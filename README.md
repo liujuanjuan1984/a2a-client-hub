@@ -1,6 +1,6 @@
 # a2a-client-backend
 
-本仓库是 `a2a-client-mobile` 的后端服务（FastAPI + PostgreSQL）。当前处于从 `common_compass_dev` 拆分迁入并“删除式裁剪”的阶段：技术栈与数据协议保持不变，仅做模块切割与冗余移除。
+本仓库是 `a2a-client-mobile` 的后端服务（FastAPI + PostgreSQL）。
 
 ## 本地运行（开发）
 
@@ -22,7 +22,7 @@ uv sync --extra dev --locked
 cd backend
 
 # 需要先配置 RS256 key（见 backend/.env.example），否则会报错并提示如何生成。
-uv run python ../scripts/setup_db_schema.py --create
+uv run python scripts/setup_db_schema.py --create
 
 uv run alembic upgrade head
 ```

@@ -23,6 +23,10 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+REPO_ROOT = os.path.dirname(PROJECT_ROOT)
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 
 TEST_SCHEMA_NAME = os.getenv("TEST_SCHEMA_NAME", "test_common_compass_schema")
 os.environ["SCHEMA_NAME"] = TEST_SCHEMA_NAME
@@ -70,7 +74,7 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
-SCRIPT_ROOT = os.path.join(os.path.dirname(PROJECT_ROOT), "scripts")
+SCRIPT_ROOT = os.path.join(PROJECT_ROOT, "scripts")
 if SCRIPT_ROOT not in sys.path:
     sys.path.insert(0, SCRIPT_ROOT)
 

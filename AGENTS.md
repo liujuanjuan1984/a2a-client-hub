@@ -17,7 +17,6 @@
 - `cd backend && uv run pytest`
 
 > 说明：
-> - 当前项目为 Python/FastAPI/PostgreSQL 技术栈，不使用 `npm` 作为后端回归入口。
 > - 如改动涉及数据库结构或迁移脚本，应在本地额外执行：`cd backend && uv run alembic upgrade head` 并验证关键接口可用。
 
 ## 3. Git 操作规范

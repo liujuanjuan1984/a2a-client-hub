@@ -17,7 +17,7 @@ uv sync --extra dev --locked
 cd backend
 
 # 需要先配置 RS256 key（见 backend/.env.example），否则会报错并提示如何生成。
-uv run python ../scripts/setup_db_schema.py --create
+uv run python scripts/setup_db_schema.py --create
 
 uv run alembic upgrade head
 ```
