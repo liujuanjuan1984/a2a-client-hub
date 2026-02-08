@@ -24,4 +24,3 @@ Frontend uses `EXPO_PUBLIC_API_BASE_URL`:
 - Recommended (works on Web and Native): `https://<your-api-host>/api/v1`
 - Web-only (same-origin reverse proxy): `/api/v1`
   - Native must use an absolute URL.
-
