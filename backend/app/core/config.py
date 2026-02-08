@@ -352,7 +352,7 @@ class Settings(BaseSettings):
     a2a_proxy_allowed_hosts: list[str] = Field(
         default_factory=list,
         alias="A2A_PROXY_ALLOWED_HOSTS",
-        description="Allowlisted hosts for the A2A agent card proxy endpoint.",
+        description="Allowlisted hosts for outbound A2A agent card / JSON-RPC extension requests.",
     )
 
     model_config = ConfigDict(

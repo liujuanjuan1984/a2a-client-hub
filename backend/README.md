@@ -38,6 +38,38 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Default API prefix: `/api/v1`.
 
+## OpenCode Session Query (A2A Extension)
+
+This backend supports querying OpenCode sessions and message history via an A2A
+Agent Card extension declared by `opencode-a2a-serve`.
+
+Requirements:
+
+- Configure `A2A_PROXY_ALLOWED_HOSTS` to allow the downstream host(s). The same
+  allowlist is used for outbound Agent Card and JSON-RPC extension requests.
+- Create an A2A agent record pointing at the downstream Agent Card URL (e.g.
+  `https://<host>/.well-known/agent-card.json`) using the `/me/a2a/agents` API.
+
+Endpoints:
+
+- List sessions:
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions?page=1&size=20`
+- List messages for a session:
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages?page=1&size=50`
+
+Optional query (passthrough):
+
+- Provide `query` as a JSON object encoded as a string, for example:
+  - `query={"tag":"foo","archived":false}`
+
+Notes:
+
+- The backend discovers the JSON-RPC interface URL and method names via the Agent
+  Card extension contract, and enforces the declared `page/size` pagination
+  constraints (default size / max size).
+- Responses include a stable envelope with `success`, `result` (upstream
+  envelope), `error_code`, and `upstream_error`.
+
 ## Checks (Before Pushing)
 
 ```bash
