@@ -6,7 +6,7 @@ upper layers (routers, dependencies, services) can remain persistence-agnostic.
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -21,7 +21,6 @@ from app.core.security import (
 )
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.handlers import user_preferences as user_preferences_service
 from app.utils.timezone_util import utc_now
 
 logger = get_logger(__name__)
@@ -117,33 +116,18 @@ async def register_user(
     should_be_superuser = settings.first_user_superuser and is_first_user
 
     password_hash = get_password_hash(password)
+    timezone_value = _normalize_timezone(timezone)
     user = User(
         email=email,
         name=name,
         password_hash=password_hash,
         is_superuser=should_be_superuser,
+        timezone=timezone_value,
     )
 
     db.add(user)
     await commit_safely(db)
     await db.refresh(user)
-
-    timezone_value = _normalize_timezone(timezone)
-    try:
-        await user_preferences_service.set_preference_value(
-            db,
-            user_id=user.id,
-            key="system.timezone",
-            value=timezone_value,
-            module="system",
-        )
-    except Exception as exc:  # pragma: no cover - defensive logging
-        logger.warning(
-            "Failed to persist timezone preference for user %s: %s",
-            email,
-            exc,
-            exc_info=True,
-        )
 
     return RegistrationResult(
         user=user,
@@ -265,19 +249,16 @@ async def get_active_user(
     return user
 
 
-async def resolve_user_timezone(
+async def get_user_timezone(
     db: AsyncSession,
     *,
     user_id: UUID,
     default: str = "UTC",
-) -> Tuple[str, bool]:
-    """Return the stored timezone preference and whether it existed."""
+) -> str:
+    """Return the user's configured timezone, falling back to ``default``."""
 
-    pref = await user_preferences_service.get_preference(
-        db, user_id=user_id, key="system.timezone"
-    )
-    if pref and isinstance(pref, dict):
-        value = pref.get("value")
-        if isinstance(value, str) and value.strip():
-            return value.strip(), True
-    return default, False
+    user = await get_active_user(db, user_id=user_id)
+    value = getattr(user, "timezone", None)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return default

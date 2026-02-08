@@ -83,9 +83,8 @@ from setup_db_schema import create_schema, drop_schema
 from app.core.config import settings
 from app.db.models.base import Base
 
-# Import the minimal set of models required for tests. Importing user_preferences
-# pulls preference validators which depend on other models, so we import them up
-# front to ensure metadata is populated before running schema setup.
+# Import the minimal set of models required for tests to ensure SQLAlchemy
+# metadata is populated before schema setup runs.
 for module_path in [
     "app.db.models.agent_session",
     "app.db.models.a2a_agent",
@@ -94,9 +93,7 @@ for module_path in [
     "app.db.models.a2a_schedule_execution",
     "app.db.models.agent_message",
     "app.db.models.user",
-    "app.db.models.user_preference",
     "app.db.models.invitation",
-    "app.db.models.user_activity",
     "app.db.models.ws_ticket",
 ]:
     importlib.import_module(module_path)

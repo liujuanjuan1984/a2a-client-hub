@@ -12,8 +12,6 @@ from app.core.config import settings
 from app.core.security import create_user_token, get_password_hash
 from app.db.models.invitation import Invitation, InvitationStatus
 from app.db.models.user import User
-from app.db.models.user_activity import UserActivity
-from app.db.models.user_preference import UserPreference
 from app.utils.timezone_util import utc_now
 from backend.tests.api_utils import create_test_client
 
@@ -53,7 +51,7 @@ async def client(async_session_maker, async_db_session) -> AsyncClient:
         yield test_client
 
 
-async def test_register_user_creates_account_and_timezone_preference(
+async def test_register_user_creates_account_and_timezone(
     client: AsyncClient, async_session_maker
 ) -> None:
     payload = {
@@ -72,22 +70,14 @@ async def test_register_user_creates_account_and_timezone_preference(
     assert data["email"] == payload["email"]
     assert data["is_superuser"] is True  # first registered user gains superuser rights
 
-    async def fetch_pref(session):
+    async def fetch_user(session):
         result = await session.execute(
             select(User).where(User.email == payload["email"])
         )
-        created = result.scalar_one()
-        pref_result = await session.execute(
-            select(UserPreference).where(
-                UserPreference.user_id == created.id,
-                UserPreference.key == "system.timezone",
-                UserPreference.deleted_at.is_(None),
-            )
-        )
-        return pref_result.scalar_one()
+        return result.scalar_one()
 
-    preference = await run_in_session(async_session_maker, fetch_pref)
-    assert preference.value == payload["timezone"]
+    created = await run_in_session(async_session_maker, fetch_user)
+    assert created.timezone == payload["timezone"]
 
 
 async def test_login_multi_user_mode_returns_token(client: AsyncClient) -> None:
@@ -374,22 +364,14 @@ async def test_register_without_timezone_defaults_to_utc(  # type: ignore[no-unt
     data = response.json()
     assert data["timezone"] == "UTC"
 
-    async def fetch_pref(session):
+    async def fetch_user(session):
         result = await session.execute(
             select(User).where(User.email == payload["email"])
         )
-        created = result.scalar_one()
-        pref_result = await session.execute(
-            select(UserPreference).where(
-                UserPreference.user_id == created.id,
-                UserPreference.key == "system.timezone",
-                UserPreference.deleted_at.is_(None),
-            )
-        )
-        return pref_result.scalar_one()
+        return result.scalar_one()
 
-    preference = await run_in_session(async_session_maker, fetch_pref)
-    assert preference.value == "UTC"
+    created = await run_in_session(async_session_maker, fetch_user)
+    assert created.timezone == "UTC"
 
 
 async def test_register_rejects_duplicate_email(
@@ -583,7 +565,7 @@ async def test_login_disabled_user_returns_unauthorized(
     assert response.json()["detail"] == "Invalid credentials"
 
 
-async def test_login_returns_user_timezone_preference(
+async def test_login_returns_user_timezone(
     client: AsyncClient, async_session_maker
 ) -> None:
     payload = {
@@ -594,33 +576,15 @@ async def test_login_returns_user_timezone_preference(
     }
     await client.post(f"{settings.api_v1_prefix}/auth/register", json=payload)
 
-    async def set_pref(session):
+    async def set_user_timezone(session):
         result = await session.execute(
             select(User).where(User.email == payload["email"])
         )
         user = result.scalar_one()
-        pref_result = await session.execute(
-            select(UserPreference).where(
-                UserPreference.user_id == user.id,
-                UserPreference.key == "system.timezone",
-                UserPreference.deleted_at.is_(None),
-            )
-        )
-        preference = pref_result.scalar_one_or_none()
-        if preference:
-            preference.value = "Asia/Shanghai"
-        else:
-            session.add(
-                UserPreference(
-                    user_id=user.id,
-                    key="system.timezone",
-                    value="Asia/Shanghai",
-                    module="system",
-                )
-            )
+        user.timezone = "Asia/Shanghai"
         await session.commit()
 
-    await run_in_session(async_session_maker, set_pref)
+    await run_in_session(async_session_maker, set_user_timezone)
 
     login_payload = {
         "email": payload["email"],
@@ -700,7 +664,7 @@ async def test_me_endpoint_rejects_disabled_user(
     assert response.json()["detail"] == "User not found or disabled"
 
 
-async def test_login_records_activity_and_last_login(
+async def test_login_updates_last_login_and_resets_lock_state(
     client: AsyncClient, async_session_maker
 ) -> None:
     payload = {
@@ -720,7 +684,7 @@ async def test_login_records_activity_and_last_login(
     )
     assert login_response.status_code == 200
 
-    async def fetch_activity(session):
+    async def fetch_user_state(session):
         result = await session.execute(
             select(User).where(User.email == payload["email"])
         )
@@ -728,16 +692,9 @@ async def test_login_records_activity_and_last_login(
         assert user.last_login_at is not None
         assert user.failed_login_attempts == 0
         assert user.locked_until is None
-        activity_result = await session.execute(
-            select(UserActivity).where(
-                UserActivity.user_id == user.id,
-                UserActivity.event_type == "auth.login",
-            )
-        )
-        return activity_result.scalars().all()
+        return user
 
-    activities = await run_in_session(async_session_maker, fetch_activity)
-    assert any(activity.status == "success" for activity in activities)
+    await run_in_session(async_session_maker, fetch_user_state)
 
 
 async def test_login_lockout_after_repeated_failures(
@@ -770,15 +727,6 @@ async def test_login_lockout_after_repeated_failures(
         )
         user = result.scalar_one()
         assert user.locked_until is not None
-        events_result = await session.execute(
-            select(UserActivity)
-            .where(
-                UserActivity.user_id == user.id,
-                UserActivity.event_type == "auth.login",
-            )
-            .order_by(UserActivity.created_at.asc())
-        )
-        return events_result.scalars().all()
+        return user
 
-    events = await run_in_session(async_session_maker, inspect_lock)
-    assert any(event.status == "blocked" for event in events)
+    await run_in_session(async_session_maker, inspect_lock)

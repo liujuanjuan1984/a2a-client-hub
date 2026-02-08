@@ -15,7 +15,7 @@ from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.transaction import commit_safely
-from app.handlers import user_preferences as user_preferences_handler
+from app.handlers import auth as auth_handler
 from app.utils.timezone_util import ensure_utc, resolve_timezone, utc_now
 
 
@@ -118,7 +118,7 @@ class A2AScheduleService:
 
         next_run_at: Optional[datetime] = None
         if enabled:
-            timezone_value = await user_preferences_handler.get_user_timezone(
+            timezone_value = await auth_handler.get_user_timezone(
                 db,
                 user_id=user_id,
                 default="UTC",
@@ -199,7 +199,7 @@ class A2AScheduleService:
             task.next_run_at = None
 
         if should_recompute:
-            timezone_value = await user_preferences_handler.get_user_timezone(
+            timezone_value = await auth_handler.get_user_timezone(
                 db,
                 user_id=user_id,
                 default="UTC",
@@ -226,7 +226,7 @@ class A2AScheduleService:
         task = await self._get_task(db, user_id=user_id, task_id=task_id)
         task.enabled = enabled
         if enabled:
-            timezone_value = await user_preferences_handler.get_user_timezone(
+            timezone_value = await auth_handler.get_user_timezone(
                 db,
                 user_id=user_id,
                 default="UTC",
@@ -318,7 +318,7 @@ class A2AScheduleService:
         if task is None:
             return None
 
-        timezone_value = await user_preferences_handler.get_user_timezone(
+        timezone_value = await auth_handler.get_user_timezone(
             db,
             user_id=task.user_id,
             default="UTC",

@@ -39,6 +39,13 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     password_hash = Column(
         String(255), nullable=False, comment="Hashed password using bcrypt"
     )
+    timezone = Column(
+        String(64),
+        nullable=False,
+        default="UTC",
+        server_default="UTC",
+        comment="Preferred timezone (IANA identifier)",
+    )
 
     # User permissions
     is_superuser = Column(

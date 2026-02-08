@@ -13,8 +13,6 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_session import AgentSession
 from app.db.models.invitation import Invitation, InvitationStatus
 from app.db.models.user import User
-from app.db.models.user_activity import UserActivity
-from app.db.models.user_preference import UserPreference
 from app.db.models.ws_ticket import WsTicket
 
 __all__ = [
@@ -27,7 +25,5 @@ __all__ = [
     "Invitation",
     "InvitationStatus",
     "User",
-    "UserActivity",
-    "UserPreference",
     "WsTicket",
 ]

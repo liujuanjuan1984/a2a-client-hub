@@ -5,8 +5,7 @@ This module contains API endpoints for user authentication including registratio
 Supports multi-user mode with JWT authentication.
 """
 
-from typing import Any, Dict, Optional
-from uuid import UUID
+from typing import Any, Dict
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import func, select
@@ -25,7 +24,6 @@ from app.core.security import (
 from app.db.models.user import User
 from app.handlers import auth as auth_handler
 from app.handlers import invitations as invitation_handler
-from app.handlers import user_preferences
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -36,7 +34,6 @@ from app.schemas.auth import (
     RegisterResponse,
     UserResponse,
 )
-from app.services.user_activity import log_activity
 
 logger = get_logger(__name__)
 router = StrictAPIRouter(
@@ -51,7 +48,6 @@ router = StrictAPIRouter(
 )
 async def register_user(
     user_data: RegisterRequest,
-    request: Request,
     db: AsyncSession = Depends(get_async_db),
 ) -> Dict[str, Any]:
     """
@@ -68,18 +64,8 @@ async def register_user(
         HTTPException: If registration fails
     """
 
-    metadata_base = _build_activity_metadata(request, email=user_data.email)
-
     is_valid, error_msg = validate_password_strength(user_data.password)
     if not is_valid:
-        await log_activity(
-            db,
-            user_id=None,
-            event_type="auth.register",
-            status="failed",
-            metadata={**metadata_base, "reason": "weak_password"},
-            commit=True,
-        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
 
     invitation = None
@@ -96,26 +82,10 @@ async def register_user(
                 db, code=invite_code, email=user_data.email
             )
         except invitation_handler.InvitationError as exc:
-            await log_activity(
-                db,
-                user_id=None,
-                event_type="auth.register",
-                status="failed",
-                metadata={**metadata_base, "reason": "invalid_invitation"},
-                commit=True,
-            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
             )
     elif invitation_required:
-        await log_activity(
-            db,
-            user_id=None,
-            event_type="auth.register",
-            status="failed",
-            metadata={**metadata_base, "reason": "invitation_required"},
-            commit=True,
-        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invitation code is required for registration",
@@ -130,14 +100,6 @@ async def register_user(
             timezone=user_data.timezone,
         )
     except auth_handler.EmailAlreadyRegisteredError as exc:
-        await log_activity(
-            db,
-            user_id=None,
-            event_type="auth.register",
-            status="failed",
-            metadata={**metadata_base, "reason": "email_exists"},
-            commit=True,
-        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     user = registration.user
@@ -164,22 +126,12 @@ async def register_user(
         timezone=registration.timezone,
     )
 
-    await log_activity(
-        db,
-        user_id=user.id,
-        event_type="auth.register",
-        status="success",
-        metadata={**metadata_base, "timezone": registration.timezone},
-        commit=True,
-    )
-
     return response
 
 
 @router.post("/login", response_model=LoginResponse)
 async def login_user(
     login_data: LoginRequest,
-    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
 ) -> LoginResponse:
@@ -196,8 +148,6 @@ async def login_user(
     Raises:
         HTTPException: If login fails
     """
-    request_metadata = _build_activity_metadata(request, email=login_data.email)
-
     try:
         user = await auth_handler.authenticate_user(
             db,
@@ -205,30 +155,10 @@ async def login_user(
             password=login_data.password,
         )
     except auth_handler.UserNotFoundError:
-        await log_activity(
-            db,
-            user_id=None,
-            event_type="auth.login",
-            status="failed",
-            metadata={**request_metadata, "reason": "user_not_found"},
-            commit=True,
-        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
-    except auth_handler.UserLockedError as exc:
-        await log_activity(
-            db,
-            user_id=exc.user_id,
-            event_type="auth.login",
-            status="blocked",
-            metadata={
-                **request_metadata,
-                "lock_expires_at": exc.lock_expires_at.isoformat(),
-                "lock_seconds_remaining": exc.seconds_remaining,
-            },
-            commit=True,
-        )
+    except auth_handler.UserLockedError:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
@@ -236,33 +166,17 @@ async def login_user(
                 "Please wait a few minutes before trying again."
             ),
         )
-    except auth_handler.InvalidCredentialsError as exc:
-        failure_metadata = {**request_metadata, **getattr(exc, "metadata", {})}
-        failure_metadata.setdefault("reason", "invalid_credentials")
-        await log_activity(
-            db,
-            user_id=getattr(exc, "user_id", None),
-            event_type="auth.login",
-            status="failed",
-            metadata=failure_metadata,
-        )
+    except auth_handler.InvalidCredentialsError:
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
 
-    await log_activity(
-        db,
-        user_id=user.id,
-        event_type="auth.login",
-        status="success",
-        metadata=request_metadata,
-    )
     await db.commit()
 
     token = create_user_access_token(user.id)
     refresh_jwt = create_user_refresh_token(user.id)
-    timezone_value, _ = await auth_handler.resolve_user_timezone(db, user_id=user.id)
+    timezone_value = user.timezone or "UTC"
 
     response.headers["Cache-Control"] = "no-store"
     response.set_cookie(
@@ -319,7 +233,7 @@ async def refresh_access_token(
 
     access_token = create_user_access_token(user.id)
     rotated_refresh = create_user_refresh_token(user.id)
-    timezone_value, _ = await auth_handler.resolve_user_timezone(db, user_id=user.id)
+    timezone_value = user.timezone or "UTC"
 
     response.headers["Cache-Control"] = "no-store"
     response.set_cookie(
@@ -360,7 +274,6 @@ async def logout_user(response: Response) -> None:
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db),
 ) -> UserResponse:
     """
     Get current user information
@@ -372,11 +285,7 @@ async def get_current_user_info(
         Current user information
     """
 
-    timezone_value = await user_preferences.get_user_timezone(
-        db,
-        user_id=current_user.id,
-        default="UTC",
-    )
+    timezone_value = current_user.timezone or "UTC"
     return UserResponse(
         id=current_user.id,
         email=current_user.email,
@@ -389,15 +298,10 @@ async def get_current_user_info(
 @router.post("/password/change", response_model=PasswordChangeResponse)
 async def change_password(
     payload: PasswordChangeRequest,
-    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ) -> PasswordChangeResponse:
     """Allow authenticated users to update their password."""
-
-    metadata = _build_activity_metadata(
-        request, email=current_user.email, user_id=current_user.id
-    )
 
     try:
         await auth_handler.change_user_password(
@@ -411,66 +315,8 @@ async def change_password(
         auth_handler.PasswordReuseError,
         auth_handler.PasswordValidationError,
     ) as exc:
-        await log_activity(
-            db,
-            user_id=current_user.id,
-            event_type="auth.password_change",
-            status="failed",
-            metadata={**metadata, "reason": str(exc)},
-            commit=True,
-        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     logger.info("User %s successfully changed password", current_user.id)
 
-    await log_activity(
-        db,
-        user_id=current_user.id,
-        event_type="auth.password_change",
-        status="success",
-        metadata=metadata,
-        commit=True,
-    )
-
     return PasswordChangeResponse(message="Password updated successfully")
-
-
-def _build_activity_metadata(
-    request: Request,
-    *,
-    email: Optional[str] = None,
-    user_id: Optional[UUID] = None,
-    extra: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Compose a metadata payload shared by auth events."""
-
-    ip = _extract_client_ip(request)
-    user_agent = request.headers.get("user-agent")
-    request_id = getattr(request.state, "request_id", None)
-    payload: Dict[str, Any] = {}
-    if email:
-        payload["email"] = email
-    if user_id:
-        payload["user_id"] = str(user_id)
-    if ip:
-        payload["ip"] = ip
-    if user_agent:
-        payload["user_agent"] = user_agent
-    if request_id:
-        payload["request_id"] = request_id
-    if extra:
-        payload.update(extra)
-    return payload
-
-
-def _extract_client_ip(request: Request) -> Optional[str]:
-    """Best-effort extraction of the originating IP address."""
-
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        first_ip = forwarded.split(",")[0].strip()
-        if first_ip:
-            return first_ip
-    if request.client and request.client.host:
-        return request.client.host
-    return None
