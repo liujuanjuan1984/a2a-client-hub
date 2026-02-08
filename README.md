@@ -1,46 +1,12 @@
-# a2a-client-backend
+# a2a-client (monorepo)
 
-本仓库是 `a2a-client-mobile` 的后端服务（FastAPI + PostgreSQL）。
+本仓库是面向用户级消费的 A2A 综合客户端项目（即将采用单仓同时维护前端与后端）。该项目本身不提供 A2A 服务，而是让用户可以添加/管理多个 A2A 服务，并在多端进行消费。
 
-## 本地运行（开发）
+## 目录结构
 
-1. 安装依赖（使用 `uv`）：
+- `backend/`: 后端（FastAPI + PostgreSQL）
+- `frontend/`: 前端（待迁入）
 
-```bash
-cd backend
-uv sync --extra dev --locked
-```
+## 文档入口
 
-2. 配置环境变量：
-
-- 参考 `backend/.env.example`，创建 `backend/.env`
-- 至少需要：`DATABASE_URL`、`SCHEMA_NAME`、JWT 相关配置
-
-3. 初始化 schema 并执行迁移：
-
-```bash
-cd backend
-
-# 需要先配置 RS256 key（见 backend/.env.example），否则会报错并提示如何生成。
-uv run python scripts/setup_db_schema.py --create
-
-uv run alembic upgrade head
-```
-
-4. 启动服务：
-
-```bash
-cd backend
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-默认 API 前缀为 `/api/v1`（见 `API_V1_PREFIX`）。
-
-## 回归（提交前必须通过）
-
-```bash
-cd backend
-uv sync --extra dev --locked
-uv run pre-commit run --all-files --config ../.pre-commit-config.yaml
-uv run pytest
-```
+后端运行、迁移、回归等说明请以 `backend/README.md` 为唯一维护入口。
