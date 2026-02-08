@@ -9,4 +9,6 @@ This repository contains **a2a-client-hub**, a user-facing A2A client that lets 
 
 ## Docs
 
-Backend setup, migrations, and checks are documented in `backend/README.md` (single source of truth).
+- Contribution guidelines: `AGENTS.md`
+- Backend docs: `backend/README.md`
+- Frontend docs: `frontend/README.md`

@@ -4,9 +4,9 @@
 
 ## 项目定位
 
-- 前端独立仓库，提供注册/登录、Agent Card 管理与对话体验的 UI 与状态管理
+- 前端工程位于本仓库 `frontend/`，提供注册/登录、Agent Card 管理与对话体验的 UI 与状态管理
 - 目标支持维护多条 Agent Card URL 与认证凭据，并选择其一进行对话与调试
-- 凭据托管与 CORS 处理必须由后端承担，本仓库不包含后端实现
+- 凭据托管与 CORS 处理必须由后端承担；后端位于本仓库 `backend/`
 
 ## 技术栈
 
@@ -21,8 +21,7 @@
 
 ## 相关说明
 
-- 评估与定位结论：Issue #1
-- 基础工程与架构搭建结论：Issue #2
+- 单仓迁入与回归：Issue #4
 
 ## 导航约定
 
@@ -32,9 +31,9 @@
 - 仅在“重定向/不应返回到上一页”的场景使用 `router.replace()`
 - 自定义 Header 场景下，返回建议采用 “能返回则返回，否则回主页” 的策略：`router.canGoBack() ? router.back() : router.replace("/")`
 
-## 认证约定（Compass）
+## 认证约定（Backend）
 
-本项目按 Compass 新认证机制接入：
+本项目按 a2a-client-hub 后端认证机制接入：
 
 - Access Token 仅驻留内存（不写入 `localStorage/sessionStorage`，也不落盘到持久化 store）。
 - Refresh Token 由服务端通过 `HttpOnly` Cookie 下发与轮换；前端通过 `POST /api/v1/auth/refresh` 在冷启动/刷新后恢复会话。

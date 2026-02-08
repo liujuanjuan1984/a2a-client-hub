@@ -12,9 +12,16 @@
 
 每次实施代码改动后，必须完成以下回归并修复至无问题：
 
-- `cd backend && uv sync --extra dev --locked`
-- `cd backend && uv run pre-commit run --all-files --config ../.pre-commit-config.yaml`
-- `cd backend && uv run pytest`
+- **后端（backend/）变更**：
+  - `cd backend && uv sync --extra dev --locked`
+  - `cd backend && uv run pre-commit run --all-files --config ../.pre-commit-config.yaml`
+  - `cd backend && uv run pytest`
+
+- **前端（frontend/）变更**：
+  - `cd frontend && npm ci`
+  - `cd frontend && npm run lint`
+  - `cd frontend && npm run check-types`
+  - `cd frontend && npm test`
 
 > 说明：
 > - 如改动涉及数据库结构或迁移脚本，应在本地额外执行：`cd backend && uv run alembic upgrade head` 并验证关键接口可用。
