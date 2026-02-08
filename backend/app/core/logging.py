@@ -7,7 +7,6 @@ for debugging and monitoring purposes.
 
 import logging
 import sys
-import traceback
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from typing import Any, Dict
@@ -160,26 +159,6 @@ def setup_logging() -> None:
     uvicorn_logger = logging.getLogger("uvicorn.access")
     uvicorn_logger.setLevel(logging.INFO)
     uvicorn_logger.propagate = True
-
-
-def log_exception(logger: logging.Logger, message: str, exc_info: Any = None) -> None:
-    """
-    Log an exception with full stack trace
-
-    Args:
-        logger: Logger instance
-        message: Error message
-        exc_info: Exception info (usually from sys.exc_info())
-    """
-    logger.error(message, exc_info=exc_info)
-
-    # Also print to console for immediate visibility
-
-    print(f"❌ [ERROR] {message}")
-    if exc_info:
-        traceback.print_exception(*exc_info)
-    else:
-        traceback.print_exc()
 
 
 def get_logger(name: str) -> logging.Logger:
