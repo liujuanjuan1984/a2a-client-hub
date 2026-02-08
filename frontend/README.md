@@ -1,6 +1,6 @@
 # a2a-client-hub (frontend)
 
-Frontend for **a2a-client-hub**. The frontend app is called **a2a-universal-client** to emphasize its cross-platform support (Expo / React Native / Web).
+Frontend for **a2a-client-hub**. Designed for cross-platform support (Expo / React Native / Web).
 
 ## Location
 
