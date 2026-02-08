@@ -1,8 +1,4 @@
-"""
-Common Compass Backend Main Application
-
-This is the FastAPI application entry point for the Common Compass backend.
-"""
+"""FastAPI entry point for a2a-client-backend."""
 
 import importlib
 from contextlib import asynccontextmanager
@@ -27,7 +23,6 @@ from app.middleware.debug_logging import DebugLoggingMiddleware
 from app.services.a2a_schedule_job import ensure_a2a_schedule_job
 from app.services.health import run_health_checks
 from app.services.scheduler import shutdown_scheduler, start_scheduler
-from app.utils.async_debug import enable_unawaited_coroutine_logging
 from app.utils.timezone_util import utc_now_iso
 
 # Set up logging first
@@ -58,7 +53,7 @@ async def app_lifespan(_: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="Backend API for Common Compass - Your Personal Navigation Tool",
+    description="Backend API for a2a-client-mobile",
     openapi_url=f"{settings.api_v1_prefix}/openapi.json",
     docs_url=f"{settings.api_v1_prefix}/docs",
     redoc_url=f"{settings.api_v1_prefix}/redoc",
@@ -84,8 +79,6 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Add request context/logging middleware
 app.add_middleware(DebugLoggingMiddleware)
-if settings.debug:
-    enable_unawaited_coroutine_logging()
 
 
 def include_all_routers() -> None:
@@ -114,7 +107,7 @@ def read_root() -> Dict[str, Any]:
         Basic API information and status
     """
     return {
-        "message": "Welcome to Common Compass API",
+        "message": "Welcome to A2A Client Backend API",
         "version": settings.app_version,
         "docs_url": f"{settings.api_v1_prefix}/docs",
         "status": "running",
