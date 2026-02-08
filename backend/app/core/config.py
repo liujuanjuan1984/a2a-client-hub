@@ -71,7 +71,7 @@ class Settings(BaseSettings):
         description="Seconds to wait for a free async connection before timing out",
     )
     schema_name: str = Field(
-        default="common_compass_schema",
+        default="a2a_client_schema",
         alias="SCHEMA_NAME",
     )
 
