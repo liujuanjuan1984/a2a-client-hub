@@ -1,6 +1,6 @@
-# a2a-universal-client (frontend)
+# a2a-client-hub (frontend)
 
-Frontend for **a2a-client-hub**. This is an Expo (React Native + Web) app that lets users sign in, manage A2A agent cards, and chat/invoke agents.
+Frontend for **a2a-client-hub**. The frontend app is called **a2a-universal-client** to emphasize its cross-platform support (Expo / React Native / Web).
 
 ## Location
 
