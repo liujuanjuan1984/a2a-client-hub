@@ -1,0 +1,1 @@
+"""Common Compass Backend Application."""
