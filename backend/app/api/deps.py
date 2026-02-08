@@ -5,43 +5,23 @@ This module contains dependency injection functions for FastAPI routes.
 Supports JWT-based user authentication.
 """
 
-from typing import AsyncGenerator, Generator
+from typing import AsyncGenerator
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, WebSocket, WebSocketException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import set_user_context
 from app.core.security import verify_access_token
 from app.db.models.user import User
-from app.db.session import AsyncSessionLocal, SessionLocal
+from app.db.session import AsyncSessionLocal
 from app.handlers import auth as auth_handler
 from app.services.ws_ticket_service import WsTicketError, ws_ticket_service
 
 # Security scheme for OpenAPI documentation
 security = HTTPBearer()
-
-
-def get_db() -> Generator[Session, None, None]:
-    """
-    Database session dependency
-
-    Yields:
-        Session: SQLAlchemy database session
-
-    Usage:
-        @app.get("/items/")
-        def read_items(db: Session = Depends(get_db)):
-            return db.query(Item).all()
-    """
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:

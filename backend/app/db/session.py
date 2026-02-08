@@ -1,35 +1,16 @@
 """
 Database session configuration for Common Compass Backend.
 
-This module exposes the SQLAlchemy `SessionLocal` bound to the configured engine.
+This module exposes the SQLAlchemy async session factory used by the API.
 Routing dependencies should import `get_db` from `app.api.deps` to avoid duplication.
 """
 
-from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
 _use_null_pool = settings.schema_name.startswith("test_")
-
-# Create SQLAlchemy engine
-sync_engine_kwargs = dict(
-    echo=settings.database_echo,
-    pool_pre_ping=True,
-    pool_recycle=300,
-)
-if _use_null_pool:
-    sync_engine_kwargs["poolclass"] = NullPool
-
-engine = create_engine(
-    settings.database_url,
-    **sync_engine_kwargs,
-)
-
-# Create SessionLocal class for database sessions
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Async engine/session factory (used by new async stack)
 async_engine_kwargs = dict(

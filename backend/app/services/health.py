@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.session import SessionLocal
+from app.db.session import AsyncSessionLocal
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.errors import A2AAgentUnavailableError
 from app.integrations.a2a_client.metrics import a2a_metrics
@@ -46,9 +46,18 @@ def _format_result(
 def _check_database() -> Dict[str, Any]:
     started = time.perf_counter()
     timestamp = utc_now_iso()
+
+    async def _probe() -> None:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+
     try:
-        with SessionLocal() as session:
-            session.execute(text("SELECT 1"))
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(_probe())
+        else:
+            asyncio.run_coroutine_threadsafe(_probe(), loop).result()
         return _format_result(
             "database",
             "healthy",
