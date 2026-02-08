@@ -139,6 +139,15 @@ _ensure_card_box_core_stub()
 TEST_SCHEMA_NAME = os.getenv("TEST_SCHEMA_NAME", "test_common_compass_schema")
 os.environ["SCHEMA_NAME"] = TEST_SCHEMA_NAME
 
+# Default DATABASE_URL for local test runs.
+#
+# We intentionally keep this as an opt-out default (setdefault) so CI/dev
+# environments can provide their own DATABASE_URL. Using the current OS user
+# as the default database name matches common local Postgres setups.
+if "DATABASE_URL" not in os.environ:
+    default_db_name = os.getenv("TEST_DATABASE_NAME") or os.getenv("USER") or "postgres"
+    os.environ["DATABASE_URL"] = f"postgresql:///{default_db_name}"
+
 # Ensure JWT RS256 configuration is available for tests.
 if "JWT_PRIVATE_KEY_PEM" not in os.environ or "JWT_PUBLIC_KEY_PEM" not in os.environ:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)

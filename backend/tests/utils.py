@@ -46,4 +46,3 @@ async def create_user(
     await session.commit()
     await session.refresh(user)
     return user
-
