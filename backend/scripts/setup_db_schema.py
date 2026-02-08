@@ -21,7 +21,7 @@ BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 if BACKEND_ROOT not in sys.path:
     sys.path.insert(0, BACKEND_ROOT)
 
-from app.core.config import settings
+from app.core.config import settings  # noqa: E402
 
 
 def create_schema(schema_name: str | None = None) -> bool:
@@ -44,7 +44,9 @@ def create_schema(schema_name: str | None = None) -> bool:
                 print(f"Schema '{target_schema_name}' already exists.")
                 return True
 
-            connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {target_schema_name}"))
+            connection.execute(
+                text(f"CREATE SCHEMA IF NOT EXISTS {target_schema_name}")
+            )
             connection.commit()
             print(f"Schema '{target_schema_name}' created successfully!")
             return True
@@ -101,7 +103,9 @@ def drop_schema(*, force: bool = False, schema_name: str | None = None) -> bool:
 def recreate_schema(*, force: bool = False) -> bool:
     """Drop and create the schema."""
 
-    print("Recreating schema - this will drop the existing schema and create a new one...")
+    print(
+        "Recreating schema - this will drop the existing schema and create a new one..."
+    )
 
     if not drop_schema(force=force):
         return False
@@ -192,4 +196,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

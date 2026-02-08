@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # Database settings
     database_url: str = Field(
-        default="postgresql:///a2a_client",
+        default="postgresql://username:password@localhost:5432/a2a_client",
         alias="DATABASE_URL",
     )
     database_echo: bool = False  # Set to True for SQL query logging in development
