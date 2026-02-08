@@ -19,10 +19,6 @@
 - TanStack Query
 - TypeScript
 
-## 相关说明
-
-- 单仓迁入与回归：Issue #4
-
 ## 导航约定
 
 本项目使用 Expo Router（基于 React Navigation），并在主功能区域采用 `Tabs` 作为全局主导航（Agents/Sessions/Jobs），避免新增页面时反复手工补 “Home/返回” 按钮。
