@@ -1,8 +1,8 @@
 """init
 
-Revision ID: 6454e83804be
-Revises:
-Create Date: 2026-02-08 02:17:36.642309
+Revision ID: 28db89df4ec9
+Revises: 
+Create Date: 2026-02-08 02:30:28.447911
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '6454e83804be'
+revision = '28db89df4ec9'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -55,23 +55,30 @@ def upgrade() -> None:
     schema='common_compass_schema'
     )
     op.create_index(op.f('ix_common_compass_schema_a2a_agents_user_id'), 'a2a_agents', ['user_id'], unique=False, schema='common_compass_schema')
-    op.create_table('dimensions',
-    sa.Column('name', sa.String(length=100), nullable=False, comment="Dimension name (e.g., 'Work', 'Health', 'Family')"),
-    sa.Column('description', sa.Text(), nullable=True, comment='Detailed description of this life dimension'),
-    sa.Column('color', sa.String(length=7), nullable=False, comment="Color code for this dimension (hex format, e.g., '#3B82F6')"),
-    sa.Column('icon', sa.String(length=50), nullable=True, comment="Icon identifier for this dimension (e.g., 'work', 'health')"),
-    sa.Column('is_active', sa.Boolean(), nullable=True, comment='Whether this dimension is currently active'),
-    sa.Column('display_order', sa.Integer(), nullable=True, comment='Display order for this dimension'),
+    op.create_table('agent_sessions',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('name', sa.String(length=255), nullable=False),
+    sa.Column('description', sa.Text(), nullable=True),
+    sa.Column('module_key', sa.String(length=64), nullable=True),
+    sa.Column('summary', sa.Text(), nullable=True),
+    sa.Column('cardbox_name', sa.String(length=255), nullable=True),
+    sa.Column('is_favorite', sa.Boolean(), nullable=False),
+    sa.Column('session_type', sa.String(length=32), server_default='chat', nullable=False, comment='Session classification: chat/system/scheduled'),
+    sa.Column('prompt_tokens_total', sa.Integer(), nullable=False, comment='Accumulated prompt tokens for the session'),
+    sa.Column('completion_tokens_total', sa.Integer(), nullable=False, comment='Accumulated completion tokens for the session'),
+    sa.Column('total_tokens_total', sa.Integer(), nullable=False, comment='Accumulated total tokens for the session'),
+    sa.Column('cost_usd_total', sa.Numeric(precision=10, scale=6), nullable=False, comment='Accumulated USD cost for the session'),
+    sa.Column('last_activity_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('user_id', sa.UUID(), nullable=False, comment='Data owner (UUID)'),
-    sa.Column('id', sa.UUID(), nullable=False, comment='Primary key (UUID v4)'),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record creation timestamp'),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record last update timestamp'),
+    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True, comment='Soft delete timestamp (NULL means not deleted)'),
     sa.ForeignKeyConstraint(['user_id'], ['common_compass_schema.users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('user_id', 'name', name='uq_common_compass_schema_dimensions_user_name'),
     schema='common_compass_schema'
     )
-    op.create_index(op.f('ix_common_compass_schema_dimensions_user_id'), 'dimensions', ['user_id'], unique=False, schema='common_compass_schema')
+    op.create_index(op.f('ix_common_compass_schema_agent_sessions_cardbox_name'), 'agent_sessions', ['cardbox_name'], unique=False, schema='common_compass_schema')
+    op.create_index(op.f('ix_common_compass_schema_agent_sessions_user_id'), 'agent_sessions', ['user_id'], unique=False, schema='common_compass_schema')
     op.create_table('invitations',
     sa.Column('code', sa.String(length=64), nullable=False, comment='Invitation code token'),
     sa.Column('creator_user_id', sa.UUID(), nullable=False, comment='User who generated the invitation'),
@@ -144,50 +151,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_common_compass_schema_a2a_agent_credentials_agent_id'), 'a2a_agent_credentials', ['agent_id'], unique=False, schema='common_compass_schema')
     op.create_index(op.f('ix_common_compass_schema_a2a_agent_credentials_user_id'), 'a2a_agent_credentials', ['user_id'], unique=False, schema='common_compass_schema')
-    op.create_table('agent_sessions',
-    sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('name', sa.String(length=255), nullable=False),
-    sa.Column('description', sa.Text(), nullable=True),
-    sa.Column('module_key', sa.String(length=64), nullable=True),
-    sa.Column('dimension_id', sa.UUID(), nullable=True),
-    sa.Column('summary', sa.Text(), nullable=True),
-    sa.Column('cardbox_name', sa.String(length=255), nullable=True),
-    sa.Column('is_favorite', sa.Boolean(), nullable=False),
-    sa.Column('session_type', sa.String(length=32), server_default='chat', nullable=False, comment='Session classification: chat/system/scheduled'),
-    sa.Column('prompt_tokens_total', sa.Integer(), nullable=False, comment='Accumulated prompt tokens for the session'),
-    sa.Column('completion_tokens_total', sa.Integer(), nullable=False, comment='Accumulated completion tokens for the session'),
-    sa.Column('total_tokens_total', sa.Integer(), nullable=False, comment='Accumulated total tokens for the session'),
-    sa.Column('cost_usd_total', sa.Numeric(precision=10, scale=6), nullable=False, comment='Accumulated USD cost for the session'),
-    sa.Column('last_activity_at', sa.DateTime(timezone=True), nullable=False),
-    sa.Column('user_id', sa.UUID(), nullable=False, comment='Data owner (UUID)'),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record creation timestamp'),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record last update timestamp'),
-    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True, comment='Soft delete timestamp (NULL means not deleted)'),
-    sa.ForeignKeyConstraint(['dimension_id'], ['common_compass_schema.dimensions.id'], ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['user_id'], ['common_compass_schema.users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id'),
-    schema='common_compass_schema'
-    )
-    op.create_index(op.f('ix_common_compass_schema_agent_sessions_cardbox_name'), 'agent_sessions', ['cardbox_name'], unique=False, schema='common_compass_schema')
-    op.create_index(op.f('ix_common_compass_schema_agent_sessions_user_id'), 'agent_sessions', ['user_id'], unique=False, schema='common_compass_schema')
-    op.create_table('ws_tickets',
-    sa.Column('agent_id', sa.UUID(), nullable=False, comment='A2A agent bound to the ticket'),
-    sa.Column('token_hash', sa.String(length=64), nullable=False, comment='HMAC-SHA256 hash of the WS ticket'),
-    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False, comment='Ticket expiration timestamp'),
-    sa.Column('used_at', sa.DateTime(timezone=True), nullable=True, comment='Timestamp when the ticket was consumed'),
-    sa.Column('id', sa.UUID(), nullable=False, comment='Primary key (UUID v4)'),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record creation timestamp'),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record last update timestamp'),
-    sa.Column('user_id', sa.UUID(), nullable=False, comment='Data owner (UUID)'),
-    sa.ForeignKeyConstraint(['agent_id'], ['common_compass_schema.a2a_agents.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['user_id'], ['common_compass_schema.users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('token_hash'),
-    schema='common_compass_schema'
-    )
-    op.create_index(op.f('ix_common_compass_schema_ws_tickets_agent_id'), 'ws_tickets', ['agent_id'], unique=False, schema='common_compass_schema')
-    op.create_index(op.f('ix_common_compass_schema_ws_tickets_user_id'), 'ws_tickets', ['user_id'], unique=False, schema='common_compass_schema')
-    op.create_index('ix_ws_tickets_expires_at', 'ws_tickets', ['expires_at'], unique=False, schema='common_compass_schema')
     op.create_table('a2a_schedule_tasks',
     sa.Column('name', sa.String(length=120), nullable=False, comment='User-facing task name'),
     sa.Column('agent_id', sa.UUID(), nullable=False, comment='Target A2A agent identifier'),
@@ -241,6 +204,24 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_common_compass_schema_agent_messages_session_id'), 'agent_messages', ['session_id'], unique=False, schema='common_compass_schema')
     op.create_index(op.f('ix_common_compass_schema_agent_messages_user_id'), 'agent_messages', ['user_id'], unique=False, schema='common_compass_schema')
+    op.create_table('ws_tickets',
+    sa.Column('agent_id', sa.UUID(), nullable=False, comment='A2A agent bound to the ticket'),
+    sa.Column('token_hash', sa.String(length=64), nullable=False, comment='HMAC-SHA256 hash of the WS ticket'),
+    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False, comment='Ticket expiration timestamp'),
+    sa.Column('used_at', sa.DateTime(timezone=True), nullable=True, comment='Timestamp when the ticket was consumed'),
+    sa.Column('id', sa.UUID(), nullable=False, comment='Primary key (UUID v4)'),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record creation timestamp'),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record last update timestamp'),
+    sa.Column('user_id', sa.UUID(), nullable=False, comment='Data owner (UUID)'),
+    sa.ForeignKeyConstraint(['agent_id'], ['common_compass_schema.a2a_agents.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['user_id'], ['common_compass_schema.users.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('token_hash'),
+    schema='common_compass_schema'
+    )
+    op.create_index(op.f('ix_common_compass_schema_ws_tickets_agent_id'), 'ws_tickets', ['agent_id'], unique=False, schema='common_compass_schema')
+    op.create_index(op.f('ix_common_compass_schema_ws_tickets_user_id'), 'ws_tickets', ['user_id'], unique=False, schema='common_compass_schema')
+    op.create_index('ix_ws_tickets_expires_at', 'ws_tickets', ['expires_at'], unique=False, schema='common_compass_schema')
     op.create_table('a2a_schedule_executions',
     sa.Column('task_id', sa.UUID(), nullable=False, comment='Owning schedule task identifier'),
     sa.Column('scheduled_for', sa.DateTime(timezone=True), nullable=False, comment='Planned trigger time for this execution'),
@@ -282,6 +263,10 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_common_compass_schema_a2a_schedule_executions_agent_message_id'), table_name='a2a_schedule_executions', schema='common_compass_schema')
     op.drop_index('ix_a2a_schedule_executions_task_created', table_name='a2a_schedule_executions', schema='common_compass_schema')
     op.drop_table('a2a_schedule_executions', schema='common_compass_schema')
+    op.drop_index('ix_ws_tickets_expires_at', table_name='ws_tickets', schema='common_compass_schema')
+    op.drop_index(op.f('ix_common_compass_schema_ws_tickets_user_id'), table_name='ws_tickets', schema='common_compass_schema')
+    op.drop_index(op.f('ix_common_compass_schema_ws_tickets_agent_id'), table_name='ws_tickets', schema='common_compass_schema')
+    op.drop_table('ws_tickets', schema='common_compass_schema')
     op.drop_index(op.f('ix_common_compass_schema_agent_messages_user_id'), table_name='agent_messages', schema='common_compass_schema')
     op.drop_index(op.f('ix_common_compass_schema_agent_messages_session_id'), table_name='agent_messages', schema='common_compass_schema')
     op.drop_table('agent_messages', schema='common_compass_schema')
@@ -291,13 +276,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_common_compass_schema_a2a_schedule_tasks_agent_id'), table_name='a2a_schedule_tasks', schema='common_compass_schema')
     op.drop_index('ix_a2a_schedule_tasks_due', table_name='a2a_schedule_tasks', schema='common_compass_schema')
     op.drop_table('a2a_schedule_tasks', schema='common_compass_schema')
-    op.drop_index('ix_ws_tickets_expires_at', table_name='ws_tickets', schema='common_compass_schema')
-    op.drop_index(op.f('ix_common_compass_schema_ws_tickets_user_id'), table_name='ws_tickets', schema='common_compass_schema')
-    op.drop_index(op.f('ix_common_compass_schema_ws_tickets_agent_id'), table_name='ws_tickets', schema='common_compass_schema')
-    op.drop_table('ws_tickets', schema='common_compass_schema')
-    op.drop_index(op.f('ix_common_compass_schema_agent_sessions_user_id'), table_name='agent_sessions', schema='common_compass_schema')
-    op.drop_index(op.f('ix_common_compass_schema_agent_sessions_cardbox_name'), table_name='agent_sessions', schema='common_compass_schema')
-    op.drop_table('agent_sessions', schema='common_compass_schema')
     op.drop_index(op.f('ix_common_compass_schema_a2a_agent_credentials_user_id'), table_name='a2a_agent_credentials', schema='common_compass_schema')
     op.drop_index(op.f('ix_common_compass_schema_a2a_agent_credentials_agent_id'), table_name='a2a_agent_credentials', schema='common_compass_schema')
     op.drop_table('a2a_agent_credentials', schema='common_compass_schema')
@@ -311,8 +289,9 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_common_compass_schema_invitations_target_email'), table_name='invitations', schema='common_compass_schema')
     op.drop_index(op.f('ix_common_compass_schema_invitations_creator_user_id'), table_name='invitations', schema='common_compass_schema')
     op.drop_table('invitations', schema='common_compass_schema')
-    op.drop_index(op.f('ix_common_compass_schema_dimensions_user_id'), table_name='dimensions', schema='common_compass_schema')
-    op.drop_table('dimensions', schema='common_compass_schema')
+    op.drop_index(op.f('ix_common_compass_schema_agent_sessions_user_id'), table_name='agent_sessions', schema='common_compass_schema')
+    op.drop_index(op.f('ix_common_compass_schema_agent_sessions_cardbox_name'), table_name='agent_sessions', schema='common_compass_schema')
+    op.drop_table('agent_sessions', schema='common_compass_schema')
     op.drop_index(op.f('ix_common_compass_schema_a2a_agents_user_id'), table_name='a2a_agents', schema='common_compass_schema')
     op.drop_table('a2a_agents', schema='common_compass_schema')
     op.drop_index(op.f('ix_common_compass_schema_users_email'), table_name='users', schema='common_compass_schema')

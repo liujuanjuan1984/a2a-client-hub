@@ -84,7 +84,6 @@ from app.db.models.base import Base
 # front to ensure metadata is populated before running schema setup.
 for module_path in [
     "app.db.models.agent_session",
-    "app.db.models.dimension",
     "app.db.models.a2a_agent",
     "app.db.models.a2a_agent_credential",
     "app.db.models.a2a_schedule_task",

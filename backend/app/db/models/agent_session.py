@@ -3,16 +3,7 @@
 from decimal import Decimal
 from typing import ClassVar
 
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    ForeignKey,
-    Integer,
-    Numeric,
-    String,
-    Text,
-)
+from sqlalchemy import Boolean, Column, DateTime, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -41,11 +32,6 @@ class AgentSession(Base, UserOwnedMixin, TimestampMixin, SoftDeleteMixin):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)  # TODO: remove this column in the future
     module_key = Column(String(64), nullable=True)
-    dimension_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.dimensions.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     summary = Column(Text, nullable=True)
     cardbox_name = Column(String(255), nullable=True, index=True)
     is_favorite = Column(Boolean, nullable=False, default=False)
@@ -86,7 +72,6 @@ class AgentSession(Base, UserOwnedMixin, TimestampMixin, SoftDeleteMixin):
         default=lambda: utc_now(),
     )
 
-    dimension = relationship("Dimension")
     messages = relationship("AgentMessage", back_populates="session")
 
     def touch(self) -> None:
