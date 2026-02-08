@@ -84,7 +84,6 @@ def run_migrations_offline() -> None:
     )
 
     with context.begin_transaction():
-        print("context url: ", url)
         context.run_migrations()
 
 

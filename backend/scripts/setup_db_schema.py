@@ -15,6 +15,7 @@ import os
 import sys
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine.url import make_url
 
 # Ensure we can import the FastAPI app package when executed from anywhere.
 BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -162,7 +163,9 @@ def main() -> None:
 
     print("Schema Management")
     print("=================")
-    print(f"Database URL: {settings.database_url}")
+    # Avoid printing credentials when DATABASE_URL includes a password.
+    safe_url = make_url(settings.database_url).render_as_string(hide_password=True)
+    print(f"Database URL: {safe_url}")
     print(f"Schema Name: {settings.schema_name}")
 
     if args.recreate:

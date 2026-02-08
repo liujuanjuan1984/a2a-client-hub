@@ -50,8 +50,15 @@ async def get_current_user(
     Raises:
         HTTPException: If authentication fails
     """
-    user_id = verify_access_token(token.credentials)
-    if not user_id:
+    raw_user_id = verify_access_token(token.credentials)
+    if not raw_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
+
+    try:
+        user_uuid = UUID(str(raw_user_id))
+    except (ValueError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
         )
@@ -59,7 +66,7 @@ async def get_current_user(
     try:
         user = await auth_handler.get_active_user(
             db,
-            user_id=user_id,
+            user_id=user_uuid,
         )
         set_user_context(str(user.id))
         return user
