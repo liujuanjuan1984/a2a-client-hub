@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "a2a-client-backend"
+name = "a2a-client-hub"
 version = "1.0.0"
-description = "Backend API for a2a-client (FastAPI + PostgreSQL)"
+description = "Backend API for a2a-client-hub (FastAPI + PostgreSQL)"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
@@ -69,9 +69,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/liujuanjuan1984/a2a-client-backend"
-Repository = "https://github.com/liujuanjuan1984/a2a-client-backend.git"
-Issues = "https://github.com/liujuanjuan1984/a2a-client-backend/issues"
+Homepage = "https://github.com/liujuanjuan1984/a2a-client-hub"
+Repository = "https://github.com/liujuanjuan1984/a2a-client-hub.git"
+Issues = "https://github.com/liujuanjuan1984/a2a-client-hub/issues"
 
 [project.scripts]
 compass-api = "app.main:app"

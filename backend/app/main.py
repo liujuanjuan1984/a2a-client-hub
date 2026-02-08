@@ -1,4 +1,4 @@
-"""FastAPI entry point for a2a-client-backend."""
+"""FastAPI entry point for a2a-client-hub."""
 
 import importlib
 from contextlib import asynccontextmanager

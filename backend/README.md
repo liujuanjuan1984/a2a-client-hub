@@ -1,4 +1,4 @@
-# a2a-client-backend (backend)
+# a2a-client-hub (backend)
 
 该目录包含 FastAPI 后端代码与迁移脚本（Alembic）。
 

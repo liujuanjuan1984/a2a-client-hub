@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Schema initialization script for a2a-client-backend.
+"""Schema initialization script for a2a-client-hub.
 
 This script creates or recreates the PostgreSQL schema required for the backend.
 Run this before running Alembic migrations.
@@ -115,7 +115,7 @@ def recreate_schema(*, force: bool = False) -> bool:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Schema initialization script for a2a-client-backend",
+        description="Schema initialization script for a2a-client-hub",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
