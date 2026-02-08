@@ -3,10 +3,7 @@
 This module contains configuration settings using Pydantic for environment variable management.
 """
 
-import json
-import os
-from pathlib import Path
-from typing import Any, Dict, Mapping
+from typing import Any
 
 from dotenv import load_dotenv
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -317,19 +314,6 @@ class Settings(BaseSettings):
     )
 
     # A2A integration settings
-    a2a_enabled: bool = Field(
-        default=False,
-        alias="A2A_ENABLED",
-        description="Enable A2A client integration for external agents.",
-    )
-    a2a_agents: Dict[str, Dict[str, Any]] = Field(
-        default_factory=dict,
-        alias="A2A_AGENTS",
-        description=(
-            "Mapping of external A2A agents; accepts JSON content or a filesystem path "
-            "pointing to a JSON file."
-        ),
-    )
     a2a_default_timeout: float = Field(
         default=300.0,
         alias="A2A_DEFAULT_TIMEOUT",
@@ -355,16 +339,6 @@ class Settings(BaseSettings):
         alias="A2A_USE_CLIENT_PREFERENCE",
         description="Respect downstream agent preferred transports when negotiating sessions.",
     )
-    a2a_health_probe_agent: str = Field(
-        default="",
-        alias="A2A_HEALTH_PROBE_AGENT",
-        description="Optional agent name used for health probes; defaults to the first configured agent.",
-    )
-    a2a_health_probe_ttl_seconds: int = Field(
-        default=180,
-        alias="A2A_HEALTH_PROBE_TTL_SECONDS",
-        description="Cache TTL in seconds for A2A health probe results to avoid hammering downstream agents.",
-    )
     a2a_max_context_bytes: int = Field(
         default=4096,
         alias="A2A_MAX_CONTEXT_BYTES",
@@ -386,58 +360,6 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",  # Ignore extra fields from environment
     )
-
-    @field_validator("a2a_agents", mode="before")
-    @classmethod
-    def load_a2a_agents(cls, value: Any) -> Dict[str, Any]:
-        if value in (None, "", {}):
-            return {}
-
-        if isinstance(value, Mapping):
-            return dict(value)
-
-        if isinstance(value, str):
-            raw_value = value.strip()
-            if not raw_value:
-                return {}
-
-            try:
-                parsed = json.loads(raw_value)
-            except json.JSONDecodeError:
-                expanded = os.path.expandvars(raw_value)
-                path = Path(expanded).expanduser()
-                if not path.is_absolute():
-                    path = (Path.cwd() / path).resolve()
-
-                if not path.is_file():
-                    raise ValueError(
-                        f"A2A agents configuration file '{path}' does not exist."
-                    )
-
-                try:
-                    file_data = path.read_text(encoding="utf-8")
-                except OSError as exc:
-                    raise ValueError(
-                        f"Failed to read A2A agents configuration file '{path}': {exc}"
-                    ) from exc
-
-                try:
-                    parsed = json.loads(file_data)
-                except json.JSONDecodeError as exc:
-                    raise ValueError(
-                        f"A2A agents configuration file '{path}' contains invalid JSON: {exc}"
-                    ) from exc
-
-            if isinstance(parsed, Mapping):
-                return dict(parsed)
-
-            raise ValueError(
-                "A2A agents configuration must be a JSON object mapping agent names to definitions."
-            )
-
-        raise TypeError(
-            "A2A agents configuration must be provided as a mapping, JSON string, or path to a JSON file."
-        )
 
     @field_validator("invitation_code_length")
     @classmethod

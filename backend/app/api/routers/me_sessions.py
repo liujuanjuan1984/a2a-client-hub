@@ -5,13 +5,12 @@ from __future__ import annotations
 from typing import Optional
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Query
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
 from app.api.routing import StrictAPIRouter
-from app.core.config import settings
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_session import AgentSession
@@ -26,14 +25,6 @@ from app.schemas.me_sessions import (
 )
 
 router = StrictAPIRouter(prefix="/me/sessions", tags=["me-sessions"])
-
-
-def _ensure_a2a_enabled() -> None:
-    if not settings.a2a_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="A2A integration is disabled",
-        )
 
 
 def _sender_to_role(sender: str) -> str:
@@ -97,8 +88,6 @@ async def list_sessions(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> MeSessionListResponse:
-    _ensure_a2a_enabled()
-
     # We only expose scheduled sessions in phase 1. Manual sessions may exist for
     # Compass agents, but A2A manual history is intentionally not included yet.
     if source == "manual":
@@ -216,7 +205,6 @@ async def get_session(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> MeSessionItem:
-    _ensure_a2a_enabled()
     session = await _get_scheduled_session(
         db, user_id=current_user.id, session_id=session_id
     )
@@ -251,7 +239,6 @@ async def list_session_messages(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> MeSessionMessageListResponse:
-    _ensure_a2a_enabled()
     await _get_scheduled_session(db, user_id=current_user.id, session_id=session_id)
 
     offset = (page - 1) * size

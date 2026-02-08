@@ -98,14 +98,6 @@ def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
     return A2AAgentResponse.model_validate(payload)
 
 
-def _ensure_a2a_enabled() -> None:
-    if not settings.a2a_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="A2A integration is disabled",
-        )
-
-
 def _normalize_host(value: str) -> str:
     return (value or "").strip().lower().rstrip(".")
 
@@ -377,7 +369,6 @@ async def validate_agent_card(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AAgentCardValidationResponse:
-    _ensure_a2a_enabled()
     try:
         runtime = await a2a_runtime_builder.build(
             db, user_id=current_user.id, agent_id=agent_id
@@ -434,8 +425,6 @@ async def proxy_agent_card(
     payload: A2AAgentCardProxyRequest,
     current_user: User = Depends(get_current_user),
 ) -> A2AAgentCardValidationResponse:
-    _ensure_a2a_enabled()
-
     card_url = _normalize_card_url(payload.card_url)
     headers = _build_proxy_headers(payload)
     logger.info(
@@ -496,8 +485,6 @@ async def issue_invoke_ws_token(
     current_user: User = Depends(get_current_user),
 ) -> WsTicketResponse:
     """Issue a one-time WS ticket for agent invocation."""
-
-    _ensure_a2a_enabled()
     try:
         await a2a_agent_service.get_agent(
             db,
@@ -533,7 +520,6 @@ async def invoke_agent_ws(
     This endpoint accepts a WebSocket connection, waits for an invocation request,
     and then streams back events from the agent.
     """
-    _ensure_a2a_enabled()
     await websocket.accept()
 
     try:
@@ -612,7 +598,6 @@ async def invoke_agent(
     current_user: User = Depends(get_current_user),
     stream: bool = Query(False, description="Set to true for SSE streaming responses."),
 ):
-    _ensure_a2a_enabled()
     if not payload.query.strip():
         raise HTTPException(status_code=400, detail="Query must be a non-empty string")
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from app.api.routers import a2a_schedules
-from app.core.config import settings
 from app.db.models.a2a_agent import A2AAgent
 from backend.tests.api_utils import create_test_client
 from backend.tests.utils import create_user
@@ -30,7 +29,6 @@ async def test_schedule_routes_crud_and_toggle(
     async_session_maker,
     monkeypatch,
 ):
-    monkeypatch.setattr(settings, "a2a_enabled", True)
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="main")
 
@@ -110,7 +108,6 @@ async def test_schedule_create_rejects_unowned_agent(
     async_session_maker,
     monkeypatch,
 ):
-    monkeypatch.setattr(settings, "a2a_enabled", True)
     current_user = await create_user(async_db_session, skip_onboarding_defaults=True)
     other_user = await create_user(async_db_session, skip_onboarding_defaults=True)
     other_agent = await _create_agent(
@@ -143,7 +140,6 @@ async def test_schedule_create_interval_normalizes_minutes(
     async_session_maker,
     monkeypatch,
 ):
-    monkeypatch.setattr(settings, "a2a_enabled", True)
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="interval")
 
@@ -174,7 +170,6 @@ async def test_schedule_create_weekly_uses_iso_weekday(
     async_session_maker,
     monkeypatch,
 ):
-    monkeypatch.setattr(settings, "a2a_enabled", True)
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="weekly")
 
