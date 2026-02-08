@@ -60,3 +60,20 @@ repos:
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: debug-statements
+
+  # Frontend checks (run only when frontend/ files are changed)
+  - repo: local
+    hooks:
+      - id: frontend-eslint
+        name: frontend eslint
+        entry: bash -lc 'cd frontend && npm run lint'
+        language: system
+        pass_filenames: false
+        files: ^frontend/.*\.(ts|tsx|js|jsx)$
+
+      - id: frontend-tsc
+        name: frontend typescript
+        entry: bash -lc 'cd frontend && npm run check-types'
+        language: system
+        pass_filenames: false
+        files: ^frontend/(package\.json|package-lock\.json|tsconfig\.json|eslint\.config\.js|app\.json|babel\.config\.js|metro\.config\.js|.*\.(ts|tsx|js|jsx|json|css))$
