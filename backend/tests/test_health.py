@@ -40,8 +40,8 @@ def _mock_core_probes(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         health_service,
-        "_check_cardbox",
-        lambda: healthy_probe("cardbox"),
+        "_check_a2a",
+        lambda: healthy_probe("a2a"),
     )
 
 
@@ -57,7 +57,7 @@ def test_health_endpoint_returns_checks(monkeypatch: pytest.MonkeyPatch) -> None
     assert data["version"] == settings.app_version
     assert "timestamp" in data
     checks = {check["name"]: check for check in data["checks"]}
-    assert {"database", "cardbox", "llm"}.issubset(checks.keys())
+    assert {"database", "llm", "a2a"}.issubset(checks.keys())
     assert response.headers.get("X-Request-ID")
 
 
@@ -74,14 +74,14 @@ def test_health_endpoint_database_failure_returns_503(
         }
 
     healthy_probe = {
-        "name": "cardbox",
+        "name": "a2a",
         "status": "healthy",
         "latency_ms": 0.1,
         "last_checked_at": "2025-01-01T00:00:00Z",
     }
 
     monkeypatch.setattr(health_service, "_check_database", failing_db_probe)
-    monkeypatch.setattr(health_service, "_check_cardbox", lambda: dict(healthy_probe))
+    monkeypatch.setattr(health_service, "_check_a2a", lambda: dict(healthy_probe))
     monkeypatch.setattr(
         health_service, "_check_llm", lambda: dict(healthy_probe, name="llm")
     )

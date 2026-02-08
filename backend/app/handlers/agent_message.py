@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from typing import List, Optional
 from uuid import UUID
 
@@ -10,8 +9,7 @@ from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.cardbox.service import cardbox_service
-from app.core.logging import get_logger, log_exception
+from app.core.logging import get_logger
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_session import AgentSession
 from app.db.transaction import commit_safely
@@ -50,15 +48,8 @@ async def create_agent_message(
         db.add(agent_message)
         await db.flush()
 
-        if sync_to_cardbox:
-            try:
-                cardbox_service.sync_message(agent_message, session=session)
-            except Exception as exc:  # pragma: no cover - defensive logging
-                log_exception(
-                    logger,
-                    f"Failed to sync message {agent_message.id} to Cardbox: {exc}",
-                    sys.exc_info(),
-                )
+        # Cardbox sync is intentionally disabled in the A2A client backend cut.
+        _ = sync_to_cardbox
         return agent_message
     except Exception as exc:
         raise AgentMessageCreationError(

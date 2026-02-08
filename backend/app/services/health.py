@@ -10,7 +10,6 @@ from typing import Any, Dict, Literal
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.cardbox.engine_factory import create_engine
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.session import SessionLocal
@@ -71,40 +70,6 @@ def _check_database() -> Dict[str, Any]:
         logger.error("Unexpected database health probe failure", exc_info=exc)
         return _format_result(
             "database",
-            "unhealthy",
-            (time.perf_counter() - started) * 1000,
-            detail=str(exc),
-            last_checked_at=timestamp,
-        )
-
-
-def _check_cardbox() -> Dict[str, Any]:
-    started = time.perf_counter()
-    timestamp = utc_now_iso()
-    try:
-        engine = create_engine("__health_probe__", trace_id="health-probe")
-        storage = engine.storage_adapter
-        storage.load_card_box("__health_probe__", tenant_id="__health_probe__")
-        return _format_result(
-            "cardbox",
-            "healthy",
-            (time.perf_counter() - started) * 1000,
-            last_checked_at=timestamp,
-        )
-    except ModuleNotFoundError:
-        detail = "card_box_core not installed"
-        logger.warning("Cardbox health probe degraded: %s", detail)
-        return _format_result(
-            "cardbox",
-            "degraded",
-            (time.perf_counter() - started) * 1000,
-            detail=detail,
-            last_checked_at=timestamp,
-        )
-    except Exception as exc:
-        logger.error("Cardbox health probe failed", exc_info=exc)
-        return _format_result(
-            "cardbox",
             "unhealthy",
             (time.perf_counter() - started) * 1000,
             detail=str(exc),
@@ -202,7 +167,7 @@ def _check_llm() -> Dict[str, Any]:
 
 
 def run_health_checks() -> tuple[HealthStatus, list[Dict[str, Any]]]:
-    checks = [_check_database(), _check_cardbox(), _check_llm(), _check_a2a()]
+    checks = [_check_database(), _check_llm(), _check_a2a()]
 
     overall: HealthStatus = "healthy"
     if any(check["status"] == "unhealthy" for check in checks):

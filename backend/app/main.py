@@ -5,7 +5,6 @@ This is the FastAPI application entry point for the Common Compass backend.
 """
 
 import importlib
-import pkgutil
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
@@ -16,22 +15,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import routers
 from app.api.error_handlers import (
     http_exception_handler,
     unhandled_exception_handler,
     validation_exception_handler,
 )
-from app.cardbox.config import setup_cardbox
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.integrations.a2a_client import get_a2a_service, shutdown_a2a_service
 from app.middleware.debug_logging import DebugLoggingMiddleware
 from app.services.a2a_schedule_job import ensure_a2a_schedule_job
-from app.services.habit_expiration_job import ensure_habit_expiration_job
 from app.services.health import run_health_checks
 from app.services.scheduler import shutdown_scheduler, start_scheduler
-from app.services.system_health_monitor import ensure_health_check_job
 from app.utils.async_debug import enable_unawaited_coroutine_logging
 from app.utils.timezone_util import utc_now_iso
 
@@ -40,17 +35,11 @@ setup_logging()
 
 logger = get_logger(__name__)
 
-# Configure Cardbox before building the FastAPI application. This guarantees
-# any later Cardbox imports see the configured storage/settings.
-setup_cardbox(settings)
-
 
 # Lifecycle management for the FastAPI application.
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
     start_scheduler()
-    ensure_health_check_job()
-    ensure_habit_expiration_job()
     ensure_a2a_schedule_job()
     if settings.a2a_enabled:
         try:
@@ -100,17 +89,16 @@ if settings.debug:
 
 
 def include_all_routers() -> None:
-    for module_loader, module_name, _ in pkgutil.iter_modules(
-        routers.__path__, routers.__name__ + "."
-    ):
-        try:
-            module = importlib.import_module(module_name)
-            if hasattr(module, "router"):
-                app.include_router(module.router, prefix=settings.api_v1_prefix)
-                logger.info("Successfully included router from: %s", module_name)
-
-        except Exception as e:
-            logger.error("Failed to include router from %s: %s", module_name, e)
+    router_modules = (
+        "app.api.routers.auth",
+        "app.api.routers.a2a_agents",
+        "app.api.routers.a2a_schedules",
+        "app.api.routers.me_sessions",
+    )
+    for module_name in router_modules:
+        module = importlib.import_module(module_name)
+        app.include_router(module.router, prefix=settings.api_v1_prefix)
+        logger.info("Successfully included router from: %s", module_name)
 
 
 include_all_routers()

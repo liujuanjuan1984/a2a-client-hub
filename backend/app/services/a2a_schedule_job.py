@@ -9,7 +9,6 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from sqlalchemy import and_, select
 
-from app.cardbox.service import cardbox_service
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
@@ -68,7 +67,6 @@ async def _ensure_task_session(
         )
         db.add(session)
         await db.flush()
-        cardbox_service.ensure_session_box(session)
         task.session_id = session.id
     else:
         if session.session_type != AgentSession.TYPE_SCHEDULED:
