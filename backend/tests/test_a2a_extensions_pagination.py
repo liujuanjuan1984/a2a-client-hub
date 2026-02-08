@@ -14,4 +14,3 @@ def test_extension_pagination_rejects_size_over_max() -> None:
             size=51,
         )
     assert "size must be <=" in str(exc.value)
-

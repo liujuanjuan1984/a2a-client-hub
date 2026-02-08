@@ -55,13 +55,17 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
             ext = candidate
             break
     if ext is None:
-        raise A2AExtensionNotSupportedError("OpenCode session query extension not found")
+        raise A2AExtensionNotSupportedError(
+            "OpenCode session query extension not found"
+        )
 
     required = bool(getattr(ext, "required", False))
     params: Dict[str, Any] = _as_dict(getattr(ext, "params", None))
 
     methods = _as_dict(params.get("methods"))
-    list_sessions_method = _require_str(methods.get("list_sessions"), field="methods.list_sessions")
+    list_sessions_method = _require_str(
+        methods.get("list_sessions"), field="methods.list_sessions"
+    )
     get_messages_method = _require_str(
         methods.get("get_session_messages"),
         field="methods.get_session_messages",
@@ -71,7 +75,9 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
     mode = _require_str(pagination.get("mode"), field="pagination.mode")
     if mode != "page_size":
         raise A2AExtensionContractError("Extension pagination.mode must be 'page_size'")
-    default_size = _require_int(pagination.get("default_size"), field="pagination.default_size")
+    default_size = _require_int(
+        pagination.get("default_size"), field="pagination.default_size"
+    )
     max_size = _require_int(pagination.get("max_size"), field="pagination.max_size")
     if default_size <= 0 or max_size <= 0 or default_size > max_size:
         raise A2AExtensionContractError("Extension pagination sizes are invalid")
@@ -116,7 +122,9 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
         jsonrpc_url = (getattr(card, "url", "") or "").strip()
         fallback_used = True
     if not jsonrpc_url:
-        raise A2AExtensionContractError("Agent card is missing a JSON-RPC interface URL")
+        raise A2AExtensionContractError(
+            "Agent card is missing a JSON-RPC interface URL"
+        )
 
     return ResolvedExtension(
         uri=OPENCODE_SESSION_QUERY_URI,
@@ -126,11 +134,12 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
             "list_sessions": list_sessions_method,
             "get_session_messages": get_messages_method,
         },
-        pagination=PageSizePagination(mode=mode, default_size=default_size, max_size=max_size),
+        pagination=PageSizePagination(
+            mode=mode, default_size=default_size, max_size=max_size
+        ),
         business_code_map=code_to_error,
         result_envelope=envelope_mapping,
     )
 
 
 __all__ = ["OPENCODE_SESSION_QUERY_URI", "resolve_opencode_session_query"]
-

@@ -128,4 +128,3 @@ def validate_outbound_http_url(
 
 
 __all__ = ["OutboundURLNotAllowedError", "validate_outbound_http_url"]
-

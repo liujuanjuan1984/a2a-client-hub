@@ -19,7 +19,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
 )
-from app.schemas.a2a_extension import A2AExtensionResponse
+from app.schemas.a2a_extension import A2AExtensionQueryRequest, A2AExtensionResponse
 from app.services.a2a_runtime import (
     A2ARuntimeNotFoundError,
     A2ARuntimeValidationError,
@@ -66,8 +66,12 @@ async def opencode_list_sessions(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: Optional[int] = Query(None, ge=1, description="Page size (uses card default when omitted)"),
-    query: Optional[str] = Query(None, description="Optional JSON object encoded as a string"),
+    size: Optional[int] = Query(
+        None, ge=1, description="Page size (uses card default when omitted)"
+    ),
+    query: Optional[str] = Query(
+        None, description="Optional JSON object encoded as a string"
+    ),
 ) -> A2AExtensionResponse:
     response.headers["Cache-Control"] = "no-store"
 
@@ -123,6 +127,70 @@ async def opencode_list_sessions(
     )
 
 
+@router.post(
+    "/{agent_id}/extensions/opencode/sessions:query",
+    response_model=A2AExtensionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def opencode_list_sessions_post(
+    *,
+    agent_id: UUID,
+    payload: A2AExtensionQueryRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> A2AExtensionResponse:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        runtime = await a2a_runtime_builder.build(
+            db, user_id=current_user.id, agent_id=agent_id
+        )
+    except A2ARuntimeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except A2ARuntimeValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    logger.info(
+        "OpenCode sessions list requested (POST)",
+        extra={
+            "user_id": str(current_user.id),
+            "agent_id": str(agent_id),
+            "agent_url": runtime.resolved.url,
+            "page": payload.page,
+            "size": payload.size,
+            "query_meta": _summarize_query_object(payload.query),
+        },
+    )
+    try:
+        result = await get_a2a_extensions_service().opencode_list_sessions(
+            runtime=runtime,
+            page=payload.page,
+            size=payload.size,
+            query=payload.query,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except A2AExtensionNotSupportedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except A2AExtensionContractError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except A2AExtensionUpstreamError as exc:
+        return A2AExtensionResponse(
+            success=False,
+            error_code=exc.error_code,
+            upstream_error=exc.upstream_error,
+            meta={},
+        )
+
+    return A2AExtensionResponse(
+        success=result.success,
+        result=result.result,
+        error_code=result.error_code,
+        upstream_error=result.upstream_error,
+        meta=result.meta or {},
+    )
+
+
 @router.get(
     "/{agent_id}/extensions/opencode/sessions/{session_id}/messages",
     response_model=A2AExtensionResponse,
@@ -136,8 +204,12 @@ async def opencode_list_session_messages(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    size: Optional[int] = Query(None, ge=1, description="Page size (uses card default when omitted)"),
-    query: Optional[str] = Query(None, description="Optional JSON object encoded as a string"),
+    size: Optional[int] = Query(
+        None, ge=1, description="Page size (uses card default when omitted)"
+    ),
+    query: Optional[str] = Query(
+        None, description="Optional JSON object encoded as a string"
+    ),
 ) -> A2AExtensionResponse:
     response.headers["Cache-Control"] = "no-store"
 
@@ -195,5 +267,71 @@ async def opencode_list_session_messages(
     )
 
 
-__all__ = ["router"]
+@router.post(
+    "/{agent_id}/extensions/opencode/sessions/{session_id}/messages:query",
+    response_model=A2AExtensionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def opencode_list_session_messages_post(
+    *,
+    agent_id: UUID,
+    session_id: str,
+    payload: A2AExtensionQueryRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> A2AExtensionResponse:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        runtime = await a2a_runtime_builder.build(
+            db, user_id=current_user.id, agent_id=agent_id
+        )
+    except A2ARuntimeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except A2ARuntimeValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    logger.info(
+        "OpenCode session messages list requested (POST)",
+        extra={
+            "user_id": str(current_user.id),
+            "agent_id": str(agent_id),
+            "agent_url": runtime.resolved.url,
+            "session_id": session_id,
+            "page": payload.page,
+            "size": payload.size,
+            "query_meta": _summarize_query_object(payload.query),
+        },
+    )
+    try:
+        result = await get_a2a_extensions_service().opencode_get_session_messages(
+            runtime=runtime,
+            session_id=session_id,
+            page=payload.page,
+            size=payload.size,
+            query=payload.query,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except A2AExtensionNotSupportedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except A2AExtensionContractError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except A2AExtensionUpstreamError as exc:
+        return A2AExtensionResponse(
+            success=False,
+            error_code=exc.error_code,
+            upstream_error=exc.upstream_error,
+            meta={},
+        )
+
+    return A2AExtensionResponse(
+        success=result.success,
+        result=result.result,
+        error_code=result.error_code,
+        upstream_error=result.upstream_error,
+        meta=result.meta or {},
+    )
+
+
+__all__ = ["router"]
