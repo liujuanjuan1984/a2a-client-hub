@@ -1,0 +1,17 @@
+{
+  "ii-agent": {
+    "url": "http://127.0.0.1:9000",
+    "description": "Sample intelligent agent platform for local testing.",
+    "headers": {
+      "Authorization": "Bearer <YOUR_TOKEN>"
+    }
+  },
+  "arxiv_query_agent": {
+    "url": "https://commons-dev.example/api/arxiv/a2a",
+    "description": "Sample agent for querying arXiv content."
+  },
+  "pubmed_query_agent": {
+    "url": "https://commons-dev.example/api/pubmed/a2a",
+    "description": "Sample agent for retrieving PubMed research data."
+  }
+}
