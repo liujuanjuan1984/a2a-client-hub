@@ -3,7 +3,6 @@
 This backend cut keeps only the validators required by the A2A client surface.
 """
 
-import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 from uuid import UUID
@@ -63,38 +62,9 @@ class TimezoneValidator(PreferenceValidator):
         return tz_value
 
 
-class CurrencyValidator(PreferenceValidator):
-    """Validator for currency codes (both fiat and cryptocurrency)"""
-
-    def validate(self, db: Session, user_id: UUID, key: str, value: Any) -> Any:
-        if value in (None, ""):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Currency code cannot be empty.",
-            )
-
-        if not isinstance(value, str):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Currency code must be a string.",
-            )
-
-        currency = value.strip().upper()
-
-        # Basic validation: 1-16 characters, alphanumeric and some symbols
-        if not re.match(r"^[A-Z0-9._-]{1,16}$", currency):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Currency code must be 1-16 characters containing only letters, numbers, dots, hyphens, and underscores.",
-            )
-
-        return currency
-
-
 # Validator registry
 VALIDATORS: Dict[str, PreferenceValidator] = {
     "timezone_validator": TimezoneValidator(),
-    "currency_validator": CurrencyValidator(),
 }
 
 

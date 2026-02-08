@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.constants import USER_PREFERENCE_DEFAULTS
-from app.core.i18n import DEFAULT_LOCALE, normalize_locale
 from app.core.preference_validators import get_validator
 from app.db.models.user_preference import UserPreference
 from app.db.transaction import commit_safely
@@ -171,51 +170,6 @@ async def get_preference_value(
     return normalized
 
 
-async def get_finance_primary_currency(
-    db: AsyncSession,
-    *,
-    user_id: Union[UUID, str],
-    default: str = "USD",
-) -> str:
-    """
-    Return the user's preferred primary currency, ensuring a string fallback.
-
-    Centralizes the common lookup logic so that routers don't repeat the same
-    ``finance.primary_currency`` access pattern.
-    """
-
-    value = await get_preference_value(
-        db,
-        user_id=user_id,
-        key="finance.primary_currency",
-        default=default,
-    )
-    if isinstance(value, str):
-        stripped = value.strip()
-        return stripped or default
-    return default
-
-
-async def resolve_language_preference(
-    db: AsyncSession,
-    *,
-    user_id: Union[UUID, str],
-    default: str = DEFAULT_LOCALE,
-) -> str:
-    raw_value = await get_preference_value(
-        db, user_id=user_id, key="system.language", default=default
-    )
-    if not isinstance(raw_value, str):
-        return normalize_locale(default)
-    normalized = raw_value.strip()
-    if not normalized:
-        return normalize_locale(default)
-    lowered = normalized.lower()
-    if lowered == "auto":
-        return normalize_locale(default)
-    return normalize_locale(lowered)
-
-
 async def get_user_timezone(
     db: AsyncSession,
     *,
@@ -326,14 +280,12 @@ async def get_preference(
 __all__ = [
     "convert_date_range_to_timezone",
     "create_default_preference",
-    "get_finance_primary_currency",
     "get_preference",
     "get_preference_by_key",
     "get_preference_value",
     "normalize_preference_value",
     "get_user_timezone",
     "list_preferences",
-    "resolve_language_preference",
     "set_preference_value",
 ]
 
