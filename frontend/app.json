@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "A2A Universal Client",
+    "slug": "a2a-universal-client",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "a2a-universal-client",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#05070a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.liujuanjuan.a2a.client",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#05070a"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.liujuanjuan.a2a.client",
+      "predictiveBackGestureEnabled": true,
+      "versionCode": 1
+    },
+    "web": {
+      "bundler": "metro",
+      "display": "standalone",
+      "backgroundColor": "#05070a",
+      "favicon": "./assets/pwa-icon.png",
+      "splash": {
+        "image": "./assets/splash-icon.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#05070a"
+      }
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "extra": {
+      "router": {}
+    },
+    "owner": "liujuanjuan"
+  }
+}

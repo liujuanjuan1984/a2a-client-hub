@@ -5,7 +5,7 @@
 ## 目录结构
 
 - `backend/`: 后端（FastAPI + PostgreSQL）
-- `frontend/`: 前端（待迁入）
+- `frontend/`: 前端（Expo / React Native）
 
 ## 文档入口
 
