@@ -38,6 +38,13 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Default API prefix: `/api/v1`.
 
+## A2A Outbound Allowlist
+
+This backend requires an allowlist for all outbound A2A HTTP requests (agent card
+fetching, transport negotiation, and extensions).
+
+- Configure `A2A_PROXY_ALLOWED_HOSTS` to allow the downstream host(s).
+
 ## OpenCode Session Query (A2A Extension)
 
 This backend supports querying OpenCode sessions and message history via an A2A
@@ -45,8 +52,7 @@ Agent Card extension declared by `opencode-a2a-serve`.
 
 Requirements:
 
-- Configure `A2A_PROXY_ALLOWED_HOSTS` to allow the downstream host(s). The same
-  allowlist is used for outbound Agent Card and JSON-RPC extension requests.
+- Configure `A2A_PROXY_ALLOWED_HOSTS` to allow the downstream host(s).
 - Create an A2A agent record pointing at the downstream Agent Card URL (e.g.
   `https://<host>/.well-known/agent-card.json`) using the `/me/a2a/agents` API.
 

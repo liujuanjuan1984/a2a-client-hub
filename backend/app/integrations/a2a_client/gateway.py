@@ -18,6 +18,7 @@ from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
+    A2AOutboundNotAllowedError,
 )
 from app.integrations.a2a_client.metrics import a2a_metrics
 
@@ -142,6 +143,28 @@ class A2AGateway:
                 "agent_url": resolved.url,
                 "error": str(exc),
                 "error_code": "client_reset",
+            }
+        except A2AOutboundNotAllowedError as exc:
+            elapsed = time.monotonic() - start_time
+            logger.error(
+                "A2A outbound target blocked",
+                extra={
+                    "agent_name": resolved.name,
+                    "elapsed_seconds": round(elapsed, 3),
+                    "error": str(exc),
+                },
+            )
+            a2a_metrics.record_call(
+                resolved.name,
+                success=False,
+                error_code="outbound_not_allowed",
+            )
+            return {
+                "success": False,
+                "agent_name": resolved.name,
+                "agent_url": resolved.url,
+                "error": "Outbound A2A URL is not allowed",
+                "error_code": "outbound_not_allowed",
             }
         except A2AAgentUnavailableError as exc:
             elapsed = time.monotonic() - start_time
@@ -277,6 +300,19 @@ class A2AGateway:
 
         try:
             card = await client_instance.get_agent_card()
+        except A2AOutboundNotAllowedError as exc:
+            elapsed = time.monotonic() - start_time
+            logger.warning(
+                "A2A card fetch blocked by allowlist",
+                extra={
+                    "agent_name": resolved.name,
+                    "error": str(exc),
+                    "elapsed_seconds": round(elapsed, 3),
+                },
+            )
+            if raise_on_failure:
+                raise
+            return None
         except A2AAgentUnavailableError as exc:
             elapsed = time.monotonic() - start_time
             logger.warning(
@@ -331,6 +367,19 @@ class A2AGateway:
 
         try:
             card = await client_instance.get_agent_card()
+        except A2AOutboundNotAllowedError as exc:
+            elapsed = time.monotonic() - start_time
+            logger.warning(
+                "A2A card fetch blocked by allowlist",
+                extra={
+                    "agent_name": resolved.name,
+                    "error": str(exc),
+                    "elapsed_seconds": round(elapsed, 3),
+                },
+            )
+            if raise_on_failure:
+                raise
+            return None
         except A2AAgentUnavailableError as exc:
             elapsed = time.monotonic() - start_time
             logger.warning(
