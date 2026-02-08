@@ -70,7 +70,7 @@ class Settings(BaseSettings):
         description="Seconds to wait for a free async connection before timing out",
     )
     schema_name: str = Field(
-        default="a2a_client_schema",
+        default="a2a_client_hub_schema",
         alias="SCHEMA_NAME",
     )
 
@@ -262,11 +262,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_jwt_config(self) -> "Settings":
-        if self.schema_name not in {"a2a_client_schema", "test_a2a_client_schema"}:
+        if self.schema_name not in {
+            "a2a_client_hub_schema",
+            "test_a2a_client_hub_schema",
+        }:
             raise ValueError(
                 "SCHEMA_NAME is fixed for this project. "
-                "Use SCHEMA_NAME=a2a_client_schema "
-                "(or test_a2a_client_schema for tests)."
+                "Use SCHEMA_NAME=a2a_client_hub_schema "
+                "(or test_a2a_client_hub_schema for tests)."
             )
 
         algorithm = (self.jwt_algorithm or "").upper()

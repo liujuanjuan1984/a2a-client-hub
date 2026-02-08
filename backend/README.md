@@ -24,7 +24,7 @@ uv run alembic upgrade head
 
 说明：
 - `alembic.ini` 中的 `sqlalchemy.url` 仅为占位示例；实际迁移连接由环境变量（如 `DATABASE_URL`）通过 `app.core.config.Settings` 注入。
-- 本项目 schema 名固定为 `a2a_client_schema`（测试为 `test_a2a_client_schema`），不支持通过 `SCHEMA_NAME` 自定义其它值。
+- 本项目 schema 名固定为 `a2a_client_hub_schema`（测试为 `test_a2a_client_hub_schema`），不支持通过 `SCHEMA_NAME` 自定义其它值。
 
 启动服务：
 

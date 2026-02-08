@@ -28,7 +28,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 
-TEST_SCHEMA_NAME = os.getenv("TEST_SCHEMA_NAME", "test_a2a_client_schema")
+TEST_SCHEMA_NAME = os.getenv("TEST_SCHEMA_NAME", "test_a2a_client_hub_schema")
 os.environ["SCHEMA_NAME"] = TEST_SCHEMA_NAME
 
 # Default DATABASE_URL for local test runs.
