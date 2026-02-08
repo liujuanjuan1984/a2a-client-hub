@@ -16,15 +16,17 @@ from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
 )
-from app.integrations.a2a_extensions.errors import (
-    A2AExtensionUpstreamError,
-)
+from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient
+from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
 from app.integrations.a2a_extensions.opencode_session_query import (
     resolve_opencode_session_query,
 )
 from app.services.a2a_runtime import A2ARuntime
-from app.utils.outbound_url import OutboundURLNotAllowedError, validate_outbound_http_url
+from app.utils.outbound_url import (
+    OutboundURLNotAllowedError,
+    validate_outbound_http_url,
+)
 
 logger = get_logger(__name__)
 
@@ -69,6 +71,8 @@ class A2AExtensionsService:
             await http.aclose()
 
     async def _fetch_card(self, runtime: A2ARuntime) -> AgentCard:
+        # Validate the agent card URL before any outbound request.
+        self._ensure_outbound_allowed(runtime.resolved.url, purpose="Agent card URL")
         try:
             card = await get_a2a_service().gateway.fetch_agent_card_detail(
                 resolved=runtime.resolved,
@@ -103,6 +107,60 @@ class A2AExtensionsService:
             ) from exc
 
     @staticmethod
+    def _normalize_envelope(
+        result: Optional[Dict[str, Any]],
+        *,
+        page: int,
+        size: int,
+    ) -> Optional[Dict[str, Any]]:
+        if result is None:
+            return None
+        envelope = dict(result)
+        envelope.setdefault("raw", result)
+        envelope.setdefault("items", [])
+        envelope.setdefault("pagination", {"page": page, "size": size})
+        return envelope
+
+    async def _call_with_retry(
+        self,
+        *,
+        url: str,
+        method: str,
+        params: Dict[str, Any],
+        headers: Dict[str, str],
+        timeout_seconds: float,
+        max_attempts: int = 2,
+        backoff_seconds: float = 0.2,
+    ):
+        assert self._jsonrpc is not None
+        attempt = 0
+        last_exc: Exception | None = None
+        while attempt < max_attempts:
+            attempt += 1
+            try:
+                return await self._jsonrpc.call(
+                    url=url,
+                    method=method,
+                    params=params,
+                    headers=headers,
+                    timeout_seconds=timeout_seconds,
+                )
+            except httpx.TransportError as exc:
+                last_exc = exc
+                if attempt >= max_attempts:
+                    raise
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                # Retry only on server-side errors.
+                status_code = exc.response.status_code if exc.response else None
+                if not status_code or status_code < 500 or attempt >= max_attempts:
+                    raise
+            if backoff_seconds > 0:
+                await asyncio.sleep(backoff_seconds * (2 ** (attempt - 1)))
+        assert last_exc is not None
+        raise last_exc
+
+    @staticmethod
     def _coerce_page_size(
         *,
         default_size: int,
@@ -130,7 +188,9 @@ class A2AExtensionsService:
     ) -> ExtensionCallResult:
         card = await self._fetch_card(runtime)
         ext = resolve_opencode_session_query(card)
-        jsonrpc_url = self._ensure_outbound_allowed(ext.jsonrpc.url, purpose="JSON-RPC interface URL")
+        jsonrpc_url = self._ensure_outbound_allowed(
+            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+        )
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -146,7 +206,7 @@ class A2AExtensionsService:
         await self._get_http()
         assert self._jsonrpc is not None  # constructed alongside _http
         try:
-            resp = await self._jsonrpc.call(
+            resp = await self._call_with_retry(
                 url=jsonrpc_url,
                 method=ext.methods["list_sessions"],
                 params=params,
@@ -163,7 +223,10 @@ class A2AExtensionsService:
             raise A2AExtensionUpstreamError(
                 message=str(exc),
                 error_code="upstream_http_error",
-                upstream_error={"message": str(exc), "status_code": exc.response.status_code if exc.response else None},
+                upstream_error={
+                    "message": str(exc),
+                    "status_code": exc.response.status_code if exc.response else None,
+                },
             ) from exc
         except Exception as exc:  # noqa: BLE001
             raise A2AExtensionUpstreamError(
@@ -182,7 +245,17 @@ class A2AExtensionsService:
         }
 
         if resp.ok:
-            return ExtensionCallResult(success=True, result=resp.result, meta=meta)
+            normalized = self._normalize_envelope(
+                resp.result,
+                page=resolved_page,
+                size=resolved_size,
+            )
+            a2a_extension_metrics.record_call(
+                f"{ext.uri}:{ext.methods['list_sessions']}",
+                success=True,
+                error_code=None,
+            )
+            return ExtensionCallResult(success=True, result=normalized, meta=meta)
 
         error = resp.error or {}
         code = error.get("code")
@@ -191,9 +264,15 @@ class A2AExtensionsService:
             mapped = ext.business_code_map.get(code)
         elif isinstance(code, str) and code.strip().lstrip("-").isdigit():
             mapped = ext.business_code_map.get(int(code.strip()))
+        error_code = mapped or "upstream_error"
+        a2a_extension_metrics.record_call(
+            f"{ext.uri}:{ext.methods['list_sessions']}",
+            success=False,
+            error_code=error_code,
+        )
         return ExtensionCallResult(
             success=False,
-            error_code=mapped or "upstream_error",
+            error_code=error_code,
             upstream_error=error,
             meta=meta,
         )
@@ -213,7 +292,9 @@ class A2AExtensionsService:
 
         card = await self._fetch_card(runtime)
         ext = resolve_opencode_session_query(card)
-        jsonrpc_url = self._ensure_outbound_allowed(ext.jsonrpc.url, purpose="JSON-RPC interface URL")
+        jsonrpc_url = self._ensure_outbound_allowed(
+            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+        )
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -233,7 +314,7 @@ class A2AExtensionsService:
         await self._get_http()
         assert self._jsonrpc is not None
         try:
-            resp = await self._jsonrpc.call(
+            resp = await self._call_with_retry(
                 url=jsonrpc_url,
                 method=ext.methods["get_session_messages"],
                 params=params,
@@ -250,7 +331,10 @@ class A2AExtensionsService:
             raise A2AExtensionUpstreamError(
                 message=str(exc),
                 error_code="upstream_http_error",
-                upstream_error={"message": str(exc), "status_code": exc.response.status_code if exc.response else None},
+                upstream_error={
+                    "message": str(exc),
+                    "status_code": exc.response.status_code if exc.response else None,
+                },
             ) from exc
         except Exception as exc:  # noqa: BLE001
             raise A2AExtensionUpstreamError(
@@ -270,7 +354,17 @@ class A2AExtensionsService:
         }
 
         if resp.ok:
-            return ExtensionCallResult(success=True, result=resp.result, meta=meta)
+            normalized = self._normalize_envelope(
+                resp.result,
+                page=resolved_page,
+                size=resolved_size,
+            )
+            a2a_extension_metrics.record_call(
+                f"{ext.uri}:{ext.methods['get_session_messages']}",
+                success=True,
+                error_code=None,
+            )
+            return ExtensionCallResult(success=True, result=normalized, meta=meta)
 
         error = resp.error or {}
         code = error.get("code")
@@ -279,9 +373,15 @@ class A2AExtensionsService:
             mapped = ext.business_code_map.get(code)
         elif isinstance(code, str) and code.strip().lstrip("-").isdigit():
             mapped = ext.business_code_map.get(int(code.strip()))
+        error_code = mapped or "upstream_error"
+        a2a_extension_metrics.record_call(
+            f"{ext.uri}:{ext.methods['get_session_messages']}",
+            success=False,
+            error_code=error_code,
+        )
         return ExtensionCallResult(
             success=False,
-            error_code=mapped or "upstream_error",
+            error_code=error_code,
             upstream_error=error,
             meta=meta,
         )

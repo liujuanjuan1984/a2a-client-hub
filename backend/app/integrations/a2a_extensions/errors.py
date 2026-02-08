@@ -36,4 +36,3 @@ __all__ = [
     "A2AExtensionContractError",
     "A2AExtensionUpstreamError",
 ]
-

@@ -44,7 +44,11 @@ def test_resolve_extracts_methods_pagination_and_interface() -> None:
                     "list_sessions": "opencode.sessions.list",
                     "get_session_messages": "opencode.sessions.messages.list",
                 },
-                "pagination": {"mode": "page_size", "default_size": 20, "max_size": 100},
+                "pagination": {
+                    "mode": "page_size",
+                    "default_size": 20,
+                    "max_size": 100,
+                },
                 "errors": {
                     "business_codes": {
                         "SESSION_NOT_FOUND": -32001,

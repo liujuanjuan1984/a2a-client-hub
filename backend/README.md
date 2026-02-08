@@ -54,13 +54,16 @@ Endpoints:
 
 - List sessions:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions?page=1&size=20`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions:query`
 - List messages for a session:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages?page=1&size=50`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages:query`
 
 Optional query (passthrough):
 
 - Provide `query` as a JSON object encoded as a string, for example:
   - `query={"tag":"foo","archived":false}`
+- Or use the POST endpoints and pass `query` as a JSON object in the request body.
 
 Notes:
 

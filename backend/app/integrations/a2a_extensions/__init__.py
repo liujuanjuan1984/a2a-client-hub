@@ -10,4 +10,3 @@ from app.integrations.a2a_extensions.service import (
 )
 
 __all__ = ["get_a2a_extensions_service", "shutdown_a2a_extensions_service"]
-

@@ -94,6 +94,11 @@ class JsonRpcClient:
         if not isinstance(data, dict):
             raise ValueError("Invalid JSON-RPC response (not an object)")
 
+        if data.get("jsonrpc") != "2.0":
+            raise ValueError("Invalid JSON-RPC response (jsonrpc must be '2.0')")
+        if str(data.get("id", "")) != request_id:
+            raise ValueError("Invalid JSON-RPC response (id mismatch)")
+
         # JSON-RPC 2.0 response must contain either "result" or "error".
         if "error" in data:
             err = data.get("error")
@@ -111,4 +116,3 @@ class JsonRpcClient:
 
 
 __all__ = ["JsonRpcClient", "JsonRpcResponse"]
-
