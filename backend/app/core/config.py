@@ -38,21 +38,10 @@ class Settings(BaseSettings):
         alias="BACKEND_PORT",
         description="Port to bind the server to",
     )
-    # TODO: 多workers访问duckdb会出问题，需fix后才能把workers>1
     uvicorn_workers: int = Field(
         default=1,
         alias="UVICORN_WORKERS",
         description="Number of worker processes for the ASGI server",
-    )
-    tasks_max_page_size: int = Field(
-        default=500,
-        alias="TASKS_MAX_PAGE_SIZE",
-        description="Maximum number of tasks returned per list call",
-    )
-    actual_events_search_limit: int = Field(
-        default=1000,
-        alias="ACTUAL_EVENTS_SEARCH_LIMIT",
-        description="Maximum number of actual events returned for advanced search queries",
     )
 
     # Database settings
@@ -239,11 +228,6 @@ class Settings(BaseSettings):
         default=32,
         alias="INVITATION_CODE_LENGTH",
         description="Length of generated invitation codes (before base64 trimming)",
-    )
-    frontend_base_url: str = Field(
-        default="http://localhost:5173",
-        alias="FRONTEND_BASE_URL",
-        description="Base URL of the frontend, used for invitation links",
     )
 
     @field_validator("jwt_private_key_pem", "jwt_public_key_pem", mode="before")
