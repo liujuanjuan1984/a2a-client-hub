@@ -25,11 +25,17 @@ from a2a.utils.constants import (
     PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
+    A2AOutboundNotAllowedError,
+)
+from app.utils.outbound_url import (
+    OutboundURLNotAllowedError,
+    validate_outbound_http_url,
 )
 
 logger = get_logger(__name__)
@@ -206,6 +212,15 @@ class A2AClient:
         if self._agent_card is not None:
             return self._agent_card
 
+        try:
+            validate_outbound_http_url(
+                self.agent_url,
+                allowed_hosts=settings.a2a_proxy_allowed_hosts,
+                purpose="Agent card URL",
+            )
+        except OutboundURLNotAllowedError as exc:
+            raise A2AOutboundNotAllowedError(str(exc)) from exc
+
         httpx_client = await self._get_http_client()
         resolver = self._build_card_resolver(httpx_client)
         logger.info(
@@ -244,6 +259,27 @@ class A2AClient:
             raise A2AAgentUnavailableError(
                 f"Failed to fetch metadata for A2A agent '{self.agent_url}'"
             ) from exc
+
+        # Validate downstream card-declared endpoints before caching. This prevents the
+        # SDK transport negotiation from selecting a disallowed interface later.
+        try:
+            validate_outbound_http_url(
+                getattr(card, "url", "") or "",
+                allowed_hosts=settings.a2a_proxy_allowed_hosts,
+                purpose="Agent URL",
+            )
+            for iface in getattr(card, "additional_interfaces", None) or []:
+                url = (getattr(iface, "url", "") or "").strip()
+                if not url:
+                    continue
+                validate_outbound_http_url(
+                    url,
+                    allowed_hosts=settings.a2a_proxy_allowed_hosts,
+                    purpose="Agent interface URL",
+                )
+        except OutboundURLNotAllowedError as exc:
+            raise A2AOutboundNotAllowedError(str(exc)) from exc
+
         self._agent_card = card
         logger.info(
             "Fetched agent card for %s (name=%s)",

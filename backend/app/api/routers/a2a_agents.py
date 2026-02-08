@@ -186,12 +186,13 @@ async def create_agent(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> Any:
+    normalized_card_url = _normalize_card_url(payload.card_url)
     logger.info(
         "A2A agent create requested",
         extra={
             "user_id": str(current_user.id),
             "agent_name": payload.name,
-            "card_url": payload.card_url,
+            "card_url": normalized_card_url,
             "auth_type": payload.auth_type,
             "enabled": payload.enabled,
             "tags_count": len(payload.tags or []),
@@ -203,7 +204,7 @@ async def create_agent(
             db,
             user_id=current_user.id,
             name=payload.name,
-            card_url=payload.card_url,
+            card_url=normalized_card_url,
             auth_type=payload.auth_type,
             auth_header=payload.auth_header,
             auth_scheme=payload.auth_scheme,
@@ -225,13 +226,16 @@ async def update_agent(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> Any:
+    normalized_card_url = (
+        _normalize_card_url(payload.card_url) if payload.card_url is not None else None
+    )
     logger.info(
         "A2A agent update requested",
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
             "agent_name": payload.name,
-            "card_url": payload.card_url,
+            "card_url": normalized_card_url,
             "auth_type": payload.auth_type,
             "enabled": payload.enabled,
             "tags_count": len(payload.tags) if payload.tags is not None else None,
@@ -248,7 +252,7 @@ async def update_agent(
             user_id=current_user.id,
             agent_id=agent_id,
             name=payload.name,
-            card_url=payload.card_url,
+            card_url=normalized_card_url,
             auth_type=payload.auth_type,
             auth_header=payload.auth_header,
             auth_scheme=payload.auth_scheme,

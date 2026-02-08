@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.utils.outbound_url import OutboundURLNotAllowedError, validate_outbound_http_url
+from app.utils.outbound_url import (
+    OutboundURLNotAllowedError,
+    validate_outbound_http_url,
+)
 
 
 def test_outbound_url_requires_allowlist() -> None:
@@ -23,4 +26,3 @@ def test_outbound_url_allows_exact_host() -> None:
         )
         == "https://example.com/.well-known/agent-card.json"
     )
-
