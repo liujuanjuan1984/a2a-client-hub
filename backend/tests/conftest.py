@@ -4,10 +4,7 @@ import asyncio
 import importlib
 import os
 import sys
-import types
-from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Generator
-from uuid import uuid4
+from typing import AsyncGenerator, Generator
 
 import pytest
 import pytest_asyncio
@@ -26,115 +23,6 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-
-def _ensure_card_box_core_stub() -> None:
-    """Install lightweight card_box_core modules when dependency is absent."""
-
-    if "card_box_core" in sys.modules:
-        return
-
-    card_box_core = types.ModuleType("card_box_core")
-
-    structures = types.ModuleType("card_box_core.structures")
-
-    class Card:
-        def __init__(self, content: Any = None, metadata: dict | None = None) -> None:
-            self.card_id = str(uuid4())
-            self.content = content
-            self.metadata = metadata or {}
-
-    class TextContent:
-        def __init__(self, text: str = "") -> None:
-            self.text = text
-
-    class CardBox:
-        def __init__(self) -> None:
-            self.card_ids: list[str] = []
-
-        def add(self, card_id: str) -> None:
-            self.card_ids.append(card_id)
-
-    structures.Card = Card
-    structures.TextContent = TextContent
-    structures.CardBox = CardBox
-
-    adapters = types.ModuleType("card_box_core.adapters")
-
-    class StorageAdapter:
-        def load_card_box(self, name: str, tenant_id: str) -> CardBox | None:
-            return getattr(self, "_boxes", {}).get((tenant_id, name))
-
-        def save_card_box(self, box: CardBox, *, name: str, tenant_id: str) -> None:
-            self._boxes.setdefault((tenant_id, name), box)
-
-    @dataclass
-    class DuckDBStorageAdapterSettings:
-        path: str
-
-    class DuckDBStorageAdapter(StorageAdapter):
-        def __init__(self, *, config: DuckDBStorageAdapterSettings) -> None:
-            self.config = config
-            self._boxes: dict[tuple[str, str], CardBox] = {}
-
-    class LocalFileStorageAdapter:
-        pass
-
-    adapters.StorageAdapter = StorageAdapter
-    adapters.DuckDBStorageAdapter = DuckDBStorageAdapter
-    adapters.LocalFileStorageAdapter = LocalFileStorageAdapter
-
-    config_mod = types.ModuleType("card_box_core.config")
-
-    def configure(config_dict: dict[str, Any]) -> None:
-        config_mod._last_config = config_dict
-
-    config_mod.DuckDBStorageAdapterSettings = DuckDBStorageAdapterSettings
-    config_mod.configure = configure
-
-    engine_mod = types.ModuleType("card_box_core.engine")
-
-    class _CardStore:
-        def __init__(self) -> None:
-            self._cards: dict[str, Card] = {}
-
-        def add(self, card: Card) -> None:
-            self._cards[card.card_id] = card
-
-        def get(self, card_id: str) -> Card | None:
-            return self._cards.get(card_id)
-
-    class ContextEngine:
-        def __init__(
-            self,
-            *,
-            trace_id: str,
-            tenant_id: str,
-            storage_adapter: StorageAdapter,
-            history_level: str,
-            fs_adapter: Any,
-        ) -> None:
-            self.trace_id = trace_id
-            self.tenant_id = tenant_id
-            self.storage_adapter = storage_adapter
-            self.history_level = history_level
-            self.fs_adapter = fs_adapter
-            self.card_store = _CardStore()
-
-    engine_mod.ContextEngine = ContextEngine
-
-    card_box_core.structures = structures
-    card_box_core.adapters = adapters
-    card_box_core.config = config_mod
-    card_box_core.engine = engine_mod
-
-    sys.modules["card_box_core"] = card_box_core
-    sys.modules["card_box_core.structures"] = structures
-    sys.modules["card_box_core.adapters"] = adapters
-    sys.modules["card_box_core.config"] = config_mod
-    sys.modules["card_box_core.engine"] = engine_mod
-
-
-_ensure_card_box_core_stub()
 
 TEST_SCHEMA_NAME = os.getenv("TEST_SCHEMA_NAME", "test_common_compass_schema")
 os.environ["SCHEMA_NAME"] = TEST_SCHEMA_NAME
@@ -196,17 +84,16 @@ from app.db.models.base import Base
 # front to ensure metadata is populated before running schema setup.
 for module_path in [
     "app.db.models.agent_session",
-    "app.db.models.agent_audit_log",
+    "app.db.models.dimension",
     "app.db.models.a2a_agent",
+    "app.db.models.a2a_agent_credential",
     "app.db.models.a2a_schedule_task",
     "app.db.models.a2a_schedule_execution",
+    "app.db.models.agent_message",
     "app.db.models.user",
     "app.db.models.user_preference",
-    "app.db.models.dimension",
-    "app.db.models.vision",
-    "app.db.models.task",
     "app.db.models.invitation",
-    "app.db.models.finance_trading",
+    "app.db.models.user_activity",
     "app.db.models.ws_ticket",
 ]:
     importlib.import_module(module_path)
