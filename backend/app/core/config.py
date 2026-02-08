@@ -264,6 +264,13 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _validate_jwt_config(self) -> "Settings":
         algorithm = (self.jwt_algorithm or "").upper()
+        if algorithm == "HS256":
+            raise ValueError(
+                "JWT_ALGORITHM=HS256 is not supported. Use RS256 instead. "
+                "Generate keys and set JWT_PRIVATE_KEY_PEM/JWT_PUBLIC_KEY_PEM "
+                "(e.g. `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt_private_key.pem` "
+                "and `openssl rsa -in jwt_private_key.pem -pubout -out jwt_public_key.pem`)."
+            )
         if algorithm.startswith(("RS", "ES")):
             if not self.jwt_private_key_pem or not self.jwt_public_key_pem:
                 raise ValueError(

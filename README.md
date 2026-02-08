@@ -21,8 +21,8 @@ uv sync --extra dev --locked
 ```bash
 cd backend
 
-# 若你本地尚未配置 RS256 key，可临时使用 HS256 仅用于执行脚本/迁移命令：
-JWT_ALGORITHM=HS256 uv run python ../scripts/setup_db_schema.py --create
+# 需要先配置 RS256 key（见 backend/.env.example），否则会报错并提示如何生成。
+uv run python ../scripts/setup_db_schema.py --create
 
 uv run alembic upgrade head
 ```
