@@ -47,9 +47,6 @@ dependencies = [
     "pydantic-settings>=2.1.0",
     # HTTP client and utilities
     "httpx>=0.25.0",
-    "starlette>=0.48.0",
-    # Date and time utilities
-    "python-dateutil>=2.8.2",
     # Environment and configuration
     "python-dotenv>=1.0.0",
     # JSON handling
@@ -60,7 +57,6 @@ dependencies = [
     "cryptography>=42.0.0",
     # LLM
     "litellm>=1.77.0",
-    "tiktoken>=0.6.0",
 ]
 
 [project.optional-dependencies]
