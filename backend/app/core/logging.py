@@ -161,26 +161,6 @@ def setup_logging() -> None:
     uvicorn_logger.setLevel(logging.INFO)
     uvicorn_logger.propagate = True
 
-    # Configure LiteLLM logs to reduce noise
-    litellm_logger = logging.getLogger("litellm")
-    litellm_logger.setLevel(logging.WARNING)  # Only show warnings and errors
-    litellm_logger.propagate = True
-
-    # Also configure LiteLLM sub-loggers
-    litellm_utils_logger = logging.getLogger("litellm.utils")
-    litellm_utils_logger.setLevel(logging.WARNING)
-    litellm_utils_logger.propagate = True
-
-    litellm_cost_logger = logging.getLogger("litellm.cost_calculator")
-    litellm_cost_logger.setLevel(logging.WARNING)
-    litellm_cost_logger.propagate = True
-
-    litellm_logging_logger = logging.getLogger(
-        "litellm.litellm_core_utils.litellm_logging"
-    )
-    litellm_logging_logger.setLevel(logging.WARNING)
-    litellm_logging_logger.propagate = True
-
 
 def log_exception(logger: logging.Logger, message: str, exc_info: Any = None) -> None:
     """

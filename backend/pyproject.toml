@@ -55,8 +55,6 @@ dependencies = [
     "passlib[bcrypt]==1.7.4",
     "bcrypt==4.0.1",
     "cryptography>=42.0.0",
-    # LLM
-    "litellm>=1.77.0",
 ]
 
 [project.optional-dependencies]
@@ -68,9 +66,6 @@ dev = [
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=5.0.0",
     "ruff>=0.5.0",
-]
-cardbox = [
-    "card-box-core @ git+https://github.com/Intelligent-Internet/card-box-cg.git@09950bb220e76d4f1641da2ec5340bf0a04aa243",
 ]
 
 [project.urls]

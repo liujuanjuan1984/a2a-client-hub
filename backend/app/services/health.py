@@ -77,97 +77,12 @@ def _check_database() -> Dict[str, Any]:
         )
 
 
-_llm_probe_lock = Lock()
-_llm_probe_cache: Dict[str, Any] = {"expires_at": 0.0, "result": None}
-
 _a2a_probe_lock = Lock()
 _a2a_probe_cache: Dict[str, Any] = {"expires_at": 0.0, "result": None}
 
 
-def _perform_llm_active_probe(litellm_module: Any, timestamp: str) -> Dict[str, Any]:
-    started = time.perf_counter()
-    try:
-        _list_models(litellm_module)
-        status: HealthStatus = "healthy"
-        detail = None
-    except Exception as exc:  # pragma: no cover - network errors difficult to simulate
-        logger.warning("LLM active health probe degraded: %s", exc)
-        status = "degraded"
-        detail = f"active probe failed: {exc}"
-    latency = (time.perf_counter() - started) * 1000
-    return _format_result(
-        "llm",
-        status,
-        latency,
-        detail=detail,
-        last_checked_at=timestamp,
-    )
-
-
-def _list_models(litellm_module: Any) -> Any:
-    return litellm_module.list_models()
-
-
-def _should_run_active_llm_probe() -> bool:
-    return bool(settings.health_llm_active_probe_enabled)
-
-
-def _check_llm() -> Dict[str, Any]:
-    timestamp = utc_now_iso()
-    started = time.perf_counter()
-    try:
-        import litellm  # type: ignore[import-not-found]
-    except ImportError:
-        return _format_result(
-            "llm",
-            "degraded",
-            (time.perf_counter() - started) * 1000,
-            detail="litellm not installed",
-            last_checked_at=timestamp,
-        )
-
-    if not settings.litellm_model:
-        return _format_result(
-            "llm",
-            "degraded",
-            (time.perf_counter() - started) * 1000,
-            detail="model not configured",
-            last_checked_at=timestamp,
-        )
-
-    if not settings.litellm_api_key:
-        return _format_result(
-            "llm",
-            "degraded",
-            (time.perf_counter() - started) * 1000,
-            detail="api key not configured",
-            last_checked_at=timestamp,
-        )
-
-    if not _should_run_active_llm_probe():
-        return _format_result(
-            "llm",
-            "healthy",
-            (time.perf_counter() - started) * 1000,
-            last_checked_at=timestamp,
-        )
-
-    ttl_seconds = max(settings.health_llm_active_probe_ttl_seconds, 1)
-    now_monotonic = time.monotonic()
-    with _llm_probe_lock:
-        cached = _llm_probe_cache.get("result")
-        expires_at = _llm_probe_cache.get("expires_at", 0.0)
-        if cached and isinstance(cached, dict) and now_monotonic < float(expires_at):
-            return cached
-
-        result = _perform_llm_active_probe(litellm, timestamp)
-        _llm_probe_cache["result"] = result
-        _llm_probe_cache["expires_at"] = now_monotonic + ttl_seconds
-        return result
-
-
 def run_health_checks() -> tuple[HealthStatus, list[Dict[str, Any]]]:
-    checks = [_check_database(), _check_llm(), _check_a2a()]
+    checks = [_check_database(), _check_a2a()]
 
     overall: HealthStatus = "healthy"
     if any(check["status"] == "unhealthy" for check in checks):

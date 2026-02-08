@@ -37,4 +37,3 @@ uv sync --extra dev --locked
 uv run pre-commit run --all-files --config ../.pre-commit-config.yaml
 uv run pytest
 ```
-
