@@ -74,7 +74,7 @@ Repository = "https://github.com/liujuanjuan1984/a2a-client-hub.git"
 Issues = "https://github.com/liujuanjuan1984/a2a-client-hub/issues"
 
 [project.scripts]
-compass-api = "app.main:app"
+a2a-client-hub-api = "app.main:app"
 
 [tool.setuptools.packages.find]
 where = ["."]

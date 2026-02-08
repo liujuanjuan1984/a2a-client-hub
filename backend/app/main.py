@@ -53,7 +53,7 @@ async def app_lifespan(_: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="Backend API for a2a-client-mobile",
+    description="Backend API for a2a-client-hub",
     openapi_url=f"{settings.api_v1_prefix}/openapi.json",
     docs_url=f"{settings.api_v1_prefix}/docs",
     redoc_url=f"{settings.api_v1_prefix}/redoc",
