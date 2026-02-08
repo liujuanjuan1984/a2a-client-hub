@@ -45,4 +45,3 @@ async def recompute_task_efforts(
         ) from exc
 
     return {"task_id": task_id, "status": "ok"}
-

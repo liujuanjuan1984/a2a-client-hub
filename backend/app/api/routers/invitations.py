@@ -224,4 +224,3 @@ async def lookup_invitation(
         creator_name=creator_name,
         memo=invitation.memo,
     )
-
