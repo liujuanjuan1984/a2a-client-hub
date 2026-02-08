@@ -1,5 +1,4 @@
-"""
-Security utilities for Common Compass Backend
+"""Security utilities for a2a-client-hub.
 
 This module contains JWT token handling, password hashing, and authentication utilities.
 """

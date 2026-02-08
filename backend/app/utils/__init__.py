@@ -1,5 +1,4 @@
-"""
-Utility modules for Common Compass backend
+"""Utility modules for a2a-client-hub.
 
 This package contains various utility functions and classes used across the application.
 """

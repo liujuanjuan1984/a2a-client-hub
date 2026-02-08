@@ -1,8 +1,7 @@
-"""
-Logging configuration for Common Compass Backend
+"""Logging configuration for a2a-client-hub.
 
-This module sets up structured logging with proper stack trace handling
-for debugging and monitoring purposes.
+This module sets up structured logging with proper stack trace handling for debugging
+and monitoring purposes.
 """
 
 import logging

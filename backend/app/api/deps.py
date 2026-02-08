@@ -1,5 +1,4 @@
-"""
-API dependencies for Common Compass Backend
+"""API dependencies for a2a-client-hub.
 
 This module contains dependency injection functions for FastAPI routes.
 Supports JWT-based user authentication.

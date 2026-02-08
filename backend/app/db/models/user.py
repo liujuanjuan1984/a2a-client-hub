@@ -1,7 +1,7 @@
 """
 User SQLAlchemy model
 
-This model represents users in the Common Compass system.
+This model represents users in the a2a-client-hub system.
 Supports multi-user mode with JWT authentication.
 """
 

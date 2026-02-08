@@ -1,5 +1,4 @@
-"""
-Authentication schemas for Common Compass Backend
+"""Authentication schemas for a2a-client-hub.
 
 This module contains Pydantic schemas for user authentication requests and responses.
 """

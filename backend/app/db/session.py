@@ -1,8 +1,7 @@
-"""
-Database session configuration for Common Compass Backend.
+"""Database session configuration for a2a-client-hub.
 
 This module exposes the SQLAlchemy async session factory used by the API.
-Routing dependencies should import `get_db` from `app.api.deps` to avoid duplication.
+Routing dependencies should import `get_async_db` from `app.api.deps` to avoid duplication.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

@@ -1,5 +1,4 @@
-"""
-Base models and mixins for Common Compass Backend
+"""Base models and mixins for a2a-client-hub.
 
 This module contains the base model classes and common mixins used across all models.
 It includes schema configuration for PostgreSQL 16 support.

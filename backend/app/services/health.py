@@ -1,4 +1,4 @@
-"""Health check probe helpers for Common Compass."""
+"""Health check probe helpers for a2a-client-hub."""
 
 from __future__ import annotations
 
