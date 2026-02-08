@@ -25,19 +25,6 @@ async def run_in_session(async_session_maker, coro_fn):
         return await coro_fn(session)
 
 
-@pytest.fixture(autouse=True)
-def _noop_user_onboarding(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure onboarding side effects do not interfere with auth tests."""
-
-    async def _noop_create_default_data_for_user(db, user) -> None:
-        return None
-
-    monkeypatch.setattr(
-        "app.handlers.user_onboarding.UserOnboardingService.create_default_data_for_user",
-        _noop_create_default_data_for_user,
-    )
-
-
 async def _create_invitation(
     async_session_maker, *, creator_user_id: UUID, target_email: str
 ) -> Invitation:

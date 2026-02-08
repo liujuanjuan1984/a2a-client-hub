@@ -22,7 +22,6 @@ from app.core.security import (
 from app.db.models.user import User
 from app.db.transaction import commit_safely
 from app.handlers import user_preferences as user_preferences_service
-from app.handlers.user_onboarding import UserOnboardingService
 from app.utils.timezone_util import utc_now
 
 logger = get_logger(__name__)
@@ -128,17 +127,6 @@ async def register_user(
     db.add(user)
     await commit_safely(db)
     await db.refresh(user)
-
-    try:
-        await UserOnboardingService.create_default_data_for_user(db, user)
-        await commit_safely(db)
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning(
-            "Default onboarding data creation failed for %s: %s",
-            email,
-            exc,
-            exc_info=True,
-        )
 
     timezone_value = _normalize_timezone(timezone)
     try:
