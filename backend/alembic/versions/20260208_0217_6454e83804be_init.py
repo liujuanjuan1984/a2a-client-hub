@@ -1,7 +1,7 @@
 """init
 
 Revision ID: 6454e83804be
-Revises: 
+Revises:
 Create Date: 2026-02-08 02:17:36.642309
 
 """
