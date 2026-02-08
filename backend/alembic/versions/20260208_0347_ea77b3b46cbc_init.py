@@ -1,8 +1,8 @@
 """init
 
-Revision ID: 28db89df4ec9
-Revises:
-Create Date: 2026-02-08 02:30:28.447911
+Revision ID: ea77b3b46cbc
+Revises: 
+Create Date: 2026-02-08 03:47:44.183154
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '28db89df4ec9'
+revision = 'ea77b3b46cbc'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -22,6 +22,7 @@ def upgrade() -> None:
     sa.Column('email', sa.String(length=255), nullable=False, comment='User email address (unique)'),
     sa.Column('name', sa.String(length=100), nullable=False, comment='User display name'),
     sa.Column('password_hash', sa.String(length=255), nullable=False, comment='Hashed password using bcrypt'),
+    sa.Column('timezone', sa.String(length=64), server_default='UTC', nullable=False, comment='Preferred timezone (IANA identifier)'),
     sa.Column('is_superuser', sa.Boolean(), nullable=False, comment='Whether user has superuser privileges'),
     sa.Column('disabled_at', sa.DateTime(timezone=True), nullable=True, comment='Account disabled timestamp (NULL means active)'),
     sa.Column('failed_login_attempts', sa.Integer(), server_default='0', nullable=False, comment='Consecutive failed login attempts since last success'),
@@ -102,37 +103,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_common_compass_schema_invitations_creator_user_id'), 'invitations', ['creator_user_id'], unique=False, schema='common_compass_schema')
     op.create_index(op.f('ix_common_compass_schema_invitations_target_email'), 'invitations', ['target_email'], unique=False, schema='common_compass_schema')
-    op.create_table('user_activity',
-    sa.Column('user_id', sa.UUID(), nullable=True, comment='Associated user if available'),
-    sa.Column('event_type', sa.String(length=64), nullable=False, comment='Classification of the recorded activity'),
-    sa.Column('status', sa.String(length=32), nullable=False, comment='Outcome descriptor (e.g. success/failed/blocked)'),
-    sa.Column('payload', postgresql.JSONB(astext_type=sa.Text()), nullable=True, comment='Flexible metadata payload for the event'),
-    sa.Column('id', sa.UUID(), nullable=False, comment='Primary key (UUID v4)'),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record creation timestamp'),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record last update timestamp'),
-    sa.ForeignKeyConstraint(['user_id'], ['common_compass_schema.users.id'], ondelete='SET NULL'),
-    sa.PrimaryKeyConstraint('id'),
-    schema='common_compass_schema'
-    )
-    op.create_index(op.f('ix_common_compass_schema_user_activity_event_type'), 'user_activity', ['event_type'], unique=False, schema='common_compass_schema')
-    op.create_index(op.f('ix_common_compass_schema_user_activity_user_id'), 'user_activity', ['user_id'], unique=False, schema='common_compass_schema')
-    op.create_table('user_preferences',
-    sa.Column('key', sa.String(length=100), nullable=False, comment="Preference key (e.g., 'theme', 'language', 'notifications.email')"),
-    sa.Column('value', postgresql.JSONB(astext_type=sa.Text()), nullable=False, comment='Preference value stored as JSON'),
-    sa.Column('module', sa.String(length=50), nullable=False, comment="Module or category this preference belongs to (e.g., 'ui', 'notifications', 'calendar')"),
-    sa.Column('user_id', sa.UUID(), nullable=False, comment='Data owner (UUID)'),
-    sa.Column('id', sa.UUID(), nullable=False, comment='Primary key (UUID v4)'),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record creation timestamp'),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False, comment='Record last update timestamp'),
-    sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True, comment='Soft delete timestamp (NULL means not deleted)'),
-    sa.ForeignKeyConstraint(['user_id'], ['common_compass_schema.users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('user_id', 'key', name='uq_user_preferences_user_key'),
-    schema='common_compass_schema'
-    )
-    op.create_index(op.f('ix_common_compass_schema_user_preferences_key'), 'user_preferences', ['key'], unique=False, schema='common_compass_schema')
-    op.create_index(op.f('ix_common_compass_schema_user_preferences_module'), 'user_preferences', ['module'], unique=False, schema='common_compass_schema')
-    op.create_index(op.f('ix_common_compass_schema_user_preferences_user_id'), 'user_preferences', ['user_id'], unique=False, schema='common_compass_schema')
     op.create_table('a2a_agent_credentials',
     sa.Column('agent_id', sa.UUID(), nullable=False, comment='Related A2A agent id'),
     sa.Column('encrypted_token', sa.Text(), nullable=False, comment='Encrypted bearer token (Fernet)'),
@@ -279,13 +249,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_common_compass_schema_a2a_agent_credentials_user_id'), table_name='a2a_agent_credentials', schema='common_compass_schema')
     op.drop_index(op.f('ix_common_compass_schema_a2a_agent_credentials_agent_id'), table_name='a2a_agent_credentials', schema='common_compass_schema')
     op.drop_table('a2a_agent_credentials', schema='common_compass_schema')
-    op.drop_index(op.f('ix_common_compass_schema_user_preferences_user_id'), table_name='user_preferences', schema='common_compass_schema')
-    op.drop_index(op.f('ix_common_compass_schema_user_preferences_module'), table_name='user_preferences', schema='common_compass_schema')
-    op.drop_index(op.f('ix_common_compass_schema_user_preferences_key'), table_name='user_preferences', schema='common_compass_schema')
-    op.drop_table('user_preferences', schema='common_compass_schema')
-    op.drop_index(op.f('ix_common_compass_schema_user_activity_user_id'), table_name='user_activity', schema='common_compass_schema')
-    op.drop_index(op.f('ix_common_compass_schema_user_activity_event_type'), table_name='user_activity', schema='common_compass_schema')
-    op.drop_table('user_activity', schema='common_compass_schema')
     op.drop_index(op.f('ix_common_compass_schema_invitations_target_email'), table_name='invitations', schema='common_compass_schema')
     op.drop_index(op.f('ix_common_compass_schema_invitations_creator_user_id'), table_name='invitations', schema='common_compass_schema')
     op.drop_table('invitations', schema='common_compass_schema')
