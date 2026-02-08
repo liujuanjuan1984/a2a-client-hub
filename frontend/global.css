@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
+  --safe-area-inset-right: env(safe-area-inset-right, 0px);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-inset-left: env(safe-area-inset-left, 0px);
+}
+
+html,
+body,
+#root {
+  background-color: #05070a;
+  height: 100%;
+  margin: 0;
+  width: 100%;
+}
+
+.ios-web {
+  -webkit-text-size-adjust: 100%;
+}
+
+.ios-web body {
+  overscroll-behavior: none;
+}
+
+.ios-web #root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: var(--app-height, 100vh);
+}
+
+/* Prevent iOS auto-zoom on input focus */
+.ios-web input,
+.ios-web textarea,
+.ios-web select {
+  font-size: 16px;
+}

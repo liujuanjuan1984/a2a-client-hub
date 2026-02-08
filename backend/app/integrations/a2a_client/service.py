@@ -1,4 +1,4 @@
-"""Service facade coordinating A2A client access for Compass."""
+"""Service facade coordinating A2A client access for a2a-client-hub."""
 
 from __future__ import annotations
 
@@ -31,58 +31,6 @@ class A2AService:
         self.settings = settings
         self.gateway = A2AGateway(settings)
 
-    def resolve_agent(
-        self,
-        *,
-        agent: Optional[str] = None,
-        agent_url: Optional[str] = None,
-    ) -> ResolvedAgent:
-        logger.info(
-            "Resolving A2A agent",
-            extra={"configured_agent": agent, "agent_url": agent_url},
-        )
-        if agent:
-            config = self.settings.agents.get(agent)
-            if config is None:
-                raise ValueError(f"Unknown A2A agent '{agent}'")
-            resolved = ResolvedAgent(
-                name=config.name,
-                url=config.url,
-                description=config.description,
-                metadata=dict(config.metadata),
-                headers=dict(config.headers),
-            )
-            logger.info(
-                "Resolved configured A2A agent",
-                extra={
-                    "agent": agent,
-                    "resolved_name": resolved.name,
-                    "resolved_url": resolved.url,
-                    "metadata_keys": sorted(resolved.metadata.keys()),
-                    "header_keys": sorted(resolved.headers.keys()),
-                },
-            )
-            return resolved
-
-        if agent_url:
-            normalized_url = agent_url.strip()
-            if not normalized_url:
-                raise ValueError("'agent_url' must be a non-empty string")
-            resolved = ResolvedAgent(
-                name=agent_url,
-                url=normalized_url,
-                description=None,
-                metadata={},
-                headers={},
-            )
-            logger.info(
-                "Using direct A2A agent URL",
-                extra={"agent_url": normalized_url},
-            )
-            return resolved
-
-        raise ValueError("Either 'agent' or 'agent_url' must be provided")
-
     async def call_agent(
         self,
         *,
@@ -109,30 +57,6 @@ class A2AService:
             metadata=metadata,
             timeout=timeout_override,
         )
-
-    def build_prompt_section(self, language: str = "en") -> str:
-        if not self.settings.has_agents:
-            return ""
-
-        _ = language  # preserved for backward compatibility
-
-        lines = [
-            "A2A tool usage guidelines:",
-            "1. Invoke an A2A agent only when cross-system expertise is required; prefer reusing the existing context first.",
-            "2. Limit to two consecutive attempts; if both fail to add new value or miss the intent, stop calling tools and summarize with what you have.",
-            "3. When a tool response repeats the prior one or is clearly low relevance, explain the issue and answer directly instead of calling again.",
-            "4. When a user only asks whether you *can* use an A2A agent, describe the option and ask for permission before running any tool.",
-            "",
-            "Example:",
-            "User: Can you look up AI research papers?",
-            "You: I can call the arxiv_query_agent to fetch the latest AI papers. Would you like me to do that now?",
-            "",
-            "Available A2A agents:",
-        ]
-        for name, config in self.settings.agents.items():
-            description = config.description or f"Specialised agent '{name}'"
-            lines.append(f"- {name}: {description}")
-        return "\n".join(lines)
 
 
 _service_instance: Optional[A2AService] = None

@@ -1,0 +1,25 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["./*"],
+      "@app/*": ["app/*"],
+      "@components/*": ["components/*"],
+      "@hooks/*": ["hooks/*"],
+      "@lib/*": ["lib/*"],
+      "@screens/*": ["screens/*"],
+      "@services/*": ["services/*"],
+      "@store/*": ["store/*"]
+    },
+    "types": ["nativewind/types", "node", "jest"]
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts",
+    "nativewind-env.d.ts"
+  ]
+}

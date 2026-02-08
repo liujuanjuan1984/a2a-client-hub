@@ -9,7 +9,6 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from sqlalchemy import and_, select
 
-from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
@@ -209,9 +208,6 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
 
 
 async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
-    if not settings.a2a_enabled:
-        return
-
     # Recover stale "running" tasks first so the UI doesn't get stuck forever if a
     # worker crashes after claiming a task but before persisting the execution.
     async with AsyncSessionLocal() as db:

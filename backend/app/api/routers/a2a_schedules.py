@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
 from app.api.routing import StrictAPIRouter
-from app.core.config import settings
 from app.db.models.user import User
 from app.schemas.a2a_schedule import (
     A2AScheduleExecutionListResponse,
@@ -29,14 +28,6 @@ from app.services.a2a_schedule_service import (
 router = StrictAPIRouter(prefix="/me/a2a/schedules", tags=["a2a-schedules"])
 
 
-def _ensure_a2a_enabled() -> None:
-    if not settings.a2a_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="A2A integration is disabled",
-        )
-
-
 @router.post(
     "", response_model=A2AScheduleTaskResponse, status_code=status.HTTP_201_CREATED
 )
@@ -45,7 +36,6 @@ async def create_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    _ensure_a2a_enabled()
     try:
         task = await a2a_schedule_service.create_task(
             db,
@@ -69,7 +59,6 @@ async def list_schedule_tasks(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskListResponse:
-    _ensure_a2a_enabled()
     items, total = await a2a_schedule_service.list_tasks(
         db,
         user_id=current_user.id,
@@ -95,7 +84,6 @@ async def get_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    _ensure_a2a_enabled()
     try:
         task = await a2a_schedule_service.get_task(
             db,
@@ -119,8 +107,6 @@ async def patch_schedule_task(
 
     NOTE: This endpoint is the only supported partial update API.
     """
-
-    _ensure_a2a_enabled()
     try:
         task = await a2a_schedule_service.update_task(
             db,
@@ -149,7 +135,6 @@ async def delete_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    _ensure_a2a_enabled()
     try:
         await a2a_schedule_service.delete_task(
             db,
@@ -167,7 +152,6 @@ async def enable_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleToggleResponse:
-    _ensure_a2a_enabled()
     try:
         task = await a2a_schedule_service.set_enabled(
             db,
@@ -193,7 +177,6 @@ async def disable_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleToggleResponse:
-    _ensure_a2a_enabled()
     try:
         task = await a2a_schedule_service.set_enabled(
             db,
@@ -219,7 +202,6 @@ async def list_schedule_executions(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleExecutionListResponse:
-    _ensure_a2a_enabled()
     try:
         items, total = await a2a_schedule_service.list_executions(
             db,

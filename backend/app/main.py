@@ -36,12 +36,11 @@ logger = get_logger(__name__)
 async def app_lifespan(_: FastAPI):
     start_scheduler()
     ensure_a2a_schedule_job()
-    if settings.a2a_enabled:
-        try:
-            get_a2a_service()
-            logger.info("A2A service initialised during startup")
-        except Exception as exc:  # pragma: no cover - defensive startup logging
-            logger.error("Failed to initialise A2A service: %s", exc, exc_info=exc)
+    try:
+        get_a2a_service()
+        logger.info("A2A service initialised during startup")
+    except Exception as exc:  # pragma: no cover - defensive startup logging
+        logger.error("Failed to initialise A2A service: %s", exc, exc_info=exc)
     try:
         yield
     finally:

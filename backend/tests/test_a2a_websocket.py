@@ -92,9 +92,6 @@ def test_invoke_agent_ws_success(monkeypatch, mock_user):
         "app.api.routers.a2a_agents.a2a_runtime_builder.build", mock_build
     )
 
-    # Mock settings
-    monkeypatch.setattr(settings, "a2a_enabled", True)
-
     # Mock validate_message to return empty list
     monkeypatch.setattr("app.api.routers.a2a_agents.validate_message", lambda x: [])
 

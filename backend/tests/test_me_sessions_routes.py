@@ -6,7 +6,6 @@ from uuid import uuid4
 import pytest
 
 from app.api.routers import me_sessions
-from app.core.config import settings
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
@@ -38,7 +37,6 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
     async_session_maker,
     monkeypatch,
 ):
-    monkeypatch.setattr(settings, "a2a_enabled", True)
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="sched")
 
