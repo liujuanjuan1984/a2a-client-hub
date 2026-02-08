@@ -1,7 +1,6 @@
-"""
-Core configuration settings for Common Compass Backend
+"""Core configuration settings for a2a-client-hub.
 
-This module contains all configuration settings using Pydantic for environment variable management.
+This module contains configuration settings using Pydantic for environment variable management.
 """
 
 import json
@@ -23,7 +22,7 @@ class Settings(BaseSettings):
     """
 
     # Application settings
-    app_name: str = "Common Compass API"
+    app_name: str = "a2a-client-hub API"
     app_version: str = "1.0.0"
     debug: bool = False
 
@@ -155,7 +154,7 @@ class Settings(BaseSettings):
         description="PEM-encoded public key for asymmetric JWT verification",
     )
     jwt_issuer: str = Field(
-        default="common-compass",
+        default="a2a-client-hub",
         alias="JWT_ISSUER",
         description="JWT issuer (iss claim) enforced on decode",
     )
@@ -170,7 +169,7 @@ class Settings(BaseSettings):
         description="Refresh token TTL (seconds)",
     )
     auth_refresh_cookie_name: str = Field(
-        default="cc_refresh_token",
+        default="a2a_refresh_token",
         alias="AUTH_REFRESH_COOKIE_NAME",
         description="Cookie name for refresh token",
     )
@@ -263,6 +262,13 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_jwt_config(self) -> "Settings":
+        if self.schema_name not in {"a2a_client_schema", "test_a2a_client_schema"}:
+            raise ValueError(
+                "SCHEMA_NAME is fixed for this project. "
+                "Use SCHEMA_NAME=a2a_client_schema "
+                "(or test_a2a_client_schema for tests)."
+            )
+
         algorithm = (self.jwt_algorithm or "").upper()
         if algorithm == "HS256":
             raise ValueError(
