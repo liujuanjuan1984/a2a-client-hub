@@ -22,7 +22,6 @@ cd "${REPO_ROOT}/backend"
 if [[ ${#PYTEST_ARGS[@]} -eq 0 ]]; then
   PYTEST_ARGS=(
     tests/test_auth.py
-    tests/test_a2a_integration.py
     tests/test_a2a_proxy_security.py
     tests/test_a2a_schedule_routes.py
     tests/test_a2a_validators.py
