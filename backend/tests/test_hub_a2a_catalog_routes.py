@@ -31,6 +31,23 @@ class _FakeGateway:
         )
         return {"success": True, "content": "ok"}
 
+    async def stream(self, *, resolved, query: str, context_id=None, metadata=None):
+        self.calls.append(
+            {
+                "resolved": resolved,
+                "query": query,
+                "context_id": context_id,
+                "metadata": metadata,
+                "stream": True,
+            }
+        )
+
+        class _MockMessage:
+            def model_dump(self, **kwargs):
+                return {"content": "ok"}
+
+        yield _MockMessage()
+
 
 class _FakeA2AService:
     def __init__(self, gateway: _FakeGateway) -> None:
@@ -162,6 +179,178 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
     assert len(fake_gateway.calls) == 1
     resolved = fake_gateway.calls[0]["resolved"]
     assert resolved.headers["Authorization"].endswith("secret-token-9999")
+
+
+@pytest.mark.asyncio
+async def test_allowlisted_user_can_stream_sse(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    admin = await create_user(
+        async_db_session, email="admin_stream@example.com", is_superuser=True
+    )
+    alice = await create_user(
+        async_db_session, email="alice_stream@example.com", is_superuser=False
+    )
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        create_payload = {
+            "name": "Stream Agent",
+            "card_url": "https://example.com/.well-known/agent-card.json",
+            "availability_policy": "allowlist",
+            "auth_type": "bearer",
+            "token": "secret-token-stream",
+            "enabled": True,
+            "tags": [],
+            "extra_headers": {},
+        }
+        resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents", json=create_payload
+        )
+        assert resp.status_code == 201
+        agent_id = resp.json()["id"]
+
+        allow_resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}/allowlist",
+            json={"email": alice.email},
+        )
+        assert allow_resp.status_code == 201
+
+    fake_gateway = _FakeGateway()
+    monkeypatch.setattr(
+        hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
+    )
+    monkeypatch.setattr(hub_router, "validate_message", lambda payload: [])
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=alice,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        async with user_client.stream(
+            "POST",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/invoke",
+            params={"stream": "true"},
+            json={"query": "hi", "metadata": {}},
+        ) as stream_resp:
+            assert stream_resp.status_code == 200
+            assert stream_resp.headers["content-type"].startswith("text/event-stream")
+            body = (await stream_resp.aread()).decode("utf-8")
+            assert "data:" in body
+            assert "event: stream_end" in body
+
+    # Ensure we injected the system-managed Authorization header.
+    resolved = fake_gateway.calls[0]["resolved"]
+    assert resolved.headers["Authorization"].endswith("secret-token-stream")
+
+
+@pytest.mark.asyncio
+async def test_ws_token_404_for_non_allowlisted_user(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    admin = await create_user(
+        async_db_session, email="admin_ws_token@example.com", is_superuser=True
+    )
+    alice = await create_user(
+        async_db_session, email="alice_ws_token@example.com", is_superuser=False
+    )
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        create_payload = {
+            "name": "Private Agent",
+            "card_url": "https://example.com/.well-known/agent-card.json",
+            "availability_policy": "allowlist",
+            "auth_type": "none",
+            "enabled": True,
+            "tags": [],
+            "extra_headers": {},
+        }
+        resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents", json=create_payload
+        )
+        assert resp.status_code == 201
+        agent_id = resp.json()["id"]
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=alice,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        ws_token_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/invoke/ws-token"
+        )
+        assert ws_token_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_ws_token_200_for_allowlisted_user(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    admin = await create_user(
+        async_db_session, email="admin_ws_token2@example.com", is_superuser=True
+    )
+    alice = await create_user(
+        async_db_session, email="alice_ws_token2@example.com", is_superuser=False
+    )
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        create_payload = {
+            "name": "Private Agent",
+            "card_url": "https://example.com/.well-known/agent-card.json",
+            "availability_policy": "allowlist",
+            "auth_type": "none",
+            "enabled": True,
+            "tags": [],
+            "extra_headers": {},
+        }
+        resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents", json=create_payload
+        )
+        assert resp.status_code == 201
+        agent_id = resp.json()["id"]
+
+        allow_resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}/allowlist",
+            json={"email": alice.email},
+        )
+        assert allow_resp.status_code == 201
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=alice,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        ws_token_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/invoke/ws-token"
+        )
+        assert ws_token_resp.status_code == 200
+        payload = ws_token_resp.json()
+        assert payload["token"]
+        assert payload["expires_at"]
+        assert payload["expires_in"] > 0
 
 
 @pytest.mark.asyncio
