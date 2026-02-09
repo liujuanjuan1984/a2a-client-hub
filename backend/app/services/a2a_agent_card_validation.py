@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import app.core.config
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
@@ -49,14 +50,17 @@ async def fetch_and_validate_agent_card(
         "Agent card validated" if success else "Agent card validation issues detected"
     )
 
-    return A2AAgentCardValidationResponse(
-        success=success,
-        message=message,
-        card_name=card_payload.get("name"),
-        card_description=card_payload.get("description"),
-        card=card_payload,
-        validation_errors=validation_errors,
-    )
+    response_kwargs: dict[str, Any] = {
+        "success": success,
+        "message": message,
+        "card_name": card_payload.get("name"),
+        "card_description": card_payload.get("description"),
+        "card": card_payload,
+    }
+    if app.core.config.settings.debug:
+        response_kwargs["validation_errors"] = validation_errors
+
+    return A2AAgentCardValidationResponse(**response_kwargs)
 
 
 __all__ = ["fetch_and_validate_agent_card"]
