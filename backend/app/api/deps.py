@@ -103,16 +103,15 @@ async def get_ws_ticket_user(
     scope_type: str,
     scope_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    ticket: str | None = Query(None),
 ) -> User:
     """
     Get current authenticated user for WebSocket connections via WS ticket.
 
     Args:
         websocket: WebSocket connection
-        agent_id: A2A agent identifier from path
+        scope_type: Scope type for ticket validation
+        scope_id: Scope identifier (e.g., agent_id)
         db: Database session
-        ticket: One-time WS ticket from query parameters
 
     Returns:
         Current user instance
@@ -125,6 +124,18 @@ async def get_ws_ticket_user(
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION, reason="Origin not allowed"
         )
+
+    # We extract the ticket from the Sec-WebSocket-Protocol header to avoid
+    # leaking it in URL query parameters.
+    ticket = None
+    subprotocols = websocket.headers.get("sec-websocket-protocol")
+    if subprotocols:
+        for proto in subprotocols.split(","):
+            candidate = proto.strip()
+            # tickets are generated with urlsafe_token (base64-ish) and length >= 16
+            if len(candidate) >= 16:
+                ticket = candidate
+                break
 
     if not ticket:
         raise WebSocketException(
@@ -162,14 +173,12 @@ async def get_ws_ticket_user_me(
     websocket: WebSocket,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    ticket: str | None = Query(None),
 ) -> User:
     return await get_ws_ticket_user(
         websocket=websocket,
         scope_type="me_a2a_agent",
         scope_id=agent_id,
         db=db,
-        ticket=ticket,
     )
 
 
@@ -178,14 +187,12 @@ async def get_ws_ticket_user_hub(
     websocket: WebSocket,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    ticket: str | None = Query(None),
 ) -> User:
     return await get_ws_ticket_user(
         websocket=websocket,
         scope_type="hub_a2a_agent",
         scope_id=agent_id,
         db=db,
-        ticket=ticket,
     )
 
 
