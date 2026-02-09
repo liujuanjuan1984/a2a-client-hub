@@ -165,7 +165,7 @@ export function AgentListScreen() {
                       {agent.source === "shared" ? (
                         <View className="mt-2 self-start rounded-full bg-slate-800/60 px-2.5 py-1">
                           <Text className="text-[11px] font-semibold text-slate-200">
-                            Shared by admin
+                            Shared
                           </Text>
                         </View>
                       ) : null}
