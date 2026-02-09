@@ -47,8 +47,9 @@ def test_invoke_hub_agent_ws_invalid_token(monkeypatch):
     try:
         with pytest.raises(Exception):
             with client.websocket_connect(
-                f"{settings.api_v1_prefix}/a2a/agents/{uuid4()}/invoke/ws?ticket=invalid",
+                f"{settings.api_v1_prefix}/a2a/agents/{uuid4()}/invoke/ws",
                 headers={"origin": "http://localhost:5173"},
+                subprotocols=["invalid-ticket-length-48-chars-minimum-1234567"],
             ):
                 pass
     finally:
@@ -91,8 +92,9 @@ def test_invoke_hub_agent_ws_success(monkeypatch, mock_user):
     client = TestClient(app)
     try:
         with client.websocket_connect(
-            f"{settings.api_v1_prefix}/a2a/agents/{uuid4()}/invoke/ws?ticket=mock",
+            f"{settings.api_v1_prefix}/a2a/agents/{uuid4()}/invoke/ws",
             headers={"origin": "http://localhost:5173"},
+            subprotocols=["mock-ticket-length-48-chars-minimum-1234567890"],
         ) as websocket:
             websocket.send_json({"query": "ping"})
 
