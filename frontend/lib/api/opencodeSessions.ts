@@ -167,3 +167,41 @@ export const listOpencodeSessionMessagesPage = async (
         : undefined;
   return { ...parsed, nextPage, envelope, raw: envelope.raw };
 };
+
+export type OpencodeSessionDirectoryItem = {
+  agent_id: string;
+  agent_source: AgentSource;
+  agent_name: string;
+  session_id: string;
+  title: string;
+  last_active_at?: string | null;
+};
+
+export const listOpencodeSessionsDirectoryPage = async (options?: {
+  page?: number;
+  size?: number;
+  refresh?: boolean;
+}): Promise<PaginatedResult<OpencodeSessionDirectoryItem>> => {
+  const page = options?.page ?? 1;
+  const size = options?.size ?? 50;
+  const response = await apiRequest<
+    {
+      items: OpencodeSessionDirectoryItem[];
+      pagination?: unknown;
+      meta?: unknown;
+    },
+    { page: number; size: number; refresh: boolean }
+  >("/me/a2a/opencode/sessions:query", {
+    method: "POST",
+    body: { page, size, refresh: options?.refresh ?? false },
+  });
+
+  const parsed = parsePaginatedListResponse(response);
+  const pagination =
+    parsed.pagination && typeof parsed.pagination === "object"
+      ? (parsed.pagination as Record<string, unknown>)
+      : {};
+  const pages = typeof pagination.pages === "number" ? pagination.pages : 0;
+  const nextPage = pages > 0 && page < pages ? page + 1 : undefined;
+  return { ...parsed, nextPage };
+};
