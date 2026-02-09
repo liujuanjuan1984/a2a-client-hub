@@ -42,4 +42,3 @@ def redact_url_for_logging(url: str | None) -> str | None:
 
 
 __all__ = ["redact_url_for_logging"]
-

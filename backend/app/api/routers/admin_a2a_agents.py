@@ -54,8 +54,7 @@ def _validate_card_url(value: str) -> str:
             purpose="Card URL",
         )
     except OutboundURLNotAllowedError as exc:
-        message = str(exc)
-        if "must be http(s)" in message:
+        if exc.code in {"missing_url", "invalid_scheme", "missing_host"}:
             raise HTTPException(
                 status_code=400, detail="Card URL must be http(s)"
             ) from exc
