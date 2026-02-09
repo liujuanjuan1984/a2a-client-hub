@@ -37,20 +37,22 @@ Authentication conventions are shared between frontend and backend:
   - Recommended: `https://<your-api-host>/api/v1`
   - Web-only (same-origin reverse proxy): `/api/v1`
 
-## OpenCode Extension (Sessions/Messages)
+## OpenCode Extension (Sessions)
 
 If an A2A agent advertises the OpenCode session query extension (via Agent Card),
-the app exposes an "OpenCode" entry from the Agents list to browse:
+the app surfaces OpenCode session browsing under the Sessions tab:
 
 - OpenCode sessions (paginated)
-- Messages within a session (paginated)
 
 The frontend treats the upstream result as a passthrough envelope and avoids
 binding to OpenCode-private schemas.
 
 ### Continue (Resume Chat)
 
-From the OpenCode sessions list, the app can "Continue" into the main Chat UI.
+From the sessions list, the app can "Continue" into the main Chat UI.
 This uses the backend continue endpoint to obtain a stable binding
 (`contextId`/`metadata`) for the selected OpenCode `session_id`, then forwards
 those fields on every message so the upstream can append to the same session.
+
+OpenCode history is rendered inline in the Chat screen (there is no standalone
+"messages list" screen).
