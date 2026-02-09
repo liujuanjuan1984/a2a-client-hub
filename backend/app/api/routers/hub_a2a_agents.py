@@ -20,7 +20,15 @@ from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.integrations.a2a_client import get_a2a_service
+from app.integrations.a2a_client.errors import (
+    A2AAgentUnavailableError,
+    A2AClientResetRequiredError,
+)
+from app.integrations.a2a_client.validators import (
+    validate_agent_card as validate_agent_card_payload,
+)
 from app.integrations.a2a_client.validators import validate_message
+from app.schemas.a2a_agent_card import A2AAgentCardValidationResponse
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.hub_a2a_agent import (
     HubA2AAgentUserListResponse,
@@ -68,6 +76,67 @@ async def list_hub_agents_for_user(
         ],
         pagination={"page": page, "size": size, "total": total, "pages": pages},
         meta={},
+    )
+
+
+@router.post(
+    "/{agent_id}/card:validate",
+    response_model=A2AAgentCardValidationResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def validate_hub_agent_card(
+    *,
+    agent_id: UUID,
+    response: Response,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> A2AAgentCardValidationResponse:
+    response.headers["Cache-Control"] = "no-store"
+
+    try:
+        runtime = await hub_a2a_runtime_builder.build(
+            db, user_id=current_user.id, agent_id=agent_id
+        )
+    except HubA2ARuntimeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HubA2ARuntimeValidationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    logger.info(
+        "Hub A2A agent card validation requested",
+        extra={
+            "user_id": str(current_user.id),
+            "agent_id": str(agent_id),
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
+        },
+    )
+    try:
+        card = await get_a2a_service().gateway.fetch_agent_card_detail(
+            resolved=runtime.resolved, raise_on_failure=True
+        )
+    except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if not card:
+        return A2AAgentCardValidationResponse(
+            success=False,
+            message="Agent card unavailable",
+        )
+
+    card_payload = card.model_dump(exclude_none=True)
+    validation_errors = validate_agent_card_payload(card_payload)
+    success = not validation_errors
+    message = (
+        "Agent card validated" if success else "Agent card validation issues detected"
+    )
+
+    return A2AAgentCardValidationResponse(
+        success=success,
+        message=message,
+        card_name=card_payload.get("name"),
+        card_description=card_payload.get("description"),
+        card=card_payload,
+        validation_errors=validation_errors,
     )
 
 
