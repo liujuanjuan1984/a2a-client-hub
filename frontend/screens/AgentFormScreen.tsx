@@ -116,6 +116,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
   const initialSnapshotRef = useRef<Snapshot | null>(null);
 
   const goBackOrHome = useCallback(() => backOrHome(router), [router]);
+  const isSharedAgent = Boolean(agentId && agent && agent.source === "shared");
 
   useEffect(() => {
     if (!agentId || agent) {
@@ -330,6 +331,34 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       setIsDeleting(false);
     }
   };
+
+  if (isSharedAgent) {
+    return (
+      <View className="flex-1 bg-background px-6 pt-10">
+        <PageHeader
+          title="Agent"
+          subtitle="This agent is provided by an admin and cannot be edited here."
+          rightElement={
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="arrow-back"
+              variant="outline"
+              size="sm"
+              onPress={handleCancel}
+            />
+          }
+        />
+        <View className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
+          <Text className="text-base font-semibold text-white">
+            Read-only agent
+          </Text>
+          <Text className="mt-2 text-sm text-muted">
+            Please contact your administrator if you need changes to this agent.
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <ScrollView className="flex-1 bg-background px-6 pt-10">
