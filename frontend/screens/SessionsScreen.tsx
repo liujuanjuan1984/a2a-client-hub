@@ -12,10 +12,7 @@ import {
 } from "@/lib/api/opencodeSessions";
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
-import {
-  buildChatRoute,
-  buildOpencodeSessionMessagesRoute,
-} from "@/lib/routes";
+import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useChatStore } from "@/store/chat";
 
@@ -73,17 +70,6 @@ export function SessionsScreen() {
   };
 
   const sortedItems = useMemo(() => items, [items]);
-
-  const openMessages = (item: OpencodeSessionDirectoryItem) => {
-    const agentId = item.agent_id;
-    const sessionId = item.session_id;
-    if (!sessionId) {
-      toast.error("Open session failed", "Missing session id.");
-      return;
-    }
-    blurActiveElement();
-    router.push(buildOpencodeSessionMessagesRoute(agentId, sessionId));
-  };
 
   const continueSession = async (item: OpencodeSessionDirectoryItem) => {
     const agentId = item.agent_id;
@@ -192,14 +178,6 @@ export function SessionsScreen() {
                       variant="secondary"
                       label="Continue"
                       onPress={() => continueSession(item)}
-                    />
-
-                    <Button
-                      size="xs"
-                      variant="secondary"
-                      label="Messages"
-                      iconRight="chevron-forward"
-                      onPress={() => openMessages(item)}
                     />
                   </View>
                 </View>
