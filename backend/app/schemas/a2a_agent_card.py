@@ -31,7 +31,9 @@ class A2AAgentCardValidationResponse(BaseModel):
         default=None,
         description="Full agent card payload when available",
     )
-    validation_errors: List[str] = Field(default_factory=list)
+    validation_errors: Optional[List[str]] = Field(
+        default=None, description="Detailed validation errors (only in debug mode)"
+    )
 
 
 __all__ = ["A2AAgentCardProxyRequest", "A2AAgentCardValidationResponse"]
