@@ -36,3 +36,14 @@ Authentication conventions are shared between frontend and backend:
 - `EXPO_PUBLIC_API_BASE_URL` is required for Web and Native.
   - Recommended: `https://<your-api-host>/api/v1`
   - Web-only (same-origin reverse proxy): `/api/v1`
+
+## OpenCode Extension (Sessions/Messages)
+
+If an A2A agent advertises the OpenCode session query extension (via Agent Card),
+the app exposes an "OpenCode" entry from the Agents list to browse:
+
+- OpenCode sessions (paginated)
+- Messages within a session (paginated)
+
+The frontend treats the upstream result as a passthrough envelope and avoids
+binding to OpenCode-private schemas.

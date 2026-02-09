@@ -4,7 +4,6 @@ REST endpoints for user-managed A2A agents.
 
 from __future__ import annotations
 
-import ipaddress
 from typing import Any, AsyncIterator
 from urllib.parse import urlparse
 from uuid import UUID
@@ -63,6 +62,10 @@ from app.services.a2a_runtime import (
 )
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.json_encoder import json_dumps
+from app.utils.outbound_url import (
+    OutboundURLNotAllowedError,
+    validate_outbound_http_url,
+)
 
 router = StrictAPIRouter(prefix="/me/a2a/agents", tags=["a2a"])
 logger = get_logger(__name__)
@@ -98,90 +101,22 @@ def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
     return A2AAgentResponse.model_validate(payload)
 
 
-def _normalize_host(value: str) -> str:
-    return (value or "").strip().lower().rstrip(".")
-
-
-def _parse_allowed_host_entry(value: str) -> tuple[str, int | None]:
-    trimmed = (value or "").strip()
-    if not trimmed:
-        return "", None
-    if "://" in trimmed:
-        parsed = urlparse(trimmed)
-        return parsed.hostname or "", parsed.port
-    if trimmed.startswith("[") and "]" in trimmed:
-        host_part, _, remainder = trimmed[1:].partition("]")
-        if remainder.startswith(":") and remainder[1:].isdigit():
-            return host_part, int(remainder[1:])
-        return host_part, None
-    if ":" in trimmed:
-        host_part, port_part = trimmed.rsplit(":", 1)
-        if port_part.isdigit():
-            return host_part, int(port_part)
-    return trimmed, None
-
-
-def _match_allowed_host(host: str, allowed_host: str) -> bool:
-    if not allowed_host:
-        return False
-    if allowed_host.startswith("*."):
-        suffix = allowed_host[2:]
-        if not suffix:
-            return False
-        return host == suffix or host.endswith(f".{suffix}")
-    if allowed_host.startswith("."):
-        suffix = allowed_host[1:]
-        if not suffix:
-            return False
-        return host == suffix or host.endswith(f".{suffix}")
-    return host == allowed_host
-
-
 def _validate_proxy_target(parsed: Any) -> None:
-    host = _normalize_host(parsed.hostname or "")
-    if not host:
-        raise HTTPException(status_code=400, detail="Card URL must be http(s)")
-    if host == "localhost" or host.endswith(".localhost"):
-        raise HTTPException(status_code=403, detail="Card URL host is not allowed")
     try:
-        ip_value = ipaddress.ip_address(host)
-    except ValueError:
-        ip_value = None
-    if ip_value and (
-        ip_value.is_private
-        or ip_value.is_loopback
-        or ip_value.is_link_local
-        or ip_value.is_multicast
-        or ip_value.is_reserved
-        or ip_value.is_unspecified
-    ):
-        raise HTTPException(status_code=403, detail="Card URL host is not allowed")
-
-    allowed_hosts = [
-        _parse_allowed_host_entry(entry)
-        for entry in settings.a2a_proxy_allowed_hosts
-        if (entry or "").strip()
-    ]
-    if not allowed_hosts:
-        raise HTTPException(status_code=403, detail="Card URL host is not allowed")
-
-    port = parsed.port
-    if port is None:
-        if parsed.scheme == "https":
-            port = 443
-        elif parsed.scheme == "http":
-            port = 80
-    for entry_host, entry_port in allowed_hosts:
-        normalized_entry_host = _normalize_host(entry_host)
-        if not normalized_entry_host:
-            continue
-        if entry_port is not None and port is not None and entry_port != port:
-            continue
-        if entry_port is not None and port is None:
-            continue
-        if _match_allowed_host(host, normalized_entry_host):
-            return
-    raise HTTPException(status_code=403, detail="Card URL host is not allowed")
+        validate_outbound_http_url(
+            parsed.geturl(),
+            allowed_hosts=settings.a2a_proxy_allowed_hosts,
+            purpose="Card URL",
+        )
+    except OutboundURLNotAllowedError as exc:
+        message = str(exc)
+        if "must be http(s)" in message:
+            raise HTTPException(
+                status_code=400, detail="Card URL must be http(s)"
+            ) from exc
+        raise HTTPException(
+            status_code=403, detail="Card URL host is not allowed"
+        ) from exc
 
 
 def _normalize_card_url(value: str) -> str:
@@ -251,12 +186,13 @@ async def create_agent(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> Any:
+    normalized_card_url = _normalize_card_url(payload.card_url)
     logger.info(
         "A2A agent create requested",
         extra={
             "user_id": str(current_user.id),
             "agent_name": payload.name,
-            "card_url": payload.card_url,
+            "card_url": normalized_card_url,
             "auth_type": payload.auth_type,
             "enabled": payload.enabled,
             "tags_count": len(payload.tags or []),
@@ -268,7 +204,7 @@ async def create_agent(
             db,
             user_id=current_user.id,
             name=payload.name,
-            card_url=payload.card_url,
+            card_url=normalized_card_url,
             auth_type=payload.auth_type,
             auth_header=payload.auth_header,
             auth_scheme=payload.auth_scheme,
@@ -290,13 +226,16 @@ async def update_agent(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> Any:
+    normalized_card_url = (
+        _normalize_card_url(payload.card_url) if payload.card_url is not None else None
+    )
     logger.info(
         "A2A agent update requested",
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
             "agent_name": payload.name,
-            "card_url": payload.card_url,
+            "card_url": normalized_card_url,
             "auth_type": payload.auth_type,
             "enabled": payload.enabled,
             "tags_count": len(payload.tags) if payload.tags is not None else None,
@@ -313,7 +252,7 @@ async def update_agent(
             user_id=current_user.id,
             agent_id=agent_id,
             name=payload.name,
-            card_url=payload.card_url,
+            card_url=normalized_card_url,
             auth_type=payload.auth_type,
             auth_header=payload.auth_header,
             auth_scheme=payload.auth_scheme,

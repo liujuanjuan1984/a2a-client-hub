@@ -19,6 +19,10 @@ from app.api.error_handlers import (
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.integrations.a2a_client import get_a2a_service, shutdown_a2a_service
+from app.integrations.a2a_extensions import (
+    get_a2a_extensions_service,
+    shutdown_a2a_extensions_service,
+)
 from app.middleware.debug_logging import DebugLoggingMiddleware
 from app.services.a2a_schedule_job import ensure_a2a_schedule_job
 from app.services.health import run_health_checks
@@ -42,8 +46,16 @@ async def app_lifespan(_: FastAPI):
     except Exception as exc:  # pragma: no cover - defensive startup logging
         logger.error("Failed to initialise A2A service: %s", exc, exc_info=exc)
     try:
+        get_a2a_extensions_service()
+        logger.info("A2A extensions service initialised during startup")
+    except Exception as exc:  # pragma: no cover - defensive startup logging
+        logger.error(
+            "Failed to initialise A2A extensions service: %s", exc, exc_info=exc
+        )
+    try:
         yield
     finally:
+        await shutdown_a2a_extensions_service()
         await shutdown_a2a_service()
         shutdown_scheduler()
 
@@ -84,6 +96,7 @@ def include_all_routers() -> None:
     router_modules = (
         "app.api.routers.auth",
         "app.api.routers.a2a_agents",
+        "app.api.routers.a2a_extensions_opencode",
         "app.api.routers.a2a_schedules",
         "app.api.routers.me_sessions",
         "app.api.routers.invitations",
