@@ -63,16 +63,32 @@ const extractTextFromParts = (parts: unknown[]) =>
 export const getOpencodeSessionId = (item: unknown) => {
   const obj = asRecord(item);
   return (
-    pickString(obj, ["id", "session_id", "sessionId"]) ??
-    stringifyCompact(item, 120)
+    pickString(obj, [
+      "id",
+      "contextId",
+      "context_id",
+      "session_id",
+      "sessionId",
+    ]) ?? stringifyCompact(item, 120)
   );
 };
 
 export const getOpencodeSessionTitle = (item: unknown) => {
   const obj = asRecord(item);
+  // A2A Task shape (from upstream extension): session title is exposed as metadata.opencode.title.
+  const metadata = asRecord(obj?.metadata);
+  const opencode = asRecord(metadata?.opencode);
+  const contractTitle = pickString(opencode, ["title"]);
+  if (contractTitle) return contractTitle;
   return (
     pickString(obj, ["title", "name", "label"]) ??
-    pickString(obj, ["id", "session_id", "sessionId"]) ??
+    pickString(obj, [
+      "id",
+      "contextId",
+      "context_id",
+      "session_id",
+      "sessionId",
+    ]) ??
     "Session"
   );
 };

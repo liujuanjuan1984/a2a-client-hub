@@ -12,6 +12,17 @@ describe("opencodeAdapters", () => {
     expect(getOpencodeSessionTitle({ id: "s-2" })).toBe("s-2");
   });
 
+  it("extracts session title from A2A Task metadata contract", () => {
+    expect(
+      getOpencodeSessionTitle({
+        kind: "task",
+        id: "s-1",
+        contextId: "s-1",
+        metadata: { opencode: { title: "Untitled session" } },
+      }),
+    ).toBe("Untitled session");
+  });
+
   it("extracts message role/text from common fields", () => {
     expect(getOpencodeMessageRole({ role: "assistant" })).toBe("assistant");
     expect(getOpencodeMessageText({ text: "hi" })).toBe("hi");
