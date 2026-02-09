@@ -22,6 +22,7 @@ import { ENV } from "@/lib/config";
 import { generateId } from "@/lib/id";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { applyStreamChunk } from "@/lib/streamChunks";
+import { shouldSplitStreamMessage } from "@/lib/streamMessageSplit";
 import { type AgentSource, useAgentStore } from "@/store/agents";
 import { useMessageStore } from "@/store/messages";
 
@@ -296,6 +297,8 @@ export const useChatStore = create<ChatState>()(
         messageStore.addMessage(sessionId, userMessage);
         messageStore.addMessage(sessionId, agentMessage);
 
+        let activeAgentMessageId = agentMessageId;
+
         const session = get().sessions[sessionId] ?? createSession(agentId);
         const payload = buildInvokePayload(trimmed, session);
         const agentSource = resolveAgentSource(agentId);
@@ -324,9 +327,31 @@ export const useChatStore = create<ChatState>()(
         };
 
         const appendStreamChunk = (chunk: StreamChunk) => {
+          const bucket = messageStore.messages[sessionId] || [];
+          const current = bucket.find((m) => m.id === activeAgentMessageId);
+          if (!current) return;
+
+          if (shouldSplitStreamMessage(current, chunk)) {
+            // Finish the current streamed message and start a new one.
+            messageStore.updateMessage(sessionId, activeAgentMessageId, {
+              status: "done",
+            });
+            const nextAgentMessageId = generateId();
+            activeAgentMessageId = nextAgentMessageId;
+            messageStore.addMessage(sessionId, {
+              id: nextAgentMessageId,
+              role: "agent" as const,
+              content: "",
+              streamChunks: [],
+              createdAt: new Date().toISOString(),
+              status: "streaming" as const,
+            });
+          }
+
+          const targetId = activeAgentMessageId;
           messageStore.updateMessageWithUpdater(
             sessionId,
-            agentMessageId,
+            targetId,
             (message) => {
               const next = applyStreamChunk(
                 message.content,
@@ -345,7 +370,7 @@ export const useChatStore = create<ChatState>()(
         const appendStreamError = (errorText: string) => {
           messageStore.updateMessageWithUpdater(
             sessionId,
-            agentMessageId,
+            activeAgentMessageId,
             (message) => ({
               content: `${message.content}\n[Stream Error: ${errorText}]`,
               status: "done",
@@ -453,7 +478,7 @@ export const useChatStore = create<ChatState>()(
                 }
 
                 if (data.event === "stream_end") {
-                  messageStore.updateMessage(sessionId, agentMessageId, {
+                  messageStore.updateMessage(sessionId, activeAgentMessageId, {
                     status: "done",
                   });
                   finalize("resolve");
@@ -612,7 +637,7 @@ export const useChatStore = create<ChatState>()(
                   }
                 },
                 onDone: () => {
-                  messageStore.updateMessage(sessionId, agentMessageId, {
+                  messageStore.updateMessage(sessionId, activeAgentMessageId, {
                     status: "done",
                   });
                   set((state) => {
