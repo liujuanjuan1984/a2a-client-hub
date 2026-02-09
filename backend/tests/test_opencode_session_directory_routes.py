@@ -29,7 +29,9 @@ def _task(session_id: str, *, title: str, updated_ms: int) -> Dict[str, Any]:
     }
 
 
-async def _create_personal_agent(async_db_session, *, user_id, card_url: str) -> A2AAgent:
+async def _create_personal_agent(
+    async_db_session, *, user_id, card_url: str
+) -> A2AAgent:
     agent = A2AAgent(
         user_id=user_id,
         name="Personal Agent",
@@ -43,7 +45,9 @@ async def _create_personal_agent(async_db_session, *, user_id, card_url: str) ->
     return agent
 
 
-async def _create_hub_agent(async_db_session, *, admin_user_id, card_url: str) -> HubA2AAgent:
+async def _create_hub_agent(
+    async_db_session, *, admin_user_id, card_url: str
+) -> HubA2AAgent:
     agent = HubA2AAgent(
         name="Shared Agent",
         card_url=card_url,
@@ -82,9 +86,19 @@ async def test_opencode_sessions_directory_caches_and_sorts(
             url = getattr(getattr(runtime, "resolved", None), "url", "")
             self.calls.append(str(url))
             if "personal" in str(url):
-                items = [_task("ses_personal", title="Personal older", updated_ms=1_700_000_000_000)]
+                items = [
+                    _task(
+                        "ses_personal",
+                        title="Personal older",
+                        updated_ms=1_700_000_000_000,
+                    )
+                ]
             else:
-                items = [_task("ses_shared", title="Shared newer", updated_ms=1_700_000_100_000)]
+                items = [
+                    _task(
+                        "ses_shared", title="Shared newer", updated_ms=1_700_000_100_000
+                    )
+                ]
             return ExtensionCallResult(
                 success=True,
                 result={"items": items, "pagination": {"page": page, "size": size}},
@@ -150,3 +164,54 @@ async def test_opencode_sessions_directory_caches_and_sorts(
         assert resp3.status_code == 200
         assert len(fake.calls) == 4
 
+
+async def test_opencode_sessions_directory_deduplicates_across_same_upstream(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    # Two agents (personal + shared) that point to the same upstream.
+    personal = await _create_personal_agent(
+        async_db_session, user_id=user.id, card_url="https://same.example.com"
+    )
+    await _create_hub_agent(
+        async_db_session, admin_user_id=user.id, card_url="https://same.example.com"
+    )
+
+    class FakeExtensionsService:
+        async def opencode_list_sessions(self, *, runtime, page: int, size: int, query):
+            items = [_task("ses_dup", title="Duplicated", updated_ms=1_700_000_000_000)]
+            return ExtensionCallResult(
+                success=True,
+                result={"items": items, "pagination": {"page": page, "size": size}},
+                error_code=None,
+                upstream_error=None,
+                meta=None,
+            )
+
+    monkeypatch.setattr(
+        "app.services.opencode_session_directory.get_a2a_extensions_service",
+        lambda: FakeExtensionsService(),
+    )
+
+    async with create_test_client(
+        opencode_session_directory.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": False},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+
+        # Deduped: one session item even though it appears under two agents.
+        assert payload["pagination"]["total"] == 1
+        item = payload["items"][0]
+        assert item["session_id"] == "ses_dup"
+        # Prefer personal agent record when timestamps are equal.
+        assert item["agent_id"] == str(personal.id)
+        assert item["agent_source"] == "personal"
+        assert item["agent_name"] == "Personal Agent"

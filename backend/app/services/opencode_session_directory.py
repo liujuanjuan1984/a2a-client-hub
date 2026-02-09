@@ -87,20 +87,28 @@ def _extract_title(task: Any) -> str:
     title = _pick_str(opencode, ["title"])
     if title:
         return title
-    return _pick_str(obj, ["title", "name", "label"]) or _extract_session_id(obj) or "Session"
+    return (
+        _pick_str(obj, ["title", "name", "label"])
+        or _extract_session_id(obj)
+        or "Session"
+    )
 
 
 def _extract_last_active_at(task: Any) -> Optional[str]:
     obj = _as_record(task) or {}
     # Prefer explicit fields if present.
-    direct = _pick_str(obj, ["last_active_at", "updated_at", "created_at", "timestamp", "ts"])
+    direct = _pick_str(
+        obj, ["last_active_at", "updated_at", "created_at", "timestamp", "ts"]
+    )
     if direct:
         return direct
 
     metadata = _as_record(obj.get("metadata")) or {}
     opencode = _as_record(metadata.get("opencode")) or {}
     raw = _as_record(opencode.get("raw")) or {}
-    raw_direct = _pick_str(raw, ["last_active_at", "updated_at", "created_at", "timestamp", "ts"])
+    raw_direct = _pick_str(
+        raw, ["last_active_at", "updated_at", "created_at", "timestamp", "ts"]
+    )
     if raw_direct:
         return raw_direct
 
@@ -113,6 +121,29 @@ def _extract_last_active_at(task: Any) -> Optional[str]:
         or _pick_ms(raw, ["updated", "created"])
     )
     return _to_iso_from_ms(ms)
+
+
+def _normalize_agent_url(value: str) -> str:
+    return (value or "").strip().rstrip("/")
+
+
+def _compare_last_active(a: Optional[str], b: Optional[str]) -> int:
+    """Compare ISO timestamps (best-effort).
+
+    Returns:
+        1 if a > b, -1 if a < b, 0 if equal/unknown.
+    """
+
+    if not a and not b:
+        return 0
+    if a and not b:
+        return 1
+    if b and not a:
+        return -1
+    assert a is not None and b is not None
+    if a == b:
+        return 0
+    return 1 if a > b else -1
 
 
 def _prune_task_for_cache(task: Any) -> Optional[Dict[str, Any]]:
@@ -128,8 +159,16 @@ def _prune_task_for_cache(task: Any) -> Optional[Dict[str, Any]]:
     raw = _as_record(opencode.get("raw")) or {}
     raw_time = _as_record(raw.get("time")) or {}
     raw_info_time = _as_record((_as_record(raw.get("info")) or {}).get("time")) or {}
-    updated = raw_time.get("updated") if isinstance(raw_time.get("updated"), (int, float, str)) else None
-    created = raw_time.get("created") if isinstance(raw_time.get("created"), (int, float, str)) else None
+    updated = (
+        raw_time.get("updated")
+        if isinstance(raw_time.get("updated"), (int, float, str))
+        else None
+    )
+    created = (
+        raw_time.get("created")
+        if isinstance(raw_time.get("created"), (int, float, str))
+        else None
+    )
     if updated is None and "updated" in raw_info_time:
         updated = raw_info_time.get("updated")
     if created is None and "created" in raw_info_time:
@@ -158,6 +197,7 @@ class _AgentRef:
     agent_id: UUID
     agent_name: str
     agent_source: str  # personal/shared
+    agent_url: str
 
 
 class OpencodeSessionDirectoryService:
@@ -173,7 +213,9 @@ class OpencodeSessionDirectoryService:
         agents = await self._list_visible_agents(db, user_id=user_id)
         total_agents = len(agents)
 
-        cache_entries = await self._load_cache_entries(db, user_id=user_id, agents=agents)
+        cache_entries = await self._load_cache_entries(
+            db, user_id=user_id, agents=agents
+        )
         now = _utc_now()
 
         expired: list[_AgentRef] = []
@@ -198,7 +240,9 @@ class OpencodeSessionDirectoryService:
             runtime_targets: list[tuple[_AgentRef, Any]] = []
             for agent in agents_to_refresh:
                 try:
-                    runtime = await self._build_runtime(db, user_id=user_id, agent=agent)
+                    runtime = await self._build_runtime(
+                        db, user_id=user_id, agent=agent
+                    )
                 except Exception as exc:  # noqa: BLE001
                     partial_failures += 1
                     logger.warning(
@@ -219,11 +263,13 @@ class OpencodeSessionDirectoryService:
             async def _fetch_one(agent: _AgentRef, runtime: Any):
                 async with sem:
                     try:
-                        result = await get_a2a_extensions_service().opencode_list_sessions(
-                            runtime=runtime,
-                            page=1,
-                            size=int(settings.opencode_sessions_per_agent_size),
-                            query=None,
+                        result = (
+                            await get_a2a_extensions_service().opencode_list_sessions(
+                                runtime=runtime,
+                                page=1,
+                                size=int(settings.opencode_sessions_per_agent_size),
+                                query=None,
+                            )
                         )
                         return agent, result
                     except A2AExtensionUpstreamError as exc:
@@ -282,9 +328,14 @@ class OpencodeSessionDirectoryService:
             await db.commit()
 
             # Reload cache entries after refresh attempts.
-            cache_entries = await self._load_cache_entries(db, user_id=user_id, agents=agents)
+            cache_entries = await self._load_cache_entries(
+                db, user_id=user_id, agents=agents
+            )
 
         directory_items: list[Dict[str, Any]] = []
+        # Deduplicate sessions across agents that point to the same upstream
+        # (e.g. personal + shared agent records referencing the same OpenCode A2A serve).
+        dedup: dict[tuple[str, str], Dict[str, Any]] = {}
         for agent in agents:
             entry = cache_entries.get((agent.agent_source, agent.agent_id))
             if not entry:
@@ -297,16 +348,37 @@ class OpencodeSessionDirectoryService:
                 session_id = _extract_session_id(task)
                 if not session_id:
                     continue
-                directory_items.append(
-                    {
-                        "agent_id": agent.agent_id,
-                        "agent_source": agent.agent_source,
-                        "agent_name": agent.agent_name,
-                        "session_id": session_id,
-                        "title": _extract_title(task),
-                        "last_active_at": _extract_last_active_at(task),
-                    }
+                candidate = {
+                    "agent_id": agent.agent_id,
+                    "agent_source": agent.agent_source,
+                    "agent_name": agent.agent_name,
+                    "session_id": session_id,
+                    "title": _extract_title(task),
+                    "last_active_at": _extract_last_active_at(task),
+                }
+                key = (_normalize_agent_url(agent.agent_url), session_id)
+                existing = dedup.get(key)
+                if existing is None:
+                    dedup[key] = candidate
+                    continue
+
+                cmp_active = _compare_last_active(
+                    candidate.get("last_active_at"), existing.get("last_active_at")
                 )
+                if cmp_active > 0:
+                    dedup[key] = candidate
+                    continue
+                if cmp_active < 0:
+                    continue
+
+                # Prefer personal agent records when timestamps are equal/missing,
+                # to keep user-managed agent naming/credentials as the default.
+                existing_source = existing.get("agent_source")
+                if existing_source != "personal" and agent.agent_source == "personal":
+                    dedup[key] = candidate
+                    continue
+
+        directory_items = list(dedup.values())
 
         directory_items.sort(
             key=lambda item: (
@@ -336,16 +408,30 @@ class OpencodeSessionDirectoryService:
         }
         return page_items, {"pagination": pagination, "meta": meta}
 
-    async def _list_visible_agents(self, db: AsyncSession, *, user_id: UUID) -> List[_AgentRef]:
+    async def _list_visible_agents(
+        self, db: AsyncSession, *, user_id: UUID
+    ) -> List[_AgentRef]:
         personal_records = await a2a_agent_service.list_agents(db, user_id=user_id)
         personal = [
-            _AgentRef(agent_id=record.agent.id, agent_name=record.agent.name, agent_source="personal")
+            _AgentRef(
+                agent_id=record.agent.id,
+                agent_name=record.agent.name,
+                agent_source="personal",
+                agent_url=record.agent.card_url,
+            )
             for record in personal_records
             if record.agent.enabled
         ]
-        hub_agents = await hub_a2a_agent_service.list_visible_agents_for_user(db, user_id=user_id)
+        hub_agents = await hub_a2a_agent_service.list_visible_agents_for_user(
+            db, user_id=user_id
+        )
         shared = [
-            _AgentRef(agent_id=agent.id, agent_name=agent.name, agent_source="shared")
+            _AgentRef(
+                agent_id=agent.id,
+                agent_name=agent.name,
+                agent_source="shared",
+                agent_url=agent.card_url,
+            )
             for agent in hub_agents
         ]
         return [*personal, *shared]
@@ -410,7 +496,9 @@ class OpencodeSessionDirectoryService:
         )
         return True
 
-    async def _build_runtime(self, db: AsyncSession, *, user_id: UUID, agent: _AgentRef) -> Any:
+    async def _build_runtime(
+        self, db: AsyncSession, *, user_id: UUID, agent: _AgentRef
+    ) -> Any:
         if agent.agent_source == "shared":
             return await hub_a2a_runtime_builder.build(
                 db, user_id=user_id, agent_id=agent.agent_id

@@ -148,4 +148,3 @@ def downgrade() -> None:
         schema=SCHEMA,
     )
     op.drop_table("opencode_session_cache", schema=SCHEMA)
-
