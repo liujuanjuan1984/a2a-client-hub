@@ -167,10 +167,7 @@ export function SessionsScreen() {
 
                   <View className="flex-row items-center justify-between gap-3 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
                     <View className="flex-1">
-                      <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
-                        Last active
-                      </Text>
-                      <Text className="mt-1 text-xs text-slate-200">
+                      <Text className="text-xs text-slate-200">
                         {formatLocalDateTimeYmdHm(ts)}
                       </Text>
                     </View>
