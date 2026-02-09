@@ -39,4 +39,3 @@ def downgrade() -> None:
         referent_schema=SCHEMA,
         ondelete="CASCADE",
     )
-

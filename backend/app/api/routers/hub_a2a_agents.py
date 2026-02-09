@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator
 from uuid import UUID
 
-from a2a.client.client import ClientEvent
-from a2a.types import Message
 from fastapi import (
     Depends,
     HTTPException,
@@ -16,10 +13,9 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user
+from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_hub
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
@@ -31,6 +27,7 @@ from app.schemas.hub_a2a_agent import (
     HubA2AAgentUserResponse,
 )
 from app.schemas.ws_ticket import WsTicketResponse
+from app.services.a2a_invoke_service import a2a_invoke_service
 from app.services.hub_a2a_agents import HubA2AAgentNotFoundError, hub_a2a_agent_service
 from app.services.hub_a2a_runtime import (
     HubA2ARuntimeNotFoundError,
@@ -38,22 +35,10 @@ from app.services.hub_a2a_runtime import (
     hub_a2a_runtime_builder,
 )
 from app.services.ws_ticket_service import ws_ticket_service
-from app.utils.json_encoder import json_dumps
 from app.utils.logging_redaction import redact_url_for_logging
 
 router = StrictAPIRouter(prefix="/a2a/agents", tags=["a2a-catalog"])
 logger = get_logger(__name__)
-
-
-def _serialize_stream_event(event: ClientEvent | Message) -> dict[str, Any]:
-    if isinstance(event, tuple):
-        resolved = event[1] if event[1] else event[0]
-    else:
-        resolved = event
-
-    payload = resolved.model_dump(exclude_none=True)
-    payload["validation_errors"] = validate_message(payload)
-    return payload
 
 
 @router.get("", response_model=HubA2AAgentUserListResponse)
@@ -125,32 +110,17 @@ async def invoke_hub_agent(
     )
 
     if stream:
-
-        async def event_generator() -> AsyncIterator[str]:
-            try:
-                async for event in get_a2a_service().gateway.stream(
-                    resolved=runtime.resolved,
-                    query=payload.query,
-                    context_id=payload.context_id,
-                    metadata=payload.metadata,
-                ):
-                    serialized = _serialize_stream_event(event)
-                    yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
-            except Exception as stream_error:
-                yield (
-                    "event: error\n"
-                    f"data: {json_dumps({'message': str(stream_error)}, ensure_ascii=False)}\n\n"
-                )
-            finally:
-                yield "event: stream_end\ndata: {}\n\n"
-
-        return StreamingResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
+        return a2a_invoke_service.stream_sse(
+            gateway=get_a2a_service().gateway,
+            resolved=runtime.resolved,
+            query=payload.query,
+            context_id=payload.context_id,
+            metadata=payload.metadata,
+            validate_message=validate_message,
+            logger=logger,
+            log_extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
             },
         )
 
@@ -194,7 +164,8 @@ async def issue_hub_invoke_ws_token(
     issued = await ws_ticket_service.issue_ticket(
         db,
         user_id=current_user.id,
-        agent_id=agent_id,
+        scope_type="hub_a2a_agent",
+        scope_id=agent_id,
     )
     return WsTicketResponse(
         token=issued.token,
@@ -209,7 +180,7 @@ async def invoke_hub_agent_ws(
     websocket: WebSocket,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_ws_ticket_user),
+    current_user: User = Depends(get_ws_ticket_user_hub),
 ):
     """WebSocket endpoint for hub agent invocation with streaming responses."""
     await websocket.accept()
@@ -246,35 +217,28 @@ async def invoke_hub_agent_ws(
             },
         )
 
-        try:
-            async for event in get_a2a_service().gateway.stream(
-                resolved=runtime.resolved,
-                query=payload.query,
-                context_id=payload.context_id,
-                metadata=payload.metadata,
-            ):
-                serialized = _serialize_stream_event(event)
-                await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
-        except Exception as stream_error:
-            await websocket.send_text(
-                json_dumps(
-                    {"event": "error", "data": {"message": str(stream_error)}},
-                    ensure_ascii=False,
-                )
-            )
-        finally:
-            await websocket.send_text(json_dumps({"event": "stream_end", "data": {}}))
+        await a2a_invoke_service.stream_ws(
+            websocket=websocket,
+            gateway=get_a2a_service().gateway,
+            resolved=runtime.resolved,
+            query=payload.query,
+            context_id=payload.context_id,
+            metadata=payload.metadata,
+            validate_message=validate_message,
+            logger=logger,
+            log_extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+            },
+        )
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected", extra={"user_id": str(current_user.id)})
-    except Exception as exc:
+    except Exception:
         logger.error("Hub WS error", exc_info=True)
         try:
             await websocket.send_text(
-                json_dumps(
-                    {"event": "error", "data": {"message": str(exc)}},
-                    ensure_ascii=False,
-                )
+                '{"event":"error","data":{"message":"Upstream streaming failed"}}'
             )
         except Exception:
             pass

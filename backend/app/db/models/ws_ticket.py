@@ -17,11 +17,18 @@ class WsTicket(Base, TimestampMixin, UserOwnedMixin):
         {"schema": SCHEMA_NAME},
     )
 
-    agent_id = Column(
+    scope_type = Column(
+        String(32),
+        nullable=True,
+        index=True,
+        comment="Scope type for this ticket (e.g., me_a2a_agent, hub_a2a_agent)",
+    )
+    scope_id = Column(
+        "agent_id",
         PG_UUID(as_uuid=True),
         nullable=False,
         index=True,
-        comment="Invocation scope identifier (e.g., user-managed or hub agent id)",
+        comment="Scope identifier (UUID) bound to this ticket",
     )
     token_hash = Column(
         String(64),
