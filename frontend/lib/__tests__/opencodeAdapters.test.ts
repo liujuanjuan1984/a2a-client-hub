@@ -18,6 +18,25 @@ describe("opencodeAdapters", () => {
     expect(getOpencodeMessageText({ content: "hello" })).toBe("hello");
   });
 
+  it("extracts message role/text from A2A Message shapes", () => {
+    const a2aMsg = {
+      kind: "message",
+      messageId: "m-1",
+      role: "agent", // some upstreams set this to agent; prefer metadata raw role when present
+      parts: [{ kind: "text", text: "Hello from parts" }],
+      metadata: {
+        opencode: {
+          raw: {
+            info: { role: "user", time: { created: 1770636900085 } },
+            parts: [{ type: "text", text: "Hello from raw parts" }],
+          },
+        },
+      },
+    };
+    expect(getOpencodeMessageRole(a2aMsg)).toBe("user");
+    expect(getOpencodeMessageText(a2aMsg)).toBe("Hello from parts");
+  });
+
   it("falls back safely for unknown shapes", () => {
     expect(getOpencodeSessionTitle(null)).toBe("Session");
     expect(getOpencodeMessageRole(null)).toBe("message");

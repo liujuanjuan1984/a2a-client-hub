@@ -45,6 +45,21 @@ const stringifyCompact = (value: unknown, limit = 800) => {
   }
 };
 
+const extractTextFromParts = (parts: unknown[]) =>
+  parts
+    .map((part) => {
+      if (!part || typeof part !== "object") return null;
+      const typed = part as { kind?: unknown; type?: unknown; text?: unknown };
+      const kind = typeof typed.kind === "string" ? typed.kind : "";
+      const type = typeof typed.type === "string" ? typed.type : "";
+      if (kind === "text" || type === "text") {
+        return typeof typed.text === "string" ? typed.text : null;
+      }
+      return null;
+    })
+    .filter((item): item is string => Boolean(item))
+    .join("");
+
 export const getOpencodeSessionId = (item: unknown) => {
   const obj = asRecord(item);
   return (
@@ -94,6 +109,14 @@ export const getOpencodeMessageId = (item: unknown) => {
 
 export const getOpencodeMessageRole = (item: unknown) => {
   const obj = asRecord(item);
+  if (obj?.kind === "message") {
+    const metadata = asRecord(obj.metadata);
+    const opencode = asRecord(metadata?.opencode);
+    const raw = asRecord(opencode?.raw);
+    const info = asRecord(raw?.info);
+    const role = pickString(info, ["role"]);
+    if (role) return role;
+  }
   return pickString(obj, ["role", "type", "sender"]) ?? "message";
 };
 
@@ -101,6 +124,21 @@ export const getOpencodeMessageText = (item: unknown) => {
   const obj = asRecord(item);
   const direct = pickString(obj, ["text", "content", "message"]);
   if (direct) return direct;
+
+  // A2A Message shape: { kind: "message", parts: [{ kind: "text", text: ... }] }
+  if (obj?.kind === "message") {
+    const parts = Array.isArray(obj.parts) ? obj.parts : [];
+    const text = extractTextFromParts(parts);
+    if (text) return text;
+
+    // Fallback: OpenCode raw shape nested under metadata.
+    const metadata = asRecord(obj.metadata);
+    const opencode = asRecord(metadata?.opencode);
+    const raw = asRecord(opencode?.raw);
+    const rawParts = Array.isArray(raw?.parts) ? (raw?.parts as unknown[]) : [];
+    const rawText = extractTextFromParts(rawParts);
+    if (rawText) return rawText;
+  }
 
   const content = obj?.content;
   if (typeof content === "string" && content.trim()) return content;
@@ -112,6 +150,19 @@ export const getOpencodeMessageTimestamp = (item: unknown) => {
   const obj = asRecord(item);
   const direct = pickIsoDateString(obj, ["created_at", "timestamp", "ts"]);
   if (direct) return direct;
+
+  if (obj?.kind === "message") {
+    const metadata = asRecord(obj.metadata);
+    const opencode = asRecord(metadata?.opencode);
+    const raw = asRecord(opencode?.raw);
+    const info = asRecord(raw?.info);
+    const time = asRecord(info?.time);
+    const created = time?.created;
+    if (typeof created === "number") return toIsoStringMaybe(created);
+    const completed = time?.completed;
+    if (typeof completed === "number") return toIsoStringMaybe(completed);
+  }
+
   const ms = pickNumber(obj, ["created", "updated"]);
   if (typeof ms === "number") {
     return toIsoStringMaybe(ms);
