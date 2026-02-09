@@ -25,6 +25,7 @@ from app.integrations.a2a_extensions import (
 )
 from app.middleware.debug_logging import DebugLoggingMiddleware
 from app.services.a2a_schedule_job import ensure_a2a_schedule_job
+from app.services.ws_ticket_service import ensure_ws_ticket_cleanup_job
 from app.services.health import run_health_checks
 from app.services.scheduler import shutdown_scheduler, start_scheduler
 from app.utils.timezone_util import utc_now_iso
@@ -40,6 +41,7 @@ logger = get_logger(__name__)
 async def app_lifespan(_: FastAPI):
     start_scheduler()
     ensure_a2a_schedule_job()
+    ensure_ws_ticket_cleanup_job()
     try:
         get_a2a_service()
         logger.info("A2A service initialised during startup")

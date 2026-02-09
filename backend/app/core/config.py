@@ -200,6 +200,11 @@ class Settings(BaseSettings):
         alias="WS_TICKET_LENGTH",
         description="Length of generated WS ticket tokens",
     )
+    ws_ticket_retention_days: int = Field(
+        default=7,
+        alias="WS_TICKET_RETENTION_DAYS",
+        description="Number of days to retain used WS tickets for audit before cleanup",
+    )
     ws_allowed_origins: list[str] = Field(
         default_factory=list,
         alias="WS_ALLOWED_ORIGINS",
