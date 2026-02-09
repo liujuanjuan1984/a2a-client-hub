@@ -10,7 +10,7 @@ import {
   listOpencodeSessionsDirectoryPage,
   type OpencodeSessionDirectoryItem,
 } from "@/lib/api/opencodeSessions";
-import { formatLocalDateTime } from "@/lib/datetime";
+import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
@@ -148,35 +148,39 @@ export function SessionsScreen() {
                 >
                   <View className="p-4">
                     <Text
-                      className="text-sm font-semibold text-white"
-                      numberOfLines={1}
-                    >
-                      {title}
-                    </Text>
-                    <Text
-                      className="mt-1 text-xs text-slate-400"
+                      className="text-base font-semibold text-white"
                       numberOfLines={1}
                     >
                       {item.agent_name}
                     </Text>
                     <Text
-                      className="mt-1 text-xs text-slate-400"
+                      className="mt-1 text-sm text-slate-100"
+                      numberOfLines={1}
+                    >
+                      {title}
+                    </Text>
+                    <Text
+                      className="mt-2 text-xs text-slate-400"
                       numberOfLines={1}
                     >
                       {sessionId}
                     </Text>
-                    {ts ? (
-                      <Text className="mt-2 text-xs text-slate-400">
-                        Last active: {formatLocalDateTime(ts)}
-                      </Text>
-                    ) : null}
                   </View>
 
-                  <View className="flex-row items-center justify-end gap-1 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
+                  <View className="flex-row items-center justify-between gap-3 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
+                    <View className="flex-1">
+                      <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                        Last active
+                      </Text>
+                      <Text className="mt-1 text-xs text-slate-200">
+                        {formatLocalDateTimeYmdHm(ts)}
+                      </Text>
+                    </View>
                     <Button
                       size="xs"
                       variant="secondary"
                       label="Continue"
+                      iconRight="chevron-forward"
                       onPress={() => continueSession(item)}
                     />
                   </View>
