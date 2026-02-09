@@ -123,7 +123,7 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     reset();
-    if (supportState === "unsupported") {
+    if (supportState !== "supported") {
       return;
     }
     loadFirstPage().catch(() => {
@@ -132,7 +132,7 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
   }, [agentId, loadFirstPage, reset, supportState]);
 
   const onRefresh = async () => {
-    if (supportState === "unsupported") return;
+    if (supportState !== "supported") return;
     await loadFirstPage("refreshing");
   };
 
