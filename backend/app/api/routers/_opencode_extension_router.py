@@ -70,9 +70,7 @@ def create_opencode_extension_router(
     def _scope_message(message: str) -> str:
         return f"{log_scope} {message}".strip()
 
-    async def _get_runtime(
-        db: AsyncSession, current_user: User, agent_id: UUID
-    ) -> Any:
+    async def _get_runtime(db: AsyncSession, current_user: User, agent_id: UUID) -> Any:
         try:
             return await build_runtime(db, user_id=current_user.id, agent_id=agent_id)
         except runtime_not_found_error as exc:
@@ -334,4 +332,3 @@ def create_opencode_extension_router(
 
 
 __all__ = ["create_opencode_extension_router"]
-

@@ -233,13 +233,6 @@ export function AdminInvitationsScreen() {
                       {inv.target_email}
                     </Text>
                     <View className="mt-2 flex-row items-center gap-2">
-                      <Text
-                        className="flex-1 font-mono text-[11px] text-muted"
-                        numberOfLines={1}
-                        selectable
-                      >
-                        {buildInvitationLink(inv.code, inv.target_email)}
-                      </Text>
                       {inv.status === "pending" ? (
                         <Pressable
                           className="flex-row items-center gap-1 rounded-lg px-2 py-2 active:bg-slate-800/40"
@@ -261,6 +254,13 @@ export function AdminInvitationsScreen() {
                           </Text>
                         </Pressable>
                       ) : null}
+                      <Text
+                        className="flex-1 font-mono text-[11px] text-muted"
+                        numberOfLines={1}
+                        selectable
+                      >
+                        {buildInvitationLink(inv.code, inv.target_email)}
+                      </Text>
                     </View>
                     {inv.memo ? (
                       <Text className="mt-2 text-xs text-slate-300">
