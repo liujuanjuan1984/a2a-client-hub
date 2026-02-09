@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String
+from sqlalchemy import Column, DateTime, Index, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from app.db.models.base import SCHEMA_NAME, Base, TimestampMixin, UserOwnedMixin
 
 
 class WsTicket(Base, TimestampMixin, UserOwnedMixin):
-    """One-time WebSocket ticket bound to a user and agent."""
+    """One-time WebSocket ticket bound to a user and an invocation scope."""
 
     __tablename__ = "ws_tickets"
     __table_args__ = (
@@ -17,12 +17,18 @@ class WsTicket(Base, TimestampMixin, UserOwnedMixin):
         {"schema": SCHEMA_NAME},
     )
 
-    agent_id = Column(
+    scope_type = Column(
+        String(32),
+        nullable=True,
+        index=True,
+        comment="Scope type for this ticket (e.g., me_a2a_agent, hub_a2a_agent)",
+    )
+    scope_id = Column(
+        "agent_id",
         PG_UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.a2a_agents.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="A2A agent bound to the ticket",
+        comment="Scope identifier (UUID) bound to this ticket",
     )
     token_hash = Column(
         String(64),

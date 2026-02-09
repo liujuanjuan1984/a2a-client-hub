@@ -11,6 +11,10 @@ from urllib.parse import urlparse
 class OutboundURLNotAllowedError(ValueError):
     """Raised when an outbound URL is not permitted by the allowlist."""
 
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
 
 @dataclass(frozen=True, slots=True)
 class AllowedHostEntry:
@@ -71,17 +75,25 @@ def validate_outbound_http_url(
 
     trimmed = (url or "").strip()
     if not trimmed:
-        raise OutboundURLNotAllowedError(f"{purpose}: URL is required")
+        raise OutboundURLNotAllowedError(
+            f"{purpose}: URL is required", code="missing_url"
+        )
 
     parsed = urlparse(trimmed)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise OutboundURLNotAllowedError(f"{purpose}: URL must be http(s)")
+        raise OutboundURLNotAllowedError(
+            f"{purpose}: URL must be http(s)", code="invalid_scheme"
+        )
 
     host = _normalize_host(parsed.hostname or "")
     if not host:
-        raise OutboundURLNotAllowedError(f"{purpose}: URL host is required")
+        raise OutboundURLNotAllowedError(
+            f"{purpose}: URL host is required", code="missing_host"
+        )
     if host == "localhost" or host.endswith(".localhost"):
-        raise OutboundURLNotAllowedError(f"{purpose}: URL host is not allowed")
+        raise OutboundURLNotAllowedError(
+            f"{purpose}: URL host is not allowed", code="host_not_allowed"
+        )
 
     # Block outbound calls to IP literals in private/reserved ranges.
     try:
@@ -96,7 +108,9 @@ def validate_outbound_http_url(
         or ip_value.is_reserved
         or ip_value.is_unspecified
     ):
-        raise OutboundURLNotAllowedError(f"{purpose}: URL host is not allowed")
+        raise OutboundURLNotAllowedError(
+            f"{purpose}: URL host is not allowed", code="host_not_allowed"
+        )
 
     allowlist = [
         _parse_allowed_host_entry(entry)
@@ -104,7 +118,9 @@ def validate_outbound_http_url(
         if (entry or "").strip()
     ]
     if not allowlist:
-        raise OutboundURLNotAllowedError(f"{purpose}: URL host is not allowed")
+        raise OutboundURLNotAllowedError(
+            f"{purpose}: URL host is not allowed", code="host_not_allowed"
+        )
 
     port = parsed.port
     if port is None:
@@ -124,7 +140,9 @@ def validate_outbound_http_url(
         if _match_allowed_host(host, entry_host):
             return trimmed
 
-    raise OutboundURLNotAllowedError(f"{purpose}: URL host is not allowed")
+    raise OutboundURLNotAllowedError(
+        f"{purpose}: URL host is not allowed", code="host_not_allowed"
+    )
 
 
 __all__ = ["OutboundURLNotAllowedError", "validate_outbound_http_url"]

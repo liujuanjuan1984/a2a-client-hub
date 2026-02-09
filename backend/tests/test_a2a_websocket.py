@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_async_db, get_ws_ticket_user
+from app.api.deps import get_async_db, get_ws_ticket_user_me
 from app.core.config import settings
 from app.db.models.user import User
 from app.main import app
@@ -60,7 +60,7 @@ def test_invoke_agent_ws_success(monkeypatch, mock_user):
     """Verify successful WS invocation and streaming."""
     # 1. Override the user dependency
     app.dependency_overrides[get_async_db] = _override_get_async_db
-    app.dependency_overrides[get_ws_ticket_user] = lambda: mock_user
+    app.dependency_overrides[get_ws_ticket_user_me] = lambda: mock_user
 
     # 2. Mock the A2A service and gateway
     mock_gateway = MagicMock()

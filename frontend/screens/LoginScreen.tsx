@@ -64,7 +64,7 @@ export function LoginScreen() {
       ) : null}
       <View className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
         <Text className="text-sm text-muted">
-          Need an invite? Contact Helen to request an invitation code.
+          Registration is invitation-only. Use your invitation link to register.
         </Text>
       </View>
     </View>

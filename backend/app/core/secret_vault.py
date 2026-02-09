@@ -33,7 +33,7 @@ class SecretVault:
         if not key_material:
             self._fernet: Optional[Fernet] = None
             logger.info(
-                "SecretVault initialized without encryption key; BYOT features disabled"
+                "SecretVault initialized without encryption key; secret features disabled"
             )
             return
         try:
@@ -70,10 +70,14 @@ class SecretVault:
 
 
 user_llm_secret_vault = SecretVault(settings.user_llm_token_encryption_key)
+hub_a2a_secret_vault = SecretVault(
+    settings.hub_a2a_token_encryption_key or settings.user_llm_token_encryption_key
+)
 
 __all__ = [
     "SecretVault",
     "SecretVaultNotConfiguredError",
     "DecryptionResult",
     "user_llm_secret_vault",
+    "hub_a2a_secret_vault",
 ]

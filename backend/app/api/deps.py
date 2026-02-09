@@ -100,7 +100,8 @@ def _is_ws_origin_allowed(origin: str | None) -> bool:
 async def get_ws_ticket_user(
     *,
     websocket: WebSocket,
-    agent_id: UUID,
+    scope_type: str,
+    scope_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     ticket: str | None = Query(None),
 ) -> User:
@@ -132,7 +133,10 @@ async def get_ws_ticket_user(
 
     try:
         consumed = await ws_ticket_service.consume_ticket(
-            db, token=ticket, agent_id=agent_id
+            db,
+            token=ticket,
+            scope_type=scope_type,
+            scope_id=scope_id,
         )
     except WsTicketError as exc:
         raise WebSocketException(
@@ -151,6 +155,38 @@ async def get_ws_ticket_user(
             code=status.WS_1008_POLICY_VIOLATION,
             reason=str(exc),
         ) from exc
+
+
+async def get_ws_ticket_user_me(
+    *,
+    websocket: WebSocket,
+    agent_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    ticket: str | None = Query(None),
+) -> User:
+    return await get_ws_ticket_user(
+        websocket=websocket,
+        scope_type="me_a2a_agent",
+        scope_id=agent_id,
+        db=db,
+        ticket=ticket,
+    )
+
+
+async def get_ws_ticket_user_hub(
+    *,
+    websocket: WebSocket,
+    agent_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    ticket: str | None = Query(None),
+) -> User:
+    return await get_ws_ticket_user(
+        websocket=websocket,
+        scope_type="hub_a2a_agent",
+        scope_id=agent_id,
+        db=db,
+        ticket=ticket,
+    )
 
 
 def get_current_admin_user(

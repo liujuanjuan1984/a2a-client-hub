@@ -18,6 +18,7 @@ import { buildChatRoute, buildOpencodeSessionsRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { type AgentStatus, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
+import { useSessionStore } from "@/store/session";
 
 const statusIndicatorConfig = (status: AgentStatus) => {
   if (status === "success") {
@@ -34,6 +35,7 @@ const statusIndicatorConfig = (status: AgentStatus) => {
 
 export function AgentListScreen() {
   const router = useRouter();
+  const user = useSessionStore((state) => state.user);
   const agents = useAgentStore((state) => state.agents);
   const setActiveAgent = useAgentStore((state) => state.setActiveAgent);
   const testAgent = useAgentStore((state) => state.testAgent);
@@ -79,6 +81,18 @@ export function AgentListScreen() {
         subtitle="Manage your connected A2A services."
         rightElement={
           <View className="flex-row gap-2">
+            {user?.is_superuser ? (
+              <IconButton
+                accessibilityLabel="Open admin"
+                icon="shield-checkmark-outline"
+                size="sm"
+                variant="secondary"
+                onPress={() => {
+                  blurActiveElement();
+                  router.push("/admin");
+                }}
+              />
+            ) : null}
             <IconButton
               accessibilityLabel="Add agent"
               icon="add"
@@ -148,6 +162,13 @@ export function AgentListScreen() {
                       >
                         {agent.cardUrl}
                       </Text>
+                      {agent.source === "shared" ? (
+                        <View className="mt-2 self-start rounded-full bg-slate-800/60 px-2.5 py-1">
+                          <Text className="text-[11px] font-semibold text-slate-200">
+                            Shared
+                          </Text>
+                        </View>
+                      ) : null}
 
                       {agent.lastError ? (
                         <View className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 p-3">
@@ -202,25 +223,27 @@ export function AgentListScreen() {
                       </Text>
                     </Pressable>
 
-                    <Pressable
-                      className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
-                      onPress={() => {
-                        blurActiveElement();
-                        router.push(`/agents/${agent.id}`);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Edit agent"
-                      accessibilityHint={`Edit ${agent.name}`}
-                    >
-                      <Ionicons
-                        name="create-outline"
-                        size={14}
-                        color="#94a3b8"
-                      />
-                      <Text className="text-xs font-medium text-slate-400">
-                        Edit
-                      </Text>
-                    </Pressable>
+                    {agent.source === "personal" ? (
+                      <Pressable
+                        className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
+                        onPress={() => {
+                          blurActiveElement();
+                          router.push(`/agents/${agent.id}`);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Edit agent"
+                        accessibilityHint={`Edit ${agent.name}`}
+                      >
+                        <Ionicons
+                          name="create-outline"
+                          size={14}
+                          color="#94a3b8"
+                        />
+                        <Text className="text-xs font-medium text-slate-400">
+                          Edit
+                        </Text>
+                      </Pressable>
+                    ) : null}
 
                     <Pressable
                       className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"

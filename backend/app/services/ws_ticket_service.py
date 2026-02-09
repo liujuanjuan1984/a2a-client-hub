@@ -70,7 +70,8 @@ class WsTicketService:
         db: AsyncSession,
         *,
         user_id: UUID,
-        agent_id: UUID,
+        scope_type: str,
+        scope_id: UUID,
     ) -> WsTicketIssueResult:
         now = utc_now()
         expires_in = settings.ws_ticket_ttl_seconds
@@ -81,7 +82,8 @@ class WsTicketService:
 
         ticket = WsTicket(
             user_id=user_id,
-            agent_id=agent_id,
+            scope_type=(scope_type or "").strip() or None,
+            scope_id=scope_id,
             token_hash=token_hash,
             expires_at=expires_at,
         )
@@ -99,7 +101,8 @@ class WsTicketService:
         db: AsyncSession,
         *,
         token: str,
-        agent_id: UUID,
+        scope_type: str,
+        scope_id: UUID,
     ) -> WsTicket:
         token_hash = self._hash_token(token)
         now = utc_now()
@@ -114,7 +117,10 @@ class WsTicketService:
             raise WsTicketUsedError("Ticket has already been used")
         if ticket.expires_at <= now:
             raise WsTicketExpiredError("Ticket has expired")
-        if ticket.agent_id != agent_id:
+        if ticket.scope_id != scope_id:
+            raise WsTicketScopeError("Ticket scope mismatch")
+        expected_type = (scope_type or "").strip() or None
+        if ticket.scope_type is not None and ticket.scope_type != expected_type:
             raise WsTicketScopeError("Ticket scope mismatch")
 
         ticket.used_at = now

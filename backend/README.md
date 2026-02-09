@@ -45,6 +45,29 @@ fetching, transport negotiation, and extensions).
 
 - Configure `A2A_PROXY_ALLOWED_HOSTS` to allow the downstream host(s).
 
+## Hub A2A Catalog (Admin-Managed)
+
+This backend supports an admin-managed global A2A catalog ("hub agents") with:
+
+- `public`: visible/invokable by all users.
+- `allowlist`: visible/invokable only by allowlisted users (others get `404`).
+- System-managed credentials: admin can store an encrypted bearer token which is never
+  returned to normal users.
+
+Endpoints:
+
+- Admin CRUD:
+  - `GET/POST/PUT/DELETE /api/v1/admin/a2a/agents`
+  - `GET /api/v1/admin/a2a/agents/{agent_id}`
+  - `GET/POST/DELETE /api/v1/admin/a2a/agents/{agent_id}/allowlist`
+- User catalog:
+  - `GET /api/v1/a2a/agents`
+  - `POST /api/v1/a2a/agents/{agent_id}/invoke`
+
+Credentials:
+
+- Configure `HUB_A2A_TOKEN_ENCRYPTION_KEY` (falls back to `USER_LLM_TOKEN_ENCRYPTION_KEY`).
+
 ## OpenCode Session Query (A2A Extension)
 
 This backend supports querying OpenCode sessions and message history via an A2A

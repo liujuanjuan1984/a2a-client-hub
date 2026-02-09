@@ -13,11 +13,16 @@ import {
   type StreamChunk,
   extractStreamChunk,
 } from "@/lib/api/chat-utils";
+import {
+  getHubInvokeWsTicket,
+  invokeHubAgent,
+} from "@/lib/api/hubA2aAgentsUser";
 import { fetchSSE } from "@/lib/api/sse";
 import { ENV } from "@/lib/config";
 import { generateId } from "@/lib/id";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { applyStreamChunk } from "@/lib/streamChunks";
+import { type AgentSource, useAgentStore } from "@/store/agents";
 import { useMessageStore } from "@/store/messages";
 
 export type AgentSession = {
@@ -115,17 +120,35 @@ const getAbsoluteWsBaseUrl = () => {
   return httpBase.replace(/^http/, "ws");
 };
 
-const buildInvokeUrl = (agentId: string, stream: boolean) => {
+const scopeForSource = (source: AgentSource) =>
+  source === "shared" ? "a2a/agents" : "me/a2a/agents";
+
+const buildInvokeUrl = (
+  agentId: string,
+  stream: boolean,
+  source: AgentSource,
+) => {
   const base = ENV.apiBaseUrl.replace(/\/$/, "");
-  return `${base}/me/a2a/agents/${agentId}/invoke${
+  return `${base}/${scopeForSource(source)}/${encodeURIComponent(agentId)}/invoke${
     stream ? "?stream=true" : ""
   }`;
 };
 
-const buildInvokeWsUrl = (agentId: string, ticket: string) => {
+const buildInvokeWsUrl = (
+  agentId: string,
+  ticket: string,
+  source: AgentSource,
+) => {
   const wsBase = getAbsoluteWsBaseUrl();
   const params = new URLSearchParams({ ticket });
-  return `${wsBase}/me/a2a/agents/${agentId}/invoke/ws?${params.toString()}`;
+  return `${wsBase}/${scopeForSource(source)}/${encodeURIComponent(agentId)}/invoke/ws?${params.toString()}`;
+};
+
+const resolveAgentSource = (agentId: string): AgentSource => {
+  const agent = useAgentStore
+    .getState()
+    .agents.find((item) => item.id === agentId);
+  return agent?.source ?? "personal";
 };
 
 const buildInvokePayload = (
@@ -246,6 +269,7 @@ export const useChatStore = create<ChatState>()(
 
         const session = get().sessions[sessionId] ?? createSession(agentId);
         const payload = buildInvokePayload(trimmed, session);
+        const agentSource = resolveAgentSource(agentId);
 
         const updateSessionMeta = (meta: {
           contextId?: string | null;
@@ -302,8 +326,11 @@ export const useChatStore = create<ChatState>()(
 
         if (supportsWebSocket) {
           try {
-            const ticket = await getInvokeWsTicket(agentId);
-            const wsUrl = buildInvokeWsUrl(agentId, ticket.token);
+            const ticket =
+              agentSource === "shared"
+                ? await getHubInvokeWsTicket(agentId)
+                : await getInvokeWsTicket(agentId);
+            const wsUrl = buildInvokeWsUrl(agentId, ticket.token, agentSource);
             const WebSocketCtor = getWebSocketCtor();
             if (!WebSocketCtor) {
               throw new Error("WebSocket is not available");
@@ -520,7 +547,7 @@ export const useChatStore = create<ChatState>()(
 
           try {
             await fetchSSE(
-              buildInvokeUrl(agentId, true),
+              buildInvokeUrl(agentId, true, agentSource),
               {
                 onData: (data) => {
                   hasReceivedData = true;
@@ -593,7 +620,10 @@ export const useChatStore = create<ChatState>()(
         // Fallback to non-streaming
         try {
           updateSessionMeta({ transport: "http_json" });
-          const response = await invokeAgent(agentId, payload);
+          const response =
+            agentSource === "shared"
+              ? await invokeHubAgent(agentId, payload)
+              : await invokeAgent(agentId, payload);
           if (!response.success) {
             const message =
               response.error || response.error_code || "Request failed.";

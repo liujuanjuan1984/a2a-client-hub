@@ -4,12 +4,10 @@ REST endpoints for user-managed A2A agents.
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator
+from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
-from a2a.client.client import ClientEvent
-from a2a.types import Message
 from fastapi import (
     Depends,
     HTTPException,
@@ -19,23 +17,20 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user
+from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_me
 from app.api.routing import StrictAPIRouter
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.integrations.a2a_client import get_a2a_service
+from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
 )
 from app.integrations.a2a_client.service import ResolvedAgent
-from app.integrations.a2a_client.validators import (
-    validate_agent_card as validate_agent_card_payload,
-)
 from app.integrations.a2a_client.validators import validate_message
 from app.schemas.a2a_agent import (
     A2AAgentCreate,
@@ -49,19 +44,21 @@ from app.schemas.a2a_agent_card import (
 )
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.ws_ticket import WsTicketResponse
+from app.services.a2a_agent_card_validation import fetch_and_validate_agent_card
 from app.services.a2a_agents import (
     A2AAgentNotFoundError,
     A2AAgentRecord,
     A2AAgentValidationError,
     a2a_agent_service,
 )
+from app.services.a2a_invoke_service import a2a_invoke_service
 from app.services.a2a_runtime import (
     A2ARuntimeNotFoundError,
     A2ARuntimeValidationError,
     a2a_runtime_builder,
 )
 from app.services.ws_ticket_service import ws_ticket_service
-from app.utils.json_encoder import json_dumps
+from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
     validate_outbound_http_url,
@@ -69,17 +66,6 @@ from app.utils.outbound_url import (
 
 router = StrictAPIRouter(prefix="/me/a2a/agents", tags=["a2a"])
 logger = get_logger(__name__)
-
-
-def _serialize_stream_event(event: ClientEvent | Message) -> dict[str, Any]:
-    if isinstance(event, tuple):
-        resolved = event[1] if event[1] else event[0]
-    else:
-        resolved = event
-
-    payload = resolved.model_dump(exclude_none=True)
-    payload["validation_errors"] = validate_message(payload)
-    return payload
 
 
 def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
@@ -109,8 +95,7 @@ def _validate_proxy_target(parsed: Any) -> None:
             purpose="Card URL",
         )
     except OutboundURLNotAllowedError as exc:
-        message = str(exc)
-        if "must be http(s)" in message:
+        if exc.code in {"missing_url", "invalid_scheme", "missing_host"}:
             raise HTTPException(
                 status_code=400, detail="Card URL must be http(s)"
             ) from exc
@@ -192,7 +177,7 @@ async def create_agent(
         extra={
             "user_id": str(current_user.id),
             "agent_name": payload.name,
-            "card_url": normalized_card_url,
+            "card_url": redact_url_for_logging(normalized_card_url),
             "auth_type": payload.auth_type,
             "enabled": payload.enabled,
             "tags_count": len(payload.tags or []),
@@ -235,7 +220,7 @@ async def update_agent(
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
             "agent_name": payload.name,
-            "card_url": normalized_card_url,
+            "card_url": redact_url_for_logging(normalized_card_url),
             "auth_type": payload.auth_type,
             "enabled": payload.enabled,
             "tags_count": len(payload.tags) if payload.tags is not None else None,
@@ -322,37 +307,16 @@ async def validate_agent_card(
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
-            "agent_url": runtime.resolved.url,
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
         },
     )
     try:
-        card = await get_a2a_service().gateway.fetch_agent_card_detail(
-            resolved=runtime.resolved, raise_on_failure=True
+        return await fetch_and_validate_agent_card(
+            gateway=get_a2a_service().gateway,
+            resolved=runtime.resolved,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if not card:
-        return A2AAgentCardValidationResponse(
-            success=False,
-            message="Agent card unavailable",
-        )
-
-    card_payload = card.model_dump(exclude_none=True)
-    validation_errors = validate_agent_card_payload(card_payload)
-    success = not validation_errors
-    message = (
-        "Agent card validated" if success else "Agent card validation issues detected"
-    )
-
-    return A2AAgentCardValidationResponse(
-        success=success,
-        message=message,
-        card_name=card_payload.get("name"),
-        card_description=card_payload.get("description"),
-        card=card_payload,
-        validation_errors=validation_errors,
-    )
 
 
 @router.post(
@@ -370,7 +334,7 @@ async def proxy_agent_card(
         "A2A agent card proxy requested",
         extra={
             "user_id": str(current_user.id),
-            "card_url": card_url,
+            "card_url": redact_url_for_logging(card_url),
             "auth_type": payload.auth_type,
             "extra_header_keys": sorted((payload.extra_headers or {}).keys()),
         },
@@ -384,32 +348,12 @@ async def proxy_agent_card(
     )
 
     try:
-        card = await get_a2a_service().gateway.fetch_agent_card_detail(
-            resolved=resolved, raise_on_failure=True
+        return await fetch_and_validate_agent_card(
+            gateway=get_a2a_service().gateway,
+            resolved=resolved,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if not card:
-        return A2AAgentCardValidationResponse(
-            success=False,
-            message="Agent card unavailable",
-        )
-
-    card_payload = card.model_dump(exclude_none=True)
-    validation_errors = validate_agent_card_payload(card_payload)
-    success = not validation_errors
-    message = (
-        "Agent card validated" if success else "Agent card validation issues detected"
-    )
-    return A2AAgentCardValidationResponse(
-        success=success,
-        message=message,
-        card_name=card_payload.get("name"),
-        card_description=card_payload.get("description"),
-        card=card_payload,
-        validation_errors=validation_errors,
-    )
 
 
 @router.post(
@@ -436,7 +380,8 @@ async def issue_invoke_ws_token(
     issued = await ws_ticket_service.issue_ticket(
         db,
         user_id=current_user.id,
-        agent_id=agent_id,
+        scope_type="me_a2a_agent",
+        scope_id=agent_id,
     )
     return WsTicketResponse(
         token=issued.token,
@@ -451,7 +396,7 @@ async def invoke_agent_ws(
     websocket: WebSocket,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_ws_ticket_user),
+    current_user: User = Depends(get_ws_ticket_user_me),
 ):
     """
     WebSocket endpoint for A2A agent invocation with streaming responses.
@@ -480,40 +425,34 @@ async def invoke_agent_ws(
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
-                "agent_url": runtime.resolved.url,
-                "query_preview": payload.query[:50],
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "query_meta": summarize_query(payload.query),
             },
         )
 
-        try:
-            async for event in get_a2a_service().gateway.stream(
-                resolved=runtime.resolved,
-                query=payload.query,
-                context_id=payload.context_id,
-                metadata=payload.metadata,
-            ):
-                serialized = _serialize_stream_event(event)
-                await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
-        except Exception as stream_error:
-            await websocket.send_text(
-                json_dumps(
-                    {"event": "error", "data": {"message": str(stream_error)}},
-                    ensure_ascii=False,
-                )
-            )
-        finally:
-            await websocket.send_text(json_dumps({"event": "stream_end", "data": {}}))
+        await a2a_invoke_service.stream_ws(
+            websocket=websocket,
+            gateway=get_a2a_service().gateway,
+            resolved=runtime.resolved,
+            query=payload.query,
+            context_id=payload.context_id,
+            metadata=payload.metadata,
+            validate_message=validate_message,
+            logger=logger,
+            log_extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+            },
+        )
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected", extra={"user_id": str(current_user.id)})
-    except Exception as e:
-        logger.error(f"WS error: {e}", exc_info=True)
+    except Exception:
+        logger.error("WS error", exc_info=True)
         try:
             # Try to send error if still connected
             await websocket.send_text(
-                json_dumps(
-                    {"event": "error", "data": {"message": str(e)}}, ensure_ascii=False
-                )
+                '{"event":"error","data":{"message":"Upstream streaming failed"}}'
             )
         except Exception:
             pass
@@ -533,10 +472,12 @@ async def invoke_agent(
     *,
     agent_id: UUID,
     payload: A2AAgentInvokeRequest,
+    response: Response,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     stream: bool = Query(False, description="Set to true for SSE streaming responses."),
 ):
+    response.headers["Cache-Control"] = "no-store"
     if not payload.query.strip():
         raise HTTPException(status_code=400, detail="Query must be a non-empty string")
 
@@ -554,38 +495,23 @@ async def invoke_agent(
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
-            "agent_url": runtime.resolved.url,
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
             "stream": stream,
-            "query_preview": payload.query[:50],
+            "query_meta": summarize_query(payload.query),
         },
     )
     if stream:
-
-        async def event_generator() -> AsyncIterator[str]:
-            try:
-                async for event in get_a2a_service().gateway.stream(
-                    resolved=runtime.resolved,
-                    query=payload.query,
-                    context_id=payload.context_id,
-                    metadata=payload.metadata,
-                ):
-                    serialized = _serialize_stream_event(event)
-                    yield (f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n")
-            except Exception as stream_error:
-                yield (
-                    "event: error\n"
-                    f"data: {json_dumps({'message': str(stream_error)}, ensure_ascii=False)}\n\n"
-                )
-            finally:
-                yield "event: stream_end\ndata: {}\n\n"
-
-        return StreamingResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
+        return a2a_invoke_service.stream_sse(
+            gateway=get_a2a_service().gateway,
+            resolved=runtime.resolved,
+            query=payload.query,
+            context_id=payload.context_id,
+            metadata=payload.metadata,
+            validate_message=validate_message,
+            logger=logger,
+            log_extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
             },
         )
 

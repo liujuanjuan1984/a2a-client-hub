@@ -277,6 +277,10 @@ async def restore_invitation(
 
     await commit_safely(db)
 
+    # Ensure server-generated columns (e.g. updated_at) are loaded before
+    # returning the ORM instance to API layers that may serialize it.
+    await db.refresh(invitation)
+
     logger.info(
         "Invitation restored",
         extra={

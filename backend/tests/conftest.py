@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import importlib
 import os
 import sys
@@ -39,6 +40,11 @@ os.environ["SCHEMA_NAME"] = TEST_SCHEMA_NAME
 if "DATABASE_URL" not in os.environ:
     default_db_name = os.getenv("TEST_DATABASE_NAME") or os.getenv("USER") or "postgres"
     os.environ["DATABASE_URL"] = f"postgresql:///{default_db_name}"
+
+# Ensure encryption keys are available for tests that store encrypted credentials.
+default_test_secret_key = base64.urlsafe_b64encode(b"0" * 32).decode("utf-8")
+os.environ.setdefault("USER_LLM_TOKEN_ENCRYPTION_KEY", default_test_secret_key)
+os.environ.setdefault("HUB_A2A_TOKEN_ENCRYPTION_KEY", default_test_secret_key)
 
 # Ensure JWT RS256 configuration is available for tests.
 if "JWT_PRIVATE_KEY_PEM" not in os.environ or "JWT_PUBLIC_KEY_PEM" not in os.environ:
@@ -89,6 +95,9 @@ for module_path in [
     "app.db.models.agent_session",
     "app.db.models.a2a_agent",
     "app.db.models.a2a_agent_credential",
+    "app.db.models.hub_a2a_agent",
+    "app.db.models.hub_a2a_agent_credential",
+    "app.db.models.hub_a2a_agent_allowlist",
     "app.db.models.a2a_schedule_task",
     "app.db.models.a2a_schedule_execution",
     "app.db.models.agent_message",

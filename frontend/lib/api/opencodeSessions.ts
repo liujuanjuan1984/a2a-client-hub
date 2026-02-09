@@ -9,6 +9,8 @@ import {
   parsePaginatedListResponse,
 } from "@/lib/api/pagination";
 
+type AgentSource = "personal" | "shared";
+
 type OpencodeResultEnvelope = {
   items?: unknown[];
   pagination?: unknown;
@@ -31,19 +33,24 @@ const extractItems = (envelope: OpencodeResultEnvelope): unknown[] => {
   return [];
 };
 
+const scopeForSource = (source: AgentSource) =>
+  source === "shared" ? "/a2a/agents" : "/me/a2a/agents";
+
 export const listOpencodeSessionsPage = async (
   agentId: string,
   options?: {
     page?: number;
     size?: number;
     query?: Record<string, unknown> | null;
+    source?: AgentSource;
   },
 ): Promise<OpencodePaginatedResult> => {
+  const scope = scopeForSource(options?.source ?? "personal");
   const response = await apiRequest<
     A2AExtensionResponse,
     A2AExtensionQueryRequest
   >(
-    `/me/a2a/agents/${encodeURIComponent(agentId)}/extensions/opencode/sessions:query`,
+    `${scope}/${encodeURIComponent(agentId)}/extensions/opencode/sessions:query`,
     {
       method: "POST",
       body: {
@@ -81,13 +88,15 @@ export const listOpencodeSessionMessagesPage = async (
     page?: number;
     size?: number;
     query?: Record<string, unknown> | null;
+    source?: AgentSource;
   },
 ): Promise<OpencodePaginatedResult> => {
+  const scope = scopeForSource(options?.source ?? "personal");
   const response = await apiRequest<
     A2AExtensionResponse,
     A2AExtensionQueryRequest
   >(
-    `/me/a2a/agents/${encodeURIComponent(agentId)}/extensions/opencode/sessions/${encodeURIComponent(sessionId)}/messages:query`,
+    `${scope}/${encodeURIComponent(agentId)}/extensions/opencode/sessions/${encodeURIComponent(sessionId)}/messages:query`,
     {
       method: "POST",
       body: {

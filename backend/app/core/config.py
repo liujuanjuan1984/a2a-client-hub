@@ -312,6 +312,11 @@ class Settings(BaseSettings):
         alias="USER_LLM_TOKEN_ENCRYPTION_KEY",
         description="Base64 URL-safe key for encrypting user-supplied LLM API tokens (leave blank to disable BYOT)",
     )
+    hub_a2a_token_encryption_key: str = Field(
+        default="",
+        alias="HUB_A2A_TOKEN_ENCRYPTION_KEY",
+        description="Base64 URL-safe key for encrypting admin-managed hub A2A credentials (falls back to USER_LLM_TOKEN_ENCRYPTION_KEY when omitted)",
+    )
 
     # A2A integration settings
     a2a_default_timeout: float = Field(

@@ -21,6 +21,7 @@ from app.integrations.a2a_client.errors import (
     A2AOutboundNotAllowedError,
 )
 from app.integrations.a2a_client.metrics import a2a_metrics
+from app.utils.logging_redaction import redact_url_for_logging
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from a2a.types import AgentCard
@@ -37,8 +38,17 @@ def _mask_headers(headers: Dict[str, str]) -> Dict[str, str]:
             masked[key] = value
             continue
         lowered = key.lower()
-        if lowered in {"authorization", "api-key", "x-api-key", "x-goog-api-key"}:
-            masked[key] = value[:6] + "..." if value else ""
+        # Never log secrets. We only keep the key name plus a placeholder.
+        if lowered in {
+            "authorization",
+            "proxy-authorization",
+            "cookie",
+            "set-cookie",
+            "api-key",
+            "x-api-key",
+            "x-goog-api-key",
+        }:
+            masked[key] = "<redacted>" if value else ""
         else:
             masked[key] = value
     return masked
@@ -79,7 +89,7 @@ class A2AGateway:
             "A2A invoke",
             extra={
                 "agent_name": resolved.name,
-                "agent_url": resolved.url,
+                "agent_url": redact_url_for_logging(resolved.url),
                 "query_meta": query_meta,
                 "timeout_seconds": timeout_seconds,
             },
@@ -250,7 +260,7 @@ class A2AGateway:
             "A2A stream",
             extra={
                 "agent_name": resolved.name,
-                "agent_url": resolved.url,
+                "agent_url": redact_url_for_logging(resolved.url),
                 "query_meta": summarize_query(query),
             },
         )

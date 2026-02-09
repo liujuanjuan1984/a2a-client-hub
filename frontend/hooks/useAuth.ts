@@ -5,6 +5,7 @@ import { apiRequest, ApiRequestError } from "@/lib/api/client";
 import {
   type AuthResponse,
   type LoginRequest,
+  type RegisterRequest,
   type UserProfile,
 } from "@/lib/api/types";
 import { queryKeys } from "@/lib/queryKeys";
@@ -48,6 +49,25 @@ export const useLogin = () => {
         method: "POST",
         body: payload,
       }),
+    onSuccess: (data) => {
+      setSession({ token: data.access_token, user: data.user });
+    },
+  });
+};
+
+export const useRegister = () => {
+  const setSession = useSessionStore((state) => state.setSession);
+  return useMutation({
+    mutationFn: async (payload: RegisterRequest) => {
+      await apiRequest("/auth/register", {
+        method: "POST",
+        body: payload,
+      });
+      return apiRequest<AuthResponse>("/auth/login", {
+        method: "POST",
+        body: { email: payload.email, password: payload.password },
+      });
+    },
     onSuccess: (data) => {
       setSession({ token: data.access_token, user: data.user });
     },
