@@ -108,17 +108,45 @@ class A2AExtensionsService:
 
     @staticmethod
     def _normalize_envelope(
-        result: Optional[Dict[str, Any]],
+        result: Any,
         *,
         page: int,
         size: int,
     ) -> Optional[Dict[str, Any]]:
         if result is None:
             return None
-        envelope = dict(result)
+        # Upstream extensions may return either:
+        # - a pre-wrapped envelope (dict), or
+        # - a plain list of items.
+        if isinstance(result, list):
+            return {
+                "raw": result,
+                "items": result,
+                "pagination": {"page": page, "size": size},
+            }
+
+        if not isinstance(result, dict):
+            return {
+                "raw": result,
+                "items": [],
+                "pagination": {"page": page, "size": size},
+            }
+
+        envelope: Dict[str, Any] = dict(result)
         envelope.setdefault("raw", result)
-        envelope.setdefault("items", [])
-        envelope.setdefault("pagination", {"page": page, "size": size})
+
+        items = envelope.get("items")
+        if not isinstance(items, list):
+            raw = envelope.get("raw")
+            if items is None and isinstance(raw, list):
+                envelope["items"] = raw
+            else:
+                envelope["items"] = []
+
+        pagination = envelope.get("pagination")
+        if not isinstance(pagination, dict):
+            envelope["pagination"] = {"page": page, "size": size}
+
         return envelope
 
     async def _call_with_retry(
