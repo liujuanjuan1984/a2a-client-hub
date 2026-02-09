@@ -13,6 +13,7 @@ import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
+import { buildOpencodeSessionsRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { type AgentHeader, useAgentStore } from "@/store/agents";
 
@@ -87,6 +88,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
   const addAgent = useAgentStore((state) => state.addAgent);
   const updateAgent = useAgentStore((state) => state.updateAgent);
   const removeAgent = useAgentStore((state) => state.removeAgent);
+  const testAgent = useAgentStore((state) => state.testAgent);
 
   const [name, setName] = useState(agent?.name ?? "");
   const [cardUrl, setCardUrl] = useState(agent?.cardUrl ?? "");
@@ -219,6 +221,21 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     blurActiveElement();
     goBackOrHome();
   }, [goBackOrHome]);
+
+  const handleSharedTest = useCallback(async () => {
+    if (!agentId || !agent) return;
+    blurActiveElement();
+    await testAgent(agentId);
+    const updated = useAgentStore
+      .getState()
+      .agents.find((item) => item.id === agentId);
+    if (!updated) return;
+    if (updated.status === "success") {
+      toast.success("Connection OK", `${updated.name} is online.`);
+    } else if (updated.status === "error") {
+      toast.error("Connection failed", updated.lastError);
+    }
+  }, [agent, agentId, testAgent]);
 
   const handleAddHeader = () => {
     setExtraHeaders((prev) => [...prev, createHeader()]);
@@ -355,6 +372,24 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
           <Text className="mt-2 text-sm text-muted">
             Please contact your administrator if you need changes to this agent.
           </Text>
+          <View className="mt-5 flex-row flex-wrap gap-3">
+            <Button
+              label="Test connection"
+              size="sm"
+              variant="secondary"
+              onPress={() => handleSharedTest()}
+            />
+            <Button
+              label="Open OpenCode"
+              size="sm"
+              variant="secondary"
+              onPress={() => {
+                if (!agentId) return;
+                blurActiveElement();
+                router.push(buildOpencodeSessionsRoute(agentId));
+              }}
+            />
+          </View>
         </View>
       </View>
     );

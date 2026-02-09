@@ -12,7 +12,10 @@ import {
   validateAgentCard,
   type A2AAgentResponse,
 } from "@/lib/api/a2aAgents";
-import { listHubAgents } from "@/lib/api/hubA2aAgentsUser";
+import {
+  listHubAgents,
+  validateHubAgentCard,
+} from "@/lib/api/hubA2aAgentsUser";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 
 export type AgentStatus = "idle" | "checking" | "success" | "error";
@@ -197,9 +200,6 @@ export const useAgentStore = create<AgentState>()(
         if (!agent) {
           return;
         }
-        if (agent.source !== "personal") {
-          return;
-        }
 
         set((state) => ({
           agents: state.agents.map((item) =>
@@ -210,7 +210,10 @@ export const useAgentStore = create<AgentState>()(
         }));
 
         try {
-          const response = await validateAgentCard(id);
+          const response =
+            agent.source === "shared"
+              ? await validateHubAgentCard(id)
+              : await validateAgentCard(id);
           if (!response.success) {
             const rawMessage =
               response.validation_errors?.[0] || response.message;

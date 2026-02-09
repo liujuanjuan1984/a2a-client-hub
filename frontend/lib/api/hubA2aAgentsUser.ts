@@ -1,3 +1,4 @@
+import { type A2AAgentCardValidationResponse } from "@/lib/api/a2aAgents";
 import { apiRequest } from "@/lib/api/client";
 
 export type HubA2AAgentUserResponse = {
@@ -57,5 +58,11 @@ export const invokeHubAgent = (
 export const getHubInvokeWsTicket = (agentId: string) =>
   apiRequest<HubWsTicketResponse>(
     `/a2a/agents/${encodeURIComponent(agentId)}/invoke/ws-token`,
+    { method: "POST" },
+  );
+
+export const validateHubAgentCard = (agentId: string) =>
+  apiRequest<A2AAgentCardValidationResponse>(
+    `/a2a/agents/${encodeURIComponent(agentId)}/card:validate`,
     { method: "POST" },
   );

@@ -15,6 +15,7 @@ import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { validateAgentCard } from "@/lib/api/a2aAgents";
 import { A2AExtensionCallError } from "@/lib/api/a2aExtensions";
 import { ApiRequestError } from "@/lib/api/client";
+import { validateHubAgentCard } from "@/lib/api/hubA2aAgentsUser";
 import { listOpencodeSessionsPage } from "@/lib/api/opencodeSessions";
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
@@ -40,12 +41,16 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
 
   const [supportState, setSupportState] = useState<SupportState>("checking");
   const [supportMessage, setSupportMessage] = useState<string | null>(null);
+  const source = agent?.source ?? "personal";
 
   const checkSupport = useCallback(async () => {
     setSupportState("checking");
     setSupportMessage(null);
     try {
-      const response = await validateAgentCard(agentId);
+      const response =
+        source === "shared"
+          ? await validateHubAgentCard(agentId)
+          : await validateAgentCard(agentId);
       if (!response.success) {
         const raw = response.validation_errors?.[0] || response.message;
         const message =
@@ -68,7 +73,7 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
       setSupportState("unknown");
       setSupportMessage(message);
     }
-  }, [agentId]);
+  }, [agentId, source]);
 
   useEffect(() => {
     checkSupport().catch(() => {
@@ -80,10 +85,11 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
     async (page: number) => {
       const result = await listOpencodeSessionsPage(agentId, {
         page,
+        source,
       });
       return { items: result.items, nextPage: result.nextPage };
     },
-    [agentId],
+    [agentId, source],
   );
 
   const mapErrorMessage = useCallback((error: unknown) => {

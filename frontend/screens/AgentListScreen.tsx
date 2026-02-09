@@ -199,75 +199,71 @@ export function AgentListScreen() {
 
                 <View className="flex-row items-center justify-between gap-3 border-t border-slate-800/50 bg-slate-900/50 px-5 py-3">
                   <View className="flex-row items-center gap-2">
-                    {agent.source === "personal" ? (
-                      <>
-                        <Pressable
-                          className={`flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40 ${
-                            agent.status === "checking" ? "opacity-50" : ""
-                          }`}
-                          onPress={
-                            agent.status === "checking"
-                              ? undefined
-                              : () => handleTest(agent.id)
-                          }
-                          disabled={agent.status === "checking"}
-                          accessibilityRole="button"
-                          accessibilityLabel="Test agent connection"
-                          accessibilityHint={`Test connection to ${agent.name}`}
-                        >
-                          <Ionicons
-                            name="pulse-outline"
-                            size={14}
-                            color="#94a3b8"
-                          />
-                          <Text className="text-xs font-medium text-slate-400">
-                            Test
-                          </Text>
-                        </Pressable>
-
-                        <Pressable
-                          className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
-                          onPress={() => {
-                            blurActiveElement();
-                            router.push(`/agents/${agent.id}`);
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel="Edit agent"
-                          accessibilityHint={`Edit ${agent.name}`}
-                        >
-                          <Ionicons
-                            name="create-outline"
-                            size={14}
-                            color="#94a3b8"
-                          />
-                          <Text className="text-xs font-medium text-slate-400">
-                            Edit
-                          </Text>
-                        </Pressable>
-                      </>
-                    ) : null}
+                    <Pressable
+                      className={`flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40 ${
+                        agent.status === "checking" ? "opacity-50" : ""
+                      }`}
+                      onPress={
+                        agent.status === "checking"
+                          ? undefined
+                          : () => handleTest(agent.id)
+                      }
+                      disabled={agent.status === "checking"}
+                      accessibilityRole="button"
+                      accessibilityLabel="Test agent connection"
+                      accessibilityHint={`Test connection to ${agent.name}`}
+                    >
+                      <Ionicons
+                        name="pulse-outline"
+                        size={14}
+                        color="#94a3b8"
+                      />
+                      <Text className="text-xs font-medium text-slate-400">
+                        Test
+                      </Text>
+                    </Pressable>
 
                     {agent.source === "personal" ? (
                       <Pressable
                         className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
                         onPress={() => {
                           blurActiveElement();
-                          router.push(buildOpencodeSessionsRoute(agent.id));
+                          router.push(`/agents/${agent.id}`);
                         }}
                         accessibilityRole="button"
-                        accessibilityLabel="Open OpenCode sessions"
-                        accessibilityHint={`Browse OpenCode sessions for ${agent.name}`}
+                        accessibilityLabel="Edit agent"
+                        accessibilityHint={`Edit ${agent.name}`}
                       >
                         <Ionicons
-                          name="albums-outline"
+                          name="create-outline"
                           size={14}
                           color="#94a3b8"
                         />
                         <Text className="text-xs font-medium text-slate-400">
-                          OpenCode
+                          Edit
                         </Text>
                       </Pressable>
                     ) : null}
+
+                    <Pressable
+                      className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
+                      onPress={() => {
+                        blurActiveElement();
+                        router.push(buildOpencodeSessionsRoute(agent.id));
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Open OpenCode sessions"
+                      accessibilityHint={`Browse OpenCode sessions for ${agent.name}`}
+                    >
+                      <Ionicons
+                        name="albums-outline"
+                        size={14}
+                        color="#94a3b8"
+                      />
+                      <Text className="text-xs font-medium text-slate-400">
+                        OpenCode
+                      </Text>
+                    </Pressable>
                   </View>
 
                   <Button

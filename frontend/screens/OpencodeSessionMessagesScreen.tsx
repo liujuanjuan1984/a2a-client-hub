@@ -32,15 +32,17 @@ export function OpencodeSessionMessagesScreen({
     () => agents.find((item) => item.id === agentId),
     [agents, agentId],
   );
+  const source = agent?.source ?? "personal";
 
   const fetchPage = useCallback(
     async (page: number) => {
       const result = await listOpencodeSessionMessagesPage(agentId, sessionId, {
         page,
+        source,
       });
       return { items: result.items, nextPage: result.nextPage };
     },
-    [agentId, sessionId],
+    [agentId, sessionId, source],
   );
 
   const mapErrorMessage = useCallback((error: unknown) => {
