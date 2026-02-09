@@ -15,6 +15,7 @@ from app.db.models.hub_a2a_agent import HubA2AAgent
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
 from app.db.models.invitation import Invitation, InvitationStatus
+from app.db.models.opencode_session_cache import OpencodeSessionCacheEntry
 from app.db.models.user import User
 from app.db.models.ws_ticket import WsTicket
 
@@ -30,6 +31,7 @@ __all__ = [
     "HubA2AAgentAllowlistEntry",
     "Invitation",
     "InvitationStatus",
+    "OpencodeSessionCacheEntry",
     "User",
     "WsTicket",
 ]
