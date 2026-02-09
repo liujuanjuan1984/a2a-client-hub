@@ -1,4 +1,4 @@
-"""add hub a2a catalog
+"""add hub a2a catalog and ws ticket scoping
 
 Revision ID: 6c0a9a8e7f5a
 Revises: 30b3bfe6c067
@@ -256,8 +256,45 @@ def upgrade() -> None:
         schema=SCHEMA,
     )
 
+    # ws_tickets.agent_id must be usable for both user-managed agents and hub agents.
+    # Drop the FK constraint to a2a_agents and treat it as a generic scope id.
+    op.execute(
+        f"ALTER TABLE {SCHEMA}.ws_tickets "
+        "DROP CONSTRAINT IF EXISTS ws_tickets_agent_id_fkey"
+    )
+    op.add_column(
+        "ws_tickets",
+        sa.Column(
+            "scope_type",
+            sa.String(length=32),
+            nullable=True,
+            comment="Scope type for this ticket (e.g., me_a2a_agent, hub_a2a_agent)",
+        ),
+        schema=SCHEMA,
+    )
+    op.create_index(
+        "ix_ws_tickets_scope_type",
+        "ws_tickets",
+        ["scope_type"],
+        unique=False,
+        schema=SCHEMA,
+    )
+
 
 def downgrade() -> None:
+    op.drop_index("ix_ws_tickets_scope_type", table_name="ws_tickets", schema=SCHEMA)
+    op.drop_column("ws_tickets", "scope_type", schema=SCHEMA)
+    op.create_foreign_key(
+        "ws_tickets_agent_id_fkey",
+        "ws_tickets",
+        "a2a_agents",
+        ["agent_id"],
+        ["id"],
+        source_schema=SCHEMA,
+        referent_schema=SCHEMA,
+        ondelete="CASCADE",
+    )
+
     op.drop_index(
         "ix_hub_a2a_agent_allowlist_user_id",
         table_name="hub_a2a_agent_allowlist",
