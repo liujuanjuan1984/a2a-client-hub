@@ -240,25 +240,27 @@ export function AdminInvitationsScreen() {
                       >
                         {buildInvitationLink(inv.code, inv.target_email)}
                       </Text>
-                      <Pressable
-                        className="flex-row items-center gap-1 rounded-lg px-2 py-2 active:bg-slate-800/40"
-                        onPress={() =>
-                          handleCopyLink(
-                            buildInvitationLink(inv.code, inv.target_email),
-                          )
-                        }
-                        accessibilityRole="button"
-                        accessibilityLabel="Copy invitation link"
-                      >
-                        <Ionicons
-                          name="copy-outline"
-                          size={14}
-                          color="#94a3b8"
-                        />
-                        <Text className="text-xs font-medium text-slate-300">
-                          Copy
-                        </Text>
-                      </Pressable>
+                      {inv.status === "pending" ? (
+                        <Pressable
+                          className="flex-row items-center gap-1 rounded-lg px-2 py-2 active:bg-slate-800/40"
+                          onPress={() =>
+                            handleCopyLink(
+                              buildInvitationLink(inv.code, inv.target_email),
+                            )
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel="Copy invitation link"
+                        >
+                          <Ionicons
+                            name="copy-outline"
+                            size={14}
+                            color="#94a3b8"
+                          />
+                          <Text className="text-xs font-medium text-slate-300">
+                            Copy
+                          </Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                     {inv.memo ? (
                       <Text className="mt-2 text-xs text-slate-300">
@@ -282,11 +284,11 @@ export function AdminInvitationsScreen() {
                     className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
                     onPress={() => handleRevoke(inv.id)}
                     accessibilityRole="button"
-                    accessibilityLabel="Revoke invitation"
+                    accessibilityLabel="Disable invitation"
                   >
                     <Ionicons name="trash-outline" size={14} color="#f87171" />
                     <Text className="text-xs font-medium text-red-300">
-                      Revoke
+                      Disable
                     </Text>
                   </Pressable>
                 ) : null}
@@ -295,7 +297,7 @@ export function AdminInvitationsScreen() {
                     className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
                     onPress={() => handleRestore(inv.id)}
                     accessibilityRole="button"
-                    accessibilityLabel="Restore invitation"
+                    accessibilityLabel="Enable invitation"
                   >
                     <Ionicons
                       name="refresh-outline"
@@ -303,7 +305,7 @@ export function AdminInvitationsScreen() {
                       color="#94a3b8"
                     />
                     <Text className="text-xs font-medium text-slate-300">
-                      Restore
+                      Enable
                     </Text>
                   </Pressable>
                 ) : null}
