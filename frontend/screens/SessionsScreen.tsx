@@ -162,9 +162,7 @@ export function SessionsScreen() {
                     <Text
                       className="mt-2 text-xs text-slate-400"
                       numberOfLines={1}
-                    >
-                      {sessionId}
-                    </Text>
+                    />
                   </View>
 
                   <View className="flex-row items-center justify-between gap-3 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
