@@ -25,6 +25,12 @@ export type OpencodePaginatedResult = PaginatedResult<unknown> & {
 const normalizeEnvelope = (value: Record<string, unknown> | null | undefined) =>
   (value ?? {}) as OpencodeResultEnvelope;
 
+const extractItems = (envelope: OpencodeResultEnvelope): unknown[] => {
+  if (Array.isArray(envelope.items)) return envelope.items;
+  if (Array.isArray(envelope.raw)) return envelope.raw;
+  return [];
+};
+
 export const listOpencodeSessionsPage = async (
   agentId: string,
   options?: {
@@ -42,7 +48,7 @@ export const listOpencodeSessionsPage = async (
       method: "POST",
       body: {
         page: options?.page ?? 1,
-        size: options?.size ?? null,
+        size: options?.size ?? 20,
         query: options?.query ?? null,
       },
     },
@@ -50,13 +56,22 @@ export const listOpencodeSessionsPage = async (
 
   assertExtensionSuccess(response);
   const envelope = normalizeEnvelope(response.result);
+  const items = extractItems(envelope);
   const listEnvelope = {
-    items: Array.isArray(envelope.items) ? envelope.items : [],
+    items,
     pagination: envelope.pagination,
     meta: envelope.meta,
   };
   const parsed = parsePaginatedListResponse(listEnvelope);
-  return { ...parsed, envelope, raw: envelope.raw };
+  const page = options?.page ?? 1;
+  const size = options?.size ?? 20;
+  const nextPage =
+    typeof parsed.nextPage === "number"
+      ? parsed.nextPage
+      : items.length >= size
+        ? page + 1
+        : undefined;
+  return { ...parsed, nextPage, envelope, raw: envelope.raw };
 };
 
 export const listOpencodeSessionMessagesPage = async (
@@ -77,7 +92,7 @@ export const listOpencodeSessionMessagesPage = async (
       method: "POST",
       body: {
         page: options?.page ?? 1,
-        size: options?.size ?? null,
+        size: options?.size ?? 50,
         query: options?.query ?? null,
       },
     },
@@ -85,11 +100,20 @@ export const listOpencodeSessionMessagesPage = async (
 
   assertExtensionSuccess(response);
   const envelope = normalizeEnvelope(response.result);
+  const items = extractItems(envelope);
   const listEnvelope = {
-    items: Array.isArray(envelope.items) ? envelope.items : [],
+    items,
     pagination: envelope.pagination,
     meta: envelope.meta,
   };
   const parsed = parsePaginatedListResponse(listEnvelope);
-  return { ...parsed, envelope, raw: envelope.raw };
+  const page = options?.page ?? 1;
+  const size = options?.size ?? 50;
+  const nextPage =
+    typeof parsed.nextPage === "number"
+      ? parsed.nextPage
+      : items.length >= size
+        ? page + 1
+        : undefined;
+  return { ...parsed, nextPage, envelope, raw: envelope.raw };
 };

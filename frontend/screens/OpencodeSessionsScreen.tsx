@@ -150,7 +150,26 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
 
   return (
     <View className="flex-1 bg-background px-6 pt-10">
-      <PageHeader title="OpenCode Sessions" subtitle={subtitle} />
+      <PageHeader
+        title="OpenCode Sessions"
+        subtitle={subtitle}
+        rightElement={
+          <Button
+            label="Back"
+            size="xs"
+            variant="secondary"
+            iconLeft="chevron-back"
+            onPress={() => {
+              blurActiveElement();
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/");
+              }
+            }}
+          />
+        }
+      />
 
       {supportState === "checking" ? (
         <View className="mt-4 flex-row items-center gap-2">

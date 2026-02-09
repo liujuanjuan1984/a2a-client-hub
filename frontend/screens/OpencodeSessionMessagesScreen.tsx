@@ -109,7 +109,11 @@ export function OpencodeSessionMessagesScreen({
             iconLeft="chevron-back"
             onPress={() => {
               blurActiveElement();
-              router.back();
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/");
+              }
             }}
           />
         }
