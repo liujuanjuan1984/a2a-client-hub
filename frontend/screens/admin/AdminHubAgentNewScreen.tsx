@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, Switch, Text, View } from "react-native";
@@ -18,6 +19,7 @@ import {
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
+import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
 import {
   type HeaderRow,
@@ -39,6 +41,7 @@ const policies: { label: string; value: HubA2AAvailabilityPolicy }[] = [
 
 export function AdminHubAgentNewScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { isReady, isAdmin } = useRequireAdmin();
 
   const [name, setName] = useState("");
@@ -138,6 +141,7 @@ export function AdminHubAgentNewScreen() {
     setSaving(true);
     try {
       const created = await createHubAgentAdmin(buildPayload());
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.hubAgents() });
       toast.success("Shared agent created", created.name);
       router.replace(`/admin/hub-a2a/${created.id}`);
     } catch (error) {
