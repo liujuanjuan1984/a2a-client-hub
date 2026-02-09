@@ -235,6 +235,18 @@ class HubA2AAgentService:
         agent = await self._get_agent(db, agent_id=agent_id)
         agent.soft_delete()
         agent.updated_by_user_id = admin_user_id
+        # Hub agents are admin-managed, and "delete" should also purge any stored
+        # credential/allowlist rows to reduce long-term secret exposure.
+        await db.execute(
+            delete(HubA2AAgentCredential).where(
+                HubA2AAgentCredential.agent_id == agent.id
+            )
+        )
+        await db.execute(
+            delete(HubA2AAgentAllowlistEntry).where(
+                HubA2AAgentAllowlistEntry.agent_id == agent.id
+            )
+        )
         await commit_safely(db)
 
     async def list_visible_agents_for_user(
@@ -543,9 +555,7 @@ class HubA2AAgentService:
             items.append(trimmed)
         return items
 
-    def _normalize_headers(
-        self, value: Optional[Dict[str, str]]
-    ) -> Dict[str, str]:
+    def _normalize_headers(self, value: Optional[Dict[str, str]]) -> Dict[str, str]:
         if value is None:
             return {}
         normalized: dict[str, str] = {}

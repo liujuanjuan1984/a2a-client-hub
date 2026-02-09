@@ -24,13 +24,16 @@ from app.schemas.hub_a2a_agent import (
     HubA2AAllowlistListResponse,
 )
 from app.services.hub_a2a_agents import (
-    HubA2AAllowlistConflictError,
     HubA2AAgentNotFoundError,
     HubA2AAgentValidationError,
+    HubA2AAllowlistConflictError,
     HubA2AUserNotFoundError,
     hub_a2a_agent_service,
 )
-from app.utils.outbound_url import OutboundURLNotAllowedError, validate_outbound_http_url
+from app.utils.outbound_url import (
+    OutboundURLNotAllowedError,
+    validate_outbound_http_url,
+)
 
 router = StrictAPIRouter(prefix="/admin/a2a/agents", tags=["admin-a2a"])
 logger = get_logger(__name__)
@@ -52,8 +55,12 @@ def _validate_card_url(value: str) -> str:
     except OutboundURLNotAllowedError as exc:
         message = str(exc)
         if "must be http(s)" in message:
-            raise HTTPException(status_code=400, detail="Card URL must be http(s)") from exc
-        raise HTTPException(status_code=403, detail="Card URL host is not allowed") from exc
+            raise HTTPException(
+                status_code=400, detail="Card URL must be http(s)"
+            ) from exc
+        raise HTTPException(
+            status_code=403, detail="Card URL host is not allowed"
+        ) from exc
     return trimmed
 
 
@@ -171,7 +178,9 @@ async def update_hub_agent_admin(
     current_admin: User = Depends(get_current_admin_user),
 ) -> HubA2AAgentAdminResponse:
     response.headers["Cache-Control"] = "no-store"
-    normalized_card_url = _validate_card_url(payload.card_url) if payload.card_url else None
+    normalized_card_url = (
+        _validate_card_url(payload.card_url) if payload.card_url else None
+    )
     logger.info(
         "Hub A2A agent update requested (admin)",
         extra={
@@ -339,4 +348,3 @@ async def remove_hub_agent_allowlist_admin(
 
 
 __all__ = ["router"]
-

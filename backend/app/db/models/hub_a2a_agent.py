@@ -5,12 +5,7 @@ from __future__ import annotations
 from sqlalchemy import Boolean, Column, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSON, UUID
 
-from app.db.models.base import (
-    SCHEMA_NAME,
-    Base,
-    SoftDeleteMixin,
-    TimestampMixin,
-)
+from app.db.models.base import SCHEMA_NAME, Base, SoftDeleteMixin, TimestampMixin
 
 
 class HubA2AAgent(Base, TimestampMixin, SoftDeleteMixin):
@@ -91,4 +86,3 @@ class HubA2AAgent(Base, TimestampMixin, SoftDeleteMixin):
 
 
 __all__ = ["HubA2AAgent"]
-

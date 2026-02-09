@@ -3,11 +3,13 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import pytest
-from httpx import AsyncClient
+from sqlalchemy import select
 
 from app.api.routers import admin_a2a_agents as admin_router
 from app.api.routers import hub_a2a_agents as hub_router
 from app.core.config import settings
+from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
+from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
 from backend.tests.api_utils import create_test_client
 from backend.tests.utils import create_user
 
@@ -41,8 +43,12 @@ async def test_allowlist_agents_are_invisible_and_404_for_non_allowlisted_users(
 ) -> None:
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
 
-    admin = await create_user(async_db_session, email="admin@example.com", is_superuser=True)
-    alice = await create_user(async_db_session, email="alice@example.com", is_superuser=False)
+    admin = await create_user(
+        async_db_session, email="admin@example.com", is_superuser=True
+    )
+    alice = await create_user(
+        async_db_session, email="alice@example.com", is_superuser=False
+    )
 
     async with create_test_client(
         admin_router.router,
@@ -92,8 +98,12 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
 ) -> None:
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
 
-    admin = await create_user(async_db_session, email="admin2@example.com", is_superuser=True)
-    alice = await create_user(async_db_session, email="alice2@example.com", is_superuser=False)
+    admin = await create_user(
+        async_db_session, email="admin2@example.com", is_superuser=True
+    )
+    alice = await create_user(
+        async_db_session, email="alice2@example.com", is_superuser=False
+    )
 
     async with create_test_client(
         admin_router.router,
@@ -125,7 +135,9 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
         assert allow_resp.json()["user_id"] == str(alice.id)
 
     fake_gateway = _FakeGateway()
-    monkeypatch.setattr(hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway))
+    monkeypatch.setattr(
+        hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
+    )
 
     async with create_test_client(
         hub_router.router,
@@ -151,3 +163,62 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
     resolved = fake_gateway.calls[0]["resolved"]
     assert resolved.headers["Authorization"].endswith("secret-token-9999")
 
+
+@pytest.mark.asyncio
+async def test_admin_delete_purges_allowlist_and_credentials(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    admin = await create_user(
+        async_db_session, email="admin3@example.com", is_superuser=True
+    )
+    alice = await create_user(
+        async_db_session, email="alice3@example.com", is_superuser=False
+    )
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        create_payload = {
+            "name": "Private Agent",
+            "card_url": "https://example.com/.well-known/agent-card.json",
+            "availability_policy": "allowlist",
+            "auth_type": "bearer",
+            "token": "secret-token-0001",
+            "enabled": True,
+            "tags": [],
+            "extra_headers": {},
+        }
+        resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents", json=create_payload
+        )
+        assert resp.status_code == 201
+        agent_id = resp.json()["id"]
+
+        allow_resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}/allowlist",
+            json={"email": alice.email},
+        )
+        assert allow_resp.status_code == 201
+
+        delete_resp = await admin_client.delete(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}"
+        )
+        assert delete_resp.status_code == 204
+
+    # Credentials/allowlist rows should be purged on delete.
+    credential = await async_db_session.scalar(
+        select(HubA2AAgentCredential).where(HubA2AAgentCredential.agent_id == agent_id)
+    )
+    assert credential is None
+
+    allow_entry = await async_db_session.scalar(
+        select(HubA2AAgentAllowlistEntry).where(
+            HubA2AAgentAllowlistEntry.agent_id == agent_id
+        )
+    )
+    assert allow_entry is None

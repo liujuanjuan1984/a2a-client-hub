@@ -13,7 +13,10 @@ from app.core.logging import get_logger
 from app.db.models.user import User
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
-from app.schemas.hub_a2a_agent import HubA2AAgentUserListResponse, HubA2AAgentUserResponse
+from app.schemas.hub_a2a_agent import (
+    HubA2AAgentUserListResponse,
+    HubA2AAgentUserResponse,
+)
 from app.services.hub_a2a_agents import hub_a2a_agent_service
 from app.services.hub_a2a_runtime import (
     HubA2ARuntimeNotFoundError,

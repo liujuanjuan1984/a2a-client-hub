@@ -50,4 +50,3 @@ class HubA2AAgentAllowlistEntry(Base, TimestampMixin):
 
 
 __all__ = ["HubA2AAgentAllowlistEntry"]
-
