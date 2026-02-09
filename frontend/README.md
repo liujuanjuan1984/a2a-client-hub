@@ -47,3 +47,10 @@ the app exposes an "OpenCode" entry from the Agents list to browse:
 
 The frontend treats the upstream result as a passthrough envelope and avoids
 binding to OpenCode-private schemas.
+
+### Continue (Resume Chat)
+
+From the OpenCode sessions list, the app can "Continue" into the main Chat UI.
+This uses the backend continue endpoint to obtain a stable binding
+(`contextId`/`metadata`) for the selected OpenCode `session_id`, then forwards
+those fields on every message so the upstream can append to the same session.

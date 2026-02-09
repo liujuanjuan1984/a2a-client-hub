@@ -145,6 +145,59 @@ def create_opencode_extension_router(
         )
 
     @router.post(
+        "/{agent_id}/extensions/opencode/sessions/{session_id}:continue",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def opencode_continue_session(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime(db, current_user, agent_id)
+        logger.info(
+            _scope_message("OpenCode session continue requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+            },
+        )
+
+        try:
+            result = await get_a2a_extensions_service().opencode_continue_session(
+                runtime=runtime,
+                session_id=session_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except A2AExtensionNotSupportedError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except A2AExtensionContractError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except A2AExtensionUpstreamError as exc:
+            return A2AExtensionResponse(
+                success=False,
+                error_code=exc.error_code,
+                upstream_error=exc.upstream_error,
+                meta={},
+            )
+
+        return A2AExtensionResponse(
+            success=result.success,
+            result=result.result,
+            error_code=result.error_code,
+            upstream_error=result.upstream_error,
+            meta=result.meta or {},
+        )
+
+    @router.post(
         "/{agent_id}/extensions/opencode/sessions:query",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,

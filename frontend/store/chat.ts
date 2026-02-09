@@ -32,7 +32,8 @@ export type AgentSession = {
   transport: string;
   inputModes: string[];
   outputModes: string[];
-  metadata: Record<string, string>;
+  metadata: Record<string, unknown>;
+  opencodeSessionId?: string | null;
   lastActiveAt: string;
 };
 
@@ -48,6 +49,15 @@ export type ChatState = {
   ) => Promise<void>;
   cancelMessage: (sessionId: string) => void;
   resetSession: (sessionId: string, agentId: string) => void;
+  bindOpencodeSession: (
+    sessionId: string,
+    payload: {
+      agentId: string;
+      opencodeSessionId: string;
+      contextId?: string | null;
+      metadata?: Record<string, unknown> | null;
+    },
+  ) => void;
   getSessionsByAgentId: (agentId: string) => [string, AgentSession][];
   getLatestSessionIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
@@ -76,6 +86,7 @@ const createSession = (agentId: string): AgentSession => ({
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
   metadata: {},
+  opencodeSessionId: null,
   lastActiveAt: new Date().toISOString(),
 });
 
@@ -191,6 +202,24 @@ export const useChatStore = create<ChatState>()(
             },
           };
         });
+      },
+      bindOpencodeSession: (sessionId, payload) => {
+        set((state) => ({
+          sessions: {
+            ...state.sessions,
+            [sessionId]: {
+              ...(state.sessions[sessionId] ?? createSession(payload.agentId)),
+              agentId: payload.agentId,
+              opencodeSessionId: payload.opencodeSessionId,
+              contextId:
+                payload.contextId === undefined
+                  ? (state.sessions[sessionId]?.contextId ?? null)
+                  : payload.contextId,
+              metadata: payload.metadata ?? {},
+              lastActiveAt: new Date().toISOString(),
+            },
+          },
+        }));
       },
       resetSession: (sessionId, agentId) => {
         get().cancelMessage(sessionId);

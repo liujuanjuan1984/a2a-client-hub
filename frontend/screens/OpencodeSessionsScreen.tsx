@@ -16,7 +16,10 @@ import { validateAgentCard } from "@/lib/api/a2aAgents";
 import { A2AExtensionCallError } from "@/lib/api/a2aExtensions";
 import { ApiRequestError } from "@/lib/api/client";
 import { validateHubAgentCard } from "@/lib/api/hubA2aAgentsUser";
-import { listOpencodeSessionsPage } from "@/lib/api/opencodeSessions";
+import {
+  continueOpencodeSession,
+  listOpencodeSessionsPage,
+} from "@/lib/api/opencodeSessions";
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import {
@@ -25,9 +28,13 @@ import {
   getOpencodeSessionTitle,
 } from "@/lib/opencodeAdapters";
 import { supportsOpencodeSessionQuery } from "@/lib/opencodeSupport";
-import { buildOpencodeSessionMessagesRoute } from "@/lib/routes";
+import {
+  buildChatRoute,
+  buildOpencodeSessionMessagesRoute,
+} from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
+import { useChatStore } from "@/store/chat";
 
 type SupportState = "checking" | "supported" | "unsupported" | "unknown";
 
@@ -41,7 +48,15 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
 
   const [supportState, setSupportState] = useState<SupportState>("checking");
   const [supportMessage, setSupportMessage] = useState<string | null>(null);
+  const [continuingSessionId, setContinuingSessionId] = useState<string | null>(
+    null,
+  );
   const source = agent?.source ?? "personal";
+  const generateSessionId = useChatStore((state) => state.generateSessionId);
+  const ensureSession = useChatStore((state) => state.ensureSession);
+  const bindOpencodeSession = useChatStore(
+    (state) => state.bindOpencodeSession,
+  );
 
   const checkSupport = useCallback(async () => {
     setSupportState("checking");
@@ -150,6 +165,45 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
     }
     blurActiveElement();
     router.push(buildOpencodeSessionMessagesRoute(agentId, sessionId));
+  };
+
+  const continueSession = async (item: unknown) => {
+    const opencodeSessionId = getOpencodeSessionId(item);
+    if (!opencodeSessionId) {
+      toast.error("Continue session failed", "Missing session id.");
+      return;
+    }
+    setContinuingSessionId(opencodeSessionId);
+    try {
+      const binding = await continueOpencodeSession(
+        agentId,
+        opencodeSessionId,
+        {
+          source,
+        },
+      );
+
+      const chatSessionId = generateSessionId();
+      ensureSession(chatSessionId, agentId);
+      bindOpencodeSession(chatSessionId, {
+        agentId,
+        opencodeSessionId,
+        contextId: binding.contextId ?? undefined,
+        metadata: binding.metadata,
+      });
+      blurActiveElement();
+      router.push(
+        buildChatRoute(agentId, chatSessionId, {
+          opencodeSessionId,
+        }),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Continue failed.";
+      toast.error("Continue session failed", message);
+    } finally {
+      setContinuingSessionId(null);
+    }
   };
 
   const subtitle = agent?.name ? `Agent: ${agent.name}` : `Agent: ${agentId}`;
@@ -265,7 +319,21 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
                     ) : null}
                   </View>
 
-                  <View className="flex-row items-center justify-end border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
+                  <View className="flex-row items-center justify-end gap-1 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
+                    <Pressable
+                      className="flex-row items-center gap-2 rounded-lg px-3 py-2 active:bg-slate-800/40"
+                      onPress={() => continueSession(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Continue session in chat"
+                      disabled={continuingSessionId === sessionId}
+                    >
+                      <Text className="text-xs font-semibold text-slate-200">
+                        {continuingSessionId === sessionId
+                          ? "Continuing..."
+                          : "Continue"}
+                      </Text>
+                    </Pressable>
+
                     <Pressable
                       className="flex-row items-center gap-2 rounded-lg px-3 py-2 active:bg-slate-800/40"
                       onPress={() => openSession(item)}

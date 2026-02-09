@@ -66,6 +66,23 @@ class _FakeExtensionsService:
     def __init__(self) -> None:
         self.calls: list[Dict[str, Any]] = []
 
+    async def opencode_continue_session(self, *, runtime, session_id: str):
+        self.calls.append(
+            {
+                "fn": "opencode_continue_session",
+                "runtime": runtime,
+                "session_id": session_id,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={
+                "contextId": session_id,
+                "metadata": {"opencode_session_id": session_id},
+            },
+            meta={},
+        )
+
     async def opencode_list_sessions(self, *, runtime, page: int, size, query):
         self.calls.append(
             {
@@ -281,6 +298,13 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         current_user=user,
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
+        continue_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-1:continue"
+        )
+        assert continue_resp.status_code == 200
+        continue_payload = continue_resp.json()
+        assert continue_payload["success"] is True
+
         sessions_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions:query",
             json={"page": 1, "size": 20, "query": {}},
@@ -297,7 +321,7 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         messages_payload = messages_resp.json()
         assert messages_payload["success"] is True
 
-    assert len(fake_extensions.calls) == 2
+    assert len(fake_extensions.calls) == 3
     for call in fake_extensions.calls:
         resolved = call["runtime"].resolved
         assert resolved.headers["Authorization"].endswith("secret-token-opencode")
