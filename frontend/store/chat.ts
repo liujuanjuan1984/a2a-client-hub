@@ -327,7 +327,7 @@ export const useChatStore = create<ChatState>()(
         };
 
         const appendStreamChunk = (chunk: StreamChunk) => {
-          const bucket = messageStore.messages[sessionId] || [];
+          const bucket = useMessageStore.getState().messages[sessionId] || [];
           const current = bucket.find((m) => m.id === activeAgentMessageId);
           if (!current) return;
 
