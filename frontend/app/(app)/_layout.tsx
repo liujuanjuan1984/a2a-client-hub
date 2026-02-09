@@ -96,10 +96,6 @@ export default function AppLayout() {
         name="opencode/[agentId]/sessions"
         options={{ title: "OpenCode Sessions" }}
       />
-      <Stack.Screen
-        name="opencode/[agentId]/sessions/[sessionId]"
-        options={{ title: "OpenCode Messages" }}
-      />
     </Stack>
   );
 }

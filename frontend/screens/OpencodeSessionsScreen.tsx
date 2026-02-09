@@ -28,10 +28,7 @@ import {
   getOpencodeSessionTitle,
 } from "@/lib/opencodeAdapters";
 import { supportsOpencodeSessionQuery } from "@/lib/opencodeSupport";
-import {
-  buildChatRoute,
-  buildOpencodeSessionMessagesRoute,
-} from "@/lib/routes";
+import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
@@ -155,16 +152,6 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
   const onRefresh = async () => {
     if (supportState !== "supported") return;
     await loadFirstPage("refreshing");
-  };
-
-  const openSession = (item: unknown) => {
-    const sessionId = getOpencodeSessionId(item);
-    if (!sessionId) {
-      toast.error("Open session failed", "Missing session id.");
-      return;
-    }
-    blurActiveElement();
-    router.push(buildOpencodeSessionMessagesRoute(agentId, sessionId));
   };
 
   const continueSession = async (item: unknown) => {
@@ -332,22 +319,6 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
                           ? "Continuing..."
                           : "Continue"}
                       </Text>
-                    </Pressable>
-
-                    <Pressable
-                      className="flex-row items-center gap-2 rounded-lg px-3 py-2 active:bg-slate-800/40"
-                      onPress={() => openSession(item)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Open session messages"
-                    >
-                      <Text className="text-xs font-semibold text-slate-200">
-                        Messages
-                      </Text>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={14}
-                        color="#94a3b8"
-                      />
                     </Pressable>
                   </View>
                 </View>

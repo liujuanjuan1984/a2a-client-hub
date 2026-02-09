@@ -22,10 +22,7 @@ import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
 import { mapOpencodeMessagesToChatMessages } from "@/lib/opencodeChatAdapters";
-import {
-  buildChatRoute,
-  buildOpencodeSessionMessagesRoute,
-} from "@/lib/routes";
+import { buildChatRoute } from "@/lib/routes";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import {
   buildProcessStates,
@@ -604,25 +601,9 @@ export function ChatScreen({
             {session?.opencodeSessionId ? (
               <>
                 <View className="h-[1px] bg-slate-800" />
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-xs text-muted">
-                    Verify by reloading OpenCode messages.
-                  </Text>
-                  <Button
-                    label="Open OpenCode"
-                    size="xs"
-                    variant="secondary"
-                    onPress={() => {
-                      blurActiveElement();
-                      router.push(
-                        buildOpencodeSessionMessagesRoute(
-                          activeAgentId ?? agent.id,
-                          session.opencodeSessionId ?? "",
-                        ),
-                      );
-                    }}
-                  />
-                </View>
+                <Text className="text-xs text-muted">
+                  OpenCode history is shown inline in this chat.
+                </Text>
               </>
             ) : null}
           </View>
