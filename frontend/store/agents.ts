@@ -12,14 +12,18 @@ import {
   validateAgentCard,
   type A2AAgentResponse,
 } from "@/lib/api/a2aAgents";
+import { listHubAgents } from "@/lib/api/hubA2aAgentsUser";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 
 export type AgentStatus = "idle" | "checking" | "success" | "error";
 
 export type AgentHeader = HeaderEntryWithId;
 
+export type AgentSource = "personal" | "shared";
+
 export type AgentConfig = {
   id: string;
+  source: AgentSource;
   name: string;
   cardUrl: string;
   authType: AgentAuthType;
@@ -39,10 +43,12 @@ export type AgentState = {
   activeAgentId: string | null;
   hasLoaded: boolean;
   loadAgents: () => Promise<void>;
-  addAgent: (payload: Omit<AgentConfig, "id" | "status">) => Promise<void>;
+  addAgent: (
+    payload: Omit<AgentConfig, "id" | "status" | "source">,
+  ) => Promise<void>;
   updateAgent: (
     id: string,
-    payload: Partial<Omit<AgentConfig, "id">>,
+    payload: Partial<Omit<AgentConfig, "id" | "source">>,
   ) => Promise<void>;
   removeAgent: (id: string) => Promise<void>;
   setActiveAgent: (id: string | null) => void;
@@ -52,6 +58,7 @@ export type AgentState = {
 
 const toAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
   id: agent.id,
+  source: "personal",
   name: agent.name,
   cardUrl: agent.card_url,
   authType: agent.auth_type === "bearer" ? "bearer" : "none",
@@ -64,6 +71,26 @@ const toAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
   status: "idle",
 });
 
+const toSharedAgentConfig = (agent: {
+  id: string;
+  name: string;
+  card_url: string;
+  tags?: string[];
+}): AgentConfig => ({
+  id: agent.id,
+  source: "shared",
+  name: agent.name,
+  cardUrl: agent.card_url,
+  authType: "none",
+  bearerToken: "",
+  apiKeyHeader: "X-API-Key",
+  apiKeyValue: "",
+  basicUsername: "",
+  basicPassword: "",
+  extraHeaders: [],
+  status: "idle",
+});
+
 export const useAgentStore = create<AgentState>()(
   persist(
     (set, get) => ({
@@ -71,21 +98,35 @@ export const useAgentStore = create<AgentState>()(
       activeAgentId: null,
       hasLoaded: false,
       loadAgents: async () => {
-        try {
-          const response = await listAgents(1, 200);
-          const agents = response.items.map(toAgentConfig);
-          set((state) => ({
-            agents,
-            activeAgentId: agents.some(
-              (item) => item.id === state.activeAgentId,
-            )
-              ? state.activeAgentId
-              : null,
-            hasLoaded: true,
-          }));
-        } catch (error) {
-          set({ hasLoaded: true });
-          throw error;
+        const results = await Promise.allSettled([
+          listAgents(1, 200),
+          listHubAgents(1, 200),
+        ]);
+
+        const personal =
+          results[0].status === "fulfilled"
+            ? results[0].value.items.map(toAgentConfig)
+            : [];
+        const shared =
+          results[1].status === "fulfilled"
+            ? results[1].value.items.map(toSharedAgentConfig)
+            : [];
+
+        const agents = [...personal, ...shared];
+
+        set((state) => ({
+          agents,
+          activeAgentId: agents.some((item) => item.id === state.activeAgentId)
+            ? state.activeAgentId
+            : null,
+          hasLoaded: true,
+        }));
+
+        if (
+          results[0].status === "rejected" &&
+          results[1].status === "rejected"
+        ) {
+          throw results[0].reason;
         }
       },
       addAgent: async (payload) => {
@@ -110,6 +151,11 @@ export const useAgentStore = create<AgentState>()(
         if (!existing) {
           throw new Error("Agent not found.");
         }
+        if (existing.source !== "personal") {
+          throw new Error(
+            "This agent is managed by an admin and cannot be edited.",
+          );
+        }
         const next = { ...existing, ...payload };
         const request = buildAgentUpsertPayload({
           name: next.name,
@@ -132,6 +178,12 @@ export const useAgentStore = create<AgentState>()(
         }));
       },
       removeAgent: async (id) => {
+        const existing = get().agents.find((agent) => agent.id === id);
+        if (existing && existing.source !== "personal") {
+          throw new Error(
+            "This agent is managed by an admin and cannot be removed.",
+          );
+        }
         await deleteAgent(id);
         set((state) => ({
           agents: state.agents.filter((agent) => agent.id !== id),
@@ -143,6 +195,9 @@ export const useAgentStore = create<AgentState>()(
       testAgent: async (id) => {
         const agent = get().agents.find((item) => item.id === id);
         if (!agent) {
+          return;
+        }
+        if (agent.source !== "personal") {
           return;
         }
 
@@ -203,10 +258,12 @@ export const useAgentStore = create<AgentState>()(
       name: "a2a-universal-client.agents",
       storage: createPersistStorage(),
       partialize: (state) => ({
-        agents: state.agents.map((agent) => {
-          const { status, lastError, ...rest } = agent;
-          return rest;
-        }),
+        agents: state.agents
+          .filter((agent) => agent.source === "personal")
+          .map((agent) => {
+            const { status, lastError, ...rest } = agent;
+            return rest;
+          }),
         activeAgentId: state.activeAgentId,
       }),
     },
