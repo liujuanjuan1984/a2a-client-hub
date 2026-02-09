@@ -62,6 +62,7 @@ const buildUrl = (
 };
 
 const AUTH_LOGIN_PATH = "/auth/login";
+const AUTH_REGISTER_PATH = "/auth/register";
 const AUTH_REFRESH_PATH = "/auth/refresh";
 const AUTH_LOGOUT_PATH = "/auth/logout";
 
@@ -69,7 +70,12 @@ let refreshPromise: Promise<string | null> | null = null;
 let refreshCooldownUntilMs = 0;
 
 const isAuthPath = (path: string) => {
-  const authPaths = [AUTH_LOGIN_PATH, AUTH_REFRESH_PATH, AUTH_LOGOUT_PATH];
+  const authPaths = [
+    AUTH_LOGIN_PATH,
+    AUTH_REGISTER_PATH,
+    AUTH_REFRESH_PATH,
+    AUTH_LOGOUT_PATH,
+  ];
   return authPaths.some(
     (authPath) => path === authPath || path.endsWith(authPath),
   );

@@ -1,4 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
+import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -110,6 +112,28 @@ export function AdminInvitationsScreen() {
     }
   };
 
+  const buildInvitationLink = useCallback(
+    (code: string, emailValue: string) => {
+      // Align with the Compass web frontend params for familiarity.
+      return Linking.createURL("/register", {
+        queryParams: {
+          invite: code,
+          email: emailValue,
+        },
+      });
+    },
+    [],
+  );
+
+  const handleCopyLink = useCallback(async (link: string) => {
+    try {
+      await Clipboard.setStringAsync(link);
+      toast.success("Copied", "Invitation link copied.");
+    } catch {
+      toast.error("Copy failed", "Could not copy invitation link.");
+    }
+  }, []);
+
   if (!isReady) {
     return <FullscreenLoader message="Checking permissions..." />;
   }
@@ -208,9 +232,34 @@ export function AdminInvitationsScreen() {
                     <Text className="text-base font-semibold text-white">
                       {inv.target_email}
                     </Text>
-                    <Text className="mt-1 text-xs text-muted">
-                      Code: {inv.code}
-                    </Text>
+                    <View className="mt-2 flex-row items-center gap-2">
+                      <Text
+                        className="flex-1 font-mono text-[11px] text-muted"
+                        numberOfLines={1}
+                        selectable
+                      >
+                        {buildInvitationLink(inv.code, inv.target_email)}
+                      </Text>
+                      <Pressable
+                        className="flex-row items-center gap-1 rounded-lg px-2 py-2 active:bg-slate-800/40"
+                        onPress={() =>
+                          handleCopyLink(
+                            buildInvitationLink(inv.code, inv.target_email),
+                          )
+                        }
+                        accessibilityRole="button"
+                        accessibilityLabel="Copy invitation link"
+                      >
+                        <Ionicons
+                          name="copy-outline"
+                          size={14}
+                          color="#94a3b8"
+                        />
+                        <Text className="text-xs font-medium text-slate-300">
+                          Copy
+                        </Text>
+                      </Pressable>
+                    </View>
                     {inv.memo ? (
                       <Text className="mt-2 text-xs text-slate-300">
                         {inv.memo}

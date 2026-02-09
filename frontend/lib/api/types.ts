@@ -12,6 +12,14 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  name: string;
+  timezone?: string;
+  invite_code?: string;
+}
+
 export interface UserProfile {
   id: UUID;
   email: string;

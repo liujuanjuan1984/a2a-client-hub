@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Text, View } from "react-native";
 
@@ -5,9 +6,11 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useLogin } from "@/hooks/useAuth";
 import { ApiRequestError } from "@/lib/api/client";
+import { blurActiveElement } from "@/lib/focus";
 
 export function LoginScreen() {
   const login = useLogin();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -67,6 +70,16 @@ export function LoginScreen() {
           Need an invite? Contact Helen to request an invitation code.
         </Text>
       </View>
+
+      <Button
+        className="mt-4"
+        label="Register"
+        variant="secondary"
+        onPress={() => {
+          blurActiveElement();
+          router.push("/register");
+        }}
+      />
     </View>
   );
 }

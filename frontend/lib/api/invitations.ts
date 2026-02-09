@@ -38,6 +38,15 @@ export type InvitationCreateRequest = {
   memo?: string | null;
 };
 
+export type InvitationLookupResponse = {
+  code: string;
+  target_email: string;
+  status: InvitationStatus;
+  creator_email?: string | null;
+  creator_name?: string | null;
+  memo?: string | null;
+};
+
 export const createInvitation = (payload: InvitationCreateRequest) =>
   apiRequest<InvitationResponse, InvitationCreateRequest>("/invitations", {
     method: "POST",
@@ -64,4 +73,9 @@ export const restoreInvitation = (invitationId: string) =>
   apiRequest<InvitationResponse>(
     `/invitations/${encodeURIComponent(invitationId)}/restore`,
     { method: "POST" },
+  );
+
+export const lookupInvitation = (code: string) =>
+  apiRequest<InvitationLookupResponse>(
+    `/invitations/lookup/${encodeURIComponent(code)}`,
   );
