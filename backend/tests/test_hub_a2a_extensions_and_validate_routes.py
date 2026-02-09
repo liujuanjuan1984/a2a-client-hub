@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 import pytest
 
+from app.api.routers import _opencode_extension_router as opencode_router_common
 from app.api.routers import admin_a2a_agents as admin_router
 from app.api.routers import hub_a2a_agents as hub_router
 from app.api.routers import hub_a2a_extensions_opencode as hub_opencode_router
@@ -79,7 +80,12 @@ class _FakeExtensionsService:
             success=True,
             result={
                 "items": [{"id": "sess-1", "title": "One"}],
-                "pagination": {"page": page, "size": size or 20, "total": 1, "pages": 1},
+                "pagination": {
+                    "page": page,
+                    "size": size or 20,
+                    "total": 1,
+                    "pages": 1,
+                },
                 "meta": {},
             },
             meta={},
@@ -109,7 +115,12 @@ class _FakeExtensionsService:
                         "timestamp": "2026-02-09T00:00:00Z",
                     }
                 ],
-                "pagination": {"page": page, "size": size or 50, "total": 1, "pages": 1},
+                "pagination": {
+                    "page": page,
+                    "size": size or 50,
+                    "total": 1,
+                    "pages": 1,
+                },
                 "meta": {},
             },
             meta={},
@@ -124,9 +135,7 @@ async def _create_allowlisted_hub_agent(
     user_email: str,
     token: str,
 ) -> tuple[str, Any]:
-    admin = await create_user(
-        async_db_session, email=admin_email, is_superuser=True
-    )
+    admin = await create_user(async_db_session, email=admin_email, is_superuser=True)
     user = await create_user(async_db_session, email=user_email, is_superuser=False)
 
     async with create_test_client(
@@ -261,7 +270,7 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
 
     fake_extensions = _FakeExtensionsService()
     monkeypatch.setattr(
-        hub_opencode_router,
+        opencode_router_common,
         "get_a2a_extensions_service",
         lambda: fake_extensions,
     )

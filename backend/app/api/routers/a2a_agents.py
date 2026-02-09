@@ -30,9 +30,6 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
 )
 from app.integrations.a2a_client.service import ResolvedAgent
-from app.integrations.a2a_client.validators import (
-    validate_agent_card as validate_agent_card_payload,
-)
 from app.integrations.a2a_client.validators import validate_message
 from app.schemas.a2a_agent import (
     A2AAgentCreate,
@@ -46,6 +43,7 @@ from app.schemas.a2a_agent_card import (
 )
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.ws_ticket import WsTicketResponse
+from app.services.a2a_agent_card_validation import fetch_and_validate_agent_card
 from app.services.a2a_agents import (
     A2AAgentNotFoundError,
     A2AAgentRecord,
@@ -312,33 +310,12 @@ async def validate_agent_card(
         },
     )
     try:
-        card = await get_a2a_service().gateway.fetch_agent_card_detail(
-            resolved=runtime.resolved, raise_on_failure=True
+        return await fetch_and_validate_agent_card(
+            gateway=get_a2a_service().gateway,
+            resolved=runtime.resolved,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if not card:
-        return A2AAgentCardValidationResponse(
-            success=False,
-            message="Agent card unavailable",
-        )
-
-    card_payload = card.model_dump(exclude_none=True)
-    validation_errors = validate_agent_card_payload(card_payload)
-    success = not validation_errors
-    message = (
-        "Agent card validated" if success else "Agent card validation issues detected"
-    )
-
-    return A2AAgentCardValidationResponse(
-        success=success,
-        message=message,
-        card_name=card_payload.get("name"),
-        card_description=card_payload.get("description"),
-        card=card_payload,
-        validation_errors=validation_errors,
-    )
 
 
 @router.post(
@@ -370,32 +347,12 @@ async def proxy_agent_card(
     )
 
     try:
-        card = await get_a2a_service().gateway.fetch_agent_card_detail(
-            resolved=resolved, raise_on_failure=True
+        return await fetch_and_validate_agent_card(
+            gateway=get_a2a_service().gateway,
+            resolved=resolved,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if not card:
-        return A2AAgentCardValidationResponse(
-            success=False,
-            message="Agent card unavailable",
-        )
-
-    card_payload = card.model_dump(exclude_none=True)
-    validation_errors = validate_agent_card_payload(card_payload)
-    success = not validation_errors
-    message = (
-        "Agent card validated" if success else "Agent card validation issues detected"
-    )
-    return A2AAgentCardValidationResponse(
-        success=success,
-        message=message,
-        card_name=card_payload.get("name"),
-        card_description=card_payload.get("description"),
-        card=card_payload,
-        validation_errors=validation_errors,
-    )
 
 
 @router.post(
