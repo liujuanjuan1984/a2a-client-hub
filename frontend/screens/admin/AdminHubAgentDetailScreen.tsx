@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -35,6 +36,7 @@ import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
+import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
 import {
   type HeaderRow,
@@ -62,6 +64,7 @@ export function AdminHubAgentDetailScreen({
   agentId,
 }: AdminHubAgentDetailScreenProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { isReady, isAdmin } = useRequireAdmin();
   const { loading, refreshing, run } = useAsyncListLoad();
 
@@ -243,6 +246,7 @@ export function AdminHubAgentDetailScreen({
     setSaving(true);
     try {
       await updateHubAgentAdmin(agentId, buildUpdatePayload());
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.hubAgents() });
       toast.success("Saved", "Shared agent updated.");
       await load("refreshing");
     } catch (error) {
@@ -281,6 +285,7 @@ export function AdminHubAgentDetailScreen({
     setDeleting(true);
     try {
       await deleteHubAgentAdmin(agentId);
+      queryClient.invalidateQueries({ queryKey: queryKeys.admin.hubAgents() });
       toast.success("Deleted", `${agent.name} has been removed.`);
       router.replace("/admin/hub-a2a");
     } catch (error) {

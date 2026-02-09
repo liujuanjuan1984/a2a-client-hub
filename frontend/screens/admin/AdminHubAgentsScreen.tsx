@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -13,13 +14,12 @@ import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { useAsyncListLoad } from "@/hooks/useAsyncListLoad";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import {
   listHubAgentsAdmin,
-  type HubA2AAgentAdminResponse,
 } from "@/lib/api/hubA2aAgentsAdmin";
 import { blurActiveElement } from "@/lib/focus";
+import { queryKeys } from "@/lib/queryKeys";
 
 const pill = (label: string, variant: "primary" | "muted") => (
   <View
@@ -40,40 +40,27 @@ const pill = (label: string, variant: "primary" | "muted") => (
 export function AdminHubAgentsScreen() {
   const router = useRouter();
   const { isReady, isAdmin } = useRequireAdmin();
-  const { refreshing, run } = useAsyncListLoad();
-  const [items, setItems] = useState<HubA2AAgentAdminResponse[]>([]);
 
-  const load = useCallback(
-    async (mode: "loading" | "refreshing" = "loading") => {
-      await run(
-        async () => {
-          const response = await listHubAgentsAdmin(1, 200);
-          setItems(response.items);
-        },
-        {
-          mode,
-          errorTitle: "Load shared agents failed",
-          fallbackMessage: "Could not load shared agents.",
-        },
-      );
-    },
-    [run],
-  );
+  const {
+    data,
+    isLoading,
+    isRefetching,
+    refetch,
+  } = useQuery({
+    queryKey: queryKeys.admin.hubAgents(),
+    queryFn: () => listHubAgentsAdmin(1, 200),
+    enabled: isReady && isAdmin,
+  });
 
-  useEffect(() => {
-    if (!isReady || !isAdmin) return;
-    load().catch(() => {
-      // Error already handled
-    });
-  }, [isReady, isAdmin, load]);
+  const items = data?.items ?? [];
 
   const enabledCount = useMemo(
     () => items.filter((item) => item.enabled).length,
     [items],
   );
 
-  if (!isReady) {
-    return <FullscreenLoader message="Checking permissions..." />;
+  if (!isReady || (isLoading && !isRefetching)) {
+    return <FullscreenLoader message="Loading shared agents..." />;
   }
   if (!isAdmin) {
     return null;
@@ -118,8 +105,8 @@ export function AdminHubAgentsScreen() {
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => load("refreshing")}
+            refreshing={isRefetching}
+            onRefresh={refetch}
             tintColor="#5c6afb"
             colors={["#5c6afb"]}
           />
@@ -131,7 +118,7 @@ export function AdminHubAgentsScreen() {
           </Text>
           <Pressable
             className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
-            onPress={() => load("refreshing")}
+            onPress={() => refetch()}
             accessibilityRole="button"
             accessibilityLabel="Refresh"
           >
