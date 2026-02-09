@@ -38,8 +38,17 @@ def _mask_headers(headers: Dict[str, str]) -> Dict[str, str]:
             masked[key] = value
             continue
         lowered = key.lower()
-        if lowered in {"authorization", "api-key", "x-api-key", "x-goog-api-key"}:
-            masked[key] = value[:6] + "..." if value else ""
+        # Never log secrets. We only keep the key name plus a placeholder.
+        if lowered in {
+            "authorization",
+            "proxy-authorization",
+            "cookie",
+            "set-cookie",
+            "api-key",
+            "x-api-key",
+            "x-goog-api-key",
+        }:
+            masked[key] = "<redacted>" if value else ""
         else:
             masked[key] = value
     return masked

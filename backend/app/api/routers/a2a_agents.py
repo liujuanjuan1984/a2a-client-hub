@@ -25,6 +25,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.integrations.a2a_client import get_a2a_service
+from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
@@ -425,7 +426,7 @@ async def invoke_agent_ws(
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
-                "query_preview": payload.query[:50],
+                "query_meta": summarize_query(payload.query),
             },
         )
 
@@ -496,7 +497,7 @@ async def invoke_agent(
             "agent_id": str(agent_id),
             "agent_url": redact_url_for_logging(runtime.resolved.url),
             "stream": stream,
-            "query_preview": payload.query[:50],
+            "query_meta": summarize_query(payload.query),
         },
     )
     if stream:
