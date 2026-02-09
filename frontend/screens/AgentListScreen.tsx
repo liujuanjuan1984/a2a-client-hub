@@ -14,7 +14,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAsyncListLoad } from "@/hooks/useAsyncListLoad";
 import { blurActiveElement } from "@/lib/focus";
-import { buildChatRoute, buildOpencodeSessionsRoute } from "@/lib/routes";
+import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { type AgentStatus, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
@@ -244,26 +244,6 @@ export function AgentListScreen() {
                         </Text>
                       </Pressable>
                     ) : null}
-
-                    <Pressable
-                      className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
-                      onPress={() => {
-                        blurActiveElement();
-                        router.push(buildOpencodeSessionsRoute(agent.id));
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Open OpenCode sessions"
-                      accessibilityHint={`Browse OpenCode sessions for ${agent.name}`}
-                    >
-                      <Ionicons
-                        name="albums-outline"
-                        size={14}
-                        color="#94a3b8"
-                      />
-                      <Text className="text-xs font-medium text-slate-400">
-                        OpenCode
-                      </Text>
-                    </Pressable>
                   </View>
 
                   <Button

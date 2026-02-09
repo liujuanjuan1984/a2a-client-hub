@@ -12,56 +12,86 @@ import {
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { A2AExtensionCallError } from "@/lib/api/a2aExtensions";
 import { ApiRequestError } from "@/lib/api/client";
 import {
-  listSessionsPage,
-  type SessionItem,
-  type SessionSource,
-} from "@/lib/api/sessions";
+  continueOpencodeSession,
+  listOpencodeSessionsPage,
+} from "@/lib/api/opencodeSessions";
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
-import { buildChatRoute } from "@/lib/routes";
+import {
+  getOpencodeSessionId,
+  getOpencodeSessionTimestamp,
+  getOpencodeSessionTitle,
+} from "@/lib/opencodeAdapters";
+import {
+  buildChatRoute,
+  buildOpencodeSessionMessagesRoute,
+} from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
-
-const sourceOptions: { value: "all" | SessionSource; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "manual", label: "Manual" },
-  { value: "scheduled", label: "Scheduled" },
-];
+import { useChatStore } from "@/store/chat";
 
 export function SessionsScreen() {
   const router = useRouter();
+
   const agents = useAgentStore((state) => state.agents);
-  const [sourceFilter, setSourceFilter] = useState<"all" | SessionSource>(
-    "all",
+  const storeActiveAgentId = useAgentStore((state) => state.activeAgentId);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+
+  const generateSessionId = useChatStore((state) => state.generateSessionId);
+  const ensureSession = useChatStore((state) => state.ensureSession);
+  const bindOpencodeSession = useChatStore(
+    (state) => state.bindOpencodeSession,
   );
 
-  const agentNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    agents.forEach((agent) => map.set(agent.id, agent.name));
-    return map;
-  }, [agents]);
+  useEffect(() => {
+    if (selectedAgentId) return;
+    if (storeActiveAgentId) {
+      setSelectedAgentId(storeActiveAgentId);
+      return;
+    }
+    const fallback = agents[0]?.id ?? null;
+    if (fallback) setSelectedAgentId(fallback);
+  }, [agents, selectedAgentId, storeActiveAgentId]);
 
-  const source = sourceFilter === "all" ? undefined : sourceFilter;
+  const selectedAgent = useMemo(
+    () => agents.find((agent) => agent.id === selectedAgentId) ?? null,
+    [agents, selectedAgentId],
+  );
 
-  const fetchSessionsPage = useCallback(
+  const source = selectedAgent?.source ?? "personal";
+
+  const fetchPage = useCallback(
     async (page: number) => {
-      const result = await listSessionsPage(source, { page });
+      if (!selectedAgentId) {
+        return { items: [], nextPage: undefined };
+      }
+      const result = await listOpencodeSessionsPage(selectedAgentId, {
+        page,
+        size: 50,
+        source,
+      });
       return { items: result.items, nextPage: result.nextPage };
     },
-    [source],
+    [selectedAgentId, source],
   );
 
   const mapErrorMessage = useCallback((error: unknown) => {
-    if (error instanceof ApiRequestError && error.status === 503) {
-      return "A2A integration is disabled.";
+    if (error instanceof A2AExtensionCallError) {
+      return error.errorCode
+        ? `Extension error: ${error.errorCode}`
+        : error.message;
+    }
+    if (error instanceof ApiRequestError && error.status === 502) {
+      return "This agent does not support the OpenCode sessions extension.";
     }
     return null;
   }, []);
 
   const {
-    items: sessions,
+    items,
     hasMore,
     loading,
     refreshing,
@@ -69,9 +99,9 @@ export function SessionsScreen() {
     reset,
     loadFirstPage,
     loadMore,
-  } = usePaginatedList<SessionItem>({
-    fetchPage: fetchSessionsPage,
-    getKey: (item) => item.id,
+  } = usePaginatedList<unknown>({
+    fetchPage,
+    getKey: (item) => getOpencodeSessionId(item),
     errorTitle: "Load sessions failed",
     fallbackMessage: "Load failed.",
     mapErrorMessage,
@@ -79,58 +109,116 @@ export function SessionsScreen() {
 
   useEffect(() => {
     reset();
+    if (!selectedAgentId) return;
     loadFirstPage().catch(() => {
-      // Error already handled in hook
+      // Error already handled
     });
-  }, [sourceFilter, loadFirstPage, reset]);
+  }, [loadFirstPage, reset, selectedAgentId]);
 
   const onRefresh = async () => {
+    if (!selectedAgentId) return;
     await loadFirstPage("refreshing");
   };
 
-  const openSession = (session: SessionItem) => {
-    if (!session.agent_id) {
-      toast.error("Open session failed", "Missing agent id.");
+  const sortedItems = useMemo(() => {
+    const copy = [...items];
+    copy.sort((a, b) => {
+      const aTs = getOpencodeSessionTimestamp(a) ?? "";
+      const bTs = getOpencodeSessionTimestamp(b) ?? "";
+      if (aTs && bTs) return bTs.localeCompare(aTs);
+      if (aTs) return -1;
+      if (bTs) return 1;
+      return 0;
+    });
+    return copy;
+  }, [items]);
+
+  const openMessages = (item: unknown) => {
+    if (!selectedAgentId) return;
+    const sessionId = getOpencodeSessionId(item);
+    if (!sessionId) {
+      toast.error("Open session failed", "Missing session id.");
       return;
     }
     blurActiveElement();
-    router.push(
-      buildChatRoute(session.agent_id, session.id, {
-        history: true,
-        source: session.source,
-      }),
-    );
+    router.push(buildOpencodeSessionMessagesRoute(selectedAgentId, sessionId));
+  };
+
+  const continueSession = async (item: unknown) => {
+    if (!selectedAgentId) return;
+    const opencodeSessionId = getOpencodeSessionId(item);
+    if (!opencodeSessionId) {
+      toast.error("Continue session failed", "Missing session id.");
+      return;
+    }
+    try {
+      const binding = await continueOpencodeSession(
+        selectedAgentId,
+        opencodeSessionId,
+        {
+          source,
+        },
+      );
+      const chatSessionId = generateSessionId();
+      ensureSession(chatSessionId, selectedAgentId);
+      bindOpencodeSession(chatSessionId, {
+        agentId: selectedAgentId,
+        opencodeSessionId,
+        contextId: binding.contextId ?? undefined,
+        metadata: binding.metadata,
+      });
+      blurActiveElement();
+      router.push(
+        buildChatRoute(selectedAgentId, chatSessionId, {
+          opencodeSessionId,
+        }),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Continue failed.";
+      toast.error("Continue session failed", message);
+    }
   };
 
   return (
     <View className="flex-1 bg-background px-6 pt-10">
       <PageHeader
         title="Sessions"
-        subtitle="Switch between manual and scheduled conversations."
+        subtitle="Browse OpenCode sessions by agent."
       />
 
-      <View className="mt-4 flex-row gap-2">
-        {sourceOptions.map((option) => {
-          const selected = sourceFilter === option.value;
-          return (
-            <Pressable
-              key={option.value}
-              className={`rounded-lg border px-3 py-1.5 ${
-                selected
-                  ? "border-primary bg-primary/20"
-                  : "border-slate-700 bg-slate-900"
-              }`}
-              onPress={() => setSourceFilter(option.value)}
-            >
-              <Text
-                className={`text-xs ${selected ? "text-primary" : "text-slate-300"}`}
+      {agents.length > 0 ? (
+        <ScrollView
+          className="mt-4"
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingRight: 12 }}
+        >
+          {agents.map((agent) => {
+            const selected = agent.id === selectedAgentId;
+            return (
+              <Pressable
+                key={agent.id}
+                className={`mr-2 rounded-full border px-4 py-2 ${
+                  selected
+                    ? "border-primary bg-primary/20"
+                    : "border-slate-700 bg-slate-900"
+                }`}
+                onPress={() => setSelectedAgentId(agent.id)}
               >
-                {option.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+                <Text
+                  className={`text-xs font-semibold ${
+                    selected ? "text-primary" : "text-slate-200"
+                  }`}
+                  numberOfLines={1}
+                >
+                  {agent.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      ) : null}
 
       <ScrollView
         className="mt-4"
@@ -143,95 +231,81 @@ export function SessionsScreen() {
           <View className="mt-8 items-center">
             <Text className="text-sm text-muted">Loading sessions...</Text>
           </View>
-        ) : sessions.length === 0 ? (
+        ) : sortedItems.length === 0 ? (
           <View className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
             <Text className="text-base font-semibold text-white">
               No sessions
             </Text>
             <Text className="mt-2 text-sm text-muted">
-              No sessions found for the current filter.
+              {selectedAgent
+                ? "No OpenCode sessions found for this agent."
+                : "Select an agent to load sessions."}
             </Text>
           </View>
         ) : (
           <>
-            {sessions.map((session) => (
-              <View
-                key={session.id}
-                className="mb-3 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30"
-              >
-                <View className="p-4">
-                  <View className="flex-row items-start justify-between">
-                    <View className="flex-1 pr-3">
-                      <Text
-                        className="text-sm font-semibold text-white"
-                        numberOfLines={1}
-                      >
-                        {session.title || session.id}
+            {sortedItems.map((item) => {
+              const title = getOpencodeSessionTitle(item);
+              const sessionId = getOpencodeSessionId(item);
+              const ts = getOpencodeSessionTimestamp(item);
+              return (
+                <View
+                  key={sessionId}
+                  className="mb-3 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30"
+                >
+                  <View className="p-4">
+                    <Text
+                      className="text-sm font-semibold text-white"
+                      numberOfLines={1}
+                    >
+                      {title}
+                    </Text>
+                    <Text
+                      className="mt-1 text-xs text-slate-400"
+                      numberOfLines={1}
+                    >
+                      {sessionId}
+                    </Text>
+                    {ts ? (
+                      <Text className="mt-2 text-xs text-slate-400">
+                        Last active: {formatLocalDateTime(ts)}
                       </Text>
+                    ) : null}
+                  </View>
 
-                      <View className="mt-2 self-start flex-row items-center gap-1 rounded-full bg-slate-800/60 px-2.5 py-1">
-                        <Ionicons
-                          name={
-                            session.source === "scheduled"
-                              ? "calendar-outline"
-                              : "person-outline"
-                          }
-                          size={12}
-                          color={
-                            session.source === "scheduled"
-                              ? "#5c6afb"
-                              : "#94a3b8"
-                          }
-                        />
-                        <Text
-                          className={`text-[11px] font-semibold ${
-                            session.source === "scheduled"
-                              ? "text-primary"
-                              : "text-slate-300"
-                          }`}
-                        >
-                          {session.source === "scheduled"
-                            ? "Scheduled"
-                            : "Manual"}
-                        </Text>
-                      </View>
+                  <View className="flex-row items-center justify-end gap-1 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
+                    <Pressable
+                      className="flex-row items-center gap-2 rounded-lg px-3 py-2 active:bg-slate-800/40"
+                      onPress={() => continueSession(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Continue session in chat"
+                      disabled={!selectedAgentId}
+                    >
+                      <Text className="text-xs font-semibold text-slate-200">
+                        Continue
+                      </Text>
+                    </Pressable>
 
-                      <Text
-                        className="mt-2 text-xs text-slate-400"
-                        numberOfLines={1}
-                      >
-                        Agent:{" "}
-                        {agentNameMap.get(session.agent_id) ?? session.agent_id}
+                    <Pressable
+                      className="flex-row items-center gap-2 rounded-lg px-3 py-2 active:bg-slate-800/40"
+                      onPress={() => openMessages(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Open session messages"
+                      disabled={!selectedAgentId}
+                    >
+                      <Text className="text-xs font-semibold text-slate-200">
+                        Messages
                       </Text>
-                      <Text className="mt-1 text-xs text-slate-400">
-                        Last active:{" "}
-                        {formatLocalDateTime(
-                          session.last_active_at ?? session.created_at,
-                        )}
-                      </Text>
-                      {session.job_id ? (
-                        <Text className="mt-1 text-xs text-slate-400">
-                          Job: {session.job_id}
-                        </Text>
-                      ) : null}
-                    </View>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={14}
+                        color="#94a3b8"
+                      />
+                    </Pressable>
                   </View>
                 </View>
-
-                <View className="flex-row items-center justify-end border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
-                  <Button
-                    label="Open"
-                    size="xs"
-                    variant="secondary"
-                    iconRight="chevron-forward"
-                    onPress={() => openSession(session)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Open session"
-                    accessibilityHint={`Open ${session.title || session.id}`}
-                  />
-                </View>
-              </View>
-            ))}
+              );
+            })}
 
             {hasMore ? (
               <Button

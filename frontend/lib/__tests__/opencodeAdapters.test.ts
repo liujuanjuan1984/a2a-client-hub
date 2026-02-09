@@ -8,6 +8,7 @@ import {
 describe("opencodeAdapters", () => {
   it("extracts session id/title from common fields", () => {
     expect(getOpencodeSessionId({ id: "s-1" })).toBe("s-1");
+    expect(getOpencodeSessionId({ contextId: "s-ctx" })).toBe("s-ctx");
     expect(getOpencodeSessionTitle({ title: "Hello" })).toBe("Hello");
     expect(getOpencodeSessionTitle({ id: "s-2" })).toBe("s-2");
   });

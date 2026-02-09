@@ -13,7 +13,6 @@ import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
-import { buildOpencodeSessionsRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { type AgentHeader, useAgentStore } from "@/store/agents";
 
@@ -378,16 +377,6 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
               size="sm"
               variant="secondary"
               onPress={() => handleSharedTest()}
-            />
-            <Button
-              label="Open OpenCode"
-              size="sm"
-              variant="secondary"
-              onPress={() => {
-                if (!agentId) return;
-                blurActiveElement();
-                router.push(buildOpencodeSessionsRoute(agentId));
-              }}
             />
           </View>
         </View>

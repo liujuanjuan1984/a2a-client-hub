@@ -104,6 +104,28 @@ export const getOpencodeSessionTimestamp = (item: unknown) => {
   ]);
   if (direct) return direct;
 
+  // A2A Task shape: OpenCode session payload is nested under metadata.opencode.raw.
+  // Extract the best-effort timestamp without binding to a single upstream schema.
+  const metadata = asRecord(obj?.metadata);
+  const opencode = asRecord(metadata?.opencode);
+  const raw = asRecord(opencode?.raw);
+  const rawDirect = pickIsoDateString(raw, [
+    "last_active_at",
+    "updated_at",
+    "created_at",
+    "timestamp",
+    "ts",
+  ]);
+  if (rawDirect) return rawDirect;
+
+  const rawTime = asRecord(raw?.time);
+  const rawMs =
+    pickNumber(rawTime, ["updated", "created"]) ??
+    pickNumber(raw, ["updated", "created"]);
+  if (typeof rawMs === "number") {
+    return toIsoStringMaybe(rawMs);
+  }
+
   // OpenCode sessions often expose timestamps as milliseconds under `time`.
   const time = asRecord(obj?.time);
   const ms =
