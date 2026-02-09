@@ -98,6 +98,7 @@ for module_path in [
     "app.db.models.hub_a2a_agent",
     "app.db.models.hub_a2a_agent_credential",
     "app.db.models.hub_a2a_agent_allowlist",
+    "app.db.models.opencode_session_cache",
     "app.db.models.a2a_schedule_task",
     "app.db.models.a2a_schedule_execution",
     "app.db.models.agent_message",

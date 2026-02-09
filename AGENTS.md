@@ -18,7 +18,7 @@ After any code change, you must run the relevant regressions and fix all failure
   - `cd backend && uv run pytest`
 
 - **Frontend changes (`frontend/`)**
-  - `cd frontend && npm ci`
+  - `cd frontend && npm install`
   - `cd frontend && npm run lint`
   - `cd frontend && npm run check-types`
   - `cd frontend && npm test`

@@ -13,10 +13,15 @@ import {
 
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import {
+  continueOpencodeSession,
+  listOpencodeSessionMessagesPage,
+} from "@/lib/api/opencodeSessions";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
+import { mapOpencodeMessagesToChatMessages } from "@/lib/opencodeChatAdapters";
 import { buildChatRoute } from "@/lib/routes";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import {
@@ -34,11 +39,13 @@ export function ChatScreen({
   sessionId,
   history,
   source,
+  opencodeSessionId,
 }: {
   agentId?: string;
   sessionId?: string;
   history?: boolean;
   source?: "manual" | "scheduled";
+  opencodeSessionId?: string;
 }) {
   const router = useRouter();
   const goBackOrHome = useCallback(() => backOrHome(router), [router]);
@@ -66,6 +73,16 @@ export function ChatScreen({
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyNextPage, setHistoryNextPage] = useState<number | null>(null);
   const hasLoadedHistoryRef = useRef(false);
+  const [opencodeHistoryLoading, setOpencodeHistoryLoading] = useState(false);
+  const [opencodeHistoryLoadingMore, setOpencodeHistoryLoadingMore] =
+    useState(false);
+  const [opencodeHistoryError, setOpencodeHistoryError] = useState<
+    string | null
+  >(null);
+  const [opencodeHistoryNextPage, setOpencodeHistoryNextPage] = useState<
+    number | null
+  >(null);
+  const hasLoadedOpencodeHistoryRef = useRef(false);
   const suppressAutoScrollRef = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
@@ -92,6 +109,12 @@ export function ChatScreen({
     setHistoryNextPage(null);
     setHistoryError(null);
   }, [sessionId]);
+
+  useEffect(() => {
+    hasLoadedOpencodeHistoryRef.current = false;
+    setOpencodeHistoryNextPage(null);
+    setOpencodeHistoryError(null);
+  }, [sessionId, opencodeSessionId]);
 
   useEffect(() => {
     if (!history || !sessionId) return;
@@ -134,6 +157,98 @@ export function ChatScreen({
     };
   }, [history, sessionId, messages.length, setMessages]);
 
+  const resolveOpencodeSource = useCallback(() => {
+    if (agent?.source === "shared") return "shared";
+    return "personal";
+  }, [agent?.source]);
+
+  useEffect(() => {
+    if (!opencodeSessionId || !sessionId || !activeAgentId) return;
+
+    const current = useChatStore.getState().sessions[sessionId];
+    if (
+      current?.opencodeSessionId === opencodeSessionId &&
+      ((typeof current.contextId === "string" && current.contextId.trim()) ||
+        Object.keys(current.metadata ?? {}).length > 0)
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    continueOpencodeSession(activeAgentId, opencodeSessionId, {
+      source: resolveOpencodeSource(),
+    })
+      .then((binding) => {
+        if (cancelled) return;
+        useChatStore.getState().bindOpencodeSession(sessionId, {
+          agentId: activeAgentId,
+          opencodeSessionId,
+          contextId: binding.contextId ?? undefined,
+          metadata: binding.metadata,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "Bind failed.";
+        toast.error("Continue session failed", message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAgentId, opencodeSessionId, resolveOpencodeSource, sessionId]);
+
+  useEffect(() => {
+    if (!opencodeSessionId || !sessionId || !activeAgentId) return;
+    if (hasLoadedOpencodeHistoryRef.current) return;
+    if (messages.length > 0) {
+      hasLoadedOpencodeHistoryRef.current = true;
+      return;
+    }
+
+    let cancelled = false;
+    setOpencodeHistoryError(null);
+    setOpencodeHistoryLoading(true);
+
+    listOpencodeSessionMessagesPage(activeAgentId, opencodeSessionId, {
+      page: 1,
+      size: 100,
+      source: resolveOpencodeSource(),
+    })
+      .then((result) => {
+        if (cancelled) return;
+        const mapped = mapOpencodeMessagesToChatMessages(result.items).slice(
+          -100,
+        );
+        setMessages(sessionId, mapped);
+        setOpencodeHistoryNextPage(
+          typeof result.nextPage === "number" ? result.nextPage : null,
+        );
+        hasLoadedOpencodeHistoryRef.current = true;
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "Load failed.";
+        setOpencodeHistoryError(message);
+        toast.error("Load history failed", message);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setOpencodeHistoryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeAgentId,
+    messages.length,
+    opencodeSessionId,
+    resolveOpencodeSource,
+    sessionId,
+    setMessages,
+  ]);
+
   const loadEarlierHistory = async () => {
     if (!history || !sessionId) return;
     if (typeof historyNextPage !== "number") return;
@@ -162,6 +277,42 @@ export function ChatScreen({
       toast.error("Load history failed", message);
     } finally {
       setHistoryLoadingMore(false);
+    }
+  };
+
+  const loadEarlierOpencodeHistory = async () => {
+    if (!opencodeSessionId || !sessionId || !activeAgentId) return;
+    if (typeof opencodeHistoryNextPage !== "number") return;
+    if (opencodeHistoryLoadingMore) return;
+    setOpencodeHistoryLoadingMore(true);
+    try {
+      const result = await listOpencodeSessionMessagesPage(
+        activeAgentId,
+        opencodeSessionId,
+        {
+          page: opencodeHistoryNextPage,
+          size: 100,
+          source: resolveOpencodeSource(),
+        },
+      );
+      const mapped = mapOpencodeMessagesToChatMessages(result.items);
+      const merged = new Map<string, (typeof messages)[number]>();
+      [...mapped, ...messages].forEach((message) => {
+        merged.set(message.id, message);
+      });
+      const nextMessages = Array.from(merged.values())
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .slice(-500);
+      suppressAutoScrollRef.current = true;
+      setMessages(sessionId, nextMessages);
+      setOpencodeHistoryNextPage(
+        typeof result.nextPage === "number" ? result.nextPage : null,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Load failed.";
+      toast.error("Load history failed", message);
+    } finally {
+      setOpencodeHistoryLoadingMore(false);
     }
   };
 
@@ -415,6 +566,16 @@ export function ChatScreen({
                   </Text>
                 </View>
               ) : null}
+              {session?.opencodeSessionId ? (
+                <View className="flex-1 min-w-[45%]">
+                  <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                    OpenCode Session
+                  </Text>
+                  <Text className="mt-1 text-xs text-white" numberOfLines={1}>
+                    {session.opencodeSessionId}
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             <View className="h-[1px] bg-slate-800" />
@@ -436,6 +597,15 @@ export function ChatScreen({
                 ))}
               </View>
             </View>
+
+            {session?.opencodeSessionId ? (
+              <>
+                <View className="h-[1px] bg-slate-800" />
+                <Text className="text-xs text-muted">
+                  OpenCode history is shown inline in this chat.
+                </Text>
+              </>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -454,6 +624,19 @@ export function ChatScreen({
               variant="secondary"
               loading={historyLoadingMore}
               onPress={loadEarlierHistory}
+            />
+          </View>
+        ) : null}
+
+        {opencodeSessionId && typeof opencodeHistoryNextPage === "number" ? (
+          <View className="items-center">
+            <Button
+              className="mt-2"
+              label={opencodeHistoryLoadingMore ? "Loading..." : "Load earlier"}
+              size="sm"
+              variant="secondary"
+              loading={opencodeHistoryLoadingMore}
+              onPress={loadEarlierOpencodeHistory}
             />
           </View>
         ) : null}
@@ -558,10 +741,10 @@ export function ChatScreen({
         ) : (
           <View className="mt-12 items-center">
             <Text className="text-sm text-muted">
-              {historyLoading
+              {historyLoading || opencodeHistoryLoading
                 ? "Loading history..."
-                : historyError
-                  ? "Unable to load history."
+                : historyError || opencodeHistoryError
+                  ? historyError || opencodeHistoryError
                   : "No messages yet."}
             </Text>
           </View>

@@ -84,6 +84,8 @@ Endpoints:
 - List sessions:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions?page=1&size=20`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions:query`
+- Continue a session:
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}:continue`
 - List messages for a session:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages?page=1&size=50`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages:query`

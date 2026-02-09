@@ -414,6 +414,51 @@ class A2AExtensionsService:
             meta=meta,
         )
 
+    async def opencode_continue_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+    ) -> ExtensionCallResult:
+        """Return a stable "continue" binding for an OpenCode session.
+
+        This endpoint is intentionally conservative:
+        - It validates the upstream session exists (best-effort) via the session
+          query contract, returning stable error_code values on failure.
+        - It returns both `contextId` and `metadata` so upstream can bind using
+          either mechanism while the contract is being stabilized.
+        """
+
+        resolved_session_id = (session_id or "").strip()
+        if not resolved_session_id:
+            raise ValueError("session_id is required")
+
+        validation = await self.opencode_get_session_messages(
+            runtime=runtime,
+            session_id=resolved_session_id,
+            page=1,
+            size=1,
+            query=None,
+        )
+        if not validation.success:
+            return validation
+
+        meta = dict(validation.meta or {})
+        meta.update(
+            {
+                "binding_mode": "contextId+metadata",
+                "validated": True,
+            }
+        )
+        return ExtensionCallResult(
+            success=True,
+            result={
+                "contextId": resolved_session_id,
+                "metadata": {"opencode_session_id": resolved_session_id},
+            },
+            meta=meta,
+        )
+
 
 _service_instance: Optional[A2AExtensionsService] = None
 

@@ -36,6 +36,47 @@ const extractItems = (envelope: OpencodeResultEnvelope): unknown[] => {
 const scopeForSource = (source: AgentSource) =>
   source === "shared" ? "/a2a/agents" : "/me/a2a/agents";
 
+export type OpencodeContinueBinding = {
+  contextId: string | null;
+  metadata: Record<string, unknown>;
+  raw: unknown;
+};
+
+const parseContinueBinding = (value: unknown): OpencodeContinueBinding => {
+  const obj =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+  const contextId =
+    typeof obj.contextId === "string"
+      ? obj.contextId
+      : typeof obj.context_id === "string"
+        ? obj.context_id
+        : "";
+  const metadata =
+    obj.metadata && typeof obj.metadata === "object"
+      ? (obj.metadata as Record<string, unknown>)
+      : {};
+  const trimmed = contextId.trim();
+  return { contextId: trimmed ? trimmed : null, metadata, raw: value };
+};
+
+export const continueOpencodeSession = async (
+  agentId: string,
+  sessionId: string,
+  options?: { source?: AgentSource },
+): Promise<OpencodeContinueBinding> => {
+  const scope = scopeForSource(options?.source ?? "personal");
+  const response = await apiRequest<A2AExtensionResponse>(
+    `${scope}/${encodeURIComponent(agentId)}/extensions/opencode/sessions/${encodeURIComponent(sessionId)}:continue`,
+    {
+      method: "POST",
+    },
+  );
+  assertExtensionSuccess(response);
+  return parseContinueBinding(response.result);
+};
+
 export const listOpencodeSessionsPage = async (
   agentId: string,
   options?: {
@@ -125,4 +166,42 @@ export const listOpencodeSessionMessagesPage = async (
         ? page + 1
         : undefined;
   return { ...parsed, nextPage, envelope, raw: envelope.raw };
+};
+
+export type OpencodeSessionDirectoryItem = {
+  agent_id: string;
+  agent_source: AgentSource;
+  agent_name: string;
+  session_id: string;
+  title: string;
+  last_active_at?: string | null;
+};
+
+export const listOpencodeSessionsDirectoryPage = async (options?: {
+  page?: number;
+  size?: number;
+  refresh?: boolean;
+}): Promise<PaginatedResult<OpencodeSessionDirectoryItem>> => {
+  const page = options?.page ?? 1;
+  const size = options?.size ?? 50;
+  const response = await apiRequest<
+    {
+      items: OpencodeSessionDirectoryItem[];
+      pagination?: unknown;
+      meta?: unknown;
+    },
+    { page: number; size: number; refresh: boolean }
+  >("/me/a2a/opencode/sessions:query", {
+    method: "POST",
+    body: { page, size, refresh: options?.refresh ?? false },
+  });
+
+  const parsed = parsePaginatedListResponse(response);
+  const pagination =
+    parsed.pagination && typeof parsed.pagination === "object"
+      ? (parsed.pagination as Record<string, unknown>)
+      : {};
+  const pages = typeof pagination.pages === "number" ? pagination.pages : 0;
+  const nextPage = pages > 0 && page < pages ? page + 1 : undefined;
+  return { ...parsed, nextPage };
 };

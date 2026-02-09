@@ -22,6 +22,7 @@ import { ENV } from "@/lib/config";
 import { generateId } from "@/lib/id";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { applyStreamChunk } from "@/lib/streamChunks";
+import { shouldSplitStreamMessage } from "@/lib/streamMessageSplit";
 import { type AgentSource, useAgentStore } from "@/store/agents";
 import { useMessageStore } from "@/store/messages";
 
@@ -32,7 +33,8 @@ export type AgentSession = {
   transport: string;
   inputModes: string[];
   outputModes: string[];
-  metadata: Record<string, string>;
+  metadata: Record<string, unknown>;
+  opencodeSessionId?: string | null;
   lastActiveAt: string;
 };
 
@@ -48,6 +50,15 @@ export type ChatState = {
   ) => Promise<void>;
   cancelMessage: (sessionId: string) => void;
   resetSession: (sessionId: string, agentId: string) => void;
+  bindOpencodeSession: (
+    sessionId: string,
+    payload: {
+      agentId: string;
+      opencodeSessionId: string;
+      contextId?: string | null;
+      metadata?: Record<string, unknown> | null;
+    },
+  ) => void;
   getSessionsByAgentId: (agentId: string) => [string, AgentSession][];
   getLatestSessionIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
@@ -76,6 +87,7 @@ const createSession = (agentId: string): AgentSession => ({
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
   metadata: {},
+  opencodeSessionId: null,
   lastActiveAt: new Date().toISOString(),
 });
 
@@ -192,6 +204,24 @@ export const useChatStore = create<ChatState>()(
           };
         });
       },
+      bindOpencodeSession: (sessionId, payload) => {
+        set((state) => ({
+          sessions: {
+            ...state.sessions,
+            [sessionId]: {
+              ...(state.sessions[sessionId] ?? createSession(payload.agentId)),
+              agentId: payload.agentId,
+              opencodeSessionId: payload.opencodeSessionId,
+              contextId:
+                payload.contextId === undefined
+                  ? (state.sessions[sessionId]?.contextId ?? null)
+                  : payload.contextId,
+              metadata: payload.metadata ?? {},
+              lastActiveAt: new Date().toISOString(),
+            },
+          },
+        }));
+      },
       resetSession: (sessionId, agentId) => {
         get().cancelMessage(sessionId);
         set((state) => ({
@@ -267,6 +297,8 @@ export const useChatStore = create<ChatState>()(
         messageStore.addMessage(sessionId, userMessage);
         messageStore.addMessage(sessionId, agentMessage);
 
+        let activeAgentMessageId = agentMessageId;
+
         const session = get().sessions[sessionId] ?? createSession(agentId);
         const payload = buildInvokePayload(trimmed, session);
         const agentSource = resolveAgentSource(agentId);
@@ -295,9 +327,31 @@ export const useChatStore = create<ChatState>()(
         };
 
         const appendStreamChunk = (chunk: StreamChunk) => {
+          const bucket = useMessageStore.getState().messages[sessionId] || [];
+          const current = bucket.find((m) => m.id === activeAgentMessageId);
+          if (!current) return;
+
+          if (shouldSplitStreamMessage(current, chunk)) {
+            // Finish the current streamed message and start a new one.
+            messageStore.updateMessage(sessionId, activeAgentMessageId, {
+              status: "done",
+            });
+            const nextAgentMessageId = generateId();
+            activeAgentMessageId = nextAgentMessageId;
+            messageStore.addMessage(sessionId, {
+              id: nextAgentMessageId,
+              role: "agent" as const,
+              content: "",
+              streamChunks: [],
+              createdAt: new Date().toISOString(),
+              status: "streaming" as const,
+            });
+          }
+
+          const targetId = activeAgentMessageId;
           messageStore.updateMessageWithUpdater(
             sessionId,
-            agentMessageId,
+            targetId,
             (message) => {
               const next = applyStreamChunk(
                 message.content,
@@ -316,7 +370,7 @@ export const useChatStore = create<ChatState>()(
         const appendStreamError = (errorText: string) => {
           messageStore.updateMessageWithUpdater(
             sessionId,
-            agentMessageId,
+            activeAgentMessageId,
             (message) => ({
               content: `${message.content}\n[Stream Error: ${errorText}]`,
               status: "done",
@@ -424,7 +478,7 @@ export const useChatStore = create<ChatState>()(
                 }
 
                 if (data.event === "stream_end") {
-                  messageStore.updateMessage(sessionId, agentMessageId, {
+                  messageStore.updateMessage(sessionId, activeAgentMessageId, {
                     status: "done",
                   });
                   finalize("resolve");
@@ -583,7 +637,7 @@ export const useChatStore = create<ChatState>()(
                   }
                 },
                 onDone: () => {
-                  messageStore.updateMessage(sessionId, agentMessageId, {
+                  messageStore.updateMessage(sessionId, activeAgentMessageId, {
                     status: "done",
                   });
                   set((state) => {
