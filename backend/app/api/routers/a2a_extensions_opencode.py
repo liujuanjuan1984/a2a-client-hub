@@ -25,6 +25,7 @@ from app.services.a2a_runtime import (
     A2ARuntimeValidationError,
     a2a_runtime_builder,
 )
+from app.utils.logging_redaction import redact_url_for_logging
 
 router = StrictAPIRouter(prefix="/me/a2a/agents", tags=["a2a-extensions"])
 logger = get_logger(__name__)
@@ -90,7 +91,7 @@ async def opencode_list_sessions(
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
-            "agent_url": runtime.resolved.url,
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
             "page": page,
             "size": size,
             "query_meta": _summarize_query_object(query_obj),
@@ -155,7 +156,7 @@ async def opencode_list_sessions_post(
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
-            "agent_url": runtime.resolved.url,
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
             "page": payload.page,
             "size": payload.size,
             "query_meta": _summarize_query_object(payload.query),
@@ -228,7 +229,7 @@ async def opencode_list_session_messages(
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
-            "agent_url": runtime.resolved.url,
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
             "session_id": session_id,
             "page": page,
             "size": size,
@@ -296,7 +297,7 @@ async def opencode_list_session_messages_post(
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
-            "agent_url": runtime.resolved.url,
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
             "session_id": session_id,
             "page": payload.page,
             "size": payload.size,

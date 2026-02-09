@@ -14,6 +14,7 @@ from uuid import uuid4
 import httpx
 
 from app.core.logging import get_logger
+from app.utils.logging_redaction import redact_url_for_logging
 
 logger = get_logger(__name__)
 
@@ -60,7 +61,7 @@ class JsonRpcClient:
             logger.warning(
                 "JSON-RPC transport error",
                 extra={
-                    "jsonrpc_url": url,
+                    "jsonrpc_url": redact_url_for_logging(url),
                     "method": method,
                     "elapsed_seconds": round(elapsed, 3),
                     "error_type": type(exc).__name__,
@@ -72,7 +73,7 @@ class JsonRpcClient:
         logger.info(
             "JSON-RPC call finished",
             extra={
-                "jsonrpc_url": url,
+                "jsonrpc_url": redact_url_for_logging(url),
                 "method": method,
                 "status_code": resp.status_code,
                 "elapsed_seconds": round(elapsed, 3),

@@ -62,6 +62,7 @@ from app.services.a2a_runtime import (
 )
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.json_encoder import json_dumps
+from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
     validate_outbound_http_url,
@@ -192,7 +193,7 @@ async def create_agent(
         extra={
             "user_id": str(current_user.id),
             "agent_name": payload.name,
-            "card_url": normalized_card_url,
+            "card_url": redact_url_for_logging(normalized_card_url),
             "auth_type": payload.auth_type,
             "enabled": payload.enabled,
             "tags_count": len(payload.tags or []),
@@ -235,7 +236,7 @@ async def update_agent(
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
             "agent_name": payload.name,
-            "card_url": normalized_card_url,
+            "card_url": redact_url_for_logging(normalized_card_url),
             "auth_type": payload.auth_type,
             "enabled": payload.enabled,
             "tags_count": len(payload.tags) if payload.tags is not None else None,
@@ -322,7 +323,7 @@ async def validate_agent_card(
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
-            "agent_url": runtime.resolved.url,
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
         },
     )
     try:
@@ -370,7 +371,7 @@ async def proxy_agent_card(
         "A2A agent card proxy requested",
         extra={
             "user_id": str(current_user.id),
-            "card_url": card_url,
+            "card_url": redact_url_for_logging(card_url),
             "auth_type": payload.auth_type,
             "extra_header_keys": sorted((payload.extra_headers or {}).keys()),
         },
@@ -480,7 +481,7 @@ async def invoke_agent_ws(
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
-                "agent_url": runtime.resolved.url,
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "query_preview": payload.query[:50],
             },
         )
@@ -554,7 +555,7 @@ async def invoke_agent(
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
-            "agent_url": runtime.resolved.url,
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
             "stream": stream,
             "query_preview": payload.query[:50],
         },

@@ -33,6 +33,7 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
     A2AOutboundNotAllowedError,
 )
+from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
     validate_outbound_http_url,
@@ -109,7 +110,9 @@ class A2AClient:
         self._client_lock = asyncio.Lock()
         self._clients: Dict[bool, ClientCacheEntry] = {}
 
-        logger.debug("A2A client wrapper created for %s", self.agent_url)
+        logger.debug(
+            "A2A client wrapper created for %s", redact_url_for_logging(self.agent_url)
+        )
 
     async def call_agent(
         self,
@@ -122,7 +125,7 @@ class A2AClient:
 
         logger.info(
             "Calling A2A agent %s (blocking)",
-            self.agent_url,
+            redact_url_for_logging(self.agent_url),
             extra={
                 "query_meta": summarize_query(query),
             },
@@ -141,7 +144,10 @@ class A2AClient:
                 final_payload = payload
 
             if final_payload is None:
-                logger.error("No response returned from %s", self.agent_url)
+                logger.error(
+                    "No response returned from %s",
+                    redact_url_for_logging(self.agent_url),
+                )
                 return {
                     "success": False,
                     "agent_url": self.agent_url,
@@ -168,12 +174,15 @@ class A2AClient:
                 logger.warning(
                     "Detected unrecoverable HTTP error, scheduling client reset",
                     extra={
-                        "agent_url": self.agent_url,
+                        "agent_url": redact_url_for_logging(self.agent_url),
                         "error_type": type(http_error).__name__,
                     },
                 )
                 raise A2AClientResetRequiredError(str(http_error)) from exc
-            logger.exception("Blocking invocation to %s failed", self.agent_url)
+            logger.exception(
+                "Blocking invocation to %s failed",
+                redact_url_for_logging(self.agent_url),
+            )
             return {
                 "success": False,
                 "agent_url": self.agent_url,
@@ -191,7 +200,7 @@ class A2AClient:
 
         logger.info(
             "Calling A2A agent %s (streaming)",
-            self.agent_url,
+            redact_url_for_logging(self.agent_url),
             extra={
                 "query_meta": summarize_query(query),
             },
@@ -226,9 +235,10 @@ class A2AClient:
         logger.info(
             "Requesting A2A agent card",
             extra={
-                "agent_url": self.agent_url,
-                "resolver_base": resolver.base_url,
-                "card_path": resolver.agent_card_path,
+                "agent_url": redact_url_for_logging(self.agent_url),
+                "resolver_base": redact_url_for_logging(resolver.base_url),
+                # Drop query/fragment to avoid leaking accidental tokens.
+                "card_path": resolver.agent_card_path.split("?", 1)[0].split("#", 1)[0],
             },
         )
         fetch_timeout = self._card_fetch_timeout
@@ -243,21 +253,23 @@ class A2AClient:
             logger.warning(
                 "Timed out requesting A2A agent card",
                 extra={
-                    "agent_url": self.agent_url,
+                    "agent_url": redact_url_for_logging(self.agent_url),
                     "timeout_seconds": fetch_timeout,
                 },
             )
             raise A2AAgentUnavailableError(
-                f"A2A agent '{self.agent_url}' timed out while fetching metadata"
+                f"A2A agent '{redact_url_for_logging(self.agent_url)}' timed out while "
+                "fetching metadata"
             ) from exc
         except Exception as exc:
             logger.warning(
                 "Failed to retrieve A2A agent card",
                 exc_info=True,
-                extra={"agent_url": self.agent_url},
+                extra={"agent_url": redact_url_for_logging(self.agent_url)},
             )
             raise A2AAgentUnavailableError(
-                f"Failed to fetch metadata for A2A agent '{self.agent_url}'"
+                f"Failed to fetch metadata for A2A agent "
+                f"'{redact_url_for_logging(self.agent_url)}'"
             ) from exc
 
         # Validate downstream card-declared endpoints before caching. This prevents the
@@ -283,7 +295,7 @@ class A2AClient:
         self._agent_card = card
         logger.info(
             "Fetched agent card for %s (name=%s)",
-            self.agent_url,
+            redact_url_for_logging(self.agent_url),
             getattr(card, "name", "unknown"),
         )
         return card
@@ -311,7 +323,7 @@ class A2AClient:
                 logger.debug(
                     "Reusing cached transport",
                     extra={
-                        "agent_url": self.agent_url,
+                        "agent_url": redact_url_for_logging(self.agent_url),
                         "streaming": streaming,
                     },
                 )
@@ -337,7 +349,7 @@ class A2AClient:
             logger.info(
                 "Created new transport client",
                 extra={
-                    "agent_url": self.agent_url,
+                    "agent_url": redact_url_for_logging(self.agent_url),
                     "streaming": streaming,
                 },
             )
@@ -347,7 +359,7 @@ class A2AClient:
         if self._httpx_client and not self._httpx_client.is_closed:
             logger.debug(
                 "Reusing shared httpx client",
-                extra={"agent_url": self.agent_url},
+                extra={"agent_url": redact_url_for_logging(self.agent_url)},
             )
             return self._httpx_client
 
@@ -357,7 +369,7 @@ class A2AClient:
         logger.info(
             "Instantiated new httpx client for A2A agent",
             extra={
-                "agent_url": self.agent_url,
+                "agent_url": redact_url_for_logging(self.agent_url),
                 "timeout": getattr(self._timeout, "read", None),
                 "default_headers": list(self._default_headers.keys()),
             },
@@ -396,9 +408,9 @@ class A2AClient:
             logger.debug(
                 "Detected pre-resolved agent JSON endpoint",
                 extra={
-                    "agent_url": self.agent_url,
-                    "base_url": base_url,
-                    "original_path": path,
+                    "agent_url": redact_url_for_logging(self.agent_url),
+                    "base_url": redact_url_for_logging(base_url),
+                    "original_path": "<redacted>",
                 },
             )
 
@@ -442,7 +454,7 @@ class A2AClient:
         logger.debug(
             "Resolved A2A message role",
             extra={
-                "agent_url": self.agent_url,
+                "agent_url": redact_url_for_logging(self.agent_url),
                 "role_value": getattr(raw_role, "value", str(raw_role)),
                 "role_repr": repr(raw_role),
                 "message_id": message_id,

@@ -23,6 +23,7 @@ from app.services.hub_a2a_runtime import (
     HubA2ARuntimeValidationError,
     hub_a2a_runtime_builder,
 )
+from app.utils.logging_redaction import redact_url_for_logging
 
 router = StrictAPIRouter(prefix="/a2a/agents", tags=["a2a-catalog"])
 logger = get_logger(__name__)
@@ -96,7 +97,7 @@ async def invoke_hub_agent(
         extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
-            "agent_url": runtime.resolved.url,
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
             "query_preview": payload.query[:50],
         },
     )

@@ -9,6 +9,7 @@ from app.core.config import settings as app_settings
 from app.core.logging import get_logger
 from app.integrations.a2a_client.config import A2ASettings, load_settings
 from app.integrations.a2a_client.gateway import A2AGateway
+from app.utils.logging_redaction import redact_url_for_logging
 
 logger = get_logger(__name__)
 
@@ -47,7 +48,7 @@ class A2AService:
             "Invoking A2A agent via service",
             extra={
                 "agent_name": resolved.name,
-                "agent_url": resolved.url,
+                "agent_url": redact_url_for_logging(resolved.url),
             },
         )
         return await self.gateway.invoke(

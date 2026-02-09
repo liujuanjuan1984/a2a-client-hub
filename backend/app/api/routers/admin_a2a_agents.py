@@ -30,6 +30,7 @@ from app.services.hub_a2a_agents import (
     HubA2AUserNotFoundError,
     hub_a2a_agent_service,
 )
+from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
     validate_outbound_http_url,
@@ -126,7 +127,7 @@ async def create_hub_agent_admin(
         extra={
             "admin_user_id": str(current_admin.id),
             "agent_name": payload.name,
-            "card_url": normalized_card_url,
+            "card_url": redact_url_for_logging(normalized_card_url),
             "availability_policy": payload.availability_policy,
             "auth_type": payload.auth_type,
             "enabled": payload.enabled,
@@ -187,7 +188,7 @@ async def update_hub_agent_admin(
             "admin_user_id": str(current_admin.id),
             "agent_id": str(agent_id),
             "agent_name": payload.name,
-            "card_url": normalized_card_url,
+            "card_url": redact_url_for_logging(normalized_card_url),
             "availability_policy": payload.availability_policy,
             "auth_type": payload.auth_type,
             "enabled": payload.enabled,
