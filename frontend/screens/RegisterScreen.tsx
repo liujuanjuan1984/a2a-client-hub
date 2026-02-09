@@ -62,12 +62,16 @@ export function RegisterScreen() {
   const emailLocked = inviteEnabled && Boolean(inviteLookupQuery.data);
   const inviteInvalid = inviteEnabled && inviteLookupQuery.isError;
 
+  // Hard gate registration: only invitation links are supported.
+  const invitationLinkRequired = inviteFromUrl == null;
+
   useEffect(() => {
     if (!inviteEmail) return;
     setEmail(inviteEmail);
   }, [inviteEmail]);
 
   const canSubmit = useMemo(() => {
+    if (invitationLinkRequired) return false;
     if (!email.trim() || !name.trim() || !password) return false;
     if (password.length < 8) return false;
     if (inviteInvalid) return false;
@@ -113,6 +117,29 @@ export function RegisterScreen() {
     return <FullscreenLoader message="Verifying invitation..." />;
   }
 
+  if (invitationLinkRequired) {
+    return (
+      <View className="flex-1 bg-background px-6 pt-20">
+        <Text className="text-3xl font-semibold text-white">
+          Invitation required
+        </Text>
+        <Text className="mt-2 text-base text-muted">
+          Registration is invitation-only. Please open the invitation link you
+          received.
+        </Text>
+        <Button
+          className="mt-8"
+          label="Back to login"
+          variant="secondary"
+          onPress={() => {
+            blurActiveElement();
+            router.replace("/login");
+          }}
+        />
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1 bg-background px-6 pt-20">
       <Text className="text-3xl font-semibold text-white">Create account</Text>
@@ -154,11 +181,10 @@ export function RegisterScreen() {
       <View className="mt-10 gap-4">
         <Input
           label="Invitation code"
-          placeholder="(optional)"
           autoCapitalize="none"
           value={inviteCode}
           onChangeText={setInviteCode}
-          editable={inviteFromUrl == null}
+          editable={false}
         />
 
         <Input
