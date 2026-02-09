@@ -112,7 +112,7 @@ export function SessionsScreen() {
     <View className="flex-1 bg-background px-6 pt-10">
       <PageHeader
         title="Sessions"
-        subtitle="Browse OpenCode sessions across all agents."
+        subtitle="Browse sessions across all agents."
       />
 
       <ScrollView
