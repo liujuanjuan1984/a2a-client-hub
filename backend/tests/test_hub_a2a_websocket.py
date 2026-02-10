@@ -49,7 +49,7 @@ def test_invoke_hub_agent_ws_invalid_token(monkeypatch):
             with client.websocket_connect(
                 f"{settings.api_v1_prefix}/a2a/agents/{uuid4()}/invoke/ws",
                 headers={"origin": "http://localhost:5173"},
-                subprotocols=["invalid-ticket-length-48-chars-minimum-1234567"],
+                subprotocols=["a" * settings.ws_ticket_length],
             ):
                 pass
     finally:

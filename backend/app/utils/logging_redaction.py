@@ -12,6 +12,7 @@ _SENSITIVE_KEYWORDS = (
     "token",
     "ticket",
     "secret",
+    "websocket-protocol",
     "api-key",
     "apikey",
     "password",

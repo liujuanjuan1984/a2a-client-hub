@@ -81,6 +81,7 @@ async def list_hub_agents_for_user(
 @router.post(
     "/{agent_id}/card:validate",
     response_model=A2AAgentCardValidationResponse,
+    response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
 )
 async def validate_hub_agent_card(

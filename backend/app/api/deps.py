@@ -4,6 +4,7 @@ This module contains dependency injection functions for FastAPI routes.
 Supports JWT-based user authentication.
 """
 
+import re
 from typing import AsyncGenerator
 from uuid import UUID
 
@@ -21,6 +22,8 @@ from app.services.ws_ticket_service import WsTicketError, ws_ticket_service
 
 # Security scheme for OpenAPI documentation
 security = HTTPBearer()
+
+_WS_TICKET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
@@ -130,10 +133,11 @@ async def get_ws_ticket_user(
     ticket = None
     subprotocols = websocket.headers.get("sec-websocket-protocol")
     if subprotocols:
+        expected_len = settings.ws_ticket_length
         for proto in subprotocols.split(","):
             candidate = proto.strip()
-            # tickets are generated with urlsafe_token (base64-ish) and length >= 16
-            if len(candidate) >= 16:
+            # Tickets are generated with a fixed length and base64url-ish charset.
+            if len(candidate) == expected_len and _WS_TICKET_RE.match(candidate):
                 ticket = candidate
                 break
 
