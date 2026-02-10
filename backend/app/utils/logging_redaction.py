@@ -6,7 +6,6 @@ import hashlib
 from typing import Mapping
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
-
 _SENSITIVE_KEYWORDS = (
     "authorization",
     "cookie",

@@ -7,7 +7,7 @@ particularly useful for debugging agent chat interactions.
 
 import time
 import uuid
-from typing import Callable, Mapping
+from typing import Callable
 
 from fastapi import Request, Response
 from starlette.background import BackgroundTask

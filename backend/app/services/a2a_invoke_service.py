@@ -13,7 +13,6 @@ from a2a.types import Message
 from fastapi import WebSocket
 from fastapi.responses import StreamingResponse
 
-from app.core.config import settings
 from app.utils.json_encoder import json_dumps
 
 StreamEvent = ClientEvent | Message
@@ -31,6 +30,7 @@ class A2AInvokeService:
         event: StreamEvent, *, validate_message: ValidateMessageFn
     ) -> dict[str, Any]:
         from app.core.config import settings
+
         if isinstance(event, tuple):
             resolved = event[1] if event[1] else event[0]
         else:

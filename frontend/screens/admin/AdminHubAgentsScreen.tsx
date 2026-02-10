@@ -15,9 +15,7 @@ import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
-import {
-  listHubAgentsAdmin,
-} from "@/lib/api/hubA2aAgentsAdmin";
+import { listHubAgentsAdmin } from "@/lib/api/hubA2aAgentsAdmin";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
 
@@ -41,12 +39,7 @@ export function AdminHubAgentsScreen() {
   const router = useRouter();
   const { isReady, isAdmin } = useRequireAdmin();
 
-  const {
-    data,
-    isLoading,
-    isRefetching,
-    refetch,
-  } = useQuery({
+  const { data, isLoading, isRefetching, refetch } = useQuery({
     queryKey: queryKeys.admin.hubAgents(),
     queryFn: () => listHubAgentsAdmin(1, 200),
     enabled: isReady && isAdmin,

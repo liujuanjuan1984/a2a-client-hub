@@ -7,7 +7,7 @@ Supports JWT-based user authentication.
 from typing import AsyncGenerator
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Query, WebSocket, WebSocketException, status
+from fastapi import Depends, HTTPException, WebSocket, WebSocketException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -21,7 +21,10 @@ from app.integrations.a2a_client.errors import (
     A2AOutboundNotAllowedError,
 )
 from app.integrations.a2a_client.metrics import a2a_metrics
-from app.utils.logging_redaction import redact_headers_for_logging, redact_url_for_logging
+from app.utils.logging_redaction import (
+    redact_headers_for_logging,
+    redact_url_for_logging,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from a2a.types import AgentCard
@@ -29,7 +32,6 @@ if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from .service import ResolvedAgent
 
 logger = get_logger(__name__)
-
 
 
 @dataclass
@@ -430,8 +432,7 @@ class A2AGateway:
                     "Reusing cached A2A client",
                     extra={
                         "agent_name": resolved.name,
-                        "headers": redact_headers_for_logging
-(resolved.headers),
+                        "headers": redact_headers_for_logging(resolved.headers),
                     },
                 )
                 return cached.client
@@ -453,8 +454,7 @@ class A2AGateway:
                 "Created new A2A client",
                 extra={
                     "agent_name": resolved.name,
-                    "headers": redact_headers_for_logging
-(resolved.headers),
+                    "headers": redact_headers_for_logging(resolved.headers),
                 },
             )
             return client
@@ -498,8 +498,7 @@ class A2AGateway:
                 "Invalidated A2A client",
                 extra={
                     "agent_name": resolved.name,
-                    "headers": redact_headers_for_logging
-(resolved.headers),
+                    "headers": redact_headers_for_logging(resolved.headers),
                 },
             )
 
