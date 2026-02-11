@@ -258,7 +258,7 @@ export const useAgentStore = create<AgentState>()(
         set({ agents: [], activeAgentId: null, hasLoaded: false }),
     }),
     {
-      name: "a2a-universal-client.agents",
+      name: "a2a-client-hub.agents",
       storage: createPersistStorage(),
       partialize: (state) => ({
         agents: state.agents

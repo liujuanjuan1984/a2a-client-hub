@@ -751,7 +751,7 @@ export const useChatStore = create<ChatState>()(
       generateSessionId: () => generateId("sess"),
     }),
     {
-      name: "a2a-universal-client.chat",
+      name: "a2a-client-hub.chat",
       storage: createPersistStorage(),
       partialize: (state) => ({
         sessions: state.sessions,

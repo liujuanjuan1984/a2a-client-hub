@@ -1,5 +1,5 @@
 {
-  "name": "a2a-universal-client",
+  "name": "a2a-client-hub",
   "version": "0.1.0",
   "private": true,
   "main": "expo-router/entry",

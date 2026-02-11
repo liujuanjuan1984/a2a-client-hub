@@ -96,7 +96,7 @@ export const useMessageStore = create<MessageState>()(
       },
     }),
     {
-      name: "a2a-universal-client.messages",
+      name: "a2a-client-hub.messages",
       storage: createPersistStorage(),
     },
   ),
