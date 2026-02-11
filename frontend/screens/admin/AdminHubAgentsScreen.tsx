@@ -39,13 +39,15 @@ export function AdminHubAgentsScreen() {
   const router = useRouter();
   const { isReady, isAdmin } = useRequireAdmin();
 
-  const { data, isLoading, isRefetching, refetch } = useQuery({
+  const { data, isError, error, isLoading, isRefetching, refetch } = useQuery({
     queryKey: queryKeys.admin.hubAgents(),
     queryFn: () => listHubAgentsAdmin(1, 200),
     enabled: isReady && isAdmin,
   });
 
   const items = data?.items ?? [];
+  const errorMessage =
+    error instanceof Error ? error.message : "Could not load shared agents.";
 
   const enabledCount = useMemo(
     () => items.filter((item) => item.enabled).length,
@@ -120,7 +122,24 @@ export function AdminHubAgentsScreen() {
           </Pressable>
         </View>
 
-        {items.length === 0 ? (
+        {isError ? (
+          <View className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
+            <Text className="text-base font-semibold text-red-200">
+              Load shared agents failed
+            </Text>
+            <Text className="mt-2 text-sm text-red-100/90">{errorMessage}</Text>
+            <Pressable
+              className="mt-4 self-start rounded-lg border border-red-300/40 px-3 py-2 active:bg-red-500/20"
+              onPress={() => refetch()}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading shared agents"
+            >
+              <Text className="text-xs font-semibold text-red-100">Retry</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {!isError && items.length === 0 ? (
           <View className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
             <Text className="text-base font-semibold text-white">
               No shared agents

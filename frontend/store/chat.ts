@@ -75,9 +75,10 @@ type WsConnection = {
   __cancelled?: boolean;
 };
 
+type WsCtor = new (url: string, protocols?: string | string[]) => WsConnection;
+
 const getWebSocketCtor = () =>
-  (globalThis as unknown as { WebSocket?: new (url: string) => WsConnection })
-    .WebSocket;
+  (globalThis as unknown as { WebSocket?: WsCtor }).WebSocket;
 
 const createSession = (agentId: string): AgentSession => ({
   agentId,
@@ -146,14 +147,9 @@ const buildInvokeUrl = (
   }`;
 };
 
-const buildInvokeWsUrl = (
-  agentId: string,
-  ticket: string,
-  source: AgentSource,
-) => {
+const buildInvokeWsUrl = (agentId: string, source: AgentSource) => {
   const wsBase = getAbsoluteWsBaseUrl();
-  const params = new URLSearchParams({ ticket });
-  return `${wsBase}/${scopeForSource(source)}/${encodeURIComponent(agentId)}/invoke/ws?${params.toString()}`;
+  return `${wsBase}/${scopeForSource(source)}/${encodeURIComponent(agentId)}/invoke/ws`;
 };
 
 const resolveAgentSource = (agentId: string): AgentSource => {
@@ -384,7 +380,7 @@ export const useChatStore = create<ChatState>()(
               agentSource === "shared"
                 ? await getHubInvokeWsTicket(agentId)
                 : await getInvokeWsTicket(agentId);
-            const wsUrl = buildInvokeWsUrl(agentId, ticket.token, agentSource);
+            const wsUrl = buildInvokeWsUrl(agentId, agentSource);
             const WebSocketCtor = getWebSocketCtor();
             if (!WebSocketCtor) {
               throw new Error("WebSocket is not available");
@@ -397,7 +393,8 @@ export const useChatStore = create<ChatState>()(
               let connectTimer: ReturnType<typeof setTimeout> | null = null;
               let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
-              const ws = new WebSocketCtor(wsUrl);
+              // Use Sec-WebSocket-Protocol to avoid exposing ticket in URL.
+              const ws = new WebSocketCtor(wsUrl, [ticket.token]);
               set((state) => ({
                 wsConnections: {
                   ...state.wsConnections,
