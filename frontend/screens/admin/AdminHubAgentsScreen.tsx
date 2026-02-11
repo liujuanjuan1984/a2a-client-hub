@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { IconButton } from "@/components/ui/IconButton";
@@ -62,7 +63,7 @@ export function AdminHubAgentsScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-10">
+    <ScreenContainer>
       <PageHeader
         title="Shared A2A Agents"
         subtitle="Admin-managed global service directory."
@@ -96,7 +97,7 @@ export function AdminHubAgentsScreen() {
       />
 
       <ScrollView
-        className="mt-6"
+        className="mt-2"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
@@ -206,6 +207,6 @@ export function AdminHubAgentsScreen() {
           ))
         )}
       </ScrollView>
-    </View>
+    </ScreenContainer>
   );
 }

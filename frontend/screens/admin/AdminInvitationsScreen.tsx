@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { Input } from "@/components/ui/Input";
@@ -142,7 +143,7 @@ export function AdminInvitationsScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-10">
+    <ScreenContainer>
       <PageHeader
         title="Invitations"
         subtitle="Create and manage invitation codes."
@@ -165,7 +166,7 @@ export function AdminInvitationsScreen() {
       />
 
       <ScrollView
-        className="mt-6"
+        className="mt-2"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
@@ -314,6 +315,6 @@ export function AdminInvitationsScreen() {
           ))
         )}
       </ScrollView>
-    </View>
+    </ScreenContainer>
   );
 }

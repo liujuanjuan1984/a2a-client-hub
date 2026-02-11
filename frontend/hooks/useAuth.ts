@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { apiRequest, ApiRequestError } from "@/lib/api/client";
 import {
@@ -15,12 +15,29 @@ export const useMe = () => {
   const token = useSessionStore((state) => state.token);
   const setUserProfile = useSessionStore((state) => state.setUserProfile);
   const clearSession = useSessionStore((state) => state.clearSession);
+  const previousTokenRef = useRef<string | null>(null);
   const query = useQuery({
-    queryKey: queryKeys.me(token),
+    queryKey: queryKeys.me(),
     queryFn: () => apiRequest<UserProfile>("/auth/me"),
     enabled: Boolean(token),
     retry: 0,
   });
+  const { refetch } = query;
+
+  useEffect(() => {
+    const previousToken = previousTokenRef.current;
+    previousTokenRef.current = token ?? null;
+
+    if (!token) {
+      return;
+    }
+    if (!previousToken || previousToken === token) {
+      return;
+    }
+    refetch().catch(() => {
+      // Errors are handled by query state and downstream effects.
+    });
+  }, [token, refetch]);
 
   useEffect(() => {
     if (query.data) {

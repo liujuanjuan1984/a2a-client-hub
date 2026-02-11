@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -75,7 +76,7 @@ export function AgentListScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background px-6 pt-10">
+    <ScreenContainer>
       <PageHeader
         title="Agents"
         subtitle="Manage your connected A2A services."
@@ -107,7 +108,7 @@ export function AgentListScreen() {
       />
 
       <ScrollView
-        className="mt-6"
+        className="mt-2"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
@@ -261,6 +262,6 @@ export function AgentListScreen() {
           })
         )}
       </ScrollView>
-    </View>
+    </ScreenContainer>
   );
 }

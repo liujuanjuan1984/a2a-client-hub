@@ -11,9 +11,13 @@ export function PageHeader({ title, subtitle, rightElement }: PageHeaderProps) {
   return (
     <View className="flex-row items-start justify-between">
       <View className="flex-1 pr-4">
-        <Text className="text-3xl font-semibold text-white">{title}</Text>
+        <Text className="text-2xl font-semibold leading-tight text-white">
+          {title}
+        </Text>
         {subtitle ? (
-          <Text className="mt-2 text-base text-muted">{subtitle}</Text>
+          <Text className="mt-0.5 text-sm leading-5 text-muted">
+            {subtitle}
+          </Text>
         ) : null}
       </View>
       {rightElement ? <View>{rightElement}</View> : null}

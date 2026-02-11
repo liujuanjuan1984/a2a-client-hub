@@ -12,6 +12,12 @@ import { useSessionStore } from "@/store/session";
 
 export default function RootLayout() {
   const hydrated = useSessionStore((state) => state.hydrated);
+  const webHead =
+    Platform.OS === "web" ? (
+      <Head>
+        <title>A2A Universal Client</title>
+      </Head>
+    ) : null;
 
   useEffect(() => {
     if (Platform.OS !== "web") return;
@@ -25,28 +31,32 @@ export default function RootLayout() {
     const root = document.documentElement;
     root.classList.add("ios-web");
 
-    const setAppHeight = () => {
-      const height = window.visualViewport?.height ?? window.innerHeight;
-      root.style.setProperty("--app-height", `${height}px`);
+    const preventGestureZoom = (event: Event) => {
+      event.preventDefault();
     };
 
-    setAppHeight();
-    window.visualViewport?.addEventListener("resize", setAppHeight);
-    window.addEventListener("orientationchange", setAppHeight);
-    window.addEventListener("resize", setAppHeight);
+    document.addEventListener("gesturestart", preventGestureZoom, {
+      passive: false,
+    });
+    document.addEventListener("gesturechange", preventGestureZoom, {
+      passive: false,
+    });
+    document.addEventListener("gestureend", preventGestureZoom, {
+      passive: false,
+    });
 
     return () => {
-      window.visualViewport?.removeEventListener("resize", setAppHeight);
-      window.removeEventListener("orientationchange", setAppHeight);
-      window.removeEventListener("resize", setAppHeight);
+      document.removeEventListener("gesturestart", preventGestureZoom);
+      document.removeEventListener("gesturechange", preventGestureZoom);
+      document.removeEventListener("gestureend", preventGestureZoom);
       root.classList.remove("ios-web");
-      root.style.removeProperty("--app-height");
     };
   }, []);
 
   if (!hydrated) {
     return (
       <AppProviders>
+        {webHead}
         <StatusBar style="light" />
         <FullscreenLoader message="Preparing session..." />
       </AppProviders>
@@ -55,15 +65,7 @@ export default function RootLayout() {
 
   return (
     <AppProviders>
-      {Platform.OS === "web" && (
-        <Head>
-          <title>A2A Universal Client</title>
-          <meta
-            name="viewport"
-            content="width=device-width, initial-scale=1, viewport-fit=cover"
-          />
-        </Head>
-      )}
+      {webHead}
       <StatusBar style="light" />
       <Stack
         screenOptions={{

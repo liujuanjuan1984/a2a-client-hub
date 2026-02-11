@@ -1,7 +1,9 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
+import { ScreenScrollView } from "@/components/layout/ScreenScrollView";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
@@ -214,7 +216,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     extraHeaders,
   ]);
 
-  usePreventRemoveWhenDirty({ dirty });
+  const { allowNextNavigation } = usePreventRemoveWhenDirty({ dirty });
 
   const handleCancel = useCallback(() => {
     blurActiveElement();
@@ -313,6 +315,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       });
       setSaveStatus("success");
       toast.success("Success", "Agent saved successfully.");
+      allowNextNavigation();
       goBackOrHome();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
@@ -350,7 +353,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
 
   if (isSharedAgent) {
     return (
-      <View className="flex-1 bg-background px-6 pt-10">
+      <ScreenContainer>
         <PageHeader
           title="Agent"
           subtitle="This agent is provided by an admin and cannot be edited here."
@@ -380,12 +383,12 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
             />
           </View>
         </View>
-      </View>
+      </ScreenContainer>
     );
   }
 
   return (
-    <ScrollView className="flex-1 bg-background px-6 pt-10">
+    <ScreenScrollView>
       <PageHeader
         title={agentId ? "Edit Agent" : "New Agent"}
         subtitle="Provide agent card details and credentials."
@@ -400,7 +403,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
         }
       />
 
-      <View className="mt-8 gap-4">
+      <View className="mt-3 gap-4">
         <Input
           label="Name"
           placeholder="Agent name"
@@ -541,6 +544,6 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       ) : null}
 
       <View className="h-12" />
-    </ScrollView>
+    </ScreenScrollView>
   );
 }

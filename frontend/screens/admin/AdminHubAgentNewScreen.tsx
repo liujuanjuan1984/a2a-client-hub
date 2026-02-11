@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, Switch, Text, View } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { Input } from "@/components/ui/Input";
@@ -76,7 +77,7 @@ export function AdminHubAgentNewScreen() {
     );
   }, [name, cardUrl, extraHeaders, tagsText, token]);
 
-  usePreventRemoveWhenDirty({ dirty });
+  const { allowNextNavigation } = usePreventRemoveWhenDirty({ dirty });
 
   const setHeaderRow = useCallback(
     (id: string, field: "key" | "value", value: string) => {
@@ -143,6 +144,7 @@ export function AdminHubAgentNewScreen() {
       const created = await createHubAgentAdmin(buildPayload());
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.hubAgents() });
       toast.success("Shared agent created", created.name);
+      allowNextNavigation();
       router.replace(`/admin/hub-a2a/${created.id}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Create failed.";
@@ -163,6 +165,7 @@ export function AdminHubAgentNewScreen() {
     saving,
     tagsText,
     token,
+    allowNextNavigation,
   ]);
 
   if (!isReady) {
@@ -173,7 +176,7 @@ export function AdminHubAgentNewScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-10">
+    <ScreenContainer>
       <PageHeader
         title="New shared agent"
         subtitle="Create an admin-managed A2A service directory entry."
@@ -192,7 +195,7 @@ export function AdminHubAgentNewScreen() {
       />
 
       <ScrollView
-        className="mt-6"
+        className="mt-2"
         contentContainerStyle={{ paddingBottom: 32 }}
       >
         <View className="rounded-3xl border border-slate-800 bg-slate-900/30 p-5">
@@ -365,6 +368,6 @@ export function AdminHubAgentNewScreen() {
           />
         </View>
       </ScrollView>
-    </View>
+    </ScreenContainer>
   );
 }

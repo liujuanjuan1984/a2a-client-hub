@@ -24,12 +24,12 @@ body,
 
 .ios-web body {
   overscroll-behavior: none;
+  touch-action: pan-x pan-y;
 }
 
 .ios-web #root {
-  min-height: 100vh;
-  min-height: 100dvh;
-  height: var(--app-height, 100vh);
+  min-height: 100%;
+  height: 100%;
 }
 
 /* Prevent iOS auto-zoom on input focus */

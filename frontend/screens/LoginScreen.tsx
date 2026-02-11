@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Text, View } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useLogin } from "@/hooks/useAuth";
@@ -26,7 +27,7 @@ export function LoginScreen() {
         : null;
 
   return (
-    <View className="flex-1 bg-background px-6 pt-20">
+    <ScreenContainer topOffset={32}>
       <Text className="text-3xl font-semibold text-white">Welcome back</Text>
       <Text className="mt-2 text-base text-muted">
         Sign in to manage your A2A agents.
@@ -67,6 +68,6 @@ export function LoginScreen() {
           Registration is invitation-only. Use your invitation link to register.
         </Text>
       </View>
-    </View>
+    </ScreenContainer>
   );
 }

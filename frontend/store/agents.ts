@@ -101,6 +101,7 @@ export const useAgentStore = create<AgentState>()(
       activeAgentId: null,
       hasLoaded: false,
       loadAgents: async () => {
+        const previousAgents = get().agents;
         const results = await Promise.allSettled([
           listAgents(1, 200),
           listHubAgents(1, 200),
@@ -109,11 +110,11 @@ export const useAgentStore = create<AgentState>()(
         const personal =
           results[0].status === "fulfilled"
             ? results[0].value.items.map(toAgentConfig)
-            : [];
+            : previousAgents.filter((agent) => agent.source === "personal");
         const shared =
           results[1].status === "fulfilled"
             ? results[1].value.items.map(toSharedAgentConfig)
-            : [];
+            : previousAgents.filter((agent) => agent.source === "shared");
 
         const agents = [...personal, ...shared];
 
@@ -129,7 +130,7 @@ export const useAgentStore = create<AgentState>()(
           results[0].status === "rejected" &&
           results[1].status === "rejected"
         ) {
-          throw results[0].reason;
+          throw results[0].reason ?? results[1].reason;
         }
       },
       addAgent: async (payload) => {
