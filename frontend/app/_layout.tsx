@@ -29,7 +29,7 @@ export default function RootLayout() {
         <meta name="theme-color" content="#05070a" />
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1, viewport-fit=cover"
+          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
         />
       </Head>
     ) : null;
@@ -50,16 +50,31 @@ export default function RootLayout() {
       const height = window.visualViewport?.height ?? window.innerHeight;
       root.style.setProperty("--app-height", `${height}px`);
     };
+    const preventGestureZoom = (event: Event) => {
+      event.preventDefault();
+    };
 
     setAppHeight();
     window.visualViewport?.addEventListener("resize", setAppHeight);
     window.addEventListener("orientationchange", setAppHeight);
     window.addEventListener("resize", setAppHeight);
+    document.addEventListener("gesturestart", preventGestureZoom, {
+      passive: false,
+    });
+    document.addEventListener("gesturechange", preventGestureZoom, {
+      passive: false,
+    });
+    document.addEventListener("gestureend", preventGestureZoom, {
+      passive: false,
+    });
 
     return () => {
       window.visualViewport?.removeEventListener("resize", setAppHeight);
       window.removeEventListener("orientationchange", setAppHeight);
       window.removeEventListener("resize", setAppHeight);
+      document.removeEventListener("gesturestart", preventGestureZoom);
+      document.removeEventListener("gesturechange", preventGestureZoom);
+      document.removeEventListener("gestureend", preventGestureZoom);
       root.classList.remove("ios-web");
       root.style.removeProperty("--app-height");
     };

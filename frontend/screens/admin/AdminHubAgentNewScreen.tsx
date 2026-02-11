@@ -175,7 +175,7 @@ export function AdminHubAgentNewScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-10">
+    <View className="flex-1 bg-background px-6 pt-6">
       <PageHeader
         title="New shared agent"
         subtitle="Create an admin-managed A2A service directory entry."

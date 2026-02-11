@@ -344,7 +344,7 @@ export function AdminHubAgentDetailScreen({
 
   if (!agentId) {
     return (
-      <View className="flex-1 bg-background px-6 pt-10">
+      <View className="flex-1 bg-background px-6 pt-6">
         <PageHeader
           title="Shared agent"
           subtitle="Missing agent id."
@@ -363,7 +363,7 @@ export function AdminHubAgentDetailScreen({
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-10">
+    <View className="flex-1 bg-background px-6 pt-6">
       <PageHeader
         title="Shared agent"
         subtitle="Update directory entry, credentials, and allowlists."

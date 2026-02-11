@@ -106,7 +106,7 @@ export function ScheduledJobsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background px-6 pt-10">
+    <View className="flex-1 bg-background px-6 pt-6">
       <PageHeader
         title="Scheduled Jobs"
         subtitle="Configure recurring prompts and inspect execution history."

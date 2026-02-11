@@ -54,7 +54,7 @@ export function AdminHomeScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-10">
+    <View className="flex-1 bg-background px-6 pt-6">
       <PageHeader
         title="Admin"
         subtitle="System administration tools."

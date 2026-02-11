@@ -314,7 +314,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   };
 
   return (
-    <ScrollView className="flex-1 bg-background px-6 pt-10">
+    <ScrollView className="flex-1 bg-background px-6 pt-6">
       <PageHeader
         title={editing ? "Edit Job" : "New Job"}
         subtitle="Configure recurring prompts."

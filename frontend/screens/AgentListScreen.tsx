@@ -75,7 +75,7 @@ export function AgentListScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background px-6 pt-10">
+    <View className="flex-1 bg-background px-6 pt-6">
       <PageHeader
         title="Agents"
         subtitle="Manage your connected A2A services."

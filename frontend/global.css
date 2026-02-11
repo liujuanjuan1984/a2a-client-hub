@@ -24,6 +24,7 @@ body,
 
 .ios-web body {
   overscroll-behavior: none;
+  touch-action: pan-x pan-y;
 }
 
 .ios-web #root {
