@@ -35,6 +35,7 @@
     },
     "web": {
       "bundler": "metro",
+      "output": "static",
       "display": "standalone",
       "backgroundColor": "#05070a",
       "favicon": "./assets/pwa-icon.png",

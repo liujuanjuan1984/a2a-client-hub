@@ -12,6 +12,27 @@ import { useSessionStore } from "@/store/session";
 
 export default function RootLayout() {
   const hydrated = useSessionStore((state) => state.hydrated);
+  const webHead =
+    Platform.OS === "web" ? (
+      <Head>
+        <title>A2A Universal Client</title>
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
+        <meta
+          name="apple-mobile-web-app-title"
+          content="A2A Universal Client"
+        />
+        <meta name="theme-color" content="#05070a" />
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+      </Head>
+    ) : null;
 
   useEffect(() => {
     if (Platform.OS !== "web") return;
@@ -47,6 +68,7 @@ export default function RootLayout() {
   if (!hydrated) {
     return (
       <AppProviders>
+        {webHead}
         <StatusBar style="light" />
         <FullscreenLoader message="Preparing session..." />
       </AppProviders>
@@ -55,11 +77,7 @@ export default function RootLayout() {
 
   return (
     <AppProviders>
-      {Platform.OS === "web" && (
-        <Head>
-          <title>A2A Universal Client</title>
-        </Head>
-      )}
+      {webHead}
       <StatusBar style="light" />
       <Stack
         screenOptions={{
