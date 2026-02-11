@@ -1,8 +1,7 @@
-import { type PropsWithChildren, useMemo } from "react";
+import { type PropsWithChildren } from "react";
 import { type StyleProp, type ViewStyle, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { getWebSafeAreaInset } from "@/components/layout/safeAreaWeb";
+import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 
 type ScreenContainerProps = PropsWithChildren<{
   className?: string;
@@ -16,16 +15,12 @@ export function ScreenContainer({
   style,
   topOffset = 8,
 }: ScreenContainerProps) {
-  const insets = useSafeAreaInsets();
-  const safeTop = useMemo(
-    () => Math.max(insets.top, getWebSafeAreaInset("top")),
-    [insets.top],
-  );
+  const insets = useAppSafeArea();
 
   return (
     <View
       className={className}
-      style={[{ paddingTop: safeTop + topOffset }, style]}
+      style={[{ paddingTop: insets.top + topOffset }, style]}
     >
       {children}
     </View>

@@ -1,21 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import { useMemo } from "react";
-import { Platform } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { getWebSafeAreaInset } from "@/components/layout/safeAreaWeb";
+import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 
 export default function TabsLayout() {
-  const insets = useSafeAreaInsets();
-  const rawBottomInset =
-    Platform.OS === "web" ? getWebSafeAreaInset("bottom") : insets.bottom;
-  const tabBarBottomInset = Math.max(0, Math.min(rawBottomInset, 40));
+  const insets = useAppSafeArea({ maxBottomInset: 40 });
+  const tabBarBottomInset = Math.max(0, insets.bottom);
   const tabBarPaddingBottom = Math.max(tabBarBottomInset, 8);
-  const tabBarHeight = useMemo(
-    () => 52 + tabBarPaddingBottom,
-    [tabBarPaddingBottom],
-  );
+  const tabBarHeight = 52 + tabBarPaddingBottom;
 
   return (
     <Tabs

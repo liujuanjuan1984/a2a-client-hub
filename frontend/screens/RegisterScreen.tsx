@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { Input } from "@/components/ui/Input";
@@ -119,7 +120,7 @@ export function RegisterScreen() {
 
   if (invitationLinkRequired) {
     return (
-      <View className="flex-1 bg-background px-6 pt-20">
+      <ScreenContainer topOffset={32}>
         <Text className="text-3xl font-semibold text-white">
           Invitation required
         </Text>
@@ -136,12 +137,12 @@ export function RegisterScreen() {
             router.replace("/login");
           }}
         />
-      </View>
+      </ScreenContainer>
     );
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-20">
+    <ScreenContainer topOffset={32}>
       <Text className="text-3xl font-semibold text-white">Create account</Text>
       <Text className="mt-2 text-base text-muted">
         Register with your invitation link.
@@ -239,6 +240,6 @@ export function RegisterScreen() {
       >
         <Text className="text-sm text-primary">Back to login</Text>
       </Pressable>
-    </View>
+    </ScreenContainer>
   );
 }

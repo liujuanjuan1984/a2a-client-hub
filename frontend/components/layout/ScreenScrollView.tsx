@@ -1,13 +1,11 @@
-import { useMemo } from "react";
 import {
   ScrollView,
   type ScrollViewProps,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { getWebSafeAreaInset } from "@/components/layout/safeAreaWeb";
+import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 
 type ScreenScrollViewProps = Omit<ScrollViewProps, "style"> & {
   className?: string;
@@ -21,16 +19,12 @@ export function ScreenScrollView({
   topOffset = 8,
   ...props
 }: ScreenScrollViewProps) {
-  const insets = useSafeAreaInsets();
-  const safeTop = useMemo(
-    () => Math.max(insets.top, getWebSafeAreaInset("top")),
-    [insets.top],
-  );
+  const insets = useAppSafeArea();
 
   return (
     <ScrollView
       className={className}
-      style={[{ paddingTop: safeTop + topOffset }, style]}
+      style={[{ paddingTop: insets.top + topOffset }, style]}
       {...props}
     />
   );
