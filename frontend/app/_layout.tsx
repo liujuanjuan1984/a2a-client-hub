@@ -16,21 +16,6 @@ export default function RootLayout() {
     Platform.OS === "web" ? (
       <Head>
         <title>A2A Universal Client</title>
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta
-          name="apple-mobile-web-app-status-bar-style"
-          content="black-translucent"
-        />
-        <meta
-          name="apple-mobile-web-app-title"
-          content="A2A Universal Client"
-        />
-        <meta name="theme-color" content="#05070a" />
-        <meta
-          name="viewport"
-          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
-        />
       </Head>
     ) : null;
 
