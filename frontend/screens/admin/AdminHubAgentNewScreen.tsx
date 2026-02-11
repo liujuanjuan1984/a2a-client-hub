@@ -76,7 +76,7 @@ export function AdminHubAgentNewScreen() {
     );
   }, [name, cardUrl, extraHeaders, tagsText, token]);
 
-  usePreventRemoveWhenDirty({ dirty });
+  const { allowNextNavigation } = usePreventRemoveWhenDirty({ dirty });
 
   const setHeaderRow = useCallback(
     (id: string, field: "key" | "value", value: string) => {
@@ -143,6 +143,7 @@ export function AdminHubAgentNewScreen() {
       const created = await createHubAgentAdmin(buildPayload());
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.hubAgents() });
       toast.success("Shared agent created", created.name);
+      allowNextNavigation();
       router.replace(`/admin/hub-a2a/${created.id}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Create failed.";
@@ -163,6 +164,7 @@ export function AdminHubAgentNewScreen() {
     saving,
     tagsText,
     token,
+    allowNextNavigation,
   ]);
 
   if (!isReady) {

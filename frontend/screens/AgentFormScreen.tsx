@@ -214,7 +214,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     extraHeaders,
   ]);
 
-  usePreventRemoveWhenDirty({ dirty });
+  const { allowNextNavigation } = usePreventRemoveWhenDirty({ dirty });
 
   const handleCancel = useCallback(() => {
     blurActiveElement();
@@ -313,6 +313,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       });
       setSaveStatus("success");
       toast.success("Success", "Agent saved successfully.");
+      allowNextNavigation();
       goBackOrHome();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
