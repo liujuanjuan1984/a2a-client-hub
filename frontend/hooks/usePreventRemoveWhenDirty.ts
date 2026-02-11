@@ -14,6 +14,8 @@ type Options = {
   cancelLabel?: string;
 };
 
+const ALLOW_NEXT_NAVIGATION_WINDOW_MS = 2_000;
+
 /**
  * Prevents accidental dismissal (back gesture / hardware back / modal swipe-down)
  * when the current screen has unsaved changes.
@@ -29,10 +31,11 @@ export function usePreventRemoveWhenDirty({
   const [pendingAction, setPendingAction] = useState<NavigationAction | null>(
     null,
   );
-  const allowNextNavigationRef = useRef(false);
+  const allowNextNavigationUntilMsRef = useRef(0);
 
   const allowNextNavigation = useCallback(() => {
-    allowNextNavigationRef.current = true;
+    allowNextNavigationUntilMsRef.current =
+      Date.now() + ALLOW_NEXT_NAVIGATION_WINDOW_MS;
   }, []);
 
   useEffect(() => {
@@ -43,16 +46,18 @@ export function usePreventRemoveWhenDirty({
   useEffect(() => {
     if (!dirty) {
       setPendingAction(null);
-      allowNextNavigationRef.current = false;
+      allowNextNavigationUntilMsRef.current = 0;
     }
   }, [dirty]);
 
   usePreventRemove(dirty && pendingAction == null, ({ data }) => {
-    if (allowNextNavigationRef.current) {
-      allowNextNavigationRef.current = false;
+    const now = Date.now();
+    if (allowNextNavigationUntilMsRef.current > now) {
+      allowNextNavigationUntilMsRef.current = 0;
       setPendingAction(data.action);
       return;
     }
+    allowNextNavigationUntilMsRef.current = 0;
 
     confirmAction({
       title,
