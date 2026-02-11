@@ -58,10 +58,6 @@ export default function RootLayout() {
       {Platform.OS === "web" && (
         <Head>
           <title>A2A Universal Client</title>
-          <meta
-            name="viewport"
-            content="width=device-width, initial-scale=1, viewport-fit=cover"
-          />
         </Head>
       )}
       <StatusBar style="light" />
