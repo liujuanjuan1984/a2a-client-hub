@@ -117,15 +117,80 @@ class WsTicketService:
             raise WsTicketUsedError("Ticket has already been used")
         if ticket.expires_at <= now:
             raise WsTicketExpiredError("Ticket has expired")
-        if ticket.scope_id != scope_id:
-            raise WsTicketScopeError("Ticket scope mismatch")
+
+        # Strict scope matching (including type)
         expected_type = (scope_type or "").strip() or None
-        if ticket.scope_type is not None and ticket.scope_type != expected_type:
+        if ticket.scope_id != scope_id or ticket.scope_type != expected_type:
             raise WsTicketScopeError("Ticket scope mismatch")
 
         ticket.used_at = now
         await commit_safely(db)
         return ticket
+
+    async def cleanup_tickets(self, db: AsyncSession) -> int:
+        """
+        Delete expired or old used tickets to prevent table growth.
+
+        Conditions for deletion:
+        1. Expired tickets (regardless of used_at status)
+        2. Used tickets older than the retention window
+        3. Tickets with NULL scope_type (legacy/invalid)
+        """
+        from sqlalchemy import delete, or_
+
+        now = utc_now()
+        retention_days = max(settings.ws_ticket_retention_days, 0)
+        retention_cutoff = now - timedelta(days=retention_days)
+
+        stmt = delete(WsTicket).where(
+            or_(
+                WsTicket.expires_at < now,
+                WsTicket.used_at < retention_cutoff,
+                WsTicket.scope_type.is_(None),
+            )
+        )
+        result = await db.execute(stmt)
+        await commit_safely(db)
+        return result.rowcount
+
+
+async def cleanup_ws_tickets_job() -> None:
+    """Scheduled job to clean up WS tickets."""
+    from app.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        deleted = await ws_ticket_service.cleanup_tickets(db)
+
+    if deleted > 0:
+        from app.core.logging import get_logger
+
+        logger = get_logger(__name__)
+        logger.info("Cleaned up %d WS ticket(s).", deleted)
+
+
+def ensure_ws_ticket_cleanup_job() -> None:
+    """Register the WS ticket cleanup job with the shared scheduler."""
+    from app.services.scheduler import get_scheduler
+
+    scheduler = get_scheduler()
+    job_id = "ws-ticket-cleanup-daily"
+    if scheduler.get_job(job_id):
+        return
+
+    # Run daily at 3:00 AM
+    from apscheduler.triggers.cron import CronTrigger
+
+    scheduler.add_job(
+        cleanup_ws_tickets_job,
+        trigger=CronTrigger(hour=3, minute=0),
+        id=job_id,
+        replace_existing=True,
+        coalesce=True,
+    )
+    from app.core.logging import get_logger
+
+    logger = get_logger(__name__)
+    logger.info("Registered daily WS ticket cleanup job.")
 
 
 ws_ticket_service = WsTicketService()
@@ -139,4 +204,6 @@ __all__ = [
     "WsTicketService",
     "WsTicketUsedError",
     "ws_ticket_service",
+    "cleanup_ws_tickets_job",
+    "ensure_ws_ticket_cleanup_job",
 ]

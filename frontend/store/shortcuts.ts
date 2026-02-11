@@ -72,7 +72,7 @@ export const useShortcutStore = create<ShortcutState>()(
         })),
     }),
     {
-      name: "a2a-universal-client.shortcuts",
+      name: "a2a-client-hub.shortcuts",
       storage: createPersistStorage(),
     },
   ),

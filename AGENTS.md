@@ -20,7 +20,7 @@ After any code change, you must run the relevant regressions and fix all failure
 - **Frontend changes (`frontend/`)**
   - `cd frontend && npm install`
   - `cd frontend && npm run lint`
-  - `cd frontend && npm run check-types`
+  - `cd frontend && export NODE_OPTIONS="--max-old-space-size=1024" && npm run check-types`
   - `cd frontend && npm test`
 
 Notes:

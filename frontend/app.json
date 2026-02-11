@@ -1,13 +1,13 @@
 {
   "expo": {
     "name": "A2A Universal Client",
-    "slug": "a2a-universal-client",
+    "slug": "a2a-client-hub",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "scheme": "a2a-universal-client",
+    "scheme": "a2a-client-hub",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",

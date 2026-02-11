@@ -285,6 +285,7 @@ async def delete_agent(
 @router.post(
     "/{agent_id}/card:validate",
     response_model=A2AAgentCardValidationResponse,
+    response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
 )
 async def validate_agent_card(
@@ -322,6 +323,7 @@ async def validate_agent_card(
 @router.post(
     "/card:proxy",
     response_model=A2AAgentCardValidationResponse,
+    response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
 )
 async def proxy_agent_card(

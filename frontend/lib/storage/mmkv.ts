@@ -40,7 +40,7 @@ const getMmkvInstance = async () => {
       await SecureStore.setItemAsync(MMKV_ENCRYPTION_KEY, encryptionKey);
     }
     mmkvInstance = new MMKV({
-      id: "a2a-universal-client-storage",
+      id: "a2a-client-hub-storage",
       encryptionKey,
     });
     return mmkvInstance;

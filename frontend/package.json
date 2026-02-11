@@ -1,5 +1,5 @@
 {
-  "name": "a2a-universal-client",
+  "name": "a2a-client-hub",
   "version": "0.1.0",
   "private": true,
   "main": "expo-router/entry",
@@ -13,7 +13,7 @@
     "lint": "eslint app components hooks lib screens services store --ext .ts,.tsx --max-warnings=0",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
     "test": "jest",
-    "check-types": "tsc --noEmit"
+    "check-types": "export NODE_OPTIONS=\"--max-old-space-size=1024\" && tsc --noEmit"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

@@ -7,7 +7,7 @@ particularly useful for debugging agent chat interactions.
 
 import time
 import uuid
-from typing import Callable, Mapping
+from typing import Callable
 
 from fastapi import Request, Response
 from starlette.background import BackgroundTask
@@ -23,38 +23,12 @@ from app.core.logging import (
     set_user_context,
 )
 from app.core.security import verify_access_token
-
-logger = get_logger(__name__)
-
-_SENSITIVE_KEYWORDS = (
-    "authorization",
-    "cookie",
-    "token",
-    "ticket",
-    "secret",
-    "api-key",
-    "apikey",
-    "password",
+from app.utils.logging_redaction import (
+    redact_headers_for_logging,
+    redact_query_params_for_logging,
 )
 
-
-def _redact_mapping(data: Mapping[str, str]) -> dict[str, str]:
-    redacted: dict[str, str] = {}
-    for key, value in data.items():
-        lower_key = key.lower()
-        if any(keyword in lower_key for keyword in _SENSITIVE_KEYWORDS):
-            redacted[key] = "<redacted>"
-        else:
-            redacted[key] = value
-    return redacted
-
-
-def redact_headers_for_logging(headers: Mapping[str, str]) -> dict[str, str]:
-    return _redact_mapping(headers)
-
-
-def redact_query_params_for_logging(query_params: Mapping[str, str]) -> dict[str, str]:
-    return _redact_mapping(query_params)
+logger = get_logger(__name__)
 
 
 class DebugLoggingMiddleware(BaseHTTPMiddleware):

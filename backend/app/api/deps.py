@@ -4,10 +4,11 @@ This module contains dependency injection functions for FastAPI routes.
 Supports JWT-based user authentication.
 """
 
+import re
 from typing import AsyncGenerator
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Query, WebSocket, WebSocketException, status
+from fastapi import Depends, HTTPException, WebSocket, WebSocketException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,8 @@ from app.services.ws_ticket_service import WsTicketError, ws_ticket_service
 
 # Security scheme for OpenAPI documentation
 security = HTTPBearer()
+
+_WS_TICKET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
@@ -103,16 +106,15 @@ async def get_ws_ticket_user(
     scope_type: str,
     scope_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    ticket: str | None = Query(None),
 ) -> User:
     """
     Get current authenticated user for WebSocket connections via WS ticket.
 
     Args:
         websocket: WebSocket connection
-        agent_id: A2A agent identifier from path
+        scope_type: Scope type for ticket validation
+        scope_id: Scope identifier (e.g., agent_id)
         db: Database session
-        ticket: One-time WS ticket from query parameters
 
     Returns:
         Current user instance
@@ -125,6 +127,19 @@ async def get_ws_ticket_user(
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION, reason="Origin not allowed"
         )
+
+    # We extract the ticket from the Sec-WebSocket-Protocol header to avoid
+    # leaking it in URL query parameters.
+    ticket = None
+    subprotocols = websocket.headers.get("sec-websocket-protocol")
+    if subprotocols:
+        expected_len = settings.ws_ticket_length
+        for proto in subprotocols.split(","):
+            candidate = proto.strip()
+            # Tickets are generated with a fixed length and base64url-ish charset.
+            if len(candidate) == expected_len and _WS_TICKET_RE.match(candidate):
+                ticket = candidate
+                break
 
     if not ticket:
         raise WebSocketException(
@@ -162,14 +177,12 @@ async def get_ws_ticket_user_me(
     websocket: WebSocket,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    ticket: str | None = Query(None),
 ) -> User:
     return await get_ws_ticket_user(
         websocket=websocket,
         scope_type="me_a2a_agent",
         scope_id=agent_id,
         db=db,
-        ticket=ticket,
     )
 
 
@@ -178,14 +191,12 @@ async def get_ws_ticket_user_hub(
     websocket: WebSocket,
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
-    ticket: str | None = Query(None),
 ) -> User:
     return await get_ws_ticket_user(
         websocket=websocket,
         scope_type="hub_a2a_agent",
         scope_id=agent_id,
         db=db,
-        ticket=ticket,
     )
 
 

@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -13,13 +14,10 @@ import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { useAsyncListLoad } from "@/hooks/useAsyncListLoad";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
-import {
-  listHubAgentsAdmin,
-  type HubA2AAgentAdminResponse,
-} from "@/lib/api/hubA2aAgentsAdmin";
+import { listHubAgentsAdmin } from "@/lib/api/hubA2aAgentsAdmin";
 import { blurActiveElement } from "@/lib/focus";
+import { queryKeys } from "@/lib/queryKeys";
 
 const pill = (label: string, variant: "primary" | "muted") => (
   <View
@@ -40,40 +38,24 @@ const pill = (label: string, variant: "primary" | "muted") => (
 export function AdminHubAgentsScreen() {
   const router = useRouter();
   const { isReady, isAdmin } = useRequireAdmin();
-  const { refreshing, run } = useAsyncListLoad();
-  const [items, setItems] = useState<HubA2AAgentAdminResponse[]>([]);
 
-  const load = useCallback(
-    async (mode: "loading" | "refreshing" = "loading") => {
-      await run(
-        async () => {
-          const response = await listHubAgentsAdmin(1, 200);
-          setItems(response.items);
-        },
-        {
-          mode,
-          errorTitle: "Load shared agents failed",
-          fallbackMessage: "Could not load shared agents.",
-        },
-      );
-    },
-    [run],
-  );
+  const { data, isError, error, isLoading, isRefetching, refetch } = useQuery({
+    queryKey: queryKeys.admin.hubAgents(),
+    queryFn: () => listHubAgentsAdmin(1, 200),
+    enabled: isReady && isAdmin,
+  });
 
-  useEffect(() => {
-    if (!isReady || !isAdmin) return;
-    load().catch(() => {
-      // Error already handled
-    });
-  }, [isReady, isAdmin, load]);
+  const items = data?.items ?? [];
+  const errorMessage =
+    error instanceof Error ? error.message : "Could not load shared agents.";
 
   const enabledCount = useMemo(
     () => items.filter((item) => item.enabled).length,
     [items],
   );
 
-  if (!isReady) {
-    return <FullscreenLoader message="Checking permissions..." />;
+  if (!isReady || (isLoading && !isRefetching)) {
+    return <FullscreenLoader message="Loading shared agents..." />;
   }
   if (!isAdmin) {
     return null;
@@ -118,8 +100,8 @@ export function AdminHubAgentsScreen() {
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => load("refreshing")}
+            refreshing={isRefetching}
+            onRefresh={refetch}
             tintColor="#5c6afb"
             colors={["#5c6afb"]}
           />
@@ -131,7 +113,7 @@ export function AdminHubAgentsScreen() {
           </Text>
           <Pressable
             className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
-            onPress={() => load("refreshing")}
+            onPress={() => refetch()}
             accessibilityRole="button"
             accessibilityLabel="Refresh"
           >
@@ -140,7 +122,24 @@ export function AdminHubAgentsScreen() {
           </Pressable>
         </View>
 
-        {items.length === 0 ? (
+        {isError ? (
+          <View className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
+            <Text className="text-base font-semibold text-red-200">
+              Load shared agents failed
+            </Text>
+            <Text className="mt-2 text-sm text-red-100/90">{errorMessage}</Text>
+            <Pressable
+              className="mt-4 self-start rounded-lg border border-red-300/40 px-3 py-2 active:bg-red-500/20"
+              onPress={() => refetch()}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading shared agents"
+            >
+              <Text className="text-xs font-semibold text-red-100">Retry</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {!isError && items.length === 0 ? (
           <View className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
             <Text className="text-base font-semibold text-white">
               No shared agents
