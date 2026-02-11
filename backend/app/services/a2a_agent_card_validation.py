@@ -5,7 +5,7 @@ This logic is shared by both user-managed (/me) and hub catalog (/a2a) routes.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import app.core.config
 from app.integrations.a2a_client.errors import (
@@ -17,11 +17,15 @@ from app.integrations.a2a_client.validators import (
 )
 from app.schemas.a2a_agent_card import A2AAgentCardValidationResponse
 
+if TYPE_CHECKING:
+    from app.integrations.a2a_client.gateway import A2AGateway
+    from app.integrations.a2a_client.service import ResolvedAgent
+
 
 async def fetch_and_validate_agent_card(
     *,
-    gateway: Any,
-    resolved: Any,
+    gateway: A2AGateway,
+    resolved: ResolvedAgent,
 ) -> A2AAgentCardValidationResponse:
     """Fetch the agent card and validate it.
 

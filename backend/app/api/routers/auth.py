@@ -8,7 +8,7 @@ Supports multi-user mode with JWT authentication.
 from typing import Any, Dict
 
 from fastapi import Depends, HTTPException, Request, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
@@ -71,9 +71,9 @@ async def register_user(
     invitation = None
     invite_code = (user_data.invite_code or "").strip()
 
-    existing_user_count = await db.scalar(select(func.count()).select_from(User))
-    invitation_required = (
-        settings.require_invitation_for_registration and existing_user_count > 0
+    has_existing_user = await db.scalar(select(exists().where(User.id.is_not(None))))
+    invitation_required = settings.require_invitation_for_registration and bool(
+        has_existing_user
     )
 
     if invite_code:

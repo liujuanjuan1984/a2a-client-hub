@@ -3,11 +3,13 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
   Text,
   TextInput,
+  TextInputKeyPressEventData,
   View,
 } from "react-native";
 
@@ -33,6 +35,15 @@ import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 import { useMessageStore } from "@/store/messages";
 import { useShortcutStore } from "@/store/shortcuts";
+
+type WebTextInputKeyPressEvent =
+  NativeSyntheticEvent<TextInputKeyPressEventData> & {
+    nativeEvent: TextInputKeyPressEventData & {
+      shiftKey?: boolean;
+      isComposing?: boolean;
+    };
+    preventDefault?: () => void;
+  };
 
 export function ChatScreen({
   agentId: routeAgentId,
@@ -386,14 +397,17 @@ export function ChatScreen({
     setInputHeight((prev) => (prev === nextHeight ? prev : nextHeight));
   };
 
-  const handleKeyPress = (e: any) => {
+  const handleKeyPress = (
+    e: NativeSyntheticEvent<TextInputKeyPressEventData>,
+  ) => {
+    const webEvent = e as WebTextInputKeyPressEvent;
     if (
       Platform.OS === "web" &&
-      e.nativeEvent.key === "Enter" &&
-      !e.nativeEvent.shiftKey &&
-      !e.nativeEvent.isComposing
+      webEvent.nativeEvent.key === "Enter" &&
+      !webEvent.nativeEvent.shiftKey &&
+      !webEvent.nativeEvent.isComposing
     ) {
-      e.preventDefault();
+      webEvent.preventDefault?.();
       handleSend();
     }
   };
