@@ -13,7 +13,7 @@ import { useSessionStore } from "@/store/session";
 export default function AppLayout() {
   const token = useSessionStore((state) => state.token);
   const hydrated = useSessionStore((state) => state.hydrated);
-  const { isLoading, isError, refetch, error, isFetching } = useMe();
+  const { data, isLoading, isError, refetch, error, isFetching } = useMe();
   const loadAgents = useAgentStore((state) => state.loadAgents);
   const cleanupSessions = useChatStore((state) => state.cleanupSessions);
 
@@ -23,7 +23,7 @@ export default function AppLayout() {
 
   const isUnauthorizedError =
     error instanceof ApiRequestError && error.status === 401;
-  const shouldShowErrorScreen = isError && !isUnauthorizedError;
+  const shouldShowErrorScreen = isError && !isUnauthorizedError && !data;
 
   useEffect(() => {
     if (!token) {
@@ -61,41 +61,44 @@ export default function AppLayout() {
     );
   }
 
-  if (isLoading) {
-    return <FullscreenLoader message="Syncing account..." />;
-  }
-
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ title: "Home" }} />
-      <Stack.Screen
-        name="agents/new"
-        options={{ title: "Add Agent", presentation: "modal" }}
-      />
-      <Stack.Screen
-        name="agents/[id]"
-        options={{ title: "Edit Agent", presentation: "modal" }}
-      />
-      <Stack.Screen
-        name="scheduled-jobs/new"
-        options={{ title: "New Job", presentation: "modal" }}
-      />
-      <Stack.Screen
-        name="scheduled-jobs/[id]"
-        options={{ title: "Edit Job", presentation: "modal" }}
-      />
-      <Stack.Screen
-        name="chat/[agentId]/[sessionId]"
-        options={{ title: "Chat" }}
-      />
-      <Stack.Screen
-        name="opencode/[agentId]/sessions"
-        options={{ title: "OpenCode Sessions" }}
-      />
-    </Stack>
+    <View className="flex-1">
+      <Stack
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ title: "Home" }} />
+        <Stack.Screen
+          name="agents/new"
+          options={{ title: "Add Agent", presentation: "modal" }}
+        />
+        <Stack.Screen
+          name="agents/[id]"
+          options={{ title: "Edit Agent", presentation: "modal" }}
+        />
+        <Stack.Screen
+          name="scheduled-jobs/new"
+          options={{ title: "New Job", presentation: "modal" }}
+        />
+        <Stack.Screen
+          name="scheduled-jobs/[id]"
+          options={{ title: "Edit Job", presentation: "modal" }}
+        />
+        <Stack.Screen
+          name="chat/[agentId]/[sessionId]"
+          options={{ title: "Chat" }}
+        />
+        <Stack.Screen
+          name="opencode/[agentId]/sessions"
+          options={{ title: "OpenCode Sessions" }}
+        />
+      </Stack>
+      {isLoading ? (
+        <View pointerEvents="none" className="absolute inset-0">
+          <FullscreenLoader message="Syncing account..." />
+        </View>
+      ) : null}
+    </View>
   );
 }
