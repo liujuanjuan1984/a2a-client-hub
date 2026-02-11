@@ -594,6 +594,16 @@ export const useChatStore = create<ChatState>()(
           }
           updateSessionMeta({ transport: "http_sse" });
           const controller = new AbortController();
+          const clearAbortController = () => {
+            set((state) => {
+              if (!state.abortControllers[sessionId]) {
+                return state;
+              }
+              const next = { ...state.abortControllers };
+              delete next[sessionId];
+              return { abortControllers: next };
+            });
+          };
           set((state) => ({
             abortControllers: {
               ...state.abortControllers,
@@ -644,11 +654,7 @@ export const useChatStore = create<ChatState>()(
                   messageStore.updateMessage(sessionId, activeAgentMessageId, {
                     status: "done",
                   });
-                  set((state) => {
-                    const next = { ...state.abortControllers };
-                    delete next[sessionId];
-                    return { abortControllers: next };
-                  });
+                  clearAbortController();
                 },
               },
               {
@@ -672,6 +678,8 @@ export const useChatStore = create<ChatState>()(
               reason: error instanceof Error ? error.message : String(error),
             });
             return false;
+          } finally {
+            clearAbortController();
           }
         };
 
