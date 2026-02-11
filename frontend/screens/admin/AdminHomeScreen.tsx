@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -54,7 +55,7 @@ export function AdminHomeScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-8">
+    <ScreenContainer>
       <PageHeader
         title="Admin"
         subtitle="System administration tools."
@@ -76,7 +77,7 @@ export function AdminHomeScreen() {
         }
       />
 
-      <View className="mt-8">
+      <View className="mt-4">
         <AdminTile
           title="Invitations"
           subtitle="Create and manage invitation codes."
@@ -96,6 +97,6 @@ export function AdminHomeScreen() {
           }}
         />
       </View>
-    </View>
+    </ScreenContainer>
   );
 }

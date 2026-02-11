@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
@@ -109,7 +110,7 @@ export function SessionsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background px-6 pt-8">
+    <ScreenContainer>
       <PageHeader
         title="Sessions"
         subtitle="Browse sessions across all agents."
@@ -196,6 +197,6 @@ export function SessionsScreen() {
           </>
         )}
       </ScrollView>
-    </View>
+    </ScreenContainer>
   );
 }

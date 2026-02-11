@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { Input } from "@/components/ui/Input";
@@ -344,7 +345,7 @@ export function AdminHubAgentDetailScreen({
 
   if (!agentId) {
     return (
-      <View className="flex-1 bg-background px-6 pt-8">
+      <ScreenContainer>
         <PageHeader
           title="Shared agent"
           subtitle="Missing agent id."
@@ -358,12 +359,12 @@ export function AdminHubAgentDetailScreen({
             />
           }
         />
-      </View>
+      </ScreenContainer>
     );
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-8">
+    <ScreenContainer>
       <PageHeader
         title="Shared agent"
         subtitle="Update directory entry, credentials, and allowlists."
@@ -379,7 +380,7 @@ export function AdminHubAgentDetailScreen({
       />
 
       <ScrollView
-        className="mt-3"
+        className="mt-2"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
@@ -635,6 +636,6 @@ export function AdminHubAgentDetailScreen({
 
         <View className="h-8" />
       </ScrollView>
-    </View>
+    </ScreenContainer>
   );
 }

@@ -30,7 +30,8 @@ body,
 .ios-web #root {
   min-height: 100vh;
   min-height: 100dvh;
-  height: var(--app-height, 100vh);
+  height: 100vh;
+  height: 100dvh;
 }
 
 /* Prevent iOS auto-zoom on input focus */

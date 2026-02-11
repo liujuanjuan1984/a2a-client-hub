@@ -15,7 +15,9 @@ export function PageHeader({ title, subtitle, rightElement }: PageHeaderProps) {
           {title}
         </Text>
         {subtitle ? (
-          <Text className="mt-1 text-sm leading-5 text-muted">{subtitle}</Text>
+          <Text className="mt-0.5 text-sm leading-5 text-muted">
+            {subtitle}
+          </Text>
         ) : null}
       </View>
       {rightElement ? <View>{rightElement}</View> : null}

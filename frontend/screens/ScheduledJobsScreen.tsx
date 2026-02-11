@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { ScheduledJobCard } from "@/components/scheduled/ScheduledJobCard";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
@@ -106,7 +107,7 @@ export function ScheduledJobsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background px-6 pt-8">
+    <ScreenContainer>
       <PageHeader
         title="Scheduled Jobs"
         subtitle="Configure recurring prompts and inspect execution history."
@@ -126,7 +127,7 @@ export function ScheduledJobsScreen() {
       />
 
       <ScrollView
-        className="mt-3"
+        className="mt-2"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -210,6 +211,6 @@ export function ScheduledJobsScreen() {
           />
         ) : null}
       </ScrollView>
-    </View>
+    </ScreenContainer>
   );
 }

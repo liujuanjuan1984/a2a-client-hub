@@ -1,7 +1,8 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
+import { ScreenScrollView } from "@/components/layout/ScreenScrollView";
 import { ScheduledJobForm } from "@/components/scheduled/ScheduledJobForm";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -314,7 +315,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   };
 
   return (
-    <ScrollView className="flex-1 bg-background px-6 pt-8">
+    <ScreenScrollView>
       <PageHeader
         title={editing ? "Edit Job" : "New Job"}
         subtitle="Configure recurring prompts."
@@ -341,7 +342,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           <Text className="mt-2 text-sm text-muted">{loadError}</Text>
         </View>
       ) : (
-        <View className="mt-4">
+        <View className="mt-3">
           <ScheduledJobForm
             form={form}
             saving={saving}
@@ -356,6 +357,6 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       )}
 
       <View className="h-10" />
-    </ScrollView>
+    </ScreenScrollView>
   );
 }

@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 
+import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
@@ -196,7 +197,7 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
   const subtitle = agent?.name ? `Agent: ${agent.name}` : `Agent: ${agentId}`;
 
   return (
-    <View className="flex-1 bg-background px-6 pt-8">
+    <ScreenContainer>
       <PageHeader
         title="OpenCode Sessions"
         subtitle={subtitle}
@@ -338,6 +339,6 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
           </>
         )}
       </ScrollView>
-    </View>
+    </ScreenContainer>
   );
 }
