@@ -75,6 +75,7 @@ export function usePreventRemoveWhenDirty({
   useEffect(() => {
     if (!pendingAction) return;
     navigation.dispatch(pendingAction);
+    setPendingAction(null);
   }, [navigation, pendingAction]);
 
   return { allowNextNavigation };
