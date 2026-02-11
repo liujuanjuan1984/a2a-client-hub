@@ -106,7 +106,7 @@ export function ScheduledJobsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background px-6 pt-6">
+    <View className="flex-1 bg-background px-6 pt-8">
       <PageHeader
         title="Scheduled Jobs"
         subtitle="Configure recurring prompts and inspect execution history."
@@ -126,7 +126,7 @@ export function ScheduledJobsScreen() {
       />
 
       <ScrollView
-        className="mt-6"
+        className="mt-3"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

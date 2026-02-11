@@ -351,7 +351,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
 
   if (isSharedAgent) {
     return (
-      <View className="flex-1 bg-background px-6 pt-6">
+      <View className="flex-1 bg-background px-6 pt-8">
         <PageHeader
           title="Agent"
           subtitle="This agent is provided by an admin and cannot be edited here."
@@ -386,7 +386,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background px-6 pt-6">
+    <ScrollView className="flex-1 bg-background px-6 pt-8">
       <PageHeader
         title={agentId ? "Edit Agent" : "New Agent"}
         subtitle="Provide agent card details and credentials."
@@ -401,7 +401,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
         }
       />
 
-      <View className="mt-8 gap-4">
+      <View className="mt-4 gap-4">
         <Input
           label="Name"
           placeholder="Agent name"

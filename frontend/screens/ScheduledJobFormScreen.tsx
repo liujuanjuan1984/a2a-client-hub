@@ -314,7 +314,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   };
 
   return (
-    <ScrollView className="flex-1 bg-background px-6 pt-6">
+    <ScrollView className="flex-1 bg-background px-6 pt-8">
       <PageHeader
         title={editing ? "Edit Job" : "New Job"}
         subtitle="Configure recurring prompts."
@@ -341,7 +341,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           <Text className="mt-2 text-sm text-muted">{loadError}</Text>
         </View>
       ) : (
-        <View className="mt-6">
+        <View className="mt-4">
           <ScheduledJobForm
             form={form}
             saving={saving}

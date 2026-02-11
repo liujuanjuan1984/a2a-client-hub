@@ -109,14 +109,14 @@ export function SessionsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background px-6 pt-6">
+    <View className="flex-1 bg-background px-6 pt-8">
       <PageHeader
         title="Sessions"
         subtitle="Browse sessions across all agents."
       />
 
       <ScrollView
-        className="mt-4"
+        className="mt-2"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

@@ -196,7 +196,7 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
   const subtitle = agent?.name ? `Agent: ${agent.name}` : `Agent: ${agentId}`;
 
   return (
-    <View className="flex-1 bg-background px-6 pt-6">
+    <View className="flex-1 bg-background px-6 pt-8">
       <PageHeader
         title="OpenCode Sessions"
         subtitle={subtitle}
@@ -256,7 +256,7 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
       ) : null}
 
       <ScrollView
-        className="mt-4"
+        className="mt-2"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

@@ -142,7 +142,7 @@ export function AdminInvitationsScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-6">
+    <View className="flex-1 bg-background px-6 pt-8">
       <PageHeader
         title="Invitations"
         subtitle="Create and manage invitation codes."
@@ -165,7 +165,7 @@ export function AdminInvitationsScreen() {
       />
 
       <ScrollView
-        className="mt-6"
+        className="mt-3"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl

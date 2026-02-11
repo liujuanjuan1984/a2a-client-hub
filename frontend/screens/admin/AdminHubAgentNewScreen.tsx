@@ -175,7 +175,7 @@ export function AdminHubAgentNewScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background px-6 pt-6">
+    <View className="flex-1 bg-background px-6 pt-8">
       <PageHeader
         title="New shared agent"
         subtitle="Create an admin-managed A2A service directory entry."
@@ -194,7 +194,7 @@ export function AdminHubAgentNewScreen() {
       />
 
       <ScrollView
-        className="mt-6"
+        className="mt-3"
         contentContainerStyle={{ paddingBottom: 32 }}
       >
         <View className="rounded-3xl border border-slate-800 bg-slate-900/30 p-5">
