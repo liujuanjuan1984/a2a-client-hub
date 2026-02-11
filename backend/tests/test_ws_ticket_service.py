@@ -61,4 +61,3 @@ async def test_consume_ticket_used(async_db_session):
             scope_type="test_scope",
             scope_id=scope_id,
         )
-

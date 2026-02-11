@@ -23,7 +23,9 @@ async def test_fetch_and_validate_agent_card_validation_errors_gated(monkeypatch
     )
 
     monkeypatch.setattr(settings, "debug", False)
-    resp = await fetch_and_validate_agent_card(gateway=_DummyGateway(), resolved=object())
+    resp = await fetch_and_validate_agent_card(
+        gateway=_DummyGateway(), resolved=object()
+    )
     assert resp.validation_errors is None
 
     monkeypatch.setattr(settings, "debug", True)
@@ -51,4 +53,3 @@ def test_serialize_stream_event_validation_errors_gated(monkeypatch):
         _DummyEvent(), validate_message=validate_message
     )
     assert payload_debug["validation_errors"] == ["bad-event"]
-
