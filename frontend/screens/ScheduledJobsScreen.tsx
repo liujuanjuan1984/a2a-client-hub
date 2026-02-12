@@ -51,19 +51,19 @@ export function ScheduledJobsScreen() {
   useFocusEffect(
     useCallback(() => {
       const mode = hasLoadedRef.current ? "refreshing" : "loading";
-      loadFirstPage(mode)
-        .then(() => {
+      loadFirstPage(mode).then((succeeded) => {
+        if (succeeded) {
           hasLoadedRef.current = true;
-        })
-        .catch(() => {
-          // Error already handled in hook
-        });
+        }
+      });
     }, [loadFirstPage]),
   );
 
   const onRefresh = async () => {
-    await loadFirstPage("refreshing");
-    hasLoadedRef.current = true;
+    const succeeded = await loadFirstPage("refreshing");
+    if (succeeded) {
+      hasLoadedRef.current = true;
+    }
   };
 
   const toggleExecutionsPanel = async (taskId: string) => {
@@ -151,8 +151,10 @@ export function ScheduledJobsScreen() {
               onToggleEnabled={async () => {
                 try {
                   await toggleJobStatus(job);
-                  await loadFirstPage("refreshing");
-                  hasLoadedRef.current = true;
+                  const succeeded = await loadFirstPage("refreshing");
+                  if (succeeded) {
+                    hasLoadedRef.current = true;
+                  }
                 } catch (error) {
                   const message =
                     error instanceof Error ? error.message : "Update failed.";

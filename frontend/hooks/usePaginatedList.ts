@@ -123,22 +123,44 @@ export function usePaginatedList<T>({
     showErrorToast(query.error);
   }, [query.error, query.isError, showErrorToast]);
 
+  const keepFirstPageOnly = useCallback(() => {
+    queryClient.setQueryData<
+      InfiniteData<PaginatedPage<T>, number> | undefined
+    >(queryKey, (current) => {
+      if (!current || current.pages.length <= 1) {
+        return current;
+      }
+      return {
+        pages: [current.pages[0]],
+        pageParams: [current.pageParams[0] ?? 1],
+      };
+    });
+  }, [queryClient, queryKey]);
+
   const loadFirstPage = useCallback(
     async (mode: LoadMode = "loading") => {
       if (mode === "refreshing") {
         setRefreshing(true);
+        keepFirstPageOnly();
       }
+
       try {
-        await query.refetch();
+        const result = await query.refetch();
+        if (result.status === "error") {
+          showErrorToast(result.error);
+          return false;
+        }
+        return true;
       } catch (error) {
         showErrorToast(error);
+        return false;
       } finally {
         if (mode === "refreshing") {
           setRefreshing(false);
         }
       }
     },
-    [enabled, query, showErrorToast],
+    [keepFirstPageOnly, query, showErrorToast],
   );
 
   const reset = useCallback(() => {
@@ -153,7 +175,7 @@ export function usePaginatedList<T>({
     } catch (error) {
       showErrorToast(error);
     }
-  }, [enabled, hasMore, query, showErrorToast]);
+  }, [hasMore, query, showErrorToast]);
 
   const setItems = useCallback(
     (nextItems: T[]) => {

@@ -35,7 +35,7 @@ const createPaginatedResult = (
     refreshing: false,
     loadingMore: false,
     reset: jest.fn(),
-    loadFirstPage: jest.fn(async () => {}),
+    loadFirstPage: jest.fn(async () => true),
     loadMore: jest.fn(async () => {}),
   }) as ReturnType<typeof usePaginatedList>;
 
