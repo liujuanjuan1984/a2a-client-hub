@@ -280,7 +280,12 @@ class Settings(BaseSettings):
             return value
         if not isinstance(value, str):
             return value
-        return value.strip().lower()
+        normalized = value.strip().lower()
+        allowed_values = {"development", "staging", "production"}
+        if normalized not in allowed_values:
+            allowed = ", ".join(sorted(allowed_values))
+            raise ValueError(f"APP_ENV must be one of: {allowed}")
+        return normalized
 
     @staticmethod
     def _is_weak_secret(value: str) -> bool:

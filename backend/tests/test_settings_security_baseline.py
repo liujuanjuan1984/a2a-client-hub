@@ -70,3 +70,11 @@ def test_development_allows_localhost_and_dev_defaults(
     settings = Settings()
 
     assert settings.app_env == "development"
+
+
+def test_invalid_app_env_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("APP_ENV", "prod")
+
+    with pytest.raises(ValueError, match="APP_ENV must be one of"):
+        Settings()
