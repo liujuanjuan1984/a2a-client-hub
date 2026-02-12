@@ -18,6 +18,7 @@ import {
   useAgentsCatalogQuery,
   useValidateAgentMutation,
 } from "@/hooks/useAgentsCatalogQuery";
+import { AGENT_ERROR_MESSAGES } from "@/lib/agentCatalogCache";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
@@ -81,8 +82,14 @@ export function AgentListScreen() {
     blurActiveElement();
     try {
       await validateAgentMutation.mutateAsync(agentId);
-    } catch {
-      // Status and error text are already patched into query cache.
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === AGENT_ERROR_MESSAGES.notFound
+      ) {
+        toast.error("Agent unavailable", error.message);
+        return;
+      }
     }
 
     const updated = queryClient

@@ -19,6 +19,7 @@ import {
 } from "@/hooks/useAgentsCatalogQuery";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { type AgentAuthType } from "@/lib/agentAuth";
+import { AGENT_ERROR_MESSAGES } from "@/lib/agentCatalogCache";
 import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
@@ -139,7 +140,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       return;
     }
     if (hasFetchedAgents) {
-      setErrors({ name: "Agent not found." });
+      setErrors({ name: AGENT_ERROR_MESSAGES.notFound });
     }
   }, [agentId, agent, hasFetchedAgents]);
 
@@ -241,8 +242,14 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     blurActiveElement();
     try {
       await validateAgentMutation.mutateAsync(agentId);
-    } catch {
-      // Status and error text are already patched into query cache.
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === AGENT_ERROR_MESSAGES.notFound
+      ) {
+        toast.error("Agent unavailable", error.message);
+        return;
+      }
     }
 
     const updated = queryClient

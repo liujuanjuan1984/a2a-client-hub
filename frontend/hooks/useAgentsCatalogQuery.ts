@@ -1,5 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 
+import {
+  AGENT_ERROR_MESSAGES,
+  mergeTransientAgentState,
+  patchAgentInCatalog,
+  removeAgentFromCatalog,
+  shouldClearActiveAgent,
+  toValidationErrorMessage,
+  upsertAgentInCatalog,
+} from "@/lib/agentCatalogCache";
 import { headersToEntries } from "@/lib/agentHeaders";
 import { buildAgentUpsertPayload } from "@/lib/agentUpsert";
 import {
@@ -8,9 +18,9 @@ import {
   listAgents,
   updateAgent,
   validateAgentCard,
-  type A2AAgentCardValidationResponse,
   type A2AAgentResponse,
 } from "@/lib/api/a2aAgents";
+import { ApiRequestError } from "@/lib/api/client";
 import {
   listHubAgents,
   validateHubAgentCard,
@@ -58,52 +68,7 @@ const toSharedAgentConfig = (agent: HubA2AAgentUserResponse): AgentConfig => ({
   status: "idle",
 });
 
-const mergeTransientStatus = (
-  nextAgents: AgentConfig[],
-  previousAgents: AgentConfig[],
-) => {
-  const previousById = new Map(
-    previousAgents.map((agent) => [agent.id, agent]),
-  );
-  return nextAgents.map((agent) => {
-    const previous = previousById.get(agent.id);
-    if (!previous) {
-      return agent;
-    }
-    return {
-      ...agent,
-      status: previous.status,
-      lastCheckedAt: previous.lastCheckedAt,
-      lastError: previous.lastError,
-    };
-  });
-};
-
 const getCatalogCache = (catalog: AgentConfig[] | undefined) => catalog ?? [];
-
-const patchAgentInCatalog = (
-  catalog: AgentConfig[] | undefined,
-  agentId: string,
-  updater: (agent: AgentConfig) => AgentConfig,
-) => {
-  if (!catalog) {
-    return catalog;
-  }
-  return catalog.map((agent) =>
-    agent.id === agentId ? updater(agent) : agent,
-  );
-};
-
-const toValidationError = (response: A2AAgentCardValidationResponse) => {
-  const rawMessage = response.validation_errors?.[0] || response.message;
-  if (typeof rawMessage === "string" && rawMessage.trim()) {
-    return rawMessage;
-  }
-  if (rawMessage) {
-    return JSON.stringify(rawMessage);
-  }
-  return "Connection failed";
-};
 
 const toUpsertPayload = (input: {
   name: string;
@@ -128,10 +93,26 @@ const toUpsertPayload = (input: {
     extraHeaders: input.extraHeaders,
   });
 
+const markCatalogStale = async (
+  queryClient: ReturnType<typeof useQueryClient>,
+) => {
+  await queryClient.invalidateQueries({
+    queryKey: queryKeys.agents.catalog(),
+    refetchType: "none",
+  });
+};
+
+const toNotFoundError = () => new Error(AGENT_ERROR_MESSAGES.notFound);
+
+const isNotFoundError = (error: unknown) =>
+  error instanceof ApiRequestError && error.status === 404;
+
 export function useAgentsCatalogQuery(enabled = true) {
   const queryClient = useQueryClient();
+  const activeAgentId = useAgentStore((state) => state.activeAgentId);
+  const setActiveAgent = useAgentStore((state) => state.setActiveAgent);
 
-  return useQuery({
+  const query = useQuery({
     queryKey: queryKeys.agents.catalog(),
     enabled,
     queryFn: async () => {
@@ -161,22 +142,21 @@ export function useAgentsCatalogQuery(enabled = true) {
           ? sharedResult.value.items.map(toSharedAgentConfig)
           : previousAgents.filter((agent) => agent.source === "shared");
 
-      const mergedAgents = mergeTransientStatus(
+      return mergeTransientAgentState(
         [...personalAgents, ...sharedAgents],
         previousAgents,
       );
-
-      const activeAgentId = useAgentStore.getState().activeAgentId;
-      if (
-        activeAgentId &&
-        !mergedAgents.some((agent) => agent.id === activeAgentId)
-      ) {
-        useAgentStore.getState().setActiveAgent(null);
-      }
-
-      return mergedAgents;
     },
   });
+
+  useEffect(() => {
+    if (!shouldClearActiveAgent(activeAgentId, query.data)) {
+      return;
+    }
+    setActiveAgent(null);
+  }, [activeAgentId, query.data, setActiveAgent]);
+
+  return query;
 }
 
 export function useCreateAgentMutation() {
@@ -186,10 +166,12 @@ export function useCreateAgentMutation() {
     mutationFn: async (payload: CreateAgentPayload) => {
       return await createAgent(toUpsertPayload(payload));
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.agents.catalog(),
-      });
+    onSuccess: async (response) => {
+      queryClient.setQueryData<AgentConfig[] | undefined>(
+        queryKeys.agents.catalog(),
+        (catalog) => upsertAgentInCatalog(catalog, toAgentConfig(response)),
+      );
+      await markCatalogStale(queryClient);
     },
   });
 }
@@ -210,21 +192,29 @@ export function useUpdateAgentMutation() {
       );
       const existing = catalog.find((agent) => agent.id === id);
       if (!existing) {
-        throw new Error("Agent not found.");
+        throw toNotFoundError();
       }
       if (existing.source !== "personal") {
-        throw new Error(
-          "This agent is managed by an admin and cannot be edited.",
-        );
+        throw new Error(AGENT_ERROR_MESSAGES.readOnlyEdit);
       }
 
       const next = { ...existing, ...payload };
-      return await updateAgent(id, toUpsertPayload(next));
+      try {
+        return await updateAgent(id, toUpsertPayload(next));
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          throw toNotFoundError();
+        }
+        throw error;
+      }
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.agents.catalog(),
-      });
+    onSuccess: async (response, variables) => {
+      queryClient.setQueryData<AgentConfig[] | undefined>(
+        queryKeys.agents.catalog(),
+        (catalog) =>
+          upsertAgentInCatalog(catalog, toAgentConfig(response), variables.id),
+      );
+      await markCatalogStale(queryClient);
     },
   });
 }
@@ -238,26 +228,37 @@ export function useDeleteAgentMutation() {
         queryClient.getQueryData<AgentConfig[]>(queryKeys.agents.catalog()),
       );
       const existing = catalog.find((agent) => agent.id === id);
-      if (existing && existing.source !== "personal") {
-        throw new Error(
-          "This agent is managed by an admin and cannot be removed.",
-        );
+      if (!existing) {
+        throw toNotFoundError();
       }
-      await deleteAgent(id);
+      if (existing.source !== "personal") {
+        throw new Error(AGENT_ERROR_MESSAGES.readOnlyDelete);
+      }
+
+      try {
+        await deleteAgent(id);
+      } catch (error) {
+        if (!isNotFoundError(error)) {
+          throw error;
+        }
+      }
       return id;
     },
     onSuccess: async (id) => {
       queryClient.setQueryData<AgentConfig[] | undefined>(
         queryKeys.agents.catalog(),
-        (catalog) => catalog?.filter((agent) => agent.id !== id),
+        (catalog) => removeAgentFromCatalog(catalog, id),
       );
 
-      if (useAgentStore.getState().activeAgentId === id) {
+      const activeAgentId = useAgentStore.getState().activeAgentId;
+      const nextCatalog = queryClient.getQueryData<AgentConfig[]>(
+        queryKeys.agents.catalog(),
+      );
+      if (shouldClearActiveAgent(activeAgentId, nextCatalog)) {
         useAgentStore.getState().setActiveAgent(null);
       }
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.agents.catalog(),
-      });
+
+      await markCatalogStale(queryClient);
     },
   });
 }
@@ -272,16 +273,24 @@ export function useValidateAgentMutation() {
       );
       const agent = catalog.find((item) => item.id === agentId);
       if (!agent) {
-        throw new Error("Agent not found.");
+        throw toNotFoundError();
       }
 
-      const response =
-        agent.source === "shared"
-          ? await validateHubAgentCard(agentId)
-          : await validateAgentCard(agentId);
+      let response;
+      try {
+        response =
+          agent.source === "shared"
+            ? await validateHubAgentCard(agentId)
+            : await validateAgentCard(agentId);
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          throw toNotFoundError();
+        }
+        throw error;
+      }
 
       if (!response.success) {
-        throw new Error(toValidationError(response));
+        throw new Error(toValidationErrorMessage(response));
       }
 
       return {
@@ -313,8 +322,28 @@ export function useValidateAgentMutation() {
       );
     },
     onError: (error, agentId) => {
+      if (
+        error instanceof Error &&
+        error.message === AGENT_ERROR_MESSAGES.notFound
+      ) {
+        queryClient.setQueryData<AgentConfig[] | undefined>(
+          queryKeys.agents.catalog(),
+          (catalog) => removeAgentFromCatalog(catalog, agentId),
+        );
+        const activeAgentId = useAgentStore.getState().activeAgentId;
+        const nextCatalog = queryClient.getQueryData<AgentConfig[]>(
+          queryKeys.agents.catalog(),
+        );
+        if (shouldClearActiveAgent(activeAgentId, nextCatalog)) {
+          useAgentStore.getState().setActiveAgent(null);
+        }
+        return;
+      }
+
       const message =
-        error instanceof Error ? error.message : "Connection failed";
+        error instanceof Error
+          ? error.message
+          : AGENT_ERROR_MESSAGES.connectionFailed;
       queryClient.setQueryData<AgentConfig[] | undefined>(
         queryKeys.agents.catalog(),
         (catalog) =>
