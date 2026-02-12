@@ -12,6 +12,7 @@ import {
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { validateAgentCard } from "@/lib/api/a2aAgents";
 import { A2AExtensionCallError } from "@/lib/api/a2aExtensions";
@@ -32,14 +33,13 @@ import { supportsOpencodeSessionQuery } from "@/lib/opencodeSupport";
 import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
-import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 
 type SupportState = "checking" | "supported" | "unsupported" | "unknown";
 
 export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
   const router = useRouter();
-  const agents = useAgentStore((state) => state.agents);
+  const { data: agents = [] } = useAgentsCatalogQuery(true);
   const agent = useMemo(
     () => agents.find((item) => item.id === agentId),
     [agents, agentId],

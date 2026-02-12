@@ -8,6 +8,7 @@ import { ScheduledJobCard } from "@/components/scheduled/ScheduledJobCard";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { useScheduledJobs } from "@/hooks/useScheduledJobs";
 import { ApiRequestError } from "@/lib/api/client";
@@ -19,11 +20,10 @@ import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
 import { buildScheduledJobEditHref, scheduledJobNewHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
-import { useAgentStore } from "@/store/agents";
 
 export function ScheduledJobsScreen() {
   const router = useRouter();
-  const agents = useAgentStore((state) => state.agents);
+  const { data: agents = [] } = useAgentsCatalogQuery(true);
   const {
     executionsByTaskId,
     executionsNextPageByTaskId,

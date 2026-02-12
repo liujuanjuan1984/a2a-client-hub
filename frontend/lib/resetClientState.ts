@@ -6,7 +6,7 @@ import { useSessionStore } from "@/store/session";
 
 export const resetClientState = () => {
   useSessionStore.getState().clearSession();
-  useAgentStore.getState().resetAgents();
+  useAgentStore.getState().resetAgentUiState();
   useChatStore.getState().clearAll();
   useMessageStore.getState().clearAll();
   queryClient.clear();

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -13,11 +14,19 @@ import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { useAsyncListLoad } from "@/hooks/useAsyncListLoad";
+import {
+  useAgentsCatalogQuery,
+  useValidateAgentMutation,
+} from "@/hooks/useAgentsCatalogQuery";
 import { blurActiveElement } from "@/lib/focus";
+import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
-import { type AgentStatus, useAgentStore } from "@/store/agents";
+import {
+  type AgentConfig,
+  type AgentStatus,
+  useAgentStore,
+} from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 import { useSessionStore } from "@/store/session";
 
@@ -36,19 +45,26 @@ const statusIndicatorConfig = (status: AgentStatus) => {
 
 export function AgentListScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const user = useSessionStore((state) => state.user);
-  const agents = useAgentStore((state) => state.agents);
   const setActiveAgent = useAgentStore((state) => state.setActiveAgent);
-  const testAgent = useAgentStore((state) => state.testAgent);
-  const loadAgents = useAgentStore((state) => state.loadAgents);
 
-  const { refreshing, run } = useAsyncListLoad();
+  const {
+    data: agents = [],
+    isFetching,
+    refetch,
+  } = useAgentsCatalogQuery(true);
+  const validateAgentMutation = useValidateAgentMutation();
+
   const onRefresh = async () => {
-    await run(() => loadAgents(), {
-      mode: "refreshing",
-      errorTitle: "Refresh failed",
-      fallbackMessage: "Could not load agents from server.",
-    });
+    const result = await refetch();
+    if (result.error) {
+      const message =
+        result.error instanceof Error
+          ? result.error.message
+          : "Could not load agents from server.";
+      toast.error("Refresh failed", message);
+    }
   };
 
   const handleChat = (agentId: string) => {
@@ -63,11 +79,17 @@ export function AgentListScreen() {
 
   const handleTest = async (agentId: string) => {
     blurActiveElement();
-    await testAgent(agentId);
-    const updated = useAgentStore
-      .getState()
-      .agents.find((item) => item.id === agentId);
+    try {
+      await validateAgentMutation.mutateAsync(agentId);
+    } catch {
+      // Status and error text are already patched into query cache.
+    }
+
+    const updated = queryClient
+      .getQueryData<AgentConfig[]>(queryKeys.agents.catalog())
+      ?.find((item) => item.id === agentId);
     if (!updated) return;
+
     if (updated.status === "success") {
       toast.success("Connection OK", `${updated.name} is online.`);
     } else if (updated.status === "error") {
@@ -112,7 +134,7 @@ export function AgentListScreen() {
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={isFetching}
             onRefresh={onRefresh}
             tintColor="#5c6afb"
             colors={["#5c6afb"]}

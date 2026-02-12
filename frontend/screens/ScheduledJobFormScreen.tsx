@@ -7,6 +7,7 @@ import { ScreenScrollView } from "@/components/layout/ScreenScrollView";
 import { ScheduledJobForm } from "@/components/scheduled/ScheduledJobForm";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { ApiRequestError } from "@/lib/api/client";
 import {
@@ -22,7 +23,6 @@ import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
 import { scheduledJobsHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
-import { useAgentStore } from "@/store/agents";
 
 const initialForm: ScheduledJobPayload = {
   name: "",
@@ -111,7 +111,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
     [router],
   );
 
-  const agents = useAgentStore((state) => state.agents);
+  const { data: agents = [] } = useAgentsCatalogQuery(true);
   const agentOptions = useMemo(
     () => agents.map((agent) => ({ id: agent.id, name: agent.name })),
     [agents],

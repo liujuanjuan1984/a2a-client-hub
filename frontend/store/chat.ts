@@ -23,7 +23,7 @@ import { generateId } from "@/lib/id";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { applyStreamChunk } from "@/lib/streamChunks";
 import { shouldSplitStreamMessage } from "@/lib/streamMessageSplit";
-import { type AgentSource, useAgentStore } from "@/store/agents";
+import { type AgentSource } from "@/store/agents";
 import { useMessageStore } from "@/store/messages";
 
 export type AgentSession = {
@@ -47,6 +47,7 @@ export type ChatState = {
     sessionId: string,
     agentId: string,
     content: string,
+    agentSource: AgentSource,
   ) => Promise<void>;
   cancelMessage: (sessionId: string) => void;
   resetSession: (sessionId: string, agentId: string) => void;
@@ -153,13 +154,6 @@ const buildInvokeWsUrl = (agentId: string, source: AgentSource) => {
   return `${wsBase}/${scopeForSource(source)}/${encodeURIComponent(agentId)}/invoke/ws`;
 };
 
-const resolveAgentSource = (agentId: string): AgentSource => {
-  const agent = useAgentStore
-    .getState()
-    .agents.find((item) => item.id === agentId);
-  return agent?.source ?? "personal";
-};
-
 const buildInvokePayload = (
   query: string,
   session: AgentSession,
@@ -250,7 +244,7 @@ export const useChatStore = create<ChatState>()(
           });
         }
       },
-      sendMessage: async (sessionId, agentId, content) => {
+      sendMessage: async (sessionId, agentId, content, agentSource) => {
         const trimmed = content.trim();
         if (!trimmed) return;
 
@@ -298,7 +292,6 @@ export const useChatStore = create<ChatState>()(
 
         const session = get().sessions[sessionId] ?? createSession(agentId);
         const payload = buildInvokePayload(trimmed, session);
-        const agentSource = resolveAgentSource(agentId);
 
         const updateSessionMeta = (meta: {
           contextId?: string | null;

@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -9,14 +10,22 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
 import { KeyValueInputRow } from "@/components/ui/KeyValueInputRow";
 import { PageHeader } from "@/components/ui/PageHeader";
+import {
+  useAgentsCatalogQuery,
+  useCreateAgentMutation,
+  useDeleteAgentMutation,
+  useUpdateAgentMutation,
+  useValidateAgentMutation,
+} from "@/hooks/useAgentsCatalogQuery";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { type AgentAuthType } from "@/lib/agentAuth";
 import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
+import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
-import { type AgentHeader, useAgentStore } from "@/store/agents";
+import { type AgentConfig, type AgentHeader } from "@/store/agents";
 
 const authTypes: { label: string; value: AgentAuthType }[] = [
   { label: "No Auth", value: "none" },
@@ -82,14 +91,18 @@ const buildSnapshot = (value: {
 
 export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
   const router = useRouter();
-  const agent = useAgentStore((state) =>
-    state.agents.find((item) => item.id === agentId),
+  const queryClient = useQueryClient();
+  const { data: agents = [], isFetched: hasFetchedAgents } =
+    useAgentsCatalogQuery(true);
+  const createAgentMutation = useCreateAgentMutation();
+  const updateAgentMutation = useUpdateAgentMutation();
+  const deleteAgentMutation = useDeleteAgentMutation();
+  const validateAgentMutation = useValidateAgentMutation();
+
+  const agent = useMemo(
+    () => agents.find((item) => item.id === agentId),
+    [agents, agentId],
   );
-  const hasLoadedAgents = useAgentStore((state) => state.hasLoaded);
-  const addAgent = useAgentStore((state) => state.addAgent);
-  const updateAgent = useAgentStore((state) => state.updateAgent);
-  const removeAgent = useAgentStore((state) => state.removeAgent);
-  const testAgent = useAgentStore((state) => state.testAgent);
 
   const [name, setName] = useState(agent?.name ?? "");
   const [cardUrl, setCardUrl] = useState(agent?.cardUrl ?? "");
@@ -125,10 +138,10 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     if (!agentId || agent) {
       return;
     }
-    if (hasLoadedAgents) {
+    if (hasFetchedAgents) {
       setErrors({ name: "Agent not found." });
     }
-  }, [agentId, agent, hasLoadedAgents]);
+  }, [agentId, agent, hasFetchedAgents]);
 
   useEffect(() => {
     if (!agentId) {
@@ -226,17 +239,22 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
   const handleSharedTest = useCallback(async () => {
     if (!agentId || !agent) return;
     blurActiveElement();
-    await testAgent(agentId);
-    const updated = useAgentStore
-      .getState()
-      .agents.find((item) => item.id === agentId);
+    try {
+      await validateAgentMutation.mutateAsync(agentId);
+    } catch {
+      // Status and error text are already patched into query cache.
+    }
+
+    const updated = queryClient
+      .getQueryData<AgentConfig[]>(queryKeys.agents.catalog())
+      ?.find((item) => item.id === agentId);
     if (!updated) return;
     if (updated.status === "success") {
       toast.success("Connection OK", `${updated.name} is online.`);
     } else if (updated.status === "error") {
       toast.error("Connection failed", updated.lastError);
     }
-  }, [agent, agentId, testAgent]);
+  }, [agent, agentId, queryClient, validateAgentMutation]);
 
   const handleAddHeader = () => {
     setExtraHeaders((prev) => [...prev, createHeader()]);
@@ -298,9 +316,9 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     };
     try {
       if (agentId && agent) {
-        await updateAgent(agentId, payload);
+        await updateAgentMutation.mutateAsync({ id: agentId, payload });
       } else {
-        await addAgent(payload);
+        await createAgentMutation.mutateAsync(payload);
       }
       initialSnapshotRef.current = buildSnapshot({
         name: payload.name,
@@ -340,7 +358,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
 
     setIsDeleting(true);
     try {
-      await removeAgent(agentId);
+      await deleteAgentMutation.mutateAsync(agentId);
       toast.success("Agent deleted", `${agent.name} has been removed.`);
       goBackOrHome();
     } catch (error) {

@@ -16,6 +16,7 @@ import {
 
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import {
   continueOpencodeSession,
   listOpencodeSessionMessagesPage,
@@ -66,9 +67,11 @@ export function ChatScreen({
   const storeActiveAgentId = useAgentStore((state) => state.activeAgentId);
   const activeAgentId = routeAgentId || storeActiveAgentId;
 
-  const hasLoaded = useAgentStore((state) => state.hasLoaded);
-  const agent = useAgentStore((state) =>
-    state.agents.find((item) => item.id === activeAgentId),
+  const { data: agents = [], isFetched: hasFetchedAgents } =
+    useAgentsCatalogQuery(true);
+  const agent = useMemo(
+    () => agents.find((item) => item.id === activeAgentId),
+    [agents, activeAgentId],
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
   const sendMessage = useChatStore((state) => state.sendMessage);
@@ -353,11 +356,11 @@ export function ChatScreen({
   };
 
   useEffect(() => {
-    if (hasLoaded && !agent) {
+    if (hasFetchedAgents && !agent) {
       // Redirect: the agent is missing, so we should not keep this screen in history.
       router.replace("/");
     }
-  }, [agent, hasLoaded, router]);
+  }, [agent, hasFetchedAgents, router]);
 
   useEffect(() => {
     if (suppressAutoScrollRef.current) {
@@ -382,13 +385,13 @@ export function ChatScreen({
   }, [agent]);
 
   const handleSend = () => {
-    if (!activeAgentId || !sessionId) {
+    if (!activeAgentId || !sessionId || !agent) {
       return;
     }
     if (!input.trim()) {
       return;
     }
-    sendMessage(sessionId, activeAgentId, input);
+    sendMessage(sessionId, activeAgentId, input, agent.source);
     setInput("");
     setInputHeight(minInputHeight);
   };
@@ -461,7 +464,7 @@ export function ChatScreen({
   };
 
   if (!agent) {
-    if (!hasLoaded) {
+    if (!hasFetchedAgents) {
       return <FullscreenLoader message="Restoring session..." />;
     }
     return (
