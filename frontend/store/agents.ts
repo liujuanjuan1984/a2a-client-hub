@@ -28,7 +28,7 @@ export type AgentConfig = {
   lastError?: string;
 };
 
-export type AgentState = {
+type AgentState = {
   activeAgentId: string | null;
   setActiveAgent: (id: string | null) => void;
   resetAgentUiState: () => void;

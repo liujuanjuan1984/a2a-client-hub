@@ -4,14 +4,14 @@ import { persist } from "zustand/middleware";
 import { generateId } from "@/lib/id";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 
-export type Shortcut = {
+type Shortcut = {
   id: string;
   label: string;
   value: string;
   isCustom: boolean;
 };
 
-export type ShortcutState = {
+type ShortcutState = {
   shortcuts: Shortcut[];
   addShortcut: (label: string, value: string) => void;
   removeShortcut: (id: string) => void;

@@ -13,7 +13,7 @@ type IconButtonVariant =
   | "secondary";
 type IconButtonSize = "xs" | "sm" | "md" | "lg";
 
-export type IconButtonProps = Omit<PressableProps, "accessibilityLabel"> & {
+type IconButtonProps = Omit<PressableProps, "accessibilityLabel"> & {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   accessibilityLabel: string;
   variant?: IconButtonVariant;

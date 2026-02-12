@@ -26,7 +26,7 @@ import { shouldSplitStreamMessage } from "@/lib/streamMessageSplit";
 import { type AgentSource } from "@/store/agents";
 import { useMessageStore } from "@/store/messages";
 
-export type AgentSession = {
+type AgentSession = {
   agentId: string;
   contextId: string | null;
   runtimeStatus?: string | null;
@@ -38,7 +38,7 @@ export type AgentSession = {
   lastActiveAt: string;
 };
 
-export type ChatState = {
+type ChatState = {
   sessions: Record<string, AgentSession>;
   abortControllers: Record<string, AbortController>;
   wsConnections: Record<string, WsConnection>;

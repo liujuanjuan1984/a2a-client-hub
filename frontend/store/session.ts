@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import { type UserProfile } from "@/lib/api/types";
 
-export type SessionState = {
+type SessionState = {
   token: string | null;
   user: UserProfile | null;
   hydrated: boolean;

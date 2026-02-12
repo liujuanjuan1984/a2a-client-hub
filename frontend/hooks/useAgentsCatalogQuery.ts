@@ -29,12 +29,12 @@ import {
 import { queryKeys } from "@/lib/queryKeys";
 import { type AgentConfig, useAgentStore } from "@/store/agents";
 
-export type CreateAgentPayload = Omit<
+type CreateAgentPayload = Omit<
   AgentConfig,
   "id" | "source" | "status" | "lastCheckedAt" | "lastError"
 >;
 
-export type UpdateAgentPayload = Partial<
+type UpdateAgentPayload = Partial<
   Omit<AgentConfig, "id" | "source" | "status" | "lastCheckedAt" | "lastError">
 >;
 
