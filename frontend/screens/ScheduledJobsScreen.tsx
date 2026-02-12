@@ -1,6 +1,6 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
@@ -9,15 +9,9 @@ import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
-import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { useScheduledJobs } from "@/hooks/useScheduledJobs";
-import { ApiRequestError } from "@/lib/api/client";
-import {
-  listScheduledJobsPage,
-  type ScheduledJob,
-} from "@/lib/api/scheduledJobs";
+import { useScheduledJobsQuery } from "@/hooks/useScheduledJobsQuery";
 import { blurActiveElement } from "@/lib/focus";
-import { queryKeys } from "@/lib/queryKeys";
 import { buildScheduledJobEditHref, scheduledJobNewHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 
@@ -43,18 +37,6 @@ export function ScheduledJobsScreen() {
     [agents],
   );
 
-  const fetchJobsPage = useCallback(async (page: number) => {
-    const result = await listScheduledJobsPage({ page, size: 50 });
-    return { items: result.items, nextPage: result.nextPage };
-  }, []);
-
-  const mapErrorMessage = useCallback((error: unknown) => {
-    if (error instanceof ApiRequestError && error.status === 503) {
-      return "A2A integration is disabled.";
-    }
-    return null;
-  }, []);
-
   const {
     items: jobs,
     hasMore,
@@ -63,34 +45,25 @@ export function ScheduledJobsScreen() {
     loadingMore,
     loadFirstPage,
     loadMore,
-  } = usePaginatedList<ScheduledJob>({
-    queryKey: queryKeys.sessions.scheduledJobs(),
-    fetchPage: fetchJobsPage,
-    getKey: (item) => item.id,
-    errorTitle: "Load jobs failed",
-    fallbackMessage: "Load failed.",
-    mapErrorMessage,
-    enabled: false,
-  });
+  } = useScheduledJobsQuery({ enabled: false });
 
   const hasLoadedRef = useRef(false);
-  useEffect(() => {
-    if (jobs.length > 0) {
-      hasLoadedRef.current = true;
-    }
-  }, [jobs.length]);
-
   useFocusEffect(
     useCallback(() => {
       const mode = hasLoadedRef.current ? "refreshing" : "loading";
-      loadFirstPage(mode).catch(() => {
-        // Error already handled in hook
-      });
+      loadFirstPage(mode)
+        .then(() => {
+          hasLoadedRef.current = true;
+        })
+        .catch(() => {
+          // Error already handled in hook
+        });
     }, [loadFirstPage]),
   );
 
   const onRefresh = async () => {
     await loadFirstPage("refreshing");
+    hasLoadedRef.current = true;
   };
 
   const toggleExecutionsPanel = async (taskId: string) => {
@@ -179,6 +152,7 @@ export function ScheduledJobsScreen() {
                 try {
                   await toggleJobStatus(job);
                   await loadFirstPage("refreshing");
+                  hasLoadedRef.current = true;
                 } catch (error) {
                   const message =
                     error instanceof Error ? error.message : "Update failed.";

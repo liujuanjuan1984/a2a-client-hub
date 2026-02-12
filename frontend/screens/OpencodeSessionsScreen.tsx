@@ -12,16 +12,11 @@ import {
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useAgentOpencodeSessionsQuery } from "@/hooks/useAgentOpencodeSessionsQuery";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
-import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { validateAgentCard } from "@/lib/api/a2aAgents";
-import { A2AExtensionCallError } from "@/lib/api/a2aExtensions";
-import { ApiRequestError } from "@/lib/api/client";
 import { validateHubAgentCard } from "@/lib/api/hubA2aAgentsUser";
-import {
-  continueOpencodeSession,
-  listOpencodeSessionsPage,
-} from "@/lib/api/opencodeSessions";
+import { continueOpencodeSession } from "@/lib/api/opencodeSessions";
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import {
@@ -30,7 +25,6 @@ import {
   getOpencodeSessionTitle,
 } from "@/lib/opencodeAdapters";
 import { supportsOpencodeSessionQuery } from "@/lib/opencodeSupport";
-import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useChatStore } from "@/store/chat";
@@ -95,35 +89,6 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
     });
   }, [checkSupport]);
 
-  const fetchPage = useCallback(
-    async (page: number) => {
-      const result = await listOpencodeSessionsPage(agentId, {
-        page,
-        source,
-      });
-      return { items: result.items, nextPage: result.nextPage };
-    },
-    [agentId, source],
-  );
-
-  const mapErrorMessage = useCallback((error: unknown) => {
-    if (error instanceof A2AExtensionCallError) {
-      if (error.errorCode === "upstream_unreachable") {
-        return "Upstream is unreachable.";
-      }
-      if (error.errorCode === "upstream_http_error") {
-        return "Upstream returned an HTTP error.";
-      }
-      return error.errorCode
-        ? `Extension error: ${error.errorCode}`
-        : error.message;
-    }
-    if (error instanceof ApiRequestError && error.status === 502) {
-      return "Extension is not supported or the contract is invalid.";
-    }
-    return null;
-  }, []);
-
   const {
     items,
     hasMore,
@@ -131,15 +96,11 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
     refreshing,
     loadingMore,
     reset,
-    loadFirstPage,
     loadMore,
-  } = usePaginatedList<unknown>({
-    queryKey: queryKeys.sessions.opencodeByAgent(agentId, source),
-    fetchPage,
-    getKey: (item) => getOpencodeSessionId(item),
-    errorTitle: "Load OpenCode sessions failed",
-    fallbackMessage: "Load failed.",
-    mapErrorMessage,
+    loadFirstPage,
+  } = useAgentOpencodeSessionsQuery({
+    agentId,
+    source,
     enabled: supportState === "supported",
   });
 

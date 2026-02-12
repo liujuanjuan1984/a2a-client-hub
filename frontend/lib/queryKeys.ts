@@ -10,8 +10,14 @@ export const queryKeys = {
     scheduledJobs: () => ["scheduled-jobs", "list"] as const,
   },
   history: {
+    chat: (sessionId: string) => ["history", "chat", sessionId] as const,
     chatPage: (sessionId: string, page: number) =>
       ["history", "chat", sessionId, page] as const,
+    opencode: (
+      agentId: string,
+      sessionId: string,
+      source: "personal" | "shared",
+    ) => ["history", "opencode", source, agentId, sessionId] as const,
     opencodePage: (
       agentId: string,
       sessionId: string,

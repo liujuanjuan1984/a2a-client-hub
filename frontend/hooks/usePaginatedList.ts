@@ -169,6 +169,8 @@ export function usePaginatedList<T>({
   const loading = query.status === "pending" && pages.length === 0;
 
   return {
+    error: query.error,
+    isError: query.isError,
     items,
     setItems,
     nextPage,

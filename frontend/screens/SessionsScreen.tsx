@@ -1,19 +1,17 @@
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
 import {
   continueOpencodeSession,
-  listOpencodeSessionsDirectoryPage,
   type OpencodeSessionDirectoryItem,
 } from "@/lib/api/opencodeSessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
-import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useChatStore } from "@/store/chat";
@@ -27,39 +25,15 @@ export function SessionsScreen() {
     (state) => state.bindOpencodeSession,
   );
 
-  const refreshNextRef = useRef(false);
-
-  const fetchPage = useCallback(async (page: number) => {
-    const refresh = page === 1 && refreshNextRef.current;
-    if (refresh) refreshNextRef.current = false;
-    const result = await listOpencodeSessionsDirectoryPage({
-      page,
-      size: 50,
-      refresh,
-    });
-    return { items: result.items, nextPage: result.nextPage };
-  }, []);
-
   const {
     items,
     hasMore,
     loading,
     refreshing,
     loadingMore,
-    loadFirstPage,
+    refresh,
     loadMore,
-  } = usePaginatedList<OpencodeSessionDirectoryItem>({
-    queryKey: queryKeys.sessions.directory(),
-    fetchPage,
-    getKey: (item) => `${item.agent_id}:${item.session_id}`,
-    errorTitle: "Load sessions failed",
-    fallbackMessage: "Load failed.",
-  });
-
-  const onRefresh = async () => {
-    refreshNextRef.current = true;
-    await loadFirstPage("refreshing");
-  };
+  } = useSessionsDirectoryQuery();
 
   const sortedItems = useMemo(() => items, [items]);
 
@@ -111,7 +85,7 @@ export function SessionsScreen() {
         className="mt-2"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} />
         }
       >
         {loading ? (
