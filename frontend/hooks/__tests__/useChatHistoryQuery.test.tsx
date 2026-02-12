@@ -5,6 +5,7 @@ import {
   useSessionHistoryQuery,
 } from "@/hooks/useChatHistoryQuery";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import { type SessionMessageItem } from "@/lib/sessionHistory";
 
 jest.mock("@/hooks/usePaginatedList", () => ({
@@ -44,7 +45,7 @@ describe("useChatHistoryQuery", () => {
     mockedUsePaginatedList.mockReset();
   });
 
-  it("maps session history messages and keeps the latest 500", () => {
+  it("maps session history messages and keeps the latest configured limit", () => {
     const items: SessionMessageItem[] = Array.from({ length: 520 }, (_, i) => {
       const minute = String(Math.floor(i / 60)).padStart(2, "0");
       const second = String(i % 60).padStart(2, "0");
@@ -65,11 +66,12 @@ describe("useChatHistoryQuery", () => {
       }),
     );
 
-    expect(result.current.messages).toHaveLength(500);
+    const firstRetainedIndex = items.length - CHAT_MESSAGE_HISTORY_LIMIT;
+    expect(result.current.messages).toHaveLength(CHAT_MESSAGE_HISTORY_LIMIT);
     expect(result.current.messages[0]).toMatchObject({
-      id: "msg-20",
-      role: "agent",
-      content: "content-20",
+      id: `msg-${firstRetainedIndex}`,
+      role: firstRetainedIndex % 2 === 0 ? "agent" : "user",
+      content: `content-${firstRetainedIndex}`,
     });
 
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];
