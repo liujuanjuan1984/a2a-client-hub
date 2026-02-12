@@ -16,6 +16,7 @@ import {
   type ScheduledJob,
 } from "@/lib/api/scheduledJobs";
 import { blurActiveElement } from "@/lib/focus";
+import { queryKeys } from "@/lib/queryKeys";
 import { buildScheduledJobEditHref, scheduledJobNewHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
@@ -63,11 +64,13 @@ export function ScheduledJobsScreen() {
     loadFirstPage,
     loadMore,
   } = usePaginatedList<ScheduledJob>({
+    queryKey: queryKeys.sessions.scheduledJobs(),
     fetchPage: fetchJobsPage,
     getKey: (item) => item.id,
     errorTitle: "Load jobs failed",
     fallbackMessage: "Load failed.",
     mapErrorMessage,
+    enabled: false,
   });
 
   const hasLoadedRef = useRef(false);

@@ -63,6 +63,7 @@ export type ChatState = {
   getLatestSessionIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
   generateSessionId: () => string;
+  clearAll: () => void;
 };
 
 type WsConnection = {
@@ -770,6 +771,24 @@ export const useChatStore = create<ChatState>()(
         });
       },
       generateSessionId: () => generateId("sess"),
+      clearAll: () => {
+        const wsConnections = get().wsConnections;
+        Object.values(wsConnections).forEach((ws) => {
+          try {
+            ws.__cancelled = true;
+            ws.close();
+          } catch {}
+        });
+
+        const controllers = get().abortControllers;
+        Object.values(controllers).forEach((controller) => {
+          try {
+            controller.abort();
+          } catch {}
+        });
+
+        set({ sessions: {}, abortControllers: {}, wsConnections: {} });
+      },
     }),
     {
       name: "a2a-client-hub.chat",

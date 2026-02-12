@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
@@ -13,6 +13,7 @@ import {
 } from "@/lib/api/opencodeSessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
+import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useChatStore } from "@/store/chat";
@@ -28,19 +29,16 @@ export function SessionsScreen() {
 
   const refreshNextRef = useRef(false);
 
-  const fetchPage = useCallback(
-    async (page: number) => {
-      const refresh = page === 1 && refreshNextRef.current;
-      if (refresh) refreshNextRef.current = false;
-      const result = await listOpencodeSessionsDirectoryPage({
-        page,
-        size: 50,
-        refresh,
-      });
-      return { items: result.items, nextPage: result.nextPage };
-    },
-    [refreshNextRef, listOpencodeSessionsDirectoryPage],
-  );
+  const fetchPage = useCallback(async (page: number) => {
+    const refresh = page === 1 && refreshNextRef.current;
+    if (refresh) refreshNextRef.current = false;
+    const result = await listOpencodeSessionsDirectoryPage({
+      page,
+      size: 50,
+      refresh,
+    });
+    return { items: result.items, nextPage: result.nextPage };
+  }, []);
 
   const {
     items,
@@ -48,22 +46,15 @@ export function SessionsScreen() {
     loading,
     refreshing,
     loadingMore,
-    reset,
     loadFirstPage,
     loadMore,
   } = usePaginatedList<OpencodeSessionDirectoryItem>({
+    queryKey: queryKeys.sessions.directory(),
     fetchPage,
     getKey: (item) => `${item.agent_id}:${item.session_id}`,
     errorTitle: "Load sessions failed",
     fallbackMessage: "Load failed.",
   });
-
-  useEffect(() => {
-    reset();
-    loadFirstPage().catch(() => {
-      // Error already handled
-    });
-  }, [loadFirstPage, reset]);
 
   const onRefresh = async () => {
     refreshNextRef.current = true;

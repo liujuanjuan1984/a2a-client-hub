@@ -16,7 +16,9 @@ import {
   listHubAgents,
   validateHubAgentCard,
 } from "@/lib/api/hubA2aAgentsUser";
+import { queryKeys } from "@/lib/queryKeys";
 import { createPersistStorage } from "@/lib/storage/mmkv";
+import { queryClient } from "@/services/queryClient";
 
 export type AgentStatus = "idle" | "checking" | "success" | "error";
 
@@ -149,6 +151,9 @@ export const useAgentStore = create<AgentState>()(
         set((state) => ({
           agents: [toAgentConfig(response), ...state.agents],
         }));
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.agents.catalog(),
+        });
       },
       updateAgent: async (id, payload) => {
         const existing = get().agents.find((agent) => agent.id === id);
@@ -180,6 +185,9 @@ export const useAgentStore = create<AgentState>()(
               : agent,
           ),
         }));
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.agents.catalog(),
+        });
       },
       removeAgent: async (id) => {
         const existing = get().agents.find((agent) => agent.id === id);
@@ -194,6 +202,9 @@ export const useAgentStore = create<AgentState>()(
           activeAgentId:
             state.activeAgentId === id ? null : state.activeAgentId,
         }));
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.agents.catalog(),
+        });
       },
       setActiveAgent: (id) => set({ activeAgentId: id }),
       testAgent: async (id) => {

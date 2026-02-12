@@ -4,9 +4,9 @@ import { Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useMe } from "@/hooks/useAuth";
 import { ApiRequestError } from "@/lib/api/client";
-import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 import { useSessionStore } from "@/store/session";
 
@@ -14,8 +14,9 @@ export default function AppLayout() {
   const token = useSessionStore((state) => state.token);
   const hydrated = useSessionStore((state) => state.hydrated);
   const { data, isLoading, isError, refetch, error, isFetching } = useMe();
-  const loadAgents = useAgentStore((state) => state.loadAgents);
   const cleanupSessions = useChatStore((state) => state.cleanupSessions);
+
+  useAgentsCatalogQuery(Boolean(token));
 
   useEffect(() => {
     cleanupSessions();
@@ -24,15 +25,6 @@ export default function AppLayout() {
   const isUnauthorizedError =
     error instanceof ApiRequestError && error.status === 401;
   const shouldShowErrorScreen = isError && !isUnauthorizedError && !data;
-
-  useEffect(() => {
-    if (!token) {
-      return;
-    }
-    loadAgents().catch(() => {
-      // Agent list failures are handled per screen; keep app shell usable.
-    });
-  }, [token, loadAgents]);
 
   if (!hydrated) {
     return <FullscreenLoader message="Loading session..." />;

@@ -16,6 +16,16 @@ This frontend lives in `frontend/`. The backend lives in `backend/`.
 - TanStack Query
 - TypeScript
 
+## Cache Strategy
+
+Server state and client state are intentionally separated:
+
+- Default: TanStack Query owns server state (list/detail/pagination).
+- Mutations (create/update/delete) must invalidate related query keys.
+- Use focus refetch only as a supplement when a screen needs stronger freshness on return.
+- Zustand stores are reserved for local UI state and live interaction state (e.g. stream progress, local drafts).
+- On logout/session invalidation, clear both query cache and persisted client stores to avoid cross-account residue.
+
 ## Routing Conventions
 
 This project uses Expo Router (React Navigation). The main app area uses `Tabs` (Agents/Sessions/Jobs) as the global navigation.

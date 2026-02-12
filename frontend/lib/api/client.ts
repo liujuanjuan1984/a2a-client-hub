@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import { ENV } from "../config";
 import { type ApiErrorResponse } from "./types";
 
+import { resetClientState } from "@/lib/resetClientState";
 import { useSessionStore } from "@/store/session";
 
 export class ApiConfigError extends Error {
@@ -176,10 +177,10 @@ export async function apiRequest<Response, Body = unknown>(
       // If we still can't authenticate after a refresh, stop retrying and clear
       // local state to avoid request->refresh storms.
       if (response.status === 401) {
-        useSessionStore.getState().clearSession();
+        resetClientState();
       }
     } else {
-      useSessionStore.getState().clearSession();
+      resetClientState();
     }
   }
 

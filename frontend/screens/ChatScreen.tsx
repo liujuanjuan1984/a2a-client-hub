@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -24,6 +25,7 @@ import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
 import { mapOpencodeMessagesToChatMessages } from "@/lib/opencodeChatAdapters";
+import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import {
@@ -59,6 +61,7 @@ export function ChatScreen({
   opencodeSessionId?: string;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const goBackOrHome = useCallback(() => backOrHome(router), [router]);
   const storeActiveAgentId = useAgentStore((state) => state.activeAgentId);
   const activeAgentId = routeAgentId || storeActiveAgentId;
@@ -139,7 +142,7 @@ export function ChatScreen({
     setHistoryError(null);
     setHistoryLoading(true);
 
-    listSessionMessagesPage(sessionId, { page: 1, size: 100 })
+    fetchSessionHistoryPage(1)
       .then((result) => {
         if (cancelled) return;
         const mapped = mapSessionMessagesToChatMessages(
@@ -166,12 +169,49 @@ export function ChatScreen({
     return () => {
       cancelled = true;
     };
-  }, [history, sessionId, messages.length, setMessages]);
+  }, [history, messages.length, sessionId, setMessages]);
 
   const resolveOpencodeSource = useCallback(() => {
     if (agent?.source === "shared") return "shared";
     return "personal";
   }, [agent?.source]);
+
+  const fetchSessionHistoryPage = useCallback(
+    async (page: number) => {
+      if (!sessionId) {
+        throw new Error("Session id is required.");
+      }
+      return await queryClient.fetchQuery({
+        queryKey: queryKeys.history.chatPage(sessionId, page),
+        queryFn: () => listSessionMessagesPage(sessionId, { page, size: 100 }),
+      });
+    },
+    [queryClient, sessionId],
+  );
+
+  const fetchOpencodeHistoryPage = useCallback(
+    async (page: number) => {
+      if (!activeAgentId || !opencodeSessionId) {
+        throw new Error("Agent and OpenCode session are required.");
+      }
+      const sourceMode = resolveOpencodeSource();
+      return await queryClient.fetchQuery({
+        queryKey: queryKeys.history.opencodePage(
+          activeAgentId,
+          opencodeSessionId,
+          sourceMode,
+          page,
+        ),
+        queryFn: () =>
+          listOpencodeSessionMessagesPage(activeAgentId, opencodeSessionId, {
+            page,
+            size: 100,
+            source: sourceMode,
+          }),
+      });
+    },
+    [activeAgentId, opencodeSessionId, queryClient, resolveOpencodeSource],
+  );
 
   useEffect(() => {
     if (!opencodeSessionId || !sessionId || !activeAgentId) return;
@@ -221,11 +261,7 @@ export function ChatScreen({
     setOpencodeHistoryError(null);
     setOpencodeHistoryLoading(true);
 
-    listOpencodeSessionMessagesPage(activeAgentId, opencodeSessionId, {
-      page: 1,
-      size: 100,
-      source: resolveOpencodeSource(),
-    })
+    fetchOpencodeHistoryPage(1)
       .then((result) => {
         if (cancelled) return;
         const mapped = mapOpencodeMessagesToChatMessages(result.items).slice(
@@ -253,9 +289,9 @@ export function ChatScreen({
     };
   }, [
     activeAgentId,
+    fetchOpencodeHistoryPage,
     messages.length,
     opencodeSessionId,
-    resolveOpencodeSource,
     sessionId,
     setMessages,
   ]);
@@ -266,10 +302,7 @@ export function ChatScreen({
     if (historyLoadingMore) return;
     setHistoryLoadingMore(true);
     try {
-      const result = await listSessionMessagesPage(sessionId, {
-        page: historyNextPage,
-        size: 100,
-      });
+      const result = await fetchSessionHistoryPage(historyNextPage);
       const mapped = mapSessionMessagesToChatMessages(result.items, sessionId);
       const merged = new Map<string, (typeof messages)[number]>();
       [...mapped, ...messages].forEach((message) => {
@@ -297,15 +330,7 @@ export function ChatScreen({
     if (opencodeHistoryLoadingMore) return;
     setOpencodeHistoryLoadingMore(true);
     try {
-      const result = await listOpencodeSessionMessagesPage(
-        activeAgentId,
-        opencodeSessionId,
-        {
-          page: opencodeHistoryNextPage,
-          size: 100,
-          source: resolveOpencodeSource(),
-        },
-      );
+      const result = await fetchOpencodeHistoryPage(opencodeHistoryNextPage);
       const mapped = mapOpencodeMessagesToChatMessages(result.items);
       const merged = new Map<string, (typeof messages)[number]>();
       [...mapped, ...messages].forEach((message) => {

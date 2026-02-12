@@ -20,6 +20,7 @@ type MessageState = {
   ) => void;
   removeMessages: (sessionId: string) => void;
   pruneMessages: (sessionId: string, limit: number) => void;
+  clearAll: () => void;
 };
 
 export const useMessageStore = create<MessageState>()(
@@ -94,6 +95,7 @@ export const useMessageStore = create<MessageState>()(
           };
         });
       },
+      clearAll: () => set({ messages: {} }),
     }),
     {
       name: "a2a-client-hub.messages",

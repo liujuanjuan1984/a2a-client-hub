@@ -29,6 +29,7 @@ import {
   getOpencodeSessionTitle,
 } from "@/lib/opencodeAdapters";
 import { supportsOpencodeSessionQuery } from "@/lib/opencodeSupport";
+import { queryKeys } from "@/lib/queryKeys";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
@@ -133,22 +134,19 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
     loadFirstPage,
     loadMore,
   } = usePaginatedList<unknown>({
+    queryKey: queryKeys.sessions.opencodeByAgent(agentId, source),
     fetchPage,
     getKey: (item) => getOpencodeSessionId(item),
     errorTitle: "Load OpenCode sessions failed",
     fallbackMessage: "Load failed.",
     mapErrorMessage,
+    enabled: supportState === "supported",
   });
 
   useEffect(() => {
+    if (supportState === "supported") return;
     reset();
-    if (supportState !== "supported") {
-      return;
-    }
-    loadFirstPage().catch(() => {
-      // Error already handled
-    });
-  }, [agentId, loadFirstPage, reset, supportState]);
+  }, [reset, supportState]);
 
   const onRefresh = async () => {
     if (supportState !== "supported") return;

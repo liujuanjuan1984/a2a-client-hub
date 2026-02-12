@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
@@ -18,6 +19,7 @@ import {
 } from "@/lib/api/scheduledJobs";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
+import { queryKeys } from "@/lib/queryKeys";
 import { scheduledJobsHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
@@ -103,6 +105,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   const normalizedJobId = jobId?.trim() || undefined;
   const editing = Boolean(normalizedJobId);
   const router = useRouter();
+  const queryClient = useQueryClient();
   const goBackOrHome = useCallback(
     () => backOrHome(router, scheduledJobsHref),
     [router],
@@ -305,6 +308,9 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           ? "Scheduled job updated successfully."
           : "Scheduled job created successfully.",
       );
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.sessions.scheduledJobs(),
+      });
       goBackOrHome();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";

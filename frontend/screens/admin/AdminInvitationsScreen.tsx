@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -16,7 +17,6 @@ import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { useAsyncListLoad } from "@/hooks/useAsyncListLoad";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import {
   createInvitation,
@@ -26,6 +26,7 @@ import {
   type InvitationResponse,
 } from "@/lib/api/invitations";
 import { blurActiveElement } from "@/lib/focus";
+import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
 
 const statusColor = (status: InvitationResponse["status"]) => {
@@ -37,80 +38,105 @@ const statusColor = (status: InvitationResponse["status"]) => {
 
 export function AdminInvitationsScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { isReady, isAdmin } = useRequireAdmin();
-  const { loading, refreshing, run } = useAsyncListLoad();
+  const hasShownLoadErrorRef = useRef(false);
 
   const [email, setEmail] = useState("");
   const [memo, setMemo] = useState("");
-  const [items, setItems] = useState<InvitationResponse[]>([]);
 
   const canCreate = useMemo(() => Boolean(email.trim()), [email]);
 
-  const load = useCallback(
-    async (mode: "loading" | "refreshing" = "loading") => {
-      await run(
-        async () => {
-          const response = await listMyInvitations(1, 200);
-          setItems(response.items);
-        },
-        {
-          mode,
-          errorTitle: "Load invitations failed",
-          fallbackMessage: "Could not load invitations.",
-        },
-      );
-    },
-    [run],
-  );
+  const invitationsQuery = useQuery({
+    queryKey: queryKeys.admin.invitations(),
+    queryFn: () => listMyInvitations(1, 200),
+    enabled: isReady && isAdmin,
+  });
 
   useEffect(() => {
-    if (!isReady || !isAdmin) return;
-    load().catch(() => {
-      // Error already handled
-    });
-  }, [isReady, isAdmin, load]);
+    if (!invitationsQuery.isError || !invitationsQuery.error) {
+      hasShownLoadErrorRef.current = false;
+      return;
+    }
+    if (hasShownLoadErrorRef.current) return;
+    hasShownLoadErrorRef.current = true;
+    const message =
+      invitationsQuery.error instanceof Error
+        ? invitationsQuery.error.message
+        : "Could not load invitations.";
+    toast.error("Load invitations failed", message);
+  }, [invitationsQuery.error, invitationsQuery.isError]);
 
-  const handleCreate = async () => {
-    if (!canCreate) return;
-    blurActiveElement();
-    try {
-      const created = await createInvitation({
+  const invalidateInvitations = useCallback(async () => {
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.admin.invitations(),
+    });
+  }, [queryClient]);
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      return await createInvitation({
         email: email.trim(),
         memo: memo.trim() || null,
       });
+    },
+    onSuccess: async (created) => {
       setEmail("");
       setMemo("");
       toast.success("Invitation created", `${created.target_email}`);
-      await load("refreshing");
-    } catch (error) {
+      await invalidateInvitations();
+    },
+    onError: (error) => {
       const message = error instanceof Error ? error.message : "Create failed.";
       toast.error("Create failed", message);
-    }
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: async (invitationId: string) => {
+      await revokeInvitation(invitationId);
+    },
+    onSuccess: async () => {
+      toast.success("Invitation revoked", "The invitation has been revoked.");
+      await invalidateInvitations();
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Revoke failed.";
+      toast.error("Revoke failed", message);
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: async (invitationId: string) => {
+      await restoreInvitation(invitationId);
+    },
+    onSuccess: async () => {
+      toast.success("Invitation restored", "The invitation has been restored.");
+      await invalidateInvitations();
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : "Restore failed.";
+      toast.error("Restore failed", message);
+    },
+  });
+
+  const items = invitationsQuery.data?.items ?? [];
+
+  const handleCreate = async () => {
+    if (!canCreate || createMutation.isPending) return;
+    blurActiveElement();
+    await createMutation.mutateAsync();
   };
 
   const handleRevoke = async (invitationId: string) => {
     blurActiveElement();
-    try {
-      await revokeInvitation(invitationId);
-      toast.success("Invitation revoked", "The invitation has been revoked.");
-      await load("refreshing");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Revoke failed.";
-      toast.error("Revoke failed", message);
-    }
+    await revokeMutation.mutateAsync(invitationId);
   };
 
   const handleRestore = async (invitationId: string) => {
     blurActiveElement();
-    try {
-      await restoreInvitation(invitationId);
-      toast.success("Invitation restored", "The invitation has been restored.");
-      await load("refreshing");
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Restore failed.";
-      toast.error("Restore failed", message);
-    }
+    await restoreMutation.mutateAsync(invitationId);
   };
 
   const buildInvitationLink = useCallback(
@@ -141,6 +167,9 @@ export function AdminInvitationsScreen() {
   if (!isAdmin) {
     return null;
   }
+  if (invitationsQuery.isLoading) {
+    return <FullscreenLoader message="Loading invitations..." />;
+  }
 
   return (
     <ScreenContainer>
@@ -170,8 +199,8 @@ export function AdminInvitationsScreen() {
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => load("refreshing")}
+            refreshing={invitationsQuery.isRefetching}
+            onRefresh={() => invitationsQuery.refetch()}
             tintColor="#5c6afb"
             colors={["#5c6afb"]}
           />
@@ -197,10 +226,10 @@ export function AdminInvitationsScreen() {
               onChangeText={setMemo}
             />
             <Button
-              label={loading ? "Creating..." : "Create"}
-              loading={loading}
+              label={createMutation.isPending ? "Creating..." : "Create"}
+              loading={createMutation.isPending}
               onPress={handleCreate}
-              disabled={!canCreate || loading}
+              disabled={!canCreate || createMutation.isPending}
             />
           </View>
         </View>
@@ -212,7 +241,26 @@ export function AdminInvitationsScreen() {
           <Text className="text-xs text-muted">{items.length} total</Text>
         </View>
 
-        {items.length === 0 ? (
+        {invitationsQuery.isError ? (
+          <View className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
+            <Text className="text-base font-semibold text-red-200">
+              Load invitations failed
+            </Text>
+            <Text className="mt-2 text-sm text-red-100/90">
+              {invitationsQuery.error instanceof Error
+                ? invitationsQuery.error.message
+                : "Could not load invitations."}
+            </Text>
+            <Button
+              className="mt-4 self-start"
+              label={invitationsQuery.isRefetching ? "Retrying..." : "Retry"}
+              size="sm"
+              variant="secondary"
+              onPress={() => invitationsQuery.refetch()}
+              loading={invitationsQuery.isRefetching}
+            />
+          </View>
+        ) : items.length === 0 ? (
           <View className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
             <Text className="text-base font-semibold text-white">
               No invitations
@@ -279,36 +327,25 @@ export function AdminInvitationsScreen() {
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-end gap-2 border-t border-slate-800/50 bg-slate-900/50 px-5 py-3">
+              <View className="flex-row items-center justify-end gap-1 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
                 {inv.status === "pending" ? (
-                  <Pressable
-                    className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    label="Revoke"
                     onPress={() => handleRevoke(inv.id)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Disable invitation"
-                  >
-                    <Ionicons name="trash-outline" size={14} color="#f87171" />
-                    <Text className="text-xs font-medium text-red-300">
-                      Disable
-                    </Text>
-                  </Pressable>
-                ) : null}
-                {inv.status === "revoked" ? (
-                  <Pressable
-                    className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
+                    loading={revokeMutation.isPending}
+                    disabled={revokeMutation.isPending}
+                  />
+                ) : inv.status === "revoked" ? (
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    label="Restore"
                     onPress={() => handleRestore(inv.id)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Enable invitation"
-                  >
-                    <Ionicons
-                      name="refresh-outline"
-                      size={14}
-                      color="#94a3b8"
-                    />
-                    <Text className="text-xs font-medium text-slate-300">
-                      Enable
-                    </Text>
-                  </Pressable>
+                    loading={restoreMutation.isPending}
+                    disabled={restoreMutation.isPending}
+                  />
                 ) : null}
               </View>
             </View>
