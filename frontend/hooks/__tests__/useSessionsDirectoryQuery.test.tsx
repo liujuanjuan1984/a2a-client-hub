@@ -1,0 +1,86 @@
+import { act, renderHook } from "@testing-library/react-native";
+
+import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
+import { listOpencodeSessionsDirectoryPage } from "@/lib/api/opencodeSessions";
+
+jest.mock("@/hooks/usePaginatedList", () => ({
+  usePaginatedList: jest.fn(),
+}));
+
+jest.mock("@/lib/api/opencodeSessions", () => ({
+  listOpencodeSessionsDirectoryPage: jest.fn(),
+}));
+
+jest.mock("@/lib/storage/mmkv", () => ({
+  createPersistStorage: () => ({
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+  }),
+}));
+
+const mockedUsePaginatedList = jest.mocked(usePaginatedList);
+const mockedListDirectoryPage = jest.mocked(listOpencodeSessionsDirectoryPage);
+
+const createPaginatedResult = (): ReturnType<typeof usePaginatedList> =>
+  ({
+    error: null,
+    isError: false,
+    items: [],
+    setItems: jest.fn(),
+    nextPage: null,
+    hasMore: false,
+    loading: false,
+    refreshing: false,
+    loadingMore: false,
+    reset: jest.fn(),
+    loadFirstPage: jest.fn(async () => true),
+    loadMore: jest.fn(async () => {}),
+  }) as ReturnType<typeof usePaginatedList>;
+
+describe("useSessionsDirectoryQuery", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedUsePaginatedList.mockReturnValue(createPaginatedResult());
+    mockedListDirectoryPage.mockResolvedValue({
+      items: [],
+      nextPage: undefined,
+      pagination: null,
+      meta: null,
+    });
+  });
+
+  it("uses directory key and toggles refresh flag only for the next first-page fetch", async () => {
+    const { result } = renderHook(() => useSessionsDirectoryQuery());
+
+    const options = mockedUsePaginatedList.mock.calls[0]?.[0];
+    expect(options?.queryKey).toEqual(["sessions", "directory"]);
+
+    await options?.fetchPage(1);
+    expect(mockedListDirectoryPage).toHaveBeenNthCalledWith(1, {
+      page: 1,
+      size: 50,
+      refresh: false,
+    });
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.loadFirstPage).toHaveBeenCalledWith("refreshing");
+
+    await options?.fetchPage(1);
+    expect(mockedListDirectoryPage).toHaveBeenNthCalledWith(2, {
+      page: 1,
+      size: 50,
+      refresh: true,
+    });
+
+    await options?.fetchPage(1);
+    expect(mockedListDirectoryPage).toHaveBeenNthCalledWith(3, {
+      page: 1,
+      size: 50,
+      refresh: false,
+    });
+  });
+});

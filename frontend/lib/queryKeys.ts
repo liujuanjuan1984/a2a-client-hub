@@ -11,19 +11,11 @@ export const queryKeys = {
   },
   history: {
     chat: (sessionId: string) => ["history", "chat", sessionId] as const,
-    chatPage: (sessionId: string, page: number) =>
-      ["history", "chat", sessionId, page] as const,
     opencode: (
       agentId: string,
       sessionId: string,
       source: "personal" | "shared",
     ) => ["history", "opencode", source, agentId, sessionId] as const,
-    opencodePage: (
-      agentId: string,
-      sessionId: string,
-      source: "personal" | "shared",
-      page: number,
-    ) => ["history", "opencode", source, agentId, sessionId, page] as const,
   },
   admin: {
     hubAgents: () => ["admin", "hub-agents"] as const,
