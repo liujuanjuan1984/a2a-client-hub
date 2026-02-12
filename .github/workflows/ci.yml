@@ -32,8 +32,14 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --extra dev --locked
 
-      - name: Run backend pre-commit
-        run: uv run pre-commit run --all-files --config ../.pre-commit-config.yaml
+      - name: Run backend black check
+        run: uv run black --check .
+
+      - name: Run backend isort check
+        run: uv run isort --check-only .
+
+      - name: Run backend ruff check
+        run: uv run ruff check .
 
       - name: Run backend tests
         run: uv run pytest
