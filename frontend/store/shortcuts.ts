@@ -15,6 +15,7 @@ export type ShortcutState = {
   shortcuts: Shortcut[];
   addShortcut: (label: string, value: string) => void;
   removeShortcut: (id: string) => void;
+  clearAll: () => void;
 };
 
 const DEFAULT_SHORTCUTS: Shortcut[] = [
@@ -70,6 +71,10 @@ export const useShortcutStore = create<ShortcutState>()(
         set((state) => ({
           shortcuts: state.shortcuts.filter((s) => s.id !== id || !s.isCustom),
         })),
+      clearAll: () =>
+        set({
+          shortcuts: DEFAULT_SHORTCUTS,
+        }),
     }),
     {
       name: "a2a-client-hub.shortcuts",

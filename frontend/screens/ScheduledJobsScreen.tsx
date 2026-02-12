@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
+import { useScheduledJobExecutionsQuery } from "@/hooks/useScheduledJobExecutionsQuery";
 import { useScheduledJobs } from "@/hooks/useScheduledJobs";
 import { useScheduledJobsQuery } from "@/hooks/useScheduledJobsQuery";
 import { blurActiveElement } from "@/lib/focus";
@@ -18,15 +19,7 @@ import { toast } from "@/lib/toast";
 export function ScheduledJobsScreen() {
   const router = useRouter();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
-  const {
-    executionsByTaskId,
-    executionsNextPageByTaskId,
-    loadingExecutionsTaskId,
-    loadingMoreExecutionsTaskId,
-    loadExecutions,
-    loadMoreExecutions,
-    toggleJobStatus,
-  } = useScheduledJobs();
+  const { toggleJobStatus } = useScheduledJobs();
 
   const [expandedExecutionsTaskId, setExpandedExecutionsTaskId] = useState<
     string | null
@@ -47,6 +40,11 @@ export function ScheduledJobsScreen() {
     loadMore,
   } = useScheduledJobsQuery({ enabled: false });
 
+  const executionsQuery = useScheduledJobExecutionsQuery({
+    taskId: expandedExecutionsTaskId ?? undefined,
+    enabled: Boolean(expandedExecutionsTaskId),
+  });
+
   const hasLoadedRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
@@ -66,20 +64,10 @@ export function ScheduledJobsScreen() {
     }
   };
 
-  const toggleExecutionsPanel = async (taskId: string) => {
-    if (expandedExecutionsTaskId === taskId) {
-      setExpandedExecutionsTaskId(null);
-      return;
-    }
-    setExpandedExecutionsTaskId(taskId);
-    if (!executionsByTaskId[taskId]) {
-      try {
-        await loadExecutions(taskId);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Load failed.";
-        toast.error("Load executions failed", message);
-      }
-    }
+  const toggleExecutionsPanel = (taskId: string) => {
+    setExpandedExecutionsTaskId((current) =>
+      current === taskId ? null : taskId,
+    );
   };
 
   return (
@@ -133,50 +121,58 @@ export function ScheduledJobsScreen() {
             />
           </View>
         ) : (
-          jobs.map((job) => (
-            <ScheduledJobCard
-              key={job.id}
-              job={job}
-              agentName={
-                agentOptions.find((agent) => agent.id === job.agent_id)?.name ??
-                job.agent_id
-              }
-              executions={executionsByTaskId[job.id] ?? []}
-              executionsOpen={expandedExecutionsTaskId === job.id}
-              executionsLoading={loadingExecutionsTaskId === job.id}
-              executionsHasMore={
-                typeof executionsNextPageByTaskId[job.id] === "number"
-              }
-              executionsLoadingMore={loadingMoreExecutionsTaskId === job.id}
-              onToggleEnabled={async () => {
-                try {
-                  await toggleJobStatus(job);
-                  const succeeded = await loadFirstPage("refreshing");
-                  if (succeeded) {
-                    hasLoadedRef.current = true;
+          jobs.map((job) => {
+            const executionsOpen = expandedExecutionsTaskId === job.id;
+            return (
+              <ScheduledJobCard
+                key={job.id}
+                job={job}
+                agentName={
+                  agentOptions.find((agent) => agent.id === job.agent_id)
+                    ?.name ?? job.agent_id
+                }
+                executions={executionsOpen ? executionsQuery.items : []}
+                executionsOpen={executionsOpen}
+                executionsLoading={
+                  executionsOpen ? executionsQuery.loading : false
+                }
+                executionsHasMore={
+                  executionsOpen ? executionsQuery.hasMore : false
+                }
+                executionsLoadingMore={
+                  executionsOpen ? executionsQuery.loadingMore : false
+                }
+                onToggleEnabled={async () => {
+                  try {
+                    await toggleJobStatus(job);
+                    const succeeded = await loadFirstPage("refreshing");
+                    if (succeeded) {
+                      hasLoadedRef.current = true;
+                    }
+                    if (expandedExecutionsTaskId === job.id) {
+                      await executionsQuery.loadFirstPage("refreshing");
+                    }
+                  } catch (error) {
+                    const message =
+                      error instanceof Error ? error.message : "Update failed.";
+                    toast.error("Update failed", message);
                   }
-                } catch (error) {
-                  const message =
-                    error instanceof Error ? error.message : "Update failed.";
-                  toast.error("Update failed", message);
+                }}
+                onEdit={() => {
+                  blurActiveElement();
+                  router.push(buildScheduledJobEditHref(job.id));
+                }}
+                onToggleExecutions={() => toggleExecutionsPanel(job.id)}
+                onLoadMoreExecutions={
+                  executionsOpen
+                    ? async () => {
+                        await executionsQuery.loadMore();
+                      }
+                    : undefined
                 }
-              }}
-              onEdit={() => {
-                blurActiveElement();
-                router.push(buildScheduledJobEditHref(job.id));
-              }}
-              onToggleExecutions={() => toggleExecutionsPanel(job.id)}
-              onLoadMoreExecutions={async () => {
-                try {
-                  await loadMoreExecutions(job.id);
-                } catch (error) {
-                  const message =
-                    error instanceof Error ? error.message : "Load failed.";
-                  toast.error("Load executions failed", message);
-                }
-              }}
-            />
-          ))
+              />
+            );
+          })
         )}
 
         {hasMore ? (
