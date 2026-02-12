@@ -327,6 +327,7 @@ class Settings(BaseSettings):
             )
 
         algorithm = (self.jwt_algorithm or "").upper()
+        uses_asymmetric_jwt = algorithm.startswith(("RS", "ES"))
         if algorithm == "HS256":
             raise ValueError(
                 "JWT_ALGORITHM=HS256 is not supported. Use RS256 instead. "
@@ -334,7 +335,7 @@ class Settings(BaseSettings):
                 "(e.g. `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt_private_key.pem` "
                 "and `openssl rsa -in jwt_private_key.pem -pubout -out jwt_public_key.pem`)."
             )
-        if algorithm.startswith(("RS", "ES")):
+        if uses_asymmetric_jwt:
             if not self.jwt_private_key_pem or not self.jwt_public_key_pem:
                 raise ValueError(
                     "JWT_PRIVATE_KEY_PEM and JWT_PUBLIC_KEY_PEM are required for "
@@ -364,9 +365,10 @@ class Settings(BaseSettings):
         if self.is_production:
             baseline_errors: list[str] = []
 
-            if self._is_weak_secret(self.jwt_secret_key):
+            if not uses_asymmetric_jwt and self._is_weak_secret(self.jwt_secret_key):
                 baseline_errors.append(
-                    "JWT_SECRET_KEY must be set to a strong non-default value in production"
+                    "JWT_SECRET_KEY must be set to a strong non-default value in production "
+                    "when using symmetric JWT signing"
                 )
             if self._is_weak_secret(self.ws_ticket_secret_key):
                 baseline_errors.append(
