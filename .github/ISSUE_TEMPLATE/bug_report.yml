@@ -1,0 +1,66 @@
+name: Bug Report
+description: Report a reproducible problem
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please include enough detail to reproduce the issue.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe what happened.
+      placeholder: "Example: POST /api/v1/auth/refresh intermittently returns 401 on iOS Web."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Provide the minimal reproducible steps in order.
+      placeholder: |
+        1. Log in with account A
+        2. Open the Sessions page
+        3. Click Continue
+        4. Observe the error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      placeholder: The app should enter the session and load message history.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      placeholder: The page shows "Session continuation failed".
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, browser/device, deployment mode, branch, or commit SHA.
+      placeholder: |
+        - OS: macOS 14
+        - Browser: Chrome 121
+        - App: Web
+        - Commit: abcdef1
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or Screenshots
+      description: Paste key logs or screenshots (please remove sensitive data).

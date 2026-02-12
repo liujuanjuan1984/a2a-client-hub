@@ -13,6 +13,12 @@ uv sync --extra dev --locked
 
 Create `backend/.env` (see `backend/.env.example`).
 
+Production note:
+
+- Set `APP_ENV=production` to enable strict security baseline checks at startup.
+- See [`docs/security-baseline.md`](../docs/security-baseline.md) for required
+  cookie/CORS/origin/TLS settings.
+
 ## Initialize Schema and Run Migrations
 
 ```bash
@@ -44,6 +50,8 @@ This backend requires an allowlist for all outbound A2A HTTP requests (agent car
 fetching, transport negotiation, and extensions).
 
 - Configure `A2A_PROXY_ALLOWED_HOSTS` to allow the downstream host(s).
+- In production (`APP_ENV=production`), this list must be non-empty and must
+  not contain literal `*`.
 
 ## Hub A2A Catalog (Admin-Managed)
 

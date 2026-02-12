@@ -47,6 +47,13 @@ Authentication conventions are shared between frontend and backend:
   - Recommended: `https://<your-api-host>/api/v1`
   - Web-only (same-origin reverse proxy): `/api/v1`
 
+## Network Security Baseline
+
+- iOS default is `NSAllowsArbitraryLoads=false` (`frontend/app.json`).
+- Production builds should use HTTPS API endpoints.
+- If local debugging requires HTTP endpoints, scope any ATS relaxations to
+  development-only builds and do not ship them in production artifacts.
+
 ## Time Display Strategy
 
 - This project does not introduce a frontend i18n framework for date formatting.
