@@ -1,5 +1,7 @@
 # a2a-client-hub
 
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 `a2a-client-hub` is a self-hosted A2A client hub for teams and individuals who
 need one place to manage, invoke, and operate multiple A2A agents across web
 and mobile.
@@ -108,3 +110,7 @@ Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your backend.
 - Authentication conventions: [docs/authentication.md](docs/authentication.md)
 - Architecture and API examples:
   [docs/architecture-and-api.md](docs/architecture-and-api.md)
+
+## License
+
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
