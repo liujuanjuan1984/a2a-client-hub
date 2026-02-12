@@ -17,6 +17,17 @@ This project uses a short-lived **access token** + rotating **refresh token** mo
 - Web requests must send cookies:
   - `fetch(..., { credentials: "include" })`
 
+## Production Baseline
+
+For production deployments:
+
+- Set `APP_ENV=production` in backend settings.
+- Keep `AUTH_REFRESH_COOKIE_SECURE=true`.
+- Keep explicit allowlists for `BACKEND_CORS_ORIGINS` and `WS_ALLOWED_ORIGINS`.
+- Keep `WS_REQUIRE_ORIGIN=true`.
+
+See [security baseline](security-baseline.md) for the full hardening checklist.
+
 ## API Base URL
 
 Frontend uses `EXPO_PUBLIC_API_BASE_URL`:

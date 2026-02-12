@@ -106,6 +106,7 @@ Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your backend.
 - Backend details: [backend/README.md](backend/README.md)
 - Frontend details: [frontend/README.md](frontend/README.md)
 - Authentication conventions: [docs/authentication.md](docs/authentication.md)
+- Production security baseline: [docs/security-baseline.md](docs/security-baseline.md)
 - Architecture and API examples:
   [docs/architecture-and-api.md](docs/architecture-and-api.md)
 

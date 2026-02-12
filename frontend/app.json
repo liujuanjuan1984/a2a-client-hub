@@ -19,7 +19,7 @@
       "buildNumber": "1",
       "infoPlist": {
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
+          "NSAllowsArbitraryLoads": false
         }
       }
     },

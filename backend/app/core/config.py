@@ -1,9 +1,11 @@
 """Core configuration settings for a2a-client-hub.
 
-This module contains configuration settings using Pydantic for environment variable management.
+This module contains configuration settings using Pydantic for environment
+variable management.
 """
 
 from typing import Any
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -22,6 +24,11 @@ class Settings(BaseSettings):
     app_name: str = "a2a-client-hub API"
     app_version: str = "1.0.0"
     debug: bool = False
+    app_env: str = Field(
+        default="development",
+        alias="APP_ENV",
+        description="Deployment environment name (development/staging/production).",
+    )
 
     # Server settings
     host: str = Field(
@@ -104,6 +111,10 @@ class Settings(BaseSettings):
         """Resolve WS allowed origins, falling back to CORS origins."""
 
         return self.ws_allowed_origins or self.backend_cors_origins
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env == "production"
 
     # API settings
     api_v1_prefix: str = "/api/v1"
@@ -262,6 +273,42 @@ class Settings(BaseSettings):
             return value
         return value.strip().lower()
 
+    @field_validator("app_env", mode="before")
+    @classmethod
+    def _normalize_app_env(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if not isinstance(value, str):
+            return value
+        return value.strip().lower()
+
+    @staticmethod
+    def _is_weak_secret(value: str) -> bool:
+        candidate = (value or "").strip().lower()
+        if not candidate:
+            return True
+        weak_markers = (
+            "change-me",
+            "changeme",
+            "replace-me",
+            "replace_with",
+            "default",
+        )
+        return any(marker in candidate for marker in weak_markers)
+
+    @staticmethod
+    def _origin_is_local(origin: str) -> bool:
+        normalized = (origin or "").strip().lower()
+        if not normalized:
+            return False
+        parsed = urlparse(normalized)
+        host = (parsed.hostname or "").strip().lower()
+        if not host:
+            host = normalized
+        if host.startswith("[") and host.endswith("]"):
+            host = host[1:-1]
+        return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost")
+
     @model_validator(mode="after")
     def _validate_jwt_config(self) -> "Settings":
         if self.schema_name not in {
@@ -308,6 +355,64 @@ class Settings(BaseSettings):
             raise ValueError(
                 "AUTH_REFRESH_COOKIE_SECURE must be true when AUTH_REFRESH_COOKIE_SAMESITE=none"
             )
+
+        if self.is_production:
+            baseline_errors: list[str] = []
+
+            if self._is_weak_secret(self.jwt_secret_key):
+                baseline_errors.append(
+                    "JWT_SECRET_KEY must be set to a strong non-default value in production"
+                )
+            if self._is_weak_secret(self.ws_ticket_secret_key):
+                baseline_errors.append(
+                    "WS_TICKET_SECRET_KEY must be set to a strong non-default value in production"
+                )
+            if not self.auth_refresh_cookie_secure:
+                baseline_errors.append(
+                    "AUTH_REFRESH_COOKIE_SECURE must be true in production"
+                )
+            if not self.a2a_proxy_allowed_hosts:
+                baseline_errors.append(
+                    "A2A_PROXY_ALLOWED_HOSTS must not be empty in production"
+                )
+            if any(
+                (entry or "").strip() == "*" for entry in self.a2a_proxy_allowed_hosts
+            ):
+                baseline_errors.append(
+                    "A2A_PROXY_ALLOWED_HOSTS must not include '*' in production"
+                )
+            if any(
+                (origin or "").strip() == "*" for origin in self.backend_cors_origins
+            ):
+                baseline_errors.append(
+                    "BACKEND_CORS_ORIGINS must not include '*' in production"
+                )
+            if any(
+                self._origin_is_local(origin) for origin in self.backend_cors_origins
+            ):
+                baseline_errors.append(
+                    "BACKEND_CORS_ORIGINS must not include localhost origins in production"
+                )
+            if not self.ws_require_origin:
+                baseline_errors.append("WS_REQUIRE_ORIGIN must be true in production")
+            if not self.ws_allowed_origins:
+                baseline_errors.append(
+                    "WS_ALLOWED_ORIGINS must be explicitly configured in production"
+                )
+            if any((origin or "").strip() == "*" for origin in self.ws_allowed_origins):
+                baseline_errors.append(
+                    "WS_ALLOWED_ORIGINS must not include '*' in production"
+                )
+            if any(self._origin_is_local(origin) for origin in self.ws_allowed_origins):
+                baseline_errors.append(
+                    "WS_ALLOWED_ORIGINS must not include localhost origins in production"
+                )
+
+            if baseline_errors:
+                joined_errors = "; ".join(baseline_errors)
+                raise ValueError(
+                    "Production security baseline checks failed: " f"{joined_errors}"
+                )
         return self
 
     # Logging settings
