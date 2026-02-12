@@ -15,7 +15,7 @@ export default function RootLayout() {
   const webHead =
     Platform.OS === "web" ? (
       <Head>
-        <title>A2A Universal Client</title>
+        <title>A2AClientHub</title>
       </Head>
     ) : null;
 

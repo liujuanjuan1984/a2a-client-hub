@@ -35,6 +35,27 @@ const DEFAULT_IDLE_TIMEOUT_MS = 45_000;
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+const findSseBoundary = (
+  buffer: string,
+): { index: number; length: number } | null => {
+  const lfBoundary = buffer.indexOf("\n\n");
+  const crlfBoundary = buffer.indexOf("\r\n\r\n");
+
+  if (lfBoundary < 0 && crlfBoundary < 0) {
+    return null;
+  }
+  if (lfBoundary < 0) {
+    return { index: crlfBoundary, length: 4 };
+  }
+  if (crlfBoundary < 0) {
+    return { index: lfBoundary, length: 2 };
+  }
+
+  return lfBoundary < crlfBoundary
+    ? { index: lfBoundary, length: 2 }
+    : { index: crlfBoundary, length: 4 };
+};
+
 const getBackoffDelay = (attempt: number, options: SSEReconnectOptions) => {
   const initialDelayMs = options.initialDelayMs ?? 800;
   const maxDelayMs = options.maxDelayMs ?? 8_000;
@@ -238,14 +259,11 @@ const consumeSseStream = async (
 
     helpers.resetIdleTimer();
     buffer += decoder.decode(value, { stream: true });
-    // Normalize line endings
-    buffer = buffer.replace(/\r\n/g, "\n");
-
-    let boundaryIndex = buffer.indexOf("\n\n");
-    while (boundaryIndex >= 0) {
-      const rawEvent = buffer.slice(0, boundaryIndex).trim();
-      buffer = buffer.slice(boundaryIndex + 2);
-      boundaryIndex = buffer.indexOf("\n\n");
+    let boundary = findSseBoundary(buffer);
+    while (boundary) {
+      const rawEvent = buffer.slice(0, boundary.index).trim();
+      buffer = buffer.slice(boundary.index + boundary.length);
+      boundary = findSseBoundary(buffer);
 
       if (!rawEvent) continue;
 
@@ -277,7 +295,7 @@ const consumeSseStream = async (
 };
 
 const parseSseEvent = (rawEvent: string): SSEEvent => {
-  const lines = rawEvent.split("\n");
+  const lines = rawEvent.split(/\r?\n/);
   let eventType = "message";
   const dataLines: string[] = [];
 

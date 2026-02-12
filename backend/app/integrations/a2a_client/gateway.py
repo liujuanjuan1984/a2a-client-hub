@@ -96,9 +96,7 @@ class A2AGateway:
             )
 
         try:
-            result = await asyncio.wait_for(
-                asyncio.shield(call_task), timeout=timeout_seconds
-            )
+            result = await asyncio.wait_for(call_task, timeout=timeout_seconds)
         except asyncio.CancelledError:
             elapsed = time.monotonic() - start_time
             logger.warning(

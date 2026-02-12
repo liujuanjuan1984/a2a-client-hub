@@ -137,7 +137,7 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
     has_upper = any(c.isupper() for c in password)
     has_lower = any(c.islower() for c in password)
     has_digit = any(c.isdigit() for c in password)
-    has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password)
+    has_special = any(not c.isalnum() and not c.isspace() for c in password)
 
     if not has_upper:
         return False, "Password must contain at least one uppercase letter"

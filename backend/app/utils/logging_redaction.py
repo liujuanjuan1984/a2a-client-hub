@@ -41,7 +41,7 @@ def redact_sensitive_value(value: str | None) -> str | None:
 
     prefix = s_value[:6]
     # Use a stable hash of the value to help with debugging across logs
-    val_hash = hashlib.md5(s_value.encode()).hexdigest()[:8]
+    val_hash = hashlib.sha256(s_value.encode()).hexdigest()[:8]
     return f"{prefix}...{val_hash}"
 
 

@@ -374,7 +374,10 @@ export const useChatStore = create<ChatState>()(
           );
         };
 
-        if (supportsWebSocket) {
+        const tryWebSocketTransport = async () => {
+          if (!supportsWebSocket) {
+            return false;
+          }
           try {
             const ticket =
               agentSource === "shared"
@@ -575,18 +578,32 @@ export const useChatStore = create<ChatState>()(
                 finalize("reject", new Error("WebSocket connection timeout"));
               }, wsConnectTimeoutMs);
             });
-            return;
+            return true;
           } catch (error) {
             console.warn("[WS Fallback]", {
               platform: Platform.OS,
               reason: error instanceof Error ? error.message : String(error),
             });
+            return false;
           }
-        }
+        };
 
-        if (supportsStreaming) {
+        const trySseTransport = async () => {
+          if (!supportsStreaming) {
+            return false;
+          }
           updateSessionMeta({ transport: "http_sse" });
           const controller = new AbortController();
+          const clearAbortController = () => {
+            set((state) => {
+              if (!state.abortControllers[sessionId]) {
+                return state;
+              }
+              const next = { ...state.abortControllers };
+              delete next[sessionId];
+              return { abortControllers: next };
+            });
+          };
           set((state) => ({
             abortControllers: {
               ...state.abortControllers,
@@ -637,11 +654,7 @@ export const useChatStore = create<ChatState>()(
                   messageStore.updateMessage(sessionId, activeAgentMessageId, {
                     status: "done",
                   });
-                  set((state) => {
-                    const next = { ...state.abortControllers };
-                    delete next[sessionId];
-                    return { abortControllers: next };
-                  });
+                  clearAbortController();
                 },
               },
               {
@@ -657,46 +670,57 @@ export const useChatStore = create<ChatState>()(
                 },
               },
             );
-            return;
+            return true;
           } catch (error) {
             console.warn("[SSE Fallback]", {
               platform: Platform.OS,
               isIOSWeb,
               reason: error instanceof Error ? error.message : String(error),
             });
-            // Fall through to non-streaming logic
+            return false;
+          } finally {
+            clearAbortController();
           }
-        }
+        };
 
-        // Fallback to non-streaming
-        try {
-          updateSessionMeta({ transport: "http_json" });
-          const response =
-            agentSource === "shared"
-              ? await invokeHubAgent(agentId, payload)
-              : await invokeAgent(agentId, payload);
-          if (!response.success) {
+        const sendViaJsonFallback = async () => {
+          try {
+            updateSessionMeta({ transport: "http_json" });
+            const response =
+              agentSource === "shared"
+                ? await invokeHubAgent(agentId, payload)
+                : await invokeAgent(agentId, payload);
+            if (!response.success) {
+              const message =
+                response.error || response.error_code || "Request failed.";
+              messageStore.updateMessage(sessionId, agentMessageId, {
+                content: message,
+                status: "done",
+              });
+              return;
+            }
+
+            messageStore.updateMessage(sessionId, agentMessageId, {
+              content: response.content ?? "",
+              status: "done",
+            });
+          } catch (error) {
             const message =
-              response.error || response.error_code || "Request failed.";
+              error instanceof Error ? error.message : "Request failed.";
             messageStore.updateMessage(sessionId, agentMessageId, {
               content: message,
               status: "done",
             });
-            return;
           }
+        };
 
-          messageStore.updateMessage(sessionId, agentMessageId, {
-            content: response.content ?? "",
-            status: "done",
-          });
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : "Request failed.";
-          messageStore.updateMessage(sessionId, agentMessageId, {
-            content: message,
-            status: "done",
-          });
+        if (await tryWebSocketTransport()) {
+          return;
         }
+        if (await trySseTransport()) {
+          return;
+        }
+        await sendViaJsonFallback();
       },
       getSessionsByAgentId: (agentId) => {
         const getLastActiveAt = (session: AgentSession) =>
