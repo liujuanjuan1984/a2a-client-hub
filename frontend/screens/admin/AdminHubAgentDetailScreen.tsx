@@ -93,6 +93,7 @@ export function AdminHubAgentDetailScreen({
   const [errors, setErrors] = useState<{ name?: string; cardUrl?: string }>({});
   const hasShownAgentLoadErrorRef = useRef(false);
   const hasShownAllowlistLoadErrorRef = useRef(false);
+  const formInitializedRef = useRef(false);
 
   const agentQuery = useQuery({
     queryKey: queryKeys.admin.hubAgent(agentId),
@@ -187,11 +188,26 @@ export function AdminHubAgentDetailScreen({
   }, []);
 
   useEffect(() => {
+    formInitializedRef.current = false;
+  }, [agentId]);
+
+  useEffect(() => {
     if (!agentQuery.data) {
       return;
     }
+
+    if (!formInitializedRef.current) {
+      hydrateFromAgent(agentQuery.data);
+      formInitializedRef.current = true;
+      return;
+    }
+
+    if (dirty) {
+      return;
+    }
+
     hydrateFromAgent(agentQuery.data);
-  }, [agentQuery.data, hydrateFromAgent]);
+  }, [agentQuery.data, dirty, hydrateFromAgent, agentId]);
 
   useEffect(() => {
     if (!agentQuery.isError || !agentQuery.error) {
@@ -247,12 +263,17 @@ export function AdminHubAgentDetailScreen({
     if (!agentId) return;
 
     const agentResult = await agentQuery.refetch();
+    if (agentResult.data) {
+      hydrateFromAgent(agentResult.data);
+      formInitializedRef.current = true;
+    }
+
     if (agentResult.data?.availability_policy === "allowlist") {
       await allowlistQuery.refetch();
       return;
     }
     setAllowlist([]);
-  }, [agentId, agentQuery.refetch, allowlistQuery.refetch]);
+  }, [agentId, agentQuery.refetch, allowlistQuery.refetch, hydrateFromAgent]);
 
   const setHeaderRow = useCallback(
     (id: string, field: "key" | "value", value: string) => {
