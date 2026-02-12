@@ -122,8 +122,8 @@ export function AdminHubAgentDetailScreen({
       return;
     }
 
-    setAgent(agentQuery.data);
     if (!formInitializedRef.current) {
+      setAgent(agentQuery.data);
       hydrateFromRecord(agentQuery.data);
       formInitializedRef.current = true;
       return;
@@ -132,6 +132,7 @@ export function AdminHubAgentDetailScreen({
     if (dirty) {
       return;
     }
+    setAgent(agentQuery.data);
     hydrateFromRecord(agentQuery.data);
   }, [agentId, agentQuery.data, dirty, hydrateFromRecord]);
 
