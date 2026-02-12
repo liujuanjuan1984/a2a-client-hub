@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题提交
+    url: https://github.com/liujuanjuan1984/a2a-client-hub/security/advisories/new
+    about: 涉及漏洞或敏感信息，请使用私密方式上报。
