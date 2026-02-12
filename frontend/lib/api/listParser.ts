@@ -7,6 +7,3 @@ export const parseListResponse = <T>(response: T[] | ItemsEnvelope<T>) => ({
   items: Array.isArray(response) ? response : response.items,
   envelope: Array.isArray(response) ? null : response,
 });
-
-export const parseListItems = <T>(response: T[] | ItemsEnvelope<T>) =>
-  parseListResponse(response).items;

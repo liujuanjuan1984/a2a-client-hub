@@ -90,18 +90,3 @@ export const useRegister = () => {
     },
   });
 };
-
-export const useLogout = () => {
-  return useMutation({
-    mutationFn: async () => {
-      try {
-        await apiRequest("/auth/logout", { method: "POST" });
-      } catch {
-        // Best-effort: always clear local state even if the network fails.
-      }
-    },
-    onSettled: () => {
-      resetClientState();
-    },
-  });
-};
