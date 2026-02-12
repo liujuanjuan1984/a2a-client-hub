@@ -53,7 +53,7 @@ dependencies = [
     # JWT handling
     "PyJWT>=2.7.0",
     "passlib[bcrypt]==1.7.4",
-    "bcrypt==4.0.1",
+    "bcrypt==5.0.0",
     "cryptography>=42.0.0",
 ]
 
