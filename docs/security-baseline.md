@@ -10,7 +10,8 @@ The backend will refuse to start when baseline checks fail.
 
 When `APP_ENV=production`, the backend enforces:
 
-- `JWT_SECRET_KEY` is not a weak/default placeholder when symmetric JWT signing is used.
+- `JWT_ALGORITHM` is restricted to asymmetric algorithms (`RS*`/`ES*`) with
+  explicit `JWT_PRIVATE_KEY_PEM` and `JWT_PUBLIC_KEY_PEM`.
 - `WS_TICKET_SECRET_KEY` is not a weak/default placeholder.
 - `AUTH_REFRESH_COOKIE_SECURE=true`.
 - `A2A_PROXY_ALLOWED_HOSTS` is non-empty and does not contain literal `*`.

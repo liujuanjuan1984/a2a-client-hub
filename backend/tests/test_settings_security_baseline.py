@@ -38,6 +38,16 @@ def test_production_allows_default_jwt_secret_for_asymmetric_jwt(
     assert settings.jwt_algorithm == "RS256"
 
 
+def test_rejects_unsupported_symmetric_jwt_algorithm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("JWT_ALGORITHM", "HS512")
+
+    with pytest.raises(ValueError, match="JWT_ALGORITHM must be one of"):
+        Settings()
+
+
 def test_production_rejects_relaxed_network_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
