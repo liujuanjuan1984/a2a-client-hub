@@ -24,6 +24,7 @@ import { type ChatMessage } from "@/lib/api/chat-utils";
 import { continueOpencodeSession } from "@/lib/api/opencodeSessions";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
+import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import { backOrHome } from "@/lib/navigation";
 import { buildChatRoute } from "@/lib/routes";
 import {
@@ -192,7 +193,7 @@ export function ChatScreen({
       });
       const nextMessages = Array.from(merged.values())
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .slice(-500);
+        .slice(-CHAT_MESSAGE_HISTORY_LIMIT);
       if (isSameMessageList(current, nextMessages)) {
         return;
       }

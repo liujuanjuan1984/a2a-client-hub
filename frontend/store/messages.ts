@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { type ChatMessage } from "@/lib/api/chat-utils";
+import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 
 type MessageState = {
@@ -39,11 +40,10 @@ export const useMessageStore = create<MessageState>()(
         set((state) => {
           const current = state.messages[sessionId] || [];
           const next = [...current, message];
-          // Enforce 100 messages limit internally
           return {
             messages: {
               ...state.messages,
-              [sessionId]: next.slice(-100),
+              [sessionId]: next.slice(-CHAT_MESSAGE_HISTORY_LIMIT),
             },
           };
         });

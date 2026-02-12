@@ -137,8 +137,23 @@ export function usePaginatedList<T>({
     });
   }, [queryClient, queryKey]);
 
+  const restoreSnapshot = useCallback(
+    (snapshot: InfiniteData<PaginatedPage<T>, number> | undefined) => {
+      if (!snapshot) return;
+      queryClient.setQueryData(queryKey, snapshot);
+    },
+    [queryClient, queryKey],
+  );
+
   const loadFirstPage = useCallback(
     async (mode: LoadMode = "loading") => {
+      const snapshot =
+        mode === "refreshing"
+          ? queryClient.getQueryData<InfiniteData<PaginatedPage<T>, number>>(
+              queryKey,
+            )
+          : undefined;
+
       if (mode === "refreshing") {
         setRefreshing(true);
         keepFirstPageOnly();
@@ -147,11 +162,13 @@ export function usePaginatedList<T>({
       try {
         const result = await query.refetch();
         if (result.status === "error") {
+          restoreSnapshot(snapshot);
           showErrorToast(result.error);
           return false;
         }
         return true;
       } catch (error) {
+        restoreSnapshot(snapshot);
         showErrorToast(error);
         return false;
       } finally {
@@ -160,7 +177,14 @@ export function usePaginatedList<T>({
         }
       }
     },
-    [keepFirstPageOnly, query, showErrorToast],
+    [
+      keepFirstPageOnly,
+      query,
+      queryClient,
+      queryKey,
+      restoreSnapshot,
+      showErrorToast,
+    ],
   );
 
   const reset = useCallback(() => {

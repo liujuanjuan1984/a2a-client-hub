@@ -128,4 +128,71 @@ describe("usePaginatedList", () => {
 
     expect(refreshCalls).toEqual([1]);
   });
+
+  it("restores previously loaded pages when refresh fails", async () => {
+    const queryClient = createQueryClient();
+    let failRefresh = false;
+
+    const fetchPage = jest.fn(async (page: number) => {
+      if (page === 1) {
+        if (failRefresh) {
+          throw new Error("refresh failed");
+        }
+        return {
+          items: [{ id: "item-1" }],
+          nextPage: 2,
+        };
+      }
+
+      if (page === 2) {
+        return {
+          items: [{ id: "item-2" }],
+        };
+      }
+
+      return {
+        items: [],
+      };
+    });
+
+    const { result } = renderHook(
+      () =>
+        usePaginatedList<Item>({
+          queryKey: ["test", "rollback"],
+          fetchPage,
+          getKey: (item) => item.id,
+          errorTitle: "Load failed",
+          fallbackMessage: "Load failed.",
+          enabled: true,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    await waitFor(() => {
+      expect(result.current.items).toHaveLength(2);
+    });
+
+    failRefresh = true;
+
+    await act(async () => {
+      const succeeded = await result.current.loadFirstPage("refreshing");
+      expect(succeeded).toBe(false);
+    });
+
+    await waitFor(() => {
+      expect(result.current.items).toHaveLength(2);
+      expect(result.current.items.map((item) => item.id)).toEqual([
+        "item-1",
+        "item-2",
+      ]);
+    });
+  });
 });

@@ -3,6 +3,7 @@ import { useCallback, useMemo } from "react";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { listOpencodeSessionMessagesPage } from "@/lib/api/opencodeSessions";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
+import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import {
   getOpencodeMessageId,
   getOpencodeMessageRole,
@@ -45,7 +46,9 @@ export function useSessionHistoryQuery(options: {
     if (!sessionId) {
       return [];
     }
-    return mapSessionMessagesToChatMessages(query.items, sessionId).slice(-500);
+    return mapSessionMessagesToChatMessages(query.items, sessionId).slice(
+      -CHAT_MESSAGE_HISTORY_LIMIT,
+    );
   }, [query.items, sessionId]);
 
   return {
@@ -93,7 +96,7 @@ export function useOpencodeHistoryQuery(options: {
   const messages = useMemo(() => {
     return mapOpencodeMessagesToChatMessages(query.items)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      .slice(-500);
+      .slice(-CHAT_MESSAGE_HISTORY_LIMIT);
   }, [query.items]);
 
   return {
