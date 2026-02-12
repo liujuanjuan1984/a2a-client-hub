@@ -331,17 +331,6 @@ async def revoke_other_invitations_for_email(
     return invitations
 
 
-async def list_created_invitations(
-    db: AsyncSession,
-    *,
-    creator_user_id,
-) -> List[Invitation]:
-    stmt = _build_invitation_query(creator_user_id=creator_user_id).order_by(
-        Invitation.created_at.desc()
-    )
-    return list((await db.execute(stmt)).scalars())
-
-
 async def list_created_invitations_with_total(
     db: AsyncSession,
     *,
@@ -355,17 +344,6 @@ async def list_created_invitations_with_total(
     result = await db.execute(stmt)
     total = await db.scalar(count_stmt)
     return list(result.scalars()), int(total or 0)
-
-
-async def list_invitations_for_email(
-    db: AsyncSession,
-    *,
-    email: str,
-) -> List[Invitation]:
-    stmt = _build_invitation_query(target_email=email).order_by(
-        Invitation.created_at.desc()
-    )
-    return list((await db.execute(stmt)).scalars())
 
 
 async def list_invitations_targeting_user_with_total(
