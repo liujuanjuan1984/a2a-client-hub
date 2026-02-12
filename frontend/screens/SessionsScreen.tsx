@@ -1,29 +1,17 @@
-import { useRouter } from "expo-router";
 import { useMemo } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useContinueOpencodeSession } from "@/hooks/useContinueOpencodeSession";
 import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
-import {
-  continueOpencodeSession,
-  type OpencodeSessionDirectoryItem,
-} from "@/lib/api/opencodeSessions";
+import { type OpencodeSessionDirectoryItem } from "@/lib/api/opencodeSessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
-import { blurActiveElement } from "@/lib/focus";
-import { buildChatRoute } from "@/lib/routes";
-import { toast } from "@/lib/toast";
-import { useChatStore } from "@/store/chat";
 
 export function SessionsScreen() {
-  const router = useRouter();
-
-  const generateSessionId = useChatStore((state) => state.generateSessionId);
-  const ensureSession = useChatStore((state) => state.ensureSession);
-  const bindOpencodeSession = useChatStore(
-    (state) => state.bindOpencodeSession,
-  );
+  const { continueSession: continueOpencodeSession } =
+    useContinueOpencodeSession();
 
   const {
     items,
@@ -37,41 +25,12 @@ export function SessionsScreen() {
 
   const sortedItems = useMemo(() => items, [items]);
 
-  const continueSession = async (item: OpencodeSessionDirectoryItem) => {
-    const agentId = item.agent_id;
-    const source = item.agent_source;
-    const opencodeSessionId = item.session_id;
-    if (!opencodeSessionId) {
-      toast.error("Continue session failed", "Missing session id.");
-      return;
-    }
-    try {
-      const binding = await continueOpencodeSession(
-        agentId,
-        opencodeSessionId,
-        {
-          source,
-        },
-      );
-      const chatSessionId = generateSessionId();
-      ensureSession(chatSessionId, agentId);
-      bindOpencodeSession(chatSessionId, {
-        agentId,
-        opencodeSessionId,
-        contextId: binding.contextId ?? undefined,
-        metadata: binding.metadata,
-      });
-      blurActiveElement();
-      router.push(
-        buildChatRoute(agentId, chatSessionId, {
-          opencodeSessionId,
-        }),
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Continue failed.";
-      toast.error("Continue session failed", message);
-    }
+  const handleContinueSession = async (item: OpencodeSessionDirectoryItem) => {
+    await continueOpencodeSession({
+      agentId: item.agent_id,
+      sessionId: item.session_id,
+      source: item.agent_source,
+    });
   };
 
   return (
@@ -142,7 +101,7 @@ export function SessionsScreen() {
                       variant="secondary"
                       label="Continue"
                       iconRight="chevron-forward"
-                      onPress={() => continueSession(item)}
+                      onPress={() => handleContinueSession(item)}
                     />
                   </View>
                 </View>

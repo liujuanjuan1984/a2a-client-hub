@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/pagination";
 
 type AgentSource = "personal" | "shared";
+export type { AgentSource };
 
 type OpencodeResultEnvelope = {
   items?: unknown[];
@@ -35,6 +36,59 @@ const extractItems = (envelope: OpencodeResultEnvelope): unknown[] => {
 
 const scopeForSource = (source: AgentSource) =>
   source === "shared" ? "/a2a/agents" : "/me/a2a/agents";
+
+type OpencodeListOptions = {
+  page?: number;
+  size?: number;
+  query?: Record<string, unknown> | null;
+  source?: AgentSource;
+};
+
+type OpencodeListRequest = {
+  agentId: string;
+  endpoint: string;
+  defaultSize: number;
+  options?: OpencodeListOptions;
+};
+
+const listOpencodePage = async ({
+  agentId,
+  endpoint,
+  defaultSize,
+  options,
+}: OpencodeListRequest): Promise<OpencodePaginatedResult> => {
+  const page = options?.page ?? 1;
+  const size = options?.size ?? defaultSize;
+  const scope = scopeForSource(options?.source ?? "personal");
+  const response = await apiRequest<
+    A2AExtensionResponse,
+    A2AExtensionQueryRequest
+  >(`${scope}/${encodeURIComponent(agentId)}/${endpoint}`, {
+    method: "POST",
+    body: {
+      page,
+      size,
+      query: options?.query ?? null,
+    },
+  });
+
+  assertExtensionSuccess(response);
+  const envelope = normalizeEnvelope(response.result);
+  const items = extractItems(envelope);
+  const listEnvelope = {
+    items,
+    pagination: envelope.pagination,
+    meta: envelope.meta,
+  };
+  const parsed = parsePaginatedListResponse(listEnvelope);
+  const nextPage =
+    typeof parsed.nextPage === "number"
+      ? parsed.nextPage
+      : items.length >= size
+        ? page + 1
+        : undefined;
+  return { ...parsed, nextPage, envelope, raw: envelope.raw };
+};
 
 export type OpencodeContinueBinding = {
   contextId: string | null;
@@ -79,94 +133,26 @@ export const continueOpencodeSession = async (
 
 export const listOpencodeSessionsPage = async (
   agentId: string,
-  options?: {
-    page?: number;
-    size?: number;
-    query?: Record<string, unknown> | null;
-    source?: AgentSource;
-  },
-): Promise<OpencodePaginatedResult> => {
-  const scope = scopeForSource(options?.source ?? "personal");
-  const response = await apiRequest<
-    A2AExtensionResponse,
-    A2AExtensionQueryRequest
-  >(
-    `${scope}/${encodeURIComponent(agentId)}/extensions/opencode/sessions:query`,
-    {
-      method: "POST",
-      body: {
-        page: options?.page ?? 1,
-        size: options?.size ?? 20,
-        query: options?.query ?? null,
-      },
-    },
-  );
-
-  assertExtensionSuccess(response);
-  const envelope = normalizeEnvelope(response.result);
-  const items = extractItems(envelope);
-  const listEnvelope = {
-    items,
-    pagination: envelope.pagination,
-    meta: envelope.meta,
-  };
-  const parsed = parsePaginatedListResponse(listEnvelope);
-  const page = options?.page ?? 1;
-  const size = options?.size ?? 20;
-  const nextPage =
-    typeof parsed.nextPage === "number"
-      ? parsed.nextPage
-      : items.length >= size
-        ? page + 1
-        : undefined;
-  return { ...parsed, nextPage, envelope, raw: envelope.raw };
-};
+  options?: OpencodeListOptions,
+): Promise<OpencodePaginatedResult> =>
+  listOpencodePage({
+    agentId,
+    endpoint: "extensions/opencode/sessions:query",
+    defaultSize: 20,
+    options,
+  });
 
 export const listOpencodeSessionMessagesPage = async (
   agentId: string,
   sessionId: string,
-  options?: {
-    page?: number;
-    size?: number;
-    query?: Record<string, unknown> | null;
-    source?: AgentSource;
-  },
-): Promise<OpencodePaginatedResult> => {
-  const scope = scopeForSource(options?.source ?? "personal");
-  const response = await apiRequest<
-    A2AExtensionResponse,
-    A2AExtensionQueryRequest
-  >(
-    `${scope}/${encodeURIComponent(agentId)}/extensions/opencode/sessions/${encodeURIComponent(sessionId)}/messages:query`,
-    {
-      method: "POST",
-      body: {
-        page: options?.page ?? 1,
-        size: options?.size ?? 50,
-        query: options?.query ?? null,
-      },
-    },
-  );
-
-  assertExtensionSuccess(response);
-  const envelope = normalizeEnvelope(response.result);
-  const items = extractItems(envelope);
-  const listEnvelope = {
-    items,
-    pagination: envelope.pagination,
-    meta: envelope.meta,
-  };
-  const parsed = parsePaginatedListResponse(listEnvelope);
-  const page = options?.page ?? 1;
-  const size = options?.size ?? 50;
-  const nextPage =
-    typeof parsed.nextPage === "number"
-      ? parsed.nextPage
-      : items.length >= size
-        ? page + 1
-        : undefined;
-  return { ...parsed, nextPage, envelope, raw: envelope.raw };
-};
+  options?: OpencodeListOptions,
+): Promise<OpencodePaginatedResult> =>
+  listOpencodePage({
+    agentId,
+    endpoint: `extensions/opencode/sessions/${encodeURIComponent(sessionId)}/messages:query`,
+    defaultSize: 50,
+    options,
+  });
 
 export type OpencodeSessionDirectoryItem = {
   agent_id: string;

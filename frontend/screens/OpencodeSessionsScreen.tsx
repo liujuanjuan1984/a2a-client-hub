@@ -14,9 +14,9 @@ import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAgentOpencodeSessionsQuery } from "@/hooks/useAgentOpencodeSessionsQuery";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
+import { useContinueOpencodeSession } from "@/hooks/useContinueOpencodeSession";
 import { validateAgentCard } from "@/lib/api/a2aAgents";
 import { validateHubAgentCard } from "@/lib/api/hubA2aAgentsUser";
-import { continueOpencodeSession } from "@/lib/api/opencodeSessions";
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import {
@@ -25,9 +25,6 @@ import {
   getOpencodeSessionTitle,
 } from "@/lib/opencodeAdapters";
 import { supportsOpencodeSessionQuery } from "@/lib/opencodeSupport";
-import { buildChatRoute } from "@/lib/routes";
-import { toast } from "@/lib/toast";
-import { useChatStore } from "@/store/chat";
 
 type SupportState = "checking" | "supported" | "unsupported" | "unknown";
 
@@ -45,11 +42,7 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
     null,
   );
   const source = agent?.source ?? "personal";
-  const generateSessionId = useChatStore((state) => state.generateSessionId);
-  const ensureSession = useChatStore((state) => state.ensureSession);
-  const bindOpencodeSession = useChatStore(
-    (state) => state.bindOpencodeSession,
-  );
+  const { continueSession: continueWithBinding } = useContinueOpencodeSession();
 
   const checkSupport = useCallback(async () => {
     setSupportState("checking");
@@ -115,39 +108,18 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
   };
 
   const continueSession = async (item: unknown) => {
-    const opencodeSessionId = getOpencodeSessionId(item);
+    const opencodeSessionId = getOpencodeSessionId(item) ?? "";
     if (!opencodeSessionId) {
-      toast.error("Continue session failed", "Missing session id.");
+      await continueWithBinding({ agentId, sessionId: "", source });
       return;
     }
     setContinuingSessionId(opencodeSessionId);
     try {
-      const binding = await continueOpencodeSession(
+      await continueWithBinding({
         agentId,
-        opencodeSessionId,
-        {
-          source,
-        },
-      );
-
-      const chatSessionId = generateSessionId();
-      ensureSession(chatSessionId, agentId);
-      bindOpencodeSession(chatSessionId, {
-        agentId,
-        opencodeSessionId,
-        contextId: binding.contextId ?? undefined,
-        metadata: binding.metadata,
+        sessionId: opencodeSessionId,
+        source,
       });
-      blurActiveElement();
-      router.push(
-        buildChatRoute(agentId, chatSessionId, {
-          opencodeSessionId,
-        }),
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Continue failed.";
-      toast.error("Continue session failed", message);
     } finally {
       setContinuingSessionId(null);
     }

@@ -22,6 +22,7 @@ from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
 from app.integrations.a2a_extensions.opencode_session_query import (
     resolve_opencode_session_query,
 )
+from app.integrations.a2a_extensions.types import ResolvedExtension
 from app.services.a2a_runtime import A2ARuntime
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
@@ -206,37 +207,46 @@ class A2AExtensionsService:
             raise ValueError(f"size must be <= {max_size}")
         return resolved_page, resolved_size
 
-    async def opencode_list_sessions(
-        self,
-        *,
-        runtime: A2ARuntime,
-        page: int,
-        size: Optional[int],
-        query: Optional[Dict[str, Any]],
-    ) -> ExtensionCallResult:
+    async def _resolve_opencode_extension(
+        self, runtime: A2ARuntime
+    ) -> tuple[ResolvedExtension, str]:
         card = await self._fetch_card(runtime)
         ext = resolve_opencode_session_query(card)
         jsonrpc_url = self._ensure_outbound_allowed(
             ext.jsonrpc.url, purpose="JSON-RPC interface URL"
         )
+        return ext, jsonrpc_url
 
-        resolved_page, resolved_size = self._coerce_page_size(
-            default_size=ext.pagination.default_size,
-            max_size=ext.pagination.max_size,
-            page=page,
-            size=size,
-        )
+    @staticmethod
+    def _map_business_error_code(error: Dict[str, Any], ext: ResolvedExtension) -> str:
+        code = error.get("code")
+        mapped = None
+        if isinstance(code, int):
+            mapped = ext.business_code_map.get(code)
+        elif isinstance(code, str) and code.strip().lstrip("-").isdigit():
+            mapped = ext.business_code_map.get(int(code.strip()))
+        return mapped or "upstream_error"
 
-        params: Dict[str, Any] = {"page": resolved_page, "size": resolved_size}
-        if query is not None:
-            params["query"] = query
-
+    async def _invoke_opencode_method(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        jsonrpc_url: str,
+        method_key: str,
+        params: Dict[str, Any],
+        page: int,
+        size: int,
+        meta_extra: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        method_name = ext.methods[method_key]
+        metric_key = f"{ext.uri}:{method_name}"
         await self._get_http()
         assert self._jsonrpc is not None  # constructed alongside _http
         try:
             resp = await self._call_with_retry(
                 url=jsonrpc_url,
-                method=ext.methods["list_sessions"],
+                method=method_name,
                 params=params,
                 headers=dict(runtime.resolved.headers),
                 timeout_seconds=max(settings.a2a_default_timeout, 1.0),
@@ -266,35 +276,31 @@ class A2AExtensionsService:
         meta = {
             "extension_uri": ext.uri,
             "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
-            "page": resolved_page,
-            "size": resolved_size,
+            "page": page,
+            "size": size,
             "max_size": ext.pagination.max_size,
             "default_size": ext.pagination.default_size,
         }
+        if meta_extra:
+            meta.update(meta_extra)
 
         if resp.ok:
             normalized = self._normalize_envelope(
                 resp.result,
-                page=resolved_page,
-                size=resolved_size,
+                page=page,
+                size=size,
             )
             a2a_extension_metrics.record_call(
-                f"{ext.uri}:{ext.methods['list_sessions']}",
+                metric_key,
                 success=True,
                 error_code=None,
             )
             return ExtensionCallResult(success=True, result=normalized, meta=meta)
 
         error = resp.error or {}
-        code = error.get("code")
-        mapped = None
-        if isinstance(code, int):
-            mapped = ext.business_code_map.get(code)
-        elif isinstance(code, str) and code.strip().lstrip("-").isdigit():
-            mapped = ext.business_code_map.get(int(code.strip()))
-        error_code = mapped or "upstream_error"
+        error_code = self._map_business_error_code(error, ext)
         a2a_extension_metrics.record_call(
-            f"{ext.uri}:{ext.methods['list_sessions']}",
+            metric_key,
             success=False,
             error_code=error_code,
         )
@@ -303,6 +309,37 @@ class A2AExtensionsService:
             error_code=error_code,
             upstream_error=error,
             meta=meta,
+        )
+
+    async def opencode_list_sessions(
+        self,
+        *,
+        runtime: A2ARuntime,
+        page: int,
+        size: Optional[int],
+        query: Optional[Dict[str, Any]],
+    ) -> ExtensionCallResult:
+        ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
+
+        resolved_page, resolved_size = self._coerce_page_size(
+            default_size=ext.pagination.default_size,
+            max_size=ext.pagination.max_size,
+            page=page,
+            size=size,
+        )
+
+        params: Dict[str, Any] = {"page": resolved_page, "size": resolved_size}
+        if query is not None:
+            params["query"] = query
+
+        return await self._invoke_opencode_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="list_sessions",
+            params=params,
+            page=resolved_page,
+            size=resolved_size,
         )
 
     async def opencode_get_session_messages(
@@ -318,11 +355,7 @@ class A2AExtensionsService:
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        card = await self._fetch_card(runtime)
-        ext = resolve_opencode_session_query(card)
-        jsonrpc_url = self._ensure_outbound_allowed(
-            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
-        )
+        ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -339,79 +372,15 @@ class A2AExtensionsService:
         if query is not None:
             params["query"] = query
 
-        await self._get_http()
-        assert self._jsonrpc is not None
-        try:
-            resp = await self._call_with_retry(
-                url=jsonrpc_url,
-                method=ext.methods["get_session_messages"],
-                params=params,
-                headers=dict(runtime.resolved.headers),
-                timeout_seconds=max(settings.a2a_default_timeout, 1.0),
-            )
-        except httpx.TransportError as exc:
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_unreachable",
-                upstream_error={"message": str(exc), "type": type(exc).__name__},
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_http_error",
-                upstream_error={
-                    "message": str(exc),
-                    "status_code": exc.response.status_code if exc.response else None,
-                },
-            ) from exc
-        except Exception as exc:  # noqa: BLE001
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_error",
-                upstream_error={"message": str(exc), "type": type(exc).__name__},
-            ) from exc
-
-        meta = {
-            "extension_uri": ext.uri,
-            "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
-            "session_id": resolved_session_id,
-            "page": resolved_page,
-            "size": resolved_size,
-            "max_size": ext.pagination.max_size,
-            "default_size": ext.pagination.default_size,
-        }
-
-        if resp.ok:
-            normalized = self._normalize_envelope(
-                resp.result,
-                page=resolved_page,
-                size=resolved_size,
-            )
-            a2a_extension_metrics.record_call(
-                f"{ext.uri}:{ext.methods['get_session_messages']}",
-                success=True,
-                error_code=None,
-            )
-            return ExtensionCallResult(success=True, result=normalized, meta=meta)
-
-        error = resp.error or {}
-        code = error.get("code")
-        mapped = None
-        if isinstance(code, int):
-            mapped = ext.business_code_map.get(code)
-        elif isinstance(code, str) and code.strip().lstrip("-").isdigit():
-            mapped = ext.business_code_map.get(int(code.strip()))
-        error_code = mapped or "upstream_error"
-        a2a_extension_metrics.record_call(
-            f"{ext.uri}:{ext.methods['get_session_messages']}",
-            success=False,
-            error_code=error_code,
-        )
-        return ExtensionCallResult(
-            success=False,
-            error_code=error_code,
-            upstream_error=error,
-            meta=meta,
+        return await self._invoke_opencode_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="get_session_messages",
+            params=params,
+            page=resolved_page,
+            size=resolved_size,
+            meta_extra={"session_id": resolved_session_id},
         )
 
     async def opencode_continue_session(
