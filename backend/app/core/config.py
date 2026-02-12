@@ -14,6 +14,17 @@ from sqlalchemy.engine.url import make_url
 
 load_dotenv(override=True)
 
+SUPPORTED_JWT_ALGORITHMS = frozenset(
+    {
+        "RS256",
+        "RS384",
+        "RS512",
+        "ES256",
+        "ES384",
+        "ES512",
+    }
+)
+
 
 class Settings(BaseSettings):
     """
@@ -144,7 +155,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(
         default="change-me-32-chars-minimum-secret-key",
         alias="JWT_SECRET_KEY",
-        description="Secret key for JWT token signing",
+        description="Legacy compatibility secret; JWT signing uses asymmetric PEM keys",
     )
     jwt_algorithm: str = Field(
         default="RS256",
@@ -327,19 +338,17 @@ class Settings(BaseSettings):
             )
 
         algorithm = (self.jwt_algorithm or "").upper()
-        if algorithm == "HS256":
+        if algorithm not in SUPPORTED_JWT_ALGORITHMS:
+            allowed = ", ".join(sorted(SUPPORTED_JWT_ALGORITHMS))
             raise ValueError(
-                "JWT_ALGORITHM=HS256 is not supported. Use RS256 instead. "
-                "Generate keys and set JWT_PRIVATE_KEY_PEM/JWT_PUBLIC_KEY_PEM "
-                "(e.g. `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt_private_key.pem` "
-                "and `openssl rsa -in jwt_private_key.pem -pubout -out jwt_public_key.pem`)."
+                "JWT_ALGORITHM must be one of: "
+                f"{allowed}. Symmetric algorithms (HS*) are not supported."
             )
-        if algorithm.startswith(("RS", "ES")):
-            if not self.jwt_private_key_pem or not self.jwt_public_key_pem:
-                raise ValueError(
-                    "JWT_PRIVATE_KEY_PEM and JWT_PUBLIC_KEY_PEM are required for "
-                    f"JWT_ALGORITHM={self.jwt_algorithm}"
-                )
+        if not self.jwt_private_key_pem or not self.jwt_public_key_pem:
+            raise ValueError(
+                "JWT_PRIVATE_KEY_PEM and JWT_PUBLIC_KEY_PEM are required for "
+                f"JWT_ALGORITHM={self.jwt_algorithm}"
+            )
 
         if self.jwt_access_token_ttl_seconds <= 0:
             raise ValueError("JWT_ACCESS_TOKEN_TTL_SECONDS must be positive")
@@ -364,10 +373,6 @@ class Settings(BaseSettings):
         if self.is_production:
             baseline_errors: list[str] = []
 
-            if self._is_weak_secret(self.jwt_secret_key):
-                baseline_errors.append(
-                    "JWT_SECRET_KEY must be set to a strong non-default value in production"
-                )
             if self._is_weak_secret(self.ws_ticket_secret_key):
                 baseline_errors.append(
                     "WS_TICKET_SECRET_KEY must be set to a strong non-default value in production"

@@ -27,13 +27,24 @@ def _set_base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A2A_PROXY_ALLOWED_HOSTS", '["agent.example.com"]')
 
 
-def test_production_rejects_weak_default_secret(
+def test_production_allows_default_jwt_secret_for_asymmetric_jwt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_base_env(monkeypatch)
     monkeypatch.setenv("JWT_SECRET_KEY", "change-me-32-chars-minimum-secret-key")
 
-    with pytest.raises(ValueError, match="JWT_SECRET_KEY"):
+    settings = Settings()
+
+    assert settings.jwt_algorithm == "RS256"
+
+
+def test_rejects_unsupported_symmetric_jwt_algorithm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("JWT_ALGORITHM", "HS512")
+
+    with pytest.raises(ValueError, match="JWT_ALGORITHM must be one of"):
         Settings()
 
 
