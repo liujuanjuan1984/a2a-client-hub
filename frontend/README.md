@@ -39,13 +39,36 @@ This project uses Expo Router (React Navigation). The main app area uses `Tabs` 
 
 Authentication conventions are shared between frontend and backend:
 
-- See `docs/authentication.md`.
+- See [docs/authentication.md](../docs/authentication.md).
 
 ## Environment
 
 - `EXPO_PUBLIC_API_BASE_URL` is required for Web and Native.
   - Recommended: `https://<your-api-host>/api/v1`
   - Web-only (same-origin reverse proxy): `/api/v1`
+
+## Time Display Strategy
+
+- This project does not introduce a frontend i18n framework for date formatting.
+- Use shared helpers in `frontend/lib/datetime.ts`:
+  - `formatLocalDateTime`
+  - `formatLocalDateTimeYmdHm`
+- Timezone resolution:
+  - Prefer `Intl.DateTimeFormat().resolvedOptions().timeZone`
+  - Fallback to `UTC` when missing/invalid/unavailable
+- Display format: `YYYY-MM-DD HH:mm` (24-hour)
+- Fallback values:
+  - Empty timestamp -> `-`
+  - Invalid timestamp string -> original input (passthrough)
+
+## Web Publish Helper
+
+Use `npm run publish:web` to export and serve the web build locally.
+
+- Default host: `127.0.0.1`
+- Default port: `8787`
+- Override with env vars: `HOST`, `PORT`
+- Run in background: `DETACH=1 npm run publish:web`
 
 ## OpenCode Extension (Sessions)
 

@@ -10,17 +10,9 @@ import { Input } from "@/components/ui/Input";
 import { useRegister } from "@/hooks/useAuth";
 import { ApiRequestError } from "@/lib/api/client";
 import { lookupInvitation } from "@/lib/api/invitations";
+import { resolveUserTimeZone } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { toast } from "@/lib/toast";
-
-const detectTimezone = (): string | undefined => {
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return typeof tz === "string" && tz.trim().length > 0 ? tz : undefined;
-  } catch {
-    return undefined;
-  }
-};
 
 const toStringParam = (value: unknown): string | undefined => {
   if (typeof value === "string") return value;
@@ -102,7 +94,7 @@ export function RegisterScreen() {
         email: email.trim(),
         name: name.trim(),
         password,
-        timezone: detectTimezone(),
+        timezone: resolveUserTimeZone(),
         invite_code: inviteCode.trim() || undefined,
       });
       toast.success("Registered", "Welcome!");

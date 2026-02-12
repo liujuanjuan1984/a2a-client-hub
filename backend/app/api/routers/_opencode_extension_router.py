@@ -80,6 +80,31 @@ def create_opencode_extension_router(
                 status_code=runtime_validation_status_code, detail=str(exc)
             ) from exc
 
+    def _to_extension_response(result: Any) -> A2AExtensionResponse:
+        return A2AExtensionResponse(
+            success=result.success,
+            result=result.result,
+            error_code=result.error_code,
+            upstream_error=result.upstream_error,
+            meta=result.meta or {},
+        )
+
+    async def _run_extension_call(call: Awaitable[Any]) -> A2AExtensionResponse:
+        try:
+            result = await call
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except (A2AExtensionNotSupportedError, A2AExtensionContractError) as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except A2AExtensionUpstreamError as exc:
+            return A2AExtensionResponse(
+                success=False,
+                error_code=exc.error_code,
+                upstream_error=exc.upstream_error,
+                meta={},
+            )
+        return _to_extension_response(result)
+
     @router.get(
         "/{agent_id}/extensions/opencode/sessions",
         response_model=A2AExtensionResponse,
@@ -115,33 +140,13 @@ def create_opencode_extension_router(
             },
         )
 
-        try:
-            result = await get_a2a_extensions_service().opencode_list_sessions(
+        return await _run_extension_call(
+            get_a2a_extensions_service().opencode_list_sessions(
                 runtime=runtime,
                 page=page,
                 size=size,
                 query=query_obj,
             )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except A2AExtensionNotSupportedError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except A2AExtensionContractError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except A2AExtensionUpstreamError as exc:
-            return A2AExtensionResponse(
-                success=False,
-                error_code=exc.error_code,
-                upstream_error=exc.upstream_error,
-                meta={},
-            )
-
-        return A2AExtensionResponse(
-            success=result.success,
-            result=result.result,
-            error_code=result.error_code,
-            upstream_error=result.upstream_error,
-            meta=result.meta or {},
         )
 
     @router.post(
@@ -170,31 +175,11 @@ def create_opencode_extension_router(
             },
         )
 
-        try:
-            result = await get_a2a_extensions_service().opencode_continue_session(
+        return await _run_extension_call(
+            get_a2a_extensions_service().opencode_continue_session(
                 runtime=runtime,
                 session_id=session_id,
             )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except A2AExtensionNotSupportedError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except A2AExtensionContractError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except A2AExtensionUpstreamError as exc:
-            return A2AExtensionResponse(
-                success=False,
-                error_code=exc.error_code,
-                upstream_error=exc.upstream_error,
-                meta={},
-            )
-
-        return A2AExtensionResponse(
-            success=result.success,
-            result=result.result,
-            error_code=result.error_code,
-            upstream_error=result.upstream_error,
-            meta=result.meta or {},
         )
 
     @router.post(
@@ -225,33 +210,13 @@ def create_opencode_extension_router(
             },
         )
 
-        try:
-            result = await get_a2a_extensions_service().opencode_list_sessions(
+        return await _run_extension_call(
+            get_a2a_extensions_service().opencode_list_sessions(
                 runtime=runtime,
                 page=payload.page,
                 size=payload.size,
                 query=payload.query,
             )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except A2AExtensionNotSupportedError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except A2AExtensionContractError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except A2AExtensionUpstreamError as exc:
-            return A2AExtensionResponse(
-                success=False,
-                error_code=exc.error_code,
-                upstream_error=exc.upstream_error,
-                meta={},
-            )
-
-        return A2AExtensionResponse(
-            success=result.success,
-            result=result.result,
-            error_code=result.error_code,
-            upstream_error=result.upstream_error,
-            meta=result.meta or {},
         )
 
     @router.get(
@@ -291,34 +256,14 @@ def create_opencode_extension_router(
             },
         )
 
-        try:
-            result = await get_a2a_extensions_service().opencode_get_session_messages(
+        return await _run_extension_call(
+            get_a2a_extensions_service().opencode_get_session_messages(
                 runtime=runtime,
                 session_id=session_id,
                 page=page,
                 size=size,
                 query=query_obj,
             )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except A2AExtensionNotSupportedError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except A2AExtensionContractError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except A2AExtensionUpstreamError as exc:
-            return A2AExtensionResponse(
-                success=False,
-                error_code=exc.error_code,
-                upstream_error=exc.upstream_error,
-                meta={},
-            )
-
-        return A2AExtensionResponse(
-            success=result.success,
-            result=result.result,
-            error_code=result.error_code,
-            upstream_error=result.upstream_error,
-            meta=result.meta or {},
         )
 
     @router.post(
@@ -351,34 +296,14 @@ def create_opencode_extension_router(
             },
         )
 
-        try:
-            result = await get_a2a_extensions_service().opencode_get_session_messages(
+        return await _run_extension_call(
+            get_a2a_extensions_service().opencode_get_session_messages(
                 runtime=runtime,
                 session_id=session_id,
                 page=payload.page,
                 size=payload.size,
                 query=payload.query,
             )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except A2AExtensionNotSupportedError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except A2AExtensionContractError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except A2AExtensionUpstreamError as exc:
-            return A2AExtensionResponse(
-                success=False,
-                error_code=exc.error_code,
-                upstream_error=exc.upstream_error,
-                meta={},
-            )
-
-        return A2AExtensionResponse(
-            success=result.success,
-            result=result.result,
-            error_code=result.error_code,
-            upstream_error=result.upstream_error,
-            meta=result.meta or {},
         )
 
     return router

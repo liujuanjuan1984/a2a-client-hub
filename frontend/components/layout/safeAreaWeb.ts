@@ -2,7 +2,7 @@ import { Platform } from "react-native";
 
 type SafeAreaEdge = "top" | "right" | "bottom" | "left";
 
-export type WebSafeAreaInsets = Record<SafeAreaEdge, number>;
+type WebSafeAreaInsets = Record<SafeAreaEdge, number>;
 
 const EDGE_CSS_VAR: Record<SafeAreaEdge, string> = {
   top: "--safe-area-inset-top",

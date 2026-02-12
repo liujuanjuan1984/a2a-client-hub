@@ -9,7 +9,9 @@ This repository contains **a2a-client-hub**, a user-facing A2A client that lets 
 
 ## Docs
 
-- Contribution guidelines: `AGENTS.md`
-- Backend docs: `backend/README.md`
-- Frontend docs: `frontend/README.md`
-- Authentication conventions: `docs/authentication.md`
+- Contributing guide (human contributors): [CONTRIBUTING.md](CONTRIBUTING.md)
+- Agent operating protocol: [AGENTS.md](AGENTS.md)
+- Backend docs: [backend/README.md](backend/README.md)
+- Frontend docs: [frontend/README.md](frontend/README.md)
+- Authentication conventions: [docs/authentication.md](docs/authentication.md)
+- Architecture and API examples: [docs/architecture-and-api.md](docs/architecture-and-api.md)

@@ -4,20 +4,15 @@ This module contains the base model classes and common mixins used across all mo
 It includes schema configuration for PostgreSQL 16 support.
 """
 
-from typing import TYPE_CHECKING, Union
-from uuid import UUID as PythonUUID
 from uuid import uuid4
 
 from sqlalchemy import Column, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Query, declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
 from app.core.config import settings
 from app.utils.timezone_util import utc_now
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
 
 # Schema name from settings
 SCHEMA_NAME = settings.schema_name
@@ -60,16 +55,6 @@ class TimestampMixin:
         comment="Record last update timestamp",
     )
 
-    @property
-    def created_at_iso(self) -> str:
-        """Get created_at as ISO string for API responses"""
-        return self.created_at.isoformat() if self.created_at else ""
-
-    @property
-    def updated_at_iso(self) -> str:
-        """Get updated_at as ISO string for API responses"""
-        return self.updated_at.isoformat() if self.updated_at else ""
-
 
 class UserOwnedMixin:
     """
@@ -100,11 +85,6 @@ class SoftDeleteMixin:
         comment="Soft delete timestamp (NULL means not deleted)",
     )
 
-    @property
-    def is_deleted(self) -> bool:
-        """Check if the record is soft deleted"""
-        return self.deleted_at is not None
-
     def soft_delete(self) -> None:
         """Mark the record as deleted"""
         self.deleted_at = utc_now()
@@ -112,48 +92,6 @@ class SoftDeleteMixin:
     def restore(self) -> None:
         """Restore a soft deleted record"""
         self.deleted_at = None
-
-    @classmethod
-    def active(
-        cls, db_session: "Session", user_id: Union[PythonUUID, Column, None] = None
-    ) -> Query:
-        """
-        Return a query that automatically filters out soft-deleted records.
-
-        Usage:
-            # Instead of: db.query(Task).filter(Task.deleted_at.is_(None))
-            # Use: Task.active(db)
-
-            # For chaining:
-            Task.active(db).filter(Task.status == 'todo').all()
-        """
-        return db_session.query(cls).filter(cls.deleted_at.is_(None))
-
-    @classmethod
-    def with_deleted(
-        cls, db_session, user_id: Union[PythonUUID, Column, None] = None
-    ) -> Query:
-        """
-        Return a query that includes soft-deleted records.
-
-        Usage:
-            # When you need to include deleted records
-            Task.with_deleted(db).filter(Task.id == task_id).first()
-        """
-        return db_session.query(cls)
-
-    @classmethod
-    def only_deleted(
-        cls, db_session, user_id: Union[PythonUUID, Column, None] = None
-    ) -> Query:
-        """
-        Return a query that only includes soft-deleted records.
-
-        Usage:
-            # When you need only deleted records
-            Task.only_deleted(db).all()
-        """
-        return db_session.query(cls).filter(cls.deleted_at.isnot(None))
 
 
 # Export all classes for easy importing

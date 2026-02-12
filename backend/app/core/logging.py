@@ -125,7 +125,7 @@ def setup_logging() -> None:
     - Prevents duplicate log output by clearing existing handlers
     """
 
-    # 清除现有的处理器，避免重复输出
+    # Clear existing handlers to prevent duplicate output.
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
 
@@ -141,13 +141,13 @@ def setup_logging() -> None:
     root_logger.setLevel(getattr(logging, settings.log_level.upper()))
     root_logger.addHandler(console_handler)
 
-    # 防止日志传播到父 logger，避免重复输出
+    # Disable upward propagation on root logger to avoid duplicate records.
     root_logger.propagate = False
 
     # Configure specific loggers
     app_logger = logging.getLogger("app")
     app_logger.setLevel(logging.DEBUG)
-    app_logger.propagate = True  # 允许传播到 root logger
+    app_logger.propagate = True  # Allow propagation to the root logger.
 
     # Ensure SQLAlchemy logs are visible for debugging
     sqlalchemy_logger = logging.getLogger("sqlalchemy.engine")

@@ -11,7 +11,7 @@ import { toast } from "@/lib/toast";
 
 type LoadMode = "loading" | "refreshing";
 
-export type PaginatedPage<T> = {
+type PaginatedPage<T> = {
   items: T[];
   nextPage?: number;
 };
