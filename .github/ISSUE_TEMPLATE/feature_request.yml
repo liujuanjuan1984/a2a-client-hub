@@ -1,54 +1,54 @@
-name: 功能建议
-description: 提交新能力或改进建议
+name: Feature Request
+description: Propose a new capability or improvement
 labels:
   - enhancement
 body:
   - type: markdown
     attributes:
       value: |
-        欢迎提交功能建议。请描述业务价值与验收标准。
+        Thanks for the proposal. Please describe user value and clear acceptance criteria.
 
   - type: textarea
     id: problem
     attributes:
-      label: 现状问题
-      description: 目前遇到的痛点是什么？
-      placeholder: 例如：管理员无法批量导入 Hub A2A catalog。
+      label: Problem Statement
+      description: What pain point are you trying to solve?
+      placeholder: "Example: Admins cannot bulk import the Hub A2A catalog."
     validations:
       required: true
 
   - type: textarea
     id: proposal
     attributes:
-      label: 建议方案
-      description: 期望如何改进？
-      placeholder: 例如：新增 CSV 导入与预检接口。
+      label: Proposed Solution
+      description: How should this be improved?
+      placeholder: "Example: Add CSV import with a pre-validation endpoint."
     validations:
       required: true
 
   - type: textarea
     id: value
     attributes:
-      label: 业务价值
-      description: 该改动能带来什么收益？
-      placeholder: 例如：降低 catalog 维护成本并减少手工配置错误。
+      label: User/Business Value
+      description: What value does this change deliver?
+      placeholder: "Example: Reduce catalog maintenance cost and manual configuration errors."
     validations:
       required: true
 
   - type: textarea
     id: acceptance
     attributes:
-      label: 验收标准
-      description: 给出可验证的完成条件。
+      label: Acceptance Criteria
+      description: Define verifiable completion criteria.
       placeholder: |
-        - 支持 100 条记录批量导入
-        - 导入失败项返回行号与错误原因
-        - 前后端均有测试覆盖
+        - Supports batch import of 100 records
+        - Failed rows return line number and reason
+        - Backend and frontend tests are included
     validations:
       required: true
 
   - type: textarea
     id: extra
     attributes:
-      label: 补充信息
-      description: 相关链接、草图、API 示例等。
+      label: Additional Context
+      description: Related links, mockups, API examples, or other context.

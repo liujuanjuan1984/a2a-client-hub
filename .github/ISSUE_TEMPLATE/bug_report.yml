@@ -1,56 +1,56 @@
-name: 缺陷报告
-description: 报告一个可复现的问题
+name: Bug Report
+description: Report a reproducible problem
 labels:
   - bug
 body:
   - type: markdown
     attributes:
       value: |
-        感谢反馈问题。请尽量提供可复现信息，便于快速定位。
+        Thanks for reporting. Please include enough detail to reproduce the issue.
 
   - type: textarea
     id: summary
     attributes:
-      label: 问题描述
-      description: 简要说明出现了什么问题。
-      placeholder: 例如：调用 /api/v1/auth/refresh 在 iOS Web 下偶发 401。
+      label: Summary
+      description: Briefly describe what happened.
+      placeholder: "Example: POST /api/v1/auth/refresh intermittently returns 401 on iOS Web."
     validations:
       required: true
 
   - type: textarea
     id: steps
     attributes:
-      label: 复现步骤
-      description: 请按顺序给出最小复现路径。
+      label: Steps to Reproduce
+      description: Provide the minimal reproducible steps in order.
       placeholder: |
-        1. 使用账号 A 登录
-        2. 打开 Sessions 页面
-        3. 点击 Continue
-        4. 观察报错
+        1. Log in with account A
+        2. Open the Sessions page
+        3. Click Continue
+        4. Observe the error
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: 期望行为
-      placeholder: 应进入会话并拉取历史消息。
+      label: Expected Behavior
+      placeholder: The app should enter the session and load message history.
     validations:
       required: true
 
   - type: textarea
     id: actual
     attributes:
-      label: 实际行为
-      placeholder: 页面提示 "Session continuation failed"。
+      label: Actual Behavior
+      placeholder: The page shows "Session continuation failed".
     validations:
       required: true
 
   - type: textarea
     id: env
     attributes:
-      label: 环境信息
-      description: 操作系统、浏览器/设备、部署方式、分支或提交号。
+      label: Environment
+      description: OS, browser/device, deployment mode, branch, or commit SHA.
       placeholder: |
         - OS: macOS 14
         - Browser: Chrome 121
@@ -62,5 +62,5 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: 日志或截图
-      description: 请粘贴关键日志片段（注意脱敏）。
+      label: Logs or Screenshots
+      description: Paste key logs or screenshots (please remove sensitive data).
