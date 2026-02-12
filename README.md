@@ -1,7 +1,5 @@
 # a2a-client-hub
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-
 `a2a-client-hub` is a self-hosted A2A client hub for teams and individuals who
 need one place to manage, invoke, and operate multiple A2A agents across web
 and mobile.
@@ -24,7 +22,7 @@ outbound access.
 ## What value it delivers
 
 - Faster integration: connect multiple A2A agents from one product surface.
-- Better governance: enforce allowlists, role-based admin control, and secure
+- Better governance: enforce allowlists, admin-only control, and secure
   token handling.
 - Better user continuity: keep chat and session flows available across devices.
 - Better extensibility: support A2A extension workflows (for example, OpenCode
