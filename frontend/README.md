@@ -47,6 +47,15 @@ Authentication conventions are shared between frontend and backend:
   - Recommended: `https://<your-api-host>/api/v1`
   - Web-only (same-origin reverse proxy): `/api/v1`
 
+## Web Publish Helper
+
+Use `npm run publish:web` to export and serve the web build locally.
+
+- Default host: `127.0.0.1`
+- Default port: `8787`
+- Override with env vars: `HOST`, `PORT`
+- Run in background: `DETACH=1 npm run publish:web`
+
 ## OpenCode Extension (Sessions)
 
 If an A2A agent advertises the OpenCode session query extension (via Agent Card),
