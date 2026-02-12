@@ -47,6 +47,20 @@ Authentication conventions are shared between frontend and backend:
   - Recommended: `https://<your-api-host>/api/v1`
   - Web-only (same-origin reverse proxy): `/api/v1`
 
+## Time Display Strategy
+
+- This project does not introduce a frontend i18n framework for date formatting.
+- Use shared helpers in `frontend/lib/datetime.ts`:
+  - `formatLocalDateTime`
+  - `formatLocalDateTimeYmdHm`
+- Timezone resolution:
+  - Prefer `Intl.DateTimeFormat().resolvedOptions().timeZone`
+  - Fallback to `UTC` when missing/invalid/unavailable
+- Display format: `YYYY-MM-DD HH:mm` (24-hour)
+- Fallback values:
+  - Empty timestamp -> `-`
+  - Invalid timestamp string -> original input (passthrough)
+
 ## Web Publish Helper
 
 Use `npm run publish:web` to export and serve the web build locally.
