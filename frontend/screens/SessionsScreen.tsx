@@ -1,14 +1,13 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
 import {
   continueOpencodeSession,
-  listOpencodeSessionsDirectoryPage,
   type OpencodeSessionDirectoryItem,
 } from "@/lib/api/opencodeSessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
@@ -26,49 +25,15 @@ export function SessionsScreen() {
     (state) => state.bindOpencodeSession,
   );
 
-  const refreshNextRef = useRef(false);
-
-  const fetchPage = useCallback(
-    async (page: number) => {
-      const refresh = page === 1 && refreshNextRef.current;
-      if (refresh) refreshNextRef.current = false;
-      const result = await listOpencodeSessionsDirectoryPage({
-        page,
-        size: 50,
-        refresh,
-      });
-      return { items: result.items, nextPage: result.nextPage };
-    },
-    [refreshNextRef, listOpencodeSessionsDirectoryPage],
-  );
-
   const {
     items,
     hasMore,
     loading,
     refreshing,
     loadingMore,
-    reset,
-    loadFirstPage,
+    refresh,
     loadMore,
-  } = usePaginatedList<OpencodeSessionDirectoryItem>({
-    fetchPage,
-    getKey: (item) => `${item.agent_id}:${item.session_id}`,
-    errorTitle: "Load sessions failed",
-    fallbackMessage: "Load failed.",
-  });
-
-  useEffect(() => {
-    reset();
-    loadFirstPage().catch(() => {
-      // Error already handled
-    });
-  }, [loadFirstPage, reset]);
-
-  const onRefresh = async () => {
-    refreshNextRef.current = true;
-    await loadFirstPage("refreshing");
-  };
+  } = useSessionsDirectoryQuery();
 
   const sortedItems = useMemo(() => items, [items]);
 
@@ -120,7 +85,7 @@ export function SessionsScreen() {
         className="mt-2"
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} />
         }
       >
         {loading ? (

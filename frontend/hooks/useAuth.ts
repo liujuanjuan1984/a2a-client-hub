@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 import { apiRequest, ApiRequestError } from "@/lib/api/client";
@@ -9,12 +9,12 @@ import {
   type UserProfile,
 } from "@/lib/api/types";
 import { queryKeys } from "@/lib/queryKeys";
+import { resetClientState } from "@/lib/resetClientState";
 import { useSessionStore } from "@/store/session";
 
 export const useMe = () => {
   const token = useSessionStore((state) => state.token);
   const setUserProfile = useSessionStore((state) => state.setUserProfile);
-  const clearSession = useSessionStore((state) => state.clearSession);
   const previousTokenRef = useRef<string | null>(null);
   const query = useQuery({
     queryKey: queryKeys.me(),
@@ -51,9 +51,9 @@ export const useMe = () => {
     }
     const error = query.error;
     if (error instanceof ApiRequestError && error.status === 401) {
-      clearSession();
+      resetClientState();
     }
-  }, [query.error, query.isError, clearSession, token]);
+  }, [query.error, query.isError, token]);
 
   return query;
 };
@@ -87,24 +87,6 @@ export const useRegister = () => {
     },
     onSuccess: (data) => {
       setSession({ token: data.access_token, user: data.user });
-    },
-  });
-};
-
-export const useLogout = () => {
-  const clearSession = useSessionStore((state) => state.clearSession);
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      try {
-        await apiRequest("/auth/logout", { method: "POST" });
-      } catch {
-        // Best-effort: always clear local state even if the network fails.
-      }
-    },
-    onSettled: () => {
-      clearSession();
-      queryClient.clear();
     },
   });
 };

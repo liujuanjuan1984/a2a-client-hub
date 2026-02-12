@@ -15,17 +15,18 @@ import {
 
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import {
-  continueOpencodeSession,
-  listOpencodeSessionMessagesPage,
-} from "@/lib/api/opencodeSessions";
-import { listSessionMessagesPage } from "@/lib/api/sessions";
+  useOpencodeHistoryQuery,
+  useSessionHistoryQuery,
+} from "@/hooks/useChatHistoryQuery";
+import { type ChatMessage } from "@/lib/api/chat-utils";
+import { continueOpencodeSession } from "@/lib/api/opencodeSessions";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
+import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import { backOrHome } from "@/lib/navigation";
-import { mapOpencodeMessagesToChatMessages } from "@/lib/opencodeChatAdapters";
 import { buildChatRoute } from "@/lib/routes";
-import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import {
   buildProcessStates,
   sanitizeStreamRecords,
@@ -45,6 +46,21 @@ type WebTextInputKeyPressEvent =
     preventDefault?: () => void;
   };
 
+const isSameMessageList = (left: ChatMessage[], right: ChatMessage[]) => {
+  if (left.length !== right.length) return false;
+  return left.every((message, index) => {
+    const next = right[index];
+    if (!next) return false;
+    return (
+      message.id === next.id &&
+      message.role === next.role &&
+      message.content === next.content &&
+      message.createdAt === next.createdAt &&
+      message.status === next.status
+    );
+  });
+};
+
 export function ChatScreen({
   agentId: routeAgentId,
   sessionId,
@@ -63,9 +79,11 @@ export function ChatScreen({
   const storeActiveAgentId = useAgentStore((state) => state.activeAgentId);
   const activeAgentId = routeAgentId || storeActiveAgentId;
 
-  const hasLoaded = useAgentStore((state) => state.hasLoaded);
-  const agent = useAgentStore((state) =>
-    state.agents.find((item) => item.id === activeAgentId),
+  const { data: agents = [], isFetched: hasFetchedAgents } =
+    useAgentsCatalogQuery(true);
+  const agent = useMemo(
+    () => agents.find((item) => item.id === activeAgentId),
+    [agents, activeAgentId],
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
   const sendMessage = useChatStore((state) => state.sendMessage);
@@ -79,21 +97,6 @@ export function ChatScreen({
   const { shortcuts, addShortcut, removeShortcut } = useShortcutStore();
 
   const [input, setInput] = useState("");
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [historyNextPage, setHistoryNextPage] = useState<number | null>(null);
-  const hasLoadedHistoryRef = useRef(false);
-  const [opencodeHistoryLoading, setOpencodeHistoryLoading] = useState(false);
-  const [opencodeHistoryLoadingMore, setOpencodeHistoryLoadingMore] =
-    useState(false);
-  const [opencodeHistoryError, setOpencodeHistoryError] = useState<
-    string | null
-  >(null);
-  const [opencodeHistoryNextPage, setOpencodeHistoryNextPage] = useState<
-    number | null
-  >(null);
-  const hasLoadedOpencodeHistoryRef = useRef(false);
   const suppressAutoScrollRef = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
@@ -109,69 +112,40 @@ export function ChatScreen({
   const maxInputHeight = 128;
   const [inputHeight, setInputHeight] = useState(minInputHeight);
 
+  const opencodeSource = agent?.source === "shared" ? "shared" : "personal";
+
+  const sessionHistoryQuery = useSessionHistoryQuery({
+    sessionId,
+    enabled: Boolean(history && sessionId),
+  });
+  const opencodeHistoryQuery = useOpencodeHistoryQuery({
+    agentId: activeAgentId ?? undefined,
+    sessionId: opencodeSessionId,
+    source: opencodeSource,
+    enabled: Boolean(opencodeSessionId && sessionId && activeAgentId),
+  });
+
+  const historyLoading = sessionHistoryQuery.loading;
+  const historyLoadingMore = sessionHistoryQuery.loadingMore;
+  const historyNextPage = sessionHistoryQuery.nextPage;
+  const historyError =
+    sessionHistoryQuery.error instanceof Error
+      ? sessionHistoryQuery.error.message
+      : null;
+
+  const opencodeHistoryLoading = opencodeHistoryQuery.loading;
+  const opencodeHistoryLoadingMore = opencodeHistoryQuery.loadingMore;
+  const opencodeHistoryNextPage = opencodeHistoryQuery.nextPage;
+  const opencodeHistoryError =
+    opencodeHistoryQuery.error instanceof Error
+      ? opencodeHistoryQuery.error.message
+      : null;
+
   useEffect(() => {
     if (activeAgentId && sessionId) {
       ensureSession(sessionId, activeAgentId);
     }
   }, [activeAgentId, sessionId, ensureSession]);
-
-  useEffect(() => {
-    hasLoadedHistoryRef.current = false;
-    setHistoryNextPage(null);
-    setHistoryError(null);
-  }, [sessionId]);
-
-  useEffect(() => {
-    hasLoadedOpencodeHistoryRef.current = false;
-    setOpencodeHistoryNextPage(null);
-    setOpencodeHistoryError(null);
-  }, [sessionId, opencodeSessionId]);
-
-  useEffect(() => {
-    if (!history || !sessionId) return;
-    if (hasLoadedHistoryRef.current) return;
-    if (messages.length > 0) {
-      hasLoadedHistoryRef.current = true;
-      return;
-    }
-
-    let cancelled = false;
-    setHistoryError(null);
-    setHistoryLoading(true);
-
-    listSessionMessagesPage(sessionId, { page: 1, size: 100 })
-      .then((result) => {
-        if (cancelled) return;
-        const mapped = mapSessionMessagesToChatMessages(
-          result.items,
-          sessionId,
-        ).slice(-100);
-        setMessages(sessionId, mapped);
-        setHistoryNextPage(
-          typeof result.nextPage === "number" ? result.nextPage : null,
-        );
-        hasLoadedHistoryRef.current = true;
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : "Load failed.";
-        setHistoryError(message);
-        toast.error("Load history failed", message);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setHistoryLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [history, sessionId, messages.length, setMessages]);
-
-  const resolveOpencodeSource = useCallback(() => {
-    if (agent?.source === "shared") return "shared";
-    return "personal";
-  }, [agent?.source]);
 
   useEffect(() => {
     if (!opencodeSessionId || !sessionId || !activeAgentId) return;
@@ -187,12 +161,12 @@ export function ChatScreen({
 
     let cancelled = false;
     continueOpencodeSession(activeAgentId, opencodeSessionId, {
-      source: resolveOpencodeSource(),
+      source: opencodeSource,
     })
       .then((binding) => {
         if (cancelled) return;
         useChatStore.getState().bindOpencodeSession(sessionId, {
-          agentId: activeAgentId,
+          agentId: activeAgentId ?? undefined,
           opencodeSessionId,
           contextId: binding.contextId ?? undefined,
           metadata: binding.metadata,
@@ -207,132 +181,66 @@ export function ChatScreen({
     return () => {
       cancelled = true;
     };
-  }, [activeAgentId, opencodeSessionId, resolveOpencodeSource, sessionId]);
+  }, [activeAgentId, opencodeSessionId, opencodeSource, sessionId]);
+
+  const mergeHistoryMessages = useCallback(
+    (incoming: ChatMessage[]) => {
+      if (!sessionId) return;
+      const current = useMessageStore.getState().messages[sessionId] ?? [];
+      const merged = new Map<string, ChatMessage>();
+      [...incoming, ...current].forEach((message) => {
+        merged.set(message.id, message);
+      });
+      const nextMessages = Array.from(merged.values())
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .slice(-CHAT_MESSAGE_HISTORY_LIMIT);
+      if (isSameMessageList(current, nextMessages)) {
+        return;
+      }
+      setMessages(sessionId, nextMessages);
+    },
+    [sessionId, setMessages],
+  );
 
   useEffect(() => {
-    if (!opencodeSessionId || !sessionId || !activeAgentId) return;
-    if (hasLoadedOpencodeHistoryRef.current) return;
-    if (messages.length > 0) {
-      hasLoadedOpencodeHistoryRef.current = true;
-      return;
-    }
+    if (!history || !sessionId) return;
+    if (sessionHistoryQuery.messages.length === 0) return;
+    mergeHistoryMessages(sessionHistoryQuery.messages);
+  }, [history, mergeHistoryMessages, sessionId, sessionHistoryQuery.messages]);
 
-    let cancelled = false;
-    setOpencodeHistoryError(null);
-    setOpencodeHistoryLoading(true);
-
-    listOpencodeSessionMessagesPage(activeAgentId, opencodeSessionId, {
-      page: 1,
-      size: 100,
-      source: resolveOpencodeSource(),
-    })
-      .then((result) => {
-        if (cancelled) return;
-        const mapped = mapOpencodeMessagesToChatMessages(result.items).slice(
-          -100,
-        );
-        setMessages(sessionId, mapped);
-        setOpencodeHistoryNextPage(
-          typeof result.nextPage === "number" ? result.nextPage : null,
-        );
-        hasLoadedOpencodeHistoryRef.current = true;
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : "Load failed.";
-        setOpencodeHistoryError(message);
-        toast.error("Load history failed", message);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setOpencodeHistoryLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+  useEffect(() => {
+    if (!opencodeSessionId || !sessionId) return;
+    if (opencodeHistoryQuery.messages.length === 0) return;
+    mergeHistoryMessages(opencodeHistoryQuery.messages);
   }, [
-    activeAgentId,
-    messages.length,
+    mergeHistoryMessages,
+    opencodeHistoryQuery.messages,
     opencodeSessionId,
-    resolveOpencodeSource,
     sessionId,
-    setMessages,
   ]);
 
   const loadEarlierHistory = async () => {
     if (!history || !sessionId) return;
     if (typeof historyNextPage !== "number") return;
     if (historyLoadingMore) return;
-    setHistoryLoadingMore(true);
-    try {
-      const result = await listSessionMessagesPage(sessionId, {
-        page: historyNextPage,
-        size: 100,
-      });
-      const mapped = mapSessionMessagesToChatMessages(result.items, sessionId);
-      const merged = new Map<string, (typeof messages)[number]>();
-      [...mapped, ...messages].forEach((message) => {
-        merged.set(message.id, message);
-      });
-      const nextMessages = Array.from(merged.values())
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .slice(-500);
-      suppressAutoScrollRef.current = true;
-      setMessages(sessionId, nextMessages);
-      setHistoryNextPage(
-        typeof result.nextPage === "number" ? result.nextPage : null,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Load failed.";
-      toast.error("Load history failed", message);
-    } finally {
-      setHistoryLoadingMore(false);
-    }
+    suppressAutoScrollRef.current = true;
+    await sessionHistoryQuery.loadMore();
   };
 
   const loadEarlierOpencodeHistory = async () => {
     if (!opencodeSessionId || !sessionId || !activeAgentId) return;
     if (typeof opencodeHistoryNextPage !== "number") return;
     if (opencodeHistoryLoadingMore) return;
-    setOpencodeHistoryLoadingMore(true);
-    try {
-      const result = await listOpencodeSessionMessagesPage(
-        activeAgentId,
-        opencodeSessionId,
-        {
-          page: opencodeHistoryNextPage,
-          size: 100,
-          source: resolveOpencodeSource(),
-        },
-      );
-      const mapped = mapOpencodeMessagesToChatMessages(result.items);
-      const merged = new Map<string, (typeof messages)[number]>();
-      [...mapped, ...messages].forEach((message) => {
-        merged.set(message.id, message);
-      });
-      const nextMessages = Array.from(merged.values())
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .slice(-500);
-      suppressAutoScrollRef.current = true;
-      setMessages(sessionId, nextMessages);
-      setOpencodeHistoryNextPage(
-        typeof result.nextPage === "number" ? result.nextPage : null,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Load failed.";
-      toast.error("Load history failed", message);
-    } finally {
-      setOpencodeHistoryLoadingMore(false);
-    }
+    suppressAutoScrollRef.current = true;
+    await opencodeHistoryQuery.loadMore();
   };
 
   useEffect(() => {
-    if (hasLoaded && !agent) {
+    if (hasFetchedAgents && !agent) {
       // Redirect: the agent is missing, so we should not keep this screen in history.
       router.replace("/");
     }
-  }, [agent, hasLoaded, router]);
+  }, [agent, hasFetchedAgents, router]);
 
   useEffect(() => {
     if (suppressAutoScrollRef.current) {
@@ -341,7 +249,6 @@ export function ChatScreen({
     }
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [messages.length]);
-
   const statusColor = useMemo(() => {
     if (agent?.status === "success") return "bg-emerald-500";
     if (agent?.status === "error") return "bg-red-500";
@@ -357,13 +264,13 @@ export function ChatScreen({
   }, [agent]);
 
   const handleSend = () => {
-    if (!activeAgentId || !sessionId) {
+    if (!activeAgentId || !sessionId || !agent) {
       return;
     }
     if (!input.trim()) {
       return;
     }
-    sendMessage(sessionId, activeAgentId, input);
+    sendMessage(sessionId, activeAgentId, input, agent.source);
     setInput("");
     setInputHeight(minInputHeight);
   };
@@ -436,7 +343,7 @@ export function ChatScreen({
   };
 
   if (!agent) {
-    if (!hasLoaded) {
+    if (!hasFetchedAgents) {
       return <FullscreenLoader message="Restoring session..." />;
     }
     return (

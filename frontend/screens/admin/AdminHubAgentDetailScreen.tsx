@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -17,7 +17,6 @@ import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { Input } from "@/components/ui/Input";
 import { KeyValueInputRow } from "@/components/ui/KeyValueInputRow";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { useAsyncListLoad } from "@/hooks/useAsyncListLoad";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import {
@@ -67,7 +66,6 @@ export function AdminHubAgentDetailScreen({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { isReady, isAdmin } = useRequireAdmin();
-  const { loading, refreshing, run } = useAsyncListLoad();
 
   const [agent, setAgent] = useState<HubA2AAgentAdminResponse | null>(null);
   const [allowlist, setAllowlist] = useState<HubA2AAllowlistEntryResponse[]>(
@@ -93,6 +91,30 @@ export function AdminHubAgentDetailScreen({
 
   const [allowlistEmail, setAllowlistEmail] = useState("");
   const [errors, setErrors] = useState<{ name?: string; cardUrl?: string }>({});
+  const hasShownAgentLoadErrorRef = useRef(false);
+  const hasShownAllowlistLoadErrorRef = useRef(false);
+  const formInitializedRef = useRef(false);
+
+  const agentQuery = useQuery({
+    queryKey: queryKeys.admin.hubAgent(agentId),
+    queryFn: () => getHubAgentAdmin(agentId),
+    enabled: isReady && isAdmin && Boolean(agentId),
+  });
+
+  const shouldQueryAllowlist =
+    isReady &&
+    isAdmin &&
+    Boolean(agentId) &&
+    agentQuery.data?.availability_policy === "allowlist";
+
+  const allowlistQuery = useQuery({
+    queryKey: queryKeys.admin.hubAgentAllowlist(agentId),
+    queryFn: () => listHubAgentAllowlistAdmin(agentId),
+    enabled: shouldQueryAllowlist,
+  });
+
+  const loading = agentQuery.isLoading && !agentQuery.data && !agent;
+  const refreshing = agentQuery.isRefetching || allowlistQuery.isRefetching;
 
   const canSave = useMemo(
     () => Boolean(name.trim()) && Boolean(cardUrl.trim()),
@@ -165,37 +187,93 @@ export function AdminHubAgentDetailScreen({
     setExtraHeaders(recordToHeaderRows(value.extra_headers ?? {}));
   }, []);
 
-  const load = useCallback(
-    async (mode: "loading" | "refreshing" = "loading") => {
-      if (!agentId) return;
-      await run(
-        async () => {
-          const fetched = await getHubAgentAdmin(agentId);
-          hydrateFromAgent(fetched);
-          if (fetched.availability_policy === "allowlist") {
-            const list = await listHubAgentAllowlistAdmin(agentId);
-            setAllowlist(list.items);
-          } else {
-            setAllowlist([]);
-          }
-        },
-        {
-          mode,
-          errorTitle: "Load shared agent failed",
-          fallbackMessage: "Could not load shared agent.",
-        },
-      );
-    },
-    [agentId, hydrateFromAgent, run],
-  );
+  useEffect(() => {
+    formInitializedRef.current = false;
+  }, [agentId]);
 
   useEffect(() => {
-    if (!isReady || !isAdmin) return;
+    if (!agentQuery.data) {
+      return;
+    }
+
+    if (!formInitializedRef.current) {
+      hydrateFromAgent(agentQuery.data);
+      formInitializedRef.current = true;
+      return;
+    }
+
+    if (dirty) {
+      return;
+    }
+
+    hydrateFromAgent(agentQuery.data);
+  }, [agentQuery.data, dirty, hydrateFromAgent, agentId]);
+
+  useEffect(() => {
+    if (!agentQuery.isError || !agentQuery.error) {
+      hasShownAgentLoadErrorRef.current = false;
+      return;
+    }
+    if (hasShownAgentLoadErrorRef.current) {
+      return;
+    }
+    hasShownAgentLoadErrorRef.current = true;
+    const message =
+      agentQuery.error instanceof Error
+        ? agentQuery.error.message
+        : "Could not load shared agent.";
+    toast.error("Load shared agent failed", message);
+  }, [agentQuery.error, agentQuery.isError]);
+
+  useEffect(() => {
+    if (!allowlistQuery.data) {
+      return;
+    }
+    setAllowlist(allowlistQuery.data.items);
+  }, [allowlistQuery.data]);
+
+  useEffect(() => {
+    if (agentQuery.data?.availability_policy === "allowlist") {
+      return;
+    }
+    setAllowlist([]);
+  }, [agentQuery.data?.availability_policy]);
+
+  useEffect(() => {
+    if (
+      !allowlistQuery.isError ||
+      !allowlistQuery.error ||
+      !shouldQueryAllowlist
+    ) {
+      hasShownAllowlistLoadErrorRef.current = false;
+      return;
+    }
+    if (hasShownAllowlistLoadErrorRef.current) {
+      return;
+    }
+    hasShownAllowlistLoadErrorRef.current = true;
+    const message =
+      allowlistQuery.error instanceof Error
+        ? allowlistQuery.error.message
+        : "Could not load allowlist.";
+    toast.error("Load allowlist failed", message);
+  }, [allowlistQuery.error, allowlistQuery.isError, shouldQueryAllowlist]);
+
+  const refresh = useCallback(async () => {
     if (!agentId) return;
-    load().catch(() => {
-      // Error already handled
-    });
-  }, [isReady, isAdmin, agentId, load]);
+
+    const agentResult = await agentQuery.refetch();
+    if (agentResult.data) {
+      hydrateFromAgent(agentResult.data);
+      formInitializedRef.current = true;
+    }
+
+    if (agentResult.data?.availability_policy === "allowlist") {
+      await allowlistQuery.refetch();
+      return;
+    }
+    setAllowlist([]);
+  }, [agentId, agentQuery.refetch, allowlistQuery.refetch, hydrateFromAgent]);
 
   const setHeaderRow = useCallback(
     (id: string, field: "key" | "value", value: string) => {
@@ -249,7 +327,7 @@ export function AdminHubAgentDetailScreen({
       await updateHubAgentAdmin(agentId, buildUpdatePayload());
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.hubAgents() });
       toast.success("Saved", "Shared agent updated.");
-      await load("refreshing");
+      await refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
       toast.error("Save failed", message);
@@ -269,7 +347,7 @@ export function AdminHubAgentDetailScreen({
     name,
     tagsText,
     token,
-    load,
+    refresh,
   ]);
 
   const handleDelete = useCallback(async () => {
@@ -312,12 +390,12 @@ export function AdminHubAgentDetailScreen({
       });
       setAllowlistEmail("");
       toast.success("Allowlist updated", "User added.");
-      await load("refreshing");
+      await refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Add failed.";
       toast.error("Add failed", message);
     }
-  }, [agentId, allowlistEmail, canAddAllowlist, load]);
+  }, [agentId, allowlistEmail, canAddAllowlist, refresh]);
 
   const handleDeleteAllowlistEntry = useCallback(
     async (entryId: string) => {
@@ -326,14 +404,14 @@ export function AdminHubAgentDetailScreen({
       try {
         await deleteHubAgentAllowlistEntryAdmin(agentId, entryId);
         toast.success("Allowlist updated", "User removed.");
-        await load("refreshing");
+        await refresh();
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Remove failed.";
         toast.error("Remove failed", message);
       }
     },
-    [agentId, load],
+    [agentId, refresh],
   );
 
   if (!isReady) {
@@ -385,7 +463,7 @@ export function AdminHubAgentDetailScreen({
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => load("refreshing")}
+            onRefresh={() => refresh()}
             tintColor="#5c6afb"
             colors={["#5c6afb"]}
           />

@@ -17,11 +17,6 @@ export type InvitationResponse = {
   revoked_at?: string | null;
 };
 
-export type InvitationWithCreatorResponse = InvitationResponse & {
-  creator_email?: string | null;
-  creator_name?: string | null;
-};
-
 export type InvitationListResponse<TItem> = {
   items: TItem[];
   pagination: {
@@ -57,12 +52,6 @@ export const listMyInvitations = (page = 1, size = 100) =>
   apiRequest<InvitationListResponse<InvitationResponse>>("/invitations/mine", {
     query: { page, size },
   });
-
-export const listInvitationsForMe = (page = 1, size = 100) =>
-  apiRequest<InvitationListResponse<InvitationWithCreatorResponse>>(
-    "/invitations/invited-me",
-    { query: { page, size } },
-  );
 
 export const revokeInvitation = (invitationId: string) =>
   apiRequest<void>(`/invitations/${encodeURIComponent(invitationId)}`, {

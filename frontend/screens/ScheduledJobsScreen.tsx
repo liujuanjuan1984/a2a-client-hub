@@ -1,6 +1,6 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
@@ -8,30 +8,18 @@ import { ScheduledJobCard } from "@/components/scheduled/ScheduledJobCard";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
+import { useScheduledJobExecutionsQuery } from "@/hooks/useScheduledJobExecutionsQuery";
 import { useScheduledJobs } from "@/hooks/useScheduledJobs";
-import { ApiRequestError } from "@/lib/api/client";
-import {
-  listScheduledJobsPage,
-  type ScheduledJob,
-} from "@/lib/api/scheduledJobs";
+import { useScheduledJobsQuery } from "@/hooks/useScheduledJobsQuery";
 import { blurActiveElement } from "@/lib/focus";
 import { buildScheduledJobEditHref, scheduledJobNewHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
-import { useAgentStore } from "@/store/agents";
 
 export function ScheduledJobsScreen() {
   const router = useRouter();
-  const agents = useAgentStore((state) => state.agents);
-  const {
-    executionsByTaskId,
-    executionsNextPageByTaskId,
-    loadingExecutionsTaskId,
-    loadingMoreExecutionsTaskId,
-    loadExecutions,
-    loadMoreExecutions,
-    toggleJobStatus,
-  } = useScheduledJobs();
+  const { data: agents = [] } = useAgentsCatalogQuery(true);
+  const { toggleJobStatus } = useScheduledJobs();
 
   const [expandedExecutionsTaskId, setExpandedExecutionsTaskId] = useState<
     string | null
@@ -42,18 +30,6 @@ export function ScheduledJobsScreen() {
     [agents],
   );
 
-  const fetchJobsPage = useCallback(async (page: number) => {
-    const result = await listScheduledJobsPage({ page, size: 50 });
-    return { items: result.items, nextPage: result.nextPage };
-  }, []);
-
-  const mapErrorMessage = useCallback((error: unknown) => {
-    if (error instanceof ApiRequestError && error.status === 503) {
-      return "A2A integration is disabled.";
-    }
-    return null;
-  }, []);
-
   const {
     items: jobs,
     hasMore,
@@ -62,48 +38,36 @@ export function ScheduledJobsScreen() {
     loadingMore,
     loadFirstPage,
     loadMore,
-  } = usePaginatedList<ScheduledJob>({
-    fetchPage: fetchJobsPage,
-    getKey: (item) => item.id,
-    errorTitle: "Load jobs failed",
-    fallbackMessage: "Load failed.",
-    mapErrorMessage,
+  } = useScheduledJobsQuery({ enabled: false });
+
+  const executionsQuery = useScheduledJobExecutionsQuery({
+    taskId: expandedExecutionsTaskId ?? undefined,
+    enabled: Boolean(expandedExecutionsTaskId),
   });
 
   const hasLoadedRef = useRef(false);
-  useEffect(() => {
-    if (jobs.length > 0) {
-      hasLoadedRef.current = true;
-    }
-  }, [jobs.length]);
-
   useFocusEffect(
     useCallback(() => {
       const mode = hasLoadedRef.current ? "refreshing" : "loading";
-      loadFirstPage(mode).catch(() => {
-        // Error already handled in hook
+      loadFirstPage(mode).then((succeeded) => {
+        if (succeeded) {
+          hasLoadedRef.current = true;
+        }
       });
     }, [loadFirstPage]),
   );
 
   const onRefresh = async () => {
-    await loadFirstPage("refreshing");
+    const succeeded = await loadFirstPage("refreshing");
+    if (succeeded) {
+      hasLoadedRef.current = true;
+    }
   };
 
-  const toggleExecutionsPanel = async (taskId: string) => {
-    if (expandedExecutionsTaskId === taskId) {
-      setExpandedExecutionsTaskId(null);
-      return;
-    }
-    setExpandedExecutionsTaskId(taskId);
-    if (!executionsByTaskId[taskId]) {
-      try {
-        await loadExecutions(taskId);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Load failed.";
-        toast.error("Load executions failed", message);
-      }
-    }
+  const toggleExecutionsPanel = (taskId: string) => {
+    setExpandedExecutionsTaskId((current) =>
+      current === taskId ? null : taskId,
+    );
   };
 
   return (
@@ -157,47 +121,58 @@ export function ScheduledJobsScreen() {
             />
           </View>
         ) : (
-          jobs.map((job) => (
-            <ScheduledJobCard
-              key={job.id}
-              job={job}
-              agentName={
-                agentOptions.find((agent) => agent.id === job.agent_id)?.name ??
-                job.agent_id
-              }
-              executions={executionsByTaskId[job.id] ?? []}
-              executionsOpen={expandedExecutionsTaskId === job.id}
-              executionsLoading={loadingExecutionsTaskId === job.id}
-              executionsHasMore={
-                typeof executionsNextPageByTaskId[job.id] === "number"
-              }
-              executionsLoadingMore={loadingMoreExecutionsTaskId === job.id}
-              onToggleEnabled={async () => {
-                try {
-                  await toggleJobStatus(job);
-                  await loadFirstPage("refreshing");
-                } catch (error) {
-                  const message =
-                    error instanceof Error ? error.message : "Update failed.";
-                  toast.error("Update failed", message);
+          jobs.map((job) => {
+            const executionsOpen = expandedExecutionsTaskId === job.id;
+            return (
+              <ScheduledJobCard
+                key={job.id}
+                job={job}
+                agentName={
+                  agentOptions.find((agent) => agent.id === job.agent_id)
+                    ?.name ?? job.agent_id
                 }
-              }}
-              onEdit={() => {
-                blurActiveElement();
-                router.push(buildScheduledJobEditHref(job.id));
-              }}
-              onToggleExecutions={() => toggleExecutionsPanel(job.id)}
-              onLoadMoreExecutions={async () => {
-                try {
-                  await loadMoreExecutions(job.id);
-                } catch (error) {
-                  const message =
-                    error instanceof Error ? error.message : "Load failed.";
-                  toast.error("Load executions failed", message);
+                executions={executionsOpen ? executionsQuery.items : []}
+                executionsOpen={executionsOpen}
+                executionsLoading={
+                  executionsOpen ? executionsQuery.loading : false
                 }
-              }}
-            />
-          ))
+                executionsHasMore={
+                  executionsOpen ? executionsQuery.hasMore : false
+                }
+                executionsLoadingMore={
+                  executionsOpen ? executionsQuery.loadingMore : false
+                }
+                onToggleEnabled={async () => {
+                  try {
+                    await toggleJobStatus(job);
+                    const succeeded = await loadFirstPage("refreshing");
+                    if (succeeded) {
+                      hasLoadedRef.current = true;
+                    }
+                    if (expandedExecutionsTaskId === job.id) {
+                      await executionsQuery.loadFirstPage("refreshing");
+                    }
+                  } catch (error) {
+                    const message =
+                      error instanceof Error ? error.message : "Update failed.";
+                    toast.error("Update failed", message);
+                  }
+                }}
+                onEdit={() => {
+                  blurActiveElement();
+                  router.push(buildScheduledJobEditHref(job.id));
+                }}
+                onToggleExecutions={() => toggleExecutionsPanel(job.id)}
+                onLoadMoreExecutions={
+                  executionsOpen
+                    ? async () => {
+                        await executionsQuery.loadMore();
+                      }
+                    : undefined
+                }
+              />
+            );
+          })
         )}
 
         {hasMore ? (

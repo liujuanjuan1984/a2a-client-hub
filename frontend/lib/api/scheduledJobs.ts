@@ -1,8 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
-import { parseListItems } from "@/lib/api/listParser";
 import { parsePaginatedListResponse } from "@/lib/api/pagination";
-
-export type ScheduledJobSource = "manual" | "scheduled";
 
 const DEFAULT_PAGE_SIZE = 50;
 type PageOptions = { page?: number; size?: number };
@@ -67,19 +64,6 @@ type ScheduledJobExecutionsListResponse =
   | ScheduledJobExecution[]
   | { items: ScheduledJobExecution[]; pagination?: unknown; meta?: unknown };
 
-export const listScheduledJobs = async ({
-  page = 1,
-  size = DEFAULT_PAGE_SIZE,
-}: PageOptions = {}) => {
-  const response = await apiRequest<ScheduledJobsListResponse>(
-    "/me/a2a/schedules",
-    {
-      query: { page, size },
-    },
-  );
-  return parseListItems(response);
-};
-
 export const listScheduledJobsPage = async ({
   page = 1,
   size = DEFAULT_PAGE_SIZE,
@@ -133,14 +117,6 @@ export const disableScheduledJob = (jobId: string) =>
   apiRequest<void>(`/me/a2a/schedules/${jobId}/disable`, {
     method: "POST",
   });
-
-export const listScheduledJobExecutions = async (taskId: string) => {
-  const response = await apiRequest<ScheduledJobExecutionsListResponse>(
-    `/me/a2a/schedules/${taskId}/executions`,
-    { query: { page: 1, size: DEFAULT_PAGE_SIZE } },
-  );
-  return parseListItems(response);
-};
 
 export const listScheduledJobExecutionsPage = async (
   taskId: string,

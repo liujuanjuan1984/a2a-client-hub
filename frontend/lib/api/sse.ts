@@ -1,4 +1,5 @@
 import { refreshAccessToken } from "@/lib/api/client";
+import { resetClientState } from "@/lib/resetClientState";
 import { useSessionStore } from "@/store/session";
 
 export type SSEEvent = {
@@ -146,7 +147,7 @@ export const fetchSSE = async (
             signal: controller.signal,
           });
           if (retryResponse.status === 401) {
-            useSessionStore.getState().clearSession();
+            resetClientState();
           }
           if (!retryResponse.ok) {
             const errorText = await retryResponse
@@ -167,7 +168,7 @@ export const fetchSSE = async (
 
         // Keep behavior consistent with apiRequest(): if refresh fails, clear the
         // local session so the app can transition back to login state.
-        useSessionStore.getState().clearSession();
+        resetClientState();
       }
 
       if (!response.ok) {
