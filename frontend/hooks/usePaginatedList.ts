@@ -125,7 +125,6 @@ export function usePaginatedList<T>({
 
   const loadFirstPage = useCallback(
     async (mode: LoadMode = "loading") => {
-      if (!enabled) return;
       if (mode === "refreshing") {
         setRefreshing(true);
       }
@@ -148,7 +147,7 @@ export function usePaginatedList<T>({
   }, [queryClient, queryKey]);
 
   const loadMore = useCallback(async () => {
-    if (!enabled || !hasMore || query.isFetchingNextPage) return;
+    if (!hasMore || query.isFetchingNextPage) return;
     try {
       await query.fetchNextPage();
     } catch (error) {
