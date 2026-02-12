@@ -4,7 +4,7 @@ Thanks for contributing.
 
 ## Before You Start
 
-- Read `README.md` for repository context.
+- Read [README.md](README.md) for repository context.
 - Use English for code comments and project documentation intended for all contributors.
 - Keep pull requests focused and reviewable.
 
@@ -69,7 +69,7 @@ If your change affects both backend and frontend, run both suites.
 - Use a clear PR title and summary of behavior changes.
 - Include validation evidence (commands + key output).
 - Link related issue(s).
-- Document config or behavior changes in `README.md` or `docs/` when needed.
+- Document config or behavior changes in [README.md](README.md) or [docs/](docs/) when needed.
 
 ## Security
 
@@ -78,4 +78,4 @@ If your change affects both backend and frontend, run both suites.
 
 ## For Automated Agents
 
-`AGENTS.md` defines additional operational rules for coding agents. Human contributors can treat it as supplemental automation policy.
+[AGENTS.md](AGENTS.md) defines additional operational rules for coding agents. Human contributors can treat it as supplemental automation policy.

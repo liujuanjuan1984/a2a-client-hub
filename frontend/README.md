@@ -39,7 +39,7 @@ This project uses Expo Router (React Navigation). The main app area uses `Tabs` 
 
 Authentication conventions are shared between frontend and backend:
 
-- See `docs/authentication.md`.
+- See [docs/authentication.md](../docs/authentication.md).
 
 ## Environment
 
