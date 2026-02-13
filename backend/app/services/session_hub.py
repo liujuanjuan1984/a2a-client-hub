@@ -299,9 +299,9 @@ class SessionHubService:
                             agent_source=raw_agent_source,
                             upstream_session_id=normalized_session_id,
                         ),
-                        "conversationId": str(conversation_id)
-                        if conversation_id
-                        else None,
+                        "conversationId": (
+                            str(conversation_id) if conversation_id else None
+                        ),
                         "source": "opencode",
                         "source_session_id": normalized_session_id,
                         "agent_id": raw_agent_id,
