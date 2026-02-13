@@ -1,10 +1,18 @@
-"""Conversation binding model for local/external/protocol references."""
+"""Conversation binding model for canonical external session identity."""
 
 from __future__ import annotations
 
 from typing import ClassVar
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, String
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    String,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -13,14 +21,22 @@ from app.utils.timezone_util import utc_now
 
 
 class ConversationBinding(Base, TimestampMixin, UserOwnedMixin):
-    """Maps canonical conversations to local sessions and external references."""
+    """Maps canonical conversations to external session identity."""
 
     __tablename__ = "conversation_bindings"
-    __table_args__ = ({"schema": SCHEMA_NAME},)
+    __table_args__ = (
+        CheckConstraint(
+            "binding_kind = 'external_session'",
+            name="ck_conversation_bindings_external_only",
+        ),
+        CheckConstraint(
+            "provider IS NOT NULL AND external_session_id IS NOT NULL",
+            name="ck_conversation_bindings_external_identity_required",
+        ),
+        {"schema": SCHEMA_NAME},
+    )
 
-    KIND_LOCAL_SESSION: ClassVar[str] = "local_session"
     KIND_EXTERNAL_SESSION: ClassVar[str] = "external_session"
-    KIND_PROTOCOL_CONTEXT: ClassVar[str] = "protocol_context"
 
     STATUS_ACTIVE: ClassVar[str] = "active"
     STATUS_STALE: ClassVar[str] = "stale"
@@ -34,7 +50,7 @@ class ConversationBinding(Base, TimestampMixin, UserOwnedMixin):
     binding_kind = Column(
         String(32),
         nullable=False,
-        comment="Binding kind: local_session/external_session/protocol_context.",
+        comment="Binding kind (external_session only).",
     )
     provider = Column(
         String(64),
@@ -58,6 +74,7 @@ class ConversationBinding(Base, TimestampMixin, UserOwnedMixin):
         ForeignKey(f"{SCHEMA_NAME}.agent_sessions.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
+        comment="Optional local origin session id for diagnostics.",
     )
     external_session_id = Column(
         String(255),

@@ -30,16 +30,11 @@ export const useContinueSession = () => {
       try {
         const binding = await continueSessionBinding(unifiedSessionId);
         ensureSession(unifiedSessionId, agentId);
-        const fallbackExternalSessionId =
-          typeof binding.metadata.opencode_session_id === "string"
-            ? binding.metadata.opencode_session_id
-            : undefined;
         bindExternalSession(unifiedSessionId, {
           agentId,
           conversationId: binding.conversationId ?? undefined,
           provider: binding.provider ?? undefined,
-          externalSessionId:
-            binding.externalSessionId ?? fallbackExternalSessionId ?? undefined,
+          externalSessionId: binding.externalSessionId ?? undefined,
           contextId: binding.contextId ?? undefined,
           bindingMetadata: binding.bindingMetadata ?? undefined,
           metadata: binding.metadata,

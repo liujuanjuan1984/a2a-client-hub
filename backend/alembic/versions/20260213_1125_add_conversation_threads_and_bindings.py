@@ -125,7 +125,7 @@ def upgrade() -> None:
             "binding_kind",
             sa.String(length=32),
             nullable=False,
-            comment="Binding kind: local_session/external_session/protocol_context.",
+            comment="Binding kind (external_session only).",
         ),
         sa.Column(
             "provider",
@@ -230,6 +230,14 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(["user_id"], [f"{SCHEMA}.users.id"], ondelete="CASCADE"),
+        sa.CheckConstraint(
+            "binding_kind = 'external_session'",
+            name="ck_conversation_bindings_external_only",
+        ),
+        sa.CheckConstraint(
+            "provider IS NOT NULL AND external_session_id IS NOT NULL",
+            name="ck_conversation_bindings_external_identity_required",
+        ),
         sa.PrimaryKeyConstraint("id"),
         schema=SCHEMA,
     )
@@ -290,17 +298,9 @@ def upgrade() -> None:
         schema=SCHEMA,
     )
     op.create_index(
-        "uq_conversation_bindings_user_local_active",
-        "conversation_bindings",
-        ["user_id", "local_session_id"],
-        unique=True,
-        schema=SCHEMA,
-        postgresql_where=sa.text("status = 'active' AND local_session_id IS NOT NULL"),
-    )
-    op.create_index(
         "uq_conversation_bindings_user_provider_external_active",
         "conversation_bindings",
-        ["user_id", "provider", "agent_source", "agent_id", "external_session_id"],
+        ["user_id", "provider", "external_session_id"],
         unique=True,
         schema=SCHEMA,
         postgresql_where=sa.text(
@@ -353,11 +353,6 @@ def downgrade() -> None:
 
     op.drop_index(
         "uq_conversation_bindings_user_provider_external_active",
-        table_name="conversation_bindings",
-        schema=SCHEMA,
-    )
-    op.drop_index(
-        "uq_conversation_bindings_user_local_active",
         table_name="conversation_bindings",
         schema=SCHEMA,
     )

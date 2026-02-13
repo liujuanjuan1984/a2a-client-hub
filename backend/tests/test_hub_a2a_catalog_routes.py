@@ -200,14 +200,6 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
     assert len(fake_gateway.calls) == 1
     resolved = fake_gateway.calls[0]["resolved"]
     assert resolved.headers["Authorization"].endswith("secret-token-9999")
-    local_binding = await async_db_session.scalar(
-        select(ConversationBinding).where(
-            ConversationBinding.user_id == alice.id,
-            ConversationBinding.binding_kind == ConversationBinding.KIND_LOCAL_SESSION,
-            ConversationBinding.local_session_id == local_session_id,
-        )
-    )
-    assert local_binding is not None
     external_binding = await async_db_session.scalar(
         select(ConversationBinding).where(
             ConversationBinding.user_id == alice.id,
@@ -221,7 +213,6 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
     )
     assert external_binding is not None
     assert external_binding.context_id == "ctx-upstream-1"
-    assert external_binding.conversation_id == local_binding.conversation_id
 
 
 @pytest.mark.asyncio
@@ -305,26 +296,6 @@ async def test_allowlisted_user_can_stream_sse(
     # Ensure we injected the system-managed Authorization header.
     resolved = fake_gateway.calls[0]["resolved"]
     assert resolved.headers["Authorization"].endswith("secret-token-stream")
-    local_binding = await async_db_session.scalar(
-        select(ConversationBinding).where(
-            ConversationBinding.user_id == alice.id,
-            ConversationBinding.binding_kind == ConversationBinding.KIND_LOCAL_SESSION,
-            ConversationBinding.local_session_id == local_session_id,
-        )
-    )
-    assert local_binding is not None
-    context_binding = await async_db_session.scalar(
-        select(ConversationBinding).where(
-            ConversationBinding.user_id == alice.id,
-            ConversationBinding.binding_kind
-            == ConversationBinding.KIND_PROTOCOL_CONTEXT,
-            ConversationBinding.provider == "opencode",
-            ConversationBinding.agent_id == agent_uuid,
-            ConversationBinding.agent_source == "shared",
-            ConversationBinding.context_id == "ctx-stream-1",
-        )
-    )
-    assert context_binding is not None
     external_binding = await async_db_session.scalar(
         select(ConversationBinding).where(
             ConversationBinding.user_id == alice.id,
@@ -337,7 +308,7 @@ async def test_allowlisted_user_can_stream_sse(
         )
     )
     assert external_binding is not None
-    assert external_binding.conversation_id == local_binding.conversation_id
+    assert external_binding.context_id == "ctx-stream-1"
 
 
 @pytest.mark.asyncio

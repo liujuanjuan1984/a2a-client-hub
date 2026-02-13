@@ -136,16 +136,11 @@ export function ChatScreen({
         if (hasLocalBinding && !binding.contextId) {
           return;
         }
-        const fallbackExternalSession =
-          typeof binding.metadata.opencode_session_id === "string"
-            ? binding.metadata.opencode_session_id
-            : current?.externalSessionRef?.externalSessionId;
         useChatStore.getState().bindExternalSession(sessionId, {
           agentId: activeAgentId ?? undefined,
           conversationId: binding.conversationId ?? undefined,
           provider: binding.provider ?? undefined,
-          externalSessionId:
-            binding.externalSessionId ?? fallbackExternalSession ?? undefined,
+          externalSessionId: binding.externalSessionId ?? undefined,
           contextId: binding.contextId ?? undefined,
           bindingMetadata: binding.bindingMetadata ?? undefined,
           metadata: binding.metadata,

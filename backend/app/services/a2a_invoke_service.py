@@ -104,7 +104,6 @@ class A2AInvokeService:
             "externalSessionId",
             "external_session_id",
             "upstream_session_id",
-            "opencode_session_id",
         )
 
         for candidate in (root, message, result):

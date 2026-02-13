@@ -382,10 +382,6 @@ export const useChatStore = create<ChatState>()(
           try {
             const binding = await continueSessionBinding(sessionId);
             const current = get().sessions[sessionId] ?? createSession(agentId);
-            const fallbackExternalSessionId =
-              typeof binding.metadata.opencode_session_id === "string"
-                ? binding.metadata.opencode_session_id
-                : current.externalSessionRef?.externalSessionId;
             patchSession({
               conversationId: binding.conversationId ?? current.conversationId,
               contextId: binding.contextId ?? current.contextId,
@@ -397,7 +393,7 @@ export const useChatStore = create<ChatState>()(
                   null,
                 externalSessionId:
                   binding.externalSessionId ??
-                  fallbackExternalSessionId ??
+                  current.externalSessionRef?.externalSessionId ??
                   null,
                 contextId:
                   binding.contextId ??

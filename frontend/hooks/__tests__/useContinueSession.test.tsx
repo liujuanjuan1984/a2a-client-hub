@@ -99,7 +99,7 @@ describe("useContinueSession", () => {
       externalSessionId: "upstream-1",
       contextId: null,
       bindingMetadata: { mode: "continue" },
-      metadata: { foo: "bar", opencode_session_id: "upstream-1" },
+      metadata: { foo: "bar" },
     });
 
     const { result } = renderHook(() => useContinueSession());
@@ -122,7 +122,7 @@ describe("useContinueSession", () => {
       externalSessionId: "upstream-1",
       contextId: undefined,
       bindingMetadata: { mode: "continue" },
-      metadata: { foo: "bar", opencode_session_id: "upstream-1" },
+      metadata: { foo: "bar" },
     });
     expect(mockedBlurActiveElement).toHaveBeenCalledTimes(1);
     expect(mockedBuildChatRoute).toHaveBeenCalledWith("agent-1", "session-1");

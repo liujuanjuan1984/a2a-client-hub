@@ -347,7 +347,6 @@ async def test_unified_session_list_dedups_manual_and_opencode_with_same_binding
         invoke_metadata={
             "provider": "opencode",
             "externalSessionId": "upstream-session-1",
-            "opencode_session_id": "upstream-session-1",
         },
         extra_metadata={"transport": "http_json", "stream": False},
     )
