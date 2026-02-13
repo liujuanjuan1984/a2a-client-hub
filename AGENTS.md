@@ -10,7 +10,29 @@ This guide is for coding agents working on this repository. Follow these rules s
 
 ## 2. Required Regressions
 
-After any code change, you must run the relevant regressions and fix all failures:
+执行回归必须按变更范围区分前后端，并修复全部失败项。
+
+### 2.1 Scope-Based Rules (Mandatory)
+
+- **仅 backend 变更**：只执行 backend 回归。
+- **仅 frontend 变更**：只执行 frontend 回归。
+- **backend + frontend 同时变更**：两套回归都执行，且**串行**执行（先 backend，后 frontend），避免并发压垮本机 I/O。
+
+### 2.2 Development Loop (Low-Load, Recommended)
+
+开发过程中优先使用轻量回归，降低负载：
+
+- **Backend（按改动文件/模块）**
+  - `cd backend && uv run pre-commit run --files <changed_backend_files...> --config ../.pre-commit-config.yaml`
+  - `cd backend && uv run pytest <changed_tests_or_module>`
+- **Frontend（按改动文件/模块）**
+  - `cd frontend && npm run lint`
+  - `cd frontend && export NODE_OPTIONS="--max-old-space-size=1024" && npm run check-types`
+  - `cd frontend && npm test -- --findRelatedTests <changed_frontend_files...> --maxWorkers=25%`
+
+### 2.3 Pre-Push Gate (Mandatory)
+
+推送前必须完成对应范围的**全量**回归：
 
 - **Backend changes (`backend/`)**
   - `cd backend && uv sync --extra dev --locked`
@@ -21,10 +43,11 @@ After any code change, you must run the relevant regressions and fix all failure
   - `cd frontend && npm install`
   - `cd frontend && npm run lint`
   - `cd frontend && export NODE_OPTIONS="--max-old-space-size=1024" && npm run check-types`
-  - `cd frontend && npm test`
+  - `cd frontend && npm test -- --maxWorkers=25%`
 
 Notes:
 
+- 避免重复重负载检查：同一轮代码未变化时，不要重复执行等价全量检查。
 - If a change touches database schema or migrations, additionally run:
   - `cd backend && uv run alembic upgrade head`
   - And verify the critical endpoints manually.
@@ -95,7 +118,7 @@ Before starting any user-assigned task, the agent must:
 
 ### 6. Automated Verification and Self-Correction
 
-- **Verify before push**: run the required regressions before pushing.
+- **Verify before push**: run the required regressions before pushing, following the scope-based rules in Section 2.
 - **Self-correction loop**: if lint/tests fail, fix them autonomously before reporting.
 
 ### 7. Documentation and Verification Evidence
