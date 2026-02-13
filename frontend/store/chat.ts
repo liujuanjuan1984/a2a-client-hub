@@ -17,9 +17,11 @@ import {
   getHubInvokeWsTicket,
   invokeHubAgent,
 } from "@/lib/api/hubA2aAgentsUser";
+import { continueSession as continueSessionBinding } from "@/lib/api/sessions";
 import { fetchSSE } from "@/lib/api/sse";
 import { ENV } from "@/lib/config";
 import { generateId, generateUuid } from "@/lib/id";
+import { getSessionSource } from "@/lib/sessionIds";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { applyStreamChunk } from "@/lib/streamChunks";
 import { shouldSplitStreamMessage } from "@/lib/streamMessageSplit";
@@ -30,6 +32,8 @@ type AgentSession = {
   agentId: string;
   contextId: string | null;
   runtimeStatus?: string | null;
+  streamState?: "idle" | "streaming" | "rebinding" | "recoverable" | "error";
+  lastStreamError?: string | null;
   transport: string;
   inputModes: string[];
   outputModes: string[];
@@ -86,6 +90,8 @@ const createSession = (agentId: string): AgentSession => ({
   agentId,
   contextId: null,
   runtimeStatus: null,
+  streamState: "idle",
+  lastStreamError: null,
   transport: "http_json",
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
@@ -270,12 +276,17 @@ export const useChatStore = create<ChatState>()(
           status: "streaming" as const,
         };
 
+        const previousSession =
+          get().sessions[sessionId] ?? createSession(agentId);
+
         set((state) => ({
           sessions: {
             ...state.sessions,
             [sessionId]: {
               ...(state.sessions[sessionId] ?? createSession(agentId)),
               lastActiveAt: new Date().toISOString(),
+              streamState: "streaming",
+              lastStreamError: null,
               transport: supportsWebSocket
                 ? "ws"
                 : supportsStreaming
@@ -290,6 +301,81 @@ export const useChatStore = create<ChatState>()(
         messageStore.addMessage(sessionId, agentMessage);
 
         let activeAgentMessageId = agentMessageId;
+
+        let rebindInFlight = false;
+
+        const patchSession = (patch: Partial<AgentSession>) => {
+          set((state) => {
+            const current = state.sessions[sessionId];
+            if (!current) return state;
+            return {
+              sessions: {
+                ...state.sessions,
+                [sessionId]: {
+                  ...current,
+                  ...patch,
+                  lastActiveAt: new Date().toISOString(),
+                },
+              },
+            };
+          });
+        };
+
+        const markSessionIdle = () => {
+          patchSession({
+            streamState: "idle",
+            lastStreamError: null,
+          });
+        };
+
+        const attemptSessionRebind = async (reason: string) => {
+          if (getSessionSource(sessionId) !== "opencode") {
+            return false;
+          }
+          if (rebindInFlight) {
+            return false;
+          }
+          rebindInFlight = true;
+          patchSession({
+            streamState: "rebinding",
+            lastStreamError: reason,
+          });
+          try {
+            const binding = await continueSessionBinding(sessionId);
+            const current = get().sessions[sessionId] ?? createSession(agentId);
+            const opencodeSessionId =
+              typeof binding.metadata.opencode_session_id === "string"
+                ? binding.metadata.opencode_session_id
+                : current.opencodeSessionId;
+            patchSession({
+              contextId: binding.contextId ?? current.contextId,
+              metadata: binding.metadata ?? current.metadata,
+              opencodeSessionId,
+              streamState: "recoverable",
+              lastStreamError: reason,
+            });
+            return true;
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "Session rebind failed.";
+            patchSession({
+              streamState: "error",
+              lastStreamError: message,
+            });
+            return false;
+          } finally {
+            rebindInFlight = false;
+          }
+        };
+
+        if (
+          getSessionSource(sessionId) === "opencode" &&
+          previousSession.streamState === "error"
+        ) {
+          await attemptSessionRebind(
+            previousSession.lastStreamError ?? "Recover before sending",
+          );
+        }
 
         const session = get().sessions[sessionId] ?? createSession(agentId);
         const payload = buildInvokePayload(trimmed, session, sessionId);
@@ -367,6 +453,11 @@ export const useChatStore = create<ChatState>()(
               status: "done",
             }),
           );
+          patchSession({
+            streamState: "error",
+            lastStreamError: errorText,
+          });
+          attemptSessionRebind(errorText).catch(() => false);
         };
 
         const tryWebSocketTransport = async () => {
@@ -476,6 +567,7 @@ export const useChatStore = create<ChatState>()(
                   messageStore.updateMessage(sessionId, activeAgentMessageId, {
                     status: "done",
                   });
+                  markSessionIdle();
                   finalize("resolve");
                   return;
                 }
@@ -649,6 +741,7 @@ export const useChatStore = create<ChatState>()(
                   messageStore.updateMessage(sessionId, activeAgentMessageId, {
                     status: "done",
                   });
+                  markSessionIdle();
                   clearAbortController();
                 },
               },
@@ -692,6 +785,10 @@ export const useChatStore = create<ChatState>()(
                 content: message,
                 status: "done",
               });
+              patchSession({
+                streamState: "error",
+                lastStreamError: message,
+              });
               return;
             }
 
@@ -699,12 +796,17 @@ export const useChatStore = create<ChatState>()(
               content: response.content ?? "",
               status: "done",
             });
+            markSessionIdle();
           } catch (error) {
             const message =
               error instanceof Error ? error.message : "Request failed.";
             messageStore.updateMessage(sessionId, agentMessageId, {
               content: message,
               status: "done",
+            });
+            patchSession({
+              streamState: "error",
+              lastStreamError: message,
             });
           }
         };

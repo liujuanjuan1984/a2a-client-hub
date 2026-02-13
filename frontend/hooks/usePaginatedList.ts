@@ -24,6 +24,9 @@ type Options<T> = {
   fallbackMessage: string;
   mapErrorMessage?: (error: unknown) => string | null | undefined;
   enabled?: boolean;
+  refetchOnWindowFocus?: boolean;
+  refetchOnReconnect?: boolean;
+  refetchOnMount?: boolean;
 };
 
 const mergeUniqueByKey = <T>(
@@ -65,6 +68,9 @@ export function usePaginatedList<T>({
   fallbackMessage,
   mapErrorMessage,
   enabled = true,
+  refetchOnWindowFocus,
+  refetchOnReconnect,
+  refetchOnMount,
 }: Options<T>) {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
@@ -86,6 +92,9 @@ export function usePaginatedList<T>({
         ? lastPage.nextPage
         : undefined;
     },
+    refetchOnWindowFocus,
+    refetchOnReconnect,
+    refetchOnMount,
   });
 
   const pages = query.data?.pages ?? [];

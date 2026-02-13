@@ -88,6 +88,8 @@ The Sessions tab now uses the backend unified session domain API
 
 History loading is unified via
 `POST /me/sessions/{session_id}/messages:query`.
+To avoid transport contention, chat history auto-refetch is paused while a
+message is actively streaming.
 
 Continue binding is unified via
 `POST /me/sessions/{session_id}:continue` so Chat always restores

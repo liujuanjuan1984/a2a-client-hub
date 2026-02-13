@@ -12,8 +12,9 @@ import {
 export function useSessionHistoryQuery(options: {
   sessionId?: string;
   enabled: boolean;
+  paused?: boolean;
 }) {
-  const { sessionId, enabled } = options;
+  const { sessionId, enabled, paused = false } = options;
 
   const fetchPage = useCallback(
     async (page: number) => {
@@ -32,7 +33,9 @@ export function useSessionHistoryQuery(options: {
       `${item.id ?? "no-id"}:${item.created_at}:${item.role}:${item.content}`,
     errorTitle: "Load history failed",
     fallbackMessage: "Load failed.",
-    enabled: enabled && Boolean(sessionId),
+    enabled: enabled && Boolean(sessionId) && !paused,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const messages = useMemo(() => {

@@ -74,6 +74,8 @@ describe("useChatHistoryQuery", () => {
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];
     expect(options?.queryKey).toEqual(["history", "chat", "session-1"]);
     expect(options?.enabled).toBe(true);
+    expect(options?.refetchOnWindowFocus).toBe(false);
+    expect(options?.refetchOnReconnect).toBe(false);
   });
 
   it("disables session history query when session id is missing", () => {
@@ -88,6 +90,21 @@ describe("useChatHistoryQuery", () => {
     expect(result.current.messages).toEqual([]);
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];
     expect(options?.queryKey).toEqual(["history", "chat", "missing"]);
+    expect(options?.enabled).toBe(false);
+  });
+
+  it("pauses session history query while chat stream is active", () => {
+    mockedUsePaginatedList.mockReturnValue(createPaginatedResult([]));
+
+    renderHook(() =>
+      useSessionHistoryQuery({
+        sessionId: "session-1",
+        enabled: true,
+        paused: true,
+      }),
+    );
+
+    const options = mockedUsePaginatedList.mock.calls[0]?.[0];
     expect(options?.enabled).toBe(false);
   });
 });

@@ -93,10 +93,14 @@ export function ChatScreen({
   const minInputHeight = 44;
   const maxInputHeight = 128;
   const [inputHeight, setInputHeight] = useState(minInputHeight);
+  const historyPaused =
+    session?.streamState === "streaming" ||
+    session?.streamState === "rebinding";
 
   const sessionHistoryQuery = useSessionHistoryQuery({
     sessionId,
     enabled: Boolean(sessionId),
+    paused: historyPaused,
   });
 
   const historyLoading = sessionHistoryQuery.loading;
@@ -179,6 +183,7 @@ export function ChatScreen({
 
   const loadEarlierHistory = async () => {
     if (!sessionId) return;
+    if (historyPaused) return;
     if (typeof historyNextPage !== "number") return;
     if (historyLoadingMore) return;
     suppressAutoScrollRef.current = true;
@@ -458,6 +463,31 @@ export function ChatScreen({
         ) : null}
       </View>
 
+      {session?.streamState === "rebinding" ? (
+        <View className="mx-6 mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+          <Text className="text-xs text-amber-300">
+            Connection dropped. Rebinding this session...
+          </Text>
+        </View>
+      ) : null}
+
+      {session?.streamState === "recoverable" ? (
+        <View className="mx-6 mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+          <Text className="text-xs text-emerald-300">
+            Session recovered. You can continue chatting in this session.
+          </Text>
+        </View>
+      ) : null}
+
+      {session?.streamState === "error" ? (
+        <View className="mx-6 mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2">
+          <Text className="text-xs text-red-300">
+            Session recovery failed.
+            {session.lastStreamError ? ` ${session.lastStreamError}` : ""}
+          </Text>
+        </View>
+      ) : null}
+
       <ScrollView
         ref={scrollRef}
         className="mt-2 flex-1 px-6"
@@ -471,6 +501,7 @@ export function ChatScreen({
               size="sm"
               variant="secondary"
               loading={historyLoadingMore}
+              disabled={historyPaused}
               onPress={loadEarlierHistory}
             />
           </View>
