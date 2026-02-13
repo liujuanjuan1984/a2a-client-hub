@@ -17,7 +17,10 @@ def normalize_provider(value: object) -> Optional[str]:
     normalized = normalize_non_empty_text(value)
     if normalized is None:
         return None
-    return normalized.lower()
+    lowered = normalized.lower()
+    if lowered == "opencode" or lowered.startswith("opencode-"):
+        return "opencode"
+    return lowered
 
 
 __all__ = ["normalize_non_empty_text", "normalize_provider"]
