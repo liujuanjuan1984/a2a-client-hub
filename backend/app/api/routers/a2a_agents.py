@@ -70,6 +70,12 @@ router = StrictAPIRouter(prefix="/me/a2a/agents", tags=["a2a"])
 logger = get_logger(__name__)
 
 
+def _status_code_for_invoke_session_error(detail: str) -> int:
+    if detail == "session_not_found":
+        return 404
+    return 400
+
+
 def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
     agent = record.agent
     payload = {
@@ -437,12 +443,21 @@ async def invoke_agent_ws(
         (
             local_session,
             local_source,
-        ) = await session_hub_service.ensure_local_session_for_invoke(
-            db,
-            user_id=current_user.id,
-            agent_id=agent_id,
-            session_key=payload.session_id,
-        )
+        ) = (None, None)
+        try:
+            (
+                local_session,
+                local_source,
+            ) = await session_hub_service.ensure_local_session_for_invoke(
+                db,
+                user_id=current_user.id,
+                agent_id=agent_id,
+                session_key=payload.session_id,
+            )
+        except ValueError as exc:
+            await websocket.send_json({"error": str(exc)})
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
 
         async def _on_complete(stream_text: str) -> None:
             if local_session is None or local_source is None:
@@ -553,12 +568,22 @@ async def invoke_agent(
     (
         local_session,
         local_source,
-    ) = await session_hub_service.ensure_local_session_for_invoke(
-        db,
-        user_id=current_user.id,
-        agent_id=agent_id,
-        session_key=payload.session_id,
-    )
+    ) = (None, None)
+    try:
+        (
+            local_session,
+            local_source,
+        ) = await session_hub_service.ensure_local_session_for_invoke(
+            db,
+            user_id=current_user.id,
+            agent_id=agent_id,
+            session_key=payload.session_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=_status_code_for_invoke_session_error(str(exc)),
+            detail=str(exc),
+        ) from exc
     if stream:
 
         async def _on_complete(stream_text: str) -> None:

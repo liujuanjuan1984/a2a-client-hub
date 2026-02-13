@@ -118,7 +118,7 @@ curl -X POST "$API_BASE_URL/me/a2a/agents/<AGENT_ID>/invoke" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
-    "message":"Summarize today'\''s key updates"
+    "query":"Summarize today'\''s key updates"
   }'
 ```
 
@@ -139,7 +139,12 @@ curl -X POST "$API_BASE_URL/me/sessions:query" \
 
 ```bash
 curl -X POST "$API_BASE_URL/me/sessions/<SESSION_ID>/messages:query" \
-  -H "Authorization: Bearer <ACCESS_TOKEN>"
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "page": 1,
+    "size": 50
+  }'
 ```
 
 ## Notes

@@ -70,7 +70,9 @@ class SessionMessagesMeta(BaseModel):
     upstream_session_id: Optional[str] = None
 
 
-class SessionMessagesListResponse(ListResponse[SessionMessageItem, SessionMessagesMeta]):
+class SessionMessagesListResponse(
+    ListResponse[SessionMessageItem, SessionMessagesMeta]
+):
     pass
 
 

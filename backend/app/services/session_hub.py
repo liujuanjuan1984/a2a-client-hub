@@ -25,8 +25,16 @@ from app.db.models.agent_session import AgentSession
 from app.handlers import agent_message as agent_message_handler
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
-from app.services.a2a_runtime import a2a_runtime_builder
-from app.services.hub_a2a_runtime import hub_a2a_runtime_builder
+from app.services.a2a_runtime import (
+    A2ARuntimeNotFoundError,
+    A2ARuntimeValidationError,
+    a2a_runtime_builder,
+)
+from app.services.hub_a2a_runtime import (
+    HubA2ARuntimeNotFoundError,
+    HubA2ARuntimeValidationError,
+    hub_a2a_runtime_builder,
+)
 from app.services.opencode_session_directory import opencode_session_directory_service
 from app.utils.timezone_util import utc_now
 
@@ -119,6 +127,8 @@ def parse_session_key(value: str) -> ParsedSessionKey:
 
 
 class SessionHubService:
+    _LOCAL_SESSION_SOURCES: set[SessionSource] = {"manual", "scheduled"}
+
     async def list_sessions(
         self,
         db: AsyncSession,
@@ -133,19 +143,17 @@ class SessionHubService:
         opencode_meta: dict[str, Any] = {}
 
         if source in {None, "manual", "scheduled"}:
-            items.extend(await self._list_local_sessions(db, user_id=user_id, source=source))
+            items.extend(
+                await self._list_local_sessions(db, user_id=user_id, source=source)
+            )
 
         if source in {None, "opencode"}:
-            opencode_items, opencode_extra = (
-                await opencode_session_directory_service.list_directory(
-                    db,
-                    user_id=user_id,
-                    page=1,
-                    size=200,
-                    refresh=refresh,
-                )
+            opencode_items, opencode_meta = await self._list_all_opencode_sessions(
+                db,
+                user_id=user_id,
+                size=size,
+                refresh=refresh,
             )
-            opencode_meta = dict(opencode_extra.get("meta") or {})
             for item in opencode_items:
                 raw_agent_id = item.get("agent_id")
                 raw_agent_source = item.get("agent_source")
@@ -190,9 +198,13 @@ class SessionHubService:
 
         meta = {
             "opencode_total_agents": int(opencode_meta.get("total_agents") or 0),
-            "opencode_refreshed_agents": int(opencode_meta.get("refreshed_agents") or 0),
+            "opencode_refreshed_agents": int(
+                opencode_meta.get("refreshed_agents") or 0
+            ),
             "opencode_cached_agents": int(opencode_meta.get("cached_agents") or 0),
-            "opencode_partial_failures": int(opencode_meta.get("partial_failures") or 0),
+            "opencode_partial_failures": int(
+                opencode_meta.get("partial_failures") or 0
+            ),
         }
         pagination = {
             "page": page,
@@ -220,11 +232,15 @@ class SessionHubService:
                     ),
                 )
             )
-            .order_by(AgentSession.last_activity_at.desc(), AgentSession.created_at.desc())
+            .order_by(
+                AgentSession.last_activity_at.desc(), AgentSession.created_at.desc()
+            )
         )
         sessions = list((await db.execute(stmt)).scalars().all())
 
-        scheduled_agent_map = await self._scheduled_session_agent_map(db, user_id=user_id)
+        scheduled_agent_map = await self._scheduled_session_agent_map(
+            db, user_id=user_id
+        )
         items: list[dict[str, Any]] = []
 
         for session in sessions:
@@ -397,6 +413,17 @@ class SessionHubService:
             agent_id=parsed.agent_id,
         )
         try:
+            try:
+                runtime = await self._build_runtime(
+                    db,
+                    user_id=user_id,
+                    agent_source=parsed.agent_source,
+                    agent_id=parsed.agent_id,
+                )
+            except (A2ARuntimeNotFoundError, HubA2ARuntimeNotFoundError) as exc:
+                raise ValueError("session_not_found") from exc
+            except (A2ARuntimeValidationError, HubA2ARuntimeValidationError) as exc:
+                raise ValueError("runtime_invalid") from exc
             result = await get_a2a_extensions_service().opencode_get_session_messages(
                 runtime=runtime,
                 session_id=parsed.upstream_session_id,
@@ -411,12 +438,22 @@ class SessionHubService:
             raise ValueError(result.error_code or "upstream_error")
 
         envelope = result.result if isinstance(result.result, dict) else {}
-        raw_items = envelope.get("items") if isinstance(envelope.get("items"), list) else []
-        items = [_map_opencode_message(item, index) for index, item in enumerate(raw_items)]
+        raw_items = (
+            envelope.get("items") if isinstance(envelope.get("items"), list) else []
+        )
+        items = [
+            _map_opencode_message(item, index) for index, item in enumerate(raw_items)
+        ]
 
-        pagination_raw = envelope.get("pagination") if isinstance(envelope.get("pagination"), dict) else {}
+        pagination_raw = (
+            envelope.get("pagination")
+            if isinstance(envelope.get("pagination"), dict)
+            else {}
+        )
         total = int(pagination_raw.get("total") or len(items))
-        pages = int(pagination_raw.get("pages") or ((total + size - 1) // size if size else 0))
+        pages = int(
+            pagination_raw.get("pages") or ((total + size - 1) // size if size else 0)
+        )
         meta = {
             "session_id": session_key,
             "source": "opencode",
@@ -445,21 +482,34 @@ class SessionHubService:
             assert parsed.agent_source in {"personal", "shared"}
             assert parsed.upstream_session_id is not None
 
-            runtime = await self._build_runtime(
-                db,
-                user_id=user_id,
-                agent_source=parsed.agent_source,
-                agent_id=parsed.agent_id,
-            )
-            result = await get_a2a_extensions_service().opencode_continue_session(
-                runtime=runtime,
-                session_id=parsed.upstream_session_id,
-            )
+            try:
+                runtime = await self._build_runtime(
+                    db,
+                    user_id=user_id,
+                    agent_source=parsed.agent_source,
+                    agent_id=parsed.agent_id,
+                )
+            except (A2ARuntimeNotFoundError, HubA2ARuntimeNotFoundError) as exc:
+                raise ValueError("session_not_found") from exc
+            except (A2ARuntimeValidationError, HubA2ARuntimeValidationError) as exc:
+                raise ValueError("runtime_invalid") from exc
+
+            try:
+                result = await get_a2a_extensions_service().opencode_continue_session(
+                    runtime=runtime,
+                    session_id=parsed.upstream_session_id,
+                )
+            except A2AExtensionUpstreamError as exc:
+                raise ValueError(exc.error_code or "upstream_error") from exc
             if not result.success:
                 raise ValueError(result.error_code or "upstream_error")
             payload = result.result if isinstance(result.result, dict) else {}
             context_id = payload.get("contextId") or payload.get("context_id")
-            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+            metadata = (
+                payload.get("metadata")
+                if isinstance(payload.get("metadata"), dict)
+                else {}
+            )
             return {
                 "session_id": session_key,
                 "source": "opencode",
@@ -508,9 +558,10 @@ class SessionHubService:
             return None, None
         try:
             parsed = parse_session_key(session_key)
-        except Exception:
-            return None, None
-        if parsed.source not in {"manual", "scheduled"}:
+        except ValueError as exc:
+            raise ValueError("invalid_session_id") from exc
+
+        if parsed.source not in self._LOCAL_SESSION_SOURCES:
             return None, None
         assert parsed.local_session_id is not None
 
@@ -537,12 +588,15 @@ class SessionHubService:
             await db.flush()
 
         if session is None:
-            return None, None
+            raise ValueError("session_not_found")
 
         if parsed.source == "manual" and session.session_type != AgentSession.TYPE_CHAT:
-            return None, None
-        if parsed.source == "scheduled" and session.session_type != AgentSession.TYPE_SCHEDULED:
-            return None, None
+            raise ValueError("invalid_session_id")
+        if (
+            parsed.source == "scheduled"
+            and session.session_type != AgentSession.TYPE_SCHEDULED
+        ):
+            raise ValueError("invalid_session_id")
 
         session.module_key = str(agent_id)
         session.touch()
@@ -602,7 +656,9 @@ class SessionHubService:
         agent_id: UUID,
     ):
         if agent_source == "shared":
-            return await hub_a2a_runtime_builder.build(db, user_id=user_id, agent_id=agent_id)
+            return await hub_a2a_runtime_builder.build(
+                db, user_id=user_id, agent_id=agent_id
+            )
         return await a2a_runtime_builder.build(db, user_id=user_id, agent_id=agent_id)
 
     async def _get_local_session(
@@ -614,7 +670,9 @@ class SessionHubService:
         source: Literal["manual", "scheduled"],
     ) -> AgentSession:
         expected_type = (
-            AgentSession.TYPE_CHAT if source == "manual" else AgentSession.TYPE_SCHEDULED
+            AgentSession.TYPE_CHAT
+            if source == "manual"
+            else AgentSession.TYPE_SCHEDULED
         )
         session = await db.scalar(
             select(AgentSession).where(
@@ -630,6 +688,41 @@ class SessionHubService:
             raise ValueError("session_not_found")
         return session
 
+    async def _list_all_opencode_sessions(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        size: int,
+        refresh: bool,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        page = 1
+        per_page = max(size, 200)
+        collected: list[dict[str, Any]] = []
+        meta: dict[str, Any] = {}
+
+        while True:
+            page_items, extra = await opencode_session_directory_service.list_directory(
+                db,
+                user_id=user_id,
+                page=page,
+                size=per_page,
+                refresh=refresh if page == 1 else False,
+            )
+            if page == 1:
+                meta = dict(extra.get("meta") or {})
+            collected.extend(page_items)
+
+            pagination = extra.get("pagination") if isinstance(extra, dict) else {}
+            if not isinstance(pagination, dict):
+                break
+            pages = int(pagination.get("pages") or 0)
+            if pages <= page:
+                break
+            page += 1
+
+        return collected, meta
+
 
 def _sender_to_role(sender: str) -> str:
     normalized = (sender or "").strip().lower()
@@ -642,11 +735,21 @@ def _sender_to_role(sender: str) -> str:
 
 def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:
     obj = item if isinstance(item, dict) else {}
-    message_id = str(obj.get("id") or obj.get("message_id") or obj.get("messageId") or f"opencode-{index}")
+    message_id = str(
+        obj.get("id")
+        or obj.get("message_id")
+        or obj.get("messageId")
+        or f"opencode-{index}"
+    )
 
     role = _map_role(
         _pick_str(obj, ["role", "type", "sender"])
-        or _pick_str(_as_dict(_as_dict(_as_dict(obj.get("metadata")).get("opencode")).get("raw")).get("info"), ["role"])
+        or _pick_str(
+            _as_dict(
+                _as_dict(_as_dict(obj.get("metadata")).get("opencode")).get("raw")
+            ).get("info"),
+            ["role"],
+        )
     )
 
     content = _extract_content(obj)
@@ -707,7 +810,9 @@ def _extract_timestamp(obj: Dict[str, Any]) -> datetime:
     direct = _pick_str(obj, ["created_at", "createdAt", "timestamp", "ts"])
     if direct:
         try:
-            return datetime.fromisoformat(direct.replace("Z", "+00:00")).astimezone(timezone.utc)
+            return datetime.fromisoformat(direct.replace("Z", "+00:00")).astimezone(
+                timezone.utc
+            )
         except ValueError:
             pass
 
