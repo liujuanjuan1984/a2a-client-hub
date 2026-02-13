@@ -105,6 +105,8 @@ class A2AInvokeService:
             "externalSessionId",
             "external_session_id",
             "upstream_session_id",
+            "sessionId",
+            "session_id",
         )
 
         for candidate in (root, message, result):

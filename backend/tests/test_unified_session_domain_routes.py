@@ -395,6 +395,185 @@ async def test_unified_session_list_dedups_manual_and_opencode_with_same_binding
         assert payload["items"][0]["source"] == "manual"
 
 
+async def test_unified_session_list_dedups_using_local_conversation_id_fallback(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="conv-fallback"
+    )
+    now = utc_now()
+
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Manual Conversation Fallback",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    conversation_id = await conversation_identity_service.bind_external_session(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=None,
+        provider="opencode-a2a-serve",
+        external_session_id="upstream-conv-fallback-1",
+        agent_id=agent.id,
+        agent_source="personal",
+        context_id="ctx-conv-fallback-1",
+        title="Conversation Fallback",
+        binding_metadata={"provider": "opencode-a2a-serve"},
+    )
+
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            session_id=manual_session.id,
+            conversation_id=conversation_id,
+            sender="user",
+            content="manual-user",
+            message_metadata={"context_id": "ctx-conv-fallback-1"},
+        )
+    )
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            session_id=manual_session.id,
+            conversation_id=conversation_id,
+            sender="agent",
+            content="manual-agent",
+            message_metadata={"context_id": "ctx-conv-fallback-1"},
+        )
+    )
+    await async_db_session.commit()
+
+    async def _list_all_opencode_sessions_stub(db, *, user_id, refresh):
+        return (
+            [
+                {
+                    "agent_id": agent.id,
+                    "agent_source": "personal",
+                    "session_id": "upstream-conv-fallback-1",
+                    "title": "Remote Session",
+                    "last_active_at": now.isoformat(),
+                }
+            ],
+            {
+                "total_agents": 1,
+                "refreshed_agents": 0,
+                "cached_agents": 1,
+                "partial_failures": 0,
+            },
+        )
+
+    monkeypatch.setattr(
+        me_sessions.session_hub_service,
+        "_list_all_opencode_sessions",
+        _list_all_opencode_sessions_stub,
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/sessions:query",
+            json={"page": 1, "size": 20, "refresh": False},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pagination"]["total"] == 1
+        assert len(payload["items"]) == 1
+        assert payload["items"][0]["source"] == "manual"
+
+
+async def test_unified_session_list_dedups_when_provider_missing_but_external_present(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="weak-key")
+    now = utc_now()
+
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Manual External Only",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            session_id=manual_session.id,
+            sender="user",
+            content="manual-user",
+            message_metadata={"external_session_id": "upstream-weak-key-1"},
+        )
+    )
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            session_id=manual_session.id,
+            sender="agent",
+            content="manual-agent",
+            message_metadata={"external_session_id": "upstream-weak-key-1"},
+        )
+    )
+    await async_db_session.commit()
+
+    async def _list_all_opencode_sessions_stub(db, *, user_id, refresh):
+        return (
+            [
+                {
+                    "agent_id": agent.id,
+                    "agent_source": "personal",
+                    "session_id": "upstream-weak-key-1",
+                    "title": "Remote Session",
+                    "last_active_at": now.isoformat(),
+                }
+            ],
+            {
+                "total_agents": 1,
+                "refreshed_agents": 0,
+                "cached_agents": 1,
+                "partial_failures": 0,
+            },
+        )
+
+    monkeypatch.setattr(
+        me_sessions.session_hub_service,
+        "_list_all_opencode_sessions",
+        _list_all_opencode_sessions_stub,
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/sessions:query",
+            json={"page": 1, "size": 20, "refresh": False},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pagination"]["total"] == 1
+        assert len(payload["items"]) == 1
+        assert payload["items"][0]["source"] == "manual"
+
+
 async def test_unified_messages_query_keeps_prebinding_local_history(
     async_db_session,
     async_session_maker,

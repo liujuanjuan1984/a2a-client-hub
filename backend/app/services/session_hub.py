@@ -39,7 +39,7 @@ from app.services.hub_a2a_runtime import (
     hub_a2a_runtime_builder,
 )
 from app.services.opencode_session_directory import opencode_session_directory_service
-from app.utils.session_identity import normalize_provider
+from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import utc_now
 
 SessionSource = Literal["manual", "scheduled", "opencode"]
@@ -362,6 +362,9 @@ class SessionHubService:
         latest_metadata_map = await self._latest_local_message_metadata_map(
             db, user_id=user_id, local_session_ids=session_ids
         )
+        latest_conversation_map = await self._latest_local_message_conversation_map(
+            db, user_id=user_id, local_session_ids=session_ids
+        )
 
         scheduled_agent_map = await self._scheduled_session_agent_map(
             db, user_id=user_id
@@ -375,8 +378,8 @@ class SessionHubService:
                 metadata_external_id,
             ) = _extract_provider_and_external_from_metadata(latest_metadata)
             metadata_context_id = _extract_context_id_from_metadata(latest_metadata)
-            conversation_id: UUID | None = None
-            if metadata_provider and metadata_external_id:
+            conversation_id = latest_conversation_map.get(session.id)
+            if conversation_id is None and metadata_provider and metadata_external_id:
                 conversation_id = await conversation_identity_service.find_conversation_id_for_external(
                     db,
                     user_id=user_id,
@@ -476,6 +479,40 @@ class SessionHubService:
             mapped[session_id] = metadata
         return mapped
 
+    async def _latest_local_message_conversation_map(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        local_session_ids: list[UUID],
+    ) -> dict[UUID, UUID]:
+        if not local_session_ids:
+            return {}
+        stmt = (
+            select(AgentMessage.session_id, AgentMessage.conversation_id)
+            .where(
+                and_(
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.session_id.in_(local_session_ids),
+                    AgentMessage.conversation_id.is_not(None),
+                )
+            )
+            .order_by(
+                AgentMessage.session_id.asc(),
+                AgentMessage.created_at.desc(),
+                AgentMessage.id.desc(),
+            )
+            .distinct(AgentMessage.session_id)
+        )
+        rows = (await db.execute(stmt)).all()
+        mapped: dict[UUID, UUID] = {}
+        for row in rows:
+            session_id = row.session_id
+            conversation_id = row.conversation_id
+            if isinstance(session_id, UUID) and isinstance(conversation_id, UUID):
+                mapped[session_id] = conversation_id
+        return mapped
+
     def _dedup_cross_source_sessions(
         self,
         local_items: list[dict[str, Any]],
@@ -488,14 +525,27 @@ class SessionHubService:
             if isinstance(item.get("conversationId"), str)
             and item.get("conversationId")
         }
-        local_external_keys = {
-            (
-                normalize_provider(item.get("provider")),
-                str(item.get("external_session_id")),
+        local_external_keys: set[tuple[str, str]] = set()
+        local_agent_external_keys: set[tuple[str, str]] = set()
+        local_context_ids: set[str] = set()
+        for item in local_items:
+            normalized_external_id = normalize_non_empty_text(
+                item.get("external_session_id")
             )
-            for item in local_items
-            if item.get("provider") and item.get("external_session_id")
-        }
+            if normalized_external_id:
+                normalized_provider = normalize_provider(item.get("provider"))
+                if normalized_provider:
+                    local_external_keys.add(
+                        (normalized_provider, normalized_external_id)
+                    )
+                raw_agent_id = item.get("agent_id")
+                if isinstance(raw_agent_id, UUID):
+                    local_agent_external_keys.add(
+                        (str(raw_agent_id), normalized_external_id)
+                    )
+            normalized_context_id = normalize_non_empty_text(item.get("context_id"))
+            if normalized_context_id:
+                local_context_ids.add(normalized_context_id)
 
         for remote_item in opencode_items:
             conversation_id = remote_item.get("conversationId")
@@ -505,12 +555,28 @@ class SessionHubService:
             ):
                 continue
 
-            provider_key = normalize_provider("opencode")
-            external_key = (
-                provider_key,
-                str(remote_item.get("source_session_id")),
+            remote_external_id = normalize_non_empty_text(
+                remote_item.get("source_session_id")
             )
-            if external_key in local_external_keys:
+            provider_key = normalize_provider("opencode")
+            external_key = (provider_key, remote_external_id)
+            if (
+                provider_key
+                and remote_external_id
+                and external_key in local_external_keys
+            ):
+                continue
+
+            remote_agent_id = remote_item.get("agent_id")
+            if (
+                isinstance(remote_agent_id, UUID)
+                and remote_external_id
+                and (str(remote_agent_id), remote_external_id)
+                in local_agent_external_keys
+            ):
+                continue
+
+            if remote_external_id and remote_external_id in local_context_ids:
                 continue
 
             merged.append(remote_item)
@@ -603,13 +669,18 @@ class SessionHubService:
                 user_id=user_id,
                 local_session_ids=[session.id],
             )
+            latest_conversation_map = await self._latest_local_message_conversation_map(
+                db,
+                user_id=user_id,
+                local_session_ids=[session.id],
+            )
             latest_metadata = latest_metadata_map.get(session.id, {})
             (
                 provider,
                 external_session_id,
             ) = _extract_provider_and_external_from_metadata(latest_metadata)
-            conversation_id: UUID | None = None
-            if provider and external_session_id:
+            conversation_id = latest_conversation_map.get(session.id)
+            if conversation_id is None and provider and external_session_id:
                 conversation_id = await conversation_identity_service.find_conversation_id_for_external(
                     db,
                     user_id=user_id,
@@ -860,7 +931,11 @@ class SessionHubService:
         provider, external_session_id = _extract_provider_and_external_from_metadata(
             metadata
         )
-        conversation_id: UUID | None = None
+        conversation_id = (
+            latest.conversation_id
+            if latest is not None and isinstance(latest.conversation_id, UUID)
+            else None
+        )
         db_mutated = False
         if provider and external_session_id:
             bind_result = (
@@ -878,6 +953,8 @@ class SessionHubService:
                 )
             )
             conversation_id = bind_result.conversation_id
+            db_mutated = bind_result.mutated
+        if conversation_id:
             updated = (
                 await agent_message_handler.backfill_session_messages_conversation_id(
                     db,
@@ -886,7 +963,7 @@ class SessionHubService:
                     conversation_id=conversation_id,
                 )
             )
-            db_mutated = bind_result.mutated or updated > 0
+            db_mutated = db_mutated or updated > 0
         return (
             {
                 "session_id": session_key,

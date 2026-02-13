@@ -81,3 +81,19 @@ def test_extract_binding_hints_from_invoke_result_merges_raw_payload():
     assert context_id == "ctx-from-raw"
     assert metadata["provider"] == "opencode"
     assert metadata["externalSessionId"] == "raw-upstream"
+
+
+def test_extract_binding_hints_accepts_session_id_aliases():
+    context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
+        {
+            "success": True,
+            "content": "ok",
+            "result": {
+                "provider": "OpenCode",
+                "session_id": "alias-upstream-session",
+            },
+        }
+    )
+    assert context_id is None
+    assert metadata["provider"] == "opencode"
+    assert metadata["externalSessionId"] == "alias-upstream-session"
