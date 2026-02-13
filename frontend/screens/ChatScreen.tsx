@@ -57,11 +57,9 @@ const isSameMessageList = (left: ChatMessage[], right: ChatMessage[]) => {
 export function ChatScreen({
   agentId: routeAgentId,
   sessionId,
-  source,
 }: {
   agentId?: string;
   sessionId?: string;
-  source?: "manual" | "scheduled";
 }) {
   const router = useRouter();
   const goBackOrHome = useCallback(() => backOrHome(router), [router]);
@@ -108,6 +106,7 @@ export function ChatScreen({
     sessionHistoryQuery.error instanceof Error
       ? sessionHistoryQuery.error.message
       : null;
+  const sessionSource = sessionId ? getSessionSource(sessionId) : null;
 
   useEffect(() => {
     if (activeAgentId && sessionId) {
@@ -373,7 +372,7 @@ export function ChatScreen({
                   Source
                 </Text>
                 <Text className="mt-1 text-xs text-white">
-                  {source ?? "N/A"}
+                  {sessionSource ?? "N/A"}
                 </Text>
               </View>
             </View>

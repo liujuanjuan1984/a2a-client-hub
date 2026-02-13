@@ -17,6 +17,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_me
@@ -74,6 +75,12 @@ def _status_code_for_invoke_session_error(detail: str) -> int:
     if detail == "session_not_found":
         return 404
     return 400
+
+
+def _ws_error_code_for_invoke_session_error(detail: str) -> str:
+    if detail == "session_not_found":
+        return "session_not_found"
+    return "invalid_session_id"
 
 
 def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
@@ -419,16 +426,46 @@ async def invoke_agent_ws(
     try:
         # Receive the request payload
         data = await websocket.receive_json()
-        payload = A2AAgentInvokeRequest.model_validate(data)
-
-        if not payload.query.strip():
-            await websocket.send_json({"error": "Query must be a non-empty string"})
+        try:
+            payload = A2AAgentInvokeRequest.model_validate(data)
+        except ValidationError:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Invalid request payload",
+                error_code="invalid_request",
+            )
             await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
             return
 
-        runtime = await a2a_runtime_builder.build(
-            db, user_id=current_user.id, agent_id=agent_id
-        )
+        if not payload.query.strip():
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Query must be a non-empty string",
+                error_code="invalid_query",
+            )
+            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            return
+
+        try:
+            runtime = await a2a_runtime_builder.build(
+                db, user_id=current_user.id, agent_id=agent_id
+            )
+        except A2ARuntimeNotFoundError as exc:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=str(exc),
+                error_code="agent_not_found",
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        except A2ARuntimeValidationError as exc:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=str(exc),
+                error_code="runtime_invalid",
+            )
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            return
 
         logger.info(
             "A2A agent invoke WS requested",
@@ -455,7 +492,11 @@ async def invoke_agent_ws(
                 session_key=payload.session_id,
             )
         except ValueError as exc:
-            await websocket.send_json({"error": str(exc)})
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=str(exc),
+                error_code=_ws_error_code_for_invoke_session_error(str(exc)),
+            )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
@@ -515,9 +556,10 @@ async def invoke_agent_ws(
     except Exception:
         logger.error("WS error", exc_info=True)
         try:
-            # Try to send error if still connected
-            await websocket.send_text(
-                '{"event":"error","data":{"message":"Upstream streaming failed"}}'
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Upstream streaming failed",
+                error_code="upstream_stream_error",
             )
         except Exception:
             pass

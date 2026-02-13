@@ -26,6 +26,33 @@ class A2AInvokeService:
 
     # Keep client-facing stream errors generic. Internal errors go to logs.
     _STREAM_ERROR_MESSAGE = "Upstream streaming failed"
+    _STREAM_ERROR_CODE = "upstream_stream_error"
+
+    @classmethod
+    def build_ws_error_event(
+        cls,
+        *,
+        message: str,
+        error_code: str | None = None,
+    ) -> dict[str, Any]:
+        data: dict[str, Any] = {"message": message}
+        if error_code:
+            data["error_code"] = error_code
+        return {"event": "error", "data": data}
+
+    async def send_ws_error(
+        self,
+        websocket: WebSocket,
+        *,
+        message: str,
+        error_code: str | None = None,
+    ) -> None:
+        await websocket.send_text(
+            json_dumps(
+                self.build_ws_error_event(message=message, error_code=error_code),
+                ensure_ascii=False,
+            )
+        )
 
     @staticmethod
     async def _call_callback(callback: StreamCallbackFn | None, value: str) -> None:
@@ -164,14 +191,10 @@ class A2AInvokeService:
             stream_failed = True
             logger.warning("A2A WS stream failed", exc_info=True, extra=log_extra)
             await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
-            await websocket.send_text(
-                json_dumps(
-                    {
-                        "event": "error",
-                        "data": {"message": self._STREAM_ERROR_MESSAGE},
-                    },
-                    ensure_ascii=False,
-                )
+            await self.send_ws_error(
+                websocket,
+                message=self._STREAM_ERROR_MESSAGE,
+                error_code=self._STREAM_ERROR_CODE,
             )
         finally:
             if not stream_failed:

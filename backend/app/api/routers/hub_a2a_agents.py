@@ -13,6 +13,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_hub
@@ -54,6 +55,12 @@ def _status_code_for_invoke_session_error(detail: str) -> int:
     if detail == "session_not_found":
         return 404
     return 400
+
+
+def _ws_error_code_for_invoke_session_error(detail: str) -> str:
+    if detail == "session_not_found":
+        return "session_not_found"
+    return "invalid_session_id"
 
 
 @router.get("", response_model=HubA2AAgentUserListResponse)
@@ -324,10 +331,23 @@ async def invoke_hub_agent_ws(
 
     try:
         data = await websocket.receive_json()
-        payload = A2AAgentInvokeRequest.model_validate(data)
+        try:
+            payload = A2AAgentInvokeRequest.model_validate(data)
+        except ValidationError:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Invalid request payload",
+                error_code="invalid_request",
+            )
+            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            return
 
         if not payload.query.strip():
-            await websocket.send_json({"error": "Query must be a non-empty string"})
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Query must be a non-empty string",
+                error_code="invalid_query",
+            )
             await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
             return
 
@@ -338,9 +358,19 @@ async def invoke_hub_agent_ws(
         except HubA2ARuntimeNotFoundError:
             # Keep non-enumerable semantics: close without disclosing whether the
             # agent exists or is simply not visible.
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Agent is unavailable",
+                error_code="agent_unavailable",
+            )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-        except HubA2ARuntimeValidationError:
+        except HubA2ARuntimeValidationError as exc:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=str(exc),
+                error_code="runtime_invalid",
+            )
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
             return
 
@@ -369,7 +399,11 @@ async def invoke_hub_agent_ws(
                 session_key=payload.session_id,
             )
         except ValueError as exc:
-            await websocket.send_json({"error": str(exc)})
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=str(exc),
+                error_code=_ws_error_code_for_invoke_session_error(str(exc)),
+            )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
@@ -429,8 +463,10 @@ async def invoke_hub_agent_ws(
     except Exception:
         logger.error("Hub WS error", exc_info=True)
         try:
-            await websocket.send_text(
-                '{"event":"error","data":{"message":"Upstream streaming failed"}}'
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Upstream streaming failed",
+                error_code="upstream_stream_error",
             )
         except Exception:
             pass

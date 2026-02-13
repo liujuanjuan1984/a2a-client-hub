@@ -169,7 +169,6 @@ class SessionHubService:
             opencode_items, opencode_meta = await self._list_all_opencode_sessions(
                 db,
                 user_id=user_id,
-                size=size,
                 refresh=refresh,
             )
             for item in opencode_items:
@@ -705,35 +704,15 @@ class SessionHubService:
         db: AsyncSession,
         *,
         user_id: UUID,
-        size: int,
         refresh: bool,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        page = 1
-        per_page = max(size, 200)
-        collected: list[dict[str, Any]] = []
-        meta: dict[str, Any] = {}
-
-        while True:
-            page_items, extra = await opencode_session_directory_service.list_directory(
-                db,
-                user_id=user_id,
-                page=page,
-                size=per_page,
-                refresh=refresh if page == 1 else False,
-            )
-            if page == 1:
-                meta = dict(extra.get("meta") or {})
-            collected.extend(page_items)
-
-            pagination = extra.get("pagination") if isinstance(extra, dict) else {}
-            if not isinstance(pagination, dict):
-                break
-            pages = int(pagination.get("pages") or 0)
-            if pages <= page:
-                break
-            page += 1
-
-        return collected, meta
+        items, extra = await opencode_session_directory_service.list_directory_all(
+            db,
+            user_id=user_id,
+            refresh=refresh,
+        )
+        meta = dict(extra.get("meta") or {}) if isinstance(extra, dict) else {}
+        return items, meta
 
 
 def _sender_to_role(sender: str) -> str:
