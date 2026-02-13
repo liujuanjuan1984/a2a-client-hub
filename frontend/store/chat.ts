@@ -340,6 +340,12 @@ export const useChatStore = create<ChatState>()(
             streamState: "rebinding",
             lastStreamError: reason,
           });
+          console.info("[Session Rebind] start", {
+            sessionId,
+            source: getSessionSource(sessionId),
+            reason,
+            transport: get().sessions[sessionId]?.transport ?? "unknown",
+          });
           try {
             const binding = await continueSessionBinding(sessionId);
             const current = get().sessions[sessionId] ?? createSession(agentId);
@@ -354,6 +360,11 @@ export const useChatStore = create<ChatState>()(
               streamState: "recoverable",
               lastStreamError: reason,
             });
+            console.info("[Session Rebind] success", {
+              sessionId,
+              source: getSessionSource(sessionId),
+              contextId: binding.contextId ?? null,
+            });
             return true;
           } catch (error) {
             const message =
@@ -361,6 +372,11 @@ export const useChatStore = create<ChatState>()(
             patchSession({
               streamState: "error",
               lastStreamError: message,
+            });
+            console.warn("[Session Rebind] failed", {
+              sessionId,
+              source: getSessionSource(sessionId),
+              message,
             });
             return false;
           } finally {
@@ -456,6 +472,12 @@ export const useChatStore = create<ChatState>()(
           patchSession({
             streamState: "error",
             lastStreamError: errorText,
+          });
+          console.warn("[Chat Stream] error", {
+            sessionId,
+            source: getSessionSource(sessionId),
+            message: errorText,
+            transport: get().sessions[sessionId]?.transport ?? "unknown",
           });
           attemptSessionRebind(errorText).catch(() => false);
         };
