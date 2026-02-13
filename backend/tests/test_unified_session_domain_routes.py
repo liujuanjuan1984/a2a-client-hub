@@ -254,3 +254,59 @@ async def test_unified_opencode_continue_returns_502_for_upstream_error(
         resp = await client.post(f"/me/sessions/{opencode_key}:continue")
         assert resp.status_code == 502
         assert resp.json()["detail"] == "upstream_unreachable"
+
+
+async def test_unified_opencode_session_list_normalizes_directory_items(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent_id = uuid4()
+    last_active_at = utc_now().isoformat()
+
+    async def _list_all_opencode_sessions_stub(db, *, user_id, refresh):
+        return (
+            [
+                {
+                    "agent_id": agent_id,
+                    "agent_source": "personal",
+                    "session_id": "upstream-session-1",
+                    "title": "Remote Session",
+                    "last_active_at": last_active_at,
+                }
+            ],
+            {
+                "total_agents": 1,
+                "refreshed_agents": 0,
+                "cached_agents": 1,
+                "partial_failures": 0,
+            },
+        )
+
+    monkeypatch.setattr(
+        me_sessions.session_hub_service,
+        "_list_all_opencode_sessions",
+        _list_all_opencode_sessions_stub,
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/sessions:query",
+            json={"page": 1, "size": 20, "source": "opencode", "refresh": False},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pagination"]["total"] == 1
+        assert len(payload["items"]) == 1
+
+        item = payload["items"][0]
+        assert item["source"] == "opencode"
+        assert item["source_session_id"] == "upstream-session-1"
+        assert item["agent_id"] == str(agent_id)
+        assert item["title"] == "Remote Session"
+        assert item["id"].startswith("opencode:")

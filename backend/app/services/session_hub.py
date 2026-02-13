@@ -226,12 +226,13 @@ class SessionHubService:
             )
 
         if source in {None, "opencode"}:
-            opencode_items, opencode_meta = await self._list_all_opencode_sessions(
+            raw_opencode_items, opencode_meta = await self._list_all_opencode_sessions(
                 db,
                 user_id=user_id,
                 refresh=refresh,
             )
-            for item in opencode_items:
+            normalized_opencode_items: list[dict[str, Any]] = []
+            for item in raw_opencode_items:
                 raw_agent_id = item.get("agent_id")
                 raw_agent_source = item.get("agent_source")
                 raw_session_id = item.get("session_id")
@@ -242,7 +243,7 @@ class SessionHubService:
                     or not raw_session_id.strip()
                 ):
                     continue
-                opencode_items.append(
+                normalized_opencode_items.append(
                     {
                         "id": build_opencode_session_key(
                             agent_id=raw_agent_id,
@@ -258,6 +259,7 @@ class SessionHubService:
                         "created_at": None,
                     }
                 )
+            opencode_items = normalized_opencode_items
 
         local_items.sort(key=_session_order_key, reverse=True)
         opencode_items.sort(key=_session_order_key, reverse=True)
