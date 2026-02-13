@@ -518,68 +518,73 @@ class SessionHubService:
         local_items: list[dict[str, Any]],
         opencode_items: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        merged = list(local_items)
-        local_conversation_ids = {
+        merged = list(opencode_items)
+        provider_key = normalize_provider("opencode")
+        remote_conversation_ids = {
             str(item.get("conversationId"))
-            for item in local_items
+            for item in opencode_items
             if isinstance(item.get("conversationId"), str)
             and item.get("conversationId")
         }
-        local_external_keys: set[tuple[str, str]] = set()
-        local_agent_external_keys: set[tuple[str, str]] = set()
-        local_context_ids: set[str] = set()
-        for item in local_items:
-            normalized_external_id = normalize_non_empty_text(
-                item.get("external_session_id")
+        remote_external_keys: set[tuple[str, str]] = set()
+        remote_agent_external_keys: set[tuple[str, str]] = set()
+        remote_external_ids: set[str] = set()
+        remote_by_external_id: dict[str, dict[str, Any]] = {}
+        for item in opencode_items:
+            remote_external_id = normalize_non_empty_text(item.get("source_session_id"))
+            if not remote_external_id:
+                continue
+            remote_external_ids.add(remote_external_id)
+            if provider_key:
+                remote_external_keys.add((provider_key, remote_external_id))
+            raw_agent_id = item.get("agent_id")
+            if isinstance(raw_agent_id, UUID):
+                remote_agent_external_keys.add((str(raw_agent_id), remote_external_id))
+            remote_by_external_id.setdefault(remote_external_id, item)
+
+        for local_item in local_items:
+            local_conversation_id = local_item.get("conversationId")
+            if (
+                isinstance(local_conversation_id, str)
+                and local_conversation_id
+                and local_conversation_id in remote_conversation_ids
+            ):
+                continue
+
+            local_external_id = normalize_non_empty_text(
+                local_item.get("external_session_id")
             )
-            if normalized_external_id:
-                normalized_provider = normalize_provider(item.get("provider"))
-                if normalized_provider:
-                    local_external_keys.add(
-                        (normalized_provider, normalized_external_id)
-                    )
-                raw_agent_id = item.get("agent_id")
-                if isinstance(raw_agent_id, UUID):
-                    local_agent_external_keys.add(
-                        (str(raw_agent_id), normalized_external_id)
-                    )
-            normalized_context_id = normalize_non_empty_text(item.get("context_id"))
-            if normalized_context_id:
-                local_context_ids.add(normalized_context_id)
+            local_provider = normalize_provider(local_item.get("provider"))
+            local_agent_id = local_item.get("agent_id")
+            local_context_id = normalize_non_empty_text(local_item.get("context_id"))
 
-        for remote_item in opencode_items:
-            conversation_id = remote_item.get("conversationId")
+            matched_remote: dict[str, Any] | None = None
             if (
-                isinstance(conversation_id, str)
-                and conversation_id in local_conversation_ids
+                local_provider
+                and local_external_id
+                and (local_provider, local_external_id) in remote_external_keys
             ):
-                continue
-
-            remote_external_id = normalize_non_empty_text(
-                remote_item.get("source_session_id")
-            )
-            provider_key = normalize_provider("opencode")
-            external_key = (provider_key, remote_external_id)
-            if (
-                provider_key
-                and remote_external_id
-                and external_key in local_external_keys
+                matched_remote = remote_by_external_id.get(local_external_id)
+            elif (
+                isinstance(local_agent_id, UUID)
+                and local_external_id
+                and (str(local_agent_id), local_external_id)
+                in remote_agent_external_keys
             ):
+                matched_remote = remote_by_external_id.get(local_external_id)
+            elif local_context_id and local_context_id in remote_external_ids:
+                matched_remote = remote_by_external_id.get(local_context_id)
+
+            if matched_remote is not None:
+                if (
+                    not matched_remote.get("conversationId")
+                    and isinstance(local_conversation_id, str)
+                    and local_conversation_id
+                ):
+                    matched_remote["conversationId"] = local_conversation_id
                 continue
 
-            remote_agent_id = remote_item.get("agent_id")
-            if (
-                isinstance(remote_agent_id, UUID)
-                and remote_external_id
-                and (str(remote_agent_id), remote_external_id)
-                in local_agent_external_keys
-            ):
-                continue
-
-            if remote_external_id and remote_external_id in local_context_ids:
-                continue
-
-            merged.append(remote_item)
+            merged.append(local_item)
 
         merged.sort(key=_session_order_key, reverse=True)
         return merged

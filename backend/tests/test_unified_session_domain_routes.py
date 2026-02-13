@@ -392,7 +392,7 @@ async def test_unified_session_list_dedups_manual_and_opencode_with_same_binding
         payload = resp.json()
         assert payload["pagination"]["total"] == 1
         assert len(payload["items"]) == 1
-        assert payload["items"][0]["source"] == "manual"
+        assert payload["items"][0]["source"] == "opencode"
 
 
 async def test_unified_session_list_dedups_using_local_conversation_id_fallback(
@@ -490,7 +490,7 @@ async def test_unified_session_list_dedups_using_local_conversation_id_fallback(
         payload = resp.json()
         assert payload["pagination"]["total"] == 1
         assert len(payload["items"]) == 1
-        assert payload["items"][0]["source"] == "manual"
+        assert payload["items"][0]["source"] == "opencode"
 
 
 async def test_unified_session_list_dedups_when_provider_missing_but_external_present(
@@ -571,7 +571,7 @@ async def test_unified_session_list_dedups_when_provider_missing_but_external_pr
         payload = resp.json()
         assert payload["pagination"]["total"] == 1
         assert len(payload["items"]) == 1
-        assert payload["items"][0]["source"] == "manual"
+        assert payload["items"][0]["source"] == "opencode"
 
 
 async def test_unified_messages_query_keeps_prebinding_local_history(
