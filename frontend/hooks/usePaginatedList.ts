@@ -89,6 +89,15 @@ export function usePaginatedList<T>({
   });
 
   const pages = query.data?.pages ?? [];
+  const queryKeyRef = useRef<QueryKey>(queryKey);
+  const refetchRef = useRef(query.refetch);
+  const fetchNextPageRef = useRef(query.fetchNextPage);
+  const isFetchingNextPageRef = useRef(query.isFetchingNextPage);
+
+  queryKeyRef.current = queryKey;
+  refetchRef.current = query.refetch;
+  fetchNextPageRef.current = query.fetchNextPage;
+  isFetchingNextPageRef.current = query.isFetchingNextPage;
 
   const items = useMemo(() => mergeUniqueByKey(pages, getKey), [pages, getKey]);
 
@@ -126,7 +135,7 @@ export function usePaginatedList<T>({
   const keepFirstPageOnly = useCallback(() => {
     queryClient.setQueryData<
       InfiniteData<PaginatedPage<T>, number> | undefined
-    >(queryKey, (current) => {
+    >(queryKeyRef.current, (current) => {
       if (!current || current.pages.length <= 1) {
         return current;
       }
@@ -135,14 +144,14 @@ export function usePaginatedList<T>({
         pageParams: [current.pageParams[0] ?? 1],
       };
     });
-  }, [queryClient, queryKey]);
+  }, [queryClient]);
 
   const restoreSnapshot = useCallback(
     (snapshot: InfiniteData<PaginatedPage<T>, number> | undefined) => {
       if (!snapshot) return;
-      queryClient.setQueryData(queryKey, snapshot);
+      queryClient.setQueryData(queryKeyRef.current, snapshot);
     },
-    [queryClient, queryKey],
+    [queryClient],
   );
 
   const loadFirstPage = useCallback(
@@ -150,7 +159,7 @@ export function usePaginatedList<T>({
       const snapshot =
         mode === "refreshing"
           ? queryClient.getQueryData<InfiniteData<PaginatedPage<T>, number>>(
-              queryKey,
+              queryKeyRef.current,
             )
           : undefined;
 
@@ -160,7 +169,7 @@ export function usePaginatedList<T>({
       }
 
       try {
-        const result = await query.refetch();
+        const result = await refetchRef.current();
         if (result.status === "error") {
           restoreSnapshot(snapshot);
           showErrorToast(result.error);
@@ -177,29 +186,22 @@ export function usePaginatedList<T>({
         }
       }
     },
-    [
-      keepFirstPageOnly,
-      query,
-      queryClient,
-      queryKey,
-      restoreSnapshot,
-      showErrorToast,
-    ],
+    [keepFirstPageOnly, queryClient, restoreSnapshot, showErrorToast],
   );
 
   const reset = useCallback(() => {
     lastErrorSignatureRef.current = null;
-    queryClient.removeQueries({ queryKey, exact: true });
-  }, [queryClient, queryKey]);
+    queryClient.removeQueries({ queryKey: queryKeyRef.current, exact: true });
+  }, [queryClient]);
 
   const loadMore = useCallback(async () => {
-    if (!hasMore || query.isFetchingNextPage) return;
+    if (!hasMore || isFetchingNextPageRef.current) return;
     try {
-      await query.fetchNextPage();
+      await fetchNextPageRef.current();
     } catch (error) {
       showErrorToast(error);
     }
-  }, [hasMore, query, showErrorToast]);
+  }, [hasMore, showErrorToast]);
 
   const setItems = useCallback(
     (nextItems: T[]) => {
@@ -207,9 +209,9 @@ export function usePaginatedList<T>({
         pages: [{ items: nextItems, nextPage: undefined }],
         pageParams: [1],
       };
-      queryClient.setQueryData(queryKey, data);
+      queryClient.setQueryData(queryKeyRef.current, data);
     },
-    [queryClient, queryKey],
+    [queryClient],
   );
 
   const loading = query.status === "pending" && pages.length === 0;

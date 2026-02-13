@@ -38,6 +38,50 @@ const createWrapper = (queryClient: QueryClient) => {
 };
 
 describe("usePaginatedList", () => {
+  it("keeps loadFirstPage stable across query state changes", async () => {
+    const queryClient = createQueryClient();
+    const fetchPage = jest.fn(async (page: number) => {
+      if (page === 1) {
+        return {
+          items: [{ id: "item-1" }],
+          nextPage: 2,
+        };
+      }
+      return {
+        items: [{ id: "item-2" }],
+      };
+    });
+
+    const { result } = renderHook(
+      () =>
+        usePaginatedList<Item>({
+          queryKey: ["test", "stable-load-first-page"],
+          fetchPage,
+          getKey: (item) => item.id,
+          errorTitle: "Load failed",
+          fallbackMessage: "Load failed.",
+          enabled: true,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    const loadFirstPageBefore = result.current.loadFirstPage;
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    await waitFor(() => {
+      expect(result.current.items).toHaveLength(2);
+    });
+
+    expect(result.current.loadFirstPage).toBe(loadFirstPageBefore);
+  });
+
   it("returns false when loadFirstPage fails", async () => {
     const queryClient = createQueryClient();
     const fetchPage = jest.fn(async () => {
