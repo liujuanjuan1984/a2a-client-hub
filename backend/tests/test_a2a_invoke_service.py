@@ -48,7 +48,7 @@ def test_extract_binding_hints_from_serialized_event():
         {
             "contextId": "ctx-1",
             "metadata": {
-                "provider": "opencode",
+                "provider": "OpenCode",
                 "externalSessionId": "upstream-1",
             },
         }

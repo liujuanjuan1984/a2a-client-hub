@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -65,6 +65,7 @@ async def list_agent_messages(
     offset: int = 0,
     session_id: Optional[UUID] = None,
     conversation_id: Optional[UUID] = None,
+    use_session_or_conversation: bool = False,
 ) -> List[AgentMessage]:
     sender_priority = case(
         (AgentMessage.sender.in_(["user", "automation"]), 0),
@@ -76,10 +77,18 @@ async def list_agent_messages(
         .options(selectinload(AgentMessage.session))
         .where(AgentMessage.user_id == user_id)
     )
-    if session_id:
-        stmt = stmt.where(AgentMessage.session_id == session_id)
-    if conversation_id:
-        stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
+    if session_id and conversation_id and use_session_or_conversation:
+        stmt = stmt.where(
+            or_(
+                AgentMessage.session_id == session_id,
+                AgentMessage.conversation_id == conversation_id,
+            )
+        )
+    else:
+        if session_id:
+            stmt = stmt.where(AgentMessage.session_id == session_id)
+        if conversation_id:
+            stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
 
     stmt = (
         stmt.order_by(
@@ -125,12 +134,21 @@ async def count_agent_messages(
     user_id: UUID,
     session_id: Optional[UUID] = None,
     conversation_id: Optional[UUID] = None,
+    use_session_or_conversation: bool = False,
 ) -> int:
     stmt = select(func.count(AgentMessage.id)).where(AgentMessage.user_id == user_id)
-    if session_id:
-        stmt = stmt.where(AgentMessage.session_id == session_id)
-    if conversation_id:
-        stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
+    if session_id and conversation_id and use_session_or_conversation:
+        stmt = stmt.where(
+            or_(
+                AgentMessage.session_id == session_id,
+                AgentMessage.conversation_id == conversation_id,
+            )
+        )
+    else:
+        if session_id:
+            stmt = stmt.where(AgentMessage.session_id == session_id)
+        if conversation_id:
+            stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
     result = await db.execute(stmt)
     return int(result.scalar_one())
 

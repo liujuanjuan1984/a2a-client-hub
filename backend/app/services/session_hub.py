@@ -489,7 +489,7 @@ class SessionHubService:
         }
         local_external_keys = {
             (
-                str(item.get("provider")),
+                _normalize_provider(item.get("provider")),
                 str(item.get("external_session_id")),
             )
             for item in local_items
@@ -504,7 +504,7 @@ class SessionHubService:
             ):
                 continue
 
-            provider_key = "opencode"
+            provider_key = _normalize_provider("opencode")
             external_key = (
                 provider_key,
                 str(remote_item.get("source_session_id")),
@@ -620,14 +620,16 @@ class SessionHubService:
                 user_id=user_id,
                 limit=size,
                 offset=offset,
-                session_id=None if conversation_id else session.id,
+                session_id=session.id,
                 conversation_id=conversation_id,
+                use_session_or_conversation=bool(conversation_id),
             )
             total = await agent_message_handler.count_agent_messages(
                 db,
                 user_id=user_id,
-                session_id=None if conversation_id else session.id,
+                session_id=session.id,
                 conversation_id=conversation_id,
+                use_session_or_conversation=bool(conversation_id),
             )
             pages = (total + size - 1) // size if size else 0
             items = [
@@ -788,7 +790,9 @@ class SessionHubService:
                 provider,
                 external_session_id,
             ) = _extract_provider_and_external_from_metadata(metadata)
-            resolved_provider = provider_from_payload or provider or "opencode"
+            resolved_provider = _normalize_provider(
+                provider_from_payload or provider or "opencode"
+            )
             resolved_external_session_id = (
                 external_from_payload
                 or external_session_id
@@ -1119,9 +1123,11 @@ def _pick_str(obj: Dict[str, Any], keys: list[str]) -> Optional[str]:
 def _extract_provider_and_external_from_metadata(
     metadata: Dict[str, Any],
 ) -> tuple[Optional[str], Optional[str]]:
-    provider = _pick_str(
-        metadata,
-        ["provider", "session_provider", "external_provider"],
+    provider = _normalize_provider(
+        _pick_str(
+            metadata,
+            ["provider", "session_provider", "external_provider"],
+        )
     )
     external_session_id = _pick_str(
         metadata,
@@ -1136,6 +1142,15 @@ def _extract_provider_and_external_from_metadata(
 
 def _extract_context_id_from_metadata(metadata: Dict[str, Any]) -> Optional[str]:
     return _pick_str(metadata, ["context_id", "contextId"])
+
+
+def _normalize_provider(value: Optional[str]) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    return trimmed.lower()
 
 
 def _try_parse_uuid(value: Any) -> Optional[UUID]:

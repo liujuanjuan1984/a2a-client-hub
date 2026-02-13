@@ -77,6 +77,15 @@ class A2AInvokeService:
                     return trimmed
         return None
 
+    @staticmethod
+    def _normalize_provider(value: str | None) -> str | None:
+        if not isinstance(value, str):
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        return trimmed.lower()
+
     @classmethod
     def _extract_metadata_dict(cls, payload: dict[str, Any]) -> dict[str, Any]:
         resolved: dict[str, Any] = {}
@@ -113,7 +122,9 @@ class A2AInvokeService:
             if candidate_metadata:
                 resolved_metadata.update(candidate_metadata)
             if provider is None:
-                provider = cls._pick_first_str(candidate, provider_keys)
+                provider = cls._normalize_provider(
+                    cls._pick_first_str(candidate, provider_keys)
+                )
             if external_session_id is None:
                 external_session_id = cls._pick_first_str(candidate, external_id_keys)
 
@@ -122,16 +133,18 @@ class A2AInvokeService:
                 resolved_metadata, ("contextId", "context_id")
             )
         if provider is None:
-            provider = cls._pick_first_str(resolved_metadata, provider_keys)
+            provider = cls._normalize_provider(
+                cls._pick_first_str(resolved_metadata, provider_keys)
+            )
         if external_session_id is None:
             external_session_id = cls._pick_first_str(
                 resolved_metadata, external_id_keys
             )
 
         if provider:
-            resolved_metadata.setdefault("provider", provider)
+            resolved_metadata["provider"] = provider
         if external_session_id:
-            resolved_metadata.setdefault("externalSessionId", external_session_id)
+            resolved_metadata["externalSessionId"] = external_session_id
 
         return context_id, resolved_metadata
 

@@ -391,3 +391,83 @@ async def test_unified_session_list_dedups_manual_and_opencode_with_same_binding
         assert payload["pagination"]["total"] == 1
         assert len(payload["items"]) == 1
         assert payload["items"][0]["source"] == "manual"
+
+
+async def test_unified_messages_query_keeps_prebinding_local_history(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="prebinding-history"
+    )
+    now = utc_now()
+
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Manual Prebinding Session",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            session_id=manual_session.id,
+            sender="user",
+            content="before-binding-user",
+            message_metadata={"context_id": "ctx-before"},
+        )
+    )
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            session_id=manual_session.id,
+            sender="agent",
+            content="before-binding-agent",
+            message_metadata={"context_id": "ctx-before"},
+        )
+    )
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=manual_session,
+        source="manual",
+        user_id=user.id,
+        agent_id=agent.id,
+        agent_source="personal",
+        query="after-binding-user",
+        response_content="after-binding-agent",
+        success=True,
+        context_id="upstream-session-2",
+        invoke_metadata={
+            "provider": "OpenCode",
+            "externalSessionId": "upstream-session-2",
+        },
+        extra_metadata={"transport": "http_json", "stream": False},
+    )
+    await async_db_session.commit()
+
+    manual_key = build_manual_session_key(manual_session.id)
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/sessions/{manual_key}/messages:query",
+            json={"page": 1, "size": 50},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pagination"]["total"] == 4
+        contents = [item["content"] for item in payload["items"]]
+        assert "before-binding-user" in contents
+        assert "before-binding-agent" in contents
+        assert "after-binding-user" in contents
+        assert "after-binding-agent" in contents
