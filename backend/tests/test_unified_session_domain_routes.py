@@ -168,6 +168,22 @@ async def test_unified_manual_messages_query_returns_empty_for_new_session(
         assert payload["items"] == []
 
 
+async def test_unified_opencode_continue_returns_400_for_invalid_session_key(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post("/me/sessions/opencode:%2A%2A%2A:continue")
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "invalid opencode session key"
+
+
 async def test_unified_opencode_continue_returns_404_when_runtime_missing(
     async_db_session,
     async_session_maker,

@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react-native";
 
-import { useContinueOpencodeSession } from "@/hooks/useContinueOpencodeSession";
+import { useContinueSession } from "@/hooks/useContinueSession";
 import { continueSession } from "@/lib/api/sessions";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
@@ -49,7 +49,7 @@ const mockedBuildChatRoute = buildChatRoute as jest.MockedFunction<
 const mockedToast = toast as jest.Mocked<typeof toast>;
 const mockedUseChatStore = useChatStore as unknown as jest.Mock;
 
-describe("useContinueOpencodeSession", () => {
+describe("useContinueSession", () => {
   const mockPush = jest.fn();
   const mockEnsureSession = jest.fn();
   const mockBindOpencodeSession = jest.fn();
@@ -72,7 +72,7 @@ describe("useContinueOpencodeSession", () => {
   });
 
   it("returns false when session id is blank", async () => {
-    const { result } = renderHook(() => useContinueOpencodeSession());
+    const { result } = renderHook(() => useContinueSession());
 
     let ok = true;
     await act(async () => {
@@ -98,7 +98,7 @@ describe("useContinueOpencodeSession", () => {
       metadata: { foo: "bar", opencode_session_id: "upstream-1" },
     });
 
-    const { result } = renderHook(() => useContinueOpencodeSession());
+    const { result } = renderHook(() => useContinueSession());
 
     let ok = false;
     await act(async () => {
@@ -125,7 +125,7 @@ describe("useContinueOpencodeSession", () => {
   it("returns false and shows toast when request fails", async () => {
     mockedContinueSession.mockRejectedValue(new Error("network down"));
 
-    const { result } = renderHook(() => useContinueOpencodeSession());
+    const { result } = renderHook(() => useContinueSession());
 
     let ok = true;
     await act(async () => {

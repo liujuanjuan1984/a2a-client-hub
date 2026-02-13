@@ -9,6 +9,7 @@ This module provides a single read model for session list/history/continue acros
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -60,9 +61,19 @@ def _urlsafe_b64encode_json(data: Dict[str, Any]) -> str:
 
 
 def _urlsafe_b64decode_json(value: str) -> Dict[str, Any]:
-    padded = value + "=" * (-len(value) % 4)
-    raw = base64.urlsafe_b64decode(padded.encode("ascii"))
-    decoded = json.loads(raw.decode("utf-8"))
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        decoded = json.loads(raw.decode("utf-8"))
+    except (
+        ValueError,
+        TypeError,
+        UnicodeEncodeError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        binascii.Error,
+    ) as exc:
+        raise ValueError("invalid payload") from exc
     if not isinstance(decoded, dict):
         raise ValueError("invalid payload")
     return decoded
@@ -107,7 +118,10 @@ def parse_session_key(value: str) -> ParsedSessionKey:
 
     if trimmed.startswith(_OPENCODE_PREFIX):
         token = trimmed[len(_OPENCODE_PREFIX) :]
-        payload = _urlsafe_b64decode_json(token)
+        try:
+            payload = _urlsafe_b64decode_json(token)
+        except ValueError as exc:
+            raise ValueError("invalid opencode session key") from exc
         raw_agent_id = str(payload.get("agent_id") or "").strip()
         raw_agent_source = str(payload.get("agent_source") or "").strip()
         raw_session_id = str(payload.get("session_id") or "").strip()
@@ -115,9 +129,13 @@ def parse_session_key(value: str) -> ParsedSessionKey:
             raise ValueError("invalid opencode session key")
         if not raw_session_id:
             raise ValueError("invalid opencode session key")
+        try:
+            agent_id = UUID(raw_agent_id)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("invalid opencode session key") from exc
         return ParsedSessionKey(
             source="opencode",
-            agent_id=UUID(raw_agent_id),
+            agent_id=agent_id,
             agent_source=raw_agent_source,  # type: ignore[arg-type]
             upstream_session_id=raw_session_id,
         )

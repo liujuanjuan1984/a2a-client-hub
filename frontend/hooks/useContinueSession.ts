@@ -7,12 +7,12 @@ import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 import { useChatStore } from "@/store/chat";
 
-type ContinueOpencodeSessionInput = {
+type ContinueSessionInput = {
   agentId: string;
   sessionId: string;
 };
 
-export const useContinueOpencodeSession = () => {
+export const useContinueSession = () => {
   const router = useRouter();
   const ensureSession = useChatStore((state) => state.ensureSession);
   const bindOpencodeSession = useChatStore(
@@ -20,7 +20,7 @@ export const useContinueOpencodeSession = () => {
   );
 
   const continueSession = useCallback(
-    async ({ agentId, sessionId }: ContinueOpencodeSessionInput) => {
+    async ({ agentId, sessionId }: ContinueSessionInput) => {
       const unifiedSessionId = sessionId.trim();
       if (!unifiedSessionId) {
         toast.error("Continue session failed", "Missing session id.");

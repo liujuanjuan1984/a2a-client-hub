@@ -4,14 +4,13 @@ import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { useContinueOpencodeSession } from "@/hooks/useContinueOpencodeSession";
+import { useContinueSession } from "@/hooks/useContinueSession";
 import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
 import { type SessionListItem } from "@/lib/api/sessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 
 export function SessionsScreen() {
-  const { continueSession: continueOpencodeSession } =
-    useContinueOpencodeSession();
+  const { continueSession } = useContinueSession();
 
   const {
     items,
@@ -27,7 +26,7 @@ export function SessionsScreen() {
 
   const handleContinueSession = async (item: SessionListItem) => {
     if (!item.agent_id) return;
-    await continueOpencodeSession({
+    await continueSession({
       agentId: item.agent_id,
       sessionId: item.id,
     });
