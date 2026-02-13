@@ -95,6 +95,127 @@ class ConversationIdentityService:
                 mapped[external_session_id] = conversation_id
         return mapped
 
+    async def find_conversation_id_for_context(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        context_id: str,
+        provider: Optional[str] = None,
+    ) -> Optional[UUID]:
+        mapped = await self.find_conversation_ids_for_context_batch(
+            db,
+            user_id=user_id,
+            context_ids=[context_id],
+            provider=provider,
+        )
+        resolved_context_id = normalize_non_empty_text(context_id)
+        if not resolved_context_id:
+            return None
+        return mapped.get(resolved_context_id)
+
+    async def find_conversation_ids_for_context_batch(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        context_ids: list[str],
+        provider: Optional[str] = None,
+    ) -> dict[str, UUID]:
+        normalized_context_ids = sorted(
+            {
+                normalized
+                for item in context_ids
+                if (normalized := normalize_non_empty_text(item))
+            }
+        )
+        if not normalized_context_ids:
+            return {}
+        resolved_provider = normalize_provider(provider) if provider else None
+
+        filters = [
+            ConversationBinding.user_id == user_id,
+            ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
+            ConversationBinding.binding_kind
+            == ConversationBinding.KIND_EXTERNAL_SESSION,
+            ConversationBinding.context_id.in_(normalized_context_ids),
+        ]
+        if resolved_provider:
+            filters.append(ConversationBinding.provider == resolved_provider)
+
+        result = await db.execute(
+            select(
+                ConversationBinding.context_id,
+                ConversationBinding.conversation_id,
+            )
+            .where(and_(*filters))
+            .order_by(
+                ConversationBinding.context_id.asc(),
+                ConversationBinding.last_seen_at.desc(),
+                ConversationBinding.id.desc(),
+            )
+            .distinct(ConversationBinding.context_id)
+        )
+        mapped: dict[str, UUID] = {}
+        for context_id, conversation_id in result.all():
+            if isinstance(context_id, str) and context_id not in mapped:
+                mapped[context_id] = conversation_id
+        return mapped
+
+    async def find_conversation_id_for_local_session(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        local_session_id: UUID,
+    ) -> Optional[UUID]:
+        mapped = await self.find_conversation_ids_for_local_sessions_batch(
+            db,
+            user_id=user_id,
+            local_session_ids=[local_session_id],
+        )
+        return mapped.get(local_session_id)
+
+    async def find_conversation_ids_for_local_sessions_batch(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        local_session_ids: list[UUID],
+    ) -> dict[UUID, UUID]:
+        normalized_local_session_ids = sorted({item for item in local_session_ids})
+        if not normalized_local_session_ids:
+            return {}
+
+        result = await db.execute(
+            select(
+                ConversationBinding.local_session_id,
+                ConversationBinding.conversation_id,
+            )
+            .where(
+                and_(
+                    ConversationBinding.user_id == user_id,
+                    ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
+                    ConversationBinding.binding_kind
+                    == ConversationBinding.KIND_EXTERNAL_SESSION,
+                    ConversationBinding.local_session_id.in_(
+                        normalized_local_session_ids
+                    ),
+                )
+            )
+            .order_by(
+                ConversationBinding.local_session_id.asc(),
+                ConversationBinding.last_seen_at.desc(),
+                ConversationBinding.id.desc(),
+            )
+            .distinct(ConversationBinding.local_session_id)
+        )
+        mapped: dict[UUID, UUID] = {}
+        for local_session_id, conversation_id in result.all():
+            if isinstance(local_session_id, UUID) and local_session_id not in mapped:
+                mapped[local_session_id] = conversation_id
+        return mapped
+
     async def bind_external_session(
         self,
         db: AsyncSession,
@@ -108,6 +229,7 @@ class ConversationIdentityService:
         context_id: Optional[str],
         title: str,
         binding_metadata: Optional[dict[str, Any]],
+        local_session_id: Optional[UUID] = None,
     ) -> UUID:
         result = await self.bind_external_session_with_state(
             db,
@@ -118,6 +240,7 @@ class ConversationIdentityService:
             agent_id=agent_id,
             agent_source=agent_source,
             context_id=context_id,
+            local_session_id=local_session_id,
             title=title,
             binding_metadata=binding_metadata,
         )
@@ -136,6 +259,7 @@ class ConversationIdentityService:
         context_id: Optional[str],
         title: str,
         binding_metadata: Optional[dict[str, Any]],
+        local_session_id: Optional[UUID] = None,
     ) -> ExternalBindingResult:
         now = utc_now()
         resolved_provider = normalize_provider(provider)
@@ -168,6 +292,9 @@ class ConversationIdentityService:
             normalized_context_id = normalize_non_empty_text(context_id)
             if normalized_context_id and existing.context_id != normalized_context_id:
                 existing.context_id = normalized_context_id
+                mutated = True
+            if local_session_id and existing.local_session_id != local_session_id:
+                existing.local_session_id = local_session_id
                 mutated = True
             if isinstance(binding_metadata, dict) and binding_metadata:
                 normalized_metadata = dict(binding_metadata)
@@ -205,6 +332,7 @@ class ConversationIdentityService:
                         provider=resolved_provider,
                         agent_id=agent_id,
                         agent_source=agent_source,
+                        local_session_id=local_session_id,
                         external_session_id=resolved_external_id,
                         context_id=normalize_non_empty_text(context_id),
                         binding_metadata=dict(binding_metadata or {}),

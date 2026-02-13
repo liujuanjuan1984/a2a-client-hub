@@ -365,6 +365,28 @@ class SessionHubService:
         latest_conversation_map = await self._latest_local_message_conversation_map(
             db, user_id=user_id, local_session_ids=session_ids
         )
+        binding_conversation_map = await conversation_identity_service.find_conversation_ids_for_local_sessions_batch(
+            db,
+            user_id=user_id,
+            local_session_ids=session_ids,
+        )
+        context_ids = [
+            context_id
+            for context_id in (
+                _extract_context_id_from_metadata(
+                    latest_metadata_map.get(session.id, {})
+                )
+                for session in sessions
+            )
+            if isinstance(context_id, str) and context_id
+        ]
+        context_conversation_map = (
+            await conversation_identity_service.find_conversation_ids_for_context_batch(
+                db,
+                user_id=user_id,
+                context_ids=context_ids,
+            )
+        )
 
         scheduled_agent_map = await self._scheduled_session_agent_map(
             db, user_id=user_id
@@ -379,6 +401,8 @@ class SessionHubService:
             ) = _extract_provider_and_external_from_metadata(latest_metadata)
             metadata_context_id = _extract_context_id_from_metadata(latest_metadata)
             conversation_id = latest_conversation_map.get(session.id)
+            if conversation_id is None:
+                conversation_id = binding_conversation_map.get(session.id)
             if conversation_id is None and metadata_provider and metadata_external_id:
                 conversation_id = await conversation_identity_service.find_conversation_id_for_external(
                     db,
@@ -386,6 +410,8 @@ class SessionHubService:
                     provider=metadata_provider,
                     external_session_id=metadata_external_id,
                 )
+            if conversation_id is None and metadata_context_id:
+                conversation_id = context_conversation_map.get(metadata_context_id)
 
             if session.session_type == AgentSession.TYPE_CHAT:
                 if source not in {None, "manual"}:
@@ -684,13 +710,27 @@ class SessionHubService:
                 provider,
                 external_session_id,
             ) = _extract_provider_and_external_from_metadata(latest_metadata)
+            context_id = _extract_context_id_from_metadata(latest_metadata)
             conversation_id = latest_conversation_map.get(session.id)
+            if conversation_id is None:
+                conversation_id = await conversation_identity_service.find_conversation_id_for_local_session(
+                    db,
+                    user_id=user_id,
+                    local_session_id=session.id,
+                )
             if conversation_id is None and provider and external_session_id:
                 conversation_id = await conversation_identity_service.find_conversation_id_for_external(
                     db,
                     user_id=user_id,
                     provider=provider,
                     external_session_id=external_session_id,
+                )
+            if conversation_id is None and context_id:
+                conversation_id = await conversation_identity_service.find_conversation_id_for_context(
+                    db,
+                    user_id=user_id,
+                    context_id=context_id,
+                    provider=provider,
                 )
             if conversation_id:
                 updated = await agent_message_handler.backfill_session_messages_conversation_id(
@@ -941,6 +981,12 @@ class SessionHubService:
             if latest is not None and isinstance(latest.conversation_id, UUID)
             else None
         )
+        if conversation_id is None:
+            conversation_id = await conversation_identity_service.find_conversation_id_for_local_session(
+                db,
+                user_id=user_id,
+                local_session_id=session.id,
+            )
         db_mutated = False
         if provider and external_session_id:
             bind_result = (
@@ -955,10 +1001,20 @@ class SessionHubService:
                     context_id=context_id if isinstance(context_id, str) else None,
                     title=session.name or "Session",
                     binding_metadata=metadata,
+                    local_session_id=session.id,
                 )
             )
             conversation_id = bind_result.conversation_id
             db_mutated = bind_result.mutated
+        elif conversation_id is None and isinstance(context_id, str):
+            conversation_id = (
+                await conversation_identity_service.find_conversation_id_for_context(
+                    db,
+                    user_id=user_id,
+                    context_id=context_id,
+                    provider=provider,
+                )
+            )
         if conversation_id:
             updated = (
                 await agent_message_handler.backfill_session_messages_conversation_id(
@@ -1099,6 +1155,7 @@ class SessionHubService:
                 context_id=context_id if isinstance(context_id, str) else None,
                 title=session.name or "Session",
                 binding_metadata=invoke_metadata,
+                local_session_id=session.id,
             )
             await agent_message_handler.backfill_session_messages_conversation_id(
                 db,
@@ -1106,6 +1163,22 @@ class SessionHubService:
                 session_id=session.id,
                 conversation_id=conversation_id,
             )
+        elif context_id and isinstance(context_id, str):
+            conversation_id = (
+                await conversation_identity_service.find_conversation_id_for_context(
+                    db,
+                    user_id=user_id,
+                    context_id=context_id,
+                    provider=provider_from_invoke,
+                )
+            )
+            if conversation_id:
+                await agent_message_handler.backfill_session_messages_conversation_id(
+                    db,
+                    user_id=user_id,
+                    session_id=session.id,
+                    conversation_id=conversation_id,
+                )
 
         await agent_message_handler.create_agent_message(
             db,
