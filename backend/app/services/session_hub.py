@@ -575,7 +575,7 @@ class SessionHubService:
         session_key: str,
         page: int,
         size: int,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
         db_mutated = False
         parsed = parse_session_key(session_key)
         if parsed.source in {"manual", "scheduled"}:
@@ -597,7 +597,7 @@ class SessionHubService:
                     "pages": 0,
                 }
                 meta = {"session_id": session_key, "source": parsed.source}
-                return [], {"pagination": pagination, "meta": meta}
+                return [], {"pagination": pagination, "meta": meta}, False
             latest_metadata_map = await self._latest_local_message_metadata_map(
                 db,
                 user_id=user_id,
@@ -662,11 +662,7 @@ class SessionHubService:
                 "total": int(total),
                 "pages": pages,
             }
-            return items, {
-                "pagination": pagination,
-                "meta": meta,
-                "_db_mutated": db_mutated,
-            }
+            return items, {"pagination": pagination, "meta": meta}, db_mutated
 
         assert parsed.source == "opencode"
         assert parsed.agent_id is not None
@@ -737,7 +733,7 @@ class SessionHubService:
             "total": total,
             "pages": pages,
         }
-        return items, {"pagination": pagination, "meta": meta, "_db_mutated": False}
+        return items, {"pagination": pagination, "meta": meta}, False
 
     async def continue_session(
         self,
@@ -811,22 +807,24 @@ class SessionHubService:
                 or external_session_id
                 or parsed.upstream_session_id
             )
-            conversation_id = await conversation_identity_service.bind_external_session(
-                db,
-                user_id=user_id,
-                conversation_id=None,
-                provider=resolved_provider,
-                agent_id=parsed.agent_id,
-                agent_source=parsed.agent_source,
-                external_session_id=resolved_external_session_id,
-                context_id=context_id if isinstance(context_id, str) else None,
-                title="Session",
-                binding_metadata=binding_metadata,
+            bind_result = (
+                await conversation_identity_service.bind_external_session_with_state(
+                    db,
+                    user_id=user_id,
+                    conversation_id=None,
+                    provider=resolved_provider,
+                    agent_id=parsed.agent_id,
+                    agent_source=parsed.agent_source,
+                    external_session_id=resolved_external_session_id,
+                    context_id=context_id if isinstance(context_id, str) else None,
+                    title="Session",
+                    binding_metadata=binding_metadata,
+                )
             )
             return (
                 {
                     "session_id": session_key,
-                    "conversationId": str(conversation_id),
+                    "conversationId": str(bind_result.conversation_id),
                     "source": "opencode",
                     "provider": resolved_provider,
                     "externalSessionId": resolved_external_session_id,
@@ -834,7 +832,7 @@ class SessionHubService:
                     "bindingMetadata": binding_metadata,
                     "metadata": metadata,
                 },
-                True,
+                bind_result.mutated,
             )
 
         assert parsed.local_session_id is not None
@@ -865,25 +863,30 @@ class SessionHubService:
         conversation_id: UUID | None = None
         db_mutated = False
         if provider and external_session_id:
-            conversation_id = await conversation_identity_service.bind_external_session(
-                db,
-                user_id=user_id,
-                conversation_id=None,
-                provider=provider,
-                external_session_id=external_session_id,
-                agent_id=_try_parse_uuid(session.module_key),
-                agent_source="personal",
-                context_id=context_id if isinstance(context_id, str) else None,
-                title=session.name or "Session",
-                binding_metadata=metadata,
+            bind_result = (
+                await conversation_identity_service.bind_external_session_with_state(
+                    db,
+                    user_id=user_id,
+                    conversation_id=None,
+                    provider=provider,
+                    external_session_id=external_session_id,
+                    agent_id=_try_parse_uuid(session.module_key),
+                    agent_source="personal",
+                    context_id=context_id if isinstance(context_id, str) else None,
+                    title=session.name or "Session",
+                    binding_metadata=metadata,
+                )
             )
-            await agent_message_handler.backfill_session_messages_conversation_id(
-                db,
-                user_id=user_id,
-                session_id=session.id,
-                conversation_id=conversation_id,
+            conversation_id = bind_result.conversation_id
+            updated = (
+                await agent_message_handler.backfill_session_messages_conversation_id(
+                    db,
+                    user_id=user_id,
+                    session_id=session.id,
+                    conversation_id=conversation_id,
+                )
             )
-            db_mutated = True
+            db_mutated = bind_result.mutated or updated > 0
         return (
             {
                 "session_id": session_key,

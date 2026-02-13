@@ -73,7 +73,7 @@ async def list_unified_session_messages(
     current_user: User = Depends(get_current_user),
 ) -> SessionMessagesListResponse:
     try:
-        items, extra = await session_hub_service.list_messages(
+        items, extra, db_mutated = await session_hub_service.list_messages(
             db,
             user_id=current_user.id,
             session_key=session_id,
@@ -86,7 +86,7 @@ async def list_unified_session_messages(
             status_code=_status_code_for_session_error(detail),
             detail=detail,
         ) from exc
-    if extra.get("_db_mutated"):
+    if db_mutated:
         await commit_safely(db)
     return SessionMessagesListResponse(
         items=items,

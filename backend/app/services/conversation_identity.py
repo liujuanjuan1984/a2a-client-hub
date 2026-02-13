@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional
 from uuid import UUID
 
@@ -13,6 +14,12 @@ from app.db.models.conversation_binding import ConversationBinding
 from app.db.models.conversation_thread import ConversationThread
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import utc_now
+
+
+@dataclass(frozen=True)
+class ExternalBindingResult:
+    conversation_id: UUID
+    mutated: bool
 
 
 class ConversationIdentityService:
@@ -56,9 +63,9 @@ class ConversationIdentityService:
             return {}
         normalized_ids = sorted(
             {
-                normalize_non_empty_text(item)
+                normalized
                 for item in external_session_ids
-                if normalize_non_empty_text(item)
+                if (normalized := normalize_non_empty_text(item))
             }
         )
         if not normalized_ids:
@@ -102,6 +109,34 @@ class ConversationIdentityService:
         title: str,
         binding_metadata: Optional[dict[str, Any]],
     ) -> UUID:
+        result = await self.bind_external_session_with_state(
+            db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            provider=provider,
+            external_session_id=external_session_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            context_id=context_id,
+            title=title,
+            binding_metadata=binding_metadata,
+        )
+        return result.conversation_id
+
+    async def bind_external_session_with_state(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: Optional[UUID],
+        provider: str,
+        external_session_id: str,
+        agent_id: Optional[UUID],
+        agent_source: Optional[str],
+        context_id: Optional[str],
+        title: str,
+        binding_metadata: Optional[dict[str, Any]],
+    ) -> ExternalBindingResult:
         now = utc_now()
         resolved_provider = normalize_provider(provider)
         resolved_external_id = normalize_non_empty_text(external_session_id)
@@ -123,14 +158,28 @@ class ConversationIdentityService:
             )
         )
         if existing:
-            existing.last_seen_at = now
-            existing.agent_id = agent_id or existing.agent_id
-            existing.agent_source = agent_source or existing.agent_source
-            if context_id:
-                existing.context_id = normalize_non_empty_text(context_id)
+            mutated = False
+            if agent_id and existing.agent_id != agent_id:
+                existing.agent_id = agent_id
+                mutated = True
+            if agent_source and existing.agent_source != agent_source:
+                existing.agent_source = agent_source
+                mutated = True
+            normalized_context_id = normalize_non_empty_text(context_id)
+            if normalized_context_id and existing.context_id != normalized_context_id:
+                existing.context_id = normalized_context_id
+                mutated = True
             if isinstance(binding_metadata, dict) and binding_metadata:
-                existing.binding_metadata = dict(binding_metadata)
-            return existing.conversation_id
+                normalized_metadata = dict(binding_metadata)
+                if existing.binding_metadata != normalized_metadata:
+                    existing.binding_metadata = normalized_metadata
+                    mutated = True
+            if mutated:
+                existing.last_seen_at = now
+            return ExternalBindingResult(
+                conversation_id=existing.conversation_id,
+                mutated=mutated,
+            )
 
         resolved_conversation_id = conversation_id
 
@@ -174,10 +223,13 @@ class ConversationIdentityService:
                 external_session_id=resolved_external_id,
             )
             if rebound:
-                return rebound
+                return ExternalBindingResult(conversation_id=rebound, mutated=False)
             raise
 
-        return resolved_conversation_id
+        return ExternalBindingResult(
+            conversation_id=resolved_conversation_id,
+            mutated=True,
+        )
 
 
 conversation_identity_service = ConversationIdentityService()
