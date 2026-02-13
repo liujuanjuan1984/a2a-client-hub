@@ -1,24 +1,11 @@
 import { type Href } from "expo-router";
 
-export const buildChatRoute = (
-  agentId: string,
-  sessionId: string,
-  options?: {
-    history?: boolean;
-    source?: "manual" | "scheduled";
-    opencodeSessionId?: string;
-  },
-) =>
+export const buildChatRoute = (agentId: string, sessionId: string) =>
   ({
     pathname: "/(app)/chat/[agentId]/[sessionId]",
     params: {
       agentId,
       sessionId,
-      ...(options?.history ? { history: "1" } : {}),
-      ...(options?.source ? { source: options.source } : {}),
-      ...(options?.opencodeSessionId
-        ? { opencodeSessionId: options.opencodeSessionId }
-        : {}),
     },
   }) as unknown as Href;
 

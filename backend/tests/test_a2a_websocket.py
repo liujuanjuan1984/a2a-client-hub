@@ -116,3 +116,35 @@ def test_invoke_agent_ws_success(monkeypatch, mock_user):
             assert resp2["event"] == "stream_end"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_invoke_agent_ws_invalid_session_id_returns_error_event(monkeypatch, mock_user):
+    """Verify WS preflight errors use the unified error event envelope."""
+    app.dependency_overrides[get_async_db] = _override_get_async_db
+    app.dependency_overrides[get_ws_ticket_user_me] = lambda: mock_user
+
+    mock_runtime = MagicMock()
+    mock_runtime.resolved.url = "http://agent"
+    mock_runtime.resolved.name = "TestAgent"
+
+    async def mock_build(*args, **kwargs):
+        return mock_runtime
+
+    monkeypatch.setattr(
+        "app.api.routers.a2a_agents.a2a_runtime_builder.build", mock_build
+    )
+
+    client = TestClient(app)
+    try:
+        with client.websocket_connect(
+            f"{settings.api_v1_prefix}/me/a2a/agents/{uuid4()}/invoke/ws",
+            headers={"origin": "http://localhost:5173"},
+            subprotocols=["mock-ticket-length-48-chars-minimum-1234567890"],
+        ) as websocket:
+            websocket.send_json({"query": "ping", "sessionId": "invalid"})
+            error_event = websocket.receive_json()
+            assert error_event["event"] == "error"
+            assert error_event["data"]["error_code"] == "invalid_session_id"
+            assert error_event["data"]["message"] == "invalid_session_id"
+    finally:
+        app.dependency_overrides.clear()

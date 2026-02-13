@@ -53,6 +53,7 @@ export type A2AAgentUpdateRequest = Partial<A2AAgentCreateRequest>;
 
 export type A2AAgentInvokeRequest = {
   query: string;
+  sessionId?: string;
   contextId?: string;
   metadata?: Record<string, unknown>;
 };

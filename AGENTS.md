@@ -10,7 +10,42 @@ This guide is for coding agents working on this repository. Follow these rules s
 
 ## 2. Required Regressions
 
-After any code change, you must run the relevant regressions and fix all failures:
+Run regressions by changed scope (backend/frontend) and fix all failures.
+
+### 2.1 Scope-Based Rules (Mandatory)
+
+- **Backend-only changes**: run backend regressions only.
+- **Frontend-only changes**: run frontend regressions only.
+- **Backend + frontend changes**: run both regression suites, and run them **serially** (backend first, then frontend) to avoid overwhelming local I/O.
+
+### 2.2 Default Verification Mode (Low-Load + Serial, Mandatory)
+
+Use **serial low-load** verification by default (no parallel heavy tasks):
+
+- **Backend (changed files/modules)**
+  - `cd backend && uv run pre-commit run --files <changed_backend_files...> --config ../.pre-commit-config.yaml`
+  - `cd backend && uv run pytest <changed_tests_or_module>`
+- **Frontend (changed files/modules)**
+  - `cd frontend && npm run lint`
+  - `cd frontend && export NODE_OPTIONS="--max-old-space-size=1024" && npm run check-types`
+  - `cd frontend && npm test -- --findRelatedTests <changed_frontend_files...> --maxWorkers=25%`
+
+Execution order (when both backend and frontend changed):
+
+1. backend scoped checks
+2. frontend scoped checks
+3. rerun affected checks after fixes
+
+### 2.3 Full Regression Gate (On-Demand)
+
+Run full regressions on demand. Execute them when any condition below is met:
+
+- A human explicitly requests full regression.
+- The Draft PR is about to be moved to Ready for Review.
+- Infrastructure or cross-module critical paths are changed and scoped checks are insufficient.
+- Suspected environment/concurrency issues require broader validation.
+
+Full commands (choose by changed scope, still serial):
 
 - **Backend changes (`backend/`)**
   - `cd backend && uv sync --extra dev --locked`
@@ -21,10 +56,12 @@ After any code change, you must run the relevant regressions and fix all failure
   - `cd frontend && npm install`
   - `cd frontend && npm run lint`
   - `cd frontend && export NODE_OPTIONS="--max-old-space-size=1024" && npm run check-types`
-  - `cd frontend && npm test`
+  - `cd frontend && npm test -- --maxWorkers=25%`
 
 Notes:
 
+- Avoid repeating equivalent heavy checks when code has not changed in the same iteration.
+- In low-load default mode, run `npm install` / `uv sync` only when dependencies changed or environment drift is detected.
 - If a change touches database schema or migrations, additionally run:
   - `cd backend && uv run alembic upgrade head`
   - And verify the critical endpoints manually.
@@ -95,7 +132,7 @@ Before starting any user-assigned task, the agent must:
 
 ### 6. Automated Verification and Self-Correction
 
-- **Verify before push**: run the required regressions before pushing.
+- **Verify before push**: run Section 2.2 serial low-load checks by default; escalate to Section 2.3 full regressions when trigger conditions are met.
 - **Self-correction loop**: if lint/tests fail, fix them autonomously before reporting.
 
 ### 7. Documentation and Verification Evidence

@@ -201,13 +201,11 @@ class _AgentRef:
 
 
 class OpencodeSessionDirectoryService:
-    async def list_directory(
+    async def _build_directory_snapshot(
         self,
         db: AsyncSession,
         *,
         user_id: UUID,
-        page: int,
-        size: int,
         refresh: bool,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         agents = await self._list_visible_agents(db, user_id=user_id)
@@ -389,17 +387,32 @@ class OpencodeSessionDirectoryService:
             reverse=True,
         )
 
-        total = len(directory_items)
-        pages = (total + size - 1) // size if size else 0
-        offset = (page - 1) * size
-        page_items = directory_items[offset : offset + size]
-
         meta = {
             "total_agents": total_agents,
             "refreshed_agents": refreshed_agents,
             "cached_agents": cached_agents,
             "partial_failures": partial_failures,
         }
+        return directory_items, meta
+
+    async def list_directory(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        page: int,
+        size: int,
+        refresh: bool,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        directory_items, meta = await self._build_directory_snapshot(
+            db,
+            user_id=user_id,
+            refresh=refresh,
+        )
+        total = len(directory_items)
+        pages = (total + size - 1) // size if size else 0
+        offset = (page - 1) * size
+        page_items = directory_items[offset : offset + size]
         pagination = {
             "page": page,
             "size": size,
@@ -407,6 +420,27 @@ class OpencodeSessionDirectoryService:
             "pages": pages,
         }
         return page_items, {"pagination": pagination, "meta": meta}
+
+    async def list_directory_all(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        refresh: bool,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        directory_items, meta = await self._build_directory_snapshot(
+            db,
+            user_id=user_id,
+            refresh=refresh,
+        )
+        total = len(directory_items)
+        pagination = {
+            "page": 1,
+            "size": total,
+            "total": total,
+            "pages": 1 if total > 0 else 0,
+        }
+        return directory_items, {"pagination": pagination, "meta": meta}
 
     async def _list_visible_agents(
         self, db: AsyncSession, *, user_id: UUID

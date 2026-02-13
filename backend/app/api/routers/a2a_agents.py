@@ -17,6 +17,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_me
@@ -24,6 +25,7 @@ from app.api.routing import StrictAPIRouter
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.user import User
+from app.db.transaction import commit_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.errors import (
@@ -57,6 +59,7 @@ from app.services.a2a_runtime import (
     A2ARuntimeValidationError,
     a2a_runtime_builder,
 )
+from app.services.session_hub import session_hub_service
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (
@@ -66,6 +69,18 @@ from app.utils.outbound_url import (
 
 router = StrictAPIRouter(prefix="/me/a2a/agents", tags=["a2a"])
 logger = get_logger(__name__)
+
+
+def _status_code_for_invoke_session_error(detail: str) -> int:
+    if detail == "session_not_found":
+        return 404
+    return 400
+
+
+def _ws_error_code_for_invoke_session_error(detail: str) -> str:
+    if detail == "session_not_found":
+        return "session_not_found"
+    return "invalid_session_id"
 
 
 def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
@@ -411,16 +426,46 @@ async def invoke_agent_ws(
     try:
         # Receive the request payload
         data = await websocket.receive_json()
-        payload = A2AAgentInvokeRequest.model_validate(data)
-
-        if not payload.query.strip():
-            await websocket.send_json({"error": "Query must be a non-empty string"})
+        try:
+            payload = A2AAgentInvokeRequest.model_validate(data)
+        except ValidationError:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Invalid request payload",
+                error_code="invalid_request",
+            )
             await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
             return
 
-        runtime = await a2a_runtime_builder.build(
-            db, user_id=current_user.id, agent_id=agent_id
-        )
+        if not payload.query.strip():
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Query must be a non-empty string",
+                error_code="invalid_query",
+            )
+            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            return
+
+        try:
+            runtime = await a2a_runtime_builder.build(
+                db, user_id=current_user.id, agent_id=agent_id
+            )
+        except A2ARuntimeNotFoundError as exc:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=str(exc),
+                error_code="agent_not_found",
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        except A2ARuntimeValidationError as exc:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=str(exc),
+                error_code="runtime_invalid",
+            )
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            return
 
         logger.info(
             "A2A agent invoke WS requested",
@@ -431,6 +476,63 @@ async def invoke_agent_ws(
                 "query_meta": summarize_query(payload.query),
             },
         )
+
+        (
+            local_session,
+            local_source,
+        ) = (None, None)
+        try:
+            (
+                local_session,
+                local_source,
+            ) = await session_hub_service.ensure_local_session_for_invoke(
+                db,
+                user_id=current_user.id,
+                agent_id=agent_id,
+                session_key=payload.session_id,
+            )
+        except ValueError as exc:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=str(exc),
+                error_code=_ws_error_code_for_invoke_session_error(str(exc)),
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        async def _on_complete(stream_text: str) -> None:
+            if local_session is None or local_source is None:
+                return
+            await session_hub_service.record_local_invoke_messages(
+                db,
+                session=local_session,
+                source=local_source,
+                user_id=current_user.id,
+                agent_id=agent_id,
+                query=payload.query,
+                response_content=stream_text or "",
+                success=True,
+                context_id=payload.context_id,
+                extra_metadata={"transport": "ws", "stream": True},
+            )
+            await commit_safely(db)
+
+        async def _on_error(error_message: str) -> None:
+            if local_session is None or local_source is None:
+                return
+            await session_hub_service.record_local_invoke_messages(
+                db,
+                session=local_session,
+                source=local_source,
+                user_id=current_user.id,
+                agent_id=agent_id,
+                query=payload.query,
+                response_content=error_message,
+                success=False,
+                context_id=payload.context_id,
+                extra_metadata={"transport": "ws", "stream": True},
+            )
+            await commit_safely(db)
 
         await a2a_invoke_service.stream_ws(
             websocket=websocket,
@@ -445,6 +547,8 @@ async def invoke_agent_ws(
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
             },
+            on_complete=_on_complete,
+            on_error=_on_error,
         )
 
     except WebSocketDisconnect:
@@ -452,9 +556,10 @@ async def invoke_agent_ws(
     except Exception:
         logger.error("WS error", exc_info=True)
         try:
-            # Try to send error if still connected
-            await websocket.send_text(
-                '{"event":"error","data":{"message":"Upstream streaming failed"}}'
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Upstream streaming failed",
+                error_code="upstream_stream_error",
             )
         except Exception:
             pass
@@ -502,7 +607,61 @@ async def invoke_agent(
             "query_meta": summarize_query(payload.query),
         },
     )
+    (
+        local_session,
+        local_source,
+    ) = (None, None)
+    try:
+        (
+            local_session,
+            local_source,
+        ) = await session_hub_service.ensure_local_session_for_invoke(
+            db,
+            user_id=current_user.id,
+            agent_id=agent_id,
+            session_key=payload.session_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=_status_code_for_invoke_session_error(str(exc)),
+            detail=str(exc),
+        ) from exc
     if stream:
+
+        async def _on_complete(stream_text: str) -> None:
+            if local_session is None or local_source is None:
+                return
+            await session_hub_service.record_local_invoke_messages(
+                db,
+                session=local_session,
+                source=local_source,
+                user_id=current_user.id,
+                agent_id=agent_id,
+                query=payload.query,
+                response_content=stream_text or "",
+                success=True,
+                context_id=payload.context_id,
+                extra_metadata={"transport": "http_sse", "stream": True},
+            )
+            await commit_safely(db)
+
+        async def _on_error(error_message: str) -> None:
+            if local_session is None or local_source is None:
+                return
+            await session_hub_service.record_local_invoke_messages(
+                db,
+                session=local_session,
+                source=local_source,
+                user_id=current_user.id,
+                agent_id=agent_id,
+                query=payload.query,
+                response_content=error_message,
+                success=False,
+                context_id=payload.context_id,
+                extra_metadata={"transport": "http_sse", "stream": True},
+            )
+            await commit_safely(db)
+
         return a2a_invoke_service.stream_sse(
             gateway=get_a2a_service().gateway,
             resolved=runtime.resolved,
@@ -515,6 +674,8 @@ async def invoke_agent(
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
             },
+            on_complete=_on_complete,
+            on_error=_on_error,
         )
 
     result = await get_a2a_service().gateway.invoke(
@@ -523,6 +684,31 @@ async def invoke_agent(
         context_id=payload.context_id,
         metadata=payload.metadata,
     )
+
+    if local_session is not None and local_source is not None:
+        success = bool(result.get("success"))
+        response_content = (
+            result.get("content")
+            if success
+            else (result.get("error") or "A2A invocation failed")
+        ) or ""
+        await session_hub_service.record_local_invoke_messages(
+            db,
+            session=local_session,
+            source=local_source,
+            user_id=current_user.id,
+            agent_id=agent_id,
+            query=payload.query,
+            response_content=response_content,
+            success=success,
+            context_id=payload.context_id,
+            extra_metadata={
+                "transport": "http_json",
+                "stream": False,
+                "error_code": result.get("error_code"),
+            },
+        )
+        await commit_safely(db)
 
     return A2AAgentInvokeResponse(
         success=bool(result.get("success")),

@@ -16,17 +16,14 @@ import {
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
-import {
-  useOpencodeHistoryQuery,
-  useSessionHistoryQuery,
-} from "@/hooks/useChatHistoryQuery";
+import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { type ChatMessage } from "@/lib/api/chat-utils";
-import { continueOpencodeSession } from "@/lib/api/opencodeSessions";
+import { continueSession } from "@/lib/api/sessions";
 import { blurActiveElement } from "@/lib/focus";
-import { generateId } from "@/lib/id";
 import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import { backOrHome } from "@/lib/navigation";
 import { buildChatRoute } from "@/lib/routes";
+import { getSessionSource } from "@/lib/sessionIds";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
@@ -60,15 +57,9 @@ const isSameMessageList = (left: ChatMessage[], right: ChatMessage[]) => {
 export function ChatScreen({
   agentId: routeAgentId,
   sessionId,
-  history,
-  source,
-  opencodeSessionId,
 }: {
   agentId?: string;
   sessionId?: string;
-  history?: boolean;
-  source?: "manual" | "scheduled";
-  opencodeSessionId?: string;
 }) {
   const router = useRouter();
   const goBackOrHome = useCallback(() => backOrHome(router), [router]);
@@ -82,6 +73,7 @@ export function ChatScreen({
     [agents, activeAgentId],
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
+  const generateSessionId = useChatStore((state) => state.generateSessionId);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const session = useChatStore((state) =>
     sessionId ? state.sessions[sessionId] : undefined,
@@ -101,18 +93,14 @@ export function ChatScreen({
   const minInputHeight = 44;
   const maxInputHeight = 128;
   const [inputHeight, setInputHeight] = useState(minInputHeight);
-
-  const opencodeSource = agent?.source === "shared" ? "shared" : "personal";
+  const historyPaused =
+    session?.streamState === "streaming" ||
+    session?.streamState === "rebinding";
 
   const sessionHistoryQuery = useSessionHistoryQuery({
     sessionId,
-    enabled: Boolean(history && sessionId),
-  });
-  const opencodeHistoryQuery = useOpencodeHistoryQuery({
-    agentId: activeAgentId ?? undefined,
-    sessionId: opencodeSessionId,
-    source: opencodeSource,
-    enabled: Boolean(opencodeSessionId && sessionId && activeAgentId),
+    enabled: Boolean(sessionId),
+    paused: historyPaused,
   });
 
   const historyLoading = sessionHistoryQuery.loading;
@@ -122,14 +110,7 @@ export function ChatScreen({
     sessionHistoryQuery.error instanceof Error
       ? sessionHistoryQuery.error.message
       : null;
-
-  const opencodeHistoryLoading = opencodeHistoryQuery.loading;
-  const opencodeHistoryLoadingMore = opencodeHistoryQuery.loadingMore;
-  const opencodeHistoryNextPage = opencodeHistoryQuery.nextPage;
-  const opencodeHistoryError =
-    opencodeHistoryQuery.error instanceof Error
-      ? opencodeHistoryQuery.error.message
-      : null;
+  const sessionSource = sessionId ? getSessionSource(sessionId) : null;
 
   useEffect(() => {
     if (activeAgentId && sessionId) {
@@ -138,26 +119,28 @@ export function ChatScreen({
   }, [activeAgentId, sessionId, ensureSession]);
 
   useEffect(() => {
-    if (!opencodeSessionId || !sessionId || !activeAgentId) return;
-
-    const current = useChatStore.getState().sessions[sessionId];
-    if (
-      current?.opencodeSessionId === opencodeSessionId &&
-      ((typeof current.contextId === "string" && current.contextId.trim()) ||
-        Object.keys(current.metadata ?? {}).length > 0)
-    ) {
-      return;
-    }
+    if (!sessionId || !activeAgentId) return;
+    if (getSessionSource(sessionId) === "manual") return;
 
     let cancelled = false;
-    continueOpencodeSession(activeAgentId, opencodeSessionId, {
-      source: opencodeSource,
-    })
+    continueSession(sessionId)
       .then((binding) => {
         if (cancelled) return;
+        const current = useChatStore.getState().sessions[sessionId];
+        const hasLocalBinding =
+          (typeof current?.contextId === "string" &&
+            current.contextId.trim()) ||
+          Object.keys(current?.metadata ?? {}).length > 0;
+        if (hasLocalBinding && !binding.contextId) {
+          return;
+        }
+        const opencodeSession =
+          typeof binding.metadata.opencode_session_id === "string"
+            ? binding.metadata.opencode_session_id
+            : current?.opencodeSessionId;
         useChatStore.getState().bindOpencodeSession(sessionId, {
           agentId: activeAgentId ?? undefined,
-          opencodeSessionId,
+          opencodeSessionId: opencodeSession ?? undefined,
           contextId: binding.contextId ?? undefined,
           metadata: binding.metadata,
         });
@@ -171,7 +154,7 @@ export function ChatScreen({
     return () => {
       cancelled = true;
     };
-  }, [activeAgentId, opencodeSessionId, opencodeSource, sessionId]);
+  }, [activeAgentId, sessionId]);
 
   const mergeHistoryMessages = useCallback(
     (incoming: ChatMessage[]) => {
@@ -193,36 +176,18 @@ export function ChatScreen({
   );
 
   useEffect(() => {
-    if (!history || !sessionId) return;
+    if (!sessionId) return;
     if (sessionHistoryQuery.messages.length === 0) return;
     mergeHistoryMessages(sessionHistoryQuery.messages);
-  }, [history, mergeHistoryMessages, sessionId, sessionHistoryQuery.messages]);
-
-  useEffect(() => {
-    if (!opencodeSessionId || !sessionId) return;
-    if (opencodeHistoryQuery.messages.length === 0) return;
-    mergeHistoryMessages(opencodeHistoryQuery.messages);
-  }, [
-    mergeHistoryMessages,
-    opencodeHistoryQuery.messages,
-    opencodeSessionId,
-    sessionId,
-  ]);
+  }, [mergeHistoryMessages, sessionId, sessionHistoryQuery.messages]);
 
   const loadEarlierHistory = async () => {
-    if (!history || !sessionId) return;
+    if (!sessionId) return;
+    if (historyPaused) return;
     if (typeof historyNextPage !== "number") return;
     if (historyLoadingMore) return;
     suppressAutoScrollRef.current = true;
     await sessionHistoryQuery.loadMore();
-  };
-
-  const loadEarlierOpencodeHistory = async () => {
-    if (!opencodeSessionId || !sessionId || !activeAgentId) return;
-    if (typeof opencodeHistoryNextPage !== "number") return;
-    if (opencodeHistoryLoadingMore) return;
-    suppressAutoScrollRef.current = true;
-    await opencodeHistoryQuery.loadMore();
   };
 
   useEffect(() => {
@@ -353,7 +318,7 @@ export function ChatScreen({
             <Pressable
               className="h-10 w-10 items-center justify-center rounded-full bg-primary"
               onPress={() => {
-                const nextSessionId = generateId("sess");
+                const nextSessionId = generateSessionId();
                 blurActiveElement();
                 router.replace(buildChatRoute(agent.id, nextSessionId));
               }}
@@ -412,7 +377,7 @@ export function ChatScreen({
                   Source
                 </Text>
                 <Text className="mt-1 text-xs text-white">
-                  {source ?? "N/A"}
+                  {sessionSource ?? "N/A"}
                 </Text>
               </View>
             </View>
@@ -498,12 +463,37 @@ export function ChatScreen({
         ) : null}
       </View>
 
+      {session?.streamState === "rebinding" ? (
+        <View className="mx-6 mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+          <Text className="text-xs text-amber-300">
+            Connection dropped. Rebinding this session...
+          </Text>
+        </View>
+      ) : null}
+
+      {session?.streamState === "recoverable" ? (
+        <View className="mx-6 mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+          <Text className="text-xs text-emerald-300">
+            Session recovered. You can continue chatting in this session.
+          </Text>
+        </View>
+      ) : null}
+
+      {session?.streamState === "error" ? (
+        <View className="mx-6 mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2">
+          <Text className="text-xs text-red-300">
+            Session recovery failed.
+            {session.lastStreamError ? ` ${session.lastStreamError}` : ""}
+          </Text>
+        </View>
+      ) : null}
+
       <ScrollView
         ref={scrollRef}
         className="mt-2 flex-1 px-6"
         contentContainerStyle={{ paddingBottom: 24 }}
       >
-        {history && typeof historyNextPage === "number" ? (
+        {typeof historyNextPage === "number" ? (
           <View className="items-center">
             <Button
               className="mt-2"
@@ -511,20 +501,8 @@ export function ChatScreen({
               size="sm"
               variant="secondary"
               loading={historyLoadingMore}
+              disabled={historyPaused}
               onPress={loadEarlierHistory}
-            />
-          </View>
-        ) : null}
-
-        {opencodeSessionId && typeof opencodeHistoryNextPage === "number" ? (
-          <View className="items-center">
-            <Button
-              className="mt-2"
-              label={opencodeHistoryLoadingMore ? "Loading..." : "Load earlier"}
-              size="sm"
-              variant="secondary"
-              loading={opencodeHistoryLoadingMore}
-              onPress={loadEarlierOpencodeHistory}
             />
           </View>
         ) : null}
@@ -562,10 +540,10 @@ export function ChatScreen({
         ) : (
           <View className="mt-12 items-center">
             <Text className="text-sm text-muted">
-              {historyLoading || opencodeHistoryLoading
+              {historyLoading
                 ? "Loading history..."
-                : historyError || opencodeHistoryError
-                  ? historyError || opencodeHistoryError
+                : historyError
+                  ? historyError
                   : "No messages yet."}
             </Text>
           </View>

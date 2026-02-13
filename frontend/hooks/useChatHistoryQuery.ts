@@ -1,15 +1,8 @@
 import { useCallback, useMemo } from "react";
 
 import { usePaginatedList } from "@/hooks/usePaginatedList";
-import { listOpencodeSessionMessagesPage } from "@/lib/api/opencodeSessions";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
 import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
-import {
-  getOpencodeMessageId,
-  getOpencodeMessageRole,
-  getOpencodeMessageTimestamp,
-} from "@/lib/opencodeAdapters";
-import { mapOpencodeMessagesToChatMessages } from "@/lib/opencodeChatAdapters";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   mapSessionMessagesToChatMessages,
@@ -19,8 +12,9 @@ import {
 export function useSessionHistoryQuery(options: {
   sessionId?: string;
   enabled: boolean;
+  paused?: boolean;
 }) {
-  const { sessionId, enabled } = options;
+  const { sessionId, enabled, paused = false } = options;
 
   const fetchPage = useCallback(
     async (page: number) => {
@@ -39,7 +33,9 @@ export function useSessionHistoryQuery(options: {
       `${item.id ?? "no-id"}:${item.created_at}:${item.role}:${item.content}`,
     errorTitle: "Load history failed",
     fallbackMessage: "Load failed.",
-    enabled: enabled && Boolean(sessionId),
+    enabled: enabled && Boolean(sessionId) && !paused,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const messages = useMemo(() => {
@@ -50,54 +46,6 @@ export function useSessionHistoryQuery(options: {
       -CHAT_MESSAGE_HISTORY_LIMIT,
     );
   }, [query.items, sessionId]);
-
-  return {
-    ...query,
-    messages,
-  };
-}
-
-export function useOpencodeHistoryQuery(options: {
-  agentId?: string;
-  sessionId?: string;
-  source: "personal" | "shared";
-  enabled: boolean;
-}) {
-  const { agentId, sessionId, source, enabled } = options;
-
-  const fetchPage = useCallback(
-    async (page: number) => {
-      if (!agentId || !sessionId) {
-        throw new Error("Agent and OpenCode session are required.");
-      }
-      return await listOpencodeSessionMessagesPage(agentId, sessionId, {
-        page,
-        size: 100,
-        source,
-      });
-    },
-    [agentId, sessionId, source],
-  );
-
-  const query = usePaginatedList<unknown>({
-    queryKey: queryKeys.history.opencode(
-      agentId ?? "missing-agent",
-      sessionId ?? "missing-session",
-      source,
-    ),
-    fetchPage,
-    getKey: (item) =>
-      `${getOpencodeMessageId(item)}:${getOpencodeMessageTimestamp(item) ?? ""}:${getOpencodeMessageRole(item)}`,
-    errorTitle: "Load history failed",
-    fallbackMessage: "Load failed.",
-    enabled: enabled && Boolean(agentId) && Boolean(sessionId),
-  });
-
-  const messages = useMemo(() => {
-    return mapOpencodeMessagesToChatMessages(query.items)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      .slice(-CHAT_MESSAGE_HISTORY_LIMIT);
-  }, [query.items]);
 
   return {
     ...query,

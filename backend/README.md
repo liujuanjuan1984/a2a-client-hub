@@ -112,6 +112,18 @@ Notes:
 - Responses include a stable envelope with `success`, `result` (upstream
   envelope), `error_code`, and `upstream_error`.
 
+## Unified Session Domain API
+
+The backend now exposes a unified session read model for manual, scheduled,
+and OpenCode sessions:
+
+- `POST /api/v1/me/sessions:query`
+- `POST /api/v1/me/sessions/{session_id}/messages:query`
+- `POST /api/v1/me/sessions/{session_id}:continue`
+
+Client-generated manual sessions must use unified IDs with the `manual:`
+prefix and UUID payload, for example `manual:550e8400-e29b-41d4-a716-446655440000`.
+
 ## Checks (Before Pushing)
 
 ```bash

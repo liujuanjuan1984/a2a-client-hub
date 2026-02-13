@@ -11,6 +11,7 @@ from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_session import AgentSession
 from app.services.a2a_schedule_service import a2a_schedule_service
+from app.services.session_hub import build_scheduled_session_key
 from app.utils.timezone_util import utc_now
 from backend.tests.api_utils import create_test_client
 from backend.tests.utils import create_user
@@ -35,7 +36,6 @@ async def _create_agent(async_db_session, *, user_id, suffix: str) -> A2AAgent:
 async def test_me_sessions_scheduled_list_detail_and_messages(
     async_db_session,
     async_session_maker,
-    monkeypatch,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="sched")
@@ -108,35 +108,40 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
-        manual_resp = await client.get("/me/sessions", params={"source": "manual"})
+        manual_resp = await client.post(
+            "/me/sessions:query",
+            json={"page": 1, "size": 20, "source": "manual", "refresh": False},
+        )
         assert manual_resp.status_code == 200
         assert manual_resp.json()["pagination"]["total"] == 0
 
-        list_resp = await client.get("/me/sessions", params={"source": "scheduled"})
+        list_resp = await client.post(
+            "/me/sessions:query",
+            json={"page": 1, "size": 20, "source": "scheduled", "refresh": False},
+        )
         assert list_resp.status_code == 200
         payload = list_resp.json()
         assert payload["pagination"]["total"] >= 1
         item = payload["items"][0]
+        scheduled_key = build_scheduled_session_key(session.id)
+        assert item["id"] == scheduled_key
         assert item["source"] == "scheduled"
-        assert item["job_id"] == str(task.id)
-        assert item["run_id"] == str(execution.id)
         assert item["agent_id"] == str(agent.id)
 
-        detail_resp = await client.get(f"/me/sessions/{session.id}")
-        assert detail_resp.status_code == 200
-        detail = detail_resp.json()
-        assert detail["id"] == str(session.id)
-        assert detail["source"] == "scheduled"
-        assert detail["job_id"] == str(task.id)
-        assert detail["run_id"] == str(execution.id)
+        continue_resp = await client.post(f"/me/sessions/{scheduled_key}:continue")
+        assert continue_resp.status_code == 200
+        continue_payload = continue_resp.json()
+        assert continue_payload["session_id"] == scheduled_key
+        assert continue_payload["source"] == "scheduled"
 
-        msgs_resp = await client.get(
-            f"/me/sessions/{session.id}/messages",
-            params={"page": 1, "size": 50},
+        msgs_resp = await client.post(
+            f"/me/sessions/{scheduled_key}/messages:query",
+            json={"page": 1, "size": 50},
         )
         assert msgs_resp.status_code == 200
         msgs_payload = msgs_resp.json()
-        assert msgs_payload["meta"]["session_id"] == str(session.id)
+        assert msgs_payload["meta"]["session_id"] == scheduled_key
+        assert msgs_payload["meta"]["source"] == "scheduled"
         assert len(msgs_payload["items"]) == 2
         assert msgs_payload["items"][0]["role"] == "user"
         assert msgs_payload["items"][1]["role"] == "agent"
