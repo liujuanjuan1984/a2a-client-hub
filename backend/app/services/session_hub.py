@@ -233,7 +233,15 @@ class SessionHubService:
                 user_id=user_id,
                 refresh=refresh,
             )
-            normalized_opencode_items: list[dict[str, Any]] = []
+            normalized_lookup_items: list[
+                tuple[UUID, Literal["personal", "shared"], str, dict[str, Any]]
+            ] = []
+            external_lookup_keys: list[
+                tuple[UUID, Literal["personal", "shared"], str]
+            ] = []
+            seen_external_lookup_keys: set[
+                tuple[UUID, Literal["personal", "shared"], str]
+            ] = set()
             for item in raw_opencode_items:
                 raw_agent_id = item.get("agent_id")
                 raw_agent_source = item.get("agent_source")
@@ -246,23 +254,44 @@ class SessionHubService:
                 ):
                     continue
                 normalized_session_id = raw_session_id.strip()
-                conversation_id = await conversation_identity_service.find_conversation_id_for_external(
-                    db,
-                    user_id=user_id,
-                    provider="opencode",
-                    agent_id=raw_agent_id,
-                    agent_source=raw_agent_source,
-                    external_session_id=normalized_session_id,
+                lookup_key = (raw_agent_id, raw_agent_source, normalized_session_id)
+                normalized_lookup_items.append(
+                    (raw_agent_id, raw_agent_source, normalized_session_id, item)
                 )
+                if lookup_key in seen_external_lookup_keys:
+                    continue
+                seen_external_lookup_keys.add(lookup_key)
+                external_lookup_keys.append(lookup_key)
+
+            external_conversation_map = await conversation_identity_service.find_conversation_ids_for_external_batch(
+                db,
+                user_id=user_id,
+                provider="opencode",
+                keys=external_lookup_keys,
+            )
+            unresolved_context_keys = [
+                key
+                for key in external_lookup_keys
+                if key not in external_conversation_map
+            ]
+            context_conversation_map = await conversation_identity_service.find_conversation_ids_for_context_batch(
+                db,
+                user_id=user_id,
+                provider="opencode",
+                keys=unresolved_context_keys,
+            )
+
+            normalized_opencode_items: list[dict[str, Any]] = []
+            for (
+                raw_agent_id,
+                raw_agent_source,
+                normalized_session_id,
+                item,
+            ) in normalized_lookup_items:
+                lookup_key = (raw_agent_id, raw_agent_source, normalized_session_id)
+                conversation_id = external_conversation_map.get(lookup_key)
                 if conversation_id is None:
-                    conversation_id = await conversation_identity_service.find_conversation_id_for_context(
-                        db,
-                        user_id=user_id,
-                        provider="opencode",
-                        agent_id=raw_agent_id,
-                        agent_source=raw_agent_source,
-                        context_id=normalized_session_id,
-                    )
+                    conversation_id = context_conversation_map.get(lookup_key)
                 normalized_opencode_items.append(
                     {
                         "id": build_opencode_session_key(

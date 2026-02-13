@@ -18,7 +18,8 @@ from app.utils.json_encoder import json_dumps
 
 StreamEvent = ClientEvent | Message
 ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
-StreamCallbackFn = Callable[[str], Any]
+StreamTextCallbackFn = Callable[[str], Any]
+StreamEventPayloadCallbackFn = Callable[[dict[str, Any]], Any]
 
 
 class A2AInvokeService:
@@ -55,12 +56,128 @@ class A2AInvokeService:
         )
 
     @staticmethod
-    async def _call_callback(callback: StreamCallbackFn | None, value: str) -> None:
+    async def _call_callback(callback: Callable[[Any], Any] | None, value: Any) -> None:
         if callback is None:
             return
         outcome = callback(value)
         if inspect.isawaitable(outcome):
             await outcome
+
+    @staticmethod
+    def _as_dict(value: Any) -> dict[str, Any]:
+        return dict(value) if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _pick_first_str(payload: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str):
+                trimmed = value.strip()
+                if trimmed:
+                    return trimmed
+        return None
+
+    @classmethod
+    def _extract_metadata_dict(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        resolved: dict[str, Any] = {}
+        for key in ("metadata", "bindingMetadata", "binding_metadata"):
+            value = payload.get(key)
+            if isinstance(value, dict):
+                resolved.update(value)
+        return resolved
+
+    @classmethod
+    def _extract_binding_hints_from_payload(
+        cls, payload: dict[str, Any]
+    ) -> tuple[str | None, dict[str, Any]]:
+        root = cls._as_dict(payload)
+        message = cls._as_dict(root.get("message"))
+        result = cls._as_dict(root.get("result"))
+
+        context_id: str | None = None
+        provider: str | None = None
+        external_session_id: str | None = None
+        resolved_metadata: dict[str, Any] = {}
+
+        provider_keys = ("provider", "session_provider", "external_provider")
+        external_id_keys = (
+            "externalSessionId",
+            "external_session_id",
+            "upstream_session_id",
+            "opencode_session_id",
+        )
+
+        for candidate in (root, message, result):
+            if context_id is None:
+                context_id = cls._pick_first_str(candidate, ("contextId", "context_id"))
+            candidate_metadata = cls._extract_metadata_dict(candidate)
+            if candidate_metadata:
+                resolved_metadata.update(candidate_metadata)
+            if provider is None:
+                provider = cls._pick_first_str(candidate, provider_keys)
+            if external_session_id is None:
+                external_session_id = cls._pick_first_str(candidate, external_id_keys)
+
+        if context_id is None:
+            context_id = cls._pick_first_str(
+                resolved_metadata, ("contextId", "context_id")
+            )
+        if provider is None:
+            provider = cls._pick_first_str(resolved_metadata, provider_keys)
+        if external_session_id is None:
+            external_session_id = cls._pick_first_str(
+                resolved_metadata, external_id_keys
+            )
+
+        if provider:
+            resolved_metadata.setdefault("provider", provider)
+        if external_session_id:
+            resolved_metadata.setdefault("externalSessionId", external_session_id)
+
+        return context_id, resolved_metadata
+
+    @classmethod
+    def extract_binding_hints_from_serialized_event(
+        cls, payload: dict[str, Any]
+    ) -> tuple[str | None, dict[str, Any]]:
+        return cls._extract_binding_hints_from_payload(payload)
+
+    @classmethod
+    def _coerce_payload_to_dict(cls, payload: Any) -> dict[str, Any]:
+        resolved_payload = payload
+        if isinstance(resolved_payload, tuple):
+            if len(resolved_payload) >= 2 and resolved_payload[1]:
+                resolved_payload = resolved_payload[1]
+            elif resolved_payload:
+                resolved_payload = resolved_payload[0]
+            else:
+                return {}
+        if isinstance(resolved_payload, dict):
+            return dict(resolved_payload)
+        if hasattr(resolved_payload, "model_dump"):
+            try:
+                dumped = resolved_payload.model_dump(exclude_none=True)
+            except Exception:
+                return {}
+            if isinstance(dumped, dict):
+                return dumped
+        return {}
+
+    @classmethod
+    def extract_binding_hints_from_invoke_result(
+        cls, result: dict[str, Any]
+    ) -> tuple[str | None, dict[str, Any]]:
+        context_id, metadata = cls._extract_binding_hints_from_payload(result)
+        raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
+        if raw_payload:
+            raw_context_id, raw_metadata = cls._extract_binding_hints_from_payload(
+                raw_payload
+            )
+            if raw_context_id:
+                context_id = raw_context_id
+            if raw_metadata:
+                metadata.update(raw_metadata)
+        return context_id, metadata
 
     @staticmethod
     def _extract_stream_text(payload: dict[str, Any]) -> str:
@@ -112,8 +229,9 @@ class A2AInvokeService:
         validate_message: ValidateMessageFn,
         logger: Any,
         log_extra: dict[str, Any],
-        on_complete: StreamCallbackFn | None = None,
-        on_error: StreamCallbackFn | None = None,
+        on_complete: StreamTextCallbackFn | None = None,
+        on_error: StreamTextCallbackFn | None = None,
+        on_event: StreamEventPayloadCallbackFn | None = None,
     ) -> StreamingResponse:
         async def event_generator() -> AsyncIterator[str]:
             collected: list[str] = []
@@ -128,6 +246,7 @@ class A2AInvokeService:
                     serialized = self.serialize_stream_event(
                         event, validate_message=validate_message
                     )
+                    await self._call_callback(on_event, serialized)
                     text = self._extract_stream_text(serialized)
                     if text:
                         collected.append(text)
@@ -172,8 +291,9 @@ class A2AInvokeService:
         validate_message: ValidateMessageFn,
         logger: Any,
         log_extra: dict[str, Any],
-        on_complete: StreamCallbackFn | None = None,
-        on_error: StreamCallbackFn | None = None,
+        on_complete: StreamTextCallbackFn | None = None,
+        on_error: StreamTextCallbackFn | None = None,
+        on_event: StreamEventPayloadCallbackFn | None = None,
     ) -> None:
         collected: list[str] = []
         stream_failed = False
@@ -187,6 +307,7 @@ class A2AInvokeService:
                 serialized = self.serialize_stream_event(
                     event, validate_message=validate_message
                 )
+                await self._call_callback(on_event, serialized)
                 text = self._extract_stream_text(serialized)
                 if text:
                     collected.append(text)

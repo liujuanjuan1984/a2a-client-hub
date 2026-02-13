@@ -61,34 +61,35 @@ class ConversationIdentityService:
             return thread
 
         now = utc_now()
-        thread = ConversationThread(
-            user_id=user_id,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            title=title or "Session",
-            last_active_at=last_active_at or now,
-            status=ConversationThread.STATUS_ACTIVE,
-        )
-        db.add(thread)
-        await db.flush()
-
-        local_binding = ConversationBinding(
-            user_id=user_id,
-            conversation_id=thread.id,
-            binding_kind=ConversationBinding.KIND_LOCAL_SESSION,
-            local_session_id=local_session_id,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            is_primary=True,
-            status=ConversationBinding.STATUS_ACTIVE,
-            first_seen_at=now,
-            last_seen_at=now,
-        )
-        db.add(local_binding)
+        thread: ConversationThread | None = None
         try:
-            await db.flush()
+            async with db.begin_nested():
+                thread = ConversationThread(
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    agent_source=agent_source,
+                    title=title or "Session",
+                    last_active_at=last_active_at or now,
+                    status=ConversationThread.STATUS_ACTIVE,
+                )
+                db.add(thread)
+                await db.flush()
+                db.add(
+                    ConversationBinding(
+                        user_id=user_id,
+                        conversation_id=thread.id,
+                        binding_kind=ConversationBinding.KIND_LOCAL_SESSION,
+                        local_session_id=local_session_id,
+                        agent_id=agent_id,
+                        agent_source=agent_source,
+                        is_primary=True,
+                        status=ConversationBinding.STATUS_ACTIVE,
+                        first_seen_at=now,
+                        last_seen_at=now,
+                    )
+                )
+                await db.flush()
         except IntegrityError:
-            await db.rollback()
             # Re-query in race conditions and return winner.
             rebound = await db.scalar(
                 select(ConversationBinding)
@@ -103,8 +104,11 @@ class ConversationIdentityService:
                 .limit(1)
             )
             if rebound and rebound.conversation:
+                rebound.last_seen_at = now
                 return rebound.conversation
             raise
+        if thread is None:
+            raise RuntimeError("failed to create conversation thread")
         return thread
 
     async def find_conversation_id_for_local_session(
@@ -172,6 +176,116 @@ class ConversationIdentityService:
             select(ConversationBinding.conversation_id).where(and_(*predicates))
         )
 
+    async def find_conversation_ids_for_external_batch(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        provider: str,
+        keys: list[tuple[Optional[UUID], Optional[str], str]],
+    ) -> dict[tuple[Optional[UUID], Optional[str], str], UUID]:
+        resolved_provider = _norm(provider)
+        if not resolved_provider:
+            return {}
+
+        normalized_keys = {
+            (agent_id, agent_source, resolved_external_id)
+            for agent_id, agent_source, external_session_id in keys
+            if (resolved_external_id := _norm(external_session_id))
+        }
+        if not normalized_keys:
+            return {}
+
+        external_session_ids = sorted({item[2] for item in normalized_keys})
+        predicates = [
+            ConversationBinding.user_id == user_id,
+            ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
+            ConversationBinding.provider == resolved_provider,
+            ConversationBinding.external_session_id.in_(external_session_ids),
+        ]
+        agent_sources = {item[1] for item in normalized_keys}
+        if None not in agent_sources:
+            predicates.append(ConversationBinding.agent_source.in_(agent_sources))
+        agent_ids = {item[0] for item in normalized_keys}
+        if None not in agent_ids:
+            predicates.append(ConversationBinding.agent_id.in_(agent_ids))
+
+        result = await db.execute(
+            select(
+                ConversationBinding.agent_id,
+                ConversationBinding.agent_source,
+                ConversationBinding.external_session_id,
+                ConversationBinding.conversation_id,
+            ).where(and_(*predicates))
+        )
+        mapped: dict[tuple[Optional[UUID], Optional[str], str], UUID] = {}
+        for (
+            mapped_agent_id,
+            mapped_agent_source,
+            mapped_external_session_id,
+            mapped_conversation_id,
+        ) in result.all():
+            if not isinstance(mapped_external_session_id, str):
+                continue
+            key = (mapped_agent_id, mapped_agent_source, mapped_external_session_id)
+            if key in normalized_keys and key not in mapped:
+                mapped[key] = mapped_conversation_id
+        return mapped
+
+    async def find_conversation_ids_for_context_batch(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        provider: Optional[str],
+        keys: list[tuple[Optional[UUID], Optional[str], str]],
+    ) -> dict[tuple[Optional[UUID], Optional[str], str], UUID]:
+        normalized_keys = {
+            (agent_id, agent_source, resolved_context_id)
+            for agent_id, agent_source, context_id in keys
+            if (resolved_context_id := _norm(context_id))
+        }
+        if not normalized_keys:
+            return {}
+
+        context_ids = sorted({item[2] for item in normalized_keys})
+        predicates = [
+            ConversationBinding.user_id == user_id,
+            ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
+            ConversationBinding.context_id.in_(context_ids),
+        ]
+        resolved_provider = _norm(provider)
+        if resolved_provider:
+            predicates.append(ConversationBinding.provider == resolved_provider)
+        agent_sources = {item[1] for item in normalized_keys}
+        if None not in agent_sources:
+            predicates.append(ConversationBinding.agent_source.in_(agent_sources))
+        agent_ids = {item[0] for item in normalized_keys}
+        if None not in agent_ids:
+            predicates.append(ConversationBinding.agent_id.in_(agent_ids))
+
+        result = await db.execute(
+            select(
+                ConversationBinding.agent_id,
+                ConversationBinding.agent_source,
+                ConversationBinding.context_id,
+                ConversationBinding.conversation_id,
+            ).where(and_(*predicates))
+        )
+        mapped: dict[tuple[Optional[UUID], Optional[str], str], UUID] = {}
+        for (
+            mapped_agent_id,
+            mapped_agent_source,
+            mapped_context_id,
+            mapped_conversation_id,
+        ) in result.all():
+            if not isinstance(mapped_context_id, str):
+                continue
+            key = (mapped_agent_id, mapped_agent_source, mapped_context_id)
+            if key in normalized_keys and key not in mapped:
+                mapped[key] = mapped_conversation_id
+        return mapped
+
     async def bind_external_session(
         self,
         db: AsyncSession,
@@ -222,50 +336,75 @@ class ConversationIdentityService:
                 agent_source=agent_source,
                 context_id=context_id,
             )
-        if resolved_conversation_id is None:
-            thread = ConversationThread(
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                title=title or "Session",
-                last_active_at=now,
-                status=ConversationThread.STATUS_ACTIVE,
-            )
-            db.add(thread)
-            await db.flush()
-            resolved_conversation_id = thread.id
 
-        binding = ConversationBinding(
-            user_id=user_id,
-            conversation_id=resolved_conversation_id,
-            binding_kind=ConversationBinding.KIND_EXTERNAL_SESSION,
-            provider=resolved_provider,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            external_session_id=resolved_external_id,
-            context_id=_norm(context_id),
-            binding_metadata=dict(binding_metadata or {}),
-            status=ConversationBinding.STATUS_ACTIVE,
-            is_primary=True,
-            first_seen_at=now,
-            last_seen_at=now,
-        )
-        db.add(binding)
         try:
-            await db.flush()
+            async with db.begin_nested():
+                if resolved_conversation_id is None:
+                    new_thread = ConversationThread(
+                        user_id=user_id,
+                        agent_id=agent_id,
+                        agent_source=agent_source,
+                        title=title or "Session",
+                        last_active_at=now,
+                        status=ConversationThread.STATUS_ACTIVE,
+                    )
+                    db.add(new_thread)
+                    await db.flush()
+                    resolved_conversation_id = new_thread.id
+
+                db.add(
+                    ConversationBinding(
+                        user_id=user_id,
+                        conversation_id=resolved_conversation_id,
+                        binding_kind=ConversationBinding.KIND_EXTERNAL_SESSION,
+                        provider=resolved_provider,
+                        agent_id=agent_id,
+                        agent_source=agent_source,
+                        external_session_id=resolved_external_id,
+                        context_id=_norm(context_id),
+                        binding_metadata=dict(binding_metadata or {}),
+                        status=ConversationBinding.STATUS_ACTIVE,
+                        is_primary=True,
+                        first_seen_at=now,
+                        last_seen_at=now,
+                    )
+                )
+                await db.flush()
         except IntegrityError:
-            await db.rollback()
-            rebound = await self.find_conversation_id_for_external(
-                db,
-                user_id=user_id,
-                provider=resolved_provider,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                external_session_id=resolved_external_id,
+            rebound_binding = await db.scalar(
+                select(ConversationBinding).where(
+                    and_(
+                        ConversationBinding.user_id == user_id,
+                        ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
+                        ConversationBinding.provider == resolved_provider,
+                        ConversationBinding.agent_id == agent_id,
+                        ConversationBinding.agent_source == agent_source,
+                        ConversationBinding.external_session_id == resolved_external_id,
+                    )
+                )
             )
-            if rebound:
-                return rebound
-            raise
+            if rebound_binding:
+                rebound_binding.last_seen_at = now
+                if context_id:
+                    rebound_binding.context_id = _norm(context_id)
+                if isinstance(binding_metadata, dict) and binding_metadata:
+                    rebound_binding.binding_metadata = dict(binding_metadata)
+                resolved_conversation_id = rebound_binding.conversation_id
+            else:
+                rebound = await self.find_conversation_id_for_external(
+                    db,
+                    user_id=user_id,
+                    provider=resolved_provider,
+                    agent_id=agent_id,
+                    agent_source=agent_source,
+                    external_session_id=resolved_external_id,
+                )
+                if not rebound:
+                    raise
+                resolved_conversation_id = rebound
+
+        if resolved_conversation_id is None:
+            raise RuntimeError("failed to resolve conversation id for external binding")
 
         if context_id:
             await self.bind_protocol_context(

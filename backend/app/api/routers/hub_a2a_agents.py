@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import (
@@ -61,6 +62,36 @@ def _ws_error_code_for_invoke_session_error(detail: str) -> str:
     if detail == "session_not_found":
         return "session_not_found"
     return "invalid_session_id"
+
+
+def _normalize_invoke_binding_state(
+    *,
+    context_id: str | None,
+    metadata: dict[str, Any] | None,
+) -> tuple[str | None, dict[str, Any]]:
+    resolved_context_id = context_id.strip() if isinstance(context_id, str) else None
+    if not resolved_context_id:
+        resolved_context_id = None
+    resolved_metadata = dict(metadata) if isinstance(metadata, dict) else {}
+    return resolved_context_id, resolved_metadata
+
+
+def _merge_invoke_binding_state(
+    *,
+    current_context_id: str | None,
+    current_metadata: dict[str, Any],
+    next_context_id: str | None,
+    next_metadata: dict[str, Any],
+) -> tuple[str | None, dict[str, Any]]:
+    merged_context_id = current_context_id
+    if isinstance(next_context_id, str):
+        trimmed_context = next_context_id.strip()
+        if trimmed_context:
+            merged_context_id = trimmed_context
+    merged_metadata = dict(current_metadata)
+    if isinstance(next_metadata, dict) and next_metadata:
+        merged_metadata.update(next_metadata)
+    return merged_context_id, merged_metadata
 
 
 @router.get("", response_model=HubA2AAgentUserListResponse)
@@ -192,7 +223,33 @@ async def invoke_hub_agent(
             detail=str(exc),
         ) from exc
 
+    (
+        resolved_context_id,
+        resolved_invoke_metadata,
+    ) = _normalize_invoke_binding_state(
+        context_id=payload.context_id,
+        metadata=payload.metadata,
+    )
+
     if stream:
+
+        async def _on_event(event_payload: dict[str, Any]) -> None:
+            nonlocal resolved_context_id, resolved_invoke_metadata
+            (
+                event_context_id,
+                event_metadata,
+            ) = a2a_invoke_service.extract_binding_hints_from_serialized_event(
+                event_payload
+            )
+            (
+                resolved_context_id,
+                resolved_invoke_metadata,
+            ) = _merge_invoke_binding_state(
+                current_context_id=resolved_context_id,
+                current_metadata=resolved_invoke_metadata,
+                next_context_id=event_context_id,
+                next_metadata=event_metadata,
+            )
 
         async def _on_complete(stream_text: str) -> None:
             if local_session is None or local_source is None:
@@ -207,8 +264,8 @@ async def invoke_hub_agent(
                 query=payload.query,
                 response_content=stream_text or "",
                 success=True,
-                context_id=payload.context_id,
-                invoke_metadata=payload.metadata,
+                context_id=resolved_context_id,
+                invoke_metadata=resolved_invoke_metadata,
                 extra_metadata={"transport": "http_sse", "stream": True},
             )
             await commit_safely(db)
@@ -226,8 +283,8 @@ async def invoke_hub_agent(
                 query=payload.query,
                 response_content=error_message,
                 success=False,
-                context_id=payload.context_id,
-                invoke_metadata=payload.metadata,
+                context_id=resolved_context_id,
+                invoke_metadata=resolved_invoke_metadata,
                 extra_metadata={"transport": "http_sse", "stream": True},
             )
             await commit_safely(db)
@@ -246,6 +303,7 @@ async def invoke_hub_agent(
             },
             on_complete=_on_complete,
             on_error=_on_error,
+            on_event=_on_event,
         )
 
     result = await get_a2a_service().gateway.invoke(
@@ -255,6 +313,19 @@ async def invoke_hub_agent(
         metadata=payload.metadata,
     )
     if local_session is not None and local_source is not None:
+        (
+            result_context_id,
+            result_metadata,
+        ) = a2a_invoke_service.extract_binding_hints_from_invoke_result(result)
+        (
+            resolved_context_id,
+            resolved_invoke_metadata,
+        ) = _merge_invoke_binding_state(
+            current_context_id=resolved_context_id,
+            current_metadata=resolved_invoke_metadata,
+            next_context_id=result_context_id,
+            next_metadata=result_metadata,
+        )
         success = bool(result.get("success"))
         response_content = (
             result.get("content")
@@ -271,8 +342,8 @@ async def invoke_hub_agent(
             query=payload.query,
             response_content=response_content,
             success=success,
-            context_id=payload.context_id,
-            invoke_metadata=payload.metadata,
+            context_id=resolved_context_id,
+            invoke_metadata=resolved_invoke_metadata,
             extra_metadata={
                 "transport": "http_json",
                 "stream": False,
@@ -415,6 +486,32 @@ async def invoke_hub_agent_ws(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
+        (
+            resolved_context_id,
+            resolved_invoke_metadata,
+        ) = _normalize_invoke_binding_state(
+            context_id=payload.context_id,
+            metadata=payload.metadata,
+        )
+
+        async def _on_event(event_payload: dict[str, Any]) -> None:
+            nonlocal resolved_context_id, resolved_invoke_metadata
+            (
+                event_context_id,
+                event_metadata,
+            ) = a2a_invoke_service.extract_binding_hints_from_serialized_event(
+                event_payload
+            )
+            (
+                resolved_context_id,
+                resolved_invoke_metadata,
+            ) = _merge_invoke_binding_state(
+                current_context_id=resolved_context_id,
+                current_metadata=resolved_invoke_metadata,
+                next_context_id=event_context_id,
+                next_metadata=event_metadata,
+            )
+
         async def _on_complete(stream_text: str) -> None:
             if local_session is None or local_source is None:
                 return
@@ -428,8 +525,8 @@ async def invoke_hub_agent_ws(
                 query=payload.query,
                 response_content=stream_text or "",
                 success=True,
-                context_id=payload.context_id,
-                invoke_metadata=payload.metadata,
+                context_id=resolved_context_id,
+                invoke_metadata=resolved_invoke_metadata,
                 extra_metadata={"transport": "ws", "stream": True},
             )
             await commit_safely(db)
@@ -447,8 +544,8 @@ async def invoke_hub_agent_ws(
                 query=payload.query,
                 response_content=error_message,
                 success=False,
-                context_id=payload.context_id,
-                invoke_metadata=payload.metadata,
+                context_id=resolved_context_id,
+                invoke_metadata=resolved_invoke_metadata,
                 extra_metadata={"transport": "ws", "stream": True},
             )
             await commit_safely(db)
@@ -468,6 +565,7 @@ async def invoke_hub_agent_ws(
             },
             on_complete=_on_complete,
             on_error=_on_error,
+            on_event=_on_event,
         )
 
     except WebSocketDisconnect:

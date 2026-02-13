@@ -38,3 +38,46 @@ async def test_sse_error_event_contains_unified_error_code():
     error_data = json.loads(error_data_line.removeprefix("data: "))
     assert error_data["message"] == "Upstream streaming failed"
     assert error_data["error_code"] == "upstream_stream_error"
+
+
+def test_extract_binding_hints_from_serialized_event():
+    (
+        context_id,
+        metadata,
+    ) = a2a_invoke_service.extract_binding_hints_from_serialized_event(
+        {
+            "contextId": "ctx-1",
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "upstream-1",
+            },
+        }
+    )
+    assert context_id == "ctx-1"
+    assert metadata["provider"] == "opencode"
+    assert metadata["externalSessionId"] == "upstream-1"
+
+
+def test_extract_binding_hints_from_invoke_result_merges_raw_payload():
+    class _RawPayload:
+        def model_dump(self, **kwargs):
+            return {
+                "contextId": "ctx-from-raw",
+                "metadata": {
+                    "provider": "opencode",
+                    "externalSessionId": "raw-upstream",
+                },
+            }
+
+    context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
+        {
+            "success": True,
+            "content": "ok",
+            "contextId": "ctx-from-result",
+            "metadata": {"externalSessionId": "result-upstream"},
+            "raw": _RawPayload(),
+        }
+    )
+    assert context_id == "ctx-from-raw"
+    assert metadata["provider"] == "opencode"
+    assert metadata["externalSessionId"] == "raw-upstream"

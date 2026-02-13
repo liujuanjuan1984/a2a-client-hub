@@ -13,11 +13,11 @@ from app.db.models.agent_session import AgentSession
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.services.a2a_runtime import A2ARuntimeNotFoundError
 from app.services.a2a_schedule_service import a2a_schedule_service
-from app.services.conversation_identity import conversation_identity_service
 from app.services.session_hub import (
     build_manual_session_key,
     build_opencode_session_key,
     build_scheduled_session_key,
+    session_hub_service,
 )
 from app.utils.timezone_util import utc_now
 from backend.tests.api_utils import create_test_client
@@ -333,28 +333,23 @@ async def test_unified_session_list_dedups_manual_and_opencode_with_same_binding
     async_db_session.add(manual_session)
     await async_db_session.flush()
 
-    conversation = (
-        await conversation_identity_service.resolve_or_create_for_local_session(
-            async_db_session,
-            user_id=user.id,
-            local_session_id=manual_session.id,
-            agent_id=agent.id,
-            agent_source="personal",
-            title=manual_session.name,
-            last_active_at=manual_session.last_activity_at,
-        )
-    )
-    await conversation_identity_service.bind_external_session(
+    await session_hub_service.record_local_invoke_messages(
         async_db_session,
+        session=manual_session,
+        source="manual",
         user_id=user.id,
-        conversation_id=conversation.id,
-        provider="opencode",
         agent_id=agent.id,
         agent_source="personal",
-        external_session_id="upstream-session-1",
+        query="hello",
+        response_content="world",
+        success=True,
         context_id="upstream-session-1",
-        title=manual_session.name,
-        binding_metadata={"opencode_session_id": "upstream-session-1"},
+        invoke_metadata={
+            "provider": "opencode",
+            "externalSessionId": "upstream-session-1",
+            "opencode_session_id": "upstream-session-1",
+        },
+        extra_metadata={"transport": "http_json", "stream": False},
     )
     await async_db_session.commit()
 
