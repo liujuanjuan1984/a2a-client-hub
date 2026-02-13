@@ -15,8 +15,8 @@ type ContinueSessionInput = {
 export const useContinueSession = () => {
   const router = useRouter();
   const ensureSession = useChatStore((state) => state.ensureSession);
-  const bindOpencodeSession = useChatStore(
-    (state) => state.bindOpencodeSession,
+  const bindExternalSession = useChatStore(
+    (state) => state.bindExternalSession,
   );
 
   const continueSession = useCallback(
@@ -30,14 +30,18 @@ export const useContinueSession = () => {
       try {
         const binding = await continueSessionBinding(unifiedSessionId);
         ensureSession(unifiedSessionId, agentId);
-        const opencodeSessionId =
+        const fallbackExternalSessionId =
           typeof binding.metadata.opencode_session_id === "string"
             ? binding.metadata.opencode_session_id
             : undefined;
-        bindOpencodeSession(unifiedSessionId, {
+        bindExternalSession(unifiedSessionId, {
           agentId,
-          opencodeSessionId,
+          conversationId: binding.conversationId ?? undefined,
+          provider: binding.provider ?? undefined,
+          externalSessionId:
+            binding.externalSessionId ?? fallbackExternalSessionId ?? undefined,
           contextId: binding.contextId ?? undefined,
+          bindingMetadata: binding.bindingMetadata ?? undefined,
           metadata: binding.metadata,
         });
         blurActiveElement();
@@ -50,7 +54,7 @@ export const useContinueSession = () => {
         return false;
       }
     },
-    [bindOpencodeSession, ensureSession, router],
+    [bindExternalSession, ensureSession, router],
   );
 
   return { continueSession };

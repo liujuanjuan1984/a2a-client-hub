@@ -13,6 +13,7 @@ from app.db.models.agent_session import AgentSession
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.services.a2a_runtime import A2ARuntimeNotFoundError
 from app.services.a2a_schedule_service import a2a_schedule_service
+from app.services.conversation_identity import conversation_identity_service
 from app.services.session_hub import (
     build_manual_session_key,
     build_opencode_session_key,
@@ -310,3 +311,89 @@ async def test_unified_opencode_session_list_normalizes_directory_items(
         assert item["agent_id"] == str(agent_id)
         assert item["title"] == "Remote Session"
         assert item["id"].startswith("opencode:")
+
+
+async def test_unified_session_list_dedups_manual_and_opencode_with_same_binding(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="dedup")
+    now = utc_now()
+
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Manual Bound Session",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    conversation = (
+        await conversation_identity_service.resolve_or_create_for_local_session(
+            async_db_session,
+            user_id=user.id,
+            local_session_id=manual_session.id,
+            agent_id=agent.id,
+            agent_source="personal",
+            title=manual_session.name,
+            last_active_at=manual_session.last_activity_at,
+        )
+    )
+    await conversation_identity_service.bind_external_session(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=conversation.id,
+        provider="opencode",
+        agent_id=agent.id,
+        agent_source="personal",
+        external_session_id="upstream-session-1",
+        context_id="upstream-session-1",
+        title=manual_session.name,
+        binding_metadata={"opencode_session_id": "upstream-session-1"},
+    )
+    await async_db_session.commit()
+
+    async def _list_all_opencode_sessions_stub(db, *, user_id, refresh):
+        return (
+            [
+                {
+                    "agent_id": agent.id,
+                    "agent_source": "personal",
+                    "session_id": "upstream-session-1",
+                    "title": "Remote Session",
+                    "last_active_at": now.isoformat(),
+                }
+            ],
+            {
+                "total_agents": 1,
+                "refreshed_agents": 0,
+                "cached_agents": 1,
+                "partial_failures": 0,
+            },
+        )
+
+    monkeypatch.setattr(
+        me_sessions.session_hub_service,
+        "_list_all_opencode_sessions",
+        _list_all_opencode_sessions_stub,
+    )
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/sessions:query",
+            json={"page": 1, "size": 20, "refresh": False},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pagination"]["total"] == 1
+        assert len(payload["items"]) == 1
+        assert payload["items"][0]["source"] == "manual"

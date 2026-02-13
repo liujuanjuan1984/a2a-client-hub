@@ -130,18 +130,24 @@ export function ChatScreen({
         const hasLocalBinding =
           (typeof current?.contextId === "string" &&
             current.contextId.trim()) ||
+          (typeof current?.externalSessionRef?.externalSessionId === "string" &&
+            current.externalSessionRef.externalSessionId.trim()) ||
           Object.keys(current?.metadata ?? {}).length > 0;
         if (hasLocalBinding && !binding.contextId) {
           return;
         }
-        const opencodeSession =
+        const fallbackExternalSession =
           typeof binding.metadata.opencode_session_id === "string"
             ? binding.metadata.opencode_session_id
-            : current?.opencodeSessionId;
-        useChatStore.getState().bindOpencodeSession(sessionId, {
+            : current?.externalSessionRef?.externalSessionId;
+        useChatStore.getState().bindExternalSession(sessionId, {
           agentId: activeAgentId ?? undefined,
-          opencodeSessionId: opencodeSession ?? undefined,
+          conversationId: binding.conversationId ?? undefined,
+          provider: binding.provider ?? undefined,
+          externalSessionId:
+            binding.externalSessionId ?? fallbackExternalSession ?? undefined,
           contextId: binding.contextId ?? undefined,
+          bindingMetadata: binding.bindingMetadata ?? undefined,
           metadata: binding.metadata,
         });
       })
@@ -419,13 +425,33 @@ export function ChatScreen({
                   </Text>
                 </View>
               ) : null}
-              {session?.opencodeSessionId ? (
+              {session?.externalSessionRef?.provider ? (
                 <View className="flex-1 min-w-[45%]">
                   <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
-                    OpenCode Session
+                    Provider
                   </Text>
                   <Text className="mt-1 text-xs text-white" numberOfLines={1}>
-                    {session.opencodeSessionId}
+                    {session.externalSessionRef.provider}
+                  </Text>
+                </View>
+              ) : null}
+              {session?.externalSessionRef?.externalSessionId ? (
+                <View className="flex-1 min-w-[45%]">
+                  <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                    External Session
+                  </Text>
+                  <Text className="mt-1 text-xs text-white" numberOfLines={1}>
+                    {session.externalSessionRef.externalSessionId}
+                  </Text>
+                </View>
+              ) : null}
+              {session?.conversationId ? (
+                <View className="flex-1 min-w-[45%]">
+                  <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                    Conversation ID
+                  </Text>
+                  <Text className="mt-1 text-xs text-white" numberOfLines={1}>
+                    {session.conversationId}
                   </Text>
                 </View>
               ) : null}
@@ -451,11 +477,11 @@ export function ChatScreen({
               </View>
             </View>
 
-            {session?.opencodeSessionId ? (
+            {session?.externalSessionRef?.externalSessionId ? (
               <>
                 <View className="h-[1px] bg-slate-800" />
                 <Text className="text-xs text-muted">
-                  OpenCode history is shown inline in this chat.
+                  External history is shown inline in this chat.
                 </Text>
               </>
             ) : null}

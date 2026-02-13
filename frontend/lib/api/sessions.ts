@@ -5,6 +5,7 @@ export type UnifiedSessionSource = "manual" | "scheduled" | "opencode";
 
 export type SessionListItem = {
   id: string;
+  conversationId?: string | null;
   source: UnifiedSessionSource;
   source_session_id: string;
   agent_id?: string | null;
@@ -24,8 +25,12 @@ export type SessionMessageItem = {
 
 export type SessionContinueBinding = {
   session_id: string;
+  conversationId?: string | null;
   source: UnifiedSessionSource;
+  provider?: string | null;
+  externalSessionId?: string | null;
   contextId?: string | null;
+  bindingMetadata?: Record<string, unknown> | null;
   metadata: Record<string, unknown>;
 };
 
@@ -109,10 +114,28 @@ export const continueSession = async (
   );
   return {
     ...response,
+    conversationId:
+      typeof response.conversationId === "string" &&
+      response.conversationId.trim()
+        ? response.conversationId.trim()
+        : null,
+    provider:
+      typeof response.provider === "string" && response.provider.trim()
+        ? response.provider.trim()
+        : null,
+    externalSessionId:
+      typeof response.externalSessionId === "string" &&
+      response.externalSessionId.trim()
+        ? response.externalSessionId.trim()
+        : null,
     contextId:
       typeof response.contextId === "string" && response.contextId.trim()
         ? response.contextId.trim()
         : null,
+    bindingMetadata:
+      response.bindingMetadata && typeof response.bindingMetadata === "object"
+        ? response.bindingMetadata
+        : {},
     metadata:
       response.metadata && typeof response.metadata === "object"
         ? response.metadata

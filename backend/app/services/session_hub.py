@@ -32,6 +32,7 @@ from app.services.a2a_runtime import (
     A2ARuntimeValidationError,
     a2a_runtime_builder,
 )
+from app.services.conversation_identity import conversation_identity_service
 from app.services.hub_a2a_runtime import (
     HubA2ARuntimeNotFoundError,
     HubA2ARuntimeValidationError,
@@ -218,6 +219,7 @@ class SessionHubService:
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         local_items: list[dict[str, Any]] = []
         opencode_items: list[dict[str, Any]] = []
+        merged_items: list[dict[str, Any]] = []
         opencode_meta: dict[str, Any] = {}
 
         if source in {None, "manual", "scheduled"}:
@@ -243,15 +245,36 @@ class SessionHubService:
                     or not raw_session_id.strip()
                 ):
                     continue
+                normalized_session_id = raw_session_id.strip()
+                conversation_id = await conversation_identity_service.find_conversation_id_for_external(
+                    db,
+                    user_id=user_id,
+                    provider="opencode",
+                    agent_id=raw_agent_id,
+                    agent_source=raw_agent_source,
+                    external_session_id=normalized_session_id,
+                )
+                if conversation_id is None:
+                    conversation_id = await conversation_identity_service.find_conversation_id_for_context(
+                        db,
+                        user_id=user_id,
+                        provider="opencode",
+                        agent_id=raw_agent_id,
+                        agent_source=raw_agent_source,
+                        context_id=normalized_session_id,
+                    )
                 normalized_opencode_items.append(
                     {
                         "id": build_opencode_session_key(
                             agent_id=raw_agent_id,
                             agent_source=raw_agent_source,
-                            upstream_session_id=raw_session_id.strip(),
+                            upstream_session_id=normalized_session_id,
                         ),
+                        "conversationId": str(conversation_id)
+                        if conversation_id
+                        else None,
                         "source": "opencode",
-                        "source_session_id": raw_session_id.strip(),
+                        "source_session_id": normalized_session_id,
                         "agent_id": raw_agent_id,
                         "agent_source": raw_agent_source,
                         "title": item.get("title") or "Session",
@@ -263,19 +286,23 @@ class SessionHubService:
 
         local_items.sort(key=_session_order_key, reverse=True)
         opencode_items.sort(key=_session_order_key, reverse=True)
-        total = len(local_items) + len(opencode_items)
-        pages = (total + size - 1) // size if size else 0
-        offset = (page - 1) * size
         if source is None:
-            page_items = _take_merged_session_page(
-                local_items,
-                opencode_items,
-                offset=offset,
-                size=size,
+            merged_items = self._dedup_cross_source_sessions(
+                local_items, opencode_items
             )
+            total = len(merged_items)
+            pages = (total + size - 1) // size if size else 0
+            offset = (page - 1) * size
+            page_items = merged_items[offset : offset + size]
         elif source in {"manual", "scheduled"}:
+            total = len(local_items)
+            pages = (total + size - 1) // size if size else 0
+            offset = (page - 1) * size
             page_items = local_items[offset : offset + size]
         else:
+            total = len(opencode_items)
+            pages = (total + size - 1) // size if size else 0
+            offset = (page - 1) * size
             page_items = opencode_items[offset : offset + size]
 
         meta = {
@@ -320,12 +347,35 @@ class SessionHubService:
         )
         sessions = list((await db.execute(stmt)).scalars().all())
 
+        session_ids = [session.id for session in sessions]
+        local_binding_rows = (
+            await conversation_identity_service.list_local_binding_rows(
+                db, user_id=user_id, local_session_ids=session_ids
+            )
+        )
+        local_binding_map = {
+            binding.local_session_id: binding
+            for binding in local_binding_rows
+            if binding.local_session_id is not None
+        }
+        latest_metadata_map = await self._latest_local_message_metadata_map(
+            db, user_id=user_id, local_session_ids=session_ids
+        )
+
         scheduled_agent_map = await self._scheduled_session_agent_map(
             db, user_id=user_id
         )
         items: list[dict[str, Any]] = []
 
         for session in sessions:
+            latest_metadata = latest_metadata_map.get(session.id, {})
+            (
+                metadata_provider,
+                metadata_external_id,
+            ) = _extract_provider_and_external_from_metadata(latest_metadata)
+            metadata_context_id = _extract_context_id_from_metadata(latest_metadata)
+            local_binding = local_binding_map.get(session.id)
+
             if session.session_type == AgentSession.TYPE_CHAT:
                 if source not in {None, "manual"}:
                     continue
@@ -338,10 +388,30 @@ class SessionHubService:
                 items.append(
                     {
                         "id": build_manual_session_key(session.id),
+                        "conversationId": (
+                            str(local_binding.conversation_id)
+                            if local_binding
+                            else None
+                        ),
                         "source": "manual",
                         "source_session_id": str(session.id),
                         "agent_id": agent_id,
                         "agent_source": None,
+                        "provider": (
+                            local_binding.provider
+                            if local_binding
+                            else metadata_provider
+                        ),
+                        "external_session_id": (
+                            local_binding.external_session_id
+                            if local_binding
+                            else metadata_external_id
+                        ),
+                        "context_id": (
+                            local_binding.context_id
+                            if local_binding and local_binding.context_id
+                            else metadata_context_id
+                        ),
                         "title": session.name or "Manual Session",
                         "last_active_at": session.last_activity_at,
                         "created_at": session.created_at,
@@ -356,10 +426,30 @@ class SessionHubService:
                 items.append(
                     {
                         "id": build_scheduled_session_key(session.id),
+                        "conversationId": (
+                            str(local_binding.conversation_id)
+                            if local_binding
+                            else None
+                        ),
                         "source": "scheduled",
                         "source_session_id": str(session.id),
                         "agent_id": scheduled_meta.get("agent_id"),
                         "agent_source": "personal",
+                        "provider": (
+                            local_binding.provider
+                            if local_binding
+                            else metadata_provider
+                        ),
+                        "external_session_id": (
+                            local_binding.external_session_id
+                            if local_binding
+                            else metadata_external_id
+                        ),
+                        "context_id": (
+                            local_binding.context_id
+                            if local_binding and local_binding.context_id
+                            else metadata_context_id
+                        ),
                         "title": session.name or "Scheduled Session",
                         "last_active_at": session.last_activity_at,
                         "created_at": session.created_at,
@@ -367,6 +457,107 @@ class SessionHubService:
                 )
 
         return items
+
+    async def _latest_local_message_metadata_map(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        local_session_ids: list[UUID],
+    ) -> dict[UUID, Dict[str, Any]]:
+        if not local_session_ids:
+            return {}
+        stmt = (
+            select(AgentMessage.session_id, AgentMessage.message_metadata)
+            .where(
+                and_(
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.session_id.in_(local_session_ids),
+                )
+            )
+            .order_by(
+                AgentMessage.session_id.asc(),
+                AgentMessage.created_at.desc(),
+                AgentMessage.id.desc(),
+            )
+            .distinct(AgentMessage.session_id)
+        )
+        rows = (await db.execute(stmt)).all()
+        mapped: dict[UUID, Dict[str, Any]] = {}
+        for row in rows:
+            session_id = row.session_id
+            if not isinstance(session_id, UUID):
+                continue
+            metadata = (
+                dict(row.message_metadata)
+                if isinstance(row.message_metadata, dict)
+                else {}
+            )
+            mapped[session_id] = metadata
+        return mapped
+
+    def _dedup_cross_source_sessions(
+        self,
+        local_items: list[dict[str, Any]],
+        opencode_items: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        merged = list(local_items)
+        local_conversation_ids = {
+            str(item.get("conversationId"))
+            for item in local_items
+            if isinstance(item.get("conversationId"), str)
+            and item.get("conversationId")
+        }
+        local_context_keys = {
+            (
+                str(item.get("agent_id")),
+                str(item.get("agent_source")),
+                str(item.get("context_id")),
+            )
+            for item in local_items
+            if item.get("context_id")
+        }
+        local_external_keys = {
+            (
+                str(item.get("provider")),
+                str(item.get("agent_id")),
+                str(item.get("agent_source")),
+                str(item.get("external_session_id")),
+            )
+            for item in local_items
+            if item.get("provider") and item.get("external_session_id")
+        }
+
+        for remote_item in opencode_items:
+            conversation_id = remote_item.get("conversationId")
+            if (
+                isinstance(conversation_id, str)
+                and conversation_id in local_conversation_ids
+            ):
+                continue
+
+            provider_key = "opencode"
+            external_key = (
+                provider_key,
+                str(remote_item.get("agent_id")),
+                str(remote_item.get("agent_source")),
+                str(remote_item.get("source_session_id")),
+            )
+            if external_key in local_external_keys:
+                continue
+
+            # Fallback: many providers use context id equal to external session id.
+            context_key = (
+                str(remote_item.get("agent_id")),
+                str(remote_item.get("agent_source")),
+                str(remote_item.get("source_session_id")),
+            )
+            if context_key in local_context_keys:
+                continue
+            merged.append(remote_item)
+
+        merged.sort(key=_session_order_key, reverse=True)
+        return merged
 
     async def _scheduled_session_agent_map(
         self,
@@ -447,18 +638,23 @@ class SessionHubService:
                 }
                 meta = {"session_id": session_key, "source": parsed.source}
                 return [], {"pagination": pagination, "meta": meta}
+            conversation_id = await conversation_identity_service.find_conversation_id_for_local_session(
+                db, user_id=user_id, local_session_id=session.id
+            )
             offset = (page - 1) * size
             messages = await agent_message_handler.list_agent_messages(
                 db,
                 user_id=user_id,
                 limit=size,
                 offset=offset,
-                session_id=session.id,
+                session_id=None if conversation_id else session.id,
+                conversation_id=conversation_id,
             )
             total = await agent_message_handler.count_agent_messages(
                 db,
                 user_id=user_id,
-                session_id=session.id,
+                session_id=None if conversation_id else session.id,
+                conversation_id=conversation_id,
             )
             pages = (total + size - 1) // size if size else 0
             items = [
@@ -473,6 +669,7 @@ class SessionHubService:
             ]
             meta = {
                 "session_id": session_key,
+                "conversationId": str(conversation_id) if conversation_id else None,
                 "source": parsed.source,
             }
             pagination = {
@@ -530,8 +727,19 @@ class SessionHubService:
         pages = int(
             pagination_raw.get("pages") or ((total + size - 1) // size if size else 0)
         )
+        conversation_id = (
+            await conversation_identity_service.find_conversation_id_for_external(
+                db,
+                user_id=user_id,
+                provider="opencode",
+                agent_id=parsed.agent_id,
+                agent_source=parsed.agent_source,
+                external_session_id=parsed.upstream_session_id,
+            )
+        )
         meta = {
             "session_id": session_key,
+            "conversationId": str(conversation_id) if conversation_id else None,
             "source": "opencode",
             "agent_id": str(parsed.agent_id),
             "agent_source": parsed.agent_source,
@@ -586,10 +794,55 @@ class SessionHubService:
                 if isinstance(payload.get("metadata"), dict)
                 else {}
             )
+            provider_from_payload = (
+                payload.get("provider")
+                if isinstance(payload.get("provider"), str)
+                else None
+            )
+            external_from_payload = (
+                payload.get("externalSessionId")
+                if isinstance(payload.get("externalSessionId"), str)
+                else (
+                    payload.get("external_session_id")
+                    if isinstance(payload.get("external_session_id"), str)
+                    else None
+                )
+            )
+            binding_metadata = (
+                payload.get("bindingMetadata")
+                if isinstance(payload.get("bindingMetadata"), dict)
+                else metadata
+            )
+            (
+                provider,
+                external_session_id,
+            ) = _extract_provider_and_external_from_metadata(metadata)
+            resolved_provider = provider_from_payload or provider or "opencode"
+            resolved_external_session_id = (
+                external_from_payload
+                or external_session_id
+                or parsed.upstream_session_id
+            )
+            conversation_id = await conversation_identity_service.bind_external_session(
+                db,
+                user_id=user_id,
+                conversation_id=None,
+                provider=resolved_provider,
+                agent_id=parsed.agent_id,
+                agent_source=parsed.agent_source,
+                external_session_id=resolved_external_session_id,
+                context_id=context_id if isinstance(context_id, str) else None,
+                title="Session",
+                binding_metadata=binding_metadata,
+            )
             return {
                 "session_id": session_key,
+                "conversationId": str(conversation_id),
                 "source": "opencode",
+                "provider": resolved_provider,
+                "externalSessionId": resolved_external_session_id,
                 "contextId": context_id if isinstance(context_id, str) else None,
+                "bindingMetadata": binding_metadata,
                 "metadata": metadata,
             }
 
@@ -615,10 +868,52 @@ class SessionHubService:
         metadata_raw = getattr(latest, "message_metadata", None) if latest else None
         metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
         context_id = metadata.get("context_id") or metadata.get("contextId")
+        provider, external_session_id = _extract_provider_and_external_from_metadata(
+            metadata
+        )
+        conversation = (
+            await conversation_identity_service.resolve_or_create_for_local_session(
+                db,
+                user_id=user_id,
+                local_session_id=session.id,
+                agent_id=_try_parse_uuid(session.module_key),
+                agent_source="personal",
+                title=session.name or "Session",
+                last_active_at=session.last_activity_at,
+            )
+        )
+        if isinstance(context_id, str) and context_id.strip():
+            await conversation_identity_service.bind_protocol_context(
+                db,
+                user_id=user_id,
+                conversation_id=conversation.id,
+                provider=provider,
+                agent_id=_try_parse_uuid(session.module_key),
+                agent_source="personal",
+                context_id=context_id,
+                binding_metadata=metadata,
+            )
+        if provider and external_session_id:
+            await conversation_identity_service.bind_external_session(
+                db,
+                user_id=user_id,
+                conversation_id=conversation.id,
+                provider=provider,
+                agent_id=_try_parse_uuid(session.module_key),
+                agent_source="personal",
+                external_session_id=external_session_id,
+                context_id=context_id if isinstance(context_id, str) else None,
+                title=session.name or "Session",
+                binding_metadata=metadata,
+            )
         return {
             "session_id": session_key,
+            "conversationId": str(conversation.id),
             "source": parsed.source,
+            "provider": provider,
+            "externalSessionId": external_session_id,
             "contextId": context_id if isinstance(context_id, str) else None,
+            "bindingMetadata": metadata,
             "metadata": metadata,
         }
 
@@ -628,6 +923,7 @@ class SessionHubService:
         *,
         user_id: UUID,
         agent_id: UUID,
+        agent_source: Literal["personal", "shared"],
         session_key: Optional[str],
     ) -> tuple[Optional[AgentSession], Optional[SessionSource]]:
         if not session_key:
@@ -687,6 +983,15 @@ class SessionHubService:
 
         session.module_key = str(agent_id)
         session.touch()
+        await conversation_identity_service.resolve_or_create_for_local_session(
+            db,
+            user_id=user_id,
+            local_session_id=session.id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            title=session.name or "Session",
+            last_active_at=session.last_activity_at,
+        )
         return session, parsed.source
 
     async def record_local_invoke_messages(
@@ -697,10 +1002,12 @@ class SessionHubService:
         source: SessionSource,
         user_id: UUID,
         agent_id: UUID,
+        agent_source: Literal["personal", "shared"],
         query: str,
         response_content: str,
         success: bool,
         context_id: Optional[str],
+        invoke_metadata: Optional[Dict[str, Any]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         metadata: Dict[str, Any] = {
@@ -709,10 +1016,55 @@ class SessionHubService:
             "session_id": str(session.id),
             "success": success,
         }
+        (
+            provider_from_invoke,
+            external_session_id,
+        ) = _extract_provider_and_external_from_metadata(invoke_metadata or {})
         if context_id and isinstance(context_id, str):
             metadata["context_id"] = context_id
+        if provider_from_invoke:
+            metadata["provider"] = provider_from_invoke
+        if external_session_id:
+            metadata["external_session_id"] = external_session_id
         if extra_metadata:
             metadata.update(extra_metadata)
+
+        conversation = (
+            await conversation_identity_service.resolve_or_create_for_local_session(
+                db,
+                user_id=user_id,
+                local_session_id=session.id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                title=session.name or "Session",
+                last_active_at=session.last_activity_at,
+            )
+        )
+
+        if context_id and isinstance(context_id, str):
+            await conversation_identity_service.bind_protocol_context(
+                db,
+                user_id=user_id,
+                conversation_id=conversation.id,
+                provider=provider_from_invoke,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                context_id=context_id,
+                binding_metadata=invoke_metadata,
+            )
+        if provider_from_invoke and external_session_id:
+            await conversation_identity_service.bind_external_session(
+                db,
+                user_id=user_id,
+                conversation_id=conversation.id,
+                provider=provider_from_invoke,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                external_session_id=external_session_id,
+                context_id=context_id if isinstance(context_id, str) else None,
+                title=session.name or "Session",
+                binding_metadata=invoke_metadata,
+            )
 
         await agent_message_handler.create_agent_message(
             db,
@@ -721,6 +1073,7 @@ class SessionHubService:
             sender="user",
             session_id=session.id,
             session=session,
+            conversation_id=conversation.id,
             metadata=metadata,
         )
         await agent_message_handler.create_agent_message(
@@ -730,6 +1083,7 @@ class SessionHubService:
             sender="agent",
             session_id=session.id,
             session=session,
+            conversation_id=conversation.id,
             metadata=metadata,
         )
         session.touch()
@@ -841,6 +1195,40 @@ def _pick_str(obj: Dict[str, Any], keys: list[str]) -> Optional[str]:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
+
+
+def _extract_provider_and_external_from_metadata(
+    metadata: Dict[str, Any],
+) -> tuple[Optional[str], Optional[str]]:
+    provider = _pick_str(
+        metadata,
+        ["provider", "session_provider", "external_provider"],
+    )
+    external_session_id = _pick_str(
+        metadata,
+        [
+            "externalSessionId",
+            "external_session_id",
+            "upstream_session_id",
+            "opencode_session_id",
+        ],
+    )
+    if provider is None and isinstance(metadata.get("opencode_session_id"), str):
+        provider = "opencode"
+    return provider, external_session_id
+
+
+def _extract_context_id_from_metadata(metadata: Dict[str, Any]) -> Optional[str]:
+    return _pick_str(metadata, ["context_id", "contextId"])
+
+
+def _try_parse_uuid(value: Any) -> Optional[UUID]:
+    if not isinstance(value, str):
+        return None
+    try:
+        return UUID(value.strip())
+    except (ValueError, TypeError):
+        return None
 
 
 def _map_role(raw: Optional[str]) -> str:

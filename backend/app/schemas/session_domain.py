@@ -29,6 +29,11 @@ class SessionQueryRequest(BaseModel):
 
 class SessionViewItem(BaseModel):
     id: str = Field(..., description="Unified session id")
+    conversation_id: Optional[UUID] = Field(
+        default=None,
+        alias="conversationId",
+        description="Canonical conversation id for cross-source dedup.",
+    )
     source: SessionSource
     source_session_id: str = Field(..., description="Original source session id")
     agent_id: Optional[UUID] = None
@@ -36,6 +41,8 @@ class SessionViewItem(BaseModel):
     title: str
     last_active_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
+
+    model_config = {"populate_by_name": True}
 
 
 class SessionListMeta(BaseModel):
@@ -64,10 +71,13 @@ class SessionMessageItem(BaseModel):
 
 class SessionMessagesMeta(BaseModel):
     session_id: str
+    conversation_id: Optional[str] = Field(default=None, alias="conversationId")
     source: SessionSource
     agent_id: Optional[str] = None
     agent_source: Optional[AgentSource] = None
     upstream_session_id: Optional[str] = None
+
+    model_config = {"populate_by_name": True}
 
 
 class SessionMessagesListResponse(
@@ -78,8 +88,14 @@ class SessionMessagesListResponse(
 
 class SessionContinueResponse(BaseModel):
     session_id: str
+    conversation_id: Optional[str] = Field(default=None, alias="conversationId")
     source: SessionSource
     context_id: Optional[str] = Field(default=None, alias="contextId")
+    provider: Optional[str] = None
+    external_session_id: Optional[str] = Field(default=None, alias="externalSessionId")
+    binding_metadata: Dict[str, Any] = Field(
+        default_factory=dict, alias="bindingMetadata"
+    )
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}

@@ -52,7 +52,7 @@ const mockedUseChatStore = useChatStore as unknown as jest.Mock;
 describe("useContinueSession", () => {
   const mockPush = jest.fn();
   const mockEnsureSession = jest.fn();
-  const mockBindOpencodeSession = jest.fn();
+  const mockBindExternalSession = jest.fn();
   const chatHref = {
     pathname: "/(app)/chat/[agentId]/[sessionId]",
     params: { agentId: "agent-1", sessionId: "session-1" },
@@ -65,7 +65,7 @@ describe("useContinueSession", () => {
       (selector: (state: unknown) => unknown) =>
         selector({
           ensureSession: mockEnsureSession,
-          bindOpencodeSession: mockBindOpencodeSession,
+          bindExternalSession: mockBindExternalSession,
         }),
     );
     mockedBuildChatRoute.mockReturnValue(chatHref as never);
@@ -93,8 +93,12 @@ describe("useContinueSession", () => {
   it("continues session and navigates to chat route", async () => {
     mockedContinueSession.mockResolvedValue({
       session_id: "session-1",
+      conversationId: "conv-1",
       source: "opencode",
+      provider: "opencode",
+      externalSessionId: "upstream-1",
       contextId: null,
+      bindingMetadata: { mode: "continue" },
       metadata: { foo: "bar", opencode_session_id: "upstream-1" },
     });
 
@@ -111,10 +115,13 @@ describe("useContinueSession", () => {
     expect(ok).toBe(true);
     expect(mockedContinueSession).toHaveBeenCalledWith("session-1");
     expect(mockEnsureSession).toHaveBeenCalledWith("session-1", "agent-1");
-    expect(mockBindOpencodeSession).toHaveBeenCalledWith("session-1", {
+    expect(mockBindExternalSession).toHaveBeenCalledWith("session-1", {
       agentId: "agent-1",
-      opencodeSessionId: "upstream-1",
+      conversationId: "conv-1",
+      provider: "opencode",
+      externalSessionId: "upstream-1",
       contextId: undefined,
+      bindingMetadata: { mode: "continue" },
       metadata: { foo: "bar", opencode_session_id: "upstream-1" },
     });
     expect(mockedBlurActiveElement).toHaveBeenCalledTimes(1);

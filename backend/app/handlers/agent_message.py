@@ -64,6 +64,7 @@ async def list_agent_messages(
     limit: int = 50,
     offset: int = 0,
     session_id: Optional[UUID] = None,
+    conversation_id: Optional[UUID] = None,
 ) -> List[AgentMessage]:
     sender_priority = case(
         (AgentMessage.sender.in_(["user", "automation"]), 0),
@@ -77,6 +78,8 @@ async def list_agent_messages(
     )
     if session_id:
         stmt = stmt.where(AgentMessage.session_id == session_id)
+    if conversation_id:
+        stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
 
     stmt = (
         stmt.order_by(
@@ -97,6 +100,7 @@ async def list_recent_agent_messages(
     user_id: UUID,
     limit: int = 50,
     session_id: Optional[UUID] = None,
+    conversation_id: Optional[UUID] = None,
 ) -> List[AgentMessage]:
     stmt = (
         select(AgentMessage)
@@ -105,6 +109,8 @@ async def list_recent_agent_messages(
     )
     if session_id:
         stmt = stmt.where(AgentMessage.session_id == session_id)
+    if conversation_id:
+        stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
     stmt = stmt.order_by(
         AgentMessage.created_at.desc(),
         AgentMessage.id.desc(),
@@ -114,11 +120,17 @@ async def list_recent_agent_messages(
 
 
 async def count_agent_messages(
-    db: AsyncSession, *, user_id: UUID, session_id: Optional[UUID] = None
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    session_id: Optional[UUID] = None,
+    conversation_id: Optional[UUID] = None,
 ) -> int:
     stmt = select(func.count(AgentMessage.id)).where(AgentMessage.user_id == user_id)
     if session_id:
         stmt = stmt.where(AgentMessage.session_id == session_id)
+    if conversation_id:
+        stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
     result = await db.execute(stmt)
     return int(result.scalar_one())
 
@@ -129,6 +141,7 @@ async def get_conversation_history(
     user_id: UUID,
     limit: int = 20,
     session_id: Optional[UUID] = None,
+    conversation_id: Optional[UUID] = None,
 ) -> List[AgentMessage]:
     stmt = (
         select(AgentMessage)
@@ -137,6 +150,8 @@ async def get_conversation_history(
     )
     if session_id:
         stmt = stmt.where(AgentMessage.session_id == session_id)
+    if conversation_id:
+        stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
 
     stmt = stmt.order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc()).limit(
         limit

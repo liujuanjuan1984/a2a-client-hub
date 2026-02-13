@@ -32,6 +32,13 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
         comment="Session identifier for grouping related messages",
         index=True,
     )
+    conversation_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_NAME}.conversation_threads.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Canonical conversation identifier used for cross-source dedup.",
+        index=True,
+    )
     content = Column(Text, nullable=False)
     sender = Column(
         String(16),
@@ -74,6 +81,7 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
     )
 
     session = relationship("AgentSession", back_populates="messages")
+    conversation = relationship("ConversationThread", back_populates="messages")
 
     def __repr__(self) -> str:
         preview = (self.content or "")[:50]

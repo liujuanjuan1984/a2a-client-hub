@@ -489,6 +489,7 @@ async def invoke_agent_ws(
                 db,
                 user_id=current_user.id,
                 agent_id=agent_id,
+                agent_source="personal",
                 session_key=payload.session_id,
             )
         except ValueError as exc:
@@ -509,10 +510,12 @@ async def invoke_agent_ws(
                 source=local_source,
                 user_id=current_user.id,
                 agent_id=agent_id,
+                agent_source="personal",
                 query=payload.query,
                 response_content=stream_text or "",
                 success=True,
                 context_id=payload.context_id,
+                invoke_metadata=payload.metadata,
                 extra_metadata={"transport": "ws", "stream": True},
             )
             await commit_safely(db)
@@ -526,10 +529,12 @@ async def invoke_agent_ws(
                 source=local_source,
                 user_id=current_user.id,
                 agent_id=agent_id,
+                agent_source="personal",
                 query=payload.query,
                 response_content=error_message,
                 success=False,
                 context_id=payload.context_id,
+                invoke_metadata=payload.metadata,
                 extra_metadata={"transport": "ws", "stream": True},
             )
             await commit_safely(db)
@@ -619,6 +624,7 @@ async def invoke_agent(
             db,
             user_id=current_user.id,
             agent_id=agent_id,
+            agent_source="personal",
             session_key=payload.session_id,
         )
     except ValueError as exc:
@@ -637,10 +643,12 @@ async def invoke_agent(
                 source=local_source,
                 user_id=current_user.id,
                 agent_id=agent_id,
+                agent_source="personal",
                 query=payload.query,
                 response_content=stream_text or "",
                 success=True,
                 context_id=payload.context_id,
+                invoke_metadata=payload.metadata,
                 extra_metadata={"transport": "http_sse", "stream": True},
             )
             await commit_safely(db)
@@ -654,10 +662,12 @@ async def invoke_agent(
                 source=local_source,
                 user_id=current_user.id,
                 agent_id=agent_id,
+                agent_source="personal",
                 query=payload.query,
                 response_content=error_message,
                 success=False,
                 context_id=payload.context_id,
+                invoke_metadata=payload.metadata,
                 extra_metadata={"transport": "http_sse", "stream": True},
             )
             await commit_safely(db)
@@ -698,10 +708,12 @@ async def invoke_agent(
             source=local_source,
             user_id=current_user.id,
             agent_id=agent_id,
+            agent_source="personal",
             query=payload.query,
             response_content=response_content,
             success=success,
             context_id=payload.context_id,
+            invoke_metadata=payload.metadata,
             extra_metadata={
                 "transport": "http_json",
                 "stream": False,

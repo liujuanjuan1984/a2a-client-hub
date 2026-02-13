@@ -121,6 +121,14 @@ and OpenCode sessions:
 - `POST /api/v1/me/sessions/{session_id}/messages:query`
 - `POST /api/v1/me/sessions/{session_id}:continue`
 
+`continue` now returns canonical binding fields in addition to legacy metadata:
+
+- `conversationId` (canonical conversation id)
+- `provider` (external provider key)
+- `externalSessionId` (external session identifier)
+- `contextId` (A2A context id)
+- `bindingMetadata` (normalized binding metadata)
+
 Client-generated manual sessions must use unified IDs with the `manual:`
 prefix and UUID payload, for example `manual:550e8400-e29b-41d4-a716-446655440000`.
 

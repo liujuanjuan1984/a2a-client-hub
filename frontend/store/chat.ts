@@ -30,6 +30,7 @@ import { useMessageStore } from "@/store/messages";
 
 type AgentSession = {
   agentId: string;
+  conversationId?: string | null;
   contextId: string | null;
   runtimeStatus?: string | null;
   streamState?: "idle" | "streaming" | "rebinding" | "recoverable" | "error";
@@ -38,7 +39,12 @@ type AgentSession = {
   inputModes: string[];
   outputModes: string[];
   metadata: Record<string, unknown>;
-  opencodeSessionId?: string | null;
+  externalSessionRef?: {
+    provider?: string | null;
+    externalSessionId?: string | null;
+    contextId?: string | null;
+    bindingMetadata?: Record<string, unknown>;
+  } | null;
   lastActiveAt: string;
 };
 
@@ -55,12 +61,15 @@ type ChatState = {
   ) => Promise<void>;
   cancelMessage: (sessionId: string) => void;
   resetSession: (sessionId: string, agentId: string) => void;
-  bindOpencodeSession: (
+  bindExternalSession: (
     sessionId: string,
     payload: {
       agentId: string;
-      opencodeSessionId?: string;
+      conversationId?: string | null;
+      provider?: string | null;
+      externalSessionId?: string | null;
       contextId?: string | null;
+      bindingMetadata?: Record<string, unknown> | null;
       metadata?: Record<string, unknown> | null;
     },
   ) => void;
@@ -96,7 +105,8 @@ const createSession = (agentId: string): AgentSession => ({
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
   metadata: {},
-  opencodeSessionId: null,
+  conversationId: null,
+  externalSessionRef: null,
   lastActiveAt: new Date().toISOString(),
 });
 
@@ -202,14 +212,37 @@ export const useChatStore = create<ChatState>()(
           };
         });
       },
-      bindOpencodeSession: (sessionId, payload) => {
+      bindExternalSession: (sessionId, payload) => {
         set((state) => ({
           sessions: {
             ...state.sessions,
             [sessionId]: {
               ...(state.sessions[sessionId] ?? createSession(payload.agentId)),
               agentId: payload.agentId,
-              opencodeSessionId: payload.opencodeSessionId,
+              conversationId:
+                payload.conversationId === undefined
+                  ? (state.sessions[sessionId]?.conversationId ?? null)
+                  : payload.conversationId,
+              externalSessionRef: {
+                provider:
+                  payload.provider ??
+                  state.sessions[sessionId]?.externalSessionRef?.provider ??
+                  null,
+                externalSessionId:
+                  payload.externalSessionId ??
+                  state.sessions[sessionId]?.externalSessionRef
+                    ?.externalSessionId ??
+                  null,
+                contextId:
+                  payload.contextId ??
+                  state.sessions[sessionId]?.externalSessionRef?.contextId ??
+                  null,
+                bindingMetadata:
+                  payload.bindingMetadata ??
+                  state.sessions[sessionId]?.externalSessionRef
+                    ?.bindingMetadata ??
+                  {},
+              },
               contextId:
                 payload.contextId === undefined
                   ? (state.sessions[sessionId]?.contextId ?? null)
@@ -349,14 +382,32 @@ export const useChatStore = create<ChatState>()(
           try {
             const binding = await continueSessionBinding(sessionId);
             const current = get().sessions[sessionId] ?? createSession(agentId);
-            const opencodeSessionId =
+            const fallbackExternalSessionId =
               typeof binding.metadata.opencode_session_id === "string"
                 ? binding.metadata.opencode_session_id
-                : current.opencodeSessionId;
+                : current.externalSessionRef?.externalSessionId;
             patchSession({
+              conversationId: binding.conversationId ?? current.conversationId,
               contextId: binding.contextId ?? current.contextId,
               metadata: binding.metadata ?? current.metadata,
-              opencodeSessionId,
+              externalSessionRef: {
+                provider:
+                  binding.provider ??
+                  current.externalSessionRef?.provider ??
+                  null,
+                externalSessionId:
+                  binding.externalSessionId ??
+                  fallbackExternalSessionId ??
+                  null,
+                contextId:
+                  binding.contextId ??
+                  current.externalSessionRef?.contextId ??
+                  null,
+                bindingMetadata:
+                  binding.bindingMetadata ??
+                  current.externalSessionRef?.bindingMetadata ??
+                  {},
+              },
               streamState: "recoverable",
               lastStreamError: reason,
             });
