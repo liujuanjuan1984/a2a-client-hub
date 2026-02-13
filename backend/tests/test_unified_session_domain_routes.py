@@ -171,6 +171,29 @@ async def test_unified_manual_messages_query_returns_empty_for_new_session(
         assert payload["items"] == []
 
 
+async def test_unified_manual_continue_returns_empty_binding_for_new_session(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    missing_manual_key = f"manual:{uuid4()}"
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(f"/me/sessions/{missing_manual_key}:continue")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["session_id"] == missing_manual_key
+        assert payload["source"] == "manual"
+        assert payload["conversationId"] is None
+        assert payload["provider"] is None
+        assert payload["externalSessionId"] is None
+        assert payload["contextId"] is None
+
+
 async def test_unified_opencode_continue_returns_400_for_invalid_session_key(
     async_db_session,
     async_session_maker,

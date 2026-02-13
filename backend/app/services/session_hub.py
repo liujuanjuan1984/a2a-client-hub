@@ -1002,12 +1002,29 @@ class SessionHubService:
             )
 
         assert parsed.local_session_id is not None
-        session = await self._get_local_session(
-            db,
-            user_id=user_id,
-            local_session_id=parsed.local_session_id,
-            source=parsed.source,
-        )
+        try:
+            session = await self._get_local_session(
+                db,
+                user_id=user_id,
+                local_session_id=parsed.local_session_id,
+                source=parsed.source,
+            )
+        except ValueError as exc:
+            if parsed.source != "manual" or str(exc) != "session_not_found":
+                raise
+            return (
+                {
+                    "session_id": session_key,
+                    "conversationId": None,
+                    "source": "manual",
+                    "provider": None,
+                    "externalSessionId": None,
+                    "contextId": None,
+                    "bindingMetadata": {},
+                    "metadata": {},
+                },
+                False,
+            )
         latest_stmt = (
             select(AgentMessage)
             .where(
