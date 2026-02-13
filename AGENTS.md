@@ -18,9 +18,9 @@ This guide is for coding agents working on this repository. Follow these rules s
 - **仅 frontend 变更**：只执行 frontend 回归。
 - **backend + frontend 同时变更**：两套回归都执行，且**串行**执行（先 backend，后 frontend），避免并发压垮本机 I/O。
 
-### 2.2 Development Loop (Low-Load, Recommended)
+### 2.2 Default Verification Mode (Low-Load + Serial, Mandatory)
 
-开发过程中优先使用轻量回归，降低负载：
+默认采用**串行低负载**回归（禁止并行跑重任务）：
 
 - **Backend（按改动文件/模块）**
   - `cd backend && uv run pre-commit run --files <changed_backend_files...> --config ../.pre-commit-config.yaml`
@@ -30,9 +30,22 @@ This guide is for coding agents working on this repository. Follow these rules s
   - `cd frontend && export NODE_OPTIONS="--max-old-space-size=1024" && npm run check-types`
   - `cd frontend && npm test -- --findRelatedTests <changed_frontend_files...> --maxWorkers=25%`
 
-### 2.3 Pre-Push Gate (Mandatory)
+执行顺序（当 backend + frontend 同时改动）：
 
-推送前必须完成对应范围的**全量**回归：
+1. backend 轻量回归
+2. frontend 轻量回归
+3. 修复失败后重跑受影响项
+
+### 2.3 Full Regression Gate (On-Demand)
+
+全量回归改为按需触发；满足任一条件时必须执行：
+
+- 人类明确要求“全量回归”
+- 准备将 Draft PR 转 Ready for Review
+- 涉及基础设施/跨模块核心链路改动，轻量回归覆盖不足
+- 出现疑似环境相关或并发相关问题，需要扩大验证面
+
+全量命令如下（按范围选择，仍需串行执行）：
 
 - **Backend changes (`backend/`)**
   - `cd backend && uv sync --extra dev --locked`
@@ -48,6 +61,7 @@ This guide is for coding agents working on this repository. Follow these rules s
 Notes:
 
 - 避免重复重负载检查：同一轮代码未变化时，不要重复执行等价全量检查。
+- 低负载默认策略下，`npm install` / `uv sync` 仅在依赖变化或环境失配时执行。
 - If a change touches database schema or migrations, additionally run:
   - `cd backend && uv run alembic upgrade head`
   - And verify the critical endpoints manually.
@@ -118,7 +132,7 @@ Before starting any user-assigned task, the agent must:
 
 ### 6. Automated Verification and Self-Correction
 
-- **Verify before push**: run the required regressions before pushing, following the scope-based rules in Section 2.
+- **Verify before push**: 默认执行 Section 2.2 的串行低负载回归；触发条件满足时升级到 Section 2.3 全量回归。
 - **Self-correction loop**: if lint/tests fail, fix them autonomously before reporting.
 
 ### 7. Documentation and Verification Evidence
