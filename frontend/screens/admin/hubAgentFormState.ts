@@ -33,7 +33,7 @@ export type HubAgentFormValues = {
   extraHeaders: HeaderRow[];
 };
 
-export const createDefaultHubAgentFormValues = (): HubAgentFormValues => ({
+const createDefaultHubAgentFormValues = (): HubAgentFormValues => ({
   name: "",
   cardUrl: "",
   enabled: true,
@@ -61,7 +61,7 @@ export const createHubAgentFormValuesFromRecord = (
   extraHeaders: recordToHeaderRows(record.extra_headers ?? {}),
 });
 
-export type HubAgentComparablePayload = {
+type HubAgentComparablePayload = {
   name: string;
   card_url: string;
   enabled: boolean;
