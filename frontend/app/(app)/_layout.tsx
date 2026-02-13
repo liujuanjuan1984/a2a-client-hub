@@ -81,10 +81,6 @@ export default function AppLayout() {
           name="chat/[agentId]/[sessionId]"
           options={{ title: "Chat" }}
         />
-        <Stack.Screen
-          name="opencode/[agentId]/sessions"
-          options={{ title: "OpenCode Sessions" }}
-        />
       </Stack>
       {isLoading ? (
         <View pointerEvents="none" className="absolute inset-0">
