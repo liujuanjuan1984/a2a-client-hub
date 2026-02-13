@@ -25,6 +25,7 @@ import {
   getOpencodeSessionTitle,
 } from "@/lib/opencodeAdapters";
 import { supportsOpencodeSessionQuery } from "@/lib/opencodeSupport";
+import { buildOpencodeSessionId } from "@/lib/sessionIds";
 
 type SupportState = "checking" | "supported" | "unsupported" | "unknown";
 
@@ -110,15 +111,19 @@ export function OpencodeSessionsScreen({ agentId }: { agentId: string }) {
   const continueSession = async (item: unknown) => {
     const opencodeSessionId = getOpencodeSessionId(item) ?? "";
     if (!opencodeSessionId) {
-      await continueWithBinding({ agentId, sessionId: "", source });
+      await continueWithBinding({ agentId, sessionId: "" });
       return;
     }
     setContinuingSessionId(opencodeSessionId);
     try {
+      const unifiedSessionId = buildOpencodeSessionId({
+        agentId,
+        agentSource: source,
+        upstreamSessionId: opencodeSessionId,
+      });
       await continueWithBinding({
         agentId,
-        sessionId: opencodeSessionId,
-        source,
+        sessionId: unifiedSessionId,
       });
     } finally {
       setContinuingSessionId(null);

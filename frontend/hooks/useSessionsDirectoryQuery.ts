@@ -1,10 +1,7 @@
 import { useCallback, useRef } from "react";
 
 import { usePaginatedList } from "@/hooks/usePaginatedList";
-import {
-  listOpencodeSessionsDirectoryPage,
-  type OpencodeSessionDirectoryItem,
-} from "@/lib/api/opencodeSessions";
+import { listSessionsPage, type SessionListItem } from "@/lib/api/sessions";
 import { queryKeys } from "@/lib/queryKeys";
 
 export function useSessionsDirectoryQuery() {
@@ -16,7 +13,7 @@ export function useSessionsDirectoryQuery() {
       refreshNextRef.current = false;
     }
 
-    const result = await listOpencodeSessionsDirectoryPage({
+    const result = await listSessionsPage({
       page,
       size: 50,
       refresh,
@@ -25,10 +22,10 @@ export function useSessionsDirectoryQuery() {
     return { items: result.items, nextPage: result.nextPage };
   }, []);
 
-  const query = usePaginatedList<OpencodeSessionDirectoryItem>({
+  const query = usePaginatedList<SessionListItem>({
     queryKey: queryKeys.sessions.directory(),
     fetchPage,
-    getKey: (item) => `${item.agent_id}:${item.session_id}`,
+    getKey: (item) => item.id,
     errorTitle: "Load sessions failed",
     fallbackMessage: "Load failed.",
   });

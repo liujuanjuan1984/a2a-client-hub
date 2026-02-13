@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useContinueOpencodeSession } from "@/hooks/useContinueOpencodeSession";
 import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
-import { type OpencodeSessionDirectoryItem } from "@/lib/api/opencodeSessions";
+import { type SessionListItem } from "@/lib/api/sessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 
 export function SessionsScreen() {
@@ -25,11 +25,11 @@ export function SessionsScreen() {
 
   const sortedItems = useMemo(() => items, [items]);
 
-  const handleContinueSession = async (item: OpencodeSessionDirectoryItem) => {
+  const handleContinueSession = async (item: SessionListItem) => {
+    if (!item.agent_id) return;
     await continueOpencodeSession({
       agentId: item.agent_id,
-      sessionId: item.session_id,
-      source: item.agent_source,
+      sessionId: item.id,
     });
   };
 
@@ -56,19 +56,16 @@ export function SessionsScreen() {
             <Text className="text-base font-semibold text-white">
               No sessions
             </Text>
-            <Text className="mt-2 text-sm text-muted">
-              No OpenCode sessions found.
-            </Text>
+            <Text className="mt-2 text-sm text-muted">No sessions found.</Text>
           </View>
         ) : (
           <>
             {sortedItems.map((item) => {
               const title = item.title;
-              const sessionId = item.session_id;
               const ts = item.last_active_at ?? null;
               return (
                 <View
-                  key={`${item.agent_id}:${sessionId}`}
+                  key={item.id}
                   className="mb-3 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30"
                 >
                   <View className="p-4">
@@ -76,7 +73,7 @@ export function SessionsScreen() {
                       className="text-base font-semibold text-white"
                       numberOfLines={1}
                     >
-                      {item.agent_name}
+                      {item.source}
                     </Text>
                     <Text
                       className="mt-1 text-sm text-slate-100"
@@ -97,6 +94,7 @@ export function SessionsScreen() {
                       variant="secondary"
                       label="Continue"
                       iconRight="chevron-forward"
+                      disabled={!item.agent_id}
                       onPress={() => handleContinueSession(item)}
                     />
                   </View>

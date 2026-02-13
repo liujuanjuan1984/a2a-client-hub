@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react-native";
 
 import { useContinueOpencodeSession } from "@/hooks/useContinueOpencodeSession";
-import { continueOpencodeSession } from "@/lib/api/opencodeSessions";
+import { continueSession } from "@/lib/api/sessions";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
@@ -11,8 +11,8 @@ jest.mock("expo-router", () => ({
   useRouter: jest.fn(),
 }));
 
-jest.mock("@/lib/api/opencodeSessions", () => ({
-  continueOpencodeSession: jest.fn(),
+jest.mock("@/lib/api/sessions", () => ({
+  continueSession: jest.fn(),
 }));
 
 jest.mock("@/lib/focus", () => ({
@@ -37,10 +37,9 @@ const { useRouter } = jest.requireMock("expo-router") as {
   useRouter: jest.Mock;
 };
 
-const mockedContinueOpencodeSession =
-  continueOpencodeSession as jest.MockedFunction<
-    typeof continueOpencodeSession
-  >;
+const mockedContinueSession = continueSession as jest.MockedFunction<
+  typeof continueSession
+>;
 const mockedBlurActiveElement = blurActiveElement as jest.MockedFunction<
   typeof blurActiveElement
 >;
@@ -52,12 +51,11 @@ const mockedUseChatStore = useChatStore as unknown as jest.Mock;
 
 describe("useContinueOpencodeSession", () => {
   const mockPush = jest.fn();
-  const mockGenerateSessionId = jest.fn();
   const mockEnsureSession = jest.fn();
   const mockBindOpencodeSession = jest.fn();
   const chatHref = {
     pathname: "/(app)/chat/[agentId]/[sessionId]",
-    params: { agentId: "agent-1", sessionId: "chat-1", opencodeSessionId: "s" },
+    params: { agentId: "agent-1", sessionId: "session-1" },
   };
 
   beforeEach(() => {
@@ -66,7 +64,6 @@ describe("useContinueOpencodeSession", () => {
     mockedUseChatStore.mockImplementation(
       (selector: (state: unknown) => unknown) =>
         selector({
-          generateSessionId: mockGenerateSessionId,
           ensureSession: mockEnsureSession,
           bindOpencodeSession: mockBindOpencodeSession,
         }),
@@ -86,7 +83,7 @@ describe("useContinueOpencodeSession", () => {
     });
 
     expect(ok).toBe(false);
-    expect(mockedContinueOpencodeSession).not.toHaveBeenCalled();
+    expect(mockedContinueSession).not.toHaveBeenCalled();
     expect(mockedToast.error).toHaveBeenCalledWith(
       "Continue session failed",
       "Missing session id.",
@@ -94,12 +91,12 @@ describe("useContinueOpencodeSession", () => {
   });
 
   it("continues session and navigates to chat route", async () => {
-    mockedContinueOpencodeSession.mockResolvedValue({
+    mockedContinueSession.mockResolvedValue({
+      session_id: "session-1",
+      source: "opencode",
       contextId: null,
-      metadata: { foo: "bar" },
-      raw: {},
+      metadata: { foo: "bar", opencode_session_id: "upstream-1" },
     });
-    mockGenerateSessionId.mockReturnValue("chat-1");
 
     const { result } = renderHook(() => useContinueOpencodeSession());
 
@@ -108,32 +105,25 @@ describe("useContinueOpencodeSession", () => {
       ok = await result.current.continueSession({
         agentId: "agent-1",
         sessionId: "  session-1  ",
-        source: "shared",
       });
     });
 
     expect(ok).toBe(true);
-    expect(mockedContinueOpencodeSession).toHaveBeenCalledWith(
-      "agent-1",
-      "session-1",
-      { source: "shared" },
-    );
-    expect(mockEnsureSession).toHaveBeenCalledWith("chat-1", "agent-1");
-    expect(mockBindOpencodeSession).toHaveBeenCalledWith("chat-1", {
+    expect(mockedContinueSession).toHaveBeenCalledWith("session-1");
+    expect(mockEnsureSession).toHaveBeenCalledWith("session-1", "agent-1");
+    expect(mockBindOpencodeSession).toHaveBeenCalledWith("session-1", {
       agentId: "agent-1",
-      opencodeSessionId: "session-1",
+      opencodeSessionId: "upstream-1",
       contextId: undefined,
-      metadata: { foo: "bar" },
+      metadata: { foo: "bar", opencode_session_id: "upstream-1" },
     });
     expect(mockedBlurActiveElement).toHaveBeenCalledTimes(1);
-    expect(mockedBuildChatRoute).toHaveBeenCalledWith("agent-1", "chat-1", {
-      opencodeSessionId: "session-1",
-    });
+    expect(mockedBuildChatRoute).toHaveBeenCalledWith("agent-1", "session-1");
     expect(mockPush).toHaveBeenCalledWith(chatHref);
   });
 
   it("returns false and shows toast when request fails", async () => {
-    mockedContinueOpencodeSession.mockRejectedValue(new Error("network down"));
+    mockedContinueSession.mockRejectedValue(new Error("network down"));
 
     const { result } = renderHook(() => useContinueOpencodeSession());
 

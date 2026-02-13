@@ -19,6 +19,7 @@ from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_hub
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
+from app.db.transaction import commit_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.errors import (
@@ -41,6 +42,7 @@ from app.services.hub_a2a_runtime import (
     HubA2ARuntimeValidationError,
     hub_a2a_runtime_builder,
 )
+from app.services.session_hub import session_hub_service
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.logging_redaction import redact_url_for_logging
 
@@ -156,8 +158,52 @@ async def invoke_hub_agent(
             "query_meta": summarize_query(payload.query),
         },
     )
+    (
+        local_session,
+        local_source,
+    ) = await session_hub_service.ensure_local_session_for_invoke(
+        db,
+        user_id=current_user.id,
+        agent_id=agent_id,
+        session_key=payload.session_id,
+    )
 
     if stream:
+
+        async def _on_complete(stream_text: str) -> None:
+            if local_session is None or local_source is None:
+                return
+            await session_hub_service.record_local_invoke_messages(
+                db,
+                session=local_session,
+                source=local_source,
+                user_id=current_user.id,
+                agent_id=agent_id,
+                query=payload.query,
+                response_content=stream_text or "",
+                success=True,
+                context_id=payload.context_id,
+                extra_metadata={"transport": "http_sse", "stream": True},
+            )
+            await commit_safely(db)
+
+        async def _on_error(error_message: str) -> None:
+            if local_session is None or local_source is None:
+                return
+            await session_hub_service.record_local_invoke_messages(
+                db,
+                session=local_session,
+                source=local_source,
+                user_id=current_user.id,
+                agent_id=agent_id,
+                query=payload.query,
+                response_content=error_message,
+                success=False,
+                context_id=payload.context_id,
+                extra_metadata={"transport": "http_sse", "stream": True},
+            )
+            await commit_safely(db)
+
         return a2a_invoke_service.stream_sse(
             gateway=get_a2a_service().gateway,
             resolved=runtime.resolved,
@@ -170,6 +216,8 @@ async def invoke_hub_agent(
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
             },
+            on_complete=_on_complete,
+            on_error=_on_error,
         )
 
     result = await get_a2a_service().gateway.invoke(
@@ -178,6 +226,31 @@ async def invoke_hub_agent(
         context_id=payload.context_id,
         metadata=payload.metadata,
     )
+    if local_session is not None and local_source is not None:
+        success = bool(result.get("success"))
+        response_content = (
+            result.get("content")
+            if success
+            else (result.get("error") or "A2A invocation failed")
+        ) or ""
+        await session_hub_service.record_local_invoke_messages(
+            db,
+            session=local_session,
+            source=local_source,
+            user_id=current_user.id,
+            agent_id=agent_id,
+            query=payload.query,
+            response_content=response_content,
+            success=success,
+            context_id=payload.context_id,
+            extra_metadata={
+                "transport": "http_json",
+                "stream": False,
+                "error_code": result.get("error_code"),
+            },
+        )
+        await commit_safely(db)
+
     return A2AAgentInvokeResponse(
         success=bool(result.get("success")),
         content=result.get("content"),
@@ -265,6 +338,50 @@ async def invoke_hub_agent_ws(
             },
         )
 
+        (
+            local_session,
+            local_source,
+        ) = await session_hub_service.ensure_local_session_for_invoke(
+            db,
+            user_id=current_user.id,
+            agent_id=agent_id,
+            session_key=payload.session_id,
+        )
+
+        async def _on_complete(stream_text: str) -> None:
+            if local_session is None or local_source is None:
+                return
+            await session_hub_service.record_local_invoke_messages(
+                db,
+                session=local_session,
+                source=local_source,
+                user_id=current_user.id,
+                agent_id=agent_id,
+                query=payload.query,
+                response_content=stream_text or "",
+                success=True,
+                context_id=payload.context_id,
+                extra_metadata={"transport": "ws", "stream": True},
+            )
+            await commit_safely(db)
+
+        async def _on_error(error_message: str) -> None:
+            if local_session is None or local_source is None:
+                return
+            await session_hub_service.record_local_invoke_messages(
+                db,
+                session=local_session,
+                source=local_source,
+                user_id=current_user.id,
+                agent_id=agent_id,
+                query=payload.query,
+                response_content=error_message,
+                success=False,
+                context_id=payload.context_id,
+                extra_metadata={"transport": "ws", "stream": True},
+            )
+            await commit_safely(db)
+
         await a2a_invoke_service.stream_ws(
             websocket=websocket,
             gateway=get_a2a_service().gateway,
@@ -278,6 +395,8 @@ async def invoke_hub_agent_ws(
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
             },
+            on_complete=_on_complete,
+            on_error=_on_error,
         )
 
     except WebSocketDisconnect:

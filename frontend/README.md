@@ -77,22 +77,18 @@ Use `npm run publish:web` to export and serve the web build locally.
 - Override with env vars: `HOST`, `PORT`
 - Run in background: `DETACH=1 npm run publish:web`
 
-## OpenCode Extension (Sessions)
+## Unified Sessions
 
-If an A2A agent advertises the OpenCode session query extension (via Agent Card),
-the app surfaces OpenCode session browsing under the Sessions tab:
+The Sessions tab now uses the backend unified session domain API
+(`POST /me/sessions:query`) and can include:
 
-- OpenCode sessions (paginated)
+- `manual` sessions (local chat sessions persisted by backend)
+- `scheduled` sessions (task execution sessions)
+- `opencode` sessions (remote extension-backed sessions)
 
-The frontend treats the upstream result as a passthrough envelope and avoids
-binding to OpenCode-private schemas.
+History loading is unified via
+`POST /me/sessions/{session_id}/messages:query`.
 
-### Continue (Resume Chat)
-
-From the sessions list, the app can "Continue" into the main Chat UI.
-This uses the backend continue endpoint to obtain a stable binding
-(`contextId`/`metadata`) for the selected OpenCode `session_id`, then forwards
-those fields on every message so the upstream can append to the same session.
-
-OpenCode history is rendered inline in the Chat screen (there is no standalone
-"messages list" screen).
+Continue binding is unified via
+`POST /me/sessions/{session_id}:continue` so Chat always restores
+`contextId`/`metadata` through one entrypoint.

@@ -2,14 +2,14 @@ import { act, renderHook } from "@testing-library/react-native";
 
 import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
-import { listOpencodeSessionsDirectoryPage } from "@/lib/api/opencodeSessions";
+import { listSessionsPage } from "@/lib/api/sessions";
 
 jest.mock("@/hooks/usePaginatedList", () => ({
   usePaginatedList: jest.fn(),
 }));
 
-jest.mock("@/lib/api/opencodeSessions", () => ({
-  listOpencodeSessionsDirectoryPage: jest.fn(),
+jest.mock("@/lib/api/sessions", () => ({
+  listSessionsPage: jest.fn(),
 }));
 
 jest.mock("@/lib/storage/mmkv", () => ({
@@ -21,7 +21,7 @@ jest.mock("@/lib/storage/mmkv", () => ({
 }));
 
 const mockedUsePaginatedList = jest.mocked(usePaginatedList);
-const mockedListDirectoryPage = jest.mocked(listOpencodeSessionsDirectoryPage);
+const mockedListDirectoryPage = jest.mocked(listSessionsPage);
 
 const createPaginatedResult = (): ReturnType<typeof usePaginatedList> =>
   ({

@@ -19,7 +19,7 @@ import {
 } from "@/lib/api/hubA2aAgentsUser";
 import { fetchSSE } from "@/lib/api/sse";
 import { ENV } from "@/lib/config";
-import { generateId } from "@/lib/id";
+import { generateId, generateUuid } from "@/lib/id";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { applyStreamChunk } from "@/lib/streamChunks";
 import { shouldSplitStreamMessage } from "@/lib/streamMessageSplit";
@@ -55,7 +55,7 @@ type ChatState = {
     sessionId: string,
     payload: {
       agentId: string;
-      opencodeSessionId: string;
+      opencodeSessionId?: string;
       contextId?: string | null;
       metadata?: Record<string, unknown> | null;
     },
@@ -157,8 +157,9 @@ const buildInvokeWsUrl = (agentId: string, source: AgentSource) => {
 const buildInvokePayload = (
   query: string,
   session: AgentSession,
+  sessionId: string,
 ): A2AAgentInvokeRequest => {
-  const payload: A2AAgentInvokeRequest = { query };
+  const payload: A2AAgentInvokeRequest = { query, sessionId };
   if (session.contextId) {
     payload.contextId = session.contextId;
   }
@@ -291,7 +292,7 @@ export const useChatStore = create<ChatState>()(
         let activeAgentMessageId = agentMessageId;
 
         const session = get().sessions[sessionId] ?? createSession(agentId);
-        const payload = buildInvokePayload(trimmed, session);
+        const payload = buildInvokePayload(trimmed, session, sessionId);
 
         const updateSessionMeta = (meta: {
           contextId?: string | null;
@@ -763,7 +764,7 @@ export const useChatStore = create<ChatState>()(
           return changed ? { sessions: nextSessions } : state;
         });
       },
-      generateSessionId: () => generateId("sess"),
+      generateSessionId: () => `manual:${generateUuid()}`,
       clearAll: () => {
         const wsConnections = get().wsConnections;
         Object.values(wsConnections).forEach((ws) => {

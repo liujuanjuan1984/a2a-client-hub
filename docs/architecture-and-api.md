@@ -122,10 +122,23 @@ curl -X POST "$API_BASE_URL/me/a2a/agents/<AGENT_ID>/invoke" \
   }'
 ```
 
-### Get Session Directory (OpenCode Extension)
+### Query Unified Sessions
 
 ```bash
-curl "$API_BASE_URL/me/a2a/sessions?page=1&size=20" \
+curl -X POST "$API_BASE_URL/me/sessions:query" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "page": 1,
+    "size": 20,
+    "refresh": false
+  }'
+```
+
+### Query Unified Session Messages
+
+```bash
+curl -X POST "$API_BASE_URL/me/sessions/<SESSION_ID>/messages:query" \
   -H "Authorization: Bearer <ACCESS_TOKEN>"
 ```
 

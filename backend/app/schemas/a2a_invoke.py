@@ -9,6 +9,11 @@ from pydantic import BaseModel, Field
 
 class A2AAgentInvokeRequest(BaseModel):
     query: str = Field(..., min_length=1, description="User query to forward")
+    session_id: Optional[str] = Field(
+        default=None,
+        alias="sessionId",
+        description="Optional unified session identifier for server-side history tracking.",
+    )
     context_id: Optional[str] = Field(
         default=None,
         alias="contextId",
