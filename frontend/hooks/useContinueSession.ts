@@ -18,6 +18,7 @@ export const useContinueSession = () => {
   const bindExternalSession = useChatStore(
     (state) => state.bindExternalSession,
   );
+  const migrateSessionKey = useChatStore((state) => state.migrateSessionKey);
 
   const continueSession = useCallback(
     async ({ agentId, sessionId }: ContinueSessionInput) => {
@@ -29,8 +30,15 @@ export const useContinueSession = () => {
 
       try {
         const binding = await continueSessionBinding(unifiedSessionId);
-        ensureSession(unifiedSessionId, agentId);
-        bindExternalSession(unifiedSessionId, {
+        const canonicalSessionId =
+          typeof binding.session_id === "string" && binding.session_id.trim()
+            ? binding.session_id.trim()
+            : unifiedSessionId;
+        if (canonicalSessionId !== unifiedSessionId) {
+          migrateSessionKey(unifiedSessionId, canonicalSessionId);
+        }
+        ensureSession(canonicalSessionId, agentId);
+        bindExternalSession(canonicalSessionId, {
           agentId,
           conversationId: binding.conversationId ?? undefined,
           provider: binding.provider ?? undefined,
@@ -40,7 +48,7 @@ export const useContinueSession = () => {
           metadata: binding.metadata,
         });
         blurActiveElement();
-        router.push(buildChatRoute(agentId, unifiedSessionId));
+        router.push(buildChatRoute(agentId, canonicalSessionId));
         return true;
       } catch (error) {
         const message =
@@ -49,7 +57,7 @@ export const useContinueSession = () => {
         return false;
       }
     },
-    [bindExternalSession, ensureSession, router],
+    [bindExternalSession, ensureSession, migrateSessionKey, router],
   );
 
   return { continueSession };

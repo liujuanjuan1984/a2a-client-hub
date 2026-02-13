@@ -164,6 +164,36 @@ def build_opencode_session_key(
     return f"{_OPENCODE_PREFIX}{token}"
 
 
+def _build_canonical_session_key_for_local(
+    *,
+    source: Literal["manual", "scheduled"],
+    local_session_id: UUID,
+    provider: Optional[str],
+    external_session_id: Optional[str],
+    agent_id: Optional[UUID],
+    agent_source: Optional[Literal["personal", "shared"]],
+) -> str:
+    normalized_provider = normalize_provider(provider)
+    normalized_external_session_id = normalize_non_empty_text(external_session_id)
+    resolved_agent_source = (
+        agent_source if agent_source in {"personal", "shared"} else None
+    )
+    if (
+        normalized_provider == "opencode"
+        and normalized_external_session_id
+        and agent_id
+        and resolved_agent_source
+    ):
+        return build_opencode_session_key(
+            agent_id=agent_id,
+            agent_source=resolved_agent_source,
+            upstream_session_id=normalized_external_session_id,
+        )
+    if source == "scheduled":
+        return build_scheduled_session_key(local_session_id)
+    return build_manual_session_key(local_session_id)
+
+
 def parse_session_key(value: str) -> ParsedSessionKey:
     trimmed = (value or "").strip()
     if not trimmed:
@@ -370,6 +400,11 @@ class SessionHubService:
             user_id=user_id,
             local_session_ids=session_ids,
         )
+        binding_locator_map = await conversation_identity_service.find_latest_external_bindings_for_local_sessions_batch(
+            db,
+            user_id=user_id,
+            local_session_ids=session_ids,
+        )
         context_ids = [
             context_id
             for context_id in (
@@ -400,16 +435,18 @@ class SessionHubService:
                 metadata_external_id,
             ) = _extract_provider_and_external_from_metadata(latest_metadata)
             metadata_context_id = _extract_context_id_from_metadata(latest_metadata)
+            binding_locator = binding_locator_map.get(session.id)
+            if not metadata_provider and binding_locator:
+                metadata_provider = binding_locator.provider
+            if not metadata_external_id and binding_locator:
+                metadata_external_id = binding_locator.external_session_id
+            if not metadata_context_id and binding_locator:
+                metadata_context_id = binding_locator.context_id
             conversation_id = latest_conversation_map.get(session.id)
             if conversation_id is None:
                 conversation_id = binding_conversation_map.get(session.id)
-            if conversation_id is None and metadata_provider and metadata_external_id:
-                conversation_id = await conversation_identity_service.find_conversation_id_for_external(
-                    db,
-                    user_id=user_id,
-                    provider=metadata_provider,
-                    external_session_id=metadata_external_id,
-                )
+            if conversation_id is None and binding_locator:
+                conversation_id = binding_locator.conversation_id
             if conversation_id is None and metadata_context_id:
                 conversation_id = context_conversation_map.get(metadata_context_id)
 
@@ -711,6 +748,17 @@ class SessionHubService:
                 external_session_id,
             ) = _extract_provider_and_external_from_metadata(latest_metadata)
             context_id = _extract_context_id_from_metadata(latest_metadata)
+            binding_locator = await conversation_identity_service.find_latest_external_binding_for_local_session(
+                db,
+                user_id=user_id,
+                local_session_id=session.id,
+            )
+            if not provider and binding_locator:
+                provider = binding_locator.provider
+            if not external_session_id and binding_locator:
+                external_session_id = binding_locator.external_session_id
+            if not context_id and binding_locator:
+                context_id = binding_locator.context_id
             conversation_id = latest_conversation_map.get(session.id)
             if conversation_id is None:
                 conversation_id = await conversation_identity_service.find_conversation_id_for_local_session(
@@ -718,6 +766,8 @@ class SessionHubService:
                     user_id=user_id,
                     local_session_id=session.id,
                 )
+            if conversation_id is None and binding_locator:
+                conversation_id = binding_locator.conversation_id
             if conversation_id is None and provider and external_session_id:
                 conversation_id = await conversation_identity_service.find_conversation_id_for_external(
                     db,
@@ -976,6 +1026,17 @@ class SessionHubService:
         provider, external_session_id = _extract_provider_and_external_from_metadata(
             metadata
         )
+        binding_locator = await conversation_identity_service.find_latest_external_binding_for_local_session(
+            db,
+            user_id=user_id,
+            local_session_id=session.id,
+        )
+        if not provider and binding_locator:
+            provider = binding_locator.provider
+        if not external_session_id and binding_locator:
+            external_session_id = binding_locator.external_session_id
+        if not isinstance(context_id, str) and binding_locator:
+            context_id = binding_locator.context_id
         conversation_id = (
             latest.conversation_id
             if latest is not None and isinstance(latest.conversation_id, UUID)
@@ -996,8 +1057,18 @@ class SessionHubService:
                     conversation_id=None,
                     provider=provider,
                     external_session_id=external_session_id,
-                    agent_id=_try_parse_uuid(session.module_key),
-                    agent_source="personal",
+                    agent_id=(
+                        binding_locator.agent_id
+                        if binding_locator
+                        and isinstance(binding_locator.agent_id, UUID)
+                        else _try_parse_uuid(session.module_key)
+                    ),
+                    agent_source=(
+                        binding_locator.agent_source
+                        if binding_locator
+                        and binding_locator.agent_source in {"personal", "shared"}
+                        else "personal"
+                    ),
                     context_id=context_id if isinstance(context_id, str) else None,
                     title=session.name or "Session",
                     binding_metadata=metadata,
@@ -1025,13 +1096,38 @@ class SessionHubService:
                 )
             )
             db_mutated = db_mutated or updated > 0
+        resolved_provider = normalize_provider(provider)
+        resolved_external_session_id = normalize_non_empty_text(external_session_id)
+        resolved_agent_id = (
+            binding_locator.agent_id
+            if binding_locator and isinstance(binding_locator.agent_id, UUID)
+            else _try_parse_uuid(session.module_key)
+        )
+        resolved_agent_source: Literal["personal", "shared"] | None = None
+        if binding_locator and binding_locator.agent_source in {"personal", "shared"}:
+            resolved_agent_source = binding_locator.agent_source
+        elif parsed.source == "manual":
+            resolved_agent_source = "personal"
+        canonical_session_key = _build_canonical_session_key_for_local(
+            source=parsed.source,
+            local_session_id=session.id,
+            provider=resolved_provider,
+            external_session_id=resolved_external_session_id,
+            agent_id=resolved_agent_id,
+            agent_source=resolved_agent_source,
+        )
+        response_source: SessionSource = (
+            "opencode"
+            if canonical_session_key.startswith(_OPENCODE_PREFIX)
+            else parsed.source
+        )
         return (
             {
-                "session_id": session_key,
+                "session_id": canonical_session_key,
                 "conversationId": str(conversation_id) if conversation_id else None,
-                "source": parsed.source,
-                "provider": provider,
-                "externalSessionId": external_session_id,
+                "source": response_source,
+                "provider": resolved_provider,
+                "externalSessionId": resolved_external_session_id,
                 "contextId": context_id if isinstance(context_id, str) else None,
                 "bindingMetadata": metadata,
                 "metadata": metadata,

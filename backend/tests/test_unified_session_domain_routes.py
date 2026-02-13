@@ -574,6 +574,66 @@ async def test_unified_session_list_dedups_when_provider_missing_but_external_pr
         assert payload["items"][0]["source"] == "opencode"
 
 
+async def test_unified_manual_continue_returns_canonical_opencode_session_key(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="canonical-continue"
+    )
+    now = utc_now()
+
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Manual Canonical Continue",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=manual_session,
+        source="manual",
+        user_id=user.id,
+        agent_id=agent.id,
+        agent_source="personal",
+        query="hello",
+        response_content="world",
+        success=True,
+        context_id="ctx-canonical-continue",
+        invoke_metadata={
+            "provider": "opencode",
+            "externalSessionId": "upstream-canonical-continue-1",
+        },
+        extra_metadata={"transport": "http_json", "stream": False},
+    )
+    await async_db_session.commit()
+
+    manual_key = build_manual_session_key(manual_session.id)
+    canonical_key = build_opencode_session_key(
+        agent_id=agent.id,
+        agent_source="personal",
+        upstream_session_id="upstream-canonical-continue-1",
+    )
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(f"/me/sessions/{manual_key}:continue")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["session_id"] == canonical_key
+        assert payload["source"] == "opencode"
+        assert payload["provider"] == "opencode"
+        assert payload["externalSessionId"] == "upstream-canonical-continue-1"
+
+
 async def test_unified_session_list_uses_local_session_binding_when_metadata_missing(
     async_db_session,
     async_session_maker,

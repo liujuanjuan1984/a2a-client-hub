@@ -73,6 +73,7 @@ export function ChatScreen({
     [agents, activeAgentId],
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
+  const migrateSessionKey = useChatStore((state) => state.migrateSessionKey);
   const generateSessionId = useChatStore((state) => state.generateSessionId);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const session = useChatStore((state) =>
@@ -120,12 +121,22 @@ export function ChatScreen({
 
   useEffect(() => {
     if (!sessionId || !activeAgentId) return;
-    if (getSessionSource(sessionId) === "manual") return;
+    const sessionSource = getSessionSource(sessionId);
+    const hasHistory =
+      messages.length > 0 || sessionHistoryQuery.messages.length > 0;
+    if (sessionSource === "manual" && !hasHistory) return;
 
     let cancelled = false;
     continueSession(sessionId)
       .then((binding) => {
         if (cancelled) return;
+        const canonicalSessionId =
+          typeof binding.session_id === "string" && binding.session_id.trim()
+            ? binding.session_id.trim()
+            : sessionId;
+        if (canonicalSessionId !== sessionId) {
+          migrateSessionKey(sessionId, canonicalSessionId);
+        }
         const current = useChatStore.getState().sessions[sessionId];
         const hasLocalBinding =
           (typeof current?.contextId === "string" &&
@@ -136,7 +147,8 @@ export function ChatScreen({
         if (hasLocalBinding && !binding.contextId) {
           return;
         }
-        useChatStore.getState().bindExternalSession(sessionId, {
+        ensureSession(canonicalSessionId, activeAgentId);
+        useChatStore.getState().bindExternalSession(canonicalSessionId, {
           agentId: activeAgentId ?? undefined,
           conversationId: binding.conversationId ?? undefined,
           provider: binding.provider ?? undefined,
@@ -145,9 +157,19 @@ export function ChatScreen({
           bindingMetadata: binding.bindingMetadata ?? undefined,
           metadata: binding.metadata,
         });
+        if (canonicalSessionId !== sessionId) {
+          router.replace(buildChatRoute(activeAgentId, canonicalSessionId));
+        }
       })
       .catch((error) => {
         if (cancelled) return;
+        if (
+          sessionSource === "manual" &&
+          error instanceof Error &&
+          error.message === "session_not_found"
+        ) {
+          return;
+        }
         const message = error instanceof Error ? error.message : "Bind failed.";
         toast.error("Continue session failed", message);
       });
@@ -155,7 +177,15 @@ export function ChatScreen({
     return () => {
       cancelled = true;
     };
-  }, [activeAgentId, sessionId]);
+  }, [
+    activeAgentId,
+    ensureSession,
+    messages.length,
+    migrateSessionKey,
+    router,
+    sessionHistoryQuery.messages.length,
+    sessionId,
+  ]);
 
   const mergeHistoryMessages = useCallback(
     (incoming: ChatMessage[]) => {

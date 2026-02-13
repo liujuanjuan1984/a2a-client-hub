@@ -73,6 +73,7 @@ type ChatState = {
       metadata?: Record<string, unknown> | null;
     },
   ) => void;
+  migrateSessionKey: (fromSessionId: string, toSessionId: string) => void;
   getSessionsByAgentId: (agentId: string) => [string, AgentSession][];
   getLatestSessionIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
@@ -252,6 +253,58 @@ export const useChatStore = create<ChatState>()(
             },
           },
         }));
+      },
+      migrateSessionKey: (fromSessionId, toSessionId) => {
+        const fromKey = fromSessionId.trim();
+        const toKey = toSessionId.trim();
+        if (!fromKey || !toKey || fromKey === toKey) return;
+
+        set((state) => {
+          const fromSession = state.sessions[fromKey];
+          if (!fromSession && !state.sessions[toKey]) {
+            return state;
+          }
+
+          const nextSessions = { ...state.sessions };
+          const toSession = nextSessions[toKey];
+          if (fromSession) {
+            nextSessions[toKey] = {
+              ...(toSession ?? {}),
+              ...fromSession,
+              lastActiveAt: new Date().toISOString(),
+            };
+            delete nextSessions[fromKey];
+          }
+
+          const nextAbortControllers = { ...state.abortControllers };
+          if (nextAbortControllers[fromKey]) {
+            if (!nextAbortControllers[toKey]) {
+              nextAbortControllers[toKey] = nextAbortControllers[fromKey];
+            }
+            delete nextAbortControllers[fromKey];
+          }
+
+          const nextWsConnections = { ...state.wsConnections };
+          if (nextWsConnections[fromKey]) {
+            if (!nextWsConnections[toKey]) {
+              nextWsConnections[toKey] = nextWsConnections[fromKey];
+            } else {
+              try {
+                nextWsConnections[fromKey].__cancelled = true;
+                nextWsConnections[fromKey].close();
+              } catch {}
+            }
+            delete nextWsConnections[fromKey];
+          }
+
+          return {
+            sessions: nextSessions,
+            abortControllers: nextAbortControllers,
+            wsConnections: nextWsConnections,
+          };
+        });
+
+        useMessageStore.getState().migrateSessionKey(fromKey, toKey);
       },
       resetSession: (sessionId, agentId) => {
         get().cancelMessage(sessionId);
