@@ -88,6 +88,13 @@ class A2AInvokeService:
         return resolved
 
     @classmethod
+    def _extract_opencode_session_id(cls, payload: dict[str, Any]) -> str | None:
+        opencode = cls._as_dict(payload.get("opencode"))
+        if not opencode:
+            return None
+        return cls._pick_first_str(opencode, ("session_id", "sessionId", "id"))
+
+    @classmethod
     def _extract_binding_hints_from_payload(
         cls, payload: dict[str, Any]
     ) -> tuple[str | None, dict[str, Any]]:
@@ -121,6 +128,10 @@ class A2AInvokeService:
                 )
             if external_session_id is None:
                 external_session_id = cls._pick_first_str(candidate, external_id_keys)
+            if external_session_id is None:
+                external_session_id = cls._extract_opencode_session_id(candidate)
+                if external_session_id and provider is None:
+                    provider = normalize_provider("opencode")
 
         if context_id is None:
             context_id = cls._pick_first_str(
@@ -134,6 +145,10 @@ class A2AInvokeService:
             external_session_id = cls._pick_first_str(
                 resolved_metadata, external_id_keys
             )
+        if external_session_id is None:
+            external_session_id = cls._extract_opencode_session_id(resolved_metadata)
+            if external_session_id and provider is None:
+                provider = normalize_provider("opencode")
 
         if provider:
             resolved_metadata["provider"] = provider

@@ -97,3 +97,20 @@ def test_extract_binding_hints_accepts_session_id_aliases():
     assert context_id is None
     assert metadata["provider"] == "opencode"
     assert metadata["externalSessionId"] == "alias-upstream-session"
+
+
+def test_extract_binding_hints_from_opencode_namespace_session_id():
+    context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
+        {
+            "success": True,
+            "content": "ok",
+            "metadata": {
+                "opencode": {
+                    "session_id": "nested-upstream-session",
+                }
+            },
+        }
+    )
+    assert context_id is None
+    assert metadata["provider"] == "opencode"
+    assert metadata["externalSessionId"] == "nested-upstream-session"

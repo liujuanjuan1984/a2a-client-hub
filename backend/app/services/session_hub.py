@@ -1441,6 +1441,11 @@ def _extract_provider_and_external_from_metadata(
             "upstream_session_id",
         ],
     )
+    if external_session_id is None:
+        opencode = _as_dict(metadata.get("opencode"))
+        external_session_id = _pick_str(opencode, ["session_id", "sessionId", "id"])
+        if external_session_id and provider is None:
+            provider = normalize_provider("opencode")
     return provider, external_session_id
 
 
