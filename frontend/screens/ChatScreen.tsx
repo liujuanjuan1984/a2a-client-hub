@@ -27,10 +27,6 @@ import { generateId } from "@/lib/id";
 import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import { backOrHome } from "@/lib/navigation";
 import { buildChatRoute } from "@/lib/routes";
-import {
-  buildProcessStates,
-  sanitizeStreamRecords,
-} from "@/lib/streamChunkView";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
@@ -100,12 +96,6 @@ export function ChatScreen({
   const suppressAutoScrollRef = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
-  const [expandedChunkMessageIds, setExpandedChunkMessageIds] = useState<
-    Record<string, boolean>
-  >({});
-  const [detailsModeByMessageId, setDetailsModeByMessageId] = useState<
-    Record<string, "raw" | "process">
-  >({});
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const minInputHeight = 44;
@@ -317,29 +307,6 @@ export function ChatScreen({
       webEvent.preventDefault?.();
       handleSend();
     }
-  };
-
-  const toggleChunkPanel = (messageId: string) => {
-    setExpandedChunkMessageIds((prev) => {
-      const expanded = !(prev[messageId] ?? false);
-      if (!expanded) {
-        setDetailsModeByMessageId((current) => ({
-          ...current,
-          [messageId]: "raw",
-        }));
-      }
-      return {
-        ...prev,
-        [messageId]: expanded,
-      };
-    });
-  };
-
-  const toggleDetailsMode = (messageId: string) => {
-    setDetailsModeByMessageId((prev) => ({
-      ...prev,
-      [messageId]: (prev[messageId] ?? "raw") === "raw" ? "process" : "raw",
-    }));
   };
 
   if (!agent) {
@@ -564,18 +531,6 @@ export function ChatScreen({
 
         {messages?.length ? (
           messages.map((message) => {
-            const streamChunks = message.streamChunks ?? [];
-            const hasStreamChunks =
-              message.role === "agent" && streamChunks.length > 0;
-            const isChunkPanelExpanded =
-              expandedChunkMessageIds[message.id] ?? false;
-            const detailsMode = detailsModeByMessageId[message.id] ?? "raw";
-            const sanitizedRecords = sanitizeStreamRecords(
-              streamChunks,
-              message.content,
-            );
-            const processStates = buildProcessStates(sanitizedRecords);
-
             return (
               <View
                 key={message.id}
@@ -599,61 +554,6 @@ export function ChatScreen({
                     <Text className="mt-1 text-[10px] text-muted">
                       Streaming...
                     </Text>
-                  ) : null}
-                  {hasStreamChunks ? (
-                    <View className="mt-2">
-                      <Pressable
-                        className="self-start rounded-md border border-slate-600 px-2 py-1"
-                        onPress={() => toggleChunkPanel(message.id)}
-                      >
-                        <Text className="text-[10px] font-semibold text-slate-300">
-                          {isChunkPanelExpanded
-                            ? "Hide Details"
-                            : `Show Details (${streamChunks.length})`}
-                        </Text>
-                      </Pressable>
-                      {isChunkPanelExpanded ? (
-                        <View className="mt-2 rounded-xl border border-slate-700 bg-slate-900/80 p-2">
-                          <Pressable
-                            className="mb-2 self-start rounded-md border border-slate-600 px-2 py-1"
-                            onPress={() => toggleDetailsMode(message.id)}
-                          >
-                            <Text className="text-[10px] font-semibold text-slate-300">
-                              {detailsMode === "raw"
-                                ? "Process View"
-                                : "Raw Frames"}
-                            </Text>
-                          </Pressable>
-                          <ScrollView className="max-h-48" nestedScrollEnabled>
-                            {detailsMode === "raw"
-                              ? sanitizedRecords.map((record, index) => (
-                                  <View
-                                    key={`${message.id}-raw-${index}`}
-                                    className={index > 0 ? "mt-2" : ""}
-                                  >
-                                    <Text className="break-all text-xs text-slate-200">
-                                      {record.text}
-                                    </Text>
-                                  </View>
-                                ))
-                              : processStates.map((state, index) => (
-                                  <View
-                                    key={`${message.id}-proc-${index}`}
-                                    className={
-                                      index > 0
-                                        ? "mt-2 border-t border-slate-700 pt-2"
-                                        : ""
-                                    }
-                                  >
-                                    <Text className="break-all text-xs text-slate-200">
-                                      {state}
-                                    </Text>
-                                  </View>
-                                ))}
-                          </ScrollView>
-                        </View>
-                      ) : null}
-                    </View>
                   ) : null}
                 </View>
               </View>
