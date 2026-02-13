@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import case, delete, func, or_, select
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -65,7 +65,6 @@ async def list_agent_messages(
     offset: int = 0,
     session_id: Optional[UUID] = None,
     conversation_id: Optional[UUID] = None,
-    use_session_or_conversation: bool = False,
 ) -> List[AgentMessage]:
     sender_priority = case(
         (AgentMessage.sender.in_(["user", "automation"]), 0),
@@ -77,18 +76,10 @@ async def list_agent_messages(
         .options(selectinload(AgentMessage.session))
         .where(AgentMessage.user_id == user_id)
     )
-    if session_id and conversation_id and use_session_or_conversation:
-        stmt = stmt.where(
-            or_(
-                AgentMessage.session_id == session_id,
-                AgentMessage.conversation_id == conversation_id,
-            )
-        )
-    else:
-        if session_id:
-            stmt = stmt.where(AgentMessage.session_id == session_id)
-        if conversation_id:
-            stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
+    if session_id:
+        stmt = stmt.where(AgentMessage.session_id == session_id)
+    if conversation_id:
+        stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
 
     stmt = (
         stmt.order_by(
@@ -134,23 +125,39 @@ async def count_agent_messages(
     user_id: UUID,
     session_id: Optional[UUID] = None,
     conversation_id: Optional[UUID] = None,
-    use_session_or_conversation: bool = False,
 ) -> int:
     stmt = select(func.count(AgentMessage.id)).where(AgentMessage.user_id == user_id)
-    if session_id and conversation_id and use_session_or_conversation:
-        stmt = stmt.where(
-            or_(
-                AgentMessage.session_id == session_id,
-                AgentMessage.conversation_id == conversation_id,
-            )
-        )
-    else:
-        if session_id:
-            stmt = stmt.where(AgentMessage.session_id == session_id)
-        if conversation_id:
-            stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
+    if session_id:
+        stmt = stmt.where(AgentMessage.session_id == session_id)
+    if conversation_id:
+        stmt = stmt.where(AgentMessage.conversation_id == conversation_id)
     result = await db.execute(stmt)
     return int(result.scalar_one())
+
+
+async def backfill_session_messages_conversation_id(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    session_id: UUID,
+    conversation_id: UUID,
+) -> int:
+    """Backfill legacy rows that still only reference session_id.
+
+    Idempotent: only rows with NULL conversation_id are updated.
+    """
+
+    stmt = (
+        update(AgentMessage)
+        .where(
+            AgentMessage.user_id == user_id,
+            AgentMessage.session_id == session_id,
+            AgentMessage.conversation_id.is_(None),
+        )
+        .values(conversation_id=conversation_id)
+    )
+    result = await db.execute(stmt)
+    return int(result.rowcount or 0)
 
 
 async def get_conversation_history(
@@ -223,6 +230,7 @@ async def update_agent_message(
 
 
 __all__ = [
+    "backfill_session_messages_conversation_id",
     "AgentMessageCreationError",
     "commit_agent_messages",
     "count_agent_messages",

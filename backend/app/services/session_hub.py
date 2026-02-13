@@ -614,22 +614,27 @@ class SessionHubService:
                     provider=provider,
                     external_session_id=external_session_id,
                 )
+            if conversation_id:
+                await self._backfill_local_session_messages_conversation_id(
+                    db,
+                    user_id=user_id,
+                    session_id=session.id,
+                    conversation_id=conversation_id,
+                )
             offset = (page - 1) * size
             messages = await agent_message_handler.list_agent_messages(
                 db,
                 user_id=user_id,
                 limit=size,
                 offset=offset,
-                session_id=session.id,
+                session_id=None if conversation_id else session.id,
                 conversation_id=conversation_id,
-                use_session_or_conversation=bool(conversation_id),
             )
             total = await agent_message_handler.count_agent_messages(
                 db,
                 user_id=user_id,
-                session_id=session.id,
+                session_id=None if conversation_id else session.id,
                 conversation_id=conversation_id,
-                use_session_or_conversation=bool(conversation_id),
             )
             pages = (total + size - 1) // size if size else 0
             items = [
@@ -860,6 +865,12 @@ class SessionHubService:
                 title=session.name or "Session",
                 binding_metadata=metadata,
             )
+            await self._backfill_local_session_messages_conversation_id(
+                db,
+                user_id=user_id,
+                session_id=session.id,
+                conversation_id=conversation_id,
+            )
         return {
             "session_id": session_key,
             "conversationId": str(conversation_id) if conversation_id else None,
@@ -988,6 +999,12 @@ class SessionHubService:
                 title=session.name or "Session",
                 binding_metadata=invoke_metadata,
             )
+            await self._backfill_local_session_messages_conversation_id(
+                db,
+                user_id=user_id,
+                session_id=session.id,
+                conversation_id=conversation_id,
+            )
 
         await agent_message_handler.create_agent_message(
             db,
@@ -1024,6 +1041,21 @@ class SessionHubService:
                 db, user_id=user_id, agent_id=agent_id
             )
         return await a2a_runtime_builder.build(db, user_id=user_id, agent_id=agent_id)
+
+    async def _backfill_local_session_messages_conversation_id(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+        conversation_id: UUID,
+    ) -> int:
+        return await agent_message_handler.backfill_session_messages_conversation_id(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            conversation_id=conversation_id,
+        )
 
     async def _get_local_session(
         self,

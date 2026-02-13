@@ -4,6 +4,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.api.routers import me_sessions
 from app.db.models.a2a_agent import A2AAgent
@@ -13,6 +14,7 @@ from app.db.models.agent_session import AgentSession
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.services.a2a_runtime import A2ARuntimeNotFoundError
 from app.services.a2a_schedule_service import a2a_schedule_service
+from app.services.conversation_identity import conversation_identity_service
 from app.services.session_hub import (
     build_manual_session_key,
     build_opencode_session_key,
@@ -452,6 +454,17 @@ async def test_unified_messages_query_keeps_prebinding_local_history(
         extra_metadata={"transport": "http_json", "stream": False},
     )
     await async_db_session.commit()
+    rows = (
+        await async_db_session.execute(
+            select(AgentMessage).where(AgentMessage.session_id == manual_session.id)
+        )
+    ).scalars()
+    conversation_ids = {
+        str(message.conversation_id)
+        for message in rows
+        if getattr(message, "conversation_id", None) is not None
+    }
+    assert len(conversation_ids) == 1
 
     manual_key = build_manual_session_key(manual_session.id)
     async with create_test_client(
@@ -471,3 +484,104 @@ async def test_unified_messages_query_keeps_prebinding_local_history(
         assert "before-binding-agent" in contents
         assert "after-binding-user" in contents
         assert "after-binding-agent" in contents
+
+
+async def test_unified_messages_query_backfills_legacy_rows_on_read(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="lazy-backfill"
+    )
+    now = utc_now()
+
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Manual Legacy Session",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            session_id=manual_session.id,
+            sender="user",
+            content="legacy-user",
+            message_metadata={
+                "provider": "OpenCode",
+                "externalSessionId": "legacy-upstream-session",
+                "context_id": "legacy-context",
+            },
+        )
+    )
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            session_id=manual_session.id,
+            sender="agent",
+            content="legacy-agent",
+            message_metadata={
+                "provider": "OpenCode",
+                "externalSessionId": "legacy-upstream-session",
+                "context_id": "legacy-context",
+            },
+        )
+    )
+
+    conversation_id = await conversation_identity_service.bind_external_session(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=None,
+        provider="opencode",
+        external_session_id="legacy-upstream-session",
+        agent_id=agent.id,
+        agent_source="personal",
+        context_id="legacy-context",
+        title="Legacy Session",
+        binding_metadata={
+            "provider": "opencode",
+            "externalSessionId": "legacy-upstream-session",
+        },
+    )
+    await async_db_session.commit()
+
+    legacy_rows_before = (
+        await async_db_session.execute(
+            select(AgentMessage).where(
+                AgentMessage.session_id == manual_session.id,
+                AgentMessage.conversation_id.is_(None),
+            )
+        )
+    ).scalars()
+    assert len(list(legacy_rows_before)) == 2
+
+    manual_key = build_manual_session_key(manual_session.id)
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/sessions/{manual_key}/messages:query",
+            json={"page": 1, "size": 50},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pagination"]["total"] == 2
+        assert payload["meta"]["conversationId"] == str(conversation_id)
+
+    legacy_rows_after = (
+        await async_db_session.execute(
+            select(AgentMessage).where(
+                AgentMessage.session_id == manual_session.id,
+                AgentMessage.conversation_id == conversation_id,
+            )
+        )
+    ).scalars()
+    assert len(list(legacy_rows_after)) == 2
