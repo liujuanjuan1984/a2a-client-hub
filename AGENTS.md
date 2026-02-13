@@ -10,42 +10,42 @@ This guide is for coding agents working on this repository. Follow these rules s
 
 ## 2. Required Regressions
 
-执行回归必须按变更范围区分前后端，并修复全部失败项。
+Run regressions by changed scope (backend/frontend) and fix all failures.
 
 ### 2.1 Scope-Based Rules (Mandatory)
 
-- **仅 backend 变更**：只执行 backend 回归。
-- **仅 frontend 变更**：只执行 frontend 回归。
-- **backend + frontend 同时变更**：两套回归都执行，且**串行**执行（先 backend，后 frontend），避免并发压垮本机 I/O。
+- **Backend-only changes**: run backend regressions only.
+- **Frontend-only changes**: run frontend regressions only.
+- **Backend + frontend changes**: run both regression suites, and run them **serially** (backend first, then frontend) to avoid overwhelming local I/O.
 
 ### 2.2 Default Verification Mode (Low-Load + Serial, Mandatory)
 
-默认采用**串行低负载**回归（禁止并行跑重任务）：
+Use **serial low-load** verification by default (no parallel heavy tasks):
 
-- **Backend（按改动文件/模块）**
+- **Backend (changed files/modules)**
   - `cd backend && uv run pre-commit run --files <changed_backend_files...> --config ../.pre-commit-config.yaml`
   - `cd backend && uv run pytest <changed_tests_or_module>`
-- **Frontend（按改动文件/模块）**
+- **Frontend (changed files/modules)**
   - `cd frontend && npm run lint`
   - `cd frontend && export NODE_OPTIONS="--max-old-space-size=1024" && npm run check-types`
   - `cd frontend && npm test -- --findRelatedTests <changed_frontend_files...> --maxWorkers=25%`
 
-执行顺序（当 backend + frontend 同时改动）：
+Execution order (when both backend and frontend changed):
 
-1. backend 轻量回归
-2. frontend 轻量回归
-3. 修复失败后重跑受影响项
+1. backend scoped checks
+2. frontend scoped checks
+3. rerun affected checks after fixes
 
 ### 2.3 Full Regression Gate (On-Demand)
 
-全量回归改为按需触发；满足任一条件时必须执行：
+Run full regressions on demand. Execute them when any condition below is met:
 
-- 人类明确要求“全量回归”
-- 准备将 Draft PR 转 Ready for Review
-- 涉及基础设施/跨模块核心链路改动，轻量回归覆盖不足
-- 出现疑似环境相关或并发相关问题，需要扩大验证面
+- A human explicitly requests full regression.
+- The Draft PR is about to be moved to Ready for Review.
+- Infrastructure or cross-module critical paths are changed and scoped checks are insufficient.
+- Suspected environment/concurrency issues require broader validation.
 
-全量命令如下（按范围选择，仍需串行执行）：
+Full commands (choose by changed scope, still serial):
 
 - **Backend changes (`backend/`)**
   - `cd backend && uv sync --extra dev --locked`
@@ -60,8 +60,8 @@ This guide is for coding agents working on this repository. Follow these rules s
 
 Notes:
 
-- 避免重复重负载检查：同一轮代码未变化时，不要重复执行等价全量检查。
-- 低负载默认策略下，`npm install` / `uv sync` 仅在依赖变化或环境失配时执行。
+- Avoid repeating equivalent heavy checks when code has not changed in the same iteration.
+- In low-load default mode, run `npm install` / `uv sync` only when dependencies changed or environment drift is detected.
 - If a change touches database schema or migrations, additionally run:
   - `cd backend && uv run alembic upgrade head`
   - And verify the critical endpoints manually.
@@ -132,7 +132,7 @@ Before starting any user-assigned task, the agent must:
 
 ### 6. Automated Verification and Self-Correction
 
-- **Verify before push**: 默认执行 Section 2.2 的串行低负载回归；触发条件满足时升级到 Section 2.3 全量回归。
+- **Verify before push**: run Section 2.2 serial low-load checks by default; escalate to Section 2.3 full regressions when trigger conditions are met.
 - **Self-correction loop**: if lint/tests fail, fix them autonomously before reporting.
 
 ### 7. Documentation and Verification Evidence

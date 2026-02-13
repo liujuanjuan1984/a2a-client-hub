@@ -17,6 +17,7 @@ from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
@@ -53,6 +54,64 @@ class ParsedSessionKey:
     agent_id: Optional[UUID] = None
     agent_source: Optional[Literal["personal", "shared"]] = None
     upstream_session_id: Optional[str] = None
+
+
+def _to_utc_epoch_seconds(value: Any) -> float:
+    if isinstance(value, datetime):
+        normalized = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return normalized.astimezone(timezone.utc).timestamp()
+    if isinstance(value, str):
+        try:
+            normalized = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return float("-inf")
+        if normalized.tzinfo is None:
+            normalized = normalized.replace(tzinfo=timezone.utc)
+        return normalized.astimezone(timezone.utc).timestamp()
+    return float("-inf")
+
+
+def _session_order_key(item: dict[str, Any]) -> tuple[float, float, str]:
+    last_active = _to_utc_epoch_seconds(item.get("last_active_at"))
+    created = _to_utc_epoch_seconds(item.get("created_at"))
+    session_id = str(item.get("id") or "")
+    return (last_active, created, session_id)
+
+
+def _take_merged_session_page(
+    left_items: list[dict[str, Any]],
+    right_items: list[dict[str, Any]],
+    *,
+    offset: int,
+    size: int,
+) -> list[dict[str, Any]]:
+    left_index = 0
+    right_index = 0
+    skipped = 0
+    page_items: list[dict[str, Any]] = []
+
+    while left_index < len(left_items) or right_index < len(right_items):
+        choose_left = right_index >= len(right_items)
+        if not choose_left and left_index < len(left_items):
+            choose_left = _session_order_key(
+                left_items[left_index]
+            ) >= _session_order_key(right_items[right_index])
+
+        if choose_left:
+            picked = left_items[left_index]
+            left_index += 1
+        else:
+            picked = right_items[right_index]
+            right_index += 1
+
+        if skipped < offset:
+            skipped += 1
+            continue
+        if len(page_items) >= size:
+            break
+        page_items.append(picked)
+
+    return page_items
 
 
 def _urlsafe_b64encode_json(data: Dict[str, Any]) -> str:
@@ -157,12 +216,13 @@ class SessionHubService:
         refresh: bool,
         source: Optional[SessionSource],
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        items: list[dict[str, Any]] = []
+        local_items: list[dict[str, Any]] = []
+        opencode_items: list[dict[str, Any]] = []
         opencode_meta: dict[str, Any] = {}
 
         if source in {None, "manual", "scheduled"}:
-            items.extend(
-                await self._list_local_sessions(db, user_id=user_id, source=source)
+            local_items = await self._list_local_sessions(
+                db, user_id=user_id, source=source
             )
 
         if source in {None, "opencode"}:
@@ -182,7 +242,7 @@ class SessionHubService:
                     or not raw_session_id.strip()
                 ):
                     continue
-                items.append(
+                opencode_items.append(
                     {
                         "id": build_opencode_session_key(
                             agent_id=raw_agent_id,
@@ -199,19 +259,22 @@ class SessionHubService:
                     }
                 )
 
-        items.sort(
-            key=lambda item: (
-                str(item.get("last_active_at") or ""),
-                str(item.get("created_at") or ""),
-                str(item.get("id") or ""),
-            ),
-            reverse=True,
-        )
-
-        total = len(items)
+        local_items.sort(key=_session_order_key, reverse=True)
+        opencode_items.sort(key=_session_order_key, reverse=True)
+        total = len(local_items) + len(opencode_items)
         pages = (total + size - 1) // size if size else 0
         offset = (page - 1) * size
-        page_items = items[offset : offset + size]
+        if source is None:
+            page_items = _take_merged_session_page(
+                local_items,
+                opencode_items,
+                offset=offset,
+                size=size,
+            )
+        elif source in {"manual", "scheduled"}:
+            page_items = local_items[offset : offset + size]
+        else:
+            page_items = opencode_items[offset : offset + size]
 
         meta = {
             "opencode_total_agents": int(opencode_meta.get("total_agents") or 0),
@@ -587,6 +650,13 @@ class SessionHubService:
         )
 
         if session is None and parsed.source == "manual":
+            existing_session_id = await db.scalar(
+                select(AgentSession.id).where(
+                    AgentSession.id == parsed.local_session_id
+                )
+            )
+            if existing_session_id is not None:
+                raise ValueError("invalid_session_id")
             session = AgentSession(
                 id=parsed.local_session_id,
                 user_id=user_id,
@@ -596,7 +666,11 @@ class SessionHubService:
                 last_activity_at=utc_now(),
             )
             db.add(session)
-            await db.flush()
+            try:
+                await db.flush()
+            except IntegrityError as exc:
+                await db.rollback()
+                raise ValueError("invalid_session_id") from exc
 
         if session is None:
             raise ValueError("session_not_found")

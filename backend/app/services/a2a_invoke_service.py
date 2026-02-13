@@ -136,9 +136,13 @@ class A2AInvokeService:
                 stream_failed = True
                 logger.warning("A2A SSE stream failed", exc_info=True, extra=log_extra)
                 await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
+                error_payload = self.build_ws_error_event(
+                    message=self._STREAM_ERROR_MESSAGE,
+                    error_code=self._STREAM_ERROR_CODE,
+                )
                 yield (
                     "event: error\n"
-                    f"data: {json_dumps({'message': self._STREAM_ERROR_MESSAGE}, ensure_ascii=False)}\n\n"
+                    f"data: {json_dumps(error_payload['data'], ensure_ascii=False)}\n\n"
                 )
             finally:
                 if not stream_failed:
