@@ -708,11 +708,17 @@ class SessionHubService:
         parsed = parse_session_key(session_key)
         if parsed.source == "conversation":
             assert parsed.conversation_id is not None
-            resolved = await self._resolve_conversation_session_key(
+            resolved = await self._resolve_local_session_key_for_conversation(
                 db,
                 user_id=user_id,
                 conversation_id=parsed.conversation_id,
             )
+            if resolved is None:
+                resolved = await self._resolve_conversation_session_key(
+                    db,
+                    user_id=user_id,
+                    conversation_id=parsed.conversation_id,
+                )
             if resolved is None:
                 pagination = {
                     "page": page,
@@ -1469,6 +1475,44 @@ class SessionHubService:
                 upstream_session_id=binding_locator.external_session_id,
             )
 
+        local_session_id = (
+            binding_locator.local_session_id
+            if binding_locator and isinstance(binding_locator.local_session_id, UUID)
+            else conversation_id
+        )
+        local_session = await self._get_local_session_by_id(
+            db,
+            user_id=user_id,
+            local_session_id=local_session_id,
+        )
+        if local_session is None:
+            return None
+        if local_session.session_type == AgentSession.TYPE_CHAT:
+            return ParsedSessionKey(
+                source="manual",
+                local_session_id=local_session.id,
+                conversation_id=conversation_id,
+            )
+        if local_session.session_type == AgentSession.TYPE_SCHEDULED:
+            return ParsedSessionKey(
+                source="scheduled",
+                local_session_id=local_session.id,
+                conversation_id=conversation_id,
+            )
+        return None
+
+    async def _resolve_local_session_key_for_conversation(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> ParsedSessionKey | None:
+        binding_locator = await conversation_identity_service.find_latest_external_binding_for_conversation(
+            db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
         local_session_id = (
             binding_locator.local_session_id
             if binding_locator and isinstance(binding_locator.local_session_id, UUID)

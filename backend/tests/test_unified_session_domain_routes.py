@@ -1000,3 +1000,91 @@ async def test_unified_messages_query_backfills_legacy_rows_on_read(
         )
     ).scalars()
     assert len(list(legacy_rows_after)) == 2
+
+
+async def test_unified_conversation_messages_query_prefers_local_history(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="conv-local")
+    now = utc_now()
+
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Conversation Local Preferred",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=manual_session,
+        source="manual",
+        user_id=user.id,
+        agent_id=agent.id,
+        agent_source="personal",
+        query="round-1-user",
+        response_content="round-1-agent",
+        success=True,
+        context_id="ctx-conv-local-1",
+        invoke_metadata={
+            "provider": "opencode",
+            "externalSessionId": "upstream-conv-local-1",
+        },
+        extra_metadata={"transport": "http_json", "stream": False},
+    )
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=manual_session,
+        source="manual",
+        user_id=user.id,
+        agent_id=agent.id,
+        agent_source="personal",
+        query="round-2-user",
+        response_content="round-2-agent",
+        success=True,
+        context_id="ctx-conv-local-2",
+        invoke_metadata={
+            "provider": "opencode",
+            "externalSessionId": "upstream-conv-local-1",
+        },
+        extra_metadata={"transport": "http_json", "stream": False},
+    )
+    await async_db_session.commit()
+
+    async def _runtime_should_not_be_called(*args, **kwargs):
+        raise AssertionError("remote runtime should not be used for local conversation")
+
+    monkeypatch.setattr(
+        me_sessions.session_hub_service,
+        "_build_runtime",
+        _runtime_should_not_be_called,
+    )
+
+    conversation_key = build_conversation_session_key(manual_session.id)
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/sessions/{conversation_key}/messages:query",
+            json={"page": 1, "size": 50},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pagination"]["total"] == 4
+        contents = [item["content"] for item in payload["items"]]
+        assert len(contents) == 4
+        assert set(contents) == {
+            "round-1-user",
+            "round-1-agent",
+            "round-2-user",
+            "round-2-agent",
+        }
