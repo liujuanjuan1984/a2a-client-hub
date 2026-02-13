@@ -406,12 +406,6 @@ class SessionHubService:
         assert parsed.agent_source in {"personal", "shared"}
         assert parsed.upstream_session_id is not None
 
-        runtime = await self._build_runtime(
-            db,
-            user_id=user_id,
-            agent_source=parsed.agent_source,
-            agent_id=parsed.agent_id,
-        )
         try:
             try:
                 runtime = await self._build_runtime(
