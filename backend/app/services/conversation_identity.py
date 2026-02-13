@@ -225,6 +225,107 @@ class ConversationIdentityService:
         for local_session_id, conversation_id in result.all():
             if isinstance(local_session_id, UUID) and local_session_id not in mapped:
                 mapped[local_session_id] = conversation_id
+        unresolved_local_ids = [
+            local_id
+            for local_id in normalized_local_session_ids
+            if local_id not in mapped
+        ]
+        if unresolved_local_ids:
+            thread_rows = await db.execute(
+                select(ConversationThread.id).where(
+                    and_(
+                        ConversationThread.user_id == user_id,
+                        ConversationThread.id.in_(unresolved_local_ids),
+                        ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    )
+                )
+            )
+            for (conversation_id,) in thread_rows.all():
+                if isinstance(conversation_id, UUID) and conversation_id not in mapped:
+                    mapped[conversation_id] = conversation_id
+        return mapped
+
+    async def find_latest_external_binding_for_conversation(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> Optional[ExternalBindingLocator]:
+        mapped = await self.find_latest_external_bindings_for_conversations_batch(
+            db,
+            user_id=user_id,
+            conversation_ids=[conversation_id],
+        )
+        return mapped.get(conversation_id)
+
+    async def find_latest_external_bindings_for_conversations_batch(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_ids: list[UUID],
+    ) -> dict[UUID, ExternalBindingLocator]:
+        normalized_conversation_ids = sorted({item for item in conversation_ids})
+        if not normalized_conversation_ids:
+            return {}
+
+        result = await db.execute(
+            select(
+                ConversationBinding.conversation_id,
+                ConversationBinding.provider,
+                ConversationBinding.external_session_id,
+                ConversationBinding.context_id,
+                ConversationBinding.agent_id,
+                ConversationBinding.agent_source,
+                ConversationBinding.local_session_id,
+            )
+            .where(
+                and_(
+                    ConversationBinding.user_id == user_id,
+                    ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
+                    ConversationBinding.binding_kind
+                    == ConversationBinding.KIND_EXTERNAL_SESSION,
+                    ConversationBinding.conversation_id.in_(
+                        normalized_conversation_ids
+                    ),
+                )
+            )
+            .order_by(
+                ConversationBinding.conversation_id.asc(),
+                ConversationBinding.last_seen_at.desc(),
+                ConversationBinding.id.desc(),
+            )
+            .distinct(ConversationBinding.conversation_id)
+        )
+        mapped: dict[UUID, ExternalBindingLocator] = {}
+        for (
+            conversation_id,
+            provider,
+            external_session_id,
+            context_id,
+            agent_id,
+            agent_source,
+            local_session_id,
+        ) in result.all():
+            if (
+                not isinstance(conversation_id, UUID)
+                or conversation_id in mapped
+                or not isinstance(provider, str)
+                or not isinstance(external_session_id, str)
+            ):
+                continue
+            mapped[conversation_id] = ExternalBindingLocator(
+                conversation_id=conversation_id,
+                provider=provider,
+                external_session_id=external_session_id,
+                context_id=context_id if isinstance(context_id, str) else None,
+                agent_id=agent_id if isinstance(agent_id, UUID) else None,
+                agent_source=agent_source if isinstance(agent_source, str) else None,
+                local_session_id=(
+                    local_session_id if isinstance(local_session_id, UUID) else None
+                ),
+            )
         return mapped
 
     async def find_latest_external_binding_for_local_session(

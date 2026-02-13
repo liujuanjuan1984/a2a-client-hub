@@ -16,6 +16,7 @@ from app.services.a2a_runtime import A2ARuntimeNotFoundError
 from app.services.a2a_schedule_service import a2a_schedule_service
 from app.services.conversation_identity import conversation_identity_service
 from app.services.session_hub import (
+    build_conversation_session_key,
     build_manual_session_key,
     build_opencode_session_key,
     build_scheduled_session_key,
@@ -115,6 +116,7 @@ async def test_unified_session_list_messages_and_continue(
     await async_db_session.commit()
 
     manual_key = build_manual_session_key(manual_session.id)
+    manual_conversation_key = build_conversation_session_key(manual_session.id)
     scheduled_key = build_scheduled_session_key(scheduled_session.id)
 
     async with create_test_client(
@@ -130,7 +132,7 @@ async def test_unified_session_list_messages_and_continue(
         list_payload = list_resp.json()
 
         keys = {item["id"] for item in list_payload["items"]}
-        assert manual_key in keys
+        assert manual_conversation_key in keys
         assert scheduled_key in keys
 
         manual_msgs_resp = await client.post(
@@ -597,7 +599,7 @@ async def test_unified_session_list_dedups_when_provider_missing_but_external_pr
         assert payload["items"][0]["source"] == "opencode"
 
 
-async def test_unified_manual_continue_returns_canonical_opencode_session_key(
+async def test_unified_manual_continue_returns_stable_conversation_session_key(
     async_db_session,
     async_session_maker,
 ):
@@ -638,11 +640,7 @@ async def test_unified_manual_continue_returns_canonical_opencode_session_key(
     await async_db_session.commit()
 
     manual_key = build_manual_session_key(manual_session.id)
-    canonical_key = build_opencode_session_key(
-        agent_id=agent.id,
-        agent_source="personal",
-        upstream_session_id="upstream-canonical-continue-1",
-    )
+    canonical_key = build_conversation_session_key(manual_session.id)
     async with create_test_client(
         me_sessions.router,
         async_session_maker=async_session_maker,
@@ -652,7 +650,7 @@ async def test_unified_manual_continue_returns_canonical_opencode_session_key(
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["session_id"] == canonical_key
-        assert payload["source"] == "opencode"
+        assert payload["source"] == "manual"
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] == "upstream-canonical-continue-1"
 
@@ -699,11 +697,7 @@ async def test_unified_manual_continue_canonicalizes_opencode_namespace_metadata
     await async_db_session.commit()
 
     manual_key = build_manual_session_key(manual_session.id)
-    canonical_key = build_opencode_session_key(
-        agent_id=agent.id,
-        agent_source="personal",
-        upstream_session_id="upstream-canonical-namespace-1",
-    )
+    canonical_key = build_conversation_session_key(manual_session.id)
     async with create_test_client(
         me_sessions.router,
         async_session_maker=async_session_maker,
@@ -713,7 +707,7 @@ async def test_unified_manual_continue_canonicalizes_opencode_namespace_metadata
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["session_id"] == canonical_key
-        assert payload["source"] == "opencode"
+        assert payload["source"] == "manual"
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] == "upstream-canonical-namespace-1"
 

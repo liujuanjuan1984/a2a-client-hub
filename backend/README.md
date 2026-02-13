@@ -129,8 +129,9 @@ and OpenCode sessions:
 - `contextId` (A2A context id)
 - `bindingMetadata` (normalized binding metadata)
 
-Client-generated manual sessions must use unified IDs with the `manual:`
-prefix and UUID payload, for example `manual:550e8400-e29b-41d4-a716-446655440000`.
+Client-generated chat sessions should use unified IDs with the `conversation:`
+prefix and UUID payload, for example
+`conversation:550e8400-e29b-41d4-a716-446655440000`.
 
 ## Checks (Before Pushing)
 

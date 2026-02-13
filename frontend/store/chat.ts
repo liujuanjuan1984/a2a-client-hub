@@ -21,7 +21,7 @@ import { continueSession as continueSessionBinding } from "@/lib/api/sessions";
 import { fetchSSE } from "@/lib/api/sse";
 import { ENV } from "@/lib/config";
 import { generateId, generateUuid } from "@/lib/id";
-import { getSessionSource } from "@/lib/sessionIds";
+import { buildConversationSessionId, getSessionSource } from "@/lib/sessionIds";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { applyStreamChunk } from "@/lib/streamChunks";
 import { shouldSplitStreamMessage } from "@/lib/streamMessageSplit";
@@ -415,7 +415,13 @@ export const useChatStore = create<ChatState>()(
         };
 
         const attemptSessionRebind = async (reason: string) => {
-          if (getSessionSource(sessionId) !== "opencode") {
+          const source = getSessionSource(sessionId);
+          const current = get().sessions[sessionId];
+          const shouldRebind =
+            source === "opencode" ||
+            (source === "conversation" &&
+              current?.externalSessionRef?.provider === "opencode");
+          if (!shouldRebind) {
             return false;
           }
           if (rebindInFlight) {
@@ -485,7 +491,9 @@ export const useChatStore = create<ChatState>()(
         };
 
         if (
-          getSessionSource(sessionId) === "opencode" &&
+          (getSessionSource(sessionId) === "opencode" ||
+            (getSessionSource(sessionId) === "conversation" &&
+              previousSession.externalSessionRef?.provider === "opencode")) &&
           previousSession.streamState === "error"
         ) {
           await attemptSessionRebind(
@@ -988,7 +996,7 @@ export const useChatStore = create<ChatState>()(
           return changed ? { sessions: nextSessions } : state;
         });
       },
-      generateSessionId: () => `manual:${generateUuid()}`,
+      generateSessionId: () => buildConversationSessionId(generateUuid()),
       clearAll: () => {
         const wsConnections = get().wsConnections;
         Object.values(wsConnections).forEach((ws) => {

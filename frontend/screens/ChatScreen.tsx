@@ -124,7 +124,12 @@ export function ChatScreen({
     const sessionSource = getSessionSource(sessionId);
     const hasHistory =
       messages.length > 0 || sessionHistoryQuery.messages.length > 0;
-    if (sessionSource === "manual" && !hasHistory) return;
+    if (
+      (sessionSource === "manual" || sessionSource === "conversation") &&
+      !hasHistory
+    ) {
+      return;
+    }
 
     let cancelled = false;
     continueSession(sessionId)
