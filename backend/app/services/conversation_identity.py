@@ -11,22 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.conversation_binding import ConversationBinding
 from app.db.models.conversation_thread import ConversationThread
+from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import utc_now
-
-
-def _norm_text(value: Any) -> Optional[str]:
-    if isinstance(value, str):
-        trimmed = value.strip()
-        if trimmed:
-            return trimmed
-    return None
-
-
-def _norm_provider(value: Any) -> Optional[str]:
-    normalized = _norm_text(value)
-    if normalized is None:
-        return None
-    return normalized.lower()
 
 
 class ConversationIdentityService:
@@ -40,8 +26,8 @@ class ConversationIdentityService:
         provider: str,
         external_session_id: str,
     ) -> Optional[UUID]:
-        resolved_provider = _norm_provider(provider)
-        resolved_external_id = _norm_text(external_session_id)
+        resolved_provider = normalize_provider(provider)
+        resolved_external_id = normalize_non_empty_text(external_session_id)
         if not resolved_provider or not resolved_external_id:
             return None
         return await db.scalar(
@@ -65,11 +51,15 @@ class ConversationIdentityService:
         provider: str,
         external_session_ids: list[str],
     ) -> dict[str, UUID]:
-        resolved_provider = _norm_provider(provider)
+        resolved_provider = normalize_provider(provider)
         if not resolved_provider:
             return {}
         normalized_ids = sorted(
-            {_norm_text(item) for item in external_session_ids if _norm_text(item)}
+            {
+                normalize_non_empty_text(item)
+                for item in external_session_ids
+                if normalize_non_empty_text(item)
+            }
         )
         if not normalized_ids:
             return {}
@@ -113,8 +103,8 @@ class ConversationIdentityService:
         binding_metadata: Optional[dict[str, Any]],
     ) -> UUID:
         now = utc_now()
-        resolved_provider = _norm_provider(provider)
-        resolved_external_id = _norm_text(external_session_id)
+        resolved_provider = normalize_provider(provider)
+        resolved_external_id = normalize_non_empty_text(external_session_id)
         if not resolved_provider:
             raise ValueError("provider is required")
         if not resolved_external_id:
@@ -137,7 +127,7 @@ class ConversationIdentityService:
             existing.agent_id = agent_id or existing.agent_id
             existing.agent_source = agent_source or existing.agent_source
             if context_id:
-                existing.context_id = _norm_text(context_id)
+                existing.context_id = normalize_non_empty_text(context_id)
             if isinstance(binding_metadata, dict) and binding_metadata:
                 existing.binding_metadata = dict(binding_metadata)
             return existing.conversation_id
@@ -167,7 +157,7 @@ class ConversationIdentityService:
                         agent_id=agent_id,
                         agent_source=agent_source,
                         external_session_id=resolved_external_id,
-                        context_id=_norm_text(context_id),
+                        context_id=normalize_non_empty_text(context_id),
                         binding_metadata=dict(binding_metadata or {}),
                         status=ConversationBinding.STATUS_ACTIVE,
                         is_primary=True,

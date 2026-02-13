@@ -15,6 +15,7 @@ from fastapi import WebSocket
 from fastapi.responses import StreamingResponse
 
 from app.utils.json_encoder import json_dumps
+from app.utils.session_identity import normalize_provider
 
 StreamEvent = ClientEvent | Message
 ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
@@ -77,15 +78,6 @@ class A2AInvokeService:
                     return trimmed
         return None
 
-    @staticmethod
-    def _normalize_provider(value: str | None) -> str | None:
-        if not isinstance(value, str):
-            return None
-        trimmed = value.strip()
-        if not trimmed:
-            return None
-        return trimmed.lower()
-
     @classmethod
     def _extract_metadata_dict(cls, payload: dict[str, Any]) -> dict[str, Any]:
         resolved: dict[str, Any] = {}
@@ -122,7 +114,7 @@ class A2AInvokeService:
             if candidate_metadata:
                 resolved_metadata.update(candidate_metadata)
             if provider is None:
-                provider = cls._normalize_provider(
+                provider = normalize_provider(
                     cls._pick_first_str(candidate, provider_keys)
                 )
             if external_session_id is None:
@@ -133,7 +125,7 @@ class A2AInvokeService:
                 resolved_metadata, ("contextId", "context_id")
             )
         if provider is None:
-            provider = cls._normalize_provider(
+            provider = normalize_provider(
                 cls._pick_first_str(resolved_metadata, provider_keys)
             )
         if external_session_id is None:

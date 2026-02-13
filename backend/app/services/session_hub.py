@@ -39,6 +39,7 @@ from app.services.hub_a2a_runtime import (
     hub_a2a_runtime_builder,
 )
 from app.services.opencode_session_directory import opencode_session_directory_service
+from app.utils.session_identity import normalize_provider
 from app.utils.timezone_util import utc_now
 
 SessionSource = Literal["manual", "scheduled", "opencode"]
@@ -489,7 +490,7 @@ class SessionHubService:
         }
         local_external_keys = {
             (
-                _normalize_provider(item.get("provider")),
+                normalize_provider(item.get("provider")),
                 str(item.get("external_session_id")),
             )
             for item in local_items
@@ -504,7 +505,7 @@ class SessionHubService:
             ):
                 continue
 
-            provider_key = _normalize_provider("opencode")
+            provider_key = normalize_provider("opencode")
             external_key = (
                 provider_key,
                 str(remote_item.get("source_session_id")),
@@ -575,6 +576,7 @@ class SessionHubService:
         page: int,
         size: int,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        db_mutated = False
         parsed = parse_session_key(session_key)
         if parsed.source in {"manual", "scheduled"}:
             assert parsed.local_session_id is not None
@@ -615,12 +617,14 @@ class SessionHubService:
                     external_session_id=external_session_id,
                 )
             if conversation_id:
-                await self._backfill_local_session_messages_conversation_id(
+                updated = await agent_message_handler.backfill_session_messages_conversation_id(
                     db,
                     user_id=user_id,
                     session_id=session.id,
                     conversation_id=conversation_id,
                 )
+                if updated > 0:
+                    db_mutated = True
             offset = (page - 1) * size
             messages = await agent_message_handler.list_agent_messages(
                 db,
@@ -658,7 +662,11 @@ class SessionHubService:
                 "total": int(total),
                 "pages": pages,
             }
-            return items, {"pagination": pagination, "meta": meta}
+            return items, {
+                "pagination": pagination,
+                "meta": meta,
+                "_db_mutated": db_mutated,
+            }
 
         assert parsed.source == "opencode"
         assert parsed.agent_id is not None
@@ -729,7 +737,7 @@ class SessionHubService:
             "total": total,
             "pages": pages,
         }
-        return items, {"pagination": pagination, "meta": meta}
+        return items, {"pagination": pagination, "meta": meta, "_db_mutated": False}
 
     async def continue_session(
         self,
@@ -737,7 +745,7 @@ class SessionHubService:
         *,
         user_id: UUID,
         session_key: str,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], bool]:
         parsed = parse_session_key(session_key)
         if parsed.source == "opencode":
             assert parsed.agent_id is not None
@@ -795,7 +803,7 @@ class SessionHubService:
                 provider,
                 external_session_id,
             ) = _extract_provider_and_external_from_metadata(metadata)
-            resolved_provider = _normalize_provider(
+            resolved_provider = normalize_provider(
                 provider_from_payload or provider or "opencode"
             )
             resolved_external_session_id = (
@@ -815,16 +823,19 @@ class SessionHubService:
                 title="Session",
                 binding_metadata=binding_metadata,
             )
-            return {
-                "session_id": session_key,
-                "conversationId": str(conversation_id),
-                "source": "opencode",
-                "provider": resolved_provider,
-                "externalSessionId": resolved_external_session_id,
-                "contextId": context_id if isinstance(context_id, str) else None,
-                "bindingMetadata": binding_metadata,
-                "metadata": metadata,
-            }
+            return (
+                {
+                    "session_id": session_key,
+                    "conversationId": str(conversation_id),
+                    "source": "opencode",
+                    "provider": resolved_provider,
+                    "externalSessionId": resolved_external_session_id,
+                    "contextId": context_id if isinstance(context_id, str) else None,
+                    "bindingMetadata": binding_metadata,
+                    "metadata": metadata,
+                },
+                True,
+            )
 
         assert parsed.local_session_id is not None
         session = await self._get_local_session(
@@ -852,6 +863,7 @@ class SessionHubService:
             metadata
         )
         conversation_id: UUID | None = None
+        db_mutated = False
         if provider and external_session_id:
             conversation_id = await conversation_identity_service.bind_external_session(
                 db,
@@ -865,22 +877,26 @@ class SessionHubService:
                 title=session.name or "Session",
                 binding_metadata=metadata,
             )
-            await self._backfill_local_session_messages_conversation_id(
+            await agent_message_handler.backfill_session_messages_conversation_id(
                 db,
                 user_id=user_id,
                 session_id=session.id,
                 conversation_id=conversation_id,
             )
-        return {
-            "session_id": session_key,
-            "conversationId": str(conversation_id) if conversation_id else None,
-            "source": parsed.source,
-            "provider": provider,
-            "externalSessionId": external_session_id,
-            "contextId": context_id if isinstance(context_id, str) else None,
-            "bindingMetadata": metadata,
-            "metadata": metadata,
-        }
+            db_mutated = True
+        return (
+            {
+                "session_id": session_key,
+                "conversationId": str(conversation_id) if conversation_id else None,
+                "source": parsed.source,
+                "provider": provider,
+                "externalSessionId": external_session_id,
+                "contextId": context_id if isinstance(context_id, str) else None,
+                "bindingMetadata": metadata,
+                "metadata": metadata,
+            },
+            db_mutated,
+        )
 
     async def ensure_local_session_for_invoke(
         self,
@@ -999,7 +1015,7 @@ class SessionHubService:
                 title=session.name or "Session",
                 binding_metadata=invoke_metadata,
             )
-            await self._backfill_local_session_messages_conversation_id(
+            await agent_message_handler.backfill_session_messages_conversation_id(
                 db,
                 user_id=user_id,
                 session_id=session.id,
@@ -1041,21 +1057,6 @@ class SessionHubService:
                 db, user_id=user_id, agent_id=agent_id
             )
         return await a2a_runtime_builder.build(db, user_id=user_id, agent_id=agent_id)
-
-    async def _backfill_local_session_messages_conversation_id(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        session_id: UUID,
-        conversation_id: UUID,
-    ) -> int:
-        return await agent_message_handler.backfill_session_messages_conversation_id(
-            db,
-            user_id=user_id,
-            session_id=session_id,
-            conversation_id=conversation_id,
-        )
 
     async def _get_local_session(
         self,
@@ -1155,7 +1156,7 @@ def _pick_str(obj: Dict[str, Any], keys: list[str]) -> Optional[str]:
 def _extract_provider_and_external_from_metadata(
     metadata: Dict[str, Any],
 ) -> tuple[Optional[str], Optional[str]]:
-    provider = _normalize_provider(
+    provider = normalize_provider(
         _pick_str(
             metadata,
             ["provider", "session_provider", "external_provider"],
@@ -1174,15 +1175,6 @@ def _extract_provider_and_external_from_metadata(
 
 def _extract_context_id_from_metadata(metadata: Dict[str, Any]) -> Optional[str]:
     return _pick_str(metadata, ["context_id", "contextId"])
-
-
-def _normalize_provider(value: Optional[str]) -> Optional[str]:
-    if not isinstance(value, str):
-        return None
-    trimmed = value.strip()
-    if not trimmed:
-        return None
-    return trimmed.lower()
 
 
 def _try_parse_uuid(value: Any) -> Optional[UUID]:
