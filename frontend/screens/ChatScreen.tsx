@@ -89,6 +89,17 @@ const isSemanticallyDuplicatedWithRemote = (
   return Math.abs(localTs - remoteTs) <= 30_000;
 };
 
+const extractStreamErrorTail = (content: string): string | null => {
+  const lines = content.split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]?.trim();
+    if (line && line.startsWith("[Stream Error:")) {
+      return line;
+    }
+  }
+  return null;
+};
+
 export function ChatScreen({
   agentId: routeAgentId,
   sessionId,
@@ -454,6 +465,9 @@ export function ChatScreen({
     ({ item: message }: { item: ChatMessage }) => {
       const renderableBlocks = deriveRenderableBlocks(message);
       const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
+      const streamErrorTail = hasBlocks
+        ? extractStreamErrorTail(message.content)
+        : null;
 
       return (
         <View
@@ -472,8 +486,8 @@ export function ChatScreen({
           >
             {hasBlocks ? (
               renderableBlocks.map((block, index) => {
-                const blockText = block.content.trim();
-                if (!blockText) return null;
+                const blockText = block.content;
+                if (blockText.length === 0) return null;
                 const blockId = block.id || `${message.id}:${index}`;
                 if (block.type === "reasoning") {
                   const expanded = Boolean(expandedReasoningByBlockId[blockId]);
@@ -544,6 +558,11 @@ export function ChatScreen({
                 {message.content}
               </Text>
             )}
+            {streamErrorTail ? (
+              <Text className="mt-2 break-all text-xs text-rose-300">
+                {streamErrorTail}
+              </Text>
+            ) : null}
             {message.status === "streaming" ? (
               <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
             ) : null}

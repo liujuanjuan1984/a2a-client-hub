@@ -1,6 +1,7 @@
 import {
   applyStreamBlockUpdate,
   extractStreamBlockUpdate,
+  finalizeMessageBlocks,
   projectPrimaryTextContent,
   type MessageBlock,
   type StreamBlockUpdate,
@@ -186,5 +187,20 @@ describe("block-based stream parser and reducer", () => {
     delete payload.message_id;
     const parsed = extractStreamBlockUpdate(payload);
     expect(parsed).toBeNull();
+  });
+
+  it("finalizes the active block on stream completion", () => {
+    const blocks: MessageBlock[] = [
+      {
+        id: "blk-1",
+        type: "reasoning",
+        content: "thinking",
+        isFinished: false,
+        createdAt: "2026-02-14T00:00:00.000Z",
+        updatedAt: "2026-02-14T00:00:00.000Z",
+      },
+    ];
+    const finalized = finalizeMessageBlocks(blocks);
+    expect(finalized?.[0]?.isFinished).toBe(true);
   });
 });

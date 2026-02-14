@@ -6,6 +6,7 @@ import {
   applyStreamBlockUpdate,
   extractRuntimeStatus,
   extractSessionMeta,
+  finalizeMessageBlocks,
   type StreamBlockUpdate,
   extractStreamBlockUpdate,
   projectPrimaryTextContent,
@@ -392,10 +393,25 @@ export const useChatStore = create<ChatState>()(
           messageStore.updateMessageWithUpdater(
             sessionId,
             activeAgentMessageId,
-            (message) => ({
-              content: `${message.content}\n[Stream Error: ${errorText}]`,
-              status: "done",
-            }),
+            (message) => {
+              const finalizedBlocks =
+                finalizeMessageBlocks(message.blocks) ?? [];
+              return {
+                content: `${message.content}\n[Stream Error: ${errorText}]`,
+                blocks: [
+                  ...finalizedBlocks,
+                  {
+                    id: `${message.id}:error:${Date.now()}`,
+                    type: "system_error",
+                    content: `[Stream Error: ${errorText}]`,
+                    isFinished: true,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  },
+                ],
+                status: "done",
+              };
+            },
           );
           patchSession({
             streamState: "error",
@@ -429,6 +445,18 @@ export const useChatStore = create<ChatState>()(
           }
         };
 
+        const completeStreamingMessage = () => {
+          messageStore.updateMessageWithUpdater(
+            sessionId,
+            activeAgentMessageId,
+            (message) => ({
+              blocks: finalizeMessageBlocks(message.blocks),
+              status: "done",
+            }),
+          );
+          markSessionIdle();
+        };
+
         const tryWebSocketTransport = async () =>
           chatConnectionService.tryWebSocketTransport({
             sessionId,
@@ -448,10 +476,7 @@ export const useChatStore = create<ChatState>()(
                 }
 
                 if (data.event === "stream_end") {
-                  messageStore.updateMessage(sessionId, activeAgentMessageId, {
-                    status: "done",
-                  });
-                  markSessionIdle();
+                  completeStreamingMessage();
                   return true;
                 }
 
@@ -459,10 +484,7 @@ export const useChatStore = create<ChatState>()(
                 return false;
               },
               onDone: () => {
-                messageStore.updateMessage(sessionId, activeAgentMessageId, {
-                  status: "done",
-                });
-                markSessionIdle();
+                completeStreamingMessage();
               },
               onStreamError: appendStreamError,
             },
@@ -480,10 +502,7 @@ export const useChatStore = create<ChatState>()(
                 applyIncomingStreamData(data);
               },
               onDone: () => {
-                messageStore.updateMessage(sessionId, activeAgentMessageId, {
-                  status: "done",
-                });
-                markSessionIdle();
+                completeStreamingMessage();
               },
               onStreamError: appendStreamError,
             },

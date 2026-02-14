@@ -300,3 +300,22 @@ export const projectPrimaryTextContent = (
     .filter((block) => block.type === "text")
     .map((block) => block.content)
     .join("");
+
+export const finalizeMessageBlocks = (
+  blocks: MessageBlock[] | undefined,
+): MessageBlock[] | undefined => {
+  if (!blocks || blocks.length === 0) {
+    return blocks;
+  }
+  const nextBlocks = [...blocks];
+  const lastBlock = nextBlocks[nextBlocks.length - 1];
+  if (!lastBlock || lastBlock.isFinished) {
+    return nextBlocks;
+  }
+  nextBlocks[nextBlocks.length - 1] = {
+    ...lastBlock,
+    isFinished: true,
+    updatedAt: new Date().toISOString(),
+  };
+  return nextBlocks;
+};
