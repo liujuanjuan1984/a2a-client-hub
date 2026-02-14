@@ -398,6 +398,47 @@ async def test_sse_on_complete_respects_append_false_overwrite_then_append():
     assert completed == ["reset!"]
 
 
+@pytest.mark.asyncio
+async def test_sse_on_complete_supports_block_type_alias():
+    completed: list[str] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "task_id": "task-block-type",
+                    "message_id": "msg-block-type",
+                    "artifact": {
+                        "artifact_id": "task-block-type:stream",
+                        "parts": [{"kind": "text", "text": "Hello alias"}],
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                            }
+                        },
+                    },
+                }
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == ["Hello alias"]
+
+
 def test_extract_binding_hints_from_serialized_event():
     (
         context_id,

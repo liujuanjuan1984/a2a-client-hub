@@ -154,9 +154,24 @@ export const extractStreamBlockUpdate = (
   const metadata = asRecord(artifact?.metadata);
   const opencodeMetadata = asRecord(metadata?.opencode);
   const contentType = parseContentType(
-    pickString(opencodeMetadata, ["content_type", "contentType"]) ??
-      pickString(artifact ?? null, ["content_type", "contentType"]) ??
-      pickString(data, ["content_type", "contentType"]) ??
+    pickString(opencodeMetadata, [
+      "content_type",
+      "contentType",
+      "block_type",
+      "blockType",
+    ]) ??
+      pickString(artifact ?? null, [
+        "content_type",
+        "contentType",
+        "block_type",
+        "blockType",
+      ]) ??
+      pickString(data, [
+        "content_type",
+        "contentType",
+        "block_type",
+        "blockType",
+      ]) ??
       pickString(opencodeMetadata, ["channel", "stream_channel"]),
   );
   if (!contentType) {

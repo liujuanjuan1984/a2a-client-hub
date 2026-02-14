@@ -225,9 +225,17 @@ class A2AInvokeService:
             opencode = metadata.get("opencode") if isinstance(metadata, dict) else None
             opencode = opencode if isinstance(opencode, dict) else {}
             raw = (
-                _pick(opencode, ("content_type", "contentType"))
-                or _pick(artifact, ("content_type", "contentType"))
-                or _pick(payload, ("content_type", "contentType"))
+                _pick(
+                    opencode, ("content_type", "contentType", "block_type", "blockType")
+                )
+                or _pick(
+                    artifact,
+                    ("content_type", "contentType", "block_type", "blockType"),
+                )
+                or _pick(
+                    payload,
+                    ("content_type", "contentType", "block_type", "blockType"),
+                )
                 or _pick(opencode, ("channel", "stream_channel"))
             )
             if raw == "final_answer":
