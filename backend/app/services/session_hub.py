@@ -40,6 +40,7 @@ from app.services.hub_a2a_runtime import (
     hub_a2a_runtime_builder,
 )
 from app.services.opencode_session_directory import opencode_session_directory_service
+from app.utils.payload_extract import as_dict, pick_first_non_empty_str
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import utc_now
 
@@ -82,42 +83,6 @@ def _session_order_key(item: dict[str, Any]) -> tuple[float, float, str]:
     created = _to_utc_epoch_seconds(item.get("created_at"))
     session_id = str(item.get("id") or "")
     return (last_active, created, session_id)
-
-
-def _take_merged_session_page(
-    left_items: list[dict[str, Any]],
-    right_items: list[dict[str, Any]],
-    *,
-    offset: int,
-    size: int,
-) -> list[dict[str, Any]]:
-    left_index = 0
-    right_index = 0
-    skipped = 0
-    page_items: list[dict[str, Any]] = []
-
-    while left_index < len(left_items) or right_index < len(right_items):
-        choose_left = right_index >= len(right_items)
-        if not choose_left and left_index < len(left_items):
-            choose_left = _session_order_key(
-                left_items[left_index]
-            ) >= _session_order_key(right_items[right_index])
-
-        if choose_left:
-            picked = left_items[left_index]
-            left_index += 1
-        else:
-            picked = right_items[right_index]
-            right_index += 1
-
-        if skipped < offset:
-            skipped += 1
-            continue
-        if len(page_items) >= size:
-            break
-        page_items.append(picked)
-
-    return page_items
 
 
 def _urlsafe_b64encode_json(data: Dict[str, Any]) -> str:
@@ -1611,7 +1576,7 @@ def _sender_to_role(sender: str) -> str:
 
 
 def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:
-    obj = item if isinstance(item, dict) else {}
+    obj = as_dict(item)
     message_id = str(
         obj.get("id")
         or obj.get("message_id")
@@ -1620,11 +1585,13 @@ def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:
     )
 
     role = _map_role(
-        _pick_str(obj, ["role", "type", "sender"])
-        or _pick_str(
-            _as_dict(
-                _as_dict(_as_dict(obj.get("metadata")).get("opencode")).get("raw")
-            ).get("info"),
+        pick_first_non_empty_str(obj, ["role", "type", "sender"])
+        or pick_first_non_empty_str(
+            as_dict(
+                as_dict(
+                    as_dict(as_dict(obj.get("metadata")).get("opencode")).get("raw")
+                ).get("info")
+            ),
             ["role"],
         )
     )
@@ -1641,28 +1608,16 @@ def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:
     }
 
 
-def _as_dict(value: Any) -> Dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _pick_str(obj: Dict[str, Any], keys: list[str]) -> Optional[str]:
-    for key in keys:
-        value = obj.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
 def _extract_provider_and_external_from_metadata(
     metadata: Dict[str, Any],
 ) -> tuple[Optional[str], Optional[str]]:
     provider = normalize_provider(
-        _pick_str(
+        pick_first_non_empty_str(
             metadata,
             ["provider", "session_provider", "external_provider"],
         )
     )
-    external_session_id = _pick_str(
+    external_session_id = pick_first_non_empty_str(
         metadata,
         [
             "externalSessionId",
@@ -1671,15 +1626,17 @@ def _extract_provider_and_external_from_metadata(
         ],
     )
     if external_session_id is None:
-        opencode = _as_dict(metadata.get("opencode"))
-        external_session_id = _pick_str(opencode, ["session_id", "sessionId", "id"])
+        opencode = as_dict(metadata.get("opencode"))
+        external_session_id = pick_first_non_empty_str(
+            opencode, ["session_id", "sessionId", "id"]
+        )
         if external_session_id and provider is None:
             provider = normalize_provider("opencode")
     return provider, external_session_id
 
 
 def _extract_context_id_from_metadata(metadata: Dict[str, Any]) -> Optional[str]:
-    return _pick_str(metadata, ["context_id", "contextId"])
+    return pick_first_non_empty_str(metadata, ["context_id", "contextId"])
 
 
 def _try_parse_uuid(value: Any) -> Optional[UUID]:
@@ -1701,7 +1658,7 @@ def _map_role(raw: Optional[str]) -> str:
 
 
 def _extract_content(obj: Dict[str, Any]) -> str:
-    direct = _pick_str(obj, ["text", "content", "message"])
+    direct = pick_first_non_empty_str(obj, ["text", "content", "message"])
     if direct:
         return direct
 
@@ -1722,7 +1679,9 @@ def _extract_content(obj: Dict[str, Any]) -> str:
 
 
 def _extract_timestamp(obj: Dict[str, Any]) -> datetime:
-    direct = _pick_str(obj, ["created_at", "createdAt", "timestamp", "ts"])
+    direct = pick_first_non_empty_str(
+        obj, ["created_at", "createdAt", "timestamp", "ts"]
+    )
     if direct:
         try:
             return datetime.fromisoformat(direct.replace("Z", "+00:00")).astimezone(

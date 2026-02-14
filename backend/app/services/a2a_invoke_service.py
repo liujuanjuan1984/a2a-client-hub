@@ -15,6 +15,7 @@ from fastapi import WebSocket
 from fastapi.responses import StreamingResponse
 
 from app.utils.json_encoder import json_dumps
+from app.utils.payload_extract import as_dict, pick_first_non_empty_str
 from app.utils.session_identity import normalize_provider
 
 StreamEvent = ClientEvent | Message
@@ -64,20 +65,6 @@ class A2AInvokeService:
         if inspect.isawaitable(outcome):
             await outcome
 
-    @staticmethod
-    def _as_dict(value: Any) -> dict[str, Any]:
-        return dict(value) if isinstance(value, dict) else {}
-
-    @staticmethod
-    def _pick_first_str(payload: dict[str, Any], keys: tuple[str, ...]) -> str | None:
-        for key in keys:
-            value = payload.get(key)
-            if isinstance(value, str):
-                trimmed = value.strip()
-                if trimmed:
-                    return trimmed
-        return None
-
     @classmethod
     def _extract_metadata_dict(cls, payload: dict[str, Any]) -> dict[str, Any]:
         resolved: dict[str, Any] = {}
@@ -89,18 +76,18 @@ class A2AInvokeService:
 
     @classmethod
     def _extract_opencode_session_id(cls, payload: dict[str, Any]) -> str | None:
-        opencode = cls._as_dict(payload.get("opencode"))
+        opencode = as_dict(payload.get("opencode"))
         if not opencode:
             return None
-        return cls._pick_first_str(opencode, ("session_id", "sessionId", "id"))
+        return pick_first_non_empty_str(opencode, ("session_id", "sessionId", "id"))
 
     @classmethod
     def _extract_binding_hints_from_payload(
         cls, payload: dict[str, Any]
     ) -> tuple[str | None, dict[str, Any]]:
-        root = cls._as_dict(payload)
-        message = cls._as_dict(root.get("message"))
-        result = cls._as_dict(root.get("result"))
+        root = as_dict(payload)
+        message = as_dict(root.get("message"))
+        result = as_dict(root.get("result"))
 
         context_id: str | None = None
         provider: str | None = None
@@ -118,31 +105,35 @@ class A2AInvokeService:
 
         for candidate in (root, message, result):
             if context_id is None:
-                context_id = cls._pick_first_str(candidate, ("contextId", "context_id"))
+                context_id = pick_first_non_empty_str(
+                    candidate, ("contextId", "context_id")
+                )
             candidate_metadata = cls._extract_metadata_dict(candidate)
             if candidate_metadata:
                 resolved_metadata.update(candidate_metadata)
             if provider is None:
                 provider = normalize_provider(
-                    cls._pick_first_str(candidate, provider_keys)
+                    pick_first_non_empty_str(candidate, provider_keys)
                 )
             if external_session_id is None:
-                external_session_id = cls._pick_first_str(candidate, external_id_keys)
+                external_session_id = pick_first_non_empty_str(
+                    candidate, external_id_keys
+                )
             if external_session_id is None:
                 external_session_id = cls._extract_opencode_session_id(candidate)
                 if external_session_id and provider is None:
                     provider = normalize_provider("opencode")
 
         if context_id is None:
-            context_id = cls._pick_first_str(
+            context_id = pick_first_non_empty_str(
                 resolved_metadata, ("contextId", "context_id")
             )
         if provider is None:
             provider = normalize_provider(
-                cls._pick_first_str(resolved_metadata, provider_keys)
+                pick_first_non_empty_str(resolved_metadata, provider_keys)
             )
         if external_session_id is None:
-            external_session_id = cls._pick_first_str(
+            external_session_id = pick_first_non_empty_str(
                 resolved_metadata, external_id_keys
             )
         if external_session_id is None:

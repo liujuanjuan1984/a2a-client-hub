@@ -1,11 +1,6 @@
 import { apiRequest } from "@/lib/api/client";
 import { parsePaginatedListResponse } from "@/lib/api/pagination";
-
-export type UnifiedSessionSource =
-  | "manual"
-  | "scheduled"
-  | "opencode"
-  | "conversation";
+import { type UnifiedSessionSource } from "@/lib/sessionIds";
 
 export type SessionListItem = {
   id: string;

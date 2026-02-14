@@ -44,54 +44,18 @@ from app.services.hub_a2a_runtime import (
     HubA2ARuntimeValidationError,
     hub_a2a_runtime_builder,
 )
+from app.services.invoke_session_binding import (
+    merge_invoke_binding_state,
+    normalize_invoke_binding_state,
+    status_code_for_invoke_session_error,
+    ws_error_code_for_invoke_session_error,
+)
 from app.services.session_hub import session_hub_service
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.logging_redaction import redact_url_for_logging
 
 router = StrictAPIRouter(prefix="/a2a/agents", tags=["a2a-catalog"])
 logger = get_logger(__name__)
-
-
-def _status_code_for_invoke_session_error(detail: str) -> int:
-    if detail == "session_not_found":
-        return 404
-    return 400
-
-
-def _ws_error_code_for_invoke_session_error(detail: str) -> str:
-    if detail == "session_not_found":
-        return "session_not_found"
-    return "invalid_session_id"
-
-
-def _normalize_invoke_binding_state(
-    *,
-    context_id: str | None,
-    metadata: dict[str, Any] | None,
-) -> tuple[str | None, dict[str, Any]]:
-    resolved_context_id = context_id.strip() if isinstance(context_id, str) else None
-    if not resolved_context_id:
-        resolved_context_id = None
-    resolved_metadata = dict(metadata) if isinstance(metadata, dict) else {}
-    return resolved_context_id, resolved_metadata
-
-
-def _merge_invoke_binding_state(
-    *,
-    current_context_id: str | None,
-    current_metadata: dict[str, Any],
-    next_context_id: str | None,
-    next_metadata: dict[str, Any],
-) -> tuple[str | None, dict[str, Any]]:
-    merged_context_id = current_context_id
-    if isinstance(next_context_id, str):
-        trimmed_context = next_context_id.strip()
-        if trimmed_context:
-            merged_context_id = trimmed_context
-    merged_metadata = dict(current_metadata)
-    if isinstance(next_metadata, dict) and next_metadata:
-        merged_metadata.update(next_metadata)
-    return merged_context_id, merged_metadata
 
 
 @router.get("", response_model=HubA2AAgentUserListResponse)
@@ -219,14 +183,14 @@ async def invoke_hub_agent(
         )
     except ValueError as exc:
         raise HTTPException(
-            status_code=_status_code_for_invoke_session_error(str(exc)),
+            status_code=status_code_for_invoke_session_error(str(exc)),
             detail=str(exc),
         ) from exc
 
     (
         resolved_context_id,
         resolved_invoke_metadata,
-    ) = _normalize_invoke_binding_state(
+    ) = normalize_invoke_binding_state(
         context_id=payload.context_id,
         metadata=payload.metadata,
     )
@@ -244,7 +208,7 @@ async def invoke_hub_agent(
             (
                 resolved_context_id,
                 resolved_invoke_metadata,
-            ) = _merge_invoke_binding_state(
+            ) = merge_invoke_binding_state(
                 current_context_id=resolved_context_id,
                 current_metadata=resolved_invoke_metadata,
                 next_context_id=event_context_id,
@@ -320,7 +284,7 @@ async def invoke_hub_agent(
         (
             resolved_context_id,
             resolved_invoke_metadata,
-        ) = _merge_invoke_binding_state(
+        ) = merge_invoke_binding_state(
             current_context_id=resolved_context_id,
             current_metadata=resolved_invoke_metadata,
             next_context_id=result_context_id,
@@ -481,7 +445,7 @@ async def invoke_hub_agent_ws(
             await a2a_invoke_service.send_ws_error(
                 websocket,
                 message=str(exc),
-                error_code=_ws_error_code_for_invoke_session_error(str(exc)),
+                error_code=ws_error_code_for_invoke_session_error(str(exc)),
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
@@ -489,7 +453,7 @@ async def invoke_hub_agent_ws(
         (
             resolved_context_id,
             resolved_invoke_metadata,
-        ) = _normalize_invoke_binding_state(
+        ) = normalize_invoke_binding_state(
             context_id=payload.context_id,
             metadata=payload.metadata,
         )
@@ -505,7 +469,7 @@ async def invoke_hub_agent_ws(
             (
                 resolved_context_id,
                 resolved_invoke_metadata,
-            ) = _merge_invoke_binding_state(
+            ) = merge_invoke_binding_state(
                 current_context_id=resolved_context_id,
                 current_metadata=resolved_invoke_metadata,
                 next_context_id=event_context_id,
