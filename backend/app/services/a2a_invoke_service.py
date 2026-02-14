@@ -187,8 +187,6 @@ class A2AInvokeService:
         For non-channelized events, keep legacy concatenation behavior.
         """
 
-        _MAX_CHANNEL_METADATA_CHARS = 8_000
-
         def __init__(self) -> None:
             self._legacy_chunks: list[str] = []
             self._final_answer_by_artifact: dict[str, str] = {}
@@ -324,17 +322,16 @@ class A2AInvokeService:
             return "\n\n".join(text for _, text in ordered if text)
 
         def result_metadata(self) -> dict[str, Any]:
+            from app.core.config import settings
+
+            max_chars = int(settings.opencode_stream_metadata_max_chars)
             reasoning = self._channel_result("reasoning")
             tool_call = self._channel_result("tool_call")
             opencode_stream: dict[str, str] = {}
             if reasoning:
-                opencode_stream["reasoning"] = reasoning[
-                    : self._MAX_CHANNEL_METADATA_CHARS
-                ]
+                opencode_stream["reasoning"] = reasoning[:max_chars]
             if tool_call:
-                opencode_stream["tool_call"] = tool_call[
-                    : self._MAX_CHANNEL_METADATA_CHARS
-                ]
+                opencode_stream["tool_call"] = tool_call[:max_chars]
             if not opencode_stream:
                 return {}
             return {"opencode_stream": opencode_stream}

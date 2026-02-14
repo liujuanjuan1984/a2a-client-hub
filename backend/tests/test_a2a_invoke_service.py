@@ -5,6 +5,7 @@ import logging
 
 import pytest
 
+from app.core.config import settings
 from app.services.a2a_invoke_service import a2a_invoke_service
 
 
@@ -226,6 +227,56 @@ async def test_sse_invokes_complete_metadata_before_complete():
         pass
 
     assert callback_order == ["metadata", "complete"]
+
+
+@pytest.mark.asyncio
+async def test_sse_complete_metadata_uses_configurable_max_chars(monkeypatch):
+    original = settings.opencode_stream_metadata_max_chars
+    monkeypatch.setattr(settings, "opencode_stream_metadata_max_chars", 5)
+
+    metadata_payloads: list[dict] = []
+
+    async def _on_complete_metadata(payload: dict):
+        metadata_payloads.append(payload)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-1:stream:reasoning",
+                    text="123456789",
+                    channel="reasoning",
+                ),
+                _artifact_event(
+                    artifact_id="task-1:stream:tool_call",
+                    text="abcdefghi",
+                    channel="tool_call",
+                ),
+                _artifact_event(
+                    artifact_id="task-1:stream",
+                    text="done",
+                    channel="final_answer",
+                ),
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete_metadata=_on_complete_metadata,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert metadata_payloads == [
+        {"opencode_stream": {"reasoning": "12345", "tool_call": "abcde"}}
+    ]
+    monkeypatch.setattr(
+        settings, "opencode_stream_metadata_max_chars", original
+    )  # explicit reset for safety
 
 
 @pytest.mark.asyncio
