@@ -11,11 +11,11 @@ from uuid import UUID
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.secret_vault import SecretVaultNotConfiguredError, user_llm_secret_vault
+from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.integrations.a2a_client.service import ResolvedAgent
-from app.utils.auth_headers import build_auth_header_pair
+from app.services.runtime_auth import resolve_runtime_auth_headers
 
 
 class A2ARuntimeError(RuntimeError):
@@ -51,33 +51,20 @@ class A2ARuntimeBuilder:
         agent_id: UUID,
     ) -> A2ARuntime:
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
-        headers = dict(agent.extra_headers or {})
-        token_last4: Optional[str] = None
-
+        credential = None
         if agent.auth_type == "bearer":
             credential = await self._get_credential(
                 db, user_id=user_id, agent_id=agent.id
             )
-            if credential is None:
-                raise A2ARuntimeValidationError("Bearer token is required")
-            if not self._vault.is_configured:
-                raise A2ARuntimeValidationError("Credential encryption key is missing")
-            try:
-                decrypted = self._vault.decrypt(credential.encrypted_token)
-            except SecretVaultNotConfiguredError as exc:
-                raise A2ARuntimeValidationError(str(exc)) from exc
-
-            header_name, header_value = build_auth_header_pair(
-                auth_header=agent.auth_header,
-                auth_scheme=agent.auth_scheme,
-                token=decrypted.value,
-            )
-            headers[header_name] = header_value
-            token_last4 = decrypted.last4 or credential.token_last4
-        elif agent.auth_type == "none":
-            pass
-        else:
-            raise A2ARuntimeValidationError("Unsupported auth_type")
+        headers, token_last4 = resolve_runtime_auth_headers(
+            headers=dict(agent.extra_headers or {}),
+            auth_type=agent.auth_type,
+            auth_header=agent.auth_header,
+            auth_scheme=agent.auth_scheme,
+            credential=credential,
+            vault=self._vault,
+            validation_error_cls=A2ARuntimeValidationError,
+        )
 
         resolved = ResolvedAgent(
             name=agent.name,
