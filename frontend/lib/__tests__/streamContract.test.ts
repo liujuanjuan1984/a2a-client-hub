@@ -1,14 +1,14 @@
 import {
-  applyStreamArtifactUpdate,
-  extractStreamArtifactUpdate,
-  projectStreamChannelContent,
-  type StreamArtifactRecord,
-  type StreamArtifactUpdate,
+  applyStreamBlockUpdate,
+  extractStreamBlockUpdate,
+  projectPrimaryTextContent,
+  type MessageBlock,
+  type StreamBlockUpdate,
 } from "@/lib/api/chat-utils";
 
-const buildArtifactUpdatePayload = (input: {
-  channel: "reasoning" | "tool_call" | "final_answer";
-  text: string;
+const buildBlockUpdatePayload = (input: {
+  contentType: string;
+  delta: string;
   artifactId: string;
   taskId?: string;
   messageId?: string;
@@ -23,197 +23,168 @@ const buildArtifactUpdatePayload = (input: {
   lastChunk: input.lastChunk ?? false,
   artifact: {
     artifact_id: input.artifactId,
-    parts: [{ kind: "text", text: input.text }],
+    parts: [{ kind: "text", text: input.delta }],
     metadata: {
       opencode: {
-        channel: input.channel,
+        content_type: input.contentType,
         source: input.source ?? "stream",
       },
     },
   },
 });
 
-const mustParse = (payload: Record<string, unknown>): StreamArtifactUpdate => {
-  const parsed = extractStreamArtifactUpdate(payload);
+const mustParse = (payload: Record<string, unknown>): StreamBlockUpdate => {
+  const parsed = extractStreamBlockUpdate(payload);
   expect(parsed).not.toBeNull();
-  return parsed as StreamArtifactUpdate;
+  return parsed as StreamBlockUpdate;
 };
 
-describe("opencode stream contract parser and state machine", () => {
-  it("renders reasoning/tool_call/final_answer independently", () => {
-    let artifacts: Record<string, StreamArtifactRecord> | undefined = undefined;
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
+describe("block-based stream parser and reducer", () => {
+  it("appends when incoming content_type matches the active block", () => {
+    let blocks: MessageBlock[] | undefined = undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
       mustParse(
-        buildArtifactUpdatePayload({
-          channel: "reasoning",
-          text: "thinking...",
+        buildBlockUpdatePayload({
+          contentType: "reasoning",
+          delta: "thinking",
           artifactId: "task-1:stream:reasoning",
         }),
       ),
     );
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
+    blocks = applyStreamBlockUpdate(
+      blocks,
       mustParse(
-        buildArtifactUpdatePayload({
-          channel: "tool_call",
-          text: "search(query='weather')",
-          artifactId: "task-1:stream:tool_call",
-        }),
-      ),
-    );
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
-      mustParse(
-        buildArtifactUpdatePayload({
-          channel: "final_answer",
-          text: "It is sunny.",
-          artifactId: "task-1:stream",
+        buildBlockUpdatePayload({
+          contentType: "reasoning",
+          delta: " more",
+          artifactId: "task-1:stream:reasoning",
         }),
       ),
     );
 
-    const projected = projectStreamChannelContent(artifacts);
-    expect(projected.finalAnswer).toBe("It is sunny.");
-    expect(projected.reasoning).toBe("thinking...");
-    expect(projected.toolCall).toBe("search(query='weather')");
+    expect(blocks).toHaveLength(1);
+    expect(blocks?.[0]?.type).toBe("reasoning");
+    expect(blocks?.[0]?.content).toBe("thinking more");
   });
 
-  it("treats final_snapshot as overwrite for final_answer", () => {
-    let artifacts: Record<string, StreamArtifactRecord> | undefined = undefined;
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
+  it("creates a new block and finalizes previous block when type switches", () => {
+    let blocks: MessageBlock[] | undefined = undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
       mustParse(
-        buildArtifactUpdatePayload({
-          channel: "final_answer",
-          text: "Hello ",
-          artifactId: "task-1:stream",
-          append: true,
+        buildBlockUpdatePayload({
+          contentType: "reasoning",
+          delta: "plan",
+          artifactId: "task-1:stream:reasoning",
         }),
       ),
     );
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
+    blocks = applyStreamBlockUpdate(
+      blocks,
       mustParse(
-        buildArtifactUpdatePayload({
-          channel: "final_answer",
-          text: "world",
-          artifactId: "task-1:stream",
-          append: true,
+        buildBlockUpdatePayload({
+          contentType: "tool_call",
+          delta: "search()",
+          artifactId: "task-1:stream:tool",
         }),
       ),
     );
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks?.[0]?.type).toBe("reasoning");
+    expect(blocks?.[0]?.isFinished).toBe(true);
+    expect(blocks?.[1]?.type).toBe("tool_call");
+  });
+
+  it("maps final_answer to text and projects only text blocks into message content", () => {
+    let blocks: MessageBlock[] | undefined = undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
       mustParse(
-        buildArtifactUpdatePayload({
-          channel: "final_answer",
-          text: "Hello world",
-          artifactId: "task-1:stream",
+        buildBlockUpdatePayload({
+          contentType: "final_answer",
+          delta: "Hello",
+          artifactId: "task-1:stream:text",
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          contentType: "reasoning",
+          delta: "thought",
+          artifactId: "task-1:stream:reasoning",
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          contentType: "text",
+          delta: " world",
+          artifactId: "task-1:stream:text",
+        }),
+      ),
+    );
+
+    expect(projectPrimaryTextContent(blocks)).toBe("Hello world");
+  });
+
+  it("supports overwrite semantics when append=false or final_snapshot arrives", () => {
+    let blocks: MessageBlock[] | undefined = undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          contentType: "text",
+          delta: "abc",
+          artifactId: "task-2:stream:text",
+          append: true,
+          taskId: "task-2",
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          contentType: "text",
+          delta: "reset",
+          artifactId: "task-2:stream:text",
           append: false,
           source: "final_snapshot",
-          lastChunk: true,
+          taskId: "task-2",
         }),
       ),
     );
 
-    const projected = projectStreamChannelContent(artifacts);
-    expect(projected.finalAnswer).toBe("Hello world");
-    expect(Object.keys(artifacts ?? {})).toHaveLength(1);
+    expect(blocks).toHaveLength(1);
+    expect(blocks?.[0]?.content).toBe("reset");
   });
 
-  it("keeps buffers isolated across artifact ids", () => {
-    let artifacts: Record<string, StreamArtifactRecord> | undefined = undefined;
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
-      mustParse(
-        buildArtifactUpdatePayload({
-          channel: "reasoning",
-          text: "plan A",
-          artifactId: "task-1:stream:reasoning",
-          append: false,
-        }),
-      ),
+  it("keeps unknown content_type as fallback blocks", () => {
+    const parsed = extractStreamBlockUpdate(
+      buildBlockUpdatePayload({
+        contentType: "custom_phase",
+        delta: "custom content",
+        artifactId: "task-1:stream:custom",
+      }),
     );
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
-      mustParse(
-        buildArtifactUpdatePayload({
-          channel: "final_answer",
-          text: "answer A",
-          artifactId: "task-1:stream",
-        }),
-      ),
-    );
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
-      mustParse(
-        buildArtifactUpdatePayload({
-          channel: "reasoning",
-          text: " + detail",
-          artifactId: "task-1:stream:reasoning",
-          append: true,
-        }),
-      ),
-    );
-
-    const projected = projectStreamChannelContent(artifacts);
-    expect(projected.reasoning).toBe("plan A + detail");
-    expect(projected.finalAnswer).toBe("answer A");
-  });
-
-  it("applies append=false as overwrite and append=true as subsequent append", () => {
-    let artifacts: Record<string, StreamArtifactRecord> | undefined = undefined;
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
-      mustParse(
-        buildArtifactUpdatePayload({
-          channel: "final_answer",
-          text: "first",
-          artifactId: "task-2:stream",
-          append: true,
-          taskId: "task-2",
-        }),
-      ),
-    );
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
-      mustParse(
-        buildArtifactUpdatePayload({
-          channel: "final_answer",
-          text: "reset",
-          artifactId: "task-2:stream",
-          append: false,
-          taskId: "task-2",
-        }),
-      ),
-    );
-    artifacts = applyStreamArtifactUpdate(
-      artifacts,
-      mustParse(
-        buildArtifactUpdatePayload({
-          channel: "final_answer",
-          text: "!",
-          artifactId: "task-2:stream",
-          append: true,
-          taskId: "task-2",
-        }),
-      ),
-    );
-
-    const projected = projectStreamChannelContent(artifacts);
-    expect(projected.finalAnswer).toBe("reset!");
+    expect(parsed?.contentType).toBe("custom_phase");
   });
 
   it("ignores chunks without message_id", () => {
-    const payload = buildArtifactUpdatePayload({
-      channel: "final_answer",
-      text: "hello",
+    const payload = buildBlockUpdatePayload({
+      contentType: "text",
+      delta: "hello",
       artifactId: "task-1:stream",
       messageId: "",
     }) as Record<string, unknown>;
     delete payload.message_id;
-    const parsed = extractStreamArtifactUpdate(payload);
+    const parsed = extractStreamBlockUpdate(payload);
     expect(parsed).toBeNull();
   });
 });

@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
-import { type ChatMessage } from "@/lib/api/chat-utils";
+import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
@@ -56,8 +56,8 @@ const isSameMessageList = (left: ChatMessage[], right: ChatMessage[]) => {
       message.role === next.role &&
       message.content === next.content &&
       message.createdAt === next.createdAt &&
-      (message.reasoningContent ?? "") === (next.reasoningContent ?? "") &&
-      (message.toolCallContent ?? "") === (next.toolCallContent ?? "") &&
+      JSON.stringify(message.blocks ?? []) ===
+        JSON.stringify(next.blocks ?? []) &&
       message.status === next.status
     );
   });
@@ -125,10 +125,12 @@ export function ChatScreen({
   const suppressAutoScrollRef = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
-  const [expandedReasoningByMessageId, setExpandedReasoningByMessageId] =
-    useState<Record<string, boolean>>({});
-  const [expandedToolCallByMessageId, setExpandedToolCallByMessageId] =
-    useState<Record<string, boolean>>({});
+  const [expandedReasoningByBlockId, setExpandedReasoningByBlockId] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedToolCallByBlockId, setExpandedToolCallByBlockId] = useState<
+    Record<string, boolean>
+  >({});
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
@@ -410,31 +412,48 @@ export function ChatScreen({
     }
   };
 
-  const toggleReasoning = (messageId: string) => {
-    setExpandedReasoningByMessageId((current) => ({
+  const toggleReasoning = (blockId: string) => {
+    setExpandedReasoningByBlockId((current) => ({
       ...current,
-      [messageId]: !current[messageId],
+      [blockId]: !current[blockId],
     }));
   };
 
-  const toggleToolCall = (messageId: string) => {
-    setExpandedToolCallByMessageId((current) => ({
+  const toggleToolCall = (blockId: string) => {
+    setExpandedToolCallByBlockId((current) => ({
       ...current,
-      [messageId]: !current[messageId],
+      [blockId]: !current[blockId],
     }));
   };
+
+  const deriveRenderableBlocks = useCallback(
+    (message: ChatMessage): MessageBlock[] => {
+      const persisted = message.blocks ?? [];
+      if (persisted.length > 0) {
+        return persisted;
+      }
+      if (message.role === "agent" && message.content.trim()) {
+        const now = message.createdAt;
+        return [
+          {
+            id: `${message.id}:text`,
+            type: "text",
+            content: message.content,
+            isFinished: message.status !== "streaming",
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
+      }
+      return [];
+    },
+    [],
+  );
 
   const renderChatMessage = useCallback(
     ({ item: message }: { item: ChatMessage }) => {
-      const reasoningText = message.reasoningContent?.trim() ?? "";
-      const toolCallText = message.toolCallContent?.trim() ?? "";
-      const showReasoning =
-        message.role === "agent" && reasoningText.length > 0;
-      const showToolCall = message.role === "agent" && toolCallText.length > 0;
-      const reasoningExpanded = Boolean(
-        expandedReasoningByMessageId[message.id],
-      );
-      const toolCallExpanded = Boolean(expandedToolCallByMessageId[message.id]);
+      const renderableBlocks = deriveRenderableBlocks(message);
+      const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
 
       return (
         <View
@@ -451,37 +470,80 @@ export function ChatScreen({
                   : "bg-slate-900"
             }`}
           >
-            {showReasoning ? (
-              <View className="rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2">
-                <Pressable onPress={() => toggleReasoning(message.id)}>
-                  <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                    {reasoningExpanded ? "Hide Reasoning" : "Show Reasoning"}
-                  </Text>
-                </Pressable>
-                {reasoningExpanded ? (
-                  <Text className="mt-1 break-all text-xs text-slate-300">
-                    {reasoningText}
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
-            {showToolCall ? (
-              <View className="mt-3 rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2">
-                <Pressable onPress={() => toggleToolCall(message.id)}>
-                  <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                    {toolCallExpanded ? "Hide Tool Call" : "Show Tool Call"}
-                  </Text>
-                </Pressable>
-                {toolCallExpanded ? (
-                  <Text className="mt-1 break-all text-xs text-slate-300">
-                    {toolCallText}
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
-            <Text className="mt-3 break-all text-sm text-white">
-              {message.content}
-            </Text>
+            {hasBlocks ? (
+              renderableBlocks.map((block, index) => {
+                const blockText = block.content.trim();
+                if (!blockText) return null;
+                const blockId = block.id || `${message.id}:${index}`;
+                if (block.type === "reasoning") {
+                  const expanded = Boolean(expandedReasoningByBlockId[blockId]);
+                  return (
+                    <View
+                      key={blockId}
+                      className={`${index > 0 ? "mt-3" : ""} rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                    >
+                      <Pressable onPress={() => toggleReasoning(blockId)}>
+                        <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                          {expanded ? "Hide Reasoning" : "Show Reasoning"}
+                        </Text>
+                      </Pressable>
+                      {expanded ? (
+                        <Text className="mt-1 break-all text-xs text-slate-300">
+                          {blockText}
+                        </Text>
+                      ) : null}
+                    </View>
+                  );
+                }
+                if (block.type === "tool_call") {
+                  const expanded = Boolean(expandedToolCallByBlockId[blockId]);
+                  return (
+                    <View
+                      key={blockId}
+                      className={`${index > 0 ? "mt-3" : ""} rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                    >
+                      <Pressable onPress={() => toggleToolCall(blockId)}>
+                        <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                          {expanded ? "Hide Tool Call" : "Show Tool Call"}
+                        </Text>
+                      </Pressable>
+                      {expanded ? (
+                        <Text className="mt-1 break-all text-xs text-slate-300">
+                          {blockText}
+                        </Text>
+                      ) : null}
+                    </View>
+                  );
+                }
+                if (block.type === "text") {
+                  return (
+                    <Text
+                      key={blockId}
+                      className={`${index > 0 ? "mt-3" : ""} break-all text-sm text-white`}
+                    >
+                      {blockText}
+                    </Text>
+                  );
+                }
+                return (
+                  <View
+                    key={blockId}
+                    className={`${index > 0 ? "mt-3" : ""} rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                  >
+                    <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                      {block.type}
+                    </Text>
+                    <Text className="mt-1 break-all text-xs text-slate-300">
+                      {blockText}
+                    </Text>
+                  </View>
+                );
+              })
+            ) : (
+              <Text className="break-all text-sm text-white">
+                {message.content}
+              </Text>
+            )}
             {message.status === "streaming" ? (
               <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
             ) : null}
@@ -489,7 +551,11 @@ export function ChatScreen({
         </View>
       );
     },
-    [expandedReasoningByMessageId, expandedToolCallByMessageId],
+    [
+      deriveRenderableBlocks,
+      expandedReasoningByBlockId,
+      expandedToolCallByBlockId,
+    ],
   );
 
   if (!agent) {

@@ -1,17 +1,11 @@
 export type ChatRole = "user" | "agent" | "system";
 
-export type StreamChannel = "reasoning" | "tool_call" | "final_answer";
-
-export type StreamArtifactRecord = {
-  taskId: string;
-  artifactId: string;
-  channel: StreamChannel;
-  source: string | null;
-  messageId: string;
-  role: ChatRole;
+export type MessageBlock = {
+  id: string;
+  type: string;
   content: string;
-  append: boolean;
-  done: boolean;
+  isFinished: boolean;
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -21,19 +15,17 @@ export type ChatMessage = {
   content: string;
   createdAt: string;
   status?: "streaming" | "done";
-  streamArtifacts?: Record<string, StreamArtifactRecord>;
-  reasoningContent?: string;
-  toolCallContent?: string;
+  blocks?: MessageBlock[];
 };
 
-export type StreamArtifactUpdate = {
+export type StreamBlockUpdate = {
   taskId: string;
   artifactId: string;
-  channel: StreamChannel;
+  contentType: string;
   source: string | null;
   messageId: string;
   role: ChatRole;
-  text: string;
+  delta: string;
   append: boolean;
   done: boolean;
 };
@@ -110,6 +102,20 @@ const pickString = (
   return null;
 };
 
+const pickRawString = (
+  source: Record<string, unknown> | null,
+  keys: string[],
+): string | null => {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string") {
+      return value;
+    }
+  }
+  return null;
+};
+
 const normalizeRole = (raw: string | null): ChatRole => {
   const role = (raw ?? "").trim().toLowerCase();
   if (role === "user" || role === "human" || role === "automation") {
@@ -121,11 +127,11 @@ const normalizeRole = (raw: string | null): ChatRole => {
   return "system";
 };
 
-const parseStreamChannel = (raw: string | null): StreamChannel | null => {
-  if (raw === "reasoning" || raw === "tool_call" || raw === "final_answer") {
-    return raw;
-  }
-  return null;
+const parseContentType = (raw: string | null): string | null => {
+  const normalized = (raw ?? "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "final_answer") return "text";
+  return normalized;
 };
 
 const inferTaskIdFromArtifactId = (
@@ -137,66 +143,72 @@ const inferTaskIdFromArtifactId = (
   return artifactId.slice(0, firstSep);
 };
 
-export const buildStreamArtifactKey = (taskId: string, artifactId: string) =>
-  `${taskId}::${artifactId}`;
-
-export const extractStreamArtifactUpdate = (
+export const extractStreamBlockUpdate = (
   data: Record<string, unknown>,
-): StreamArtifactUpdate | null => {
-  if (data.kind !== "artifact-update") {
+): StreamBlockUpdate | null => {
+  const kind = pickString(data, ["kind"]);
+  if (kind && kind !== "artifact-update") {
     return null;
   }
   const artifact = asRecord(data.artifact);
-  if (!artifact) {
-    return null;
-  }
-  const metadata = asRecord(artifact.metadata);
+  const metadata = asRecord(artifact?.metadata);
   const opencodeMetadata = asRecord(metadata?.opencode);
-  const channel = parseStreamChannel(
-    pickString(opencodeMetadata, ["channel", "stream_channel"]),
+  const contentType = parseContentType(
+    pickString(opencodeMetadata, ["content_type", "contentType"]) ??
+      pickString(artifact ?? null, ["content_type", "contentType"]) ??
+      pickString(data, ["content_type", "contentType"]) ??
+      pickString(opencodeMetadata, ["channel", "stream_channel"]),
   );
-  if (!channel) {
-    return null;
-  }
-
-  const artifactId = pickString(artifact, ["artifact_id", "artifactId", "id"]);
-  if (!artifactId) {
-    return null;
-  }
-  const taskId =
-    pickString(data, ["task_id", "taskId"]) ??
-    pickString(artifact, ["task_id", "taskId"]) ??
-    inferTaskIdFromArtifactId(artifactId);
-  if (!taskId) {
+  if (!contentType) {
     return null;
   }
 
   const messageId =
     pickString(data, ["message_id", "messageId"]) ??
-    pickString(artifact, ["message_id", "messageId"]) ??
+    pickString(artifact ?? null, ["message_id", "messageId"]) ??
     pickString(opencodeMetadata, ["message_id", "messageId"]);
   // New contract: missing message_id events are invalid and should be ignored.
   if (!messageId) {
     return null;
   }
 
-  const parts = Array.isArray(artifact.parts) ? artifact.parts : [];
-  const text = extractTextFromParts(parts);
-  if (!text) {
+  const artifactId =
+    pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ??
+    `${messageId}:${contentType}`;
+  if (!artifactId) {
+    return null;
+  }
+  const taskId =
+    pickString(data, ["task_id", "taskId"]) ??
+    pickString(artifact ?? null, ["task_id", "taskId"]) ??
+    inferTaskIdFromArtifactId(artifactId);
+  if (!taskId) {
+    return null;
+  }
+
+  const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
+  const delta =
+    extractTextFromParts(parts) ||
+    pickRawString(data, ["delta"]) ||
+    pickRawString(artifact ?? null, ["delta"]) ||
+    pickRawString(data, ["content", "text"]) ||
+    pickRawString(artifact ?? null, ["content", "text"]) ||
+    "";
+  if (!delta) {
     return null;
   }
 
   const append =
     typeof data.append === "boolean"
       ? data.append
-      : typeof artifact.append === "boolean"
+      : typeof artifact?.append === "boolean"
         ? artifact.append
         : true;
   const done =
     data.lastChunk === true ||
     data.last_chunk === true ||
-    artifact.lastChunk === true ||
-    artifact.last_chunk === true;
+    artifact?.lastChunk === true ||
+    artifact?.last_chunk === true;
 
   const source =
     pickString(opencodeMetadata, ["source"]) ??
@@ -209,79 +221,82 @@ export const extractStreamArtifactUpdate = (
   return {
     taskId,
     artifactId,
-    channel,
+    contentType,
     source,
     messageId,
     role,
-    text,
+    delta,
     append,
     done,
   };
 };
 
-export const applyStreamArtifactUpdate = (
-  current: Record<string, StreamArtifactRecord> | undefined,
-  update: StreamArtifactUpdate,
+export const applyStreamBlockUpdate = (
+  current: MessageBlock[] | undefined,
+  update: StreamBlockUpdate,
 ) => {
-  const artifacts = current ?? {};
-  const key = buildStreamArtifactKey(update.taskId, update.artifactId);
-  const previous = artifacts[key];
+  const blocks = [...(current ?? [])];
+  const now = new Date().toISOString();
   const overwrite = update.source === "final_snapshot" || !update.append;
-  const nextContent = overwrite
-    ? update.text
-    : `${previous?.content ?? ""}${update.text}`;
+  const lastBlock = blocks[blocks.length - 1];
 
-  return {
-    ...artifacts,
-    [key]: {
-      taskId: update.taskId,
-      artifactId: update.artifactId,
-      channel: update.channel,
-      source: update.source,
-      messageId: update.messageId,
-      role: update.role,
-      content: nextContent,
-      append: update.append,
-      done: update.done,
-      updatedAt: new Date().toISOString(),
-    },
-  };
-};
-
-const compareByUpdatedAt = (
-  left: StreamArtifactRecord,
-  right: StreamArtifactRecord,
-) => left.updatedAt.localeCompare(right.updatedAt);
-
-export const projectStreamChannelContent = (
-  artifacts: Record<string, StreamArtifactRecord> | undefined,
-) => {
-  const entries = Object.values(artifacts ?? {});
-  if (entries.length === 0) {
-    return {
-      finalAnswer: "",
-      reasoning: "",
-      toolCall: "",
-    };
+  if (overwrite) {
+    if (
+      lastBlock &&
+      lastBlock.type === update.contentType &&
+      lastBlock.isFinished === false
+    ) {
+      lastBlock.content = update.delta;
+      lastBlock.isFinished = update.done;
+      lastBlock.updatedAt = now;
+      return blocks;
+    }
+    if (lastBlock && lastBlock.isFinished === false) {
+      lastBlock.isFinished = true;
+      lastBlock.updatedAt = now;
+    }
+    blocks.push({
+      id: `${update.messageId}:${blocks.length + 1}`,
+      type: update.contentType,
+      content: update.delta,
+      isFinished: update.done,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return blocks;
   }
 
-  const reasoningItems = entries
-    .filter((item) => item.channel === "reasoning")
-    .sort(compareByUpdatedAt);
-  const toolCallItems = entries
-    .filter((item) => item.channel === "tool_call")
-    .sort(compareByUpdatedAt);
-  const finalAnswerItems = entries
-    .filter((item) => item.channel === "final_answer")
-    .sort(compareByUpdatedAt);
-  const latestFinalAnswer =
-    finalAnswerItems.length > 0
-      ? finalAnswerItems[finalAnswerItems.length - 1]
-      : null;
+  if (
+    lastBlock &&
+    lastBlock.type === update.contentType &&
+    lastBlock.isFinished === false
+  ) {
+    lastBlock.content = `${lastBlock.content}${update.delta}`;
+    lastBlock.isFinished = update.done;
+    lastBlock.updatedAt = now;
+    return blocks;
+  }
 
-  return {
-    finalAnswer: latestFinalAnswer?.content ?? "",
-    reasoning: reasoningItems.map((item) => item.content).join("\n\n"),
-    toolCall: toolCallItems.map((item) => item.content).join("\n\n"),
-  };
+  if (lastBlock && lastBlock.isFinished === false) {
+    lastBlock.isFinished = true;
+    lastBlock.updatedAt = now;
+  }
+
+  blocks.push({
+    id: `${update.messageId}:${blocks.length + 1}`,
+    type: update.contentType,
+    content: update.delta,
+    isFinished: update.done,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return blocks;
 };
+
+export const projectPrimaryTextContent = (
+  blocks: MessageBlock[] | undefined,
+): string =>
+  (blocks ?? [])
+    .filter((block) => block.type === "text")
+    .map((block) => block.content)
+    .join("");

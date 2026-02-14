@@ -3,12 +3,12 @@ import { persist } from "zustand/middleware";
 
 import { invokeAgent } from "@/lib/api/a2aAgents";
 import {
-  applyStreamArtifactUpdate,
+  applyStreamBlockUpdate,
   extractRuntimeStatus,
   extractSessionMeta,
-  type StreamArtifactUpdate,
-  extractStreamArtifactUpdate,
-  projectStreamChannelContent,
+  type StreamBlockUpdate,
+  extractStreamBlockUpdate,
+  projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import { continueSession as continueSessionBinding } from "@/lib/api/sessions";
@@ -172,9 +172,7 @@ export const useChatStore = create<ChatState>()(
           id: agentMessageId,
           role: "agent" as const,
           content: "",
-          streamArtifacts: {},
-          reasoningContent: "",
-          toolCallContent: "",
+          blocks: [],
           createdAt: new Date().toISOString(),
           status: "streaming" as const,
         };
@@ -375,21 +373,15 @@ export const useChatStore = create<ChatState>()(
           });
         };
 
-        const appendStreamChunk = (chunk: StreamArtifactUpdate) => {
+        const appendStreamChunk = (chunk: StreamBlockUpdate) => {
           messageStore.updateMessageWithUpdater(
             sessionId,
             activeAgentMessageId,
             (message) => {
-              const nextArtifacts = applyStreamArtifactUpdate(
-                message.streamArtifacts,
-                chunk,
-              );
-              const nextContent = projectStreamChannelContent(nextArtifacts);
+              const nextBlocks = applyStreamBlockUpdate(message.blocks, chunk);
               return {
-                content: nextContent.finalAnswer,
-                reasoningContent: nextContent.reasoning,
-                toolCallContent: nextContent.toolCall,
-                streamArtifacts: nextArtifacts,
+                content: projectPrimaryTextContent(nextBlocks),
+                blocks: nextBlocks,
                 status: "streaming",
               };
             },
@@ -419,7 +411,7 @@ export const useChatStore = create<ChatState>()(
         };
 
         const applyIncomingStreamData = (data: Record<string, unknown>) => {
-          const chunk = extractStreamArtifactUpdate(data);
+          const chunk = extractStreamBlockUpdate(data);
           if (chunk) {
             appendStreamChunk(chunk);
           }

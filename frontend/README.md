@@ -91,6 +91,21 @@ History loading is unified via
 To avoid transport contention, chat history auto-refetch is paused while a
 message is actively streaming.
 
+## Block-based Streaming
+
+Chat streaming now uses a block timeline model.
+Each assistant message stores an ordered `MessageBlock[]`, where each block
+has a `type` (`text`, `reasoning`, `tool_call`, or unknown), `content`, and
+`isFinished`.
+
+Incoming chunks are reduced with this rule:
+
+- same `content_type` => append to last block
+- different `content_type` => finish previous block and push a new block
+
+Rendering iterates blocks in order to preserve generation timeline and supports
+unknown block types with a fallback view.
+
 Continue binding is unified via
 `POST /me/sessions/{session_id}:continue` so Chat always restores
 `contextId`/`metadata` through one entrypoint.
