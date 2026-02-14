@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db, get_current_user
 from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
+from app.db.transaction import commit_safely
 from app.schemas.session_domain import (
     SessionContinueResponse,
     SessionListMeta,
@@ -72,7 +73,7 @@ async def list_unified_session_messages(
     current_user: User = Depends(get_current_user),
 ) -> SessionMessagesListResponse:
     try:
-        items, extra = await session_hub_service.list_messages(
+        items, extra, db_mutated = await session_hub_service.list_messages(
             db,
             user_id=current_user.id,
             session_key=session_id,
@@ -85,6 +86,8 @@ async def list_unified_session_messages(
             status_code=_status_code_for_session_error(detail),
             detail=detail,
         ) from exc
+    if db_mutated:
+        await commit_safely(db)
     return SessionMessagesListResponse(
         items=items,
         pagination=extra["pagination"],
@@ -100,7 +103,7 @@ async def continue_unified_session(
     current_user: User = Depends(get_current_user),
 ) -> SessionContinueResponse:
     try:
-        payload = await session_hub_service.continue_session(
+        payload, db_mutated = await session_hub_service.continue_session(
             db,
             user_id=current_user.id,
             session_key=session_id,
@@ -111,6 +114,8 @@ async def continue_unified_session(
             status_code=_status_code_for_session_error(detail),
             detail=detail,
         ) from exc
+    if db_mutated:
+        await commit_safely(db)
     return SessionContinueResponse.model_validate(payload)
 
 

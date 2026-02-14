@@ -21,6 +21,7 @@ type MessageState = {
   ) => void;
   removeMessages: (sessionId: string) => void;
   pruneMessages: (sessionId: string, limit: number) => void;
+  migrateSessionKey: (fromSessionId: string, toSessionId: string) => void;
   clearAll: () => void;
 };
 
@@ -93,6 +94,32 @@ export const useMessageStore = create<MessageState>()(
               [sessionId]: current.slice(-limit),
             },
           };
+        });
+      },
+      migrateSessionKey: (fromSessionId, toSessionId) => {
+        const fromKey = fromSessionId.trim();
+        const toKey = toSessionId.trim();
+        if (!fromKey || !toKey || fromKey === toKey) return;
+        set((state) => {
+          const fromItems = state.messages[fromKey] ?? [];
+          if (fromItems.length === 0 && !state.messages[toKey]) {
+            return state;
+          }
+          const toItems = state.messages[toKey] ?? [];
+          const merged = new Map<string, ChatMessage>();
+          [...toItems, ...fromItems].forEach((item) => {
+            merged.set(item.id, item);
+          });
+          const nextItems = Array.from(merged.values())
+            .sort((left, right) =>
+              left.createdAt.localeCompare(right.createdAt),
+            )
+            .slice(-CHAT_MESSAGE_HISTORY_LIMIT);
+
+          const nextMessages = { ...state.messages };
+          nextMessages[toKey] = nextItems;
+          delete nextMessages[fromKey];
+          return { messages: nextMessages };
         });
       },
       clearAll: () => set({ messages: {} }),

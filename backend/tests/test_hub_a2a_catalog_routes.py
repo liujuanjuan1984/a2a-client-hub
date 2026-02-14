@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
@@ -8,8 +9,10 @@ from sqlalchemy import select
 from app.api.routers import admin_a2a_agents as admin_router
 from app.api.routers import hub_a2a_agents as hub_router
 from app.core.config import settings
+from app.db.models.conversation_binding import ConversationBinding
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
+from app.services.session_hub import build_manual_session_key
 from backend.tests.api_utils import create_test_client
 from backend.tests.utils import create_user
 
@@ -19,6 +22,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 class _FakeGateway:
     def __init__(self) -> None:
         self.calls: list[Dict[str, Any]] = []
+        self.invoke_response: Dict[str, Any] = {"success": True, "content": "ok"}
+        self.stream_events: list[Dict[str, Any]] = [{"content": "ok"}]
 
     async def invoke(self, *, resolved, query: str, context_id=None, metadata=None):
         self.calls.append(
@@ -29,7 +34,7 @@ class _FakeGateway:
                 "metadata": metadata,
             }
         )
-        return {"success": True, "content": "ok"}
+        return dict(self.invoke_response)
 
     async def stream(self, *, resolved, query: str, context_id=None, metadata=None):
         self.calls.append(
@@ -43,10 +48,14 @@ class _FakeGateway:
         )
 
         class _MockMessage:
-            def model_dump(self, **kwargs):
-                return {"content": "ok"}
+            def __init__(self, payload: Dict[str, Any]) -> None:
+                self._payload = payload
 
-        yield _MockMessage()
+            def model_dump(self, **kwargs):
+                return dict(self._payload)
+
+        for event_payload in self.stream_events:
+            yield _MockMessage(event_payload)
 
 
 class _FakeA2AService:
@@ -152,9 +161,21 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
         assert allow_resp.json()["user_id"] == str(alice.id)
 
     fake_gateway = _FakeGateway()
+    fake_gateway.invoke_response = {
+        "success": True,
+        "content": "ok",
+        "contextId": "ctx-upstream-1",
+        "metadata": {
+            "provider": "opencode",
+            "externalSessionId": "upstream-session-1",
+        },
+    }
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
     )
+    local_session_id = uuid4()
+    session_key = build_manual_session_key(local_session_id)
+    agent_uuid = UUID(agent_id)
 
     async with create_test_client(
         hub_router.router,
@@ -171,7 +192,7 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
 
         invoke_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/invoke",
-            json={"query": "hi", "metadata": {}},
+            json={"query": "hi", "sessionId": session_key, "metadata": {}},
         )
         assert invoke_resp.status_code == 200
         assert invoke_resp.json()["success"] is True
@@ -179,6 +200,19 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
     assert len(fake_gateway.calls) == 1
     resolved = fake_gateway.calls[0]["resolved"]
     assert resolved.headers["Authorization"].endswith("secret-token-9999")
+    external_binding = await async_db_session.scalar(
+        select(ConversationBinding).where(
+            ConversationBinding.user_id == alice.id,
+            ConversationBinding.binding_kind
+            == ConversationBinding.KIND_EXTERNAL_SESSION,
+            ConversationBinding.provider == "opencode",
+            ConversationBinding.agent_id == agent_uuid,
+            ConversationBinding.agent_source == "shared",
+            ConversationBinding.external_session_id == "upstream-session-1",
+        )
+    )
+    assert external_binding is not None
+    assert external_binding.context_id == "ctx-upstream-1"
 
 
 @pytest.mark.asyncio
@@ -223,10 +257,23 @@ async def test_allowlisted_user_can_stream_sse(
         assert allow_resp.status_code == 201
 
     fake_gateway = _FakeGateway()
+    fake_gateway.stream_events = [
+        {
+            "content": "ok",
+            "contextId": "ctx-stream-1",
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "upstream-stream-1",
+            },
+        }
+    ]
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
     )
     monkeypatch.setattr(hub_router, "validate_message", lambda payload: [])
+    local_session_id = uuid4()
+    session_key = build_manual_session_key(local_session_id)
+    agent_uuid = UUID(agent_id)
 
     async with create_test_client(
         hub_router.router,
@@ -238,7 +285,7 @@ async def test_allowlisted_user_can_stream_sse(
             "POST",
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/invoke",
             params={"stream": "true"},
-            json={"query": "hi", "metadata": {}},
+            json={"query": "hi", "sessionId": session_key, "metadata": {}},
         ) as stream_resp:
             assert stream_resp.status_code == 200
             assert stream_resp.headers["content-type"].startswith("text/event-stream")
@@ -249,6 +296,19 @@ async def test_allowlisted_user_can_stream_sse(
     # Ensure we injected the system-managed Authorization header.
     resolved = fake_gateway.calls[0]["resolved"]
     assert resolved.headers["Authorization"].endswith("secret-token-stream")
+    external_binding = await async_db_session.scalar(
+        select(ConversationBinding).where(
+            ConversationBinding.user_id == alice.id,
+            ConversationBinding.binding_kind
+            == ConversationBinding.KIND_EXTERNAL_SESSION,
+            ConversationBinding.provider == "opencode",
+            ConversationBinding.agent_id == agent_uuid,
+            ConversationBinding.agent_source == "shared",
+            ConversationBinding.external_session_id == "upstream-stream-1",
+        )
+    )
+    assert external_binding is not None
+    assert external_binding.context_id == "ctx-stream-1"
 
 
 @pytest.mark.asyncio

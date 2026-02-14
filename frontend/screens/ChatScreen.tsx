@@ -2,7 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  FlatList,
   KeyboardAvoidingView,
+  NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
   Pressable,
@@ -20,9 +22,12 @@ import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { type ChatMessage } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
 import { blurActiveElement } from "@/lib/focus";
-import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import { backOrHome } from "@/lib/navigation";
 import { buildChatRoute } from "@/lib/routes";
+import {
+  buildContinueBindingPayload,
+  resolveCanonicalSessionId,
+} from "@/lib/sessionBinding";
 import { getSessionSource } from "@/lib/sessionIds";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
@@ -49,9 +54,37 @@ const isSameMessageList = (left: ChatMessage[], right: ChatMessage[]) => {
       message.role === next.role &&
       message.content === next.content &&
       message.createdAt === next.createdAt &&
+      (message.reasoningContent ?? "") === (next.reasoningContent ?? "") &&
+      (message.toolCallContent ?? "") === (next.toolCallContent ?? "") &&
       message.status === next.status
     );
   });
+};
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const HISTORY_AUTOLOAD_THRESHOLD = 72;
+const LIST_INITIAL_NUM_TO_RENDER = 16;
+const LIST_WINDOW_SIZE = 9;
+const LIST_MAX_TO_RENDER_PER_BATCH = 20;
+
+const isUuidLikeMessageId = (value: string) => UUID_PATTERN.test(value);
+
+const toEpochMs = (isoLike: string) => {
+  const parsed = Date.parse(isoLike);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
+const isSemanticallyDuplicatedWithRemote = (
+  localMessage: ChatMessage,
+  remoteMessage: ChatMessage,
+) => {
+  if (localMessage.role !== remoteMessage.role) return false;
+  if (localMessage.content !== remoteMessage.content) return false;
+  const localTs = toEpochMs(localMessage.createdAt);
+  const remoteTs = toEpochMs(remoteMessage.createdAt);
+  if (!Number.isFinite(localTs) || !Number.isFinite(remoteTs)) return false;
+  return Math.abs(localTs - remoteTs) <= 30_000;
 };
 
 export function ChatScreen({
@@ -73,6 +106,7 @@ export function ChatScreen({
     [agents, activeAgentId],
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
+  const migrateSessionKey = useChatStore((state) => state.migrateSessionKey);
   const generateSessionId = useChatStore((state) => state.generateSessionId);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const session = useChatStore((state) =>
@@ -88,7 +122,18 @@ export function ChatScreen({
   const suppressAutoScrollRef = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const [expandedReasoningByMessageId, setExpandedReasoningByMessageId] =
+    useState<Record<string, boolean>>({});
+  const [expandedToolCallByMessageId, setExpandedToolCallByMessageId] =
+    useState<Record<string, boolean>>({});
+  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const scrollOffsetRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const prependAnchorRef = useRef<{
+    offset: number;
+    contentHeight: number;
+  } | null>(null);
+  const loadingEarlierRef = useRef(false);
   const inputRef = useRef<TextInput>(null);
   const minInputHeight = 44;
   const maxInputHeight = 128;
@@ -120,33 +165,58 @@ export function ChatScreen({
 
   useEffect(() => {
     if (!sessionId || !activeAgentId) return;
-    if (getSessionSource(sessionId) === "manual") return;
+    const boundAgentId = activeAgentId;
+    const sessionSource = getSessionSource(sessionId);
+    const hasHistory =
+      messages.length > 0 || sessionHistoryQuery.messages.length > 0;
+    if (
+      (sessionSource === "manual" || sessionSource === "conversation") &&
+      !hasHistory
+    ) {
+      return;
+    }
 
     let cancelled = false;
     continueSession(sessionId)
       .then((binding) => {
         if (cancelled) return;
+        const canonicalSessionId = resolveCanonicalSessionId(
+          sessionId,
+          binding,
+        );
+        if (canonicalSessionId !== sessionId) {
+          migrateSessionKey(sessionId, canonicalSessionId);
+        }
         const current = useChatStore.getState().sessions[sessionId];
         const hasLocalBinding =
           (typeof current?.contextId === "string" &&
             current.contextId.trim()) ||
+          (typeof current?.externalSessionRef?.externalSessionId === "string" &&
+            current.externalSessionRef.externalSessionId.trim()) ||
           Object.keys(current?.metadata ?? {}).length > 0;
         if (hasLocalBinding && !binding.contextId) {
           return;
         }
-        const opencodeSession =
-          typeof binding.metadata.opencode_session_id === "string"
-            ? binding.metadata.opencode_session_id
-            : current?.opencodeSessionId;
-        useChatStore.getState().bindOpencodeSession(sessionId, {
-          agentId: activeAgentId ?? undefined,
-          opencodeSessionId: opencodeSession ?? undefined,
-          contextId: binding.contextId ?? undefined,
-          metadata: binding.metadata,
-        });
+        ensureSession(canonicalSessionId, boundAgentId);
+        useChatStore
+          .getState()
+          .bindExternalSession(
+            canonicalSessionId,
+            buildContinueBindingPayload(boundAgentId, binding),
+          );
+        if (canonicalSessionId !== sessionId) {
+          router.replace(buildChatRoute(boundAgentId, canonicalSessionId));
+        }
       })
       .catch((error) => {
         if (cancelled) return;
+        if (
+          sessionSource === "manual" &&
+          error instanceof Error &&
+          error.message === "session_not_found"
+        ) {
+          return;
+        }
         const message = error instanceof Error ? error.message : "Bind failed.";
         toast.error("Continue session failed", message);
       });
@@ -154,19 +224,36 @@ export function ChatScreen({
     return () => {
       cancelled = true;
     };
-  }, [activeAgentId, sessionId]);
+  }, [
+    activeAgentId,
+    ensureSession,
+    messages.length,
+    migrateSessionKey,
+    router,
+    sessionHistoryQuery.messages.length,
+    sessionId,
+  ]);
 
   const mergeHistoryMessages = useCallback(
     (incoming: ChatMessage[]) => {
       if (!sessionId) return;
       const current = useMessageStore.getState().messages[sessionId] ?? [];
+      const retainedLocal = current.filter((message) => {
+        if (message.status === "streaming") return true;
+        if (isUuidLikeMessageId(message.id)) return true;
+        return !incoming.some(
+          (remoteMessage) =>
+            isUuidLikeMessageId(remoteMessage.id) &&
+            isSemanticallyDuplicatedWithRemote(message, remoteMessage),
+        );
+      });
       const merged = new Map<string, ChatMessage>();
-      [...incoming, ...current].forEach((message) => {
+      [...retainedLocal, ...incoming].forEach((message) => {
         merged.set(message.id, message);
       });
-      const nextMessages = Array.from(merged.values())
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .slice(-CHAT_MESSAGE_HISTORY_LIMIT);
+      const nextMessages = Array.from(merged.values()).sort((a, b) =>
+        a.createdAt.localeCompare(b.createdAt),
+      );
       if (isSameMessageList(current, nextMessages)) {
         return;
       }
@@ -181,14 +268,30 @@ export function ChatScreen({
     mergeHistoryMessages(sessionHistoryQuery.messages);
   }, [mergeHistoryMessages, sessionId, sessionHistoryQuery.messages]);
 
-  const loadEarlierHistory = async () => {
+  const loadEarlierHistory = useCallback(async () => {
     if (!sessionId) return;
     if (historyPaused) return;
     if (typeof historyNextPage !== "number") return;
     if (historyLoadingMore) return;
+
+    prependAnchorRef.current = {
+      offset: scrollOffsetRef.current,
+      contentHeight: contentHeightRef.current,
+    };
+    loadingEarlierRef.current = true;
     suppressAutoScrollRef.current = true;
-    await sessionHistoryQuery.loadMore();
-  };
+    try {
+      await sessionHistoryQuery.loadMore();
+    } finally {
+      loadingEarlierRef.current = false;
+    }
+  }, [
+    historyLoadingMore,
+    historyNextPage,
+    historyPaused,
+    sessionHistoryQuery.loadMore,
+    sessionId,
+  ]);
 
   useEffect(() => {
     if (hasFetchedAgents && !agent) {
@@ -202,8 +305,38 @@ export function ChatScreen({
       suppressAutoScrollRef.current = false;
       return;
     }
-    scrollRef.current?.scrollToEnd({ animated: true });
+    listRef.current?.scrollToEnd({ animated: true });
   }, [messages.length]);
+
+  const handleListContentSizeChange = useCallback((_w: number, h: number) => {
+    const anchor = prependAnchorRef.current;
+    if (anchor) {
+      const delta = Math.max(0, h - anchor.contentHeight);
+      listRef.current?.scrollToOffset({
+        offset: Math.max(0, anchor.offset + delta),
+        animated: false,
+      });
+      prependAnchorRef.current = null;
+    }
+    contentHeightRef.current = h;
+  }, []);
+
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = event.nativeEvent.contentOffset?.y ?? 0;
+      scrollOffsetRef.current = offsetY;
+      if (
+        offsetY <= HISTORY_AUTOLOAD_THRESHOLD &&
+        typeof historyNextPage === "number" &&
+        !historyLoadingMore &&
+        !historyPaused &&
+        !loadingEarlierRef.current
+      ) {
+        loadEarlierHistory().catch(() => undefined);
+      }
+    },
+    [historyLoadingMore, historyNextPage, historyPaused, loadEarlierHistory],
+  );
   const statusColor = useMemo(() => {
     if (agent?.status === "success") return "bg-emerald-500";
     if (agent?.status === "error") return "bg-red-500";
@@ -273,6 +406,88 @@ export function ChatScreen({
       handleSend();
     }
   };
+
+  const toggleReasoning = (messageId: string) => {
+    setExpandedReasoningByMessageId((current) => ({
+      ...current,
+      [messageId]: !current[messageId],
+    }));
+  };
+
+  const toggleToolCall = (messageId: string) => {
+    setExpandedToolCallByMessageId((current) => ({
+      ...current,
+      [messageId]: !current[messageId],
+    }));
+  };
+
+  const renderChatMessage = useCallback(
+    ({ item: message }: { item: ChatMessage }) => {
+      const reasoningText = message.reasoningContent?.trim() ?? "";
+      const toolCallText = message.toolCallContent?.trim() ?? "";
+      const showReasoning =
+        message.role === "agent" && reasoningText.length > 0;
+      const showToolCall = message.role === "agent" && toolCallText.length > 0;
+      const reasoningExpanded = Boolean(
+        expandedReasoningByMessageId[message.id],
+      );
+      const toolCallExpanded = Boolean(expandedToolCallByMessageId[message.id]);
+
+      return (
+        <View
+          className={`mb-3 flex ${
+            message.role === "user" ? "items-end" : "items-start"
+          }`}
+        >
+          <View
+            className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+              message.role === "user"
+                ? "bg-primary"
+                : message.role === "agent"
+                  ? "bg-slate-800"
+                  : "bg-slate-900"
+            }`}
+          >
+            {showReasoning ? (
+              <View className="rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2">
+                <Pressable onPress={() => toggleReasoning(message.id)}>
+                  <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                    {reasoningExpanded ? "Hide Reasoning" : "Show Reasoning"}
+                  </Text>
+                </Pressable>
+                {reasoningExpanded ? (
+                  <Text className="mt-1 break-all text-xs text-slate-300">
+                    {reasoningText}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+            {showToolCall ? (
+              <View className="mt-3 rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2">
+                <Pressable onPress={() => toggleToolCall(message.id)}>
+                  <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                    {toolCallExpanded ? "Hide Tool Call" : "Show Tool Call"}
+                  </Text>
+                </Pressable>
+                {toolCallExpanded ? (
+                  <Text className="mt-1 break-all text-xs text-slate-300">
+                    {toolCallText}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+            <Text className="mt-3 break-all text-sm text-white">
+              {message.content}
+            </Text>
+            {message.status === "streaming" ? (
+              <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
+            ) : null}
+          </View>
+        </View>
+      );
+    },
+    [expandedReasoningByMessageId, expandedToolCallByMessageId],
+  );
 
   if (!agent) {
     if (!hasFetchedAgents) {
@@ -419,13 +634,33 @@ export function ChatScreen({
                   </Text>
                 </View>
               ) : null}
-              {session?.opencodeSessionId ? (
+              {session?.externalSessionRef?.provider ? (
                 <View className="flex-1 min-w-[45%]">
                   <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
-                    OpenCode Session
+                    Provider
                   </Text>
                   <Text className="mt-1 text-xs text-white" numberOfLines={1}>
-                    {session.opencodeSessionId}
+                    {session.externalSessionRef.provider}
+                  </Text>
+                </View>
+              ) : null}
+              {session?.externalSessionRef?.externalSessionId ? (
+                <View className="flex-1 min-w-[45%]">
+                  <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                    External Session
+                  </Text>
+                  <Text className="mt-1 text-xs text-white" numberOfLines={1}>
+                    {session.externalSessionRef.externalSessionId}
+                  </Text>
+                </View>
+              ) : null}
+              {session?.conversationId ? (
+                <View className="flex-1 min-w-[45%]">
+                  <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                    Conversation ID
+                  </Text>
+                  <Text className="mt-1 text-xs text-white" numberOfLines={1}>
+                    {session.conversationId}
                   </Text>
                 </View>
               ) : null}
@@ -451,11 +686,11 @@ export function ChatScreen({
               </View>
             </View>
 
-            {session?.opencodeSessionId ? (
+            {session?.externalSessionRef?.externalSessionId ? (
               <>
                 <View className="h-[1px] bg-slate-800" />
                 <Text className="text-xs text-muted">
-                  OpenCode history is shown inline in this chat.
+                  External history is shown inline in this chat.
                 </Text>
               </>
             ) : null}
@@ -488,56 +723,42 @@ export function ChatScreen({
         </View>
       ) : null}
 
-      <ScrollView
-        ref={scrollRef}
+      <FlatList
+        ref={listRef}
         className="mt-2 flex-1 px-6"
+        data={messages ?? []}
+        keyExtractor={(item) => item.id}
+        renderItem={renderChatMessage}
         contentContainerStyle={{ paddingBottom: 24 }}
-      >
-        {typeof historyNextPage === "number" ? (
-          <View className="items-center">
-            <Button
-              className="mt-2"
-              label={historyLoadingMore ? "Loading..." : "Load earlier"}
-              size="sm"
-              variant="secondary"
-              loading={historyLoadingMore}
-              disabled={historyPaused}
-              onPress={loadEarlierHistory}
-            />
-          </View>
-        ) : null}
-
-        {messages?.length ? (
-          messages.map((message) => {
-            return (
-              <View
-                key={message.id}
-                className={`mb-3 flex ${
-                  message.role === "user" ? "items-end" : "items-start"
-                }`}
-              >
-                <View
-                  className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                    message.role === "user"
-                      ? "bg-primary"
-                      : message.role === "agent"
-                        ? "bg-slate-800"
-                        : "bg-slate-900"
-                  }`}
-                >
-                  <Text className="break-all text-sm text-white">
-                    {message.content}
-                  </Text>
-                  {message.status === "streaming" ? (
-                    <Text className="mt-1 text-[10px] text-muted">
-                      Streaming...
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-            );
-          })
-        ) : (
+        keyboardShouldPersistTaps="handled"
+        initialNumToRender={LIST_INITIAL_NUM_TO_RENDER}
+        maxToRenderPerBatch={LIST_MAX_TO_RENDER_PER_BATCH}
+        windowSize={LIST_WINDOW_SIZE}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews={Platform.OS === "android"}
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+          autoscrollToTopThreshold: 12,
+        }}
+        onContentSizeChange={handleListContentSizeChange}
+        onScroll={handleListScroll}
+        scrollEventThrottle={16}
+        ListHeaderComponent={
+          typeof historyNextPage === "number" ? (
+            <View className="items-center">
+              <Button
+                className="mt-2"
+                label={historyLoadingMore ? "Loading..." : "Load earlier"}
+                size="sm"
+                variant="secondary"
+                loading={historyLoadingMore}
+                disabled={historyPaused}
+                onPress={loadEarlierHistory}
+              />
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
           <View className="mt-12 items-center">
             <Text className="text-sm text-muted">
               {historyLoading
@@ -547,8 +768,8 @@ export function ChatScreen({
                   : "No messages yet."}
             </Text>
           </View>
-        )}
-      </ScrollView>
+        }
+      />
 
       <View className="relative border-t border-slate-800 px-6 py-4">
         {showPresets ? (

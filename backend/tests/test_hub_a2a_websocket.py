@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from fastapi import WebSocket
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_async_db, get_ws_ticket_user_hub
@@ -58,8 +59,14 @@ def test_invoke_hub_agent_ws_invalid_token(monkeypatch):
 
 def test_invoke_hub_agent_ws_success(monkeypatch, mock_user):
     """Verify successful hub WS invocation and streaming."""
+    ticket = "mock-ticket-length-48-chars-minimum-1234567890"
+
+    async def _override_ws_ticket_user_hub(websocket: WebSocket):
+        websocket.state.selected_subprotocol = ticket
+        return mock_user
+
     app.dependency_overrides[get_async_db] = _override_get_async_db
-    app.dependency_overrides[get_ws_ticket_user_hub] = lambda: mock_user
+    app.dependency_overrides[get_ws_ticket_user_hub] = _override_ws_ticket_user_hub
 
     mock_gateway = MagicMock()
 
@@ -94,8 +101,9 @@ def test_invoke_hub_agent_ws_success(monkeypatch, mock_user):
         with client.websocket_connect(
             f"{settings.api_v1_prefix}/a2a/agents/{uuid4()}/invoke/ws",
             headers={"origin": "http://localhost:5173"},
-            subprotocols=["mock-ticket-length-48-chars-minimum-1234567890"],
+            subprotocols=[ticket],
         ) as websocket:
+            assert websocket.accepted_subprotocol == ticket
             websocket.send_json({"query": "ping"})
 
             resp1 = websocket.receive_json()

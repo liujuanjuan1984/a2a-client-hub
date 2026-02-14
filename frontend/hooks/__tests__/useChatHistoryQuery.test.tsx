@@ -2,7 +2,6 @@ import { renderHook } from "@testing-library/react-native";
 
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
-import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import { type SessionMessageItem } from "@/lib/sessionHistory";
 
 jest.mock("@/hooks/usePaginatedList", () => ({
@@ -42,7 +41,7 @@ describe("useChatHistoryQuery", () => {
     mockedUsePaginatedList.mockReset();
   });
 
-  it("maps session history messages and keeps the latest configured limit", () => {
+  it("maps session history messages without truncating loaded pages", () => {
     const items: SessionMessageItem[] = Array.from({ length: 520 }, (_, i) => {
       const minute = String(Math.floor(i / 60)).padStart(2, "0");
       const second = String(i % 60).padStart(2, "0");
@@ -51,6 +50,15 @@ describe("useChatHistoryQuery", () => {
         role: i % 2 === 0 ? "assistant" : "user",
         content: `content-${i}`,
         created_at: `2026-02-12T00:${minute}:${second}.000Z`,
+        metadata:
+          i === 0
+            ? {
+                opencode_stream: {
+                  reasoning: "reasoning-0",
+                  tool_call: "tool-0",
+                },
+              }
+            : undefined,
       };
     });
 
@@ -63,12 +71,13 @@ describe("useChatHistoryQuery", () => {
       }),
     );
 
-    const firstRetainedIndex = items.length - CHAT_MESSAGE_HISTORY_LIMIT;
-    expect(result.current.messages).toHaveLength(CHAT_MESSAGE_HISTORY_LIMIT);
+    expect(result.current.messages).toHaveLength(items.length);
     expect(result.current.messages[0]).toMatchObject({
-      id: `msg-${firstRetainedIndex}`,
-      role: firstRetainedIndex % 2 === 0 ? "agent" : "user",
-      content: `content-${firstRetainedIndex}`,
+      id: "msg-0",
+      role: "agent",
+      content: "content-0",
+      reasoningContent: "reasoning-0",
+      toolCallContent: "tool-0",
     });
 
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];

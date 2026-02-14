@@ -496,6 +496,11 @@ class Settings(BaseSettings):
         alias="OPENCODE_SESSIONS_REFRESH_CONCURRENCY",
         description="Maximum concurrent upstream refreshes when updating cached OpenCode session listings.",
     )
+    opencode_stream_metadata_max_chars: int = Field(
+        default=12000,
+        alias="OPENCODE_STREAM_METADATA_MAX_CHARS",
+        description="Maximum characters persisted per OpenCode stream metadata channel (reasoning/tool_call).",
+    )
 
     model_config = ConfigDict(
         env_file=".env",
@@ -555,6 +560,17 @@ class Settings(BaseSettings):
             raise ValueError("OPENCODE_SESSIONS_REFRESH_CONCURRENCY must be positive")
         if value > 20:
             raise ValueError("OPENCODE_SESSIONS_REFRESH_CONCURRENCY must not exceed 20")
+        return value
+
+    @field_validator("opencode_stream_metadata_max_chars")
+    @classmethod
+    def validate_opencode_stream_metadata_max_chars(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("OPENCODE_STREAM_METADATA_MAX_CHARS must be positive")
+        if value > 1_000_000:
+            raise ValueError(
+                "OPENCODE_STREAM_METADATA_MAX_CHARS must not exceed 1000000"
+            )
         return value
 
 

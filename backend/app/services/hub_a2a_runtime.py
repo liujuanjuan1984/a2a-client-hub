@@ -9,10 +9,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.secret_vault import SecretVaultNotConfiguredError, hub_a2a_secret_vault
+from app.core.secret_vault import hub_a2a_secret_vault
 from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
 from app.integrations.a2a_client.service import ResolvedAgent
 from app.services.hub_a2a_agents import HubA2AAgentNotFoundError, hub_a2a_agent_service
+from app.services.runtime_auth import build_resolved_runtime_agent
 
 
 class HubA2ARuntimeError(RuntimeError):
@@ -55,40 +56,19 @@ class HubA2ARuntimeBuilder:
         except HubA2AAgentNotFoundError as exc:
             raise HubA2ARuntimeNotFoundError(str(exc)) from exc
 
-        headers = dict(agent.extra_headers or {})
-
+        credential = None
         if agent.auth_type == "bearer":
             credential = await self._get_credential(db, agent_id=agent.id)
-            if credential is None:
-                raise HubA2ARuntimeValidationError("Bearer token is required")
-            if not self._vault.is_configured:
-                raise HubA2ARuntimeValidationError(
-                    "Credential encryption key is missing"
-                )
-            try:
-                decrypted = self._vault.decrypt(credential.encrypted_token)
-            except SecretVaultNotConfiguredError as exc:
-                raise HubA2ARuntimeValidationError(str(exc)) from exc
-
-            header_name = (
-                agent.auth_header or "Authorization"
-            ).strip() or "Authorization"
-            scheme = (agent.auth_scheme or "Bearer").strip()
-            if scheme:
-                headers[header_name] = f"{scheme} {decrypted.value}"
-            else:
-                headers[header_name] = decrypted.value
-        elif agent.auth_type == "none":
-            pass
-        else:
-            raise HubA2ARuntimeValidationError("Unsupported auth_type")
-
-        resolved = ResolvedAgent(
+        resolved, _ = build_resolved_runtime_agent(
             name=agent.name,
-            url=agent.card_url,
-            description=None,
-            metadata={},
-            headers=headers,
+            card_url=agent.card_url,
+            extra_headers=agent.extra_headers,
+            auth_type=agent.auth_type,
+            auth_header=agent.auth_header,
+            auth_scheme=agent.auth_scheme,
+            credential=credential,
+            vault=self._vault,
+            validation_error_cls=HubA2ARuntimeValidationError,
         )
 
         return HubA2ARuntime(

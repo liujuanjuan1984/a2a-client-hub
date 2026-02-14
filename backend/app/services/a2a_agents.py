@@ -5,16 +5,17 @@ Service helpers for managing user-managed A2A agents and credentials.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.secret_vault import SecretVaultNotConfiguredError, user_llm_secret_vault
+from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.transaction import commit_safely
+from app.services.agent_common import AgentValidationMixin, encrypt_bearer_token
 
 ALLOWED_AUTH_TYPES = {"none", "bearer"}
 
@@ -37,8 +38,11 @@ class A2AAgentRecord:
     token_last4: Optional[str]
 
 
-class A2AAgentService:
+class A2AAgentService(AgentValidationMixin):
     """Business logic wrapper for A2A agent CRUD and credential handling."""
+
+    _validation_error_cls = A2AAgentValidationError
+    _allowed_auth_types = ALLOWED_AUTH_TYPES
 
     def __init__(self) -> None:
         self._vault = user_llm_secret_vault
@@ -199,11 +203,7 @@ class A2AAgentService:
     ) -> None:
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
         agent.soft_delete()
-        credential = await self._get_credential(
-            db, user_id=user_id, agent_id=agent.id, include_deleted=False
-        )
-        if credential:
-            credential.soft_delete()
+        await self._delete_credentials(db, user_id=user_id, agent_id=agent.id)
         await commit_safely(db)
 
     # ----------------------
@@ -250,17 +250,32 @@ class A2AAgentService:
         *,
         user_id: UUID,
         agent_id: UUID,
-        include_deleted: bool,
     ) -> Optional[A2AAgentCredential]:
         stmt = select(A2AAgentCredential).where(
             and_(
                 A2AAgentCredential.user_id == user_id,
                 A2AAgentCredential.agent_id == agent_id,
+                A2AAgentCredential.deleted_at.is_(None),
             )
         )
-        if not include_deleted:
-            stmt = stmt.where(A2AAgentCredential.deleted_at.is_(None))
         return await db.scalar(stmt)
+
+    async def _delete_credentials(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent_id: UUID,
+    ) -> None:
+        # Hard-delete credential rows to minimize secret retention.
+        await db.execute(
+            delete(A2AAgentCredential).where(
+                and_(
+                    A2AAgentCredential.user_id == user_id,
+                    A2AAgentCredential.agent_id == agent_id,
+                )
+            )
+        )
 
     async def _sync_credentials(
         self,
@@ -271,19 +286,13 @@ class A2AAgentService:
         token: Optional[str],
     ) -> Optional[str]:
         if agent.auth_type == "none":
-            credential = await self._get_credential(
-                db, user_id=user_id, agent_id=agent.id, include_deleted=False
-            )
-            if credential:
-                credential.soft_delete()
+            await self._delete_credentials(db, user_id=user_id, agent_id=agent.id)
             return None
 
         if agent.auth_type != "bearer":
             raise A2AAgentValidationError("Unsupported auth_type")
 
-        credential = await self._get_credential(
-            db, user_id=user_id, agent_id=agent.id, include_deleted=False
-        )
+        credential = await self._get_credential(db, user_id=user_id, agent_id=agent.id)
         if token is None:
             if credential is None:
                 raise A2AAgentValidationError("Bearer token is required")
@@ -304,20 +313,16 @@ class A2AAgentService:
         agent_id: UUID,
         token: Optional[str],
     ) -> Optional[str]:
-        if token is None or not token.strip():
-            raise A2AAgentValidationError("Bearer token is required")
-        if not self._vault.is_configured:
-            raise A2AAgentValidationError("Credential encryption key is missing")
-
-        try:
-            encrypted_value, last4 = self._vault.encrypt(token.strip())
-        except SecretVaultNotConfiguredError as exc:
-            raise A2AAgentValidationError(str(exc)) from exc
-
-        credential = await self._get_credential(
-            db, user_id=user_id, agent_id=agent_id, include_deleted=True
+        encrypted_value, last4 = encrypt_bearer_token(
+            vault=self._vault,
+            token=token,
+            validation_error_cls=A2AAgentValidationError,
         )
+
+        credential = await self._get_credential(db, user_id=user_id, agent_id=agent_id)
         if credential is None:
+            # Purge legacy soft-deleted rows before insert to satisfy unique constraint.
+            await self._delete_credentials(db, user_id=user_id, agent_id=agent_id)
             credential = A2AAgentCredential(
                 user_id=user_id,
                 agent_id=agent_id,
@@ -327,58 +332,10 @@ class A2AAgentService:
             )
             db.add(credential)
         else:
-            if credential.deleted_at is not None:
-                credential.restore()
             credential.encrypted_token = encrypted_value
             credential.token_last4 = last4
 
         return last4
-
-    def _normalize_name(self, value: str) -> str:
-        trimmed = (value or "").strip()
-        if not trimmed:
-            raise A2AAgentValidationError("Name is required")
-        return trimmed
-
-    def _normalize_card_url(self, value: str) -> str:
-        trimmed = (value or "").strip()
-        if not trimmed:
-            raise A2AAgentValidationError("Card URL is required")
-        return trimmed
-
-    def _normalize_auth_type(self, value: str) -> str:
-        normalized = (value or "").strip().lower()
-        if normalized not in ALLOWED_AUTH_TYPES:
-            raise A2AAgentValidationError("Unsupported auth_type")
-        return normalized
-
-    def _resolve_auth_fields(
-        self,
-        auth_type: str,
-        auth_header: Optional[str],
-        auth_scheme: Optional[str],
-        existing: Optional[A2AAgent],
-    ) -> Tuple[Optional[str], Optional[str]]:
-        if auth_type == "none":
-            return None, None
-
-        if auth_type != "bearer":
-            raise A2AAgentValidationError("Unsupported auth_type")
-
-        header_value = (
-            (auth_header if auth_header is not None else None)
-            or (existing.auth_header if existing else None)
-            or "Authorization"
-        )
-        scheme_value = (
-            (auth_scheme if auth_scheme is not None else None)
-            or (existing.auth_scheme if existing else None)
-            or "Bearer"
-        )
-        normalized_header = header_value.strip() or "Authorization"
-        normalized_scheme = scheme_value.strip() or "Bearer"
-
-        return normalized_header, normalized_scheme
 
     def _normalize_tags(self, tags: Optional[Iterable[str]]) -> List[str]:
         if tags is None:

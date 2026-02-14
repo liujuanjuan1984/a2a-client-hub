@@ -423,7 +423,16 @@ class A2AExtensionsService:
             success=True,
             result={
                 "contextId": resolved_session_id,
-                "metadata": {"opencode_session_id": resolved_session_id},
+                "provider": "opencode",
+                "externalSessionId": resolved_session_id,
+                "bindingMetadata": {
+                    "provider": "opencode",
+                    "external_session_id": resolved_session_id,
+                },
+                "metadata": {
+                    "provider": "opencode",
+                    "externalSessionId": resolved_session_id,
+                },
             },
             meta=meta,
         )

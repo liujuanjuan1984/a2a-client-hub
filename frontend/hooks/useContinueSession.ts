@@ -4,6 +4,10 @@ import { useCallback } from "react";
 import { continueSession as continueSessionBinding } from "@/lib/api/sessions";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
+import {
+  buildContinueBindingPayload,
+  resolveCanonicalSessionId,
+} from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
 import { useChatStore } from "@/store/chat";
 
@@ -15,9 +19,10 @@ type ContinueSessionInput = {
 export const useContinueSession = () => {
   const router = useRouter();
   const ensureSession = useChatStore((state) => state.ensureSession);
-  const bindOpencodeSession = useChatStore(
-    (state) => state.bindOpencodeSession,
+  const bindExternalSession = useChatStore(
+    (state) => state.bindExternalSession,
   );
+  const migrateSessionKey = useChatStore((state) => state.migrateSessionKey);
 
   const continueSession = useCallback(
     async ({ agentId, sessionId }: ContinueSessionInput) => {
@@ -29,19 +34,20 @@ export const useContinueSession = () => {
 
       try {
         const binding = await continueSessionBinding(unifiedSessionId);
-        ensureSession(unifiedSessionId, agentId);
-        const opencodeSessionId =
-          typeof binding.metadata.opencode_session_id === "string"
-            ? binding.metadata.opencode_session_id
-            : undefined;
-        bindOpencodeSession(unifiedSessionId, {
-          agentId,
-          opencodeSessionId,
-          contextId: binding.contextId ?? undefined,
-          metadata: binding.metadata,
-        });
+        const canonicalSessionId = resolveCanonicalSessionId(
+          unifiedSessionId,
+          binding,
+        );
+        if (canonicalSessionId !== unifiedSessionId) {
+          migrateSessionKey(unifiedSessionId, canonicalSessionId);
+        }
+        ensureSession(canonicalSessionId, agentId);
+        bindExternalSession(
+          canonicalSessionId,
+          buildContinueBindingPayload(agentId, binding),
+        );
         blurActiveElement();
-        router.push(buildChatRoute(agentId, unifiedSessionId));
+        router.push(buildChatRoute(agentId, canonicalSessionId));
         return true;
       } catch (error) {
         const message =
@@ -50,7 +56,7 @@ export const useContinueSession = () => {
         return false;
       }
     },
-    [bindOpencodeSession, ensureSession, router],
+    [bindExternalSession, ensureSession, migrateSessionKey, router],
   );
 
   return { continueSession };
