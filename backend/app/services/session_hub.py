@@ -907,16 +907,16 @@ class SessionHubService:
             )
             if resolved is None:
                 return (
-                    {
-                        "session_id": session_key,
-                        "conversationId": str(parsed.conversation_id),
-                        "source": "manual",
-                        "provider": None,
-                        "externalSessionId": None,
-                        "contextId": None,
-                        "bindingMetadata": {},
-                        "metadata": {},
-                    },
+                    _build_continue_response(
+                        session_id=session_key,
+                        conversation_id=parsed.conversation_id,
+                        source="manual",
+                        provider=None,
+                        external_session_id=None,
+                        context_id=None,
+                        binding_metadata={},
+                        metadata={},
+                    ),
                     False,
                 )
             parsed = resolved
@@ -948,25 +948,18 @@ class SessionHubService:
             if not result.success:
                 raise ValueError(result.error_code or "upstream_error")
             payload = result.result if isinstance(result.result, dict) else {}
-            context_id = payload.get("contextId") or payload.get("context_id")
+            context_id = extract_context_id(payload)
             metadata = (
                 payload.get("metadata")
                 if isinstance(payload.get("metadata"), dict)
                 else {}
             )
-            provider_from_payload = (
-                payload.get("provider")
-                if isinstance(payload.get("provider"), str)
-                else None
-            )
-            external_from_payload = (
-                payload.get("externalSessionId")
-                if isinstance(payload.get("externalSessionId"), str)
-                else (
-                    payload.get("external_session_id")
-                    if isinstance(payload.get("external_session_id"), str)
-                    else None
-                )
+            (
+                provider_from_payload,
+                external_from_payload,
+            ) = extract_provider_and_external_session_id(
+                payload,
+                include_session_id_aliases=True,
             )
             binding_metadata = (
                 payload.get("bindingMetadata")
@@ -1000,18 +993,18 @@ class SessionHubService:
                 )
             )
             return (
-                {
-                    "session_id": build_conversation_session_key(
+                _build_continue_response(
+                    session_id=build_conversation_session_key(
                         bind_result.conversation_id
                     ),
-                    "conversationId": str(bind_result.conversation_id),
-                    "source": "opencode",
-                    "provider": resolved_provider,
-                    "externalSessionId": resolved_external_session_id,
-                    "contextId": context_id if isinstance(context_id, str) else None,
-                    "bindingMetadata": binding_metadata,
-                    "metadata": metadata,
-                },
+                    conversation_id=bind_result.conversation_id,
+                    source="opencode",
+                    provider=resolved_provider,
+                    external_session_id=resolved_external_session_id,
+                    context_id=context_id if isinstance(context_id, str) else None,
+                    binding_metadata=binding_metadata,
+                    metadata=metadata,
+                ),
                 bind_result.mutated,
             )
 
@@ -1027,16 +1020,16 @@ class SessionHubService:
             if parsed.source != "manual" or str(exc) != "session_not_found":
                 raise
             return (
-                {
-                    "session_id": session_key,
-                    "conversationId": None,
-                    "source": "manual",
-                    "provider": None,
-                    "externalSessionId": None,
-                    "contextId": None,
-                    "bindingMetadata": {},
-                    "metadata": {},
-                },
+                _build_continue_response(
+                    session_id=session_key,
+                    conversation_id=None,
+                    source="manual",
+                    provider=None,
+                    external_session_id=None,
+                    context_id=None,
+                    binding_metadata={},
+                    metadata={},
+                ),
                 False,
             )
         latest_stmt = (
@@ -1053,7 +1046,7 @@ class SessionHubService:
         latest = await db.scalar(latest_stmt)
         metadata_raw = getattr(latest, "message_metadata", None) if latest else None
         metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
-        context_id = metadata.get("context_id") or metadata.get("contextId")
+        context_id = extract_context_id(metadata)
         provider, external_session_id = extract_provider_and_external_session_id(
             metadata
         )
@@ -1155,16 +1148,16 @@ class SessionHubService:
             )
         )
         return (
-            {
-                "session_id": response_session_id,
-                "conversationId": str(conversation_id) if conversation_id else None,
-                "source": parsed.source,
-                "provider": resolved_provider,
-                "externalSessionId": resolved_external_session_id,
-                "contextId": context_id if isinstance(context_id, str) else None,
-                "bindingMetadata": metadata,
-                "metadata": metadata,
-            },
+            _build_continue_response(
+                session_id=response_session_id,
+                conversation_id=conversation_id,
+                source=parsed.source,
+                provider=resolved_provider,
+                external_session_id=resolved_external_session_id,
+                context_id=context_id if isinstance(context_id, str) else None,
+                binding_metadata=metadata,
+                metadata=metadata,
+            ),
             db_mutated,
         )
 
@@ -1567,6 +1560,29 @@ class SessionHubService:
         )
         meta = dict(extra.get("meta") or {}) if isinstance(extra, dict) else {}
         return items, meta
+
+
+def _build_continue_response(
+    *,
+    session_id: str,
+    conversation_id: Optional[UUID],
+    source: ParsedSessionSource,
+    provider: Optional[str],
+    external_session_id: Optional[str],
+    context_id: Optional[str],
+    binding_metadata: dict[str, Any],
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "session_id": session_id,
+        "conversationId": str(conversation_id) if conversation_id else None,
+        "source": source,
+        "provider": provider,
+        "externalSessionId": external_session_id,
+        "contextId": context_id,
+        "bindingMetadata": binding_metadata,
+        "metadata": metadata,
+    }
 
 
 def _sender_to_role(sender: str) -> str:
