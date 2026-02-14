@@ -497,7 +497,7 @@ class Settings(BaseSettings):
         description="Maximum concurrent upstream refreshes when updating cached OpenCode session listings.",
     )
     opencode_stream_metadata_max_chars: int = Field(
-        default=131072,
+        default=12000,
         alias="OPENCODE_STREAM_METADATA_MAX_CHARS",
         description="Maximum characters persisted per OpenCode stream metadata channel (reasoning/tool_call).",
     )
