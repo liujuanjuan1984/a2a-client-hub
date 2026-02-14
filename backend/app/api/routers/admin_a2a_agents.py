@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_admin_user
+from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -31,37 +31,9 @@ from app.services.hub_a2a_agents import (
     hub_a2a_agent_service,
 )
 from app.utils.logging_redaction import redact_url_for_logging
-from app.utils.outbound_url import (
-    OutboundURLNotAllowedError,
-    validate_outbound_http_url,
-)
 
 router = StrictAPIRouter(prefix="/admin/a2a/agents", tags=["admin-a2a"])
 logger = get_logger(__name__)
-
-
-def _validate_card_url(value: str) -> str:
-    trimmed = (value or "").strip()
-    if not trimmed:
-        raise HTTPException(status_code=400, detail="Card URL is required")
-    parsed = urlparse(trimmed)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise HTTPException(status_code=400, detail="Card URL must be http(s)")
-    try:
-        validate_outbound_http_url(
-            parsed.geturl(),
-            allowed_hosts=settings.a2a_proxy_allowed_hosts,
-            purpose="Card URL",
-        )
-    except OutboundURLNotAllowedError as exc:
-        if exc.code in {"missing_url", "invalid_scheme", "missing_host"}:
-            raise HTTPException(
-                status_code=400, detail="Card URL must be http(s)"
-            ) from exc
-        raise HTTPException(
-            status_code=403, detail="Card URL host is not allowed"
-        ) from exc
-    return trimmed
 
 
 def _build_admin_response(record) -> HubA2AAgentAdminResponse:
@@ -120,7 +92,10 @@ async def create_hub_agent_admin(
     current_admin: User = Depends(get_current_admin_user),
 ) -> HubA2AAgentAdminResponse:
     response.headers["Cache-Control"] = "no-store"
-    normalized_card_url = _validate_card_url(payload.card_url)
+    normalized_card_url = normalize_card_url(
+        payload.card_url,
+        allowed_hosts=settings.a2a_proxy_allowed_hosts,
+    )
     logger.info(
         "Hub A2A agent create requested (admin)",
         extra={
@@ -179,7 +154,12 @@ async def update_hub_agent_admin(
 ) -> HubA2AAgentAdminResponse:
     response.headers["Cache-Control"] = "no-store"
     normalized_card_url = (
-        _validate_card_url(payload.card_url) if payload.card_url else None
+        normalize_card_url(
+            payload.card_url,
+            allowed_hosts=settings.a2a_proxy_allowed_hosts,
+        )
+        if payload.card_url
+        else None
     )
     logger.info(
         "Hub A2A agent update requested (admin)",

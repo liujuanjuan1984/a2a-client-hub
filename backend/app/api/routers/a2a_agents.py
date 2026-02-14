@@ -5,13 +5,13 @@ REST endpoints for user-managed A2A agents.
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, WebSocket, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_me
+from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -55,10 +55,6 @@ from app.services.invoke_route_runner import (
 )
 from app.utils.auth_headers import build_auth_header_pair
 from app.utils.logging_redaction import redact_url_for_logging
-from app.utils.outbound_url import (
-    OutboundURLNotAllowedError,
-    validate_outbound_http_url,
-)
 
 router = StrictAPIRouter(prefix="/me/a2a/agents", tags=["a2a"])
 logger = get_logger(__name__)
@@ -83,32 +79,11 @@ def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
     return A2AAgentResponse.model_validate(payload)
 
 
-def _validate_proxy_target(parsed: Any) -> None:
-    try:
-        validate_outbound_http_url(
-            parsed.geturl(),
-            allowed_hosts=settings.a2a_proxy_allowed_hosts,
-            purpose="Card URL",
-        )
-    except OutboundURLNotAllowedError as exc:
-        if exc.code in {"missing_url", "invalid_scheme", "missing_host"}:
-            raise HTTPException(
-                status_code=400, detail="Card URL must be http(s)"
-            ) from exc
-        raise HTTPException(
-            status_code=403, detail="Card URL host is not allowed"
-        ) from exc
-
-
 def _normalize_card_url(value: str) -> str:
-    trimmed = (value or "").strip()
-    if not trimmed:
-        raise HTTPException(status_code=400, detail="Card URL is required")
-    parsed = urlparse(trimmed)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise HTTPException(status_code=400, detail="Card URL must be http(s)")
-    _validate_proxy_target(parsed)
-    return trimmed
+    return normalize_card_url(
+        value,
+        allowed_hosts=settings.a2a_proxy_allowed_hosts,
+    )
 
 
 def _build_proxy_headers(payload: A2AAgentCardProxyRequest) -> dict[str, str]:
