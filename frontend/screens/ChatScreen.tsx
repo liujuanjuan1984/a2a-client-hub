@@ -124,6 +124,8 @@ export function ChatScreen({
   const [showPresets, setShowPresets] = useState(false);
   const [expandedReasoningByMessageId, setExpandedReasoningByMessageId] =
     useState<Record<string, boolean>>({});
+  const [expandedToolCallByMessageId, setExpandedToolCallByMessageId] =
+    useState<Record<string, boolean>>({});
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
@@ -412,6 +414,13 @@ export function ChatScreen({
     }));
   };
 
+  const toggleToolCall = (messageId: string) => {
+    setExpandedToolCallByMessageId((current) => ({
+      ...current,
+      [messageId]: !current[messageId],
+    }));
+  };
+
   const renderChatMessage = useCallback(
     ({ item: message }: { item: ChatMessage }) => {
       const reasoningText = message.reasoningContent?.trim() ?? "";
@@ -422,6 +431,7 @@ export function ChatScreen({
       const reasoningExpanded = Boolean(
         expandedReasoningByMessageId[message.id],
       );
+      const toolCallExpanded = Boolean(expandedToolCallByMessageId[message.id]);
 
       return (
         <View
@@ -438,21 +448,8 @@ export function ChatScreen({
                   : "bg-slate-900"
             }`}
           >
-            <Text className="break-all text-sm text-white">
-              {message.content}
-            </Text>
-            {showToolCall ? (
-              <View className="mt-3 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2">
-                <Text className="text-[10px] font-bold uppercase tracking-wider text-sky-300">
-                  Tool Call
-                </Text>
-                <Text className="mt-1 break-all text-xs text-slate-200">
-                  {toolCallText}
-                </Text>
-              </View>
-            ) : null}
             {showReasoning ? (
-              <View className="mt-3 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2">
+              <View className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2">
                 <Pressable onPress={() => toggleReasoning(message.id)}>
                   <Text className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
                     {reasoningExpanded ? "Hide Reasoning" : "Show Reasoning"}
@@ -465,6 +462,23 @@ export function ChatScreen({
                 ) : null}
               </View>
             ) : null}
+            {showToolCall ? (
+              <View className="mt-3 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2">
+                <Pressable onPress={() => toggleToolCall(message.id)}>
+                  <Text className="text-[10px] font-bold uppercase tracking-wider text-sky-300">
+                    {toolCallExpanded ? "Hide Tool Call" : "Show Tool Call"}
+                  </Text>
+                </Pressable>
+                {toolCallExpanded ? (
+                  <Text className="mt-1 break-all text-xs text-slate-200">
+                    {toolCallText}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+            <Text className="mt-3 break-all text-sm text-white">
+              {message.content}
+            </Text>
             {message.status === "streaming" ? (
               <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
             ) : null}
@@ -472,7 +486,7 @@ export function ChatScreen({
         </View>
       );
     },
-    [expandedReasoningByMessageId],
+    [expandedReasoningByMessageId, expandedToolCallByMessageId],
   );
 
   if (!agent) {
