@@ -179,10 +179,10 @@ class A2AInvokeService:
         """Accumulates stream text for persistence.
 
         For typed artifact updates:
-        - aggregate ordered message blocks by `content_type`
+        - aggregate ordered message blocks by `block_type`
         - same type appends; switched type starts a new block
         - preserve append/overwrite semantics per update
-        - map `final_answer` to `text`
+        - accepted values: `text`, `reasoning`, `tool_call`
 
         For non-typed events, keep legacy concatenation behavior.
         """
@@ -208,39 +208,20 @@ class A2AInvokeService:
 
         @staticmethod
         def _extract_artifact_type(
-            payload: dict[str, Any], artifact: dict[str, Any]
+            _payload: dict[str, Any], artifact: dict[str, Any]
         ) -> str | None:
-            def _pick(source: Any, keys: tuple[str, ...]) -> str | None:
-                if not isinstance(source, dict):
-                    return None
-                for key in keys:
-                    value = source.get(key)
-                    if isinstance(value, str) and value.strip():
-                        return value.strip().lower()
-                return None
-
             metadata = artifact.get("metadata")
             if not isinstance(metadata, dict):
                 metadata = {}
             opencode = metadata.get("opencode") if isinstance(metadata, dict) else None
             opencode = opencode if isinstance(opencode, dict) else {}
-            raw = (
-                _pick(
-                    opencode, ("content_type", "contentType", "block_type", "blockType")
-                )
-                or _pick(
-                    artifact,
-                    ("content_type", "contentType", "block_type", "blockType"),
-                )
-                or _pick(
-                    payload,
-                    ("content_type", "contentType", "block_type", "blockType"),
-                )
-                or _pick(opencode, ("channel", "stream_channel"))
-            )
-            if raw == "final_answer":
-                return "text"
-            return raw
+            raw = opencode.get("block_type")
+            if not isinstance(raw, str) or not raw.strip():
+                return None
+            normalized = raw.strip().lower()
+            if normalized in {"text", "reasoning", "tool_call"}:
+                return normalized
+            return None
 
         @staticmethod
         def _extract_artifact_source(artifact: dict[str, Any]) -> str | None:
@@ -293,13 +274,13 @@ class A2AInvokeService:
                     return raw_text
             return ""
 
-        def _push_new_block(self, content_type: str, delta: str, done: bool) -> None:
+        def _push_new_block(self, block_type: str, delta: str, done: bool) -> None:
             now = self._block_seq
             self._block_seq += 1
             self._blocks.append(
                 {
                     "id": f"block-{now + 1}",
-                    "type": content_type,
+                    "type": block_type,
                     "content": delta,
                     "is_finished": done,
                     "seq": now,
@@ -309,7 +290,7 @@ class A2AInvokeService:
         def _apply_block_update(
             self,
             *,
-            content_type: str,
+            block_type: str,
             delta: str,
             append: bool,
             done: bool,
@@ -323,7 +304,7 @@ class A2AInvokeService:
             if overwrite:
                 if (
                     isinstance(last, dict)
-                    and last.get("type") == content_type
+                    and last.get("type") == block_type
                     and last.get("is_finished") is False
                 ):
                     last["content"] = delta
@@ -331,12 +312,12 @@ class A2AInvokeService:
                     return
                 if isinstance(last, dict) and last.get("is_finished") is False:
                     last["is_finished"] = True
-                self._push_new_block(content_type, delta, done)
+                self._push_new_block(block_type, delta, done)
                 return
 
             if (
                 isinstance(last, dict)
-                and last.get("type") == content_type
+                and last.get("type") == block_type
                 and last.get("is_finished") is False
             ):
                 current = last.get("content")
@@ -348,14 +329,14 @@ class A2AInvokeService:
 
             if isinstance(last, dict) and last.get("is_finished") is False:
                 last["is_finished"] = True
-            self._push_new_block(content_type, delta, done)
+            self._push_new_block(block_type, delta, done)
 
         def consume(self, payload: dict[str, Any]) -> None:
             if payload.get("kind") == "artifact-update":
                 artifact = payload.get("artifact")
                 if isinstance(artifact, dict):
-                    content_type = self._extract_artifact_type(payload, artifact)
-                    if content_type:
+                    block_type = self._extract_artifact_type(payload, artifact)
+                    if block_type:
                         delta = self._extract_delta(payload, artifact)
                         if not delta:
                             return
@@ -363,7 +344,7 @@ class A2AInvokeService:
                         done = self._resolve_done(payload, artifact)
                         source = self._extract_artifact_source(artifact)
                         self._apply_block_update(
-                            content_type=content_type,
+                            block_type=block_type,
                             delta=delta,
                             append=append,
                             done=done,

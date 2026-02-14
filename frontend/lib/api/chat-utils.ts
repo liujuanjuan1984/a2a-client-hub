@@ -21,7 +21,7 @@ export type ChatMessage = {
 export type StreamBlockUpdate = {
   taskId: string;
   artifactId: string;
-  contentType: string;
+  blockType: "text" | "reasoning" | "tool_call";
   source: string | null;
   messageId: string;
   role: ChatRole;
@@ -127,11 +127,15 @@ const normalizeRole = (raw: string | null): ChatRole => {
   return "system";
 };
 
-const parseContentType = (raw: string | null): string | null => {
+const parseBlockType = (
+  raw: string | null,
+): "text" | "reasoning" | "tool_call" | null => {
   const normalized = (raw ?? "").trim().toLowerCase();
   if (!normalized) return null;
-  if (normalized === "final_answer") return "text";
-  return normalized;
+  if (normalized === "text") return "text";
+  if (normalized === "reasoning") return "reasoning";
+  if (normalized === "tool_call") return "tool_call";
+  return null;
 };
 
 const inferTaskIdFromArtifactId = (
@@ -153,28 +157,10 @@ export const extractStreamBlockUpdate = (
   const artifact = asRecord(data.artifact);
   const metadata = asRecord(artifact?.metadata);
   const opencodeMetadata = asRecord(metadata?.opencode);
-  const contentType = parseContentType(
-    pickString(opencodeMetadata, [
-      "content_type",
-      "contentType",
-      "block_type",
-      "blockType",
-    ]) ??
-      pickString(artifact ?? null, [
-        "content_type",
-        "contentType",
-        "block_type",
-        "blockType",
-      ]) ??
-      pickString(data, [
-        "content_type",
-        "contentType",
-        "block_type",
-        "blockType",
-      ]) ??
-      pickString(opencodeMetadata, ["channel", "stream_channel"]),
+  const blockType = parseBlockType(
+    pickString(opencodeMetadata, ["block_type"]),
   );
-  if (!contentType) {
+  if (!blockType) {
     return null;
   }
 
@@ -189,7 +175,7 @@ export const extractStreamBlockUpdate = (
 
   const artifactId =
     pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ??
-    `${messageId}:${contentType}`;
+    `${messageId}:${blockType}`;
   if (!artifactId) {
     return null;
   }
@@ -236,7 +222,7 @@ export const extractStreamBlockUpdate = (
   return {
     taskId,
     artifactId,
-    contentType,
+    blockType,
     source,
     messageId,
     role,
@@ -258,7 +244,7 @@ export const applyStreamBlockUpdate = (
   if (overwrite) {
     if (
       lastBlock &&
-      lastBlock.type === update.contentType &&
+      lastBlock.type === update.blockType &&
       lastBlock.isFinished === false
     ) {
       lastBlock.content = update.delta;
@@ -272,7 +258,7 @@ export const applyStreamBlockUpdate = (
     }
     blocks.push({
       id: `${update.messageId}:${blocks.length + 1}`,
-      type: update.contentType,
+      type: update.blockType,
       content: update.delta,
       isFinished: update.done,
       createdAt: now,
@@ -283,7 +269,7 @@ export const applyStreamBlockUpdate = (
 
   if (
     lastBlock &&
-    lastBlock.type === update.contentType &&
+    lastBlock.type === update.blockType &&
     lastBlock.isFinished === false
   ) {
     lastBlock.content = `${lastBlock.content}${update.delta}`;
@@ -299,7 +285,7 @@ export const applyStreamBlockUpdate = (
 
   blocks.push({
     id: `${update.messageId}:${blocks.length + 1}`,
-    type: update.contentType,
+    type: update.blockType,
     content: update.delta,
     isFinished: update.done,
     createdAt: now,

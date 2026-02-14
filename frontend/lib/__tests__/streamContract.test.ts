@@ -8,7 +8,7 @@ import {
 } from "@/lib/api/chat-utils";
 
 const buildBlockUpdatePayload = (input: {
-  contentType: string;
+  blockType: "text" | "reasoning" | "tool_call";
   delta: string;
   artifactId: string;
   taskId?: string;
@@ -27,7 +27,7 @@ const buildBlockUpdatePayload = (input: {
     parts: [{ kind: "text", text: input.delta }],
     metadata: {
       opencode: {
-        content_type: input.contentType,
+        block_type: input.blockType,
         source: input.source ?? "stream",
       },
     },
@@ -41,13 +41,13 @@ const mustParse = (payload: Record<string, unknown>): StreamBlockUpdate => {
 };
 
 describe("block-based stream parser and reducer", () => {
-  it("appends when incoming content_type matches the active block", () => {
+  it("appends when incoming block_type matches the active block", () => {
     let blocks: MessageBlock[] | undefined = undefined;
     blocks = applyStreamBlockUpdate(
       blocks,
       mustParse(
         buildBlockUpdatePayload({
-          contentType: "reasoning",
+          blockType: "reasoning",
           delta: "thinking",
           artifactId: "task-1:stream:reasoning",
         }),
@@ -57,7 +57,7 @@ describe("block-based stream parser and reducer", () => {
       blocks,
       mustParse(
         buildBlockUpdatePayload({
-          contentType: "reasoning",
+          blockType: "reasoning",
           delta: " more",
           artifactId: "task-1:stream:reasoning",
         }),
@@ -75,7 +75,7 @@ describe("block-based stream parser and reducer", () => {
       blocks,
       mustParse(
         buildBlockUpdatePayload({
-          contentType: "reasoning",
+          blockType: "reasoning",
           delta: "plan",
           artifactId: "task-1:stream:reasoning",
         }),
@@ -85,7 +85,7 @@ describe("block-based stream parser and reducer", () => {
       blocks,
       mustParse(
         buildBlockUpdatePayload({
-          contentType: "tool_call",
+          blockType: "tool_call",
           delta: "search()",
           artifactId: "task-1:stream:tool",
         }),
@@ -98,13 +98,13 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[1]?.type).toBe("tool_call");
   });
 
-  it("maps final_answer to text and projects only text blocks into message content", () => {
+  it("projects only text blocks into message content", () => {
     let blocks: MessageBlock[] | undefined = undefined;
     blocks = applyStreamBlockUpdate(
       blocks,
       mustParse(
         buildBlockUpdatePayload({
-          contentType: "final_answer",
+          blockType: "text",
           delta: "Hello",
           artifactId: "task-1:stream:text",
         }),
@@ -114,7 +114,7 @@ describe("block-based stream parser and reducer", () => {
       blocks,
       mustParse(
         buildBlockUpdatePayload({
-          contentType: "reasoning",
+          blockType: "reasoning",
           delta: "thought",
           artifactId: "task-1:stream:reasoning",
         }),
@@ -124,7 +124,7 @@ describe("block-based stream parser and reducer", () => {
       blocks,
       mustParse(
         buildBlockUpdatePayload({
-          contentType: "text",
+          blockType: "text",
           delta: " world",
           artifactId: "task-1:stream:text",
         }),
@@ -140,7 +140,7 @@ describe("block-based stream parser and reducer", () => {
       blocks,
       mustParse(
         buildBlockUpdatePayload({
-          contentType: "text",
+          blockType: "text",
           delta: "abc",
           artifactId: "task-2:stream:text",
           append: true,
@@ -152,7 +152,7 @@ describe("block-based stream parser and reducer", () => {
       blocks,
       mustParse(
         buildBlockUpdatePayload({
-          contentType: "text",
+          blockType: "text",
           delta: "reset",
           artifactId: "task-2:stream:text",
           append: false,
@@ -166,18 +166,7 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[0]?.content).toBe("reset");
   });
 
-  it("keeps unknown content_type as fallback blocks", () => {
-    const parsed = extractStreamBlockUpdate(
-      buildBlockUpdatePayload({
-        contentType: "custom_phase",
-        delta: "custom content",
-        artifactId: "task-1:stream:custom",
-      }),
-    );
-    expect(parsed?.contentType).toBe("custom_phase");
-  });
-
-  it("parses block_type alias from opencode metadata", () => {
+  it("parses block_type from opencode metadata", () => {
     const parsed = extractStreamBlockUpdate({
       kind: "artifact-update",
       task_id: "task-9",
@@ -192,12 +181,30 @@ describe("block-based stream parser and reducer", () => {
         },
       },
     });
-    expect(parsed?.contentType).toBe("text");
+    expect(parsed?.blockType).toBe("text");
+  });
+
+  it("ignores unsupported block_type values", () => {
+    const parsed = extractStreamBlockUpdate({
+      kind: "artifact-update",
+      task_id: "task-8",
+      message_id: "msg-8",
+      artifact: {
+        artifact_id: "task-8:stream",
+        parts: [{ kind: "text", text: "noop" }],
+        metadata: {
+          opencode: {
+            block_type: "custom_phase",
+          },
+        },
+      },
+    });
+    expect(parsed).toBeNull();
   });
 
   it("ignores chunks without message_id", () => {
     const payload = buildBlockUpdatePayload({
-      contentType: "text",
+      blockType: "text",
       delta: "hello",
       artifactId: "task-1:stream",
       messageId: "",

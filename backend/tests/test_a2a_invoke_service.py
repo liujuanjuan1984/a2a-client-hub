@@ -36,15 +36,15 @@ def _artifact_event(
     *,
     artifact_id: str,
     text: str,
-    content_type: str | None = None,
+    block_type: str | None = None,
     source: str | None = None,
     append: bool | None = None,
 ) -> dict:
     metadata: dict[str, dict[str, str]] = {}
-    if content_type or source:
+    if block_type or source:
         opencode: dict[str, str] = {}
-        if content_type:
-            opencode["content_type"] = content_type
+        if block_type:
+            opencode["block_type"] = block_type
         if source:
             opencode["source"] = source
         metadata["opencode"] = opencode
@@ -101,29 +101,29 @@ async def test_sse_on_complete_uses_typed_text_blocks_for_response_content():
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="thinking",
-                    content_type="reasoning",
+                    block_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream:tool_call",
                     text="run_tool()",
-                    content_type="tool_call",
+                    block_type="tool_call",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="Hello ",
-                    content_type="final_answer",
+                    block_type="text",
                     append=True,
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="world",
-                    content_type="final_answer",
+                    block_type="text",
                     append=True,
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="Hello world",
-                    content_type="final_answer",
+                    block_type="text",
                     source="final_snapshot",
                     append=False,
                 ),
@@ -157,17 +157,17 @@ async def test_sse_on_complete_metadata_includes_message_blocks():
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="thinking",
-                    content_type="reasoning",
+                    block_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream:tool_call",
                     text="run_tool()",
-                    content_type="tool_call",
+                    block_type="tool_call",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="done",
-                    content_type="text",
+                    block_type="text",
                 ),
             ]
         ),
@@ -225,12 +225,12 @@ async def test_sse_invokes_complete_metadata_before_complete():
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="thinking",
-                    content_type="reasoning",
+                    block_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="done",
-                    content_type="text",
+                    block_type="text",
                 ),
             ]
         ),
@@ -266,17 +266,17 @@ async def test_sse_complete_metadata_uses_configurable_max_chars(monkeypatch):
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="123456789",
-                    content_type="reasoning",
+                    block_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream:tool_call",
                     text="abcdefghi",
-                    content_type="tool_call",
+                    block_type="tool_call",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="done",
-                    content_type="text",
+                    block_type="text",
                 ),
             ]
         ),
@@ -366,19 +366,19 @@ async def test_sse_on_complete_respects_append_false_overwrite_then_append():
                 _artifact_event(
                     artifact_id="task-2:stream",
                     text="first",
-                    content_type="text",
+                    block_type="text",
                     append=True,
                 ),
                 _artifact_event(
                     artifact_id="task-2:stream",
                     text="reset",
-                    content_type="text",
+                    block_type="text",
                     append=False,
                 ),
                 _artifact_event(
                     artifact_id="task-2:stream",
                     text="!",
-                    content_type="text",
+                    block_type="text",
                     append=True,
                 ),
             ]
@@ -399,7 +399,7 @@ async def test_sse_on_complete_respects_append_false_overwrite_then_append():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_supports_block_type_alias():
+async def test_sse_on_complete_supports_block_type():
     completed: list[str] = []
 
     async def _on_complete(text: str):

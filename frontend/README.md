@@ -100,8 +100,8 @@ has a `type` (`text`, `reasoning`, `tool_call`, or unknown), `content`, and
 
 Incoming chunks are reduced with this rule:
 
-- same `content_type` => append to last block
-- different `content_type` => finish previous block and push a new block
+- same `block_type` => append to last block
+- different `block_type` => finish previous block and push a new block
 
 Rendering iterates blocks in order to preserve generation timeline and supports
 unknown block types with a fallback view.
