@@ -9,13 +9,18 @@ from uuid import UUID
 from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.secret_vault import SecretVaultNotConfiguredError, hub_a2a_secret_vault
+from app.core.secret_vault import hub_a2a_secret_vault
 from app.db.models.hub_a2a_agent import HubA2AAgent
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.utils.auth_headers import resolve_stored_auth_fields
+from app.services.agent_common import (
+    encrypt_bearer_token,
+    normalize_auth_type,
+    normalize_required_text,
+    resolve_agent_auth_fields,
+)
 
 ALLOWED_AUTH_TYPES = {"none", "bearer"}
 ALLOWED_AVAILABILITY_POLICIES = {"public", "allowlist"}
@@ -438,14 +443,11 @@ class HubA2AAgentService:
         agent_id: UUID,
         token: Optional[str],
     ) -> Optional[str]:
-        if token is None or not token.strip():
-            raise HubA2AAgentValidationError("Bearer token is required")
-        if not self._vault.is_configured:
-            raise HubA2AAgentValidationError("Credential encryption key is missing")
-        try:
-            encrypted_value, last4 = self._vault.encrypt(token.strip())
-        except SecretVaultNotConfiguredError as exc:
-            raise HubA2AAgentValidationError(str(exc)) from exc
+        encrypted_value, last4 = encrypt_bearer_token(
+            vault=self._vault,
+            token=token,
+            validation_error_cls=HubA2AAgentValidationError,
+        )
 
         credential = await self._get_credential(db, agent_id=agent_id)
         if credential is None:
@@ -489,22 +491,25 @@ class HubA2AAgentService:
         return user
 
     def _normalize_name(self, value: str) -> str:
-        trimmed = (value or "").strip()
-        if not trimmed:
-            raise HubA2AAgentValidationError("Name is required")
-        return trimmed
+        return normalize_required_text(
+            value=value,
+            field_label="Name",
+            validation_error_cls=HubA2AAgentValidationError,
+        )
 
     def _normalize_card_url(self, value: str) -> str:
-        trimmed = (value or "").strip()
-        if not trimmed:
-            raise HubA2AAgentValidationError("Card URL is required")
-        return trimmed
+        return normalize_required_text(
+            value=value,
+            field_label="Card URL",
+            validation_error_cls=HubA2AAgentValidationError,
+        )
 
     def _normalize_auth_type(self, value: str) -> str:
-        normalized = (value or "").strip().lower()
-        if normalized not in ALLOWED_AUTH_TYPES:
-            raise HubA2AAgentValidationError("Unsupported auth_type")
-        return normalized
+        return normalize_auth_type(
+            value=value,
+            allowed_auth_types=ALLOWED_AUTH_TYPES,
+            validation_error_cls=HubA2AAgentValidationError,
+        )
 
     def _normalize_availability_policy(self, value: str) -> str:
         normalized = (value or "").strip().lower()
@@ -519,16 +524,13 @@ class HubA2AAgentService:
         auth_scheme: Optional[str],
         existing: Optional[HubA2AAgent],
     ) -> tuple[Optional[str], Optional[str]]:
-        if auth_type == "none":
-            return None, None
-        if auth_type != "bearer":
-            raise HubA2AAgentValidationError("Unsupported auth_type")
-
-        normalized_header, normalized_scheme = resolve_stored_auth_fields(
+        normalized_header, normalized_scheme = resolve_agent_auth_fields(
+            auth_type=auth_type,
             auth_header=auth_header,
             auth_scheme=auth_scheme,
             existing_auth_header=existing.auth_header if existing else None,
             existing_auth_scheme=existing.auth_scheme if existing else None,
+            validation_error_cls=HubA2AAgentValidationError,
         )
         return normalized_header, normalized_scheme
 

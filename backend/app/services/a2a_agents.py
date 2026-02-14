@@ -11,11 +11,16 @@ from uuid import UUID
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.secret_vault import SecretVaultNotConfiguredError, user_llm_secret_vault
+from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.transaction import commit_safely
-from app.utils.auth_headers import resolve_stored_auth_fields
+from app.services.agent_common import (
+    encrypt_bearer_token,
+    normalize_auth_type,
+    normalize_required_text,
+    resolve_agent_auth_fields,
+)
 
 ALLOWED_AUTH_TYPES = {"none", "bearer"}
 
@@ -305,15 +310,11 @@ class A2AAgentService:
         agent_id: UUID,
         token: Optional[str],
     ) -> Optional[str]:
-        if token is None or not token.strip():
-            raise A2AAgentValidationError("Bearer token is required")
-        if not self._vault.is_configured:
-            raise A2AAgentValidationError("Credential encryption key is missing")
-
-        try:
-            encrypted_value, last4 = self._vault.encrypt(token.strip())
-        except SecretVaultNotConfiguredError as exc:
-            raise A2AAgentValidationError(str(exc)) from exc
+        encrypted_value, last4 = encrypt_bearer_token(
+            vault=self._vault,
+            token=token,
+            validation_error_cls=A2AAgentValidationError,
+        )
 
         credential = await self._get_credential(
             db, user_id=user_id, agent_id=agent_id, include_deleted=True
@@ -336,22 +337,25 @@ class A2AAgentService:
         return last4
 
     def _normalize_name(self, value: str) -> str:
-        trimmed = (value or "").strip()
-        if not trimmed:
-            raise A2AAgentValidationError("Name is required")
-        return trimmed
+        return normalize_required_text(
+            value=value,
+            field_label="Name",
+            validation_error_cls=A2AAgentValidationError,
+        )
 
     def _normalize_card_url(self, value: str) -> str:
-        trimmed = (value or "").strip()
-        if not trimmed:
-            raise A2AAgentValidationError("Card URL is required")
-        return trimmed
+        return normalize_required_text(
+            value=value,
+            field_label="Card URL",
+            validation_error_cls=A2AAgentValidationError,
+        )
 
     def _normalize_auth_type(self, value: str) -> str:
-        normalized = (value or "").strip().lower()
-        if normalized not in ALLOWED_AUTH_TYPES:
-            raise A2AAgentValidationError("Unsupported auth_type")
-        return normalized
+        return normalize_auth_type(
+            value=value,
+            allowed_auth_types=ALLOWED_AUTH_TYPES,
+            validation_error_cls=A2AAgentValidationError,
+        )
 
     def _resolve_auth_fields(
         self,
@@ -360,17 +364,13 @@ class A2AAgentService:
         auth_scheme: Optional[str],
         existing: Optional[A2AAgent],
     ) -> Tuple[Optional[str], Optional[str]]:
-        if auth_type == "none":
-            return None, None
-
-        if auth_type != "bearer":
-            raise A2AAgentValidationError("Unsupported auth_type")
-
-        normalized_header, normalized_scheme = resolve_stored_auth_fields(
+        normalized_header, normalized_scheme = resolve_agent_auth_fields(
+            auth_type=auth_type,
             auth_header=auth_header,
             auth_scheme=auth_scheme,
             existing_auth_header=existing.auth_header if existing else None,
             existing_auth_scheme=existing.auth_scheme if existing else None,
+            validation_error_cls=A2AAgentValidationError,
         )
 
         return normalized_header, normalized_scheme
