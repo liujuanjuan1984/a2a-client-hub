@@ -1,4 +1,5 @@
 import {
+  buildPersistedSessions,
   buildInvokePayload,
   buildSessionCleanupPlan,
   createAgentSession,
@@ -82,6 +83,45 @@ describe("chat store utils", () => {
     expect(plan.changed).toBe(true);
     expect(Object.keys(plan.sessions)).toEqual(["active"]);
     expect(plan.expiredSessionIds).toEqual(["expired"]);
+    expect(plan.trimmedSessionIds).toEqual([]);
     expect(plan.orphanedMessageSessionIds).toEqual(["expired", "orphan-only"]);
+  });
+
+  it("trims oldest sessions when active session cap is reached", () => {
+    const newest = createAgentSession("agent-1");
+    newest.lastActiveAt = "2026-02-14T12:00:00.000Z";
+    const middle = createAgentSession("agent-2");
+    middle.lastActiveAt = "2026-02-14T11:00:00.000Z";
+    const oldest = createAgentSession("agent-3");
+    oldest.lastActiveAt = "2026-02-14T10:00:00.000Z";
+
+    const plan = buildSessionCleanupPlan(
+      { newest, middle, oldest },
+      [],
+      new Date("2026-02-14T12:00:00.000Z"),
+      2,
+    );
+
+    expect(Object.keys(plan.sessions).sort()).toEqual(["middle", "newest"]);
+    expect(plan.trimmedSessionIds).toEqual(["oldest"]);
+  });
+
+  it("builds bounded persisted sessions and resets volatile fields", () => {
+    const newest = createAgentSession("agent-1");
+    newest.lastActiveAt = "2026-02-14T12:00:00.000Z";
+    newest.streamState = "streaming";
+    newest.lastStreamError = "temporary";
+    newest.runtimeStatus = "working";
+
+    const older = createAgentSession("agent-2");
+    older.lastActiveAt = "2026-02-14T11:00:00.000Z";
+
+    const persisted = buildPersistedSessions({ newest, older }, 1);
+
+    expect(Object.keys(persisted)).toEqual(["newest"]);
+    expect(persisted.newest.streamState).toBe("idle");
+    expect(persisted.newest.lastStreamError).toBeNull();
+    expect(persisted.newest.runtimeStatus).toBeNull();
+    expect(persisted.newest.transport).toBe("http_json");
   });
 });

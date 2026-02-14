@@ -13,6 +13,7 @@ import {
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import { continueSession as continueSessionBinding } from "@/lib/api/sessions";
 import {
+  buildPersistedSessions,
   buildInvokePayload,
   buildSessionCleanupPlan,
   createAgentSession,
@@ -206,13 +207,19 @@ export const useChatStore = create<ChatState>()(
           set((state) => {
             const current = state.sessions[sessionId];
             if (!current) return state;
+            const hasChanges = Object.entries(patch).some(
+              ([key, value]) =>
+                (current as Record<string, unknown>)[key] !== value,
+            );
+            if (!hasChanges) {
+              return state;
+            }
             return {
               sessions: {
                 ...state.sessions,
                 [sessionId]: {
                   ...current,
                   ...patch,
-                  lastActiveAt: new Date().toISOString(),
                 },
               },
             };
@@ -319,13 +326,49 @@ export const useChatStore = create<ChatState>()(
           set((state) => {
             const current = state.sessions[sessionId];
             if (!current) return state;
+
+            const nextPatch: Partial<AgentSession> = {};
+            if (
+              meta.contextId !== undefined &&
+              meta.contextId !== current.contextId
+            ) {
+              nextPatch.contextId = meta.contextId;
+            }
+            if (
+              meta.runtimeStatus !== undefined &&
+              meta.runtimeStatus !== current.runtimeStatus
+            ) {
+              nextPatch.runtimeStatus = meta.runtimeStatus;
+            }
+            if (
+              meta.transport !== undefined &&
+              meta.transport !== current.transport
+            ) {
+              nextPatch.transport = meta.transport;
+            }
+            if (
+              meta.inputModes &&
+              meta.inputModes.join("|") !== current.inputModes.join("|")
+            ) {
+              nextPatch.inputModes = meta.inputModes;
+            }
+            if (
+              meta.outputModes &&
+              meta.outputModes.join("|") !== current.outputModes.join("|")
+            ) {
+              nextPatch.outputModes = meta.outputModes;
+            }
+
+            if (Object.keys(nextPatch).length === 0) {
+              return state;
+            }
+
             return {
               sessions: {
                 ...state.sessions,
                 [sessionId]: {
                   ...current,
-                  ...meta,
-                  contextId: meta.contextId ?? current.contextId,
+                  ...nextPatch,
                 },
               },
             };
@@ -528,6 +571,10 @@ export const useChatStore = create<ChatState>()(
             chatConnectionService.cancelSession(sessionId);
             messageStore.removeMessages(sessionId);
           });
+          cleanupPlan.trimmedSessionIds.forEach((sessionId) => {
+            chatConnectionService.cancelSession(sessionId);
+            messageStore.removeMessages(sessionId);
+          });
 
           cleanupPlan.orphanedMessageSessionIds.forEach((sessionId) => {
             messageStore.removeMessages(sessionId);
@@ -546,7 +593,7 @@ export const useChatStore = create<ChatState>()(
       name: "a2a-client-hub.chat",
       storage: createPersistStorage(),
       partialize: (state) => ({
-        sessions: state.sessions,
+        sessions: buildPersistedSessions(state.sessions),
       }),
     },
   ),

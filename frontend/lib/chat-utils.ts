@@ -23,7 +23,9 @@ export type AgentSession = {
 };
 
 const FALLBACK_LAST_ACTIVE_AT = "1970-01-01T00:00:00.000Z";
-const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+export const CHAT_SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+export const CHAT_SESSION_MAX_ACTIVE = 240;
+export const CHAT_SESSION_MAX_PERSISTED = 80;
 
 export const createAgentSession = (agentId: string): AgentSession => ({
   agentId,
@@ -83,14 +85,55 @@ export const sortSessionsByLastActive = (
     getSessionLastActiveAt(b[1]).localeCompare(getSessionLastActiveAt(a[1])),
   );
 
+const normalizeSessionForPersistence = (
+  session: AgentSession,
+): AgentSession => ({
+  agentId: session.agentId,
+  conversationId: session.conversationId ?? null,
+  contextId: session.contextId ?? null,
+  runtimeStatus: null,
+  streamState: "idle",
+  lastStreamError: null,
+  transport: "http_json",
+  inputModes: ["text/plain"],
+  outputModes: ["text/plain"],
+  metadata: session.metadata ?? {},
+  externalSessionRef: session.externalSessionRef ?? null,
+  lastActiveAt: getSessionLastActiveAt(session),
+});
+
+export const buildPersistedSessions = (
+  sessions: Record<string, AgentSession>,
+  maxPersisted = CHAT_SESSION_MAX_PERSISTED,
+) => {
+  if (maxPersisted <= 0) {
+    return {};
+  }
+
+  const sorted = sortSessionsByLastActive(Object.entries(sessions)).slice(
+    0,
+    maxPersisted,
+  );
+
+  return sorted.reduce<Record<string, AgentSession>>(
+    (acc, [sessionId, session]) => {
+      acc[sessionId] = normalizeSessionForPersistence(session);
+      return acc;
+    },
+    {},
+  );
+};
+
 export const buildSessionCleanupPlan = (
   sessions: Record<string, AgentSession>,
   messageSessionIds: string[],
   now: Date = new Date(),
+  maxActiveSessions = CHAT_SESSION_MAX_ACTIVE,
 ) => {
-  const deadline = new Date(now.getTime() - SESSION_TTL_MS).toISOString();
+  const deadline = new Date(now.getTime() - CHAT_SESSION_TTL_MS).toISOString();
   const nextSessions = { ...sessions };
   const expiredSessionIds: string[] = [];
+  const trimmedSessionIds: string[] = [];
 
   Object.entries(sessions).forEach(([sessionId, session]) => {
     if (session.lastActiveAt < deadline) {
@@ -99,15 +142,26 @@ export const buildSessionCleanupPlan = (
     }
   });
 
+  const activeEntries = sortSessionsByLastActive(Object.entries(nextSessions));
+  if (maxActiveSessions > 0 && activeEntries.length > maxActiveSessions) {
+    activeEntries.slice(maxActiveSessions).forEach(([sessionId]) => {
+      delete nextSessions[sessionId];
+      trimmedSessionIds.push(sessionId);
+    });
+  }
+
   const orphanedMessageSessionIds = messageSessionIds.filter(
     (sessionId) => !nextSessions[sessionId],
   );
   const changed =
-    expiredSessionIds.length > 0 || orphanedMessageSessionIds.length > 0;
+    expiredSessionIds.length > 0 ||
+    trimmedSessionIds.length > 0 ||
+    orphanedMessageSessionIds.length > 0;
 
   return {
     sessions: nextSessions,
     expiredSessionIds,
+    trimmedSessionIds,
     orphanedMessageSessionIds,
     changed,
   };

@@ -1,6 +1,6 @@
 import { Redirect, Stack } from "expo-router";
 import { useEffect } from "react";
-import { Text, View } from "react-native";
+import { AppState, type AppStateStatus, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
@@ -20,6 +20,33 @@ export default function AppLayout() {
 
   useEffect(() => {
     cleanupSessions();
+
+    const handleLifecycleGc = (nextState: AppStateStatus) => {
+      if (nextState !== "active") {
+        cleanupSessions();
+      }
+    };
+    const appStateSub = AppState.addEventListener("change", handleLifecycleGc);
+    let lowMemorySub: { remove: () => void } | null = null;
+    try {
+      lowMemorySub = AppState.addEventListener("memoryWarning", () => {
+        cleanupSessions();
+      });
+    } catch {
+      lowMemorySub = null;
+    }
+    const periodicGcTimer = setInterval(
+      () => {
+        cleanupSessions();
+      },
+      5 * 60 * 1000,
+    );
+
+    return () => {
+      appStateSub.remove();
+      lowMemorySub?.remove();
+      clearInterval(periodicGcTimer);
+    };
   }, [cleanupSessions]);
 
   const isUnauthorizedError =
