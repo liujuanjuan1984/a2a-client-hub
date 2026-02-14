@@ -20,18 +20,13 @@ export default function TabsLayout() {
           fontSize: 12,
           fontWeight: "600",
           lineHeight: 16,
-          paddingBottom: 2,
-        },
-        tabBarItemStyle: {
-          paddingTop: 2,
-          paddingBottom: 2,
         },
         tabBarStyle: {
           backgroundColor: "#05070a",
           borderTopColor: "rgba(148, 163, 184, 0.18)",
           borderTopWidth: 1,
-          minHeight: 56 + tabBarPaddingBottom,
-          paddingTop: 2,
+          minHeight: 58 + tabBarPaddingBottom,
+          paddingTop: 0,
           paddingBottom: tabBarPaddingBottom,
         },
       }}

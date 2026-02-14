@@ -15,6 +15,8 @@ import {
   View,
 } from "react-native";
 
+import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
+import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
@@ -95,6 +97,7 @@ export function ChatScreen({
   sessionId?: string;
 }) {
   const router = useRouter();
+  const insets = useAppSafeArea();
   const goBackOrHome = useCallback(() => backOrHome(router), [router]);
   const storeActiveAgentId = useAgentStore((state) => state.activeAgentId);
   const activeAgentId = routeAgentId || storeActiveAgentId;
@@ -510,7 +513,10 @@ export function ChatScreen({
       className="flex-1 bg-background"
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View className="border-b border-slate-800 bg-background/80 px-6 pt-12 pb-4">
+      <View
+        className="border-b border-slate-800 bg-background/80 px-6 pb-4"
+        style={{ paddingTop: insets.top + PAGE_TOP_OFFSET }}
+      >
         <View className="flex-row items-center justify-between">
           <View className="flex-1 flex-row items-center gap-2">
             <View className={`h-2 w-2 rounded-full ${statusColor}`} />

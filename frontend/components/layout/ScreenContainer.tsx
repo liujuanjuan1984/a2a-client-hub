@@ -1,6 +1,7 @@
 import { type PropsWithChildren } from "react";
 import { type StyleProp, type ViewStyle, View } from "react-native";
 
+import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
 import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 
 type ScreenContainerProps = PropsWithChildren<{
@@ -13,7 +14,7 @@ export function ScreenContainer({
   children,
   className = "flex-1 bg-background px-6",
   style,
-  topOffset = 8,
+  topOffset = PAGE_TOP_OFFSET,
 }: ScreenContainerProps) {
   const insets = useAppSafeArea();
 

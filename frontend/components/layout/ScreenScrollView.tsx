@@ -5,6 +5,7 @@ import {
   type ViewStyle,
 } from "react-native";
 
+import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
 import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 
 type ScreenScrollViewProps = Omit<ScrollViewProps, "style"> & {
@@ -16,7 +17,7 @@ type ScreenScrollViewProps = Omit<ScrollViewProps, "style"> & {
 export function ScreenScrollView({
   className = "flex-1 bg-background px-6",
   style,
-  topOffset = 8,
+  topOffset = PAGE_TOP_OFFSET,
   ...props
 }: ScreenScrollViewProps) {
   const insets = useAppSafeArea();

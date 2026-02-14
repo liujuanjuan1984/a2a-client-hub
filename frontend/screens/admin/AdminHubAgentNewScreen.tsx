@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { ScrollView, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
+import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -102,7 +103,7 @@ export function AdminHubAgentNewScreen() {
       />
 
       <ScrollView
-        className="mt-2"
+        style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
         contentContainerStyle={{ paddingBottom: 32 }}
       >
         <HubAgentFormSections

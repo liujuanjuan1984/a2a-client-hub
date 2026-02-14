@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
+import { AUTH_PAGE_TOP_OFFSET } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useLogin } from "@/hooks/useAuth";
@@ -27,7 +28,7 @@ export function LoginScreen() {
         : null;
 
   return (
-    <ScreenContainer topOffset={32}>
+    <ScreenContainer topOffset={AUTH_PAGE_TOP_OFFSET}>
       <Text className="text-3xl font-semibold text-white">Welcome back</Text>
       <Text className="mt-2 text-base text-muted">
         Sign in to manage your A2A agents.
