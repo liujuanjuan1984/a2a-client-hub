@@ -3,7 +3,10 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
-from app.services.runtime_auth import resolve_runtime_auth_headers
+from app.services.runtime_auth import (
+    build_resolved_runtime_agent,
+    resolve_runtime_auth_headers,
+)
 
 
 class _ValidationError(RuntimeError):
@@ -123,3 +126,40 @@ def test_runtime_auth_maps_vault_error_to_validation_error():
             ),
             validation_error_cls=_ValidationError,
         )
+
+
+def test_build_resolved_runtime_agent_builds_resolved_agent():
+    resolved, token_last4 = build_resolved_runtime_agent(
+        name="demo-agent",
+        card_url="https://example.com/card",
+        extra_headers={"X-A": "1"},
+        auth_type="none",
+        auth_header=None,
+        auth_scheme=None,
+        credential=None,
+        vault=_Vault(is_configured=True, decrypt_outcome=None),
+        validation_error_cls=_ValidationError,
+    )
+    assert resolved.name == "demo-agent"
+    assert resolved.url == "https://example.com/card"
+    assert resolved.headers == {"X-A": "1"}
+    assert token_last4 is None
+
+
+def test_build_resolved_runtime_agent_returns_token_last4_for_bearer():
+    resolved, token_last4 = build_resolved_runtime_agent(
+        name="demo-agent",
+        card_url="https://example.com/card",
+        extra_headers={},
+        auth_type="bearer",
+        auth_header=None,
+        auth_scheme=None,
+        credential=SimpleNamespace(encrypted_token="enc", token_last4="1234"),
+        vault=_Vault(
+            is_configured=True,
+            decrypt_outcome=SimpleNamespace(value="secret", last4="cret"),
+        ),
+        validation_error_cls=_ValidationError,
+    )
+    assert resolved.headers == {"Authorization": "Bearer secret"}
+    assert token_last4 == "cret"

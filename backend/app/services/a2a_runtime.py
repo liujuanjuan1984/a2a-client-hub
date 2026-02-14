@@ -15,7 +15,7 @@ from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.integrations.a2a_client.service import ResolvedAgent
-from app.services.runtime_auth import resolve_runtime_auth_headers
+from app.services.runtime_auth import build_resolved_runtime_agent
 
 
 class A2ARuntimeError(RuntimeError):
@@ -56,22 +56,16 @@ class A2ARuntimeBuilder:
             credential = await self._get_credential(
                 db, user_id=user_id, agent_id=agent.id
             )
-        headers, token_last4 = resolve_runtime_auth_headers(
-            headers=dict(agent.extra_headers or {}),
+        resolved, token_last4 = build_resolved_runtime_agent(
+            name=agent.name,
+            card_url=agent.card_url,
+            extra_headers=agent.extra_headers,
             auth_type=agent.auth_type,
             auth_header=agent.auth_header,
             auth_scheme=agent.auth_scheme,
             credential=credential,
             vault=self._vault,
             validation_error_cls=A2ARuntimeValidationError,
-        )
-
-        resolved = ResolvedAgent(
-            name=agent.name,
-            url=agent.card_url,
-            description=None,
-            metadata={},
-            headers=headers,
         )
 
         return A2ARuntime(agent=agent, resolved=resolved, token_last4=token_last4)

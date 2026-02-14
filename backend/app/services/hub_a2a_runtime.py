@@ -13,7 +13,7 @@ from app.core.secret_vault import hub_a2a_secret_vault
 from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
 from app.integrations.a2a_client.service import ResolvedAgent
 from app.services.hub_a2a_agents import HubA2AAgentNotFoundError, hub_a2a_agent_service
-from app.services.runtime_auth import resolve_runtime_auth_headers
+from app.services.runtime_auth import build_resolved_runtime_agent
 
 
 class HubA2ARuntimeError(RuntimeError):
@@ -59,22 +59,16 @@ class HubA2ARuntimeBuilder:
         credential = None
         if agent.auth_type == "bearer":
             credential = await self._get_credential(db, agent_id=agent.id)
-        headers, _ = resolve_runtime_auth_headers(
-            headers=dict(agent.extra_headers or {}),
+        resolved, _ = build_resolved_runtime_agent(
+            name=agent.name,
+            card_url=agent.card_url,
+            extra_headers=agent.extra_headers,
             auth_type=agent.auth_type,
             auth_header=agent.auth_header,
             auth_scheme=agent.auth_scheme,
             credential=credential,
             vault=self._vault,
             validation_error_cls=HubA2ARuntimeValidationError,
-        )
-
-        resolved = ResolvedAgent(
-            name=agent.name,
-            url=agent.card_url,
-            description=None,
-            metadata={},
-            headers=headers,
         )
 
         return HubA2ARuntime(

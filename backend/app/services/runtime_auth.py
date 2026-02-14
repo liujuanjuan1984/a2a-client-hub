@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Tuple, Type
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
+from app.integrations.a2a_client.service import ResolvedAgent
 from app.utils.auth_headers import build_auth_header_pair
 
 
@@ -46,4 +47,37 @@ def resolve_runtime_auth_headers(
     return resolved_headers, token_last4
 
 
-__all__ = ["resolve_runtime_auth_headers"]
+def build_resolved_runtime_agent(
+    *,
+    name: str,
+    card_url: str,
+    extra_headers: dict[str, str] | None,
+    auth_type: str,
+    auth_header: str | None,
+    auth_scheme: str | None,
+    credential: Any | None,
+    vault: Any,
+    validation_error_cls: Type[Exception],
+) -> tuple[ResolvedAgent, str | None]:
+    """Build a ResolvedAgent and optional token_last4 for runtime execution."""
+
+    headers, token_last4 = resolve_runtime_auth_headers(
+        headers=dict(extra_headers or {}),
+        auth_type=auth_type,
+        auth_header=auth_header,
+        auth_scheme=auth_scheme,
+        credential=credential,
+        vault=vault,
+        validation_error_cls=validation_error_cls,
+    )
+    resolved = ResolvedAgent(
+        name=name,
+        url=card_url,
+        description=None,
+        metadata={},
+        headers=headers,
+    )
+    return resolved, token_last4
+
+
+__all__ = ["build_resolved_runtime_agent", "resolve_runtime_auth_headers"]
