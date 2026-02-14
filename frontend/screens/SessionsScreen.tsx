@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
+import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useContinueSession } from "@/hooks/useContinueSession";
@@ -40,7 +41,7 @@ export function SessionsScreen() {
       />
 
       <ScrollView
-        className="mt-2"
+        style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={refresh} />

@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
+import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { Input } from "@/components/ui/Input";
@@ -195,7 +196,7 @@ export function AdminInvitationsScreen() {
       />
 
       <ScrollView
-        className="mt-2"
+        style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl

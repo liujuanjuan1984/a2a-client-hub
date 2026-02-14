@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
+import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { ScheduledJobCard } from "@/components/scheduled/ScheduledJobCard";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
@@ -91,7 +92,7 @@ export function ScheduledJobsScreen() {
       />
 
       <ScrollView
-        className="mt-2"
+        style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
