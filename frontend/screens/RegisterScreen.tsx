@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
+import { AUTH_PAGE_TOP_OFFSET } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { Input } from "@/components/ui/Input";
@@ -112,7 +113,7 @@ export function RegisterScreen() {
 
   if (invitationLinkRequired) {
     return (
-      <ScreenContainer topOffset={32}>
+      <ScreenContainer topOffset={AUTH_PAGE_TOP_OFFSET}>
         <Text className="text-3xl font-semibold text-white">
           Invitation required
         </Text>
@@ -134,7 +135,7 @@ export function RegisterScreen() {
   }
 
   return (
-    <ScreenContainer topOffset={32}>
+    <ScreenContainer topOffset={AUTH_PAGE_TOP_OFFSET}>
       <Text className="text-3xl font-semibold text-white">Create account</Text>
       <Text className="mt-2 text-base text-muted">
         Register with your invitation link.

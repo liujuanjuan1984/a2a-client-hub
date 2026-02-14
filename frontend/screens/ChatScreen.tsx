@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native";
 
+import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
 import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
@@ -514,7 +515,7 @@ export function ChatScreen({
     >
       <View
         className="border-b border-slate-800 bg-background/80 px-6 pb-4"
-        style={{ paddingTop: insets.top + 8 }}
+        style={{ paddingTop: insets.top + PAGE_TOP_OFFSET }}
       >
         <View className="flex-row items-center justify-between">
           <View className="flex-1 flex-row items-center gap-2">
