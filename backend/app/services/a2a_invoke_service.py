@@ -402,11 +402,11 @@ class A2AInvokeService:
             finally:
                 if not stream_failed:
                     await self._call_callback(
-                        on_complete, stream_text_accumulator.result()
-                    )
-                    await self._call_callback(
                         on_complete_metadata,
                         stream_text_accumulator.result_metadata(),
+                    )
+                    await self._call_callback(
+                        on_complete, stream_text_accumulator.result()
                     )
                 yield "event: stream_end\ndata: {}\n\n"
 
@@ -464,11 +464,11 @@ class A2AInvokeService:
             )
         finally:
             if not stream_failed:
-                await self._call_callback(on_complete, stream_text_accumulator.result())
                 await self._call_callback(
                     on_complete_metadata,
                     stream_text_accumulator.result_metadata(),
                 )
+                await self._call_callback(on_complete, stream_text_accumulator.result())
             await websocket.send_text(json_dumps({"event": "stream_end", "data": {}}))
 
 

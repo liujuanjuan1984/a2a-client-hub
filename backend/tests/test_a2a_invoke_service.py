@@ -188,6 +188,47 @@ async def test_sse_on_complete_metadata_includes_reasoning_and_tool_call():
 
 
 @pytest.mark.asyncio
+async def test_sse_invokes_complete_metadata_before_complete():
+    callback_order: list[str] = []
+
+    async def _on_complete(_: str):
+        callback_order.append("complete")
+
+    async def _on_complete_metadata(_: dict):
+        callback_order.append("metadata")
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-1:stream:reasoning",
+                    text="thinking",
+                    channel="reasoning",
+                ),
+                _artifact_event(
+                    artifact_id="task-1:stream",
+                    text="done",
+                    channel="final_answer",
+                ),
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+        on_complete_metadata=_on_complete_metadata,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert callback_order == ["metadata", "complete"]
+
+
+@pytest.mark.asyncio
 async def test_sse_on_complete_falls_back_for_non_channelized_events():
     completed: list[str] = []
 
