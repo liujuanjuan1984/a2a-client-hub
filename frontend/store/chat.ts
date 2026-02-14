@@ -1,12 +1,7 @@
-import { Platform } from "react-native";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import {
-  getInvokeWsTicket,
-  type A2AAgentInvokeRequest,
-  invokeAgent,
-} from "@/lib/api/a2aAgents";
+import { invokeAgent } from "@/lib/api/a2aAgents";
 import {
   applyStreamArtifactUpdate,
   extractRuntimeStatus,
@@ -15,45 +10,25 @@ import {
   extractStreamArtifactUpdate,
   projectStreamChannelContent,
 } from "@/lib/api/chat-utils";
-import {
-  getHubInvokeWsTicket,
-  invokeHubAgent,
-} from "@/lib/api/hubA2aAgentsUser";
+import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import { continueSession as continueSessionBinding } from "@/lib/api/sessions";
-import { fetchSSE } from "@/lib/api/sse";
-import { ENV } from "@/lib/config";
+import {
+  buildInvokePayload,
+  buildSessionCleanupPlan,
+  createAgentSession,
+  mergeExternalSessionRef,
+  sortSessionsByLastActive,
+  type AgentSession,
+} from "@/lib/chat-utils";
 import { generateId, generateUuid } from "@/lib/id";
 import { buildConversationSessionId, getSessionSource } from "@/lib/sessionIds";
 import { createPersistStorage } from "@/lib/storage/mmkv";
+import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
 import { useMessageStore } from "@/store/messages";
 
-type ExternalSessionRef = {
-  provider?: string | null;
-  externalSessionId?: string | null;
-  contextId?: string | null;
-  bindingMetadata?: Record<string, unknown>;
-};
-
-type AgentSession = {
-  agentId: string;
-  conversationId?: string | null;
-  contextId: string | null;
-  runtimeStatus?: string | null;
-  streamState?: "idle" | "streaming" | "rebinding" | "recoverable" | "error";
-  lastStreamError?: string | null;
-  transport: string;
-  inputModes: string[];
-  outputModes: string[];
-  metadata: Record<string, unknown>;
-  externalSessionRef?: ExternalSessionRef | null;
-  lastActiveAt: string;
-};
-
 type ChatState = {
   sessions: Record<string, AgentSession>;
-  abortControllers: Record<string, AbortController>;
-  wsConnections: Record<string, WsConnection>;
   ensureSession: (sessionId: string, agentId: string) => void;
   sendMessage: (
     sessionId: string,
@@ -83,133 +58,10 @@ type ChatState = {
   clearAll: () => void;
 };
 
-type WsConnection = {
-  close: (code?: number, reason?: string) => void;
-  send: (data: string) => void;
-  onopen?: (event?: unknown) => void;
-  onmessage?: (event: { data: unknown }) => void;
-  onerror?: (event: unknown) => void;
-  onclose?: (event: unknown) => void;
-  __cancelled?: boolean;
-};
-
-type WsCtor = new (url: string, protocols?: string | string[]) => WsConnection;
-
-const getWebSocketCtor = () =>
-  (globalThis as unknown as { WebSocket?: WsCtor }).WebSocket;
-
-const createSession = (agentId: string): AgentSession => ({
-  agentId,
-  contextId: null,
-  runtimeStatus: null,
-  streamState: "idle",
-  lastStreamError: null,
-  transport: "http_json",
-  inputModes: ["text/plain"],
-  outputModes: ["text/plain"],
-  metadata: {},
-  conversationId: null,
-  externalSessionRef: null,
-  lastActiveAt: new Date().toISOString(),
-});
-
-const isIOSWeb =
-  Platform.OS === "web" &&
-  typeof navigator !== "undefined" &&
-  typeof window !== "undefined" &&
-  /iPad|iPhone|iPod/.test(navigator.userAgent) &&
-  !(window as any).MSStream;
-
-const supportsStreaming =
-  Platform.OS === "web" &&
-  typeof ReadableStream !== "undefined" &&
-  typeof TextDecoder !== "undefined"; // Enable streaming on web when supported (including iOS Web)
-
-const supportsWebSocket = typeof getWebSocketCtor() !== "undefined";
-const wsConnectTimeoutMs = 10_000;
-const wsIdleTimeoutMs = 45_000;
-
-const isAbsoluteHttpUrl = (value: string) => /^https?:\/\//.test(value);
-
-const getAbsoluteApiBaseUrl = () => {
-  const base = ENV.apiBaseUrl.replace(/\/$/, "");
-  if (isAbsoluteHttpUrl(base)) return base;
-
-  // Web supports same-origin relative API bases like `/api/v1`.
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    return new URL(base, window.location.origin).toString().replace(/\/$/, "");
-  }
-
-  // Native does not have an origin; relative API bases are invalid.
-  return base;
-};
-
-const getAbsoluteWsBaseUrl = () => {
-  const httpBase = getAbsoluteApiBaseUrl();
-  if (!isAbsoluteHttpUrl(httpBase)) {
-    throw new Error(
-      `WebSocket requires an absolute EXPO_PUBLIC_API_BASE_URL on ${Platform.OS}.`,
-    );
-  }
-  return httpBase.replace(/^http/, "ws");
-};
-
-const scopeForSource = (source: AgentSource) =>
-  source === "shared" ? "a2a/agents" : "me/a2a/agents";
-
-const buildInvokeUrl = (
-  agentId: string,
-  stream: boolean,
-  source: AgentSource,
-) => {
-  const base = ENV.apiBaseUrl.replace(/\/$/, "");
-  return `${base}/${scopeForSource(source)}/${encodeURIComponent(agentId)}/invoke${
-    stream ? "?stream=true" : ""
-  }`;
-};
-
-const buildInvokeWsUrl = (agentId: string, source: AgentSource) => {
-  const wsBase = getAbsoluteWsBaseUrl();
-  return `${wsBase}/${scopeForSource(source)}/${encodeURIComponent(agentId)}/invoke/ws`;
-};
-
-const buildInvokePayload = (
-  query: string,
-  session: AgentSession,
-  sessionId: string,
-): A2AAgentInvokeRequest => {
-  const payload: A2AAgentInvokeRequest = { query, sessionId };
-  if (session.contextId) {
-    payload.contextId = session.contextId;
-  }
-  if (Object.keys(session.metadata).length > 0) {
-    payload.metadata = session.metadata;
-  }
-  return payload;
-};
-
-const mergeExternalSessionRef = (
-  current: ExternalSessionRef | null | undefined,
-  incoming: {
-    provider?: string | null;
-    externalSessionId?: string | null;
-    contextId?: string | null;
-    bindingMetadata?: Record<string, unknown> | null;
-  },
-): ExternalSessionRef => ({
-  provider: incoming.provider ?? current?.provider ?? null,
-  externalSessionId:
-    incoming.externalSessionId ?? current?.externalSessionId ?? null,
-  contextId: incoming.contextId ?? current?.contextId ?? null,
-  bindingMetadata: incoming.bindingMetadata ?? current?.bindingMetadata ?? {},
-});
-
 export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
       sessions: {},
-      abortControllers: {},
-      wsConnections: {},
       ensureSession: (sessionId, agentId) => {
         set((state) => {
           if (state.sessions[sessionId]) {
@@ -226,7 +78,7 @@ export const useChatStore = create<ChatState>()(
           return {
             sessions: {
               ...state.sessions,
-              [sessionId]: createSession(agentId),
+              [sessionId]: createAgentSession(agentId),
             },
           };
         });
@@ -236,7 +88,8 @@ export const useChatStore = create<ChatState>()(
           sessions: {
             ...state.sessions,
             [sessionId]: {
-              ...(state.sessions[sessionId] ?? createSession(payload.agentId)),
+              ...(state.sessions[sessionId] ??
+                createAgentSession(payload.agentId)),
               agentId: payload.agentId,
               conversationId:
                 payload.conversationId === undefined
@@ -278,34 +131,12 @@ export const useChatStore = create<ChatState>()(
             delete nextSessions[fromKey];
           }
 
-          const nextAbortControllers = { ...state.abortControllers };
-          if (nextAbortControllers[fromKey]) {
-            if (!nextAbortControllers[toKey]) {
-              nextAbortControllers[toKey] = nextAbortControllers[fromKey];
-            }
-            delete nextAbortControllers[fromKey];
-          }
-
-          const nextWsConnections = { ...state.wsConnections };
-          if (nextWsConnections[fromKey]) {
-            if (!nextWsConnections[toKey]) {
-              nextWsConnections[toKey] = nextWsConnections[fromKey];
-            } else {
-              try {
-                nextWsConnections[fromKey].__cancelled = true;
-                nextWsConnections[fromKey].close();
-              } catch {}
-            }
-            delete nextWsConnections[fromKey];
-          }
-
           return {
             sessions: nextSessions,
-            abortControllers: nextAbortControllers,
-            wsConnections: nextWsConnections,
           };
         });
 
+        chatConnectionService.migrateSessionKey(fromKey, toKey);
         useMessageStore.getState().migrateSessionKey(fromKey, toKey);
       },
       resetSession: (sessionId, agentId) => {
@@ -313,37 +144,18 @@ export const useChatStore = create<ChatState>()(
         set((state) => ({
           sessions: {
             ...state.sessions,
-            [sessionId]: createSession(agentId),
+            [sessionId]: createAgentSession(agentId),
           },
         }));
         useMessageStore.getState().removeMessages(sessionId);
       },
       cancelMessage: (sessionId) => {
-        const controller = get().abortControllers[sessionId];
-        if (controller) {
-          controller.abort();
-          set((state) => {
-            const next = { ...state.abortControllers };
-            delete next[sessionId];
-            return { abortControllers: next };
-          });
-        }
-        const ws = get().wsConnections[sessionId];
-        if (ws) {
-          ws.__cancelled = true;
-          ws.close();
-          set((state) => {
-            const next = { ...state.wsConnections };
-            delete next[sessionId];
-            return { wsConnections: next };
-          });
-        }
+        chatConnectionService.cancelSession(sessionId);
       },
       sendMessage: async (sessionId, agentId, content, agentSource) => {
         const trimmed = content.trim();
         if (!trimmed) return;
 
-        // Cancel any pending request for this session
         get().cancelMessage(sessionId);
 
         const userMessage = {
@@ -367,21 +179,17 @@ export const useChatStore = create<ChatState>()(
         };
 
         const previousSession =
-          get().sessions[sessionId] ?? createSession(agentId);
+          get().sessions[sessionId] ?? createAgentSession(agentId);
 
         set((state) => ({
           sessions: {
             ...state.sessions,
             [sessionId]: {
-              ...(state.sessions[sessionId] ?? createSession(agentId)),
+              ...(state.sessions[sessionId] ?? createAgentSession(agentId)),
               lastActiveAt: new Date().toISOString(),
               streamState: "streaming",
               lastStreamError: null,
-              transport: supportsWebSocket
-                ? "ws"
-                : supportsStreaming
-                  ? "http_sse"
-                  : "http_json",
+              transport: chatConnectionService.getPreferredTransport(),
             },
           },
         }));
@@ -444,7 +252,8 @@ export const useChatStore = create<ChatState>()(
           });
           try {
             const binding = await continueSessionBinding(sessionId);
-            const current = get().sessions[sessionId] ?? createSession(agentId);
+            const current =
+              get().sessions[sessionId] ?? createAgentSession(agentId);
             patchSession({
               conversationId: binding.conversationId ?? current.conversationId,
               contextId: binding.contextId ?? current.contextId,
@@ -496,7 +305,8 @@ export const useChatStore = create<ChatState>()(
           );
         }
 
-        const session = get().sessions[sessionId] ?? createSession(agentId);
+        const session =
+          get().sessions[sessionId] ?? createAgentSession(agentId);
         const payload = buildInvokePayload(trimmed, session, sessionId);
 
         const updateSessionMeta = (meta: {
@@ -565,98 +375,33 @@ export const useChatStore = create<ChatState>()(
           attemptSessionRebind(errorText).catch(() => false);
         };
 
-        const tryWebSocketTransport = async () => {
-          if (!supportsWebSocket) {
-            return false;
+        const applyIncomingStreamData = (data: Record<string, unknown>) => {
+          const chunk = extractStreamArtifactUpdate(data);
+          if (chunk) {
+            appendStreamChunk(chunk);
           }
-          try {
-            const ticket =
-              agentSource === "shared"
-                ? await getHubInvokeWsTicket(agentId)
-                : await getInvokeWsTicket(agentId);
-            const wsUrl = buildInvokeWsUrl(agentId, agentSource);
-            const WebSocketCtor = getWebSocketCtor();
-            if (!WebSocketCtor) {
-              throw new Error("WebSocket is not available");
-            }
 
-            await new Promise<void>((resolve, reject) => {
-              let hasReceivedData = false;
-              let settled = false;
-              let closed = false;
-              let connectTimer: ReturnType<typeof setTimeout> | null = null;
-              let idleTimer: ReturnType<typeof setTimeout> | null = null;
+          const meta = extractSessionMeta(data);
+          const runtimeStatus = extractRuntimeStatus(data);
+          if (
+            meta.contextId ||
+            meta.transport ||
+            meta.inputModes ||
+            meta.outputModes ||
+            runtimeStatus
+          ) {
+            updateSessionMeta({ ...meta, runtimeStatus });
+          }
+        };
 
-              // Use Sec-WebSocket-Protocol to avoid exposing ticket in URL.
-              const ws = new WebSocketCtor(wsUrl, [ticket.token]);
-              set((state) => ({
-                wsConnections: {
-                  ...state.wsConnections,
-                  [sessionId]: ws,
-                },
-              }));
-
-              const cleanup = () => {
-                if (connectTimer) {
-                  clearTimeout(connectTimer);
-                  connectTimer = null;
-                }
-                if (idleTimer) {
-                  clearTimeout(idleTimer);
-                  idleTimer = null;
-                }
-                set((state) => {
-                  const next = { ...state.wsConnections };
-                  delete next[sessionId];
-                  return { wsConnections: next };
-                });
-              };
-
-              const finalize = (mode: "resolve" | "reject", error?: Error) => {
-                if (settled) return;
-                settled = true;
-                if (!closed) {
-                  try {
-                    ws.close();
-                  } catch {
-                    // Ignore close errors
-                  }
-                }
-                cleanup();
-                if (mode === "resolve") {
-                  resolve();
-                } else {
-                  reject(error ?? new Error("WebSocket failed"));
-                }
-              };
-
-              const resetIdleTimer = () => {
-                if (idleTimer) {
-                  clearTimeout(idleTimer);
-                }
-                idleTimer = setTimeout(() => {
-                  if (settled) return;
-                  if (ws.__cancelled) {
-                    finalize("resolve");
-                    return;
-                  }
-                  finalize("reject", new Error("WebSocket idle timeout"));
-                }, wsIdleTimeoutMs);
-              };
-
-              const handleMessageText = (raw: string) => {
-                if (settled) return;
-                if (!raw) return;
-                hasReceivedData = true;
-                resetIdleTimer();
-
-                let data: Record<string, unknown> | null = null;
-                try {
-                  data = JSON.parse(raw) as Record<string, unknown>;
-                } catch {
-                  return;
-                }
-
+        const tryWebSocketTransport = async () =>
+          chatConnectionService.tryWebSocketTransport({
+            sessionId,
+            agentId,
+            source: agentSource,
+            payload,
+            callbacks: {
+              onData: (data) => {
                 if (data.event === "error") {
                   const message =
                     typeof (data.data as { message?: unknown } | undefined)
@@ -664,8 +409,7 @@ export const useChatStore = create<ChatState>()(
                       ? (data.data as { message: string }).message
                       : "Stream error.";
                   appendStreamError(message);
-                  finalize("resolve");
-                  return;
+                  return true;
                 }
 
                 if (data.event === "stream_end") {
@@ -673,207 +417,42 @@ export const useChatStore = create<ChatState>()(
                     status: "done",
                   });
                   markSessionIdle();
-                  finalize("resolve");
-                  return;
+                  return true;
                 }
 
-                const chunk = extractStreamArtifactUpdate(data);
-                if (chunk) {
-                  appendStreamChunk(chunk);
-                }
-
-                const meta = extractSessionMeta(data);
-                const runtimeStatus = extractRuntimeStatus(data);
-                if (
-                  meta.contextId ||
-                  meta.transport ||
-                  meta.inputModes ||
-                  meta.outputModes ||
-                  runtimeStatus
-                ) {
-                  updateSessionMeta({ ...meta, runtimeStatus });
-                }
-              };
-
-              ws.onopen = () => {
-                if (connectTimer) {
-                  clearTimeout(connectTimer);
-                  connectTimer = null;
-                }
-                resetIdleTimer();
-                ws.send(JSON.stringify(payload));
-              };
-
-              ws.onmessage = async (event) => {
-                if (settled) return;
-                const { data } = event;
-                if (typeof data === "string") {
-                  handleMessageText(data);
-                  return;
-                }
-                if (
-                  typeof Blob !== "undefined" &&
-                  data instanceof Blob &&
-                  typeof data.text === "function"
-                ) {
-                  try {
-                    const text = await data.text();
-                    handleMessageText(text);
-                  } catch {
-                    // Ignore parse errors
-                  }
-                  return;
-                }
-                if (
-                  data instanceof ArrayBuffer &&
-                  typeof TextDecoder !== "undefined"
-                ) {
-                  const text = new TextDecoder().decode(data);
-                  handleMessageText(text);
-                }
-              };
-
-              ws.onerror = () => {
-                if (settled) return;
-                if (ws.__cancelled) {
-                  finalize("resolve");
-                  return;
-                }
-                if (!hasReceivedData) {
-                  finalize("reject", new Error("WebSocket connection failed"));
-                  return;
-                }
-                appendStreamError("WebSocket error");
-                finalize("resolve");
-              };
-
-              ws.onclose = () => {
-                closed = true;
-                if (!settled) {
-                  if (ws.__cancelled) {
-                    finalize("resolve");
-                    return;
-                  }
-                  if (!hasReceivedData) {
-                    finalize(
-                      "reject",
-                      new Error("WebSocket closed before receiving data"),
-                    );
-                    return;
-                  }
-                  finalize("resolve");
-                }
-              };
-
-              connectTimer = setTimeout(() => {
-                if (settled) return;
-                finalize("reject", new Error("WebSocket connection timeout"));
-              }, wsConnectTimeoutMs);
-            });
-            return true;
-          } catch (error) {
-            console.warn("[WS Fallback]", {
-              platform: Platform.OS,
-              reason: error instanceof Error ? error.message : String(error),
-            });
-            return false;
-          }
-        };
+                applyIncomingStreamData(data);
+                return false;
+              },
+              onDone: () => {
+                messageStore.updateMessage(sessionId, activeAgentMessageId, {
+                  status: "done",
+                });
+                markSessionIdle();
+              },
+              onStreamError: appendStreamError,
+            },
+          });
 
         const trySseTransport = async () => {
-          if (!supportsStreaming) {
-            return false;
-          }
           updateSessionMeta({ transport: "http_sse" });
-          const controller = new AbortController();
-          const clearAbortController = () => {
-            set((state) => {
-              if (!state.abortControllers[sessionId]) {
-                return state;
-              }
-              const next = { ...state.abortControllers };
-              delete next[sessionId];
-              return { abortControllers: next };
-            });
-          };
-          set((state) => ({
-            abortControllers: {
-              ...state.abortControllers,
-              [sessionId]: controller,
+          return chatConnectionService.trySseTransport({
+            sessionId,
+            agentId,
+            source: agentSource,
+            payload,
+            callbacks: {
+              onData: (data) => {
+                applyIncomingStreamData(data);
+              },
+              onDone: () => {
+                messageStore.updateMessage(sessionId, activeAgentMessageId, {
+                  status: "done",
+                });
+                markSessionIdle();
+              },
+              onStreamError: appendStreamError,
             },
-          }));
-
-          let hasReceivedData = false;
-
-          try {
-            await fetchSSE(
-              buildInvokeUrl(agentId, true, agentSource),
-              {
-                onData: (data) => {
-                  hasReceivedData = true;
-                  const chunk = extractStreamArtifactUpdate(data);
-                  if (chunk) {
-                    appendStreamChunk(chunk);
-                  }
-                  const meta = extractSessionMeta(data);
-                  const runtimeStatus = extractRuntimeStatus(data);
-                  if (
-                    meta.contextId ||
-                    meta.transport ||
-                    meta.inputModes ||
-                    meta.outputModes ||
-                    runtimeStatus
-                  ) {
-                    updateSessionMeta({ ...meta, runtimeStatus });
-                  }
-                },
-                onError: (error) => {
-                  console.error("[SSE Error]", {
-                    platform: Platform.OS,
-                    isIOSWeb,
-                    message: error.message,
-                  });
-
-                  // If we haven't received any data yet, we can try to fallback
-                  if (!hasReceivedData) {
-                    throw error; // Catch and fallback
-                  } else {
-                    // Already partial data, just mark as done with error
-                    appendStreamError(error.message);
-                  }
-                },
-                onDone: () => {
-                  messageStore.updateMessage(sessionId, activeAgentMessageId, {
-                    status: "done",
-                  });
-                  markSessionIdle();
-                  clearAbortController();
-                },
-              },
-              {
-                body: payload,
-                signal: controller.signal,
-                idleTimeoutMs: 45_000,
-                reconnect: {
-                  retries: 2,
-                  initialDelayMs: 800,
-                  maxDelayMs: 8_000,
-                  jitterMs: 250,
-                  onlyIfNoData: true,
-                },
-              },
-            );
-            return true;
-          } catch (error) {
-            console.warn("[SSE Fallback]", {
-              platform: Platform.OS,
-              isIOSWeb,
-              reason: error instanceof Error ? error.message : String(error),
-            });
-            return false;
-          } finally {
-            clearAbortController();
-          }
+          });
         };
 
         const sendViaJsonFallback = async () => {
@@ -925,70 +504,42 @@ export const useChatStore = create<ChatState>()(
         await sendViaJsonFallback();
       },
       getSessionsByAgentId: (agentId) => {
-        const getLastActiveAt = (session: AgentSession) =>
-          typeof session.lastActiveAt === "string"
-            ? session.lastActiveAt
-            : "1970-01-01T00:00:00.000Z";
-        return Object.entries(get().sessions)
-          .filter(([_, s]) => s.agentId === agentId)
-          .sort((a, b) =>
-            getLastActiveAt(b[1]).localeCompare(getLastActiveAt(a[1])),
-          );
+        const sessions = Object.entries(get().sessions).filter(
+          ([_, session]) => session.agentId === agentId,
+        );
+        return sortSessionsByLastActive(sessions);
       },
       getLatestSessionIdByAgentId: (agentId) => {
         const sessions = get().getSessionsByAgentId(agentId);
         return sessions[0]?.[0];
       },
       cleanupSessions: () => {
-        const now = new Date();
-        const deadline = new Date(
-          now.getTime() - 14 * 24 * 60 * 60 * 1000,
-        ).toISOString();
-
         set((state) => {
-          const nextSessions = { ...state.sessions };
-          let changed = false;
-
-          // 1. Clean up by expiration
-          Object.entries(state.sessions).forEach(([id, session]) => {
-            if (session.lastActiveAt < deadline) {
-              delete nextSessions[id];
-              useMessageStore.getState().removeMessages(id);
-              changed = true;
-            }
-          });
-
-          // 2. Orphaned messages cleanup (Self-healing)
-          // Ensure every message bucket has a corresponding session meta
           const messageStore = useMessageStore.getState();
-          const messageSessionIds = Object.keys(messageStore.messages);
-          messageSessionIds.forEach((id) => {
-            if (!nextSessions[id]) {
-              messageStore.removeMessages(id);
-            }
+          const cleanupPlan = buildSessionCleanupPlan(
+            state.sessions,
+            Object.keys(messageStore.messages),
+          );
+          if (!cleanupPlan.changed) {
+            return state;
+          }
+
+          cleanupPlan.expiredSessionIds.forEach((sessionId) => {
+            chatConnectionService.cancelSession(sessionId);
+            messageStore.removeMessages(sessionId);
           });
 
-          return changed ? { sessions: nextSessions } : state;
+          cleanupPlan.orphanedMessageSessionIds.forEach((sessionId) => {
+            messageStore.removeMessages(sessionId);
+          });
+
+          return { sessions: cleanupPlan.sessions };
         });
       },
       generateSessionId: () => buildConversationSessionId(generateUuid()),
       clearAll: () => {
-        const wsConnections = get().wsConnections;
-        Object.values(wsConnections).forEach((ws) => {
-          try {
-            ws.__cancelled = true;
-            ws.close();
-          } catch {}
-        });
-
-        const controllers = get().abortControllers;
-        Object.values(controllers).forEach((controller) => {
-          try {
-            controller.abort();
-          } catch {}
-        });
-
-        set({ sessions: {}, abortControllers: {}, wsConnections: {} });
+        chatConnectionService.clearAll();
+        set({ sessions: {} });
       },
     }),
     {
