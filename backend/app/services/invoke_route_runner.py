@@ -6,20 +6,23 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID
 
-from fastapi import WebSocket, WebSocketDisconnect, status
+from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.transaction import commit_safely
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
+from app.schemas.ws_ticket import WsTicketResponse
 from app.services.a2a_invoke_service import a2a_invoke_service
 from app.services.invoke_session_binding import (
     merge_invoke_binding_state,
     normalize_invoke_binding_state,
+    status_code_for_invoke_session_error,
     ws_error_code_for_invoke_session_error,
 )
 from app.services.session_hub import session_hub_service
+from app.services.ws_ticket_service import ws_ticket_service
 
 AgentSource = Literal["personal", "shared"]
 
@@ -394,4 +397,105 @@ async def run_ws_invoke_route(
             pass
 
 
-__all__ = ["run_http_invoke", "run_ws_invoke", "run_ws_invoke_route"]
+async def run_http_invoke_route(
+    *,
+    db: AsyncSession,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    payload: A2AAgentInvokeRequest,
+    stream: bool,
+    gateway: Any,
+    runtime_builder: Callable[[], Awaitable[Any]],
+    runtime_not_found_errors: tuple[type[Exception], ...],
+    runtime_not_found_status_code: int,
+    runtime_validation_errors: tuple[type[Exception], ...],
+    runtime_validation_status_code: int,
+    validate_message: Callable[[dict[str, Any]], list[Any]],
+    logger: Any,
+    invoke_log_message: str,
+    invoke_log_extra_builder: Callable[[A2AAgentInvokeRequest, Any], dict[str, Any]],
+) -> A2AAgentInvokeResponse | StreamingResponse:
+    if not payload.query.strip():
+        raise HTTPException(status_code=400, detail="Query must be a non-empty string")
+
+    try:
+        runtime = await runtime_builder()
+    except runtime_not_found_errors as exc:
+        raise HTTPException(
+            status_code=runtime_not_found_status_code,
+            detail=str(exc),
+        ) from exc
+    except runtime_validation_errors as exc:
+        raise HTTPException(
+            status_code=runtime_validation_status_code,
+            detail=str(exc),
+        ) from exc
+
+    logger.info(
+        invoke_log_message,
+        extra=invoke_log_extra_builder(payload, runtime),
+    )
+    try:
+        return await run_http_invoke(
+            db=db,
+            gateway=gateway,
+            runtime=runtime,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            payload=payload,
+            stream=stream,
+            validate_message=validate_message,
+            logger=logger,
+            log_extra={
+                "user_id": str(user_id),
+                "agent_id": str(agent_id),
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status_code_for_invoke_session_error(str(exc)),
+            detail=str(exc),
+        ) from exc
+
+
+async def run_issue_ws_ticket_route(
+    *,
+    db: AsyncSession,
+    user_id: UUID,
+    scope_type: str,
+    scope_id: UUID,
+    ensure_access: Callable[[], Awaitable[Any]],
+    not_found_errors: tuple[type[Exception], ...],
+    not_found_status_code: int,
+    not_found_detail: str | Callable[[Exception], str],
+) -> WsTicketResponse:
+    try:
+        await ensure_access()
+    except not_found_errors as exc:
+        detail = (
+            not_found_detail(exc) if callable(not_found_detail) else not_found_detail
+        )
+        raise HTTPException(status_code=not_found_status_code, detail=detail) from exc
+
+    issued = await ws_ticket_service.issue_ticket(
+        db,
+        user_id=user_id,
+        scope_type=scope_type,
+        scope_id=scope_id,
+    )
+    return WsTicketResponse(
+        token=issued.token,
+        expires_at=issued.expires_at,
+        expires_in=issued.expires_in,
+    )
+
+
+__all__ = [
+    "run_http_invoke",
+    "run_http_invoke_route",
+    "run_issue_ws_ticket_route",
+    "run_ws_invoke",
+    "run_ws_invoke_route",
+]

@@ -32,9 +32,11 @@ from app.services.hub_a2a_runtime import (
     HubA2ARuntimeValidationError,
     hub_a2a_runtime_builder,
 )
-from app.services.invoke_route_runner import run_http_invoke, run_ws_invoke_route
-from app.services.invoke_session_binding import status_code_for_invoke_session_error
-from app.services.ws_ticket_service import ws_ticket_service
+from app.services.invoke_route_runner import (
+    run_http_invoke_route,
+    run_issue_ws_ticket_route,
+    run_ws_invoke_route,
+)
 from app.utils.logging_redaction import redact_url_for_logging
 
 router = StrictAPIRouter(prefix="/a2a/agents", tags=["a2a-catalog"])
@@ -127,50 +129,32 @@ async def invoke_hub_agent(
     stream: bool = Query(False, description="Set to true for SSE streaming responses."),
 ) -> A2AAgentInvokeResponse:
     response.headers["Cache-Control"] = "no-store"
-    if not payload.query.strip():
-        raise HTTPException(status_code=400, detail="Query must be a non-empty string")
-
-    try:
-        runtime = await hub_a2a_runtime_builder.build(
+    return await run_http_invoke_route(
+        db=db,
+        user_id=current_user.id,
+        agent_id=agent_id,
+        agent_source="shared",
+        payload=payload,
+        stream=stream,
+        gateway=get_a2a_service().gateway,
+        runtime_builder=lambda: hub_a2a_runtime_builder.build(
             db, user_id=current_user.id, agent_id=agent_id
-        )
-    except HubA2ARuntimeNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except HubA2ARuntimeValidationError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    logger.info(
-        "Hub A2A agent invoke requested",
-        extra={
+        ),
+        runtime_not_found_errors=(HubA2ARuntimeNotFoundError,),
+        runtime_not_found_status_code=404,
+        runtime_validation_errors=(HubA2ARuntimeValidationError,),
+        runtime_validation_status_code=502,
+        validate_message=validate_message,
+        logger=logger,
+        invoke_log_message="Hub A2A agent invoke requested",
+        invoke_log_extra_builder=lambda request, runtime: {
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
             "agent_url": redact_url_for_logging(runtime.resolved.url),
             "stream": stream,
-            "query_meta": summarize_query(payload.query),
+            "query_meta": summarize_query(request.query),
         },
     )
-    try:
-        return await run_http_invoke(
-            db=db,
-            gateway=get_a2a_service().gateway,
-            runtime=runtime,
-            user_id=current_user.id,
-            agent_id=agent_id,
-            agent_source="shared",
-            payload=payload,
-            stream=stream,
-            validate_message=validate_message,
-            logger=logger,
-            log_extra={
-                "user_id": str(current_user.id),
-                "agent_id": str(agent_id),
-            },
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status_code_for_invoke_session_error(str(exc)),
-            detail=str(exc),
-        ) from exc
 
 
 @router.post(
@@ -186,24 +170,18 @@ async def issue_hub_invoke_ws_token(
     current_user: User = Depends(get_current_user),
 ) -> WsTicketResponse:
     response.headers["Cache-Control"] = "no-store"
-    try:
-        await hub_a2a_agent_service.ensure_visible_for_user(
-            db, user_id=current_user.id, agent_id=agent_id
-        )
-    except HubA2AAgentNotFoundError as exc:
-        # Keep the hub catalog non-enumerable: not found is always 404.
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    issued = await ws_ticket_service.issue_ticket(
-        db,
+    return await run_issue_ws_ticket_route(
+        db=db,
         user_id=current_user.id,
         scope_type="hub_a2a_agent",
         scope_id=agent_id,
-    )
-    return WsTicketResponse(
-        token=issued.token,
-        expires_at=issued.expires_at,
-        expires_in=issued.expires_in,
+        ensure_access=lambda: hub_a2a_agent_service.ensure_visible_for_user(
+            db, user_id=current_user.id, agent_id=agent_id
+        ),
+        not_found_errors=(HubA2AAgentNotFoundError,),
+        not_found_status_code=404,
+        # Keep the hub catalog non-enumerable: not found is always 404.
+        not_found_detail=lambda exc: str(exc),
     )
 
 
