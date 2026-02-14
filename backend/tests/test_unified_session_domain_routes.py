@@ -196,7 +196,7 @@ async def test_unified_manual_continue_returns_empty_binding_for_new_session(
         assert payload["contextId"] is None
 
 
-async def test_record_local_invoke_messages_persists_opencode_stream_only_on_agent_message(
+async def test_record_local_invoke_messages_persists_message_blocks_only_on_agent_message(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -230,10 +230,10 @@ async def test_record_local_invoke_messages_persists_opencode_stream_only_on_age
         },
         extra_metadata={"transport": "ws", "stream": True},
         response_metadata={
-            "opencode_stream": {
-                "reasoning": "thinking",
-                "tool_call": "run_tool()",
-            }
+            "message_blocks": [
+                {"id": "block-1", "type": "reasoning", "content": "thinking"},
+                {"id": "block-2", "type": "tool_call", "content": "run_tool()"},
+            ]
         },
     )
     await async_db_session.commit()
@@ -249,11 +249,11 @@ async def test_record_local_invoke_messages_persists_opencode_stream_only_on_age
     assert len(messages) == 2
     user_message = next(msg for msg in messages if msg.sender == "user")
     agent_message = next(msg for msg in messages if msg.sender == "agent")
-    assert "opencode_stream" not in (user_message.message_metadata or {})
-    assert (agent_message.message_metadata or {}).get("opencode_stream") == {
-        "reasoning": "thinking",
-        "tool_call": "run_tool()",
-    }
+    assert "message_blocks" not in (user_message.message_metadata or {})
+    assert (agent_message.message_metadata or {}).get("message_blocks") == [
+        {"id": "block-1", "type": "reasoning", "content": "thinking"},
+        {"id": "block-2", "type": "tool_call", "content": "run_tool()"},
+    ]
 
 
 async def test_unified_opencode_continue_returns_400_for_invalid_session_key(

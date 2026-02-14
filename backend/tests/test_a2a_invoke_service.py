@@ -36,15 +36,15 @@ def _artifact_event(
     *,
     artifact_id: str,
     text: str,
-    channel: str | None = None,
+    content_type: str | None = None,
     source: str | None = None,
     append: bool | None = None,
 ) -> dict:
     metadata: dict[str, dict[str, str]] = {}
-    if channel or source:
+    if content_type or source:
         opencode: dict[str, str] = {}
-        if channel:
-            opencode["channel"] = channel
+        if content_type:
+            opencode["content_type"] = content_type
         if source:
             opencode["source"] = source
         metadata["opencode"] = opencode
@@ -89,7 +89,7 @@ async def test_sse_error_event_contains_unified_error_code():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_uses_channelized_final_answer_only():
+async def test_sse_on_complete_uses_typed_text_blocks_for_response_content():
     completed: list[str] = []
 
     async def _on_complete(text: str):
@@ -101,29 +101,29 @@ async def test_sse_on_complete_uses_channelized_final_answer_only():
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="thinking",
-                    channel="reasoning",
+                    content_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream:tool_call",
                     text="run_tool()",
-                    channel="tool_call",
+                    content_type="tool_call",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="Hello ",
-                    channel="final_answer",
+                    content_type="final_answer",
                     append=True,
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="world",
-                    channel="final_answer",
+                    content_type="final_answer",
                     append=True,
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="Hello world",
-                    channel="final_answer",
+                    content_type="final_answer",
                     source="final_snapshot",
                     append=False,
                 ),
@@ -145,7 +145,7 @@ async def test_sse_on_complete_uses_channelized_final_answer_only():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_metadata_includes_reasoning_and_tool_call():
+async def test_sse_on_complete_metadata_includes_message_blocks():
     metadata_payloads: list[dict] = []
 
     async def _on_complete_metadata(payload: dict):
@@ -157,17 +157,17 @@ async def test_sse_on_complete_metadata_includes_reasoning_and_tool_call():
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="thinking",
-                    channel="reasoning",
+                    content_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream:tool_call",
                     text="run_tool()",
-                    channel="tool_call",
+                    content_type="tool_call",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="done",
-                    channel="final_answer",
+                    content_type="text",
                 ),
             ]
         ),
@@ -184,7 +184,28 @@ async def test_sse_on_complete_metadata_includes_reasoning_and_tool_call():
         pass
 
     assert metadata_payloads == [
-        {"opencode_stream": {"reasoning": "thinking", "tool_call": "run_tool()"}}
+        {
+            "message_blocks": [
+                {
+                    "id": "block-1",
+                    "type": "reasoning",
+                    "content": "thinking",
+                    "is_finished": True,
+                },
+                {
+                    "id": "block-2",
+                    "type": "tool_call",
+                    "content": "run_tool()",
+                    "is_finished": True,
+                },
+                {
+                    "id": "block-3",
+                    "type": "text",
+                    "content": "done",
+                    "is_finished": False,
+                },
+            ]
+        }
     ]
 
 
@@ -204,12 +225,12 @@ async def test_sse_invokes_complete_metadata_before_complete():
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="thinking",
-                    channel="reasoning",
+                    content_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="done",
-                    channel="final_answer",
+                    content_type="text",
                 ),
             ]
         ),
@@ -245,17 +266,17 @@ async def test_sse_complete_metadata_uses_configurable_max_chars(monkeypatch):
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="123456789",
-                    channel="reasoning",
+                    content_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream:tool_call",
                     text="abcdefghi",
-                    channel="tool_call",
+                    content_type="tool_call",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="done",
-                    channel="final_answer",
+                    content_type="text",
                 ),
             ]
         ),
@@ -272,7 +293,28 @@ async def test_sse_complete_metadata_uses_configurable_max_chars(monkeypatch):
         pass
 
     assert metadata_payloads == [
-        {"opencode_stream": {"reasoning": "12345", "tool_call": "abcde"}}
+        {
+            "message_blocks": [
+                {
+                    "id": "block-1",
+                    "type": "reasoning",
+                    "content": "12345",
+                    "is_finished": True,
+                },
+                {
+                    "id": "block-2",
+                    "type": "tool_call",
+                    "content": "abcde",
+                    "is_finished": True,
+                },
+                {
+                    "id": "block-3",
+                    "type": "text",
+                    "content": "done",
+                    "is_finished": False,
+                },
+            ]
+        }
     ]
     monkeypatch.setattr(
         settings, "opencode_stream_metadata_max_chars", original
@@ -280,7 +322,7 @@ async def test_sse_complete_metadata_uses_configurable_max_chars(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_falls_back_for_non_channelized_events():
+async def test_sse_on_complete_falls_back_for_non_typed_events():
     completed: list[str] = []
 
     async def _on_complete(text: str):
@@ -324,19 +366,19 @@ async def test_sse_on_complete_respects_append_false_overwrite_then_append():
                 _artifact_event(
                     artifact_id="task-2:stream",
                     text="first",
-                    channel="final_answer",
+                    content_type="text",
                     append=True,
                 ),
                 _artifact_event(
                     artifact_id="task-2:stream",
                     text="reset",
-                    channel="final_answer",
+                    content_type="text",
                     append=False,
                 ),
                 _artifact_event(
                     artifact_id="task-2:stream",
                     text="!",
-                    channel="final_answer",
+                    content_type="text",
                     append=True,
                 ),
             ]

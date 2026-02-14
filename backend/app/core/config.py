@@ -499,7 +499,7 @@ class Settings(BaseSettings):
     opencode_stream_metadata_max_chars: int = Field(
         default=12000,
         alias="OPENCODE_STREAM_METADATA_MAX_CHARS",
-        description="Maximum characters persisted per OpenCode stream metadata channel (reasoning/tool_call).",
+        description="Maximum characters persisted per streamed message block content.",
     )
 
     model_config = ConfigDict(
