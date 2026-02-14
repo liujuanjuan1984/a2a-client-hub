@@ -8,10 +8,12 @@ import {
   invokeAgent,
 } from "@/lib/api/a2aAgents";
 import {
+  applyStreamArtifactUpdate,
   extractRuntimeStatus,
   extractSessionMeta,
-  type StreamChunk,
-  extractStreamChunk,
+  type StreamArtifactUpdate,
+  extractStreamArtifactUpdate,
+  projectStreamChannelContent,
 } from "@/lib/api/chat-utils";
 import {
   getHubInvokeWsTicket,
@@ -23,8 +25,6 @@ import { ENV } from "@/lib/config";
 import { generateId, generateUuid } from "@/lib/id";
 import { buildConversationSessionId, getSessionSource } from "@/lib/sessionIds";
 import { createPersistStorage } from "@/lib/storage/mmkv";
-import { applyStreamChunk } from "@/lib/streamChunks";
-import { shouldSplitStreamMessage } from "@/lib/streamMessageSplit";
 import { type AgentSource } from "@/store/agents";
 import { useMessageStore } from "@/store/messages";
 
@@ -359,7 +359,9 @@ export const useChatStore = create<ChatState>()(
           id: agentMessageId,
           role: "agent" as const,
           content: "",
-          streamChunks: [],
+          streamArtifacts: {},
+          reasoningContent: "",
+          toolCallContent: "",
           createdAt: new Date().toISOString(),
           status: "streaming" as const,
         };
@@ -388,7 +390,7 @@ export const useChatStore = create<ChatState>()(
         messageStore.addMessage(sessionId, userMessage);
         messageStore.addMessage(sessionId, agentMessage);
 
-        let activeAgentMessageId = agentMessageId;
+        const activeAgentMessageId = agentMessageId;
 
         let rebindInFlight = false;
 
@@ -520,42 +522,22 @@ export const useChatStore = create<ChatState>()(
           });
         };
 
-        const appendStreamChunk = (chunk: StreamChunk) => {
-          const bucket = useMessageStore.getState().messages[sessionId] || [];
-          const current = bucket.find((m) => m.id === activeAgentMessageId);
-          if (!current) return;
-
-          if (shouldSplitStreamMessage(current, chunk)) {
-            // Finish the current streamed message and start a new one.
-            messageStore.updateMessage(sessionId, activeAgentMessageId, {
-              status: "done",
-            });
-            const nextAgentMessageId = generateId();
-            activeAgentMessageId = nextAgentMessageId;
-            messageStore.addMessage(sessionId, {
-              id: nextAgentMessageId,
-              role: "agent" as const,
-              content: "",
-              streamChunks: [],
-              createdAt: new Date().toISOString(),
-              status: "streaming" as const,
-            });
-          }
-
-          const targetId = activeAgentMessageId;
+        const appendStreamChunk = (chunk: StreamArtifactUpdate) => {
           messageStore.updateMessageWithUpdater(
             sessionId,
-            targetId,
+            activeAgentMessageId,
             (message) => {
-              const next = applyStreamChunk(
-                message.content,
-                message.streamChunks,
+              const nextArtifacts = applyStreamArtifactUpdate(
+                message.streamArtifacts,
                 chunk,
               );
+              const nextContent = projectStreamChannelContent(nextArtifacts);
               return {
-                content: next.content,
-                streamChunks: next.streamChunks,
-                status: chunk.done ? "done" : "streaming",
+                content: nextContent.finalAnswer,
+                reasoningContent: nextContent.reasoning,
+                toolCallContent: nextContent.toolCall,
+                streamArtifacts: nextArtifacts,
+                status: "streaming",
               };
             },
           );
@@ -695,7 +677,7 @@ export const useChatStore = create<ChatState>()(
                   return;
                 }
 
-                const chunk = extractStreamChunk(data);
+                const chunk = extractStreamArtifactUpdate(data);
                 if (chunk) {
                   appendStreamChunk(chunk);
                 }
@@ -829,7 +811,7 @@ export const useChatStore = create<ChatState>()(
               {
                 onData: (data) => {
                   hasReceivedData = true;
-                  const chunk = extractStreamChunk(data);
+                  const chunk = extractStreamArtifactUpdate(data);
                   if (chunk) {
                     appendStreamChunk(chunk);
                   }

@@ -115,6 +115,8 @@ export function ChatScreen({
   const suppressAutoScrollRef = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
+  const [expandedReasoningByMessageId, setExpandedReasoningByMessageId] =
+    useState<Record<string, boolean>>({});
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const minInputHeight = 44;
@@ -341,6 +343,13 @@ export function ChatScreen({
       webEvent.preventDefault?.();
       handleSend();
     }
+  };
+
+  const toggleReasoning = (messageId: string) => {
+    setExpandedReasoningByMessageId((current) => ({
+      ...current,
+      [messageId]: !current[messageId],
+    }));
   };
 
   if (!agent) {
@@ -598,6 +607,15 @@ export function ChatScreen({
 
         {messages?.length ? (
           messages.map((message) => {
+            const reasoningText = message.reasoningContent?.trim() ?? "";
+            const toolCallText = message.toolCallContent?.trim() ?? "";
+            const showReasoning =
+              message.role === "agent" && reasoningText.length > 0;
+            const showToolCall =
+              message.role === "agent" && toolCallText.length > 0;
+            const reasoningExpanded = Boolean(
+              expandedReasoningByMessageId[message.id],
+            );
             return (
               <View
                 key={message.id}
@@ -617,6 +635,32 @@ export function ChatScreen({
                   <Text className="break-all text-sm text-white">
                     {message.content}
                   </Text>
+                  {showToolCall ? (
+                    <View className="mt-3 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2">
+                      <Text className="text-[10px] font-bold uppercase tracking-wider text-sky-300">
+                        Tool Call
+                      </Text>
+                      <Text className="mt-1 break-all text-xs text-slate-200">
+                        {toolCallText}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {showReasoning ? (
+                    <View className="mt-3 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2">
+                      <Pressable onPress={() => toggleReasoning(message.id)}>
+                        <Text className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                          {reasoningExpanded
+                            ? "Hide Reasoning"
+                            : "Show Reasoning"}
+                        </Text>
+                      </Pressable>
+                      {reasoningExpanded ? (
+                        <Text className="mt-1 break-all text-xs text-slate-200">
+                          {reasoningText}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                   {message.status === "streaming" ? (
                     <Text className="mt-1 text-[10px] text-muted">
                       Streaming...
