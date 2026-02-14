@@ -50,6 +50,15 @@ describe("useChatHistoryQuery", () => {
         role: i % 2 === 0 ? "assistant" : "user",
         content: `content-${i}`,
         created_at: `2026-02-12T00:${minute}:${second}.000Z`,
+        metadata:
+          i === 0
+            ? {
+                opencode_stream: {
+                  reasoning: "reasoning-0",
+                  tool_call: "tool-0",
+                },
+              }
+            : undefined,
       };
     });
 
@@ -67,6 +76,8 @@ describe("useChatHistoryQuery", () => {
       id: "msg-0",
       role: "agent",
       content: "content-0",
+      reasoningContent: "reasoning-0",
+      toolCallContent: "tool-0",
     });
 
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];

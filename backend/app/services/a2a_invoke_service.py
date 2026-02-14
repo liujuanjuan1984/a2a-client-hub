@@ -25,6 +25,7 @@ StreamEvent = ClientEvent | Message
 ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
 StreamTextCallbackFn = Callable[[str], Any]
 StreamEventPayloadCallbackFn = Callable[[dict[str, Any]], Any]
+StreamMetadataCallbackFn = Callable[[dict[str, Any]], Any]
 
 
 class A2AInvokeService:
@@ -179,15 +180,20 @@ class A2AInvokeService:
 
         For opencode channelized events:
         - persist only `final_answer`
+        - collect `reasoning` and `tool_call` into metadata payload
         - respect append/overwrite semantics per artifact
         - treat `source=final_snapshot` as overwrite
 
         For non-channelized events, keep legacy concatenation behavior.
         """
 
+        _MAX_CHANNEL_METADATA_CHARS = 8_000
+
         def __init__(self) -> None:
             self._legacy_chunks: list[str] = []
             self._final_answer_by_artifact: dict[str, str] = {}
+            self._reasoning_by_artifact: dict[str, str] = {}
+            self._tool_call_by_artifact: dict[str, str] = {}
             self._artifact_last_seq: dict[str, int] = {}
             self._seq = 0
 
@@ -270,6 +276,19 @@ class A2AInvokeService:
                         self._seq += 1
                         return
                     if channel in {"reasoning", "tool_call"}:
+                        artifact_id = self._extract_artifact_id(artifact)
+                        append = self._resolve_append(payload, artifact)
+                        source = self._extract_artifact_source(artifact)
+                        overwrite = (not append) or source == "final_snapshot"
+                        bucket = (
+                            self._reasoning_by_artifact
+                            if channel == "reasoning"
+                            else self._tool_call_by_artifact
+                        )
+                        current = bucket.get(artifact_id, "")
+                        bucket[artifact_id] = text if overwrite else f"{current}{text}"
+                        self._artifact_last_seq[artifact_id] = self._seq
+                        self._seq += 1
                         return
                     self._legacy_chunks.append(text)
                     return
@@ -289,6 +308,36 @@ class A2AInvokeService:
                 )[0]
                 return self._final_answer_by_artifact.get(latest_artifact_id, "")
             return "".join(self._legacy_chunks)
+
+        def _channel_result(self, channel: str) -> str:
+            bucket = (
+                self._reasoning_by_artifact
+                if channel == "reasoning"
+                else self._tool_call_by_artifact
+            )
+            if not bucket:
+                return ""
+            ordered = sorted(
+                bucket.items(),
+                key=lambda item: self._artifact_last_seq.get(item[0], -1),
+            )
+            return "\n\n".join(text for _, text in ordered if text)
+
+        def result_metadata(self) -> dict[str, Any]:
+            reasoning = self._channel_result("reasoning")
+            tool_call = self._channel_result("tool_call")
+            opencode_stream: dict[str, str] = {}
+            if reasoning:
+                opencode_stream["reasoning"] = reasoning[
+                    : self._MAX_CHANNEL_METADATA_CHARS
+                ]
+            if tool_call:
+                opencode_stream["tool_call"] = tool_call[
+                    : self._MAX_CHANNEL_METADATA_CHARS
+                ]
+            if not opencode_stream:
+                return {}
+            return {"opencode_stream": opencode_stream}
 
     @staticmethod
     def serialize_stream_event(
@@ -318,6 +367,7 @@ class A2AInvokeService:
         logger: Any,
         log_extra: dict[str, Any],
         on_complete: StreamTextCallbackFn | None = None,
+        on_complete_metadata: StreamMetadataCallbackFn | None = None,
         on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
     ) -> StreamingResponse:
@@ -354,6 +404,10 @@ class A2AInvokeService:
                     await self._call_callback(
                         on_complete, stream_text_accumulator.result()
                     )
+                    await self._call_callback(
+                        on_complete_metadata,
+                        stream_text_accumulator.result_metadata(),
+                    )
                 yield "event: stream_end\ndata: {}\n\n"
 
         # Ensure downstreams do not persist potentially sensitive content.
@@ -380,6 +434,7 @@ class A2AInvokeService:
         logger: Any,
         log_extra: dict[str, Any],
         on_complete: StreamTextCallbackFn | None = None,
+        on_complete_metadata: StreamMetadataCallbackFn | None = None,
         on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
     ) -> None:
@@ -410,6 +465,10 @@ class A2AInvokeService:
         finally:
             if not stream_failed:
                 await self._call_callback(on_complete, stream_text_accumulator.result())
+                await self._call_callback(
+                    on_complete_metadata,
+                    stream_text_accumulator.result_metadata(),
+                )
             await websocket.send_text(json_dumps({"event": "stream_end", "data": {}}))
 
 

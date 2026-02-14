@@ -8,6 +8,41 @@ export type SessionMessageItem = {
   metadata?: Record<string, unknown> | null;
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+const pickNonEmptyString = (
+  source: Record<string, unknown> | null,
+  keys: string[],
+): string | undefined => {
+  if (!source) return undefined;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+const extractOpencodeStreamContent = (
+  metadata: Record<string, unknown> | null | undefined,
+) => {
+  const metadataRecord = asRecord(metadata);
+  const streamRecord =
+    asRecord(metadataRecord?.opencode_stream) ??
+    asRecord(metadataRecord?.opencodeStream);
+  return {
+    reasoningContent: pickNonEmptyString(streamRecord, ["reasoning"]),
+    toolCallContent: pickNonEmptyString(streamRecord, [
+      "tool_call",
+      "toolCall",
+    ]),
+  };
+};
+
 const normalizeSessionMessageRole = (value: string): ChatRole => {
   const role = value.toLowerCase();
   if (role === "assistant") return "agent";
@@ -22,6 +57,7 @@ export const mapSessionMessagesToChatMessages = (
 ): ChatMessage[] =>
   items
     .map((item, index) => ({
+      ...extractOpencodeStreamContent(item.metadata),
       id:
         typeof item.id === "string" && item.id
           ? item.id

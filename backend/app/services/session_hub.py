@@ -1260,6 +1260,7 @@ class SessionHubService:
         context_id: Optional[str],
         invoke_metadata: Optional[Dict[str, Any]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
+        response_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         metadata: Dict[str, Any] = {
             "source": source,
@@ -1338,6 +1339,19 @@ class SessionHubService:
             conversation_id=conversation_id,
             metadata=metadata,
         )
+        agent_metadata = dict(metadata)
+        if response_metadata:
+            for key, value in response_metadata.items():
+                if (
+                    key in agent_metadata
+                    and isinstance(agent_metadata[key], dict)
+                    and isinstance(value, dict)
+                ):
+                    merged_nested = dict(agent_metadata[key])
+                    merged_nested.update(value)
+                    agent_metadata[key] = merged_nested
+                    continue
+                agent_metadata[key] = value
         await agent_message_handler.create_agent_message(
             db,
             user_id=user_id,
@@ -1346,7 +1360,7 @@ class SessionHubService:
             session_id=session.id,
             session=session,
             conversation_id=conversation_id,
-            metadata=metadata,
+            metadata=agent_metadata,
         )
         session.touch()
 

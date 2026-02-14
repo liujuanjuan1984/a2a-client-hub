@@ -196,6 +196,66 @@ async def test_unified_manual_continue_returns_empty_binding_for_new_session(
         assert payload["contextId"] is None
 
 
+async def test_record_local_invoke_messages_persists_opencode_stream_only_on_agent_message(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="stream-meta")
+    now = utc_now()
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Manual Stream Metadata",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=manual_session,
+        source="manual",
+        user_id=user.id,
+        agent_id=agent.id,
+        agent_source="personal",
+        query="hello",
+        response_content="world",
+        success=True,
+        context_id="ctx-stream-meta",
+        invoke_metadata={
+            "provider": "opencode",
+            "externalSessionId": "upstream-stream-meta",
+        },
+        extra_metadata={"transport": "ws", "stream": True},
+        response_metadata={
+            "opencode_stream": {
+                "reasoning": "thinking",
+                "tool_call": "run_tool()",
+            }
+        },
+    )
+    await async_db_session.commit()
+
+    rows = (
+        await async_db_session.execute(
+            select(AgentMessage)
+            .where(AgentMessage.session_id == manual_session.id)
+            .order_by(AgentMessage.created_at.asc(), AgentMessage.id.asc())
+        )
+    ).scalars()
+    messages = list(rows)
+    assert len(messages) == 2
+    user_message = next(msg for msg in messages if msg.sender == "user")
+    agent_message = next(msg for msg in messages if msg.sender == "agent")
+    assert "opencode_stream" not in (user_message.message_metadata or {})
+    assert (agent_message.message_metadata or {}).get("opencode_stream") == {
+        "reasoning": "thinking",
+        "tool_call": "run_tool()",
+    }
+
+
 async def test_unified_opencode_continue_returns_400_for_invalid_session_key(
     async_db_session,
     async_session_maker,

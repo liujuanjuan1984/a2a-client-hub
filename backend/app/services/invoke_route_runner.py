@@ -78,7 +78,10 @@ def _build_stream_callbacks(
     Callable[[dict[str, Any]], Any],
     Callable[[str], Any],
     Callable[[str], Any],
+    Callable[[dict[str, Any]], Any],
 ]:
+    stream_response_metadata: dict[str, Any] = {}
+
     async def on_event(event_payload: dict[str, Any]) -> None:
         (
             event_context_id,
@@ -109,8 +112,15 @@ def _build_stream_callbacks(
             context_id=state.context_id,
             invoke_metadata=state.metadata,
             extra_metadata={"transport": transport, "stream": True},
+            response_metadata=stream_response_metadata,
         )
         await commit_safely(db)
+
+    async def on_complete_metadata(payload: dict[str, Any]) -> None:
+        nonlocal stream_response_metadata
+        if not isinstance(payload, dict):
+            return
+        stream_response_metadata = dict(payload)
 
     async def on_error(error_message: str) -> None:
         if state.local_session is None or state.local_source is None:
@@ -131,7 +141,7 @@ def _build_stream_callbacks(
         )
         await commit_safely(db)
 
-    return on_event, on_complete, on_error
+    return on_event, on_complete, on_error, on_complete_metadata
 
 
 async def run_http_invoke(
@@ -157,7 +167,7 @@ async def run_http_invoke(
     )
 
     if stream:
-        on_event, on_complete, on_error = _build_stream_callbacks(
+        on_event, on_complete, on_error, on_complete_metadata = _build_stream_callbacks(
             db=db,
             state=state,
             user_id=user_id,
@@ -176,6 +186,7 @@ async def run_http_invoke(
             logger=logger,
             log_extra=log_extra,
             on_complete=on_complete,
+            on_complete_metadata=on_complete_metadata,
             on_error=on_error,
             on_event=on_event,
         )
@@ -255,7 +266,7 @@ async def run_ws_invoke(
         agent_source=agent_source,
         payload=payload,
     )
-    on_event, on_complete, on_error = _build_stream_callbacks(
+    on_event, on_complete, on_error, on_complete_metadata = _build_stream_callbacks(
         db=db,
         state=state,
         user_id=user_id,
@@ -275,6 +286,7 @@ async def run_ws_invoke(
         logger=logger,
         log_extra=log_extra,
         on_complete=on_complete,
+        on_complete_metadata=on_complete_metadata,
         on_error=on_error,
         on_event=on_event,
     )

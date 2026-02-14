@@ -54,6 +54,8 @@ const isSameMessageList = (left: ChatMessage[], right: ChatMessage[]) => {
       message.role === next.role &&
       message.content === next.content &&
       message.createdAt === next.createdAt &&
+      (message.reasoningContent ?? "") === (next.reasoningContent ?? "") &&
+      (message.toolCallContent ?? "") === (next.toolCallContent ?? "") &&
       message.status === next.status
     );
   });
@@ -244,7 +246,7 @@ export function ChatScreen({
         );
       });
       const merged = new Map<string, ChatMessage>();
-      [...incoming, ...retainedLocal].forEach((message) => {
+      [...retainedLocal, ...incoming].forEach((message) => {
         merged.set(message.id, message);
       });
       const nextMessages = Array.from(merged.values()).sort((a, b) =>

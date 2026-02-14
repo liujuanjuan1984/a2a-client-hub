@@ -144,6 +144,50 @@ async def test_sse_on_complete_uses_channelized_final_answer_only():
 
 
 @pytest.mark.asyncio
+async def test_sse_on_complete_metadata_includes_reasoning_and_tool_call():
+    metadata_payloads: list[dict] = []
+
+    async def _on_complete_metadata(payload: dict):
+        metadata_payloads.append(payload)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-1:stream:reasoning",
+                    text="thinking",
+                    channel="reasoning",
+                ),
+                _artifact_event(
+                    artifact_id="task-1:stream:tool_call",
+                    text="run_tool()",
+                    channel="tool_call",
+                ),
+                _artifact_event(
+                    artifact_id="task-1:stream",
+                    text="done",
+                    channel="final_answer",
+                ),
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete_metadata=_on_complete_metadata,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert metadata_payloads == [
+        {"opencode_stream": {"reasoning": "thinking", "tool_call": "run_tool()"}}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_sse_on_complete_falls_back_for_non_channelized_events():
     completed: list[str] = []
 
