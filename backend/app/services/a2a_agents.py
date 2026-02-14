@@ -5,7 +5,7 @@ Service helpers for managing user-managed A2A agents and credentials.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -15,12 +15,7 @@ from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.transaction import commit_safely
-from app.services.agent_common import (
-    encrypt_bearer_token,
-    normalize_auth_type,
-    normalize_required_text,
-    resolve_agent_auth_fields,
-)
+from app.services.agent_common import AgentValidationMixin, encrypt_bearer_token
 
 ALLOWED_AUTH_TYPES = {"none", "bearer"}
 
@@ -43,8 +38,11 @@ class A2AAgentRecord:
     token_last4: Optional[str]
 
 
-class A2AAgentService:
+class A2AAgentService(AgentValidationMixin):
     """Business logic wrapper for A2A agent CRUD and credential handling."""
+
+    _validation_error_cls = A2AAgentValidationError
+    _allowed_auth_types = ALLOWED_AUTH_TYPES
 
     def __init__(self) -> None:
         self._vault = user_llm_secret_vault
@@ -335,45 +333,6 @@ class A2AAgentService:
             credential.token_last4 = last4
 
         return last4
-
-    def _normalize_name(self, value: str) -> str:
-        return normalize_required_text(
-            value=value,
-            field_label="Name",
-            validation_error_cls=A2AAgentValidationError,
-        )
-
-    def _normalize_card_url(self, value: str) -> str:
-        return normalize_required_text(
-            value=value,
-            field_label="Card URL",
-            validation_error_cls=A2AAgentValidationError,
-        )
-
-    def _normalize_auth_type(self, value: str) -> str:
-        return normalize_auth_type(
-            value=value,
-            allowed_auth_types=ALLOWED_AUTH_TYPES,
-            validation_error_cls=A2AAgentValidationError,
-        )
-
-    def _resolve_auth_fields(
-        self,
-        auth_type: str,
-        auth_header: Optional[str],
-        auth_scheme: Optional[str],
-        existing: Optional[A2AAgent],
-    ) -> Tuple[Optional[str], Optional[str]]:
-        normalized_header, normalized_scheme = resolve_agent_auth_fields(
-            auth_type=auth_type,
-            auth_header=auth_header,
-            auth_scheme=auth_scheme,
-            existing_auth_header=existing.auth_header if existing else None,
-            existing_auth_scheme=existing.auth_scheme if existing else None,
-            validation_error_cls=A2AAgentValidationError,
-        )
-
-        return normalized_header, normalized_scheme
 
     def _normalize_tags(self, tags: Optional[Iterable[str]]) -> List[str]:
         if tags is None:

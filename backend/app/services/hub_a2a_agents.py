@@ -15,12 +15,7 @@ from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.services.agent_common import (
-    encrypt_bearer_token,
-    normalize_auth_type,
-    normalize_required_text,
-    resolve_agent_auth_fields,
-)
+from app.services.agent_common import AgentValidationMixin, encrypt_bearer_token
 
 ALLOWED_AUTH_TYPES = {"none", "bearer"}
 ALLOWED_AVAILABILITY_POLICIES = {"public", "allowlist"}
@@ -60,8 +55,11 @@ class HubA2AAllowlistRecord:
     user_name: Optional[str]
 
 
-class HubA2AAgentService:
+class HubA2AAgentService(AgentValidationMixin):
     """Business logic wrapper for hub A2A agent CRUD and credential handling."""
+
+    _validation_error_cls = HubA2AAgentValidationError
+    _allowed_auth_types = ALLOWED_AUTH_TYPES
 
     def __init__(self) -> None:
         self._vault = hub_a2a_secret_vault
@@ -490,49 +488,11 @@ class HubA2AAgentService:
             raise HubA2AUserNotFoundError("User not found")
         return user
 
-    def _normalize_name(self, value: str) -> str:
-        return normalize_required_text(
-            value=value,
-            field_label="Name",
-            validation_error_cls=HubA2AAgentValidationError,
-        )
-
-    def _normalize_card_url(self, value: str) -> str:
-        return normalize_required_text(
-            value=value,
-            field_label="Card URL",
-            validation_error_cls=HubA2AAgentValidationError,
-        )
-
-    def _normalize_auth_type(self, value: str) -> str:
-        return normalize_auth_type(
-            value=value,
-            allowed_auth_types=ALLOWED_AUTH_TYPES,
-            validation_error_cls=HubA2AAgentValidationError,
-        )
-
     def _normalize_availability_policy(self, value: str) -> str:
         normalized = (value or "").strip().lower()
         if normalized not in ALLOWED_AVAILABILITY_POLICIES:
             raise HubA2AAgentValidationError("Unsupported availability_policy")
         return normalized
-
-    def _resolve_auth_fields(
-        self,
-        auth_type: str,
-        auth_header: Optional[str],
-        auth_scheme: Optional[str],
-        existing: Optional[HubA2AAgent],
-    ) -> tuple[Optional[str], Optional[str]]:
-        normalized_header, normalized_scheme = resolve_agent_auth_fields(
-            auth_type=auth_type,
-            auth_header=auth_header,
-            auth_scheme=auth_scheme,
-            existing_auth_header=existing.auth_header if existing else None,
-            existing_auth_scheme=existing.auth_scheme if existing else None,
-            validation_error_cls=HubA2AAgentValidationError,
-        )
-        return normalized_header, normalized_scheme
 
     def _normalize_tags(self, value: Optional[Iterable[str]]) -> List[str]:
         if value is None:

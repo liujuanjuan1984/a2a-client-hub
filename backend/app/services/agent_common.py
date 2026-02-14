@@ -79,7 +79,52 @@ def encrypt_bearer_token(
         raise validation_error_cls(str(exc)) from exc
 
 
+class AgentValidationMixin:
+    """Shared validation helpers for agent service classes."""
+
+    _validation_error_cls: Type[Exception]
+    _allowed_auth_types: set[str]
+
+    def _normalize_name(self, value: str) -> str:
+        return normalize_required_text(
+            value=value,
+            field_label="Name",
+            validation_error_cls=self._validation_error_cls,
+        )
+
+    def _normalize_card_url(self, value: str) -> str:
+        return normalize_required_text(
+            value=value,
+            field_label="Card URL",
+            validation_error_cls=self._validation_error_cls,
+        )
+
+    def _normalize_auth_type(self, value: str) -> str:
+        return normalize_auth_type(
+            value=value,
+            allowed_auth_types=self._allowed_auth_types,
+            validation_error_cls=self._validation_error_cls,
+        )
+
+    def _resolve_auth_fields(
+        self,
+        auth_type: str,
+        auth_header: Optional[str],
+        auth_scheme: Optional[str],
+        existing: Any | None,
+    ) -> tuple[Optional[str], Optional[str]]:
+        return resolve_agent_auth_fields(
+            auth_type=auth_type,
+            auth_header=auth_header,
+            auth_scheme=auth_scheme,
+            existing_auth_header=getattr(existing, "auth_header", None),
+            existing_auth_scheme=getattr(existing, "auth_scheme", None),
+            validation_error_cls=self._validation_error_cls,
+        )
+
+
 __all__ = [
+    "AgentValidationMixin",
     "encrypt_bearer_token",
     "normalize_auth_type",
     "normalize_required_text",

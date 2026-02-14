@@ -2,6 +2,7 @@ import pytest
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
 from app.services.agent_common import (
+    AgentValidationMixin,
     encrypt_bearer_token,
     normalize_auth_type,
     normalize_required_text,
@@ -22,6 +23,11 @@ class _Vault:
         if self._raise_encrypt_error:
             raise SecretVaultNotConfiguredError("vault is unavailable")
         return f"enc:{value}", value[-4:]
+
+
+class _DummyService(AgentValidationMixin):
+    _validation_error_cls = _ValidationError
+    _allowed_auth_types = {"none", "bearer"}
 
 
 def test_normalize_required_text_returns_trimmed_value():
@@ -134,3 +140,21 @@ def test_encrypt_bearer_token_re_raises_vault_error_as_validation_error():
             token="token1234",
             validation_error_cls=_ValidationError,
         )
+
+
+def test_agent_validation_mixin_normalizes_auth_type():
+    service = _DummyService()
+    assert service._normalize_auth_type(" BEARER ") == "bearer"
+
+
+def test_agent_validation_mixin_resolves_auth_fields():
+    service = _DummyService()
+
+    class _Existing:
+        auth_header = "X-Auth"
+        auth_scheme = "Token"
+
+    assert service._resolve_auth_fields("bearer", None, None, _Existing()) == (
+        "X-Auth",
+        "Token",
+    )
