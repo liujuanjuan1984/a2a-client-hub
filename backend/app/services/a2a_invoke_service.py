@@ -174,28 +174,121 @@ class A2AInvokeService:
                 metadata.update(raw_metadata)
         return context_id, metadata
 
-    @staticmethod
-    def _extract_stream_text(payload: dict[str, Any]) -> str:
-        if payload.get("kind") == "artifact-update":
-            artifact = payload.get("artifact")
-            parts = artifact.get("parts") if isinstance(artifact, dict) else None
-            if isinstance(parts, list):
-                collected: list[str] = []
-                for part in parts:
-                    if not isinstance(part, dict):
-                        continue
-                    kind = str(part.get("kind") or "")
-                    text = part.get("text")
-                    if kind == "text" and isinstance(text, str):
-                        collected.append(text)
-                return "".join(collected)
-        content = payload.get("content")
-        if isinstance(content, str):
-            return content
-        message = payload.get("message")
-        if isinstance(message, str):
-            return message
-        return ""
+    class _StreamTextAccumulator:
+        """Accumulates stream text for persistence.
+
+        For opencode channelized events:
+        - persist only `final_answer`
+        - respect append/overwrite semantics per artifact
+        - treat `source=final_snapshot` as overwrite
+
+        For non-channelized events, keep legacy concatenation behavior.
+        """
+
+        def __init__(self) -> None:
+            self._legacy_chunks: list[str] = []
+            self._final_answer_by_artifact: dict[str, str] = {}
+            self._artifact_last_seq: dict[str, int] = {}
+            self._seq = 0
+
+        @staticmethod
+        def _extract_text_from_parts(parts: Any) -> str:
+            if not isinstance(parts, list):
+                return ""
+            collected: list[str] = []
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                kind = str(part.get("kind") or "")
+                text = part.get("text")
+                if kind == "text" and isinstance(text, str):
+                    collected.append(text)
+            return "".join(collected)
+
+        @staticmethod
+        def _extract_artifact_channel(artifact: dict[str, Any]) -> str | None:
+            metadata = artifact.get("metadata")
+            if not isinstance(metadata, dict):
+                return None
+            opencode = metadata.get("opencode")
+            if not isinstance(opencode, dict):
+                return None
+            channel = opencode.get("channel")
+            if isinstance(channel, str) and channel.strip():
+                return channel.strip().lower()
+            return None
+
+        @staticmethod
+        def _extract_artifact_source(artifact: dict[str, Any]) -> str | None:
+            metadata = artifact.get("metadata")
+            if not isinstance(metadata, dict):
+                return None
+            opencode = metadata.get("opencode")
+            if not isinstance(opencode, dict):
+                return None
+            source = opencode.get("source")
+            if isinstance(source, str) and source.strip():
+                return source.strip().lower()
+            return None
+
+        @staticmethod
+        def _extract_artifact_id(artifact: dict[str, Any]) -> str:
+            for key in ("artifact_id", "artifactId", "id"):
+                value = artifact.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            return "__default_final_answer__"
+
+        @staticmethod
+        def _resolve_append(payload: dict[str, Any], artifact: dict[str, Any]) -> bool:
+            append = payload.get("append")
+            if isinstance(append, bool):
+                return append
+            artifact_append = artifact.get("append")
+            if isinstance(artifact_append, bool):
+                return artifact_append
+            return True
+
+        def consume(self, payload: dict[str, Any]) -> None:
+            if payload.get("kind") == "artifact-update":
+                artifact = payload.get("artifact")
+                if isinstance(artifact, dict):
+                    text = self._extract_text_from_parts(artifact.get("parts"))
+                    if not text:
+                        return
+                    channel = self._extract_artifact_channel(artifact)
+                    if channel == "final_answer":
+                        artifact_id = self._extract_artifact_id(artifact)
+                        append = self._resolve_append(payload, artifact)
+                        source = self._extract_artifact_source(artifact)
+                        overwrite = (not append) or source == "final_snapshot"
+                        current = self._final_answer_by_artifact.get(artifact_id, "")
+                        self._final_answer_by_artifact[artifact_id] = (
+                            text if overwrite else f"{current}{text}"
+                        )
+                        self._artifact_last_seq[artifact_id] = self._seq
+                        self._seq += 1
+                        return
+                    if channel in {"reasoning", "tool_call"}:
+                        return
+                    self._legacy_chunks.append(text)
+                    return
+
+            content = payload.get("content")
+            if isinstance(content, str):
+                self._legacy_chunks.append(content)
+                return
+            message = payload.get("message")
+            if isinstance(message, str):
+                self._legacy_chunks.append(message)
+
+        def result(self) -> str:
+            if self._final_answer_by_artifact:
+                latest_artifact_id = max(
+                    self._artifact_last_seq.items(), key=lambda item: item[1]
+                )[0]
+                return self._final_answer_by_artifact.get(latest_artifact_id, "")
+            return "".join(self._legacy_chunks)
 
     @staticmethod
     def serialize_stream_event(
@@ -229,7 +322,7 @@ class A2AInvokeService:
         on_event: StreamEventPayloadCallbackFn | None = None,
     ) -> StreamingResponse:
         async def event_generator() -> AsyncIterator[str]:
-            collected: list[str] = []
+            stream_text_accumulator = self._StreamTextAccumulator()
             stream_failed = False
             try:
                 async for event in gateway.stream(
@@ -242,9 +335,7 @@ class A2AInvokeService:
                         event, validate_message=validate_message
                     )
                     await self._call_callback(on_event, serialized)
-                    text = self._extract_stream_text(serialized)
-                    if text:
-                        collected.append(text)
+                    stream_text_accumulator.consume(serialized)
                     yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
             except Exception:
                 stream_failed = True
@@ -260,7 +351,9 @@ class A2AInvokeService:
                 )
             finally:
                 if not stream_failed:
-                    await self._call_callback(on_complete, "".join(collected))
+                    await self._call_callback(
+                        on_complete, stream_text_accumulator.result()
+                    )
                 yield "event: stream_end\ndata: {}\n\n"
 
         # Ensure downstreams do not persist potentially sensitive content.
@@ -290,7 +383,7 @@ class A2AInvokeService:
         on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
     ) -> None:
-        collected: list[str] = []
+        stream_text_accumulator = self._StreamTextAccumulator()
         stream_failed = False
         try:
             async for event in gateway.stream(
@@ -303,9 +396,7 @@ class A2AInvokeService:
                     event, validate_message=validate_message
                 )
                 await self._call_callback(on_event, serialized)
-                text = self._extract_stream_text(serialized)
-                if text:
-                    collected.append(text)
+                stream_text_accumulator.consume(serialized)
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
         except Exception:
             stream_failed = True
@@ -318,7 +409,7 @@ class A2AInvokeService:
             )
         finally:
             if not stream_failed:
-                await self._call_callback(on_complete, "".join(collected))
+                await self._call_callback(on_complete, stream_text_accumulator.result())
             await websocket.send_text(json_dumps({"event": "stream_end", "data": {}}))
 
 
