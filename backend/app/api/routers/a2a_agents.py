@@ -8,16 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import (
-    Depends,
-    HTTPException,
-    Query,
-    Response,
-    WebSocket,
-    WebSocketDisconnect,
-    status,
-)
-from pydantic import ValidationError
+from fastapi import Depends, HTTPException, Query, Response, WebSocket, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_me
@@ -52,17 +43,13 @@ from app.services.a2a_agents import (
     A2AAgentValidationError,
     a2a_agent_service,
 )
-from app.services.a2a_invoke_service import a2a_invoke_service
 from app.services.a2a_runtime import (
     A2ARuntimeNotFoundError,
     A2ARuntimeValidationError,
     a2a_runtime_builder,
 )
-from app.services.invoke_route_runner import run_http_invoke, run_ws_invoke
-from app.services.invoke_session_binding import (
-    status_code_for_invoke_session_error,
-    ws_error_code_for_invoke_session_error,
-)
+from app.services.invoke_route_runner import run_http_invoke, run_ws_invoke_route
+from app.services.invoke_session_binding import status_code_for_invoke_session_error
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (
@@ -412,105 +399,31 @@ async def invoke_agent_ws(
     This endpoint accepts a WebSocket connection, waits for an invocation request,
     and then streams back events from the agent.
     """
-    await websocket.accept()
-
-    try:
-        # Receive the request payload
-        data = await websocket.receive_json()
-        try:
-            payload = A2AAgentInvokeRequest.model_validate(data)
-        except ValidationError:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message="Invalid request payload",
-                error_code="invalid_request",
-            )
-            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
-            return
-
-        if not payload.query.strip():
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message="Query must be a non-empty string",
-                error_code="invalid_query",
-            )
-            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
-            return
-
-        try:
-            runtime = await a2a_runtime_builder.build(
-                db, user_id=current_user.id, agent_id=agent_id
-            )
-        except A2ARuntimeNotFoundError as exc:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message=str(exc),
-                error_code="agent_not_found",
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-        except A2ARuntimeValidationError as exc:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message=str(exc),
-                error_code="runtime_invalid",
-            )
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
-            return
-
-        logger.info(
-            "A2A agent invoke WS requested",
-            extra={
-                "user_id": str(current_user.id),
-                "agent_id": str(agent_id),
-                "agent_url": redact_url_for_logging(runtime.resolved.url),
-                "query_meta": summarize_query(payload.query),
-            },
-        )
-
-        try:
-            await run_ws_invoke(
-                websocket=websocket,
-                db=db,
-                gateway=get_a2a_service().gateway,
-                runtime=runtime,
-                user_id=current_user.id,
-                agent_id=agent_id,
-                agent_source="personal",
-                payload=payload,
-                validate_message=validate_message,
-                logger=logger,
-                log_extra={
-                    "user_id": str(current_user.id),
-                    "agent_id": str(agent_id),
-                },
-            )
-        except ValueError as exc:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message=str(exc),
-                error_code=ws_error_code_for_invoke_session_error(str(exc)),
-            )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-
-    except WebSocketDisconnect:
-        logger.info("WebSocket disconnected", extra={"user_id": str(current_user.id)})
-    except Exception:
-        logger.error("WS error", exc_info=True)
-        try:
-            await a2a_invoke_service.send_ws_error(
-                websocket,
-                message="Upstream streaming failed",
-                error_code="upstream_stream_error",
-            )
-        except Exception:
-            pass
-    finally:
-        try:
-            await websocket.close()
-        except Exception:
-            pass
+    await run_ws_invoke_route(
+        websocket=websocket,
+        db=db,
+        user_id=current_user.id,
+        agent_id=agent_id,
+        agent_source="personal",
+        gateway=get_a2a_service().gateway,
+        runtime_builder=lambda: a2a_runtime_builder.build(
+            db, user_id=current_user.id, agent_id=agent_id
+        ),
+        runtime_not_found_errors=(A2ARuntimeNotFoundError,),
+        runtime_not_found_message=lambda exc: str(exc),
+        runtime_not_found_code="agent_not_found",
+        runtime_validation_errors=(A2ARuntimeValidationError,),
+        validate_message=validate_message,
+        logger=logger,
+        invoke_log_message="A2A agent invoke WS requested",
+        invoke_log_extra_builder=lambda payload, runtime: {
+            "user_id": str(current_user.id),
+            "agent_id": str(agent_id),
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
+            "query_meta": summarize_query(payload.query),
+        },
+        unexpected_log_message="WS error",
+    )
 
 
 @router.post(

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID
 
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect, status
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.transaction import commit_safely
@@ -16,6 +17,7 @@ from app.services.a2a_invoke_service import a2a_invoke_service
 from app.services.invoke_session_binding import (
     merge_invoke_binding_state,
     normalize_invoke_binding_state,
+    ws_error_code_for_invoke_session_error,
 )
 from app.services.session_hub import session_hub_service
 
@@ -275,4 +277,121 @@ async def run_ws_invoke(
     )
 
 
-__all__ = ["run_http_invoke", "run_ws_invoke"]
+async def run_ws_invoke_route(
+    *,
+    websocket: WebSocket,
+    db: AsyncSession,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    gateway: Any,
+    runtime_builder: Callable[[], Awaitable[Any]],
+    runtime_not_found_errors: tuple[type[Exception], ...],
+    runtime_not_found_message: str | Callable[[Exception], str],
+    runtime_not_found_code: str,
+    runtime_validation_errors: tuple[type[Exception], ...],
+    validate_message: Callable[[dict[str, Any]], list[Any]],
+    logger: Any,
+    invoke_log_message: str,
+    invoke_log_extra_builder: Callable[[A2AAgentInvokeRequest, Any], dict[str, Any]],
+    unexpected_log_message: str,
+) -> None:
+    await websocket.accept()
+
+    try:
+        data = await websocket.receive_json()
+        try:
+            payload = A2AAgentInvokeRequest.model_validate(data)
+        except ValidationError:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Invalid request payload",
+                error_code="invalid_request",
+            )
+            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            return
+
+        if not payload.query.strip():
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Query must be a non-empty string",
+                error_code="invalid_query",
+            )
+            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            return
+
+        try:
+            runtime = await runtime_builder()
+        except runtime_not_found_errors as exc:
+            message = (
+                runtime_not_found_message(exc)
+                if callable(runtime_not_found_message)
+                else runtime_not_found_message
+            )
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=message,
+                error_code=runtime_not_found_code,
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        except runtime_validation_errors as exc:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=str(exc),
+                error_code="runtime_invalid",
+            )
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            return
+
+        logger.info(
+            invoke_log_message,
+            extra=invoke_log_extra_builder(payload, runtime),
+        )
+
+        try:
+            await run_ws_invoke(
+                websocket=websocket,
+                db=db,
+                gateway=gateway,
+                runtime=runtime,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                payload=payload,
+                validate_message=validate_message,
+                logger=logger,
+                log_extra={
+                    "user_id": str(user_id),
+                    "agent_id": str(agent_id),
+                },
+            )
+        except ValueError as exc:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message=str(exc),
+                error_code=ws_error_code_for_invoke_session_error(str(exc)),
+            )
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected", extra={"user_id": str(user_id)})
+    except Exception:
+        logger.error(unexpected_log_message, exc_info=True)
+        try:
+            await a2a_invoke_service.send_ws_error(
+                websocket,
+                message="Upstream streaming failed",
+                error_code="upstream_stream_error",
+            )
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+__all__ = ["run_http_invoke", "run_ws_invoke", "run_ws_invoke_route"]
