@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
 
+from app.utils.session_identity import normalize_provider
+
 
 def as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
@@ -21,4 +23,44 @@ def pick_first_non_empty_str(
     return None
 
 
-__all__ = ["as_dict", "pick_first_non_empty_str"]
+_PROVIDER_KEYS = ("provider", "session_provider", "external_provider")
+_EXTERNAL_KEYS = (
+    "externalSessionId",
+    "external_session_id",
+    "upstream_session_id",
+)
+_EXTERNAL_KEYS_WITH_SESSION_ALIASES = _EXTERNAL_KEYS + ("sessionId", "session_id")
+_OPENCODE_SESSION_KEYS = ("session_id", "sessionId", "id")
+_CONTEXT_KEYS = ("contextId", "context_id")
+
+
+def extract_context_id(payload: Mapping[str, Any]) -> str | None:
+    return pick_first_non_empty_str(payload, _CONTEXT_KEYS)
+
+
+def extract_provider_and_external_session_id(
+    payload: Mapping[str, Any],
+    *,
+    include_session_id_aliases: bool = False,
+) -> tuple[str | None, str | None]:
+    provider = normalize_provider(pick_first_non_empty_str(payload, _PROVIDER_KEYS))
+    external_keys = (
+        _EXTERNAL_KEYS_WITH_SESSION_ALIASES
+        if include_session_id_aliases
+        else _EXTERNAL_KEYS
+    )
+    external_session_id = pick_first_non_empty_str(payload, external_keys)
+    if external_session_id is None:
+        opencode = as_dict(payload.get("opencode"))
+        external_session_id = pick_first_non_empty_str(opencode, _OPENCODE_SESSION_KEYS)
+        if external_session_id and provider is None:
+            provider = normalize_provider("opencode")
+    return provider, external_session_id
+
+
+__all__ = [
+    "as_dict",
+    "extract_context_id",
+    "extract_provider_and_external_session_id",
+    "pick_first_non_empty_str",
+]

@@ -40,7 +40,12 @@ from app.services.hub_a2a_runtime import (
     hub_a2a_runtime_builder,
 )
 from app.services.opencode_session_directory import opencode_session_directory_service
-from app.utils.payload_extract import as_dict, pick_first_non_empty_str
+from app.utils.payload_extract import (
+    as_dict,
+    extract_context_id,
+    extract_provider_and_external_session_id,
+    pick_first_non_empty_str,
+)
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import utc_now
 
@@ -367,9 +372,7 @@ class SessionHubService:
         context_ids = [
             context_id
             for context_id in (
-                _extract_context_id_from_metadata(
-                    latest_metadata_map.get(session.id, {})
-                )
+                extract_context_id(latest_metadata_map.get(session.id, {}))
                 for session in sessions
             )
             if isinstance(context_id, str) and context_id
@@ -392,8 +395,8 @@ class SessionHubService:
             (
                 metadata_provider,
                 metadata_external_id,
-            ) = _extract_provider_and_external_from_metadata(latest_metadata)
-            metadata_context_id = _extract_context_id_from_metadata(latest_metadata)
+            ) = extract_provider_and_external_session_id(latest_metadata)
+            metadata_context_id = extract_context_id(latest_metadata)
             binding_locator = binding_locator_map.get(session.id)
             if not metadata_provider and binding_locator:
                 metadata_provider = binding_locator.provider
@@ -732,8 +735,8 @@ class SessionHubService:
             (
                 provider,
                 external_session_id,
-            ) = _extract_provider_and_external_from_metadata(latest_metadata)
-            context_id = _extract_context_id_from_metadata(latest_metadata)
+            ) = extract_provider_and_external_session_id(latest_metadata)
+            context_id = extract_context_id(latest_metadata)
             binding_locator = await conversation_identity_service.find_latest_external_binding_for_local_session(
                 db,
                 user_id=user_id,
@@ -973,7 +976,7 @@ class SessionHubService:
             (
                 provider,
                 external_session_id,
-            ) = _extract_provider_and_external_from_metadata(metadata)
+            ) = extract_provider_and_external_session_id(metadata)
             resolved_provider = normalize_provider(
                 provider_from_payload or provider or "opencode"
             )
@@ -1051,7 +1054,7 @@ class SessionHubService:
         metadata_raw = getattr(latest, "message_metadata", None) if latest else None
         metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
         context_id = metadata.get("context_id") or metadata.get("contextId")
-        provider, external_session_id = _extract_provider_and_external_from_metadata(
+        provider, external_session_id = extract_provider_and_external_session_id(
             metadata
         )
         binding_locator = await conversation_identity_service.find_latest_external_binding_for_local_session(
@@ -1274,7 +1277,7 @@ class SessionHubService:
         (
             provider_from_invoke,
             external_session_id,
-        ) = _extract_provider_and_external_from_metadata(invoke_metadata or {})
+        ) = extract_provider_and_external_session_id(invoke_metadata or {})
         if context_id and isinstance(context_id, str):
             metadata["context_id"] = context_id
         if provider_from_invoke:
@@ -1606,37 +1609,6 @@ def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:
         "created_at": created_at,
         "metadata": {"raw": item},
     }
-
-
-def _extract_provider_and_external_from_metadata(
-    metadata: Dict[str, Any],
-) -> tuple[Optional[str], Optional[str]]:
-    provider = normalize_provider(
-        pick_first_non_empty_str(
-            metadata,
-            ["provider", "session_provider", "external_provider"],
-        )
-    )
-    external_session_id = pick_first_non_empty_str(
-        metadata,
-        [
-            "externalSessionId",
-            "external_session_id",
-            "upstream_session_id",
-        ],
-    )
-    if external_session_id is None:
-        opencode = as_dict(metadata.get("opencode"))
-        external_session_id = pick_first_non_empty_str(
-            opencode, ["session_id", "sessionId", "id"]
-        )
-        if external_session_id and provider is None:
-            provider = normalize_provider("opencode")
-    return provider, external_session_id
-
-
-def _extract_context_id_from_metadata(metadata: Dict[str, Any]) -> Optional[str]:
-    return pick_first_non_empty_str(metadata, ["context_id", "contextId"])
 
 
 def _try_parse_uuid(value: Any) -> Optional[UUID]:

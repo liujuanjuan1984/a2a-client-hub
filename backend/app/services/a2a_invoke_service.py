@@ -15,8 +15,11 @@ from fastapi import WebSocket
 from fastapi.responses import StreamingResponse
 
 from app.utils.json_encoder import json_dumps
-from app.utils.payload_extract import as_dict, pick_first_non_empty_str
-from app.utils.session_identity import normalize_provider
+from app.utils.payload_extract import (
+    as_dict,
+    extract_context_id,
+    extract_provider_and_external_session_id,
+)
 
 StreamEvent = ClientEvent | Message
 ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
@@ -75,13 +78,6 @@ class A2AInvokeService:
         return resolved
 
     @classmethod
-    def _extract_opencode_session_id(cls, payload: dict[str, Any]) -> str | None:
-        opencode = as_dict(payload.get("opencode"))
-        if not opencode:
-            return None
-        return pick_first_non_empty_str(opencode, ("session_id", "sessionId", "id"))
-
-    @classmethod
     def _extract_binding_hints_from_payload(
         cls, payload: dict[str, Any]
     ) -> tuple[str | None, dict[str, Any]]:
@@ -94,52 +90,39 @@ class A2AInvokeService:
         external_session_id: str | None = None
         resolved_metadata: dict[str, Any] = {}
 
-        provider_keys = ("provider", "session_provider", "external_provider")
-        external_id_keys = (
-            "externalSessionId",
-            "external_session_id",
-            "upstream_session_id",
-            "sessionId",
-            "session_id",
-        )
-
         for candidate in (root, message, result):
             if context_id is None:
-                context_id = pick_first_non_empty_str(
-                    candidate, ("contextId", "context_id")
-                )
+                context_id = extract_context_id(candidate)
             candidate_metadata = cls._extract_metadata_dict(candidate)
             if candidate_metadata:
                 resolved_metadata.update(candidate_metadata)
-            if provider is None:
-                provider = normalize_provider(
-                    pick_first_non_empty_str(candidate, provider_keys)
+            if provider is None or external_session_id is None:
+                (
+                    candidate_provider,
+                    candidate_external_session_id,
+                ) = extract_provider_and_external_session_id(
+                    candidate,
+                    include_session_id_aliases=True,
                 )
-            if external_session_id is None:
-                external_session_id = pick_first_non_empty_str(
-                    candidate, external_id_keys
-                )
-            if external_session_id is None:
-                external_session_id = cls._extract_opencode_session_id(candidate)
-                if external_session_id and provider is None:
-                    provider = normalize_provider("opencode")
+                if provider is None:
+                    provider = candidate_provider
+                if external_session_id is None:
+                    external_session_id = candidate_external_session_id
 
         if context_id is None:
-            context_id = pick_first_non_empty_str(
-                resolved_metadata, ("contextId", "context_id")
+            context_id = extract_context_id(resolved_metadata)
+        if provider is None or external_session_id is None:
+            (
+                metadata_provider,
+                metadata_external_session_id,
+            ) = extract_provider_and_external_session_id(
+                resolved_metadata,
+                include_session_id_aliases=True,
             )
-        if provider is None:
-            provider = normalize_provider(
-                pick_first_non_empty_str(resolved_metadata, provider_keys)
-            )
-        if external_session_id is None:
-            external_session_id = pick_first_non_empty_str(
-                resolved_metadata, external_id_keys
-            )
-        if external_session_id is None:
-            external_session_id = cls._extract_opencode_session_id(resolved_metadata)
-            if external_session_id and provider is None:
-                provider = normalize_provider("opencode")
+            if provider is None:
+                provider = metadata_provider
+            if external_session_id is None:
+                external_session_id = metadata_external_session_id
 
         if provider:
             resolved_metadata["provider"] = provider
