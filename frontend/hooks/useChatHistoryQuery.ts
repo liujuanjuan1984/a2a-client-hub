@@ -2,7 +2,6 @@ import { useCallback, useMemo } from "react";
 
 import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
-import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   mapSessionMessagesToChatMessages,
@@ -42,9 +41,7 @@ export function useSessionHistoryQuery(options: {
     if (!sessionId) {
       return [];
     }
-    return mapSessionMessagesToChatMessages(query.items, sessionId).slice(
-      -CHAT_MESSAGE_HISTORY_LIMIT,
-    );
+    return mapSessionMessagesToChatMessages(query.items, sessionId);
   }, [query.items, sessionId]);
 
   return {
