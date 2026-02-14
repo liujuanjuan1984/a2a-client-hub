@@ -449,28 +449,28 @@ export function ChatScreen({
             }`}
           >
             {showReasoning ? (
-              <View className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2">
+              <View className="rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2">
                 <Pressable onPress={() => toggleReasoning(message.id)}>
-                  <Text className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                  <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
                     {reasoningExpanded ? "Hide Reasoning" : "Show Reasoning"}
                   </Text>
                 </Pressable>
                 {reasoningExpanded ? (
-                  <Text className="mt-1 break-all text-xs text-slate-200">
+                  <Text className="mt-1 break-all text-xs text-slate-300">
                     {reasoningText}
                   </Text>
                 ) : null}
               </View>
             ) : null}
             {showToolCall ? (
-              <View className="mt-3 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2">
+              <View className="mt-3 rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2">
                 <Pressable onPress={() => toggleToolCall(message.id)}>
-                  <Text className="text-[10px] font-bold uppercase tracking-wider text-sky-300">
+                  <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
                     {toolCallExpanded ? "Hide Tool Call" : "Show Tool Call"}
                   </Text>
                 </Pressable>
                 {toolCallExpanded ? (
-                  <Text className="mt-1 break-all text-xs text-slate-200">
+                  <Text className="mt-1 break-all text-xs text-slate-300">
                     {toolCallText}
                   </Text>
                 ) : null}
