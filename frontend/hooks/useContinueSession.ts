@@ -4,6 +4,10 @@ import { useCallback } from "react";
 import { continueSession as continueSessionBinding } from "@/lib/api/sessions";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
+import {
+  buildContinueBindingPayload,
+  resolveCanonicalSessionId,
+} from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
 import { useChatStore } from "@/store/chat";
 
@@ -30,23 +34,18 @@ export const useContinueSession = () => {
 
       try {
         const binding = await continueSessionBinding(unifiedSessionId);
-        const canonicalSessionId =
-          typeof binding.session_id === "string" && binding.session_id.trim()
-            ? binding.session_id.trim()
-            : unifiedSessionId;
+        const canonicalSessionId = resolveCanonicalSessionId(
+          unifiedSessionId,
+          binding,
+        );
         if (canonicalSessionId !== unifiedSessionId) {
           migrateSessionKey(unifiedSessionId, canonicalSessionId);
         }
         ensureSession(canonicalSessionId, agentId);
-        bindExternalSession(canonicalSessionId, {
-          agentId,
-          conversationId: binding.conversationId ?? undefined,
-          provider: binding.provider ?? undefined,
-          externalSessionId: binding.externalSessionId ?? undefined,
-          contextId: binding.contextId ?? undefined,
-          bindingMetadata: binding.bindingMetadata ?? undefined,
-          metadata: binding.metadata,
-        });
+        bindExternalSession(
+          canonicalSessionId,
+          buildContinueBindingPayload(agentId, binding),
+        );
         blurActiveElement();
         router.push(buildChatRoute(agentId, canonicalSessionId));
         return true;

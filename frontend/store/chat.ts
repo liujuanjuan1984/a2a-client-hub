@@ -28,6 +28,13 @@ import { shouldSplitStreamMessage } from "@/lib/streamMessageSplit";
 import { type AgentSource } from "@/store/agents";
 import { useMessageStore } from "@/store/messages";
 
+type ExternalSessionRef = {
+  provider?: string | null;
+  externalSessionId?: string | null;
+  contextId?: string | null;
+  bindingMetadata?: Record<string, unknown>;
+};
+
 type AgentSession = {
   agentId: string;
   conversationId?: string | null;
@@ -39,12 +46,7 @@ type AgentSession = {
   inputModes: string[];
   outputModes: string[];
   metadata: Record<string, unknown>;
-  externalSessionRef?: {
-    provider?: string | null;
-    externalSessionId?: string | null;
-    contextId?: string | null;
-    bindingMetadata?: Record<string, unknown>;
-  } | null;
+  externalSessionRef?: ExternalSessionRef | null;
   lastActiveAt: string;
 };
 
@@ -186,6 +188,22 @@ const buildInvokePayload = (
   return payload;
 };
 
+const mergeExternalSessionRef = (
+  current: ExternalSessionRef | null | undefined,
+  incoming: {
+    provider?: string | null;
+    externalSessionId?: string | null;
+    contextId?: string | null;
+    bindingMetadata?: Record<string, unknown> | null;
+  },
+): ExternalSessionRef => ({
+  provider: incoming.provider ?? current?.provider ?? null,
+  externalSessionId:
+    incoming.externalSessionId ?? current?.externalSessionId ?? null,
+  contextId: incoming.contextId ?? current?.contextId ?? null,
+  bindingMetadata: incoming.bindingMetadata ?? current?.bindingMetadata ?? {},
+});
+
 export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
@@ -224,26 +242,10 @@ export const useChatStore = create<ChatState>()(
                 payload.conversationId === undefined
                   ? (state.sessions[sessionId]?.conversationId ?? null)
                   : payload.conversationId,
-              externalSessionRef: {
-                provider:
-                  payload.provider ??
-                  state.sessions[sessionId]?.externalSessionRef?.provider ??
-                  null,
-                externalSessionId:
-                  payload.externalSessionId ??
-                  state.sessions[sessionId]?.externalSessionRef
-                    ?.externalSessionId ??
-                  null,
-                contextId:
-                  payload.contextId ??
-                  state.sessions[sessionId]?.externalSessionRef?.contextId ??
-                  null,
-                bindingMetadata:
-                  payload.bindingMetadata ??
-                  state.sessions[sessionId]?.externalSessionRef
-                    ?.bindingMetadata ??
-                  {},
-              },
+              externalSessionRef: mergeExternalSessionRef(
+                state.sessions[sessionId]?.externalSessionRef,
+                payload,
+              ),
               contextId:
                 payload.contextId === undefined
                   ? (state.sessions[sessionId]?.contextId ?? null)
@@ -445,24 +447,15 @@ export const useChatStore = create<ChatState>()(
               conversationId: binding.conversationId ?? current.conversationId,
               contextId: binding.contextId ?? current.contextId,
               metadata: binding.metadata ?? current.metadata,
-              externalSessionRef: {
-                provider:
-                  binding.provider ??
-                  current.externalSessionRef?.provider ??
-                  null,
-                externalSessionId:
-                  binding.externalSessionId ??
-                  current.externalSessionRef?.externalSessionId ??
-                  null,
-                contextId:
-                  binding.contextId ??
-                  current.externalSessionRef?.contextId ??
-                  null,
-                bindingMetadata:
-                  binding.bindingMetadata ??
-                  current.externalSessionRef?.bindingMetadata ??
-                  {},
-              },
+              externalSessionRef: mergeExternalSessionRef(
+                current.externalSessionRef,
+                {
+                  provider: binding.provider,
+                  externalSessionId: binding.externalSessionId,
+                  contextId: binding.contextId,
+                  bindingMetadata: binding.bindingMetadata,
+                },
+              ),
               streamState: "recoverable",
               lastStreamError: reason,
             });

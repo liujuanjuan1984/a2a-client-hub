@@ -23,6 +23,10 @@ import { blurActiveElement } from "@/lib/focus";
 import { CHAT_MESSAGE_HISTORY_LIMIT } from "@/lib/messageHistory";
 import { backOrHome } from "@/lib/navigation";
 import { buildChatRoute } from "@/lib/routes";
+import {
+  buildContinueBindingPayload,
+  resolveCanonicalSessionId,
+} from "@/lib/sessionBinding";
 import { getSessionSource } from "@/lib/sessionIds";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
@@ -143,6 +147,7 @@ export function ChatScreen({
 
   useEffect(() => {
     if (!sessionId || !activeAgentId) return;
+    const boundAgentId = activeAgentId;
     const sessionSource = getSessionSource(sessionId);
     const hasHistory =
       messages.length > 0 || sessionHistoryQuery.messages.length > 0;
@@ -157,10 +162,10 @@ export function ChatScreen({
     continueSession(sessionId)
       .then((binding) => {
         if (cancelled) return;
-        const canonicalSessionId =
-          typeof binding.session_id === "string" && binding.session_id.trim()
-            ? binding.session_id.trim()
-            : sessionId;
+        const canonicalSessionId = resolveCanonicalSessionId(
+          sessionId,
+          binding,
+        );
         if (canonicalSessionId !== sessionId) {
           migrateSessionKey(sessionId, canonicalSessionId);
         }
@@ -174,18 +179,15 @@ export function ChatScreen({
         if (hasLocalBinding && !binding.contextId) {
           return;
         }
-        ensureSession(canonicalSessionId, activeAgentId);
-        useChatStore.getState().bindExternalSession(canonicalSessionId, {
-          agentId: activeAgentId ?? undefined,
-          conversationId: binding.conversationId ?? undefined,
-          provider: binding.provider ?? undefined,
-          externalSessionId: binding.externalSessionId ?? undefined,
-          contextId: binding.contextId ?? undefined,
-          bindingMetadata: binding.bindingMetadata ?? undefined,
-          metadata: binding.metadata,
-        });
+        ensureSession(canonicalSessionId, boundAgentId);
+        useChatStore
+          .getState()
+          .bindExternalSession(
+            canonicalSessionId,
+            buildContinueBindingPayload(boundAgentId, binding),
+          );
         if (canonicalSessionId !== sessionId) {
-          router.replace(buildChatRoute(activeAgentId, canonicalSessionId));
+          router.replace(buildChatRoute(boundAgentId, canonicalSessionId));
         }
       })
       .catch((error) => {
