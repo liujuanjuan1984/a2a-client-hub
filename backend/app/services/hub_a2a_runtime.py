@@ -13,6 +13,7 @@ from app.core.secret_vault import SecretVaultNotConfiguredError, hub_a2a_secret_
 from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
 from app.integrations.a2a_client.service import ResolvedAgent
 from app.services.hub_a2a_agents import HubA2AAgentNotFoundError, hub_a2a_agent_service
+from app.utils.auth_headers import build_auth_header_pair
 
 
 class HubA2ARuntimeError(RuntimeError):
@@ -70,14 +71,12 @@ class HubA2ARuntimeBuilder:
             except SecretVaultNotConfiguredError as exc:
                 raise HubA2ARuntimeValidationError(str(exc)) from exc
 
-            header_name = (
-                agent.auth_header or "Authorization"
-            ).strip() or "Authorization"
-            scheme = (agent.auth_scheme or "Bearer").strip()
-            if scheme:
-                headers[header_name] = f"{scheme} {decrypted.value}"
-            else:
-                headers[header_name] = decrypted.value
+            header_name, header_value = build_auth_header_pair(
+                auth_header=agent.auth_header,
+                auth_scheme=agent.auth_scheme,
+                token=decrypted.value,
+            )
+            headers[header_name] = header_value
         elif agent.auth_type == "none":
             pass
         else:

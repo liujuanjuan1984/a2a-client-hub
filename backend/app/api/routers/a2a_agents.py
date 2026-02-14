@@ -51,6 +51,7 @@ from app.services.a2a_runtime import (
 from app.services.invoke_route_runner import run_http_invoke, run_ws_invoke_route
 from app.services.invoke_session_binding import status_code_for_invoke_session_error
 from app.services.ws_ticket_service import ws_ticket_service
+from app.utils.auth_headers import build_auth_header_pair
 from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
@@ -114,11 +115,12 @@ def _build_proxy_headers(payload: A2AAgentCardProxyRequest) -> dict[str, str]:
         token = (payload.token or "").strip()
         if not token:
             raise HTTPException(status_code=400, detail="Bearer token is required")
-        header_name = (
-            payload.auth_header or "Authorization"
-        ).strip() or "Authorization"
-        scheme = (payload.auth_scheme or "Bearer").strip()
-        headers[header_name] = f"{scheme} {token}" if scheme else token
+        header_name, header_value = build_auth_header_pair(
+            auth_header=payload.auth_header,
+            auth_scheme=payload.auth_scheme,
+            token=token,
+        )
+        headers[header_name] = header_value
     elif payload.auth_type != "none":
         raise HTTPException(status_code=400, detail="Unsupported auth_type")
     return headers

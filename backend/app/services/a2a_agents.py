@@ -15,6 +15,7 @@ from app.core.secret_vault import SecretVaultNotConfiguredError, user_llm_secret
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.transaction import commit_safely
+from app.utils.auth_headers import resolve_stored_auth_fields
 
 ALLOWED_AUTH_TYPES = {"none", "bearer"}
 
@@ -365,18 +366,12 @@ class A2AAgentService:
         if auth_type != "bearer":
             raise A2AAgentValidationError("Unsupported auth_type")
 
-        header_value = (
-            (auth_header if auth_header is not None else None)
-            or (existing.auth_header if existing else None)
-            or "Authorization"
+        normalized_header, normalized_scheme = resolve_stored_auth_fields(
+            auth_header=auth_header,
+            auth_scheme=auth_scheme,
+            existing_auth_header=existing.auth_header if existing else None,
+            existing_auth_scheme=existing.auth_scheme if existing else None,
         )
-        scheme_value = (
-            (auth_scheme if auth_scheme is not None else None)
-            or (existing.auth_scheme if existing else None)
-            or "Bearer"
-        )
-        normalized_header = header_value.strip() or "Authorization"
-        normalized_scheme = scheme_value.strip() or "Bearer"
 
         return normalized_header, normalized_scheme
 

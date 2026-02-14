@@ -15,6 +15,7 @@ from app.core.secret_vault import SecretVaultNotConfiguredError, user_llm_secret
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.integrations.a2a_client.service import ResolvedAgent
+from app.utils.auth_headers import build_auth_header_pair
 
 
 class A2ARuntimeError(RuntimeError):
@@ -66,14 +67,12 @@ class A2ARuntimeBuilder:
             except SecretVaultNotConfiguredError as exc:
                 raise A2ARuntimeValidationError(str(exc)) from exc
 
-            header_name = (
-                agent.auth_header or "Authorization"
-            ).strip() or "Authorization"
-            scheme = (agent.auth_scheme or "Bearer").strip()
-            if scheme:
-                headers[header_name] = f"{scheme} {decrypted.value}"
-            else:
-                headers[header_name] = decrypted.value
+            header_name, header_value = build_auth_header_pair(
+                auth_header=agent.auth_header,
+                auth_scheme=agent.auth_scheme,
+                token=decrypted.value,
+            )
+            headers[header_name] = header_value
             token_last4 = decrypted.last4 or credential.token_last4
         elif agent.auth_type == "none":
             pass

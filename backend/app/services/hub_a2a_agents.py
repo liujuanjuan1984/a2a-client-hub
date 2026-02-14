@@ -15,6 +15,7 @@ from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
 from app.db.models.user import User
 from app.db.transaction import commit_safely
+from app.utils.auth_headers import resolve_stored_auth_fields
 
 ALLOWED_AUTH_TYPES = {"none", "bearer"}
 ALLOWED_AVAILABILITY_POLICIES = {"public", "allowlist"}
@@ -523,18 +524,12 @@ class HubA2AAgentService:
         if auth_type != "bearer":
             raise HubA2AAgentValidationError("Unsupported auth_type")
 
-        header_value = (
-            (auth_header if auth_header is not None else None)
-            or (existing.auth_header if existing else None)
-            or "Authorization"
+        normalized_header, normalized_scheme = resolve_stored_auth_fields(
+            auth_header=auth_header,
+            auth_scheme=auth_scheme,
+            existing_auth_header=existing.auth_header if existing else None,
+            existing_auth_scheme=existing.auth_scheme if existing else None,
         )
-        scheme_value = (
-            (auth_scheme if auth_scheme is not None else None)
-            or (existing.auth_scheme if existing else None)
-            or "Bearer"
-        )
-        normalized_header = header_value.strip() or "Authorization"
-        normalized_scheme = scheme_value.strip() or "Bearer"
         return normalized_header, normalized_scheme
 
     def _normalize_tags(self, value: Optional[Iterable[str]]) -> List[str]:
