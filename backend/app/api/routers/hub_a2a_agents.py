@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from uuid import UUID
 
 from fastapi import (
@@ -21,7 +20,6 @@ from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_hub
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
-from app.db.transaction import commit_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.errors import (
@@ -44,13 +42,11 @@ from app.services.hub_a2a_runtime import (
     HubA2ARuntimeValidationError,
     hub_a2a_runtime_builder,
 )
+from app.services.invoke_route_runner import run_http_invoke, run_ws_invoke
 from app.services.invoke_session_binding import (
-    merge_invoke_binding_state,
-    normalize_invoke_binding_state,
     status_code_for_invoke_session_error,
     ws_error_code_for_invoke_session_error,
 )
-from app.services.session_hub import session_hub_service
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.logging_redaction import redact_url_for_logging
 
@@ -166,164 +162,28 @@ async def invoke_hub_agent(
             "query_meta": summarize_query(payload.query),
         },
     )
-    (
-        local_session,
-        local_source,
-    ) = (None, None)
     try:
-        (
-            local_session,
-            local_source,
-        ) = await session_hub_service.ensure_local_session_for_invoke(
-            db,
+        return await run_http_invoke(
+            db=db,
+            gateway=get_a2a_service().gateway,
+            runtime=runtime,
             user_id=current_user.id,
             agent_id=agent_id,
             agent_source="shared",
-            session_key=payload.session_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status_code_for_invoke_session_error(str(exc)),
-            detail=str(exc),
-        ) from exc
-
-    (
-        resolved_context_id,
-        resolved_invoke_metadata,
-    ) = normalize_invoke_binding_state(
-        context_id=payload.context_id,
-        metadata=payload.metadata,
-    )
-
-    if stream:
-
-        async def _on_event(event_payload: dict[str, Any]) -> None:
-            nonlocal resolved_context_id, resolved_invoke_metadata
-            (
-                event_context_id,
-                event_metadata,
-            ) = a2a_invoke_service.extract_binding_hints_from_serialized_event(
-                event_payload
-            )
-            (
-                resolved_context_id,
-                resolved_invoke_metadata,
-            ) = merge_invoke_binding_state(
-                current_context_id=resolved_context_id,
-                current_metadata=resolved_invoke_metadata,
-                next_context_id=event_context_id,
-                next_metadata=event_metadata,
-            )
-
-        async def _on_complete(stream_text: str) -> None:
-            if local_session is None or local_source is None:
-                return
-            await session_hub_service.record_local_invoke_messages(
-                db,
-                session=local_session,
-                source=local_source,
-                user_id=current_user.id,
-                agent_id=agent_id,
-                agent_source="shared",
-                query=payload.query,
-                response_content=stream_text or "",
-                success=True,
-                context_id=resolved_context_id,
-                invoke_metadata=resolved_invoke_metadata,
-                extra_metadata={"transport": "http_sse", "stream": True},
-            )
-            await commit_safely(db)
-
-        async def _on_error(error_message: str) -> None:
-            if local_session is None or local_source is None:
-                return
-            await session_hub_service.record_local_invoke_messages(
-                db,
-                session=local_session,
-                source=local_source,
-                user_id=current_user.id,
-                agent_id=agent_id,
-                agent_source="shared",
-                query=payload.query,
-                response_content=error_message,
-                success=False,
-                context_id=resolved_context_id,
-                invoke_metadata=resolved_invoke_metadata,
-                extra_metadata={"transport": "http_sse", "stream": True},
-            )
-            await commit_safely(db)
-
-        return a2a_invoke_service.stream_sse(
-            gateway=get_a2a_service().gateway,
-            resolved=runtime.resolved,
-            query=payload.query,
-            context_id=payload.context_id,
-            metadata=payload.metadata,
+            payload=payload,
+            stream=stream,
             validate_message=validate_message,
             logger=logger,
             log_extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
             },
-            on_complete=_on_complete,
-            on_error=_on_error,
-            on_event=_on_event,
         )
-
-    result = await get_a2a_service().gateway.invoke(
-        resolved=runtime.resolved,
-        query=payload.query,
-        context_id=payload.context_id,
-        metadata=payload.metadata,
-    )
-    if local_session is not None and local_source is not None:
-        (
-            result_context_id,
-            result_metadata,
-        ) = a2a_invoke_service.extract_binding_hints_from_invoke_result(result)
-        (
-            resolved_context_id,
-            resolved_invoke_metadata,
-        ) = merge_invoke_binding_state(
-            current_context_id=resolved_context_id,
-            current_metadata=resolved_invoke_metadata,
-            next_context_id=result_context_id,
-            next_metadata=result_metadata,
-        )
-        success = bool(result.get("success"))
-        response_content = (
-            result.get("content")
-            if success
-            else (result.get("error") or "A2A invocation failed")
-        ) or ""
-        await session_hub_service.record_local_invoke_messages(
-            db,
-            session=local_session,
-            source=local_source,
-            user_id=current_user.id,
-            agent_id=agent_id,
-            agent_source="shared",
-            query=payload.query,
-            response_content=response_content,
-            success=success,
-            context_id=resolved_context_id,
-            invoke_metadata=resolved_invoke_metadata,
-            extra_metadata={
-                "transport": "http_json",
-                "stream": False,
-                "error_code": result.get("error_code"),
-            },
-        )
-        await commit_safely(db)
-
-    return A2AAgentInvokeResponse(
-        success=bool(result.get("success")),
-        content=result.get("content"),
-        error=result.get("error"),
-        error_code=result.get("error_code"),
-        agent_name=runtime.resolved.name,
-        agent_url=runtime.resolved.url,
-    )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status_code_for_invoke_session_error(str(exc)),
+            detail=str(exc),
+        ) from exc
 
 
 @router.post(
@@ -426,20 +286,22 @@ async def invoke_hub_agent_ws(
             },
         )
 
-        (
-            local_session,
-            local_source,
-        ) = (None, None)
         try:
-            (
-                local_session,
-                local_source,
-            ) = await session_hub_service.ensure_local_session_for_invoke(
-                db,
+            await run_ws_invoke(
+                websocket=websocket,
+                db=db,
+                gateway=get_a2a_service().gateway,
+                runtime=runtime,
                 user_id=current_user.id,
                 agent_id=agent_id,
                 agent_source="shared",
-                session_key=payload.session_id,
+                payload=payload,
+                validate_message=validate_message,
+                logger=logger,
+                log_extra={
+                    "user_id": str(current_user.id),
+                    "agent_id": str(agent_id),
+                },
             )
         except ValueError as exc:
             await a2a_invoke_service.send_ws_error(
@@ -449,88 +311,6 @@ async def invoke_hub_agent_ws(
             )
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-
-        (
-            resolved_context_id,
-            resolved_invoke_metadata,
-        ) = normalize_invoke_binding_state(
-            context_id=payload.context_id,
-            metadata=payload.metadata,
-        )
-
-        async def _on_event(event_payload: dict[str, Any]) -> None:
-            nonlocal resolved_context_id, resolved_invoke_metadata
-            (
-                event_context_id,
-                event_metadata,
-            ) = a2a_invoke_service.extract_binding_hints_from_serialized_event(
-                event_payload
-            )
-            (
-                resolved_context_id,
-                resolved_invoke_metadata,
-            ) = merge_invoke_binding_state(
-                current_context_id=resolved_context_id,
-                current_metadata=resolved_invoke_metadata,
-                next_context_id=event_context_id,
-                next_metadata=event_metadata,
-            )
-
-        async def _on_complete(stream_text: str) -> None:
-            if local_session is None or local_source is None:
-                return
-            await session_hub_service.record_local_invoke_messages(
-                db,
-                session=local_session,
-                source=local_source,
-                user_id=current_user.id,
-                agent_id=agent_id,
-                agent_source="shared",
-                query=payload.query,
-                response_content=stream_text or "",
-                success=True,
-                context_id=resolved_context_id,
-                invoke_metadata=resolved_invoke_metadata,
-                extra_metadata={"transport": "ws", "stream": True},
-            )
-            await commit_safely(db)
-
-        async def _on_error(error_message: str) -> None:
-            if local_session is None or local_source is None:
-                return
-            await session_hub_service.record_local_invoke_messages(
-                db,
-                session=local_session,
-                source=local_source,
-                user_id=current_user.id,
-                agent_id=agent_id,
-                agent_source="shared",
-                query=payload.query,
-                response_content=error_message,
-                success=False,
-                context_id=resolved_context_id,
-                invoke_metadata=resolved_invoke_metadata,
-                extra_metadata={"transport": "ws", "stream": True},
-            )
-            await commit_safely(db)
-
-        await a2a_invoke_service.stream_ws(
-            websocket=websocket,
-            gateway=get_a2a_service().gateway,
-            resolved=runtime.resolved,
-            query=payload.query,
-            context_id=payload.context_id,
-            metadata=payload.metadata,
-            validate_message=validate_message,
-            logger=logger,
-            log_extra={
-                "user_id": str(current_user.id),
-                "agent_id": str(agent_id),
-            },
-            on_complete=_on_complete,
-            on_error=_on_error,
-            on_event=_on_event,
-        )
 
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected", extra={"user_id": str(current_user.id)})
