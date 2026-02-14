@@ -163,6 +163,7 @@ async def get_ws_ticket_user(
             db,
             user_id=consumed.user_id,
         )
+        websocket.state.selected_subprotocol = ticket
         set_user_context(str(user.id))
         return user
     except auth_handler.UserNotFoundError as exc:

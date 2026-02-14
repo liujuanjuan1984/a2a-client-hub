@@ -299,7 +299,8 @@ async def run_ws_invoke_route(
     invoke_log_extra_builder: Callable[[A2AAgentInvokeRequest, Any], dict[str, Any]],
     unexpected_log_message: str,
 ) -> None:
-    await websocket.accept()
+    selected_subprotocol = getattr(websocket.state, "selected_subprotocol", None)
+    await websocket.accept(subprotocol=selected_subprotocol)
 
     try:
         data = await websocket.receive_json()
