@@ -37,6 +37,29 @@ import { useChatStore } from "@/store/chat";
 import { useMessageStore } from "@/store/messages";
 import { useShortcutStore } from "@/store/shortcuts";
 
+const isSameBlockList = (
+  left: MessageBlock[] = [],
+  right: MessageBlock[] = [],
+) => {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const lhs = left[index];
+    const rhs = right[index];
+    if (!lhs || !rhs) return false;
+    if (
+      lhs.id !== rhs.id ||
+      lhs.type !== rhs.type ||
+      lhs.content !== rhs.content ||
+      lhs.isFinished !== rhs.isFinished ||
+      lhs.createdAt !== rhs.createdAt ||
+      lhs.updatedAt !== rhs.updatedAt
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
 type WebTextInputKeyPressEvent =
   NativeSyntheticEvent<TextInputKeyPressEventData> & {
     nativeEvent: TextInputKeyPressEventData & {
@@ -56,8 +79,7 @@ const isSameMessageList = (left: ChatMessage[], right: ChatMessage[]) => {
       message.role === next.role &&
       message.content === next.content &&
       message.createdAt === next.createdAt &&
-      JSON.stringify(message.blocks ?? []) ===
-        JSON.stringify(next.blocks ?? []) &&
+      isSameBlockList(message.blocks, next.blocks) &&
       message.status === next.status
     );
   });
@@ -87,17 +109,6 @@ const isSemanticallyDuplicatedWithRemote = (
   const remoteTs = toEpochMs(remoteMessage.createdAt);
   if (!Number.isFinite(localTs) || !Number.isFinite(remoteTs)) return false;
   return Math.abs(localTs - remoteTs) <= 30_000;
-};
-
-const extractStreamErrorTail = (content: string): string | null => {
-  const lines = content.split("\n");
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index]?.trim();
-    if (line && line.startsWith("[Stream Error:")) {
-      return line;
-    }
-  }
-  return null;
 };
 
 export function ChatScreen({
@@ -465,9 +476,6 @@ export function ChatScreen({
     ({ item: message }: { item: ChatMessage }) => {
       const renderableBlocks = deriveRenderableBlocks(message);
       const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
-      const streamErrorTail = hasBlocks
-        ? extractStreamErrorTail(message.content)
-        : null;
 
       return (
         <View
@@ -558,11 +566,6 @@ export function ChatScreen({
                 {message.content}
               </Text>
             )}
-            {streamErrorTail ? (
-              <Text className="mt-2 break-all text-xs text-rose-300">
-                {streamErrorTail}
-              </Text>
-            ) : null}
             {message.status === "streaming" ? (
               <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
             ) : null}

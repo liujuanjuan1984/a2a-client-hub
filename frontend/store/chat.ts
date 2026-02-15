@@ -397,7 +397,6 @@ export const useChatStore = create<ChatState>()(
               const finalizedBlocks =
                 finalizeMessageBlocks(message.blocks) ?? [];
               return {
-                content: `${message.content}\n[Stream Error: ${errorText}]`,
                 blocks: [
                   ...finalizedBlocks,
                   {
