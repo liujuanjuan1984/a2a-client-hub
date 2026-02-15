@@ -72,11 +72,12 @@ export function AgentListScreen() {
   const handleChat = (agentId: string) => {
     setActiveAgent(agentId);
     const chatStore = useChatStore.getState();
-    const latestSessionId = chatStore.getLatestSessionIdByAgentId(agentId);
+    const latestSessionId = chatStore.getLatestConversationIdByAgentId(agentId);
 
-    const sessionId = latestSessionId ?? chatStore.generateSessionId();
+    const conversationId =
+      latestSessionId ?? chatStore.generateConversationId();
     blurActiveElement();
-    router.push(buildChatRoute(agentId, sessionId));
+    router.push(buildChatRoute(agentId, conversationId));
   };
 
   const handleTest = async (agentId: string) => {

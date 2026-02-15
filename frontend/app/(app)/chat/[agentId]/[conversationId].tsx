@@ -8,5 +8,5 @@ export default function ChatSession() {
     conversationId: string;
   }>();
 
-  return <ChatScreen agentId={agentId} sessionId={conversationId} />;
+  return <ChatScreen agentId={agentId} conversationId={conversationId} />;
 }

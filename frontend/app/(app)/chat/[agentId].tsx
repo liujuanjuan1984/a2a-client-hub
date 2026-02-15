@@ -4,7 +4,7 @@ import { useChatStore } from "@/store/chat";
 
 export default function ChatAgentRedirect() {
   const { agentId } = useLocalSearchParams<{ agentId: string }>();
-  const conversationId = useChatStore.getState().generateSessionId();
+  const conversationId = useChatStore.getState().generateConversationId();
 
   const href = {
     pathname: "/(app)/chat/[agentId]/[conversationId]",

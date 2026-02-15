@@ -88,10 +88,10 @@ const LIST_MAX_TO_RENDER_PER_BATCH = 20;
 
 export function ChatScreen({
   agentId: routeAgentId,
-  sessionId,
+  conversationId,
 }: {
   agentId?: string;
-  sessionId?: string;
+  conversationId?: string;
 }) {
   const router = useRouter();
   const insets = useAppSafeArea();
@@ -106,14 +106,16 @@ export function ChatScreen({
     [agents, activeAgentId],
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
-  const generateSessionId = useChatStore((state) => state.generateSessionId);
+  const generateConversationId = useChatStore(
+    (state) => state.generateConversationId,
+  );
   const sendMessage = useChatStore((state) => state.sendMessage);
   const session = useChatStore((state) =>
-    sessionId ? state.sessions[sessionId] : undefined,
+    conversationId ? state.sessions[conversationId] : undefined,
   );
   const setMessages = useMessageStore((state) => state.setMessages);
   const messages = useMessageStore((state) =>
-    sessionId ? (state.messages[sessionId] ?? []) : [],
+    conversationId ? (state.messages[conversationId] ?? []) : [],
   );
   const { shortcuts, addShortcut, removeShortcut } = useShortcutStore();
 
@@ -144,8 +146,8 @@ export function ChatScreen({
     session?.streamState === "rebinding";
 
   const sessionHistoryQuery = useSessionHistoryQuery({
-    conversationId: sessionId,
-    enabled: Boolean(sessionId),
+    conversationId,
+    enabled: Boolean(conversationId),
     paused: historyPaused,
   });
 
@@ -159,13 +161,13 @@ export function ChatScreen({
   const sessionSource = session?.source ?? null;
 
   useEffect(() => {
-    if (activeAgentId && sessionId) {
-      ensureSession(sessionId, activeAgentId);
+    if (activeAgentId && conversationId) {
+      ensureSession(conversationId, activeAgentId);
     }
-  }, [activeAgentId, sessionId, ensureSession]);
+  }, [activeAgentId, conversationId, ensureSession]);
 
   useEffect(() => {
-    if (!sessionId || !activeAgentId) return;
+    if (!conversationId || !activeAgentId) return;
     const boundAgentId = activeAgentId;
     const hasHistory =
       messages.length > 0 || sessionHistoryQuery.messages.length > 0;
@@ -174,10 +176,10 @@ export function ChatScreen({
     }
 
     let cancelled = false;
-    continueSession(sessionId)
+    continueSession(conversationId)
       .then((binding) => {
         if (cancelled) return;
-        const current = useChatStore.getState().sessions[sessionId];
+        const current = useChatStore.getState().sessions[conversationId];
         const hasLocalBinding =
           (typeof current?.contextId === "string" &&
             current.contextId.trim()) ||
@@ -187,11 +189,11 @@ export function ChatScreen({
         if (hasLocalBinding && !binding.contextId) {
           return;
         }
-        ensureSession(sessionId, boundAgentId);
+        ensureSession(conversationId, boundAgentId);
         useChatStore
           .getState()
           .bindExternalSession(
-            sessionId,
+            conversationId,
             buildContinueBindingPayload(boundAgentId, binding),
           );
       })
@@ -216,14 +218,14 @@ export function ChatScreen({
     ensureSession,
     messages.length,
     sessionHistoryQuery.messages.length,
-    sessionId,
+    conversationId,
     sessionSource,
   ]);
 
   const mergeHistoryMessages = useCallback(
     (incoming: ChatMessage[]) => {
-      if (!sessionId) return;
-      const current = useMessageStore.getState().messages[sessionId] ?? [];
+      if (!conversationId) return;
+      const current = useMessageStore.getState().messages[conversationId] ?? [];
       const merged = new Map<string, ChatMessage>();
       current.forEach((message) => {
         merged.set(message.id, message);
@@ -237,19 +239,19 @@ export function ChatScreen({
       if (isSameMessageList(current, nextMessages)) {
         return;
       }
-      setMessages(sessionId, nextMessages);
+      setMessages(conversationId, nextMessages);
     },
-    [sessionId, setMessages],
+    [conversationId, setMessages],
   );
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!conversationId) return;
     if (sessionHistoryQuery.messages.length === 0) return;
     mergeHistoryMessages(sessionHistoryQuery.messages);
-  }, [mergeHistoryMessages, sessionId, sessionHistoryQuery.messages]);
+  }, [mergeHistoryMessages, conversationId, sessionHistoryQuery.messages]);
 
   const loadEarlierHistory = useCallback(async () => {
-    if (!sessionId) return;
+    if (!conversationId) return;
     if (historyPaused) return;
     if (typeof historyNextPage !== "number") return;
     if (historyLoadingMore) return;
@@ -270,7 +272,7 @@ export function ChatScreen({
     historyNextPage,
     historyPaused,
     sessionHistoryQuery.loadMore,
-    sessionId,
+    conversationId,
   ]);
 
   useEffect(() => {
@@ -332,13 +334,13 @@ export function ChatScreen({
   }, [agent]);
 
   const handleSend = () => {
-    if (!activeAgentId || !sessionId || !agent) {
+    if (!activeAgentId || !conversationId || !agent) {
       return;
     }
     if (!input.trim()) {
       return;
     }
-    sendMessage(sessionId, activeAgentId, input, agent.source);
+    sendMessage(conversationId, activeAgentId, input, agent.source);
     setInput("");
     setInputHeight(minInputHeight);
   };
@@ -580,9 +582,9 @@ export function ChatScreen({
             <Pressable
               className="h-10 w-10 items-center justify-center rounded-full bg-primary"
               onPress={() => {
-                const nextSessionId = generateSessionId();
+                const nextConversationId = generateConversationId();
                 blurActiveElement();
-                router.replace(buildChatRoute(agent.id, nextSessionId));
+                router.replace(buildChatRoute(agent.id, nextConversationId));
               }}
               accessibilityRole="button"
               accessibilityLabel="Start new session"
@@ -628,10 +630,10 @@ export function ChatScreen({
             <View className="flex-row flex-wrap gap-4">
               <View className="flex-1 min-w-[45%]">
                 <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
-                  Session ID
+                  Conversation ID
                 </Text>
                 <Text className="mt-1 text-xs text-white" numberOfLines={1}>
-                  {sessionId ?? "N/A"}
+                  {conversationId ?? "N/A"}
                 </Text>
               </View>
               <View className="flex-1 min-w-[45%]">

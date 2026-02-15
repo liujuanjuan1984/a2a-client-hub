@@ -86,7 +86,7 @@ describe("useContinueSession", () => {
     expect(mockedContinueSession).not.toHaveBeenCalled();
     expect(mockedToast.error).toHaveBeenCalledWith(
       "Continue session failed",
-      "Missing session id.",
+      "Missing conversation id.",
     );
   });
 

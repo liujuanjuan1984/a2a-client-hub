@@ -78,7 +78,7 @@ const normalizeSessionMessageRole = (value: string): ChatRole => {
 
 export const mapSessionMessagesToChatMessages = (
   items: SessionMessageItem[],
-  sessionId: string,
+  conversationId: string,
 ): ChatMessage[] =>
   items
     .map((item, index) => {
@@ -86,7 +86,7 @@ export const mapSessionMessagesToChatMessages = (
       const messageId =
         typeof item.id === "string" && item.id
           ? item.id
-          : `${sessionId}-${item.created_at}-${index}`;
+          : `${conversationId}-${item.created_at}-${index}`;
       const metadataBlocks = parseMetadataBlocks(item.metadata);
       const blocks =
         role === "agent" && metadataBlocks.length === 0 && item.content

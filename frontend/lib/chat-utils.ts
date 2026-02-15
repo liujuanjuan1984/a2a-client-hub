@@ -136,8 +136,8 @@ export const buildPersistedSessions = (
   );
 
   return sorted.reduce<Record<string, AgentSession>>(
-    (acc, [sessionId, session]) => {
-      acc[sessionId] = normalizeSessionForPersistence(session);
+    (acc, [conversationId, session]) => {
+      acc[conversationId] = normalizeSessionForPersistence(session);
       return acc;
     },
     {},
@@ -146,43 +146,43 @@ export const buildPersistedSessions = (
 
 export const buildSessionCleanupPlan = (
   sessions: Record<string, AgentSession>,
-  messageSessionIds: string[],
+  messageConversationIds: string[],
   now: Date = new Date(),
   maxActiveSessions = CHAT_SESSION_MAX_ACTIVE,
 ) => {
   const deadline = new Date(now.getTime() - CHAT_SESSION_TTL_MS).toISOString();
   const nextSessions = { ...sessions };
-  const expiredSessionIds: string[] = [];
-  const trimmedSessionIds: string[] = [];
+  const expiredConversationIds: string[] = [];
+  const trimmedConversationIds: string[] = [];
 
-  Object.entries(sessions).forEach(([sessionId, session]) => {
+  Object.entries(sessions).forEach(([conversationId, session]) => {
     if (session.lastActiveAt < deadline) {
-      delete nextSessions[sessionId];
-      expiredSessionIds.push(sessionId);
+      delete nextSessions[conversationId];
+      expiredConversationIds.push(conversationId);
     }
   });
 
   const activeEntries = sortSessionsByLastActive(Object.entries(nextSessions));
   if (maxActiveSessions > 0 && activeEntries.length > maxActiveSessions) {
-    activeEntries.slice(maxActiveSessions).forEach(([sessionId]) => {
-      delete nextSessions[sessionId];
-      trimmedSessionIds.push(sessionId);
+    activeEntries.slice(maxActiveSessions).forEach(([conversationId]) => {
+      delete nextSessions[conversationId];
+      trimmedConversationIds.push(conversationId);
     });
   }
 
-  const orphanedMessageSessionIds = messageSessionIds.filter(
-    (sessionId) => !nextSessions[sessionId],
+  const orphanedMessageConversationIds = messageConversationIds.filter(
+    (conversationId) => !nextSessions[conversationId],
   );
   const changed =
-    expiredSessionIds.length > 0 ||
-    trimmedSessionIds.length > 0 ||
-    orphanedMessageSessionIds.length > 0;
+    expiredConversationIds.length > 0 ||
+    trimmedConversationIds.length > 0 ||
+    orphanedMessageConversationIds.length > 0;
 
   return {
     sessions: nextSessions,
-    expiredSessionIds,
-    trimmedSessionIds,
-    orphanedMessageSessionIds,
+    expiredConversationIds,
+    trimmedConversationIds,
+    orphanedMessageConversationIds,
     changed,
   };
 };

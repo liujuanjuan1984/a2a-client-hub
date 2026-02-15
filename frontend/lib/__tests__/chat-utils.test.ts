@@ -105,9 +105,12 @@ describe("chat store utils", () => {
 
     expect(plan.changed).toBe(true);
     expect(Object.keys(plan.sessions)).toEqual(["active"]);
-    expect(plan.expiredSessionIds).toEqual(["expired"]);
-    expect(plan.trimmedSessionIds).toEqual([]);
-    expect(plan.orphanedMessageSessionIds).toEqual(["expired", "orphan-only"]);
+    expect(plan.expiredConversationIds).toEqual(["expired"]);
+    expect(plan.trimmedConversationIds).toEqual([]);
+    expect(plan.orphanedMessageConversationIds).toEqual([
+      "expired",
+      "orphan-only",
+    ]);
   });
 
   it("trims oldest sessions when active session cap is reached", () => {
@@ -126,7 +129,7 @@ describe("chat store utils", () => {
     );
 
     expect(Object.keys(plan.sessions).sort()).toEqual(["middle", "newest"]);
-    expect(plan.trimmedSessionIds).toEqual(["oldest"]);
+    expect(plan.trimmedConversationIds).toEqual(["oldest"]);
   });
 
   it("builds bounded persisted sessions and resets volatile fields", () => {

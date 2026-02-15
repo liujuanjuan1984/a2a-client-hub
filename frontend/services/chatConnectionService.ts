@@ -82,7 +82,7 @@ type StreamCallbacks = {
 };
 
 type TransportParams = {
-  sessionId: string;
+  conversationId: string;
   agentId: string;
   source: AgentSource;
   payload: A2AAgentInvokeRequest;
@@ -118,14 +118,14 @@ export class ChatConnectionService {
     return "http_json";
   }
 
-  cancelSession(sessionId: string) {
-    const controller = this.abortControllers.get(sessionId);
+  cancelSession(conversationId: string) {
+    const controller = this.abortControllers.get(conversationId);
     if (controller) {
       controller.abort();
-      this.abortControllers.delete(sessionId);
+      this.abortControllers.delete(conversationId);
     }
 
-    const ws = this.wsConnections.get(sessionId);
+    const ws = this.wsConnections.get(conversationId);
     if (ws) {
       ws.__cancelled = true;
       try {
@@ -133,7 +133,7 @@ export class ChatConnectionService {
       } catch {
         // Ignore close errors.
       }
-      this.wsConnections.delete(sessionId);
+      this.wsConnections.delete(conversationId);
     }
   }
 
@@ -158,7 +158,7 @@ export class ChatConnectionService {
   }
 
   async tryWebSocketTransport({
-    sessionId,
+    conversationId,
     agentId,
     source,
     payload,
@@ -187,7 +187,7 @@ export class ChatConnectionService {
         let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
         const ws = new WebSocketCtor(wsUrl, [ticket.token]);
-        this.wsConnections.set(sessionId, ws);
+        this.wsConnections.set(conversationId, ws);
 
         const cleanup = () => {
           if (connectTimer) {
@@ -198,7 +198,7 @@ export class ChatConnectionService {
             clearTimeout(idleTimer);
             idleTimer = null;
           }
-          this.wsConnections.delete(sessionId);
+          this.wsConnections.delete(conversationId);
         };
 
         const finalize = (mode: "resolve" | "reject", error?: Error) => {
@@ -318,7 +318,7 @@ export class ChatConnectionService {
   }
 
   async trySseTransport({
-    sessionId,
+    conversationId,
     agentId,
     source,
     payload,
@@ -329,7 +329,7 @@ export class ChatConnectionService {
     }
 
     const controller = new AbortController();
-    this.abortControllers.set(sessionId, controller);
+    this.abortControllers.set(conversationId, controller);
     let hasReceivedData = false;
 
     try {
@@ -369,7 +369,7 @@ export class ChatConnectionService {
       });
       return false;
     } finally {
-      this.abortControllers.delete(sessionId);
+      this.abortControllers.delete(conversationId);
     }
   }
 }

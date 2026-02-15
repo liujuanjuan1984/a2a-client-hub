@@ -111,7 +111,7 @@ describe("useChatHistoryQuery", () => {
     expect(options?.refetchOnReconnect).toBe(false);
   });
 
-  it("disables session history query when session id is missing", () => {
+  it("disables session history query when conversation id is missing", () => {
     mockedUsePaginatedList.mockReturnValue(createPaginatedResult([]));
 
     const { result } = renderHook(() =>

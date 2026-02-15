@@ -7,25 +7,25 @@ import { createPersistStorage } from "@/lib/storage/mmkv";
 
 type MessageState = {
   messages: Record<string, ChatMessage[]>;
-  setMessages: (sessionId: string, messages: ChatMessage[]) => void;
-  addMessage: (sessionId: string, message: ChatMessage) => void;
+  setMessages: (conversationId: string, messages: ChatMessage[]) => void;
+  addMessage: (conversationId: string, message: ChatMessage) => void;
   updateMessage: (
-    sessionId: string,
+    conversationId: string,
     messageId: string,
     payload: Partial<ChatMessage>,
   ) => void;
   updateMessageWithUpdater: (
-    sessionId: string,
+    conversationId: string,
     messageId: string,
     updater: (message: ChatMessage) => Partial<ChatMessage>,
   ) => void;
   rekeyMessage: (
-    sessionId: string,
+    conversationId: string,
     fromMessageId: string,
     toMessageId: string,
   ) => void;
-  removeMessages: (sessionId: string) => void;
-  pruneMessages: (sessionId: string, limit: number) => void;
+  removeMessages: (conversationId: string) => void;
+  pruneMessages: (conversationId: string, limit: number) => void;
   clearAll: () => void;
 };
 
@@ -33,46 +33,46 @@ export const useMessageStore = create<MessageState>()(
   persist(
     (set) => ({
       messages: {},
-      setMessages: (sessionId, messages) => {
+      setMessages: (conversationId, messages) => {
         set((state) => ({
           messages: {
             ...state.messages,
-            [sessionId]: messages,
+            [conversationId]: messages,
           },
         }));
       },
-      addMessage: (sessionId, message) => {
+      addMessage: (conversationId, message) => {
         set((state) => {
-          const current = state.messages[sessionId] || [];
+          const current = state.messages[conversationId] || [];
           const next = [...current, message];
           return {
             messages: {
               ...state.messages,
-              [sessionId]: next.slice(-CHAT_MESSAGE_HISTORY_LIMIT),
+              [conversationId]: next.slice(-CHAT_MESSAGE_HISTORY_LIMIT),
             },
           };
         });
       },
-      updateMessage: (sessionId, messageId, payload) => {
+      updateMessage: (conversationId, messageId, payload) => {
         set((state) => {
-          const current = state.messages[sessionId] || [];
+          const current = state.messages[conversationId] || [];
           return {
             messages: {
               ...state.messages,
-              [sessionId]: current.map((m) =>
+              [conversationId]: current.map((m) =>
                 m.id === messageId ? { ...m, ...payload } : m,
               ),
             },
           };
         });
       },
-      updateMessageWithUpdater: (sessionId, messageId, updater) => {
+      updateMessageWithUpdater: (conversationId, messageId, updater) => {
         set((state) => {
-          const current = state.messages[sessionId] || [];
+          const current = state.messages[conversationId] || [];
           return {
             messages: {
               ...state.messages,
-              [sessionId]: current.map((message) =>
+              [conversationId]: current.map((message) =>
                 message.id === messageId
                   ? { ...message, ...updater(message) }
                   : message,
@@ -81,13 +81,13 @@ export const useMessageStore = create<MessageState>()(
           };
         });
       },
-      rekeyMessage: (sessionId, fromMessageId, toMessageId) => {
+      rekeyMessage: (conversationId, fromMessageId, toMessageId) => {
         const fromId = fromMessageId.trim();
         const toId = toMessageId.trim();
         if (!fromId || !toId || fromId === toId) return;
 
         set((state) => {
-          const current = state.messages[sessionId] || [];
+          const current = state.messages[conversationId] || [];
           if (!current.some((message) => message.id === fromId)) {
             return state;
           }
@@ -104,26 +104,26 @@ export const useMessageStore = create<MessageState>()(
           return {
             messages: {
               ...state.messages,
-              [sessionId]: next,
+              [conversationId]: next,
             },
           };
         });
       },
-      removeMessages: (sessionId) => {
+      removeMessages: (conversationId) => {
         set((state) => {
           const next = { ...state.messages };
-          delete next[sessionId];
+          delete next[conversationId];
           return { messages: next };
         });
       },
-      pruneMessages: (sessionId, limit) => {
+      pruneMessages: (conversationId, limit) => {
         set((state) => {
-          const current = state.messages[sessionId] || [];
+          const current = state.messages[conversationId] || [];
           if (current.length <= limit) return state;
           return {
             messages: {
               ...state.messages,
-              [sessionId]: current.slice(-limit),
+              [conversationId]: current.slice(-limit),
             },
           };
         });

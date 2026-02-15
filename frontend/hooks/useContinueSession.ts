@@ -24,7 +24,7 @@ export const useContinueSession = () => {
     async ({ agentId, conversationId }: ContinueSessionInput) => {
       const normalizedConversationId = conversationId.trim();
       if (!normalizedConversationId) {
-        toast.error("Continue session failed", "Missing session id.");
+        toast.error("Continue session failed", "Missing conversation id.");
         return false;
       }
 
