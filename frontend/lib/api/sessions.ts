@@ -29,7 +29,6 @@ export type SessionContinueBinding = {
   provider?: string | null;
   externalSessionId?: string | null;
   contextId?: string | null;
-  bindingMetadata?: Record<string, unknown> | null;
   metadata: Record<string, unknown>;
 };
 
@@ -131,10 +130,6 @@ export const continueSession = async (
       typeof response.contextId === "string" && response.contextId.trim()
         ? response.contextId.trim()
         : null,
-    bindingMetadata:
-      response.bindingMetadata && typeof response.bindingMetadata === "object"
-        ? response.bindingMetadata
-        : {},
     metadata:
       response.metadata && typeof response.metadata === "object"
         ? response.metadata

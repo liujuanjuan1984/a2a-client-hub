@@ -796,16 +796,21 @@ class SessionHubService:
                 conversation_id=conversation_id,
             )
             pages = (total + size - 1) // size if size else 0
-            items = [
-                {
-                    "id": str(message.id),
-                    "role": _sender_to_role(getattr(message, "sender", "")),
-                    "content": message.content or "",
-                    "created_at": message.created_at,
-                    "metadata": dict(getattr(message, "message_metadata", None) or {}),
-                }
-                for message in messages
-            ]
+            items: list[dict[str, Any]] = []
+            for message in messages:
+                message_metadata = dict(
+                    getattr(message, "message_metadata", None) or {}
+                )
+                message_metadata.setdefault("local_message_id", str(message.id))
+                items.append(
+                    {
+                        "id": _resolve_local_message_item_id(message, message_metadata),
+                        "role": _sender_to_role(getattr(message, "sender", "")),
+                        "content": message.content or "",
+                        "created_at": message.created_at,
+                        "metadata": message_metadata,
+                    }
+                )
             meta = {
                 "session_id": session_key,
                 "conversationId": str(conversation_id) if conversation_id else None,
@@ -914,7 +919,6 @@ class SessionHubService:
                         provider=None,
                         external_session_id=None,
                         context_id=None,
-                        binding_metadata={},
                         metadata={},
                     ),
                     False,
@@ -961,11 +965,6 @@ class SessionHubService:
                 payload,
                 include_session_id_aliases=True,
             )
-            binding_metadata = (
-                payload.get("bindingMetadata")
-                if isinstance(payload.get("bindingMetadata"), dict)
-                else metadata
-            )
             (
                 provider,
                 external_session_id,
@@ -978,6 +977,10 @@ class SessionHubService:
                 or external_session_id
                 or parsed.upstream_session_id
             )
+            continue_metadata = _build_continue_invoke_metadata(
+                provider=resolved_provider,
+                external_session_id=resolved_external_session_id,
+            )
             bind_result = (
                 await conversation_identity_service.bind_external_session_with_state(
                     db,
@@ -989,7 +992,10 @@ class SessionHubService:
                     external_session_id=resolved_external_session_id,
                     context_id=context_id if isinstance(context_id, str) else None,
                     title="Session",
-                    binding_metadata=binding_metadata,
+                    binding_metadata={
+                        "provider": resolved_provider,
+                        "external_session_id": resolved_external_session_id,
+                    },
                 )
             )
             return (
@@ -1002,8 +1008,7 @@ class SessionHubService:
                     provider=resolved_provider,
                     external_session_id=resolved_external_session_id,
                     context_id=context_id if isinstance(context_id, str) else None,
-                    binding_metadata=binding_metadata,
-                    metadata=metadata,
+                    metadata=continue_metadata,
                 ),
                 bind_result.mutated,
             )
@@ -1027,7 +1032,6 @@ class SessionHubService:
                     provider=None,
                     external_session_id=None,
                     context_id=None,
-                    binding_metadata={},
                     metadata={},
                 ),
                 False,
@@ -1138,6 +1142,10 @@ class SessionHubService:
             db_mutated = db_mutated or updated > 0
         resolved_provider = normalize_provider(provider)
         resolved_external_session_id = normalize_non_empty_text(external_session_id)
+        continue_metadata = _build_continue_invoke_metadata(
+            provider=resolved_provider,
+            external_session_id=resolved_external_session_id,
+        )
         response_session_id = (
             build_conversation_session_key(conversation_id)
             if conversation_id
@@ -1155,8 +1163,7 @@ class SessionHubService:
                 provider=resolved_provider,
                 external_session_id=resolved_external_session_id,
                 context_id=context_id if isinstance(context_id, str) else None,
-                binding_metadata=metadata,
-                metadata=metadata,
+                metadata=continue_metadata,
             ),
             db_mutated,
         )
@@ -1258,6 +1265,8 @@ class SessionHubService:
         response_content: str,
         success: bool,
         context_id: Optional[str],
+        user_message_id: Optional[str] = None,
+        client_agent_message_id: Optional[str] = None,
         invoke_metadata: Optional[Dict[str, Any]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
         response_metadata: Optional[Dict[str, Any]] = None,
@@ -1280,6 +1289,12 @@ class SessionHubService:
             metadata["external_session_id"] = external_session_id
         if extra_metadata:
             metadata.update(extra_metadata)
+        normalized_user_message_id = normalize_non_empty_text(user_message_id)
+        normalized_client_agent_message_id = normalize_non_empty_text(
+            client_agent_message_id
+        )
+        if normalized_user_message_id:
+            metadata["client_message_id"] = normalized_user_message_id
 
         conversation_id: UUID | None = None
         if source == "manual":
@@ -1340,6 +1355,8 @@ class SessionHubService:
             metadata=metadata,
         )
         agent_metadata = dict(metadata)
+        if normalized_client_agent_message_id:
+            agent_metadata["client_message_id"] = normalized_client_agent_message_id
         if response_metadata:
             for key, value in response_metadata.items():
                 if (
@@ -1584,7 +1601,6 @@ def _build_continue_response(
     provider: Optional[str],
     external_session_id: Optional[str],
     context_id: Optional[str],
-    binding_metadata: dict[str, Any],
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
     return {
@@ -1594,9 +1610,23 @@ def _build_continue_response(
         "provider": provider,
         "externalSessionId": external_session_id,
         "contextId": context_id,
-        "bindingMetadata": binding_metadata,
         "metadata": metadata,
     }
+
+
+def _build_continue_invoke_metadata(
+    *,
+    provider: str | None,
+    external_session_id: str | None,
+) -> dict[str, Any]:
+    if normalize_provider(provider) == "opencode" and isinstance(
+        external_session_id, str
+    ):
+        normalized = external_session_id.strip()
+        if normalized:
+            # Upstream opencode-a2a-serve contract requires this key explicitly.
+            return {"opencode_session_id": normalized}
+    return {}
 
 
 def _sender_to_role(sender: str) -> str:
@@ -1606,6 +1636,30 @@ def _sender_to_role(sender: str) -> str:
     if normalized == "agent":
         return "agent"
     return "system"
+
+
+def _resolve_local_message_item_id(
+    message: AgentMessage, metadata: dict[str, Any]
+) -> str:
+    role = _sender_to_role(getattr(message, "sender", ""))
+    if role == "agent":
+        upstream_message_id = normalize_non_empty_text(
+            metadata.get("upstream_message_id")
+            or metadata.get("message_id")
+            or metadata.get("messageId")
+        )
+        if upstream_message_id:
+            return upstream_message_id
+    if role in {"user", "agent"}:
+        client_message_id = normalize_non_empty_text(
+            metadata.get("client_message_id")
+            or metadata.get("clientMessageId")
+            or metadata.get("request_message_id")
+            or metadata.get("requestMessageId")
+        )
+        if client_message_id:
+            return client_message_id
+    return str(message.id)
 
 
 def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:

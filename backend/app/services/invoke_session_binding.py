@@ -8,12 +8,16 @@ from typing import Any
 def status_code_for_invoke_session_error(detail: str) -> int:
     if detail == "session_not_found":
         return 404
+    if detail == "invoke_inflight":
+        return 409
     return 400
 
 
 def ws_error_code_for_invoke_session_error(detail: str) -> str:
     if detail == "session_not_found":
         return "session_not_found"
+    if detail == "invoke_inflight":
+        return "invoke_inflight"
     return "invalid_session_id"
 
 

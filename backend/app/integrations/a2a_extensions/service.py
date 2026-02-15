@@ -394,8 +394,8 @@ class A2AExtensionsService:
         This endpoint is intentionally conservative:
         - It validates the upstream session exists (best-effort) via the session
           query contract, returning stable error_code values on failure.
-        - It returns both `contextId` and `metadata` so upstream can bind using
-          either mechanism while the contract is being stabilized.
+        - It returns `metadata.opencode_session_id` as the strict invoke-time
+          binding key expected by opencode-a2a-serve.
         """
 
         resolved_session_id = (session_id or "").strip()
@@ -424,14 +424,8 @@ class A2AExtensionsService:
             result={
                 "contextId": resolved_session_id,
                 "provider": "opencode",
-                "externalSessionId": resolved_session_id,
-                "bindingMetadata": {
-                    "provider": "opencode",
-                    "external_session_id": resolved_session_id,
-                },
                 "metadata": {
-                    "provider": "opencode",
-                    "externalSessionId": resolved_session_id,
+                    "opencode_session_id": resolved_session_id,
                 },
             },
             meta=meta,

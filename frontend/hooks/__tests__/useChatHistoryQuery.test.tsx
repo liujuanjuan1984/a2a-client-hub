@@ -53,10 +53,24 @@ describe("useChatHistoryQuery", () => {
         metadata:
           i === 0
             ? {
-                opencode_stream: {
-                  reasoning: "reasoning-0",
-                  tool_call: "tool-0",
-                },
+                message_blocks: [
+                  {
+                    id: "blk-r",
+                    type: "reasoning",
+                    content: "reasoning-0",
+                    is_finished: true,
+                    created_at: "2026-02-12T00:00:00.100Z",
+                    updated_at: "2026-02-12T00:00:00.200Z",
+                  },
+                  {
+                    id: "blk-t",
+                    type: "tool_call",
+                    content: "tool-0",
+                    is_finished: true,
+                    created_at: "2026-02-12T00:00:00.300Z",
+                    updated_at: "2026-02-12T00:00:00.400Z",
+                  },
+                ],
               }
             : undefined,
       };
@@ -76,8 +90,18 @@ describe("useChatHistoryQuery", () => {
       id: "msg-0",
       role: "agent",
       content: "content-0",
-      reasoningContent: "reasoning-0",
-      toolCallContent: "tool-0",
+      blocks: [
+        expect.objectContaining({
+          id: "blk-r",
+          type: "reasoning",
+          content: "reasoning-0",
+        }),
+        expect.objectContaining({
+          id: "blk-t",
+          type: "tool_call",
+          content: "tool-0",
+        }),
+      ],
     });
 
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];

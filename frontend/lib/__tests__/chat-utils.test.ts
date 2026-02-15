@@ -24,7 +24,6 @@ describe("chat store utils", () => {
         provider: "opencode",
         externalSessionId: "ext-1",
         contextId: "ctx-1",
-        bindingMetadata: { a: 1 },
       },
       {
         externalSessionId: "ext-2",
@@ -35,7 +34,6 @@ describe("chat store utils", () => {
       provider: "opencode",
       externalSessionId: "ext-2",
       contextId: "ctx-1",
-      bindingMetadata: { a: 1 },
     });
   });
 
@@ -44,11 +42,36 @@ describe("chat store utils", () => {
     session.contextId = "ctx-2";
     session.metadata = { locale: "zh-CN" };
 
-    expect(buildInvokePayload("hello", session, "session-1")).toEqual({
+    expect(
+      buildInvokePayload("hello", session, "session-1", {
+        userMessageId: "user-msg-1",
+        clientAgentMessageId: "agent-msg-1",
+      }),
+    ).toEqual({
       query: "hello",
       sessionId: "session-1",
       contextId: "ctx-2",
+      userMessageId: "user-msg-1",
+      clientAgentMessageId: "agent-msg-1",
       metadata: { locale: "zh-CN" },
+    });
+  });
+
+  it("always injects opencode_session_id for opencode-bound sessions", () => {
+    const session = createAgentSession("agent-3");
+    session.metadata = { locale: "zh-CN" };
+    session.externalSessionRef = {
+      provider: "opencode",
+      externalSessionId: "ses-upstream-1",
+    };
+
+    expect(buildInvokePayload("hello", session, "conversation:abc")).toEqual({
+      query: "hello",
+      sessionId: "conversation:abc",
+      metadata: {
+        locale: "zh-CN",
+        opencode_session_id: "ses-upstream-1",
+      },
     });
   });
 

@@ -28,8 +28,7 @@ export function useSessionHistoryQuery(options: {
   const query = usePaginatedList<SessionMessageItem>({
     queryKey: queryKeys.history.chat(sessionId ?? "missing"),
     fetchPage,
-    getKey: (item) =>
-      `${item.id ?? "no-id"}:${item.created_at}:${item.role}:${item.content}`,
+    getKey: (item) => item.id ?? `${item.created_at}:${item.role}`,
     errorTitle: "Load history failed",
     fallbackMessage: "Load failed.",
     enabled: enabled && Boolean(sessionId) && !paused,

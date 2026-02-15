@@ -93,9 +93,6 @@ class SessionContinueResponse(BaseModel):
     context_id: Optional[str] = Field(default=None, alias="contextId")
     provider: Optional[str] = None
     external_session_id: Optional[str] = Field(default=None, alias="externalSessionId")
-    binding_metadata: Dict[str, Any] = Field(
-        default_factory=dict, alias="bindingMetadata"
-    )
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}

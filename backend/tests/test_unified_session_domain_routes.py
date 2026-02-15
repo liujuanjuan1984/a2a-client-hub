@@ -196,7 +196,7 @@ async def test_unified_manual_continue_returns_empty_binding_for_new_session(
         assert payload["contextId"] is None
 
 
-async def test_record_local_invoke_messages_persists_opencode_stream_only_on_agent_message(
+async def test_record_local_invoke_messages_persists_message_blocks_only_on_agent_message(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -230,10 +230,10 @@ async def test_record_local_invoke_messages_persists_opencode_stream_only_on_age
         },
         extra_metadata={"transport": "ws", "stream": True},
         response_metadata={
-            "opencode_stream": {
-                "reasoning": "thinking",
-                "tool_call": "run_tool()",
-            }
+            "message_blocks": [
+                {"id": "block-1", "type": "reasoning", "content": "thinking"},
+                {"id": "block-2", "type": "tool_call", "content": "run_tool()"},
+            ]
         },
     )
     await async_db_session.commit()
@@ -249,11 +249,11 @@ async def test_record_local_invoke_messages_persists_opencode_stream_only_on_age
     assert len(messages) == 2
     user_message = next(msg for msg in messages if msg.sender == "user")
     agent_message = next(msg for msg in messages if msg.sender == "agent")
-    assert "opencode_stream" not in (user_message.message_metadata or {})
-    assert (agent_message.message_metadata or {}).get("opencode_stream") == {
-        "reasoning": "thinking",
-        "tool_call": "run_tool()",
-    }
+    assert "message_blocks" not in (user_message.message_metadata or {})
+    assert (agent_message.message_metadata or {}).get("message_blocks") == [
+        {"id": "block-1", "type": "reasoning", "content": "thinking"},
+        {"id": "block-2", "type": "tool_call", "content": "run_tool()"},
+    ]
 
 
 async def test_unified_opencode_continue_returns_400_for_invalid_session_key(
@@ -713,6 +713,9 @@ async def test_unified_manual_continue_returns_stable_conversation_session_key(
         assert payload["source"] == "manual"
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] == "upstream-canonical-continue-1"
+        assert payload["metadata"] == {
+            "opencode_session_id": "upstream-canonical-continue-1"
+        }
 
 
 async def test_unified_manual_continue_canonicalizes_opencode_namespace_metadata(
@@ -770,6 +773,9 @@ async def test_unified_manual_continue_canonicalizes_opencode_namespace_metadata
         assert payload["source"] == "manual"
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] == "upstream-canonical-namespace-1"
+        assert payload["metadata"] == {
+            "opencode_session_id": "upstream-canonical-namespace-1"
+        }
 
 
 async def test_unified_session_list_uses_local_session_binding_when_metadata_missing(
@@ -1148,3 +1154,125 @@ async def test_unified_conversation_messages_query_prefers_local_history(
             "round-2-user",
             "round-2-agent",
         }
+
+
+async def test_unified_messages_query_prefers_upstream_message_id_for_agent_rows(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="upstream-id")
+    now = utc_now()
+
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Manual Upstream ID Session",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=manual_session,
+        source="manual",
+        user_id=user.id,
+        agent_id=agent.id,
+        agent_source="personal",
+        query="user-question",
+        response_content="agent-answer",
+        success=True,
+        context_id="ctx-upstream-id",
+        invoke_metadata={
+            "provider": "opencode",
+            "externalSessionId": "upstream-session-id",
+        },
+        extra_metadata={"transport": "ws", "stream": True},
+        response_metadata={
+            "upstream_message_id": "msg-upstream-1",
+            "upstream_event_id": "evt-upstream-9",
+            "upstream_event_seq": 9,
+        },
+    )
+    await async_db_session.commit()
+
+    manual_key = build_manual_session_key(manual_session.id)
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/sessions/{manual_key}/messages:query",
+            json={"page": 1, "size": 50},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pagination"]["total"] == 2
+        agent_row = next(item for item in payload["items"] if item["role"] == "agent")
+        assert agent_row["id"] == "msg-upstream-1"
+        assert isinstance(agent_row["metadata"].get("local_message_id"), str)
+
+
+async def test_unified_messages_query_prefers_client_message_ids_for_local_rows(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="client-id")
+    now = utc_now()
+
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Manual Client Message ID Session",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=manual_session,
+        source="manual",
+        user_id=user.id,
+        agent_id=agent.id,
+        agent_source="personal",
+        query="user-question",
+        response_content="agent-answer",
+        success=True,
+        context_id="ctx-client-id",
+        user_message_id="client-user-msg-1",
+        client_agent_message_id="client-agent-msg-1",
+        invoke_metadata={
+            "provider": "opencode",
+            "externalSessionId": "upstream-client-id",
+        },
+        extra_metadata={"transport": "http_json", "stream": False},
+    )
+    await async_db_session.commit()
+
+    manual_key = build_manual_session_key(manual_session.id)
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/sessions/{manual_key}/messages:query",
+            json={"page": 1, "size": 50},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pagination"]["total"] == 2
+        user_row = next(item for item in payload["items"] if item["role"] == "user")
+        agent_row = next(item for item in payload["items"] if item["role"] == "agent")
+        assert user_row["id"] == "client-user-msg-1"
+        assert agent_row["id"] == "client-agent-msg-1"
+        assert isinstance(user_row["metadata"].get("local_message_id"), str)
+        assert isinstance(agent_row["metadata"].get("local_message_id"), str)

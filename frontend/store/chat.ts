@@ -3,15 +3,21 @@ import { persist } from "zustand/middleware";
 
 import { invokeAgent } from "@/lib/api/a2aAgents";
 import {
-  applyStreamArtifactUpdate,
-  extractRuntimeStatus,
+  applyStreamBlockUpdate,
+  type ChatMessage,
+  extractRuntimeStatusEvent,
   extractSessionMeta,
-  type StreamArtifactUpdate,
-  extractStreamArtifactUpdate,
-  projectStreamChannelContent,
+  finalizeMessageBlocks,
+  type StreamBlockUpdate,
+  extractStreamBlockUpdate,
+  projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
-import { continueSession as continueSessionBinding } from "@/lib/api/sessions";
+import {
+  continueSession as continueSessionBinding,
+  listSessionMessagesPage,
+  type SessionMessageItem,
+} from "@/lib/api/sessions";
 import {
   buildPersistedSessions,
   buildInvokePayload,
@@ -22,6 +28,7 @@ import {
   type AgentSession,
 } from "@/lib/chat-utils";
 import { generateId, generateUuid } from "@/lib/id";
+import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import { buildConversationSessionId, getSessionSource } from "@/lib/sessionIds";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { chatConnectionService } from "@/services/chatConnectionService";
@@ -47,7 +54,6 @@ type ChatState = {
       provider?: string | null;
       externalSessionId?: string | null;
       contextId?: string | null;
-      bindingMetadata?: Record<string, unknown> | null;
       metadata?: Record<string, unknown> | null;
     },
   ) => void;
@@ -172,9 +178,7 @@ export const useChatStore = create<ChatState>()(
           id: agentMessageId,
           role: "agent" as const,
           content: "",
-          streamArtifacts: {},
-          reasoningContent: "",
-          toolCallContent: "",
+          blocks: [],
           createdAt: new Date().toISOString(),
           status: "streaming" as const,
         };
@@ -199,7 +203,17 @@ export const useChatStore = create<ChatState>()(
         messageStore.addMessage(sessionId, userMessage);
         messageStore.addMessage(sessionId, agentMessage);
 
-        const activeAgentMessageId = agentMessageId;
+        let activeAgentMessageId = agentMessageId;
+        const activeStreamMessageIds = new Set<string>([agentMessageId]);
+        const streamMessageIdMap = new Map<string, string>();
+        const seenEventIds = new Set<string>();
+        const nextExpectedSeqByMessageId = new Map<string, number>();
+        const pendingChunksByMessageId = new Map<
+          string,
+          Map<number, StreamBlockUpdate>
+        >();
+        let terminalHandled = false;
+        let hasObservedStreamEvent = false;
 
         let rebindInFlight = false;
 
@@ -271,7 +285,6 @@ export const useChatStore = create<ChatState>()(
                   provider: binding.provider,
                   externalSessionId: binding.externalSessionId,
                   contextId: binding.contextId,
-                  bindingMetadata: binding.bindingMetadata,
                 },
               ),
               streamState: "recoverable",
@@ -314,7 +327,10 @@ export const useChatStore = create<ChatState>()(
 
         const session =
           get().sessions[sessionId] ?? createAgentSession(agentId);
-        const payload = buildInvokePayload(trimmed, session, sessionId);
+        const payload = buildInvokePayload(trimmed, session, sessionId, {
+          userMessageId: userMessage.id,
+          clientAgentMessageId: agentMessage.id,
+        });
 
         const updateSessionMeta = (meta: {
           contextId?: string | null;
@@ -375,36 +391,295 @@ export const useChatStore = create<ChatState>()(
           });
         };
 
-        const appendStreamChunk = (chunk: StreamArtifactUpdate) => {
+        const markActiveMessage = (messageId: string) => {
+          activeAgentMessageId = messageId;
+          activeStreamMessageIds.add(messageId);
+        };
+
+        const resolveExistingTargetMessageIds = () => {
+          const currentMessages =
+            useMessageStore.getState().messages[sessionId] ?? [];
+          const existingIds = new Set(
+            currentMessages.map((message) => message.id),
+          );
+          const targets = Array.from(activeStreamMessageIds).filter((id) =>
+            existingIds.has(id),
+          );
+          if (targets.length === 0 && existingIds.has(activeAgentMessageId)) {
+            targets.push(activeAgentMessageId);
+          }
+          return targets;
+        };
+
+        const closeStreamingMessages = (errorText?: string) => {
+          const targetMessageIds = resolveExistingTargetMessageIds();
+          const now = new Date().toISOString();
+          targetMessageIds.forEach((messageId) => {
+            messageStore.updateMessageWithUpdater(
+              sessionId,
+              messageId,
+              (message) => {
+                const finalizedBlocks =
+                  finalizeMessageBlocks(message.blocks) ?? [];
+                if (!errorText) {
+                  return {
+                    blocks: finalizedBlocks,
+                    status: "done",
+                  };
+                }
+                return {
+                  blocks: [
+                    ...finalizedBlocks,
+                    {
+                      id: `${message.id}:error:${Date.now()}`,
+                      type: "system_error",
+                      content: `[Stream Error: ${errorText}]`,
+                      isFinished: true,
+                      createdAt: now,
+                      updatedAt: now,
+                    },
+                  ],
+                  status: "done",
+                };
+              },
+            );
+          });
+          activeStreamMessageIds.clear();
+        };
+
+        const mergeHistoryMessagesById = (incoming: ChatMessage[]) => {
+          const current = useMessageStore.getState().messages[sessionId] ?? [];
+          const merged = new Map<string, ChatMessage>();
+          current.forEach((message) => {
+            merged.set(message.id, message);
+          });
+          incoming.forEach((message) => {
+            merged.set(message.id, message);
+          });
+          const nextMessages = Array.from(merged.values()).sort((left, right) =>
+            left.createdAt.localeCompare(right.createdAt),
+          );
+          messageStore.setMessages(sessionId, nextMessages);
+        };
+
+        const backfillHistoryAfterSequenceGap = async () => {
+          const recovered = new Map<string, ChatMessage>();
+          const size = 100;
+          const maxPages = 20;
+
+          const collectPage = (items: SessionMessageItem[]) => {
+            const mapped = mapSessionMessagesToChatMessages(items, sessionId);
+            mapped.forEach((message) => {
+              recovered.set(message.id, message);
+            });
+          };
+
+          const firstPage = await listSessionMessagesPage(sessionId, {
+            page: 1,
+            size,
+          });
+          const pagination =
+            firstPage.pagination && typeof firstPage.pagination === "object"
+              ? (firstPage.pagination as Record<string, unknown>)
+              : null;
+          const totalPages =
+            pagination && typeof pagination.pages === "number"
+              ? pagination.pages
+              : null;
+
+          if (typeof totalPages === "number" && totalPages > 1) {
+            const tailPageWindow = 3;
+            const startPage = Math.max(1, totalPages - tailPageWindow + 1);
+            for (let page = startPage; page <= totalPages; page += 1) {
+              if (page === 1) {
+                collectPage(firstPage.items);
+                continue;
+              }
+              const response = await listSessionMessagesPage(sessionId, {
+                page,
+                size,
+              });
+              collectPage(response.items);
+            }
+          } else {
+            collectPage(firstPage.items);
+            let nextPage =
+              typeof firstPage.nextPage === "number"
+                ? firstPage.nextPage
+                : undefined;
+            let requestCount = 1;
+
+            while (
+              typeof nextPage === "number" &&
+              requestCount < maxPages &&
+              nextPage > 1
+            ) {
+              const response = await listSessionMessagesPage(sessionId, {
+                page: nextPage,
+                size,
+              });
+              collectPage(response.items);
+              nextPage =
+                typeof response.nextPage === "number"
+                  ? response.nextPage
+                  : undefined;
+              requestCount += 1;
+            }
+          }
+
+          if (recovered.size > 0) {
+            mergeHistoryMessagesById(Array.from(recovered.values()));
+          }
+        };
+
+        const appendStreamChunk = (chunk: StreamBlockUpdate) => {
+          const resolveChunkMessageId = () => {
+            const mapped = streamMessageIdMap.get(chunk.messageId);
+            if (mapped) {
+              markActiveMessage(mapped);
+              return mapped;
+            }
+
+            const currentMessages =
+              useMessageStore.getState().messages[sessionId] ?? [];
+            const hasExactTarget = currentMessages.some(
+              (message) => message.id === chunk.messageId,
+            );
+            if (hasExactTarget) {
+              streamMessageIdMap.set(chunk.messageId, chunk.messageId);
+              markActiveMessage(chunk.messageId);
+              return chunk.messageId;
+            }
+
+            const placeholderId = activeAgentMessageId;
+            const hasActivePlaceholder = currentMessages.some(
+              (message) => message.id === placeholderId,
+            );
+            if (hasActivePlaceholder) {
+              messageStore.rekeyMessage(
+                sessionId,
+                placeholderId,
+                chunk.messageId,
+              );
+              activeStreamMessageIds.delete(placeholderId);
+            } else {
+              messageStore.addMessage(sessionId, {
+                id: chunk.messageId,
+                role: "agent",
+                content: "",
+                blocks: [],
+                createdAt: new Date().toISOString(),
+                status: "streaming",
+              });
+            }
+            streamMessageIdMap.set(chunk.messageId, chunk.messageId);
+            markActiveMessage(chunk.messageId);
+            return chunk.messageId;
+          };
+
+          const targetMessageId = resolveChunkMessageId();
           messageStore.updateMessageWithUpdater(
             sessionId,
-            activeAgentMessageId,
+            targetMessageId,
             (message) => {
-              const nextArtifacts = applyStreamArtifactUpdate(
-                message.streamArtifacts,
-                chunk,
-              );
-              const nextContent = projectStreamChannelContent(nextArtifacts);
+              const nextBlocks = applyStreamBlockUpdate(message.blocks, chunk);
               return {
-                content: nextContent.finalAnswer,
-                reasoningContent: nextContent.reasoning,
-                toolCallContent: nextContent.toolCall,
-                streamArtifacts: nextArtifacts,
+                content: projectPrimaryTextContent(nextBlocks),
+                blocks: nextBlocks,
                 status: "streaming",
               };
             },
           );
         };
 
-        const appendStreamError = (errorText: string) => {
-          messageStore.updateMessageWithUpdater(
-            sessionId,
-            activeAgentMessageId,
-            (message) => ({
-              content: `${message.content}\n[Stream Error: ${errorText}]`,
-              status: "done",
-            }),
+        const queueIncomingChunk = (chunk: StreamBlockUpdate) => {
+          if (seenEventIds.has(chunk.eventId)) {
+            return;
+          }
+          seenEventIds.add(chunk.eventId);
+
+          const currentExpected = nextExpectedSeqByMessageId.get(
+            chunk.messageId,
           );
+          if (
+            typeof currentExpected === "number" &&
+            chunk.seq < currentExpected
+          ) {
+            return;
+          }
+          if (currentExpected === undefined) {
+            nextExpectedSeqByMessageId.set(chunk.messageId, chunk.seq);
+          }
+
+          const pending =
+            pendingChunksByMessageId.get(chunk.messageId) ?? new Map();
+          if (pending.has(chunk.seq)) {
+            return;
+          }
+          pending.set(chunk.seq, chunk);
+          pendingChunksByMessageId.set(chunk.messageId, pending);
+
+          let nextExpected =
+            nextExpectedSeqByMessageId.get(chunk.messageId) ?? chunk.seq;
+          while (pending.has(nextExpected)) {
+            const readyChunk = pending.get(nextExpected);
+            if (!readyChunk) break;
+            pending.delete(nextExpected);
+            appendStreamChunk(readyChunk);
+            nextExpected += 1;
+          }
+          nextExpectedSeqByMessageId.set(chunk.messageId, nextExpected);
+          if (pending.size === 0) {
+            pendingChunksByMessageId.delete(chunk.messageId);
+          }
+        };
+
+        const applyIncomingStreamData = (
+          data: Record<string, unknown>,
+        ): boolean => {
+          const chunk = extractStreamBlockUpdate(data);
+          const runtimeStatusEvent = extractRuntimeStatusEvent(data);
+          const kind = typeof data.kind === "string" ? data.kind : "";
+          const isLegacyContentEvent =
+            typeof data.content === "string" && data.content.trim().length > 0;
+          if (
+            chunk ||
+            runtimeStatusEvent ||
+            kind === "artifact-update" ||
+            kind === "status-update" ||
+            isLegacyContentEvent
+          ) {
+            hasObservedStreamEvent = true;
+          }
+          if (chunk) {
+            queueIncomingChunk(chunk);
+          }
+
+          const meta = extractSessionMeta(data);
+          const runtimeStatus = runtimeStatusEvent?.state ?? null;
+          if (
+            meta.contextId ||
+            meta.transport ||
+            meta.inputModes ||
+            meta.outputModes ||
+            runtimeStatus
+          ) {
+            updateSessionMeta({ ...meta, runtimeStatus });
+          }
+
+          if (runtimeStatusEvent?.isFinal) {
+            completeStreamingMessage();
+            return true;
+          }
+          return false;
+        };
+
+        const appendStreamError = (errorText: string) => {
+          if (terminalHandled) {
+            return;
+          }
+          terminalHandled = true;
+          closeStreamingMessages(errorText);
           patchSession({
             streamState: "error",
             lastStreamError: errorText,
@@ -418,22 +693,34 @@ export const useChatStore = create<ChatState>()(
           attemptSessionRebind(errorText).catch(() => false);
         };
 
-        const applyIncomingStreamData = (data: Record<string, unknown>) => {
-          const chunk = extractStreamArtifactUpdate(data);
-          if (chunk) {
-            appendStreamChunk(chunk);
+        const completeStreamingMessage = () => {
+          if (terminalHandled) {
+            return;
           }
+          terminalHandled = true;
+          closeStreamingMessages();
+          markSessionIdle();
 
-          const meta = extractSessionMeta(data);
-          const runtimeStatus = extractRuntimeStatus(data);
           if (
-            meta.contextId ||
-            meta.transport ||
-            meta.inputModes ||
-            meta.outputModes ||
-            runtimeStatus
+            Array.from(pendingChunksByMessageId.values()).some(
+              (pending) => pending.size > 0,
+            )
           ) {
-            updateSessionMeta({ ...meta, runtimeStatus });
+            backfillHistoryAfterSequenceGap().catch((error) => {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Sequence-gap recovery failed.";
+              patchSession({
+                streamState: "recoverable",
+                lastStreamError: message,
+              });
+              console.warn("[Chat Stream] sequence-gap recovery failed", {
+                sessionId,
+                source: getSessionSource(sessionId),
+                message,
+              });
+            });
           }
         };
 
@@ -456,21 +743,17 @@ export const useChatStore = create<ChatState>()(
                 }
 
                 if (data.event === "stream_end") {
-                  messageStore.updateMessage(sessionId, activeAgentMessageId, {
-                    status: "done",
-                  });
-                  markSessionIdle();
+                  completeStreamingMessage();
                   return true;
                 }
 
-                applyIncomingStreamData(data);
+                if (applyIncomingStreamData(data)) {
+                  return true;
+                }
                 return false;
               },
               onDone: () => {
-                messageStore.updateMessage(sessionId, activeAgentMessageId, {
-                  status: "done",
-                });
-                markSessionIdle();
+                completeStreamingMessage();
               },
               onStreamError: appendStreamError,
             },
@@ -485,13 +768,10 @@ export const useChatStore = create<ChatState>()(
             payload,
             callbacks: {
               onData: (data) => {
-                applyIncomingStreamData(data);
+                return applyIncomingStreamData(data);
               },
               onDone: () => {
-                messageStore.updateMessage(sessionId, activeAgentMessageId, {
-                  status: "done",
-                });
-                markSessionIdle();
+                completeStreamingMessage();
               },
               onStreamError: appendStreamError,
             },
@@ -508,7 +788,7 @@ export const useChatStore = create<ChatState>()(
             if (!response.success) {
               const message =
                 response.error || response.error_code || "Request failed.";
-              messageStore.updateMessage(sessionId, agentMessageId, {
+              messageStore.updateMessage(sessionId, activeAgentMessageId, {
                 content: message,
                 status: "done",
               });
@@ -519,7 +799,7 @@ export const useChatStore = create<ChatState>()(
               return;
             }
 
-            messageStore.updateMessage(sessionId, agentMessageId, {
+            messageStore.updateMessage(sessionId, activeAgentMessageId, {
               content: response.content ?? "",
               status: "done",
             });
@@ -527,7 +807,7 @@ export const useChatStore = create<ChatState>()(
           } catch (error) {
             const message =
               error instanceof Error ? error.message : "Request failed.";
-            messageStore.updateMessage(sessionId, agentMessageId, {
+            messageStore.updateMessage(sessionId, activeAgentMessageId, {
               content: message,
               status: "done",
             });
@@ -542,6 +822,12 @@ export const useChatStore = create<ChatState>()(
           return;
         }
         if (await trySseTransport()) {
+          return;
+        }
+        if (hasObservedStreamEvent) {
+          appendStreamError(
+            "Streaming transport interrupted before completion; skip blocking replay.",
+          );
           return;
         }
         await sendViaJsonFallback();

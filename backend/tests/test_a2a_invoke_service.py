@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -32,19 +33,38 @@ class _GatewayWithEvents:
             yield _DumpableEvent(event)
 
 
+class _GatewayWithDelayedEvents:
+    def __init__(self, events: list[dict], delay_seconds: float):
+        self._events = events
+        self._delay_seconds = delay_seconds
+
+    async def stream(self, **kwargs):  # noqa: ARG002
+        for event in self._events:
+            await asyncio.sleep(self._delay_seconds)
+            yield _DumpableEvent(event)
+
+
+class _DummyWebSocket:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+
+    async def send_text(self, payload: str) -> None:
+        self.sent.append(payload)
+
+
 def _artifact_event(
     *,
     artifact_id: str,
     text: str,
-    channel: str | None = None,
+    block_type: str | None = None,
     source: str | None = None,
     append: bool | None = None,
 ) -> dict:
     metadata: dict[str, dict[str, str]] = {}
-    if channel or source:
+    if block_type or source:
         opencode: dict[str, str] = {}
-        if channel:
-            opencode["channel"] = channel
+        if block_type:
+            opencode["block_type"] = block_type
         if source:
             opencode["source"] = source
         metadata["opencode"] = opencode
@@ -89,7 +109,7 @@ async def test_sse_error_event_contains_unified_error_code():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_uses_channelized_final_answer_only():
+async def test_sse_on_complete_uses_typed_text_blocks_for_response_content():
     completed: list[str] = []
 
     async def _on_complete(text: str):
@@ -101,29 +121,29 @@ async def test_sse_on_complete_uses_channelized_final_answer_only():
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="thinking",
-                    channel="reasoning",
+                    block_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream:tool_call",
                     text="run_tool()",
-                    channel="tool_call",
+                    block_type="tool_call",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="Hello ",
-                    channel="final_answer",
+                    block_type="text",
                     append=True,
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="world",
-                    channel="final_answer",
+                    block_type="text",
                     append=True,
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="Hello world",
-                    channel="final_answer",
+                    block_type="text",
                     source="final_snapshot",
                     append=False,
                 ),
@@ -145,7 +165,7 @@ async def test_sse_on_complete_uses_channelized_final_answer_only():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_metadata_includes_reasoning_and_tool_call():
+async def test_sse_on_complete_metadata_includes_message_blocks():
     metadata_payloads: list[dict] = []
 
     async def _on_complete_metadata(payload: dict):
@@ -157,17 +177,17 @@ async def test_sse_on_complete_metadata_includes_reasoning_and_tool_call():
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="thinking",
-                    channel="reasoning",
+                    block_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream:tool_call",
                     text="run_tool()",
-                    channel="tool_call",
+                    block_type="tool_call",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="done",
-                    channel="final_answer",
+                    block_type="text",
                 ),
             ]
         ),
@@ -184,7 +204,28 @@ async def test_sse_on_complete_metadata_includes_reasoning_and_tool_call():
         pass
 
     assert metadata_payloads == [
-        {"opencode_stream": {"reasoning": "thinking", "tool_call": "run_tool()"}}
+        {
+            "message_blocks": [
+                {
+                    "id": "block-1",
+                    "type": "reasoning",
+                    "content": "thinking",
+                    "is_finished": True,
+                },
+                {
+                    "id": "block-2",
+                    "type": "tool_call",
+                    "content": "run_tool()",
+                    "is_finished": True,
+                },
+                {
+                    "id": "block-3",
+                    "type": "text",
+                    "content": "done",
+                    "is_finished": False,
+                },
+            ]
+        }
     ]
 
 
@@ -204,12 +245,12 @@ async def test_sse_invokes_complete_metadata_before_complete():
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="thinking",
-                    channel="reasoning",
+                    block_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="done",
-                    channel="final_answer",
+                    block_type="text",
                 ),
             ]
         ),
@@ -245,17 +286,17 @@ async def test_sse_complete_metadata_uses_configurable_max_chars(monkeypatch):
                 _artifact_event(
                     artifact_id="task-1:stream:reasoning",
                     text="123456789",
-                    channel="reasoning",
+                    block_type="reasoning",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream:tool_call",
                     text="abcdefghi",
-                    channel="tool_call",
+                    block_type="tool_call",
                 ),
                 _artifact_event(
                     artifact_id="task-1:stream",
                     text="done",
-                    channel="final_answer",
+                    block_type="text",
                 ),
             ]
         ),
@@ -272,7 +313,28 @@ async def test_sse_complete_metadata_uses_configurable_max_chars(monkeypatch):
         pass
 
     assert metadata_payloads == [
-        {"opencode_stream": {"reasoning": "12345", "tool_call": "abcde"}}
+        {
+            "message_blocks": [
+                {
+                    "id": "block-1",
+                    "type": "reasoning",
+                    "content": "12345",
+                    "is_finished": True,
+                },
+                {
+                    "id": "block-2",
+                    "type": "tool_call",
+                    "content": "abcde",
+                    "is_finished": True,
+                },
+                {
+                    "id": "block-3",
+                    "type": "text",
+                    "content": "done",
+                    "is_finished": False,
+                },
+            ]
+        }
     ]
     monkeypatch.setattr(
         settings, "opencode_stream_metadata_max_chars", original
@@ -280,7 +342,7 @@ async def test_sse_complete_metadata_uses_configurable_max_chars(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_falls_back_for_non_channelized_events():
+async def test_sse_on_complete_falls_back_for_non_typed_events():
     completed: list[str] = []
 
     async def _on_complete(text: str):
@@ -324,19 +386,19 @@ async def test_sse_on_complete_respects_append_false_overwrite_then_append():
                 _artifact_event(
                     artifact_id="task-2:stream",
                     text="first",
-                    channel="final_answer",
+                    block_type="text",
                     append=True,
                 ),
                 _artifact_event(
                     artifact_id="task-2:stream",
                     text="reset",
-                    channel="final_answer",
+                    block_type="text",
                     append=False,
                 ),
                 _artifact_event(
                     artifact_id="task-2:stream",
                     text="!",
-                    channel="final_answer",
+                    block_type="text",
                     append=True,
                 ),
             ]
@@ -354,6 +416,204 @@ async def test_sse_on_complete_respects_append_false_overwrite_then_append():
         pass
 
     assert completed == ["reset!"]
+
+
+@pytest.mark.asyncio
+async def test_sse_on_complete_supports_block_type():
+    completed: list[str] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "task_id": "task-block-type",
+                    "message_id": "msg-block-type",
+                    "artifact": {
+                        "artifact_id": "task-block-type:stream",
+                        "parts": [{"kind": "text", "text": "Hello alias"}],
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                            }
+                        },
+                    },
+                }
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == ["Hello alias"]
+
+
+@pytest.mark.asyncio
+async def test_sse_drops_invalid_artifact_update_events():
+    completed: list[str] = []
+    observed_events: list[dict] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    async def _on_event(payload: dict):
+        observed_events.append(payload)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-invalid:stream",
+                    text="dropped",
+                    block_type="text",
+                ),
+                {"content": "kept"},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda payload: (
+            ["invalid artifact event"]
+            if payload.get("kind") == "artifact-update"
+            else []
+        ),
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+        on_event=_on_event,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == ["kept"]
+    assert observed_events == [{"content": "kept"}]
+
+
+@pytest.mark.asyncio
+async def test_sse_breaks_stream_after_terminal_status_update():
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "status-update",
+                    "status": {"state": "input_required"},
+                    "final": True,
+                },
+                {"content": "should-not-be-forwarded"},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    payload = "".join(chunks)
+    assert '"kind": "status-update"' in payload
+    assert "should-not-be-forwarded" not in payload
+    assert "event: stream_end" in payload
+
+
+@pytest.mark.asyncio
+async def test_ws_breaks_stream_after_terminal_status_update():
+    websocket = _DummyWebSocket()
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "status-update",
+                    "status": {"state": "input_required"},
+                    "final": True,
+                },
+                {"content": "should-not-be-forwarded"},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+
+    payloads = [json.loads(item) for item in websocket.sent]
+    assert payloads[0]["kind"] == "status-update"
+    assert payloads[-1]["event"] == "stream_end"
+    assert not any(
+        item.get("content") == "should-not-be-forwarded" for item in payloads
+    )
+
+
+@pytest.mark.asyncio
+async def test_sse_emits_keepalive_heartbeat_when_upstream_is_idle(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithDelayedEvents(
+            [{"content": "late-event"}],
+            delay_seconds=0.03,
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    payload = "".join(chunks)
+    assert ": keep-alive" in payload
+    assert '"content": "late-event"' in payload
+    assert "event: stream_end" in payload
+
+
+@pytest.mark.asyncio
+async def test_ws_emits_keepalive_heartbeat_when_upstream_is_idle(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    websocket = _DummyWebSocket()
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithDelayedEvents(
+            [{"content": "late-event"}],
+            delay_seconds=0.03,
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+
+    payloads = [json.loads(item) for item in websocket.sent]
+    assert any(item.get("event") == "heartbeat" for item in payloads)
+    assert any(item.get("content") == "late-event" for item in payloads)
+    assert payloads[-1]["event"] == "stream_end"
 
 
 def test_extract_binding_hints_from_serialized_event():
@@ -430,3 +690,44 @@ def test_extract_binding_hints_from_opencode_namespace_session_id():
     assert context_id is None
     assert metadata["provider"] == "opencode"
     assert metadata["externalSessionId"] == "nested-upstream-session"
+
+
+def test_extract_stream_identity_hints_from_serialized_event():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "event_id": "evt-1",
+            "seq": 9,
+            "artifact": {
+                "message_id": "msg-1",
+            },
+        }
+    )
+    assert hints == {
+        "upstream_message_id": "msg-1",
+        "upstream_event_id": "evt-1",
+        "upstream_event_seq": 9,
+    }
+
+
+def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
+    class _RawPayload:
+        def model_dump(self, **kwargs):  # noqa: ARG002
+            return {
+                "event_id": "evt-from-raw",
+                "seq": 12,
+                "message_id": "msg-from-raw",
+            }
+
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
+        {
+            "event_id": "evt-from-result",
+            "seq": 2,
+            "message_id": "msg-from-result",
+            "raw": _RawPayload(),
+        }
+    )
+    assert hints == {
+        "upstream_message_id": "msg-from-raw",
+        "upstream_event_id": "evt-from-raw",
+        "upstream_event_seq": 12,
+    }

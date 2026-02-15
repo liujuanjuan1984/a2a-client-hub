@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID
@@ -26,6 +28,9 @@ from app.services.ws_ticket_service import ws_ticket_service
 
 AgentSource = Literal["personal", "shared"]
 
+_invoke_inflight_guard = asyncio.Lock()
+_invoke_inflight_keys: dict[str, int] = {}
+
 
 @dataclass
 class _InvokeState:
@@ -33,6 +38,71 @@ class _InvokeState:
     local_source: Any
     context_id: str | None
     metadata: dict[str, Any]
+    stream_identity: dict[str, Any]
+    user_message_id: str | None
+    client_agent_message_id: str | None
+
+
+def _normalize_query_for_invoke_guard(query: str) -> str:
+    return " ".join(query.split())
+
+
+def _build_invoke_guard_key(
+    *,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    payload: A2AAgentInvokeRequest,
+) -> str | None:
+    session_id = (
+        payload.session_id.strip() if isinstance(payload.session_id, str) else ""
+    )
+    context_id = (
+        payload.context_id.strip() if isinstance(payload.context_id, str) else ""
+    )
+    if not session_id and not context_id:
+        return None
+    normalized_query = _normalize_query_for_invoke_guard(payload.query)
+    return (
+        f"{user_id}:{agent_source}:{agent_id}:{session_id}:{context_id}:"
+        f"{normalized_query}"
+    )
+
+
+@asynccontextmanager
+async def _guard_inflight_invoke(
+    guard_key: str | None,
+):
+    if not guard_key:
+        yield
+        return
+
+    acquired = await _try_acquire_invoke_guard(guard_key)
+    if not acquired:
+        raise ValueError("invoke_inflight")
+
+    try:
+        yield
+    finally:
+        await _release_invoke_guard(guard_key)
+
+
+async def _try_acquire_invoke_guard(guard_key: str) -> bool:
+    async with _invoke_inflight_guard:
+        active_count = _invoke_inflight_keys.get(guard_key, 0)
+        if active_count > 0:
+            return False
+        _invoke_inflight_keys[guard_key] = 1
+        return True
+
+
+async def _release_invoke_guard(guard_key: str) -> None:
+    async with _invoke_inflight_guard:
+        remaining = _invoke_inflight_keys.get(guard_key, 0) - 1
+        if remaining <= 0:
+            _invoke_inflight_keys.pop(guard_key, None)
+        else:
+            _invoke_inflight_keys[guard_key] = remaining
 
 
 async def _prepare_state(
@@ -62,6 +132,9 @@ async def _prepare_state(
         local_source=local_source,
         context_id=resolved_context_id,
         metadata=resolved_invoke_metadata,
+        stream_identity={},
+        user_message_id=payload.user_message_id,
+        client_agent_message_id=payload.client_agent_message_id,
     )
 
 
@@ -95,10 +168,20 @@ def _build_stream_callbacks(
             next_context_id=event_context_id,
             next_metadata=event_metadata,
         )
+        identity_hints = (
+            a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+                event_payload
+            )
+        )
+        if identity_hints:
+            state.stream_identity.update(identity_hints)
 
     async def on_complete(stream_text: str) -> None:
         if state.local_session is None or state.local_source is None:
             return
+        final_response_metadata = dict(stream_response_metadata)
+        if state.stream_identity:
+            final_response_metadata.update(state.stream_identity)
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
@@ -110,9 +193,11 @@ def _build_stream_callbacks(
             response_content=stream_text or "",
             success=True,
             context_id=state.context_id,
+            user_message_id=state.user_message_id,
+            client_agent_message_id=state.client_agent_message_id,
             invoke_metadata=state.metadata,
             extra_metadata={"transport": transport, "stream": True},
-            response_metadata=stream_response_metadata,
+            response_metadata=final_response_metadata,
         )
         await commit_safely(db)
 
@@ -125,6 +210,9 @@ def _build_stream_callbacks(
     async def on_error(error_message: str) -> None:
         if state.local_session is None or state.local_source is None:
             return
+        error_response_metadata = (
+            dict(state.stream_identity) if state.stream_identity else None
+        )
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
@@ -136,8 +224,11 @@ def _build_stream_callbacks(
             response_content=error_message,
             success=False,
             context_id=state.context_id,
+            user_message_id=state.user_message_id,
+            client_agent_message_id=state.client_agent_message_id,
             invoke_metadata=state.metadata,
             extra_metadata={"transport": transport, "stream": True},
+            response_metadata=error_response_metadata,
         )
         await commit_safely(db)
 
@@ -210,11 +301,17 @@ async def run_http_invoke(
             next_context_id=result_context_id,
             next_metadata=result_metadata,
         )
+        state.stream_identity.update(
+            a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(result)
+        )
         response_content = (
             result.get("content")
             if success
             else (result.get("error") or "A2A invocation failed")
         ) or ""
+        response_metadata = (
+            dict(state.stream_identity) if state.stream_identity else None
+        )
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
@@ -226,12 +323,15 @@ async def run_http_invoke(
             response_content=response_content,
             success=success,
             context_id=state.context_id,
+            user_message_id=state.user_message_id,
+            client_agent_message_id=state.client_agent_message_id,
             invoke_metadata=state.metadata,
             extra_metadata={
                 "transport": "http_json",
                 "stream": False,
                 "error_code": result.get("error_code"),
             },
+            response_metadata=response_metadata,
         )
         await commit_safely(db)
 
@@ -364,24 +464,31 @@ async def run_ws_invoke_route(
             invoke_log_message,
             extra=invoke_log_extra_builder(payload, runtime),
         )
+        guard_key = _build_invoke_guard_key(
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            payload=payload,
+        )
 
         try:
-            await run_ws_invoke(
-                websocket=websocket,
-                db=db,
-                gateway=gateway,
-                runtime=runtime,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                payload=payload,
-                validate_message=validate_message,
-                logger=logger,
-                log_extra={
-                    "user_id": str(user_id),
-                    "agent_id": str(agent_id),
-                },
-            )
+            async with _guard_inflight_invoke(guard_key):
+                await run_ws_invoke(
+                    websocket=websocket,
+                    db=db,
+                    gateway=gateway,
+                    runtime=runtime,
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    agent_source=agent_source,
+                    payload=payload,
+                    validate_message=validate_message,
+                    logger=logger,
+                    log_extra={
+                        "user_id": str(user_id),
+                        "agent_id": str(agent_id),
+                    },
+                )
         except ValueError as exc:
             await a2a_invoke_service.send_ws_error(
                 websocket,
@@ -449,23 +556,75 @@ async def run_http_invoke_route(
         invoke_log_message,
         extra=invoke_log_extra_builder(payload, runtime),
     )
+    guard_key = _build_invoke_guard_key(
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        payload=payload,
+    )
+
+    if stream and guard_key:
+        acquired = await _try_acquire_invoke_guard(guard_key)
+        if not acquired:
+            raise HTTPException(
+                status_code=status_code_for_invoke_session_error("invoke_inflight"),
+                detail="invoke_inflight",
+            )
+        try:
+            response = await run_http_invoke(
+                db=db,
+                gateway=gateway,
+                runtime=runtime,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                payload=payload,
+                stream=stream,
+                validate_message=validate_message,
+                logger=logger,
+                log_extra={
+                    "user_id": str(user_id),
+                    "agent_id": str(agent_id),
+                },
+            )
+        except Exception:
+            await _release_invoke_guard(guard_key)
+            raise
+
+        if isinstance(response, StreamingResponse):
+            original_iterator = response.body_iterator
+
+            async def guarded_iterator():
+                try:
+                    async for chunk in original_iterator:
+                        yield chunk
+                finally:
+                    await _release_invoke_guard(guard_key)
+
+            response.body_iterator = guarded_iterator()
+            return response
+
+        await _release_invoke_guard(guard_key)
+        return response
+
     try:
-        return await run_http_invoke(
-            db=db,
-            gateway=gateway,
-            runtime=runtime,
-            user_id=user_id,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            payload=payload,
-            stream=stream,
-            validate_message=validate_message,
-            logger=logger,
-            log_extra={
-                "user_id": str(user_id),
-                "agent_id": str(agent_id),
-            },
-        )
+        async with _guard_inflight_invoke(guard_key):
+            return await run_http_invoke(
+                db=db,
+                gateway=gateway,
+                runtime=runtime,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                payload=payload,
+                stream=stream,
+                validate_message=validate_message,
+                logger=logger,
+                log_extra={
+                    "user_id": str(user_id),
+                    "agent_id": str(agent_id),
+                },
+            )
     except ValueError as exc:
         raise HTTPException(
             status_code=status_code_for_invoke_session_error(str(exc)),

@@ -55,6 +55,8 @@ export type A2AAgentInvokeRequest = {
   query: string;
   sessionId?: string;
   contextId?: string;
+  userMessageId?: string;
+  clientAgentMessageId?: string;
   metadata?: Record<string, unknown>;
 };
 

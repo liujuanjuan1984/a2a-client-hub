@@ -48,14 +48,14 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --extra dev --locked
 
-      - name: Run backend black check
-        run: uv run black --check .
+      - name: Run backend black check (pre-commit)
+        run: uv run pre-commit run black --all-files --config ../.pre-commit-config.yaml
 
-      - name: Run backend isort check
-        run: uv run isort --check-only .
+      - name: Run backend isort check (pre-commit)
+        run: uv run pre-commit run isort --all-files --config ../.pre-commit-config.yaml
 
-      - name: Run backend ruff check
-        run: uv run ruff check .
+      - name: Run backend ruff check (pre-commit)
+        run: uv run pre-commit run ruff --all-files --config ../.pre-commit-config.yaml
 
       - name: Run backend tests
         run: uv run pytest

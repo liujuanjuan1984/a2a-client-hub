@@ -1,7 +1,7 @@
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 
 describe("session history mapping", () => {
-  it("hydrates reasoning and tool call content from opencode metadata", () => {
+  it("hydrates agent blocks from metadata.message_blocks", () => {
     const mapped = mapSessionMessagesToChatMessages(
       [
         {
@@ -10,30 +10,51 @@ describe("session history mapping", () => {
           content: "final",
           created_at: "2026-02-14T00:00:00.000Z",
           metadata: {
-            opencode_stream: {
-              reasoning: "thinking",
-              tool_call: "run_tool()",
-            },
+            message_blocks: [
+              {
+                id: "blk-1",
+                type: "reasoning",
+                content: "thinking",
+                is_finished: true,
+                created_at: "2026-02-14T00:00:00.100Z",
+                updated_at: "2026-02-14T00:00:00.200Z",
+              },
+              {
+                id: "blk-2",
+                type: "text",
+                content: "final",
+                is_finished: true,
+                created_at: "2026-02-14T00:00:00.300Z",
+                updated_at: "2026-02-14T00:00:00.400Z",
+              },
+            ],
           },
         },
       ],
       "session-1",
     );
 
-    expect(mapped).toEqual([
+    expect(mapped[0]?.blocks).toEqual([
       {
-        id: "msg-1",
-        role: "agent",
+        id: "blk-1",
+        type: "reasoning",
+        content: "thinking",
+        isFinished: true,
+        createdAt: "2026-02-14T00:00:00.100Z",
+        updatedAt: "2026-02-14T00:00:00.200Z",
+      },
+      {
+        id: "blk-2",
+        type: "text",
         content: "final",
-        createdAt: "2026-02-14T00:00:00.000Z",
-        status: "done",
-        reasoningContent: "thinking",
-        toolCallContent: "run_tool()",
+        isFinished: true,
+        createdAt: "2026-02-14T00:00:00.300Z",
+        updatedAt: "2026-02-14T00:00:00.400Z",
       },
     ]);
   });
 
-  it("supports camelCase metadata alias", () => {
+  it("falls back to one text block when metadata blocks are absent", () => {
     const mapped = mapSessionMessagesToChatMessages(
       [
         {
@@ -41,18 +62,21 @@ describe("session history mapping", () => {
           role: "assistant",
           content: "final",
           created_at: "2026-02-14T00:00:01.000Z",
-          metadata: {
-            opencodeStream: {
-              reasoning: "plan",
-              toolCall: "call()",
-            },
-          },
+          metadata: {},
         },
       ],
       "session-2",
     );
 
-    expect(mapped[0]?.reasoningContent).toBe("plan");
-    expect(mapped[0]?.toolCallContent).toBe("call()");
+    expect(mapped[0]?.blocks).toEqual([
+      {
+        id: "msg-2:text",
+        type: "text",
+        content: "final",
+        isFinished: true,
+        createdAt: "2026-02-14T00:00:01.000Z",
+        updatedAt: "2026-02-14T00:00:01.000Z",
+      },
+    ]);
   });
 });

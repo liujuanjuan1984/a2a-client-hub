@@ -79,10 +79,8 @@ class _FakeExtensionsService:
             result={
                 "contextId": session_id,
                 "provider": "opencode",
-                "externalSessionId": session_id,
                 "metadata": {
-                    "provider": "opencode",
-                    "externalSessionId": session_id,
+                    "opencode_session_id": session_id,
                 },
             },
             meta={},

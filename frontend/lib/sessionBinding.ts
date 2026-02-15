@@ -18,6 +18,5 @@ export const buildContinueBindingPayload = (
   provider: binding.provider ?? undefined,
   externalSessionId: binding.externalSessionId ?? undefined,
   contextId: binding.contextId ?? undefined,
-  bindingMetadata: binding.bindingMetadata ?? undefined,
   metadata: binding.metadata,
 });
