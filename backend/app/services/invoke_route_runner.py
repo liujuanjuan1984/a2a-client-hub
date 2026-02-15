@@ -34,6 +34,8 @@ class _InvokeState:
     context_id: str | None
     metadata: dict[str, Any]
     stream_identity: dict[str, Any]
+    user_message_id: str | None
+    client_agent_message_id: str | None
 
 
 async def _prepare_state(
@@ -64,6 +66,8 @@ async def _prepare_state(
         context_id=resolved_context_id,
         metadata=resolved_invoke_metadata,
         stream_identity={},
+        user_message_id=payload.user_message_id,
+        client_agent_message_id=payload.client_agent_message_id,
     )
 
 
@@ -122,6 +126,8 @@ def _build_stream_callbacks(
             response_content=stream_text or "",
             success=True,
             context_id=state.context_id,
+            user_message_id=state.user_message_id,
+            client_agent_message_id=state.client_agent_message_id,
             invoke_metadata=state.metadata,
             extra_metadata={"transport": transport, "stream": True},
             response_metadata=final_response_metadata,
@@ -151,6 +157,8 @@ def _build_stream_callbacks(
             response_content=error_message,
             success=False,
             context_id=state.context_id,
+            user_message_id=state.user_message_id,
+            client_agent_message_id=state.client_agent_message_id,
             invoke_metadata=state.metadata,
             extra_metadata={"transport": transport, "stream": True},
             response_metadata=error_response_metadata,
@@ -248,6 +256,8 @@ async def run_http_invoke(
             response_content=response_content,
             success=success,
             context_id=state.context_id,
+            user_message_id=state.user_message_id,
+            client_agent_message_id=state.client_agent_message_id,
             invoke_metadata=state.metadata,
             extra_metadata={
                 "transport": "http_json",

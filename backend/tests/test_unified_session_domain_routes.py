@@ -1209,3 +1209,64 @@ async def test_unified_messages_query_prefers_upstream_message_id_for_agent_rows
         agent_row = next(item for item in payload["items"] if item["role"] == "agent")
         assert agent_row["id"] == "msg-upstream-1"
         assert isinstance(agent_row["metadata"].get("local_message_id"), str)
+
+
+async def test_unified_messages_query_prefers_client_message_ids_for_local_rows(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="client-id")
+    now = utc_now()
+
+    manual_session = AgentSession(
+        id=uuid4(),
+        user_id=user.id,
+        name="Manual Client Message ID Session",
+        module_key=str(agent.id),
+        session_type=AgentSession.TYPE_CHAT,
+        last_activity_at=now,
+    )
+    async_db_session.add(manual_session)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=manual_session,
+        source="manual",
+        user_id=user.id,
+        agent_id=agent.id,
+        agent_source="personal",
+        query="user-question",
+        response_content="agent-answer",
+        success=True,
+        context_id="ctx-client-id",
+        user_message_id="client-user-msg-1",
+        client_agent_message_id="client-agent-msg-1",
+        invoke_metadata={
+            "provider": "opencode",
+            "externalSessionId": "upstream-client-id",
+        },
+        extra_metadata={"transport": "http_json", "stream": False},
+    )
+    await async_db_session.commit()
+
+    manual_key = build_manual_session_key(manual_session.id)
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/sessions/{manual_key}/messages:query",
+            json={"page": 1, "size": 50},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["pagination"]["total"] == 2
+        user_row = next(item for item in payload["items"] if item["role"] == "user")
+        agent_row = next(item for item in payload["items"] if item["role"] == "agent")
+        assert user_row["id"] == "client-user-msg-1"
+        assert agent_row["id"] == "client-agent-msg-1"
+        assert isinstance(user_row["metadata"].get("local_message_id"), str)
+        assert isinstance(agent_row["metadata"].get("local_message_id"), str)

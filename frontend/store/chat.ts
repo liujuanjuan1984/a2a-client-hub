@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import { invokeAgent } from "@/lib/api/a2aAgents";
 import {
   applyStreamBlockUpdate,
+  type ChatMessage,
   extractRuntimeStatus,
   extractSessionMeta,
   finalizeMessageBlocks,
@@ -12,7 +13,11 @@ import {
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
-import { continueSession as continueSessionBinding } from "@/lib/api/sessions";
+import {
+  continueSession as continueSessionBinding,
+  listSessionMessagesPage,
+  type SessionMessageItem,
+} from "@/lib/api/sessions";
 import {
   buildPersistedSessions,
   buildInvokePayload,
@@ -23,6 +28,7 @@ import {
   type AgentSession,
 } from "@/lib/chat-utils";
 import { generateId, generateUuid } from "@/lib/id";
+import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import { buildConversationSessionId, getSessionSource } from "@/lib/sessionIds";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { chatConnectionService } from "@/services/chatConnectionService";
@@ -199,9 +205,15 @@ export const useChatStore = create<ChatState>()(
         messageStore.addMessage(sessionId, agentMessage);
 
         let activeAgentMessageId = agentMessageId;
+        const activeStreamMessageIds = new Set<string>([agentMessageId]);
         const streamMessageIdMap = new Map<string, string>();
         const seenEventIds = new Set<string>();
-        const lastSeqByMessageId = new Map<string, number>();
+        const nextExpectedSeqByMessageId = new Map<string, number>();
+        const pendingChunksByMessageId = new Map<
+          string,
+          Map<number, StreamBlockUpdate>
+        >();
+        let terminalHandled = false;
 
         let rebindInFlight = false;
 
@@ -316,7 +328,10 @@ export const useChatStore = create<ChatState>()(
 
         const session =
           get().sessions[sessionId] ?? createAgentSession(agentId);
-        const payload = buildInvokePayload(trimmed, session, sessionId);
+        const payload = buildInvokePayload(trimmed, session, sessionId, {
+          userMessageId: userMessage.id,
+          clientAgentMessageId: agentMessage.id,
+        });
 
         const updateSessionMeta = (meta: {
           contextId?: string | null;
@@ -377,11 +392,152 @@ export const useChatStore = create<ChatState>()(
           });
         };
 
+        const markActiveMessage = (messageId: string) => {
+          activeAgentMessageId = messageId;
+          activeStreamMessageIds.add(messageId);
+        };
+
+        const resolveExistingTargetMessageIds = () => {
+          const currentMessages =
+            useMessageStore.getState().messages[sessionId] ?? [];
+          const existingIds = new Set(
+            currentMessages.map((message) => message.id),
+          );
+          const targets = Array.from(activeStreamMessageIds).filter((id) =>
+            existingIds.has(id),
+          );
+          if (targets.length === 0 && existingIds.has(activeAgentMessageId)) {
+            targets.push(activeAgentMessageId);
+          }
+          return targets;
+        };
+
+        const closeStreamingMessages = (errorText?: string) => {
+          const targetMessageIds = resolveExistingTargetMessageIds();
+          const now = new Date().toISOString();
+          targetMessageIds.forEach((messageId) => {
+            messageStore.updateMessageWithUpdater(
+              sessionId,
+              messageId,
+              (message) => {
+                const finalizedBlocks =
+                  finalizeMessageBlocks(message.blocks) ?? [];
+                if (!errorText) {
+                  return {
+                    blocks: finalizedBlocks,
+                    status: "done",
+                  };
+                }
+                return {
+                  blocks: [
+                    ...finalizedBlocks,
+                    {
+                      id: `${message.id}:error:${Date.now()}`,
+                      type: "system_error",
+                      content: `[Stream Error: ${errorText}]`,
+                      isFinished: true,
+                      createdAt: now,
+                      updatedAt: now,
+                    },
+                  ],
+                  status: "done",
+                };
+              },
+            );
+          });
+          activeStreamMessageIds.clear();
+        };
+
+        const mergeHistoryMessagesById = (incoming: ChatMessage[]) => {
+          const current = useMessageStore.getState().messages[sessionId] ?? [];
+          const merged = new Map<string, ChatMessage>();
+          current.forEach((message) => {
+            merged.set(message.id, message);
+          });
+          incoming.forEach((message) => {
+            merged.set(message.id, message);
+          });
+          const nextMessages = Array.from(merged.values()).sort((left, right) =>
+            left.createdAt.localeCompare(right.createdAt),
+          );
+          messageStore.setMessages(sessionId, nextMessages);
+        };
+
+        const backfillHistoryAfterSequenceGap = async () => {
+          const recovered = new Map<string, ChatMessage>();
+          const size = 100;
+          const maxPages = 20;
+
+          const collectPage = (items: SessionMessageItem[]) => {
+            const mapped = mapSessionMessagesToChatMessages(items, sessionId);
+            mapped.forEach((message) => {
+              recovered.set(message.id, message);
+            });
+          };
+
+          const firstPage = await listSessionMessagesPage(sessionId, {
+            page: 1,
+            size,
+          });
+          const pagination =
+            firstPage.pagination && typeof firstPage.pagination === "object"
+              ? (firstPage.pagination as Record<string, unknown>)
+              : null;
+          const totalPages =
+            pagination && typeof pagination.pages === "number"
+              ? pagination.pages
+              : null;
+
+          if (typeof totalPages === "number" && totalPages > 1) {
+            const tailPageWindow = 3;
+            const startPage = Math.max(1, totalPages - tailPageWindow + 1);
+            for (let page = startPage; page <= totalPages; page += 1) {
+              if (page === 1) {
+                collectPage(firstPage.items);
+                continue;
+              }
+              const response = await listSessionMessagesPage(sessionId, {
+                page,
+                size,
+              });
+              collectPage(response.items);
+            }
+          } else {
+            collectPage(firstPage.items);
+            let nextPage =
+              typeof firstPage.nextPage === "number"
+                ? firstPage.nextPage
+                : undefined;
+            let requestCount = 1;
+
+            while (
+              typeof nextPage === "number" &&
+              requestCount < maxPages &&
+              nextPage > 1
+            ) {
+              const response = await listSessionMessagesPage(sessionId, {
+                page: nextPage,
+                size,
+              });
+              collectPage(response.items);
+              nextPage =
+                typeof response.nextPage === "number"
+                  ? response.nextPage
+                  : undefined;
+              requestCount += 1;
+            }
+          }
+
+          if (recovered.size > 0) {
+            mergeHistoryMessagesById(Array.from(recovered.values()));
+          }
+        };
+
         const appendStreamChunk = (chunk: StreamBlockUpdate) => {
           const resolveChunkMessageId = () => {
             const mapped = streamMessageIdMap.get(chunk.messageId);
             if (mapped) {
-              activeAgentMessageId = mapped;
+              markActiveMessage(mapped);
               return mapped;
             }
 
@@ -392,19 +548,21 @@ export const useChatStore = create<ChatState>()(
             );
             if (hasExactTarget) {
               streamMessageIdMap.set(chunk.messageId, chunk.messageId);
-              activeAgentMessageId = chunk.messageId;
+              markActiveMessage(chunk.messageId);
               return chunk.messageId;
             }
 
+            const placeholderId = activeAgentMessageId;
             const hasActivePlaceholder = currentMessages.some(
-              (message) => message.id === activeAgentMessageId,
+              (message) => message.id === placeholderId,
             );
             if (hasActivePlaceholder) {
               messageStore.rekeyMessage(
                 sessionId,
-                activeAgentMessageId,
+                placeholderId,
                 chunk.messageId,
               );
+              activeStreamMessageIds.delete(placeholderId);
             } else {
               messageStore.addMessage(sessionId, {
                 id: chunk.messageId,
@@ -416,7 +574,7 @@ export const useChatStore = create<ChatState>()(
               });
             }
             streamMessageIdMap.set(chunk.messageId, chunk.messageId);
-            activeAgentMessageId = chunk.messageId;
+            markActiveMessage(chunk.messageId);
             return chunk.messageId;
           };
 
@@ -435,57 +593,52 @@ export const useChatStore = create<ChatState>()(
           );
         };
 
-        const appendStreamError = (errorText: string) => {
-          messageStore.updateMessageWithUpdater(
-            sessionId,
-            activeAgentMessageId,
-            (message) => {
-              const finalizedBlocks =
-                finalizeMessageBlocks(message.blocks) ?? [];
-              return {
-                blocks: [
-                  ...finalizedBlocks,
-                  {
-                    id: `${message.id}:error:${Date.now()}`,
-                    type: "system_error",
-                    content: `[Stream Error: ${errorText}]`,
-                    isFinished: true,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                  },
-                ],
-                status: "done",
-              };
-            },
+        const queueIncomingChunk = (chunk: StreamBlockUpdate) => {
+          if (seenEventIds.has(chunk.eventId)) {
+            return;
+          }
+          seenEventIds.add(chunk.eventId);
+
+          const currentExpected = nextExpectedSeqByMessageId.get(
+            chunk.messageId,
           );
-          patchSession({
-            streamState: "error",
-            lastStreamError: errorText,
-          });
-          console.warn("[Chat Stream] error", {
-            sessionId,
-            source: getSessionSource(sessionId),
-            message: errorText,
-            transport: get().sessions[sessionId]?.transport ?? "unknown",
-          });
-          attemptSessionRebind(errorText).catch(() => false);
+          if (
+            typeof currentExpected === "number" &&
+            chunk.seq < currentExpected
+          ) {
+            return;
+          }
+          if (currentExpected === undefined) {
+            nextExpectedSeqByMessageId.set(chunk.messageId, chunk.seq);
+          }
+
+          const pending =
+            pendingChunksByMessageId.get(chunk.messageId) ?? new Map();
+          if (pending.has(chunk.seq)) {
+            return;
+          }
+          pending.set(chunk.seq, chunk);
+          pendingChunksByMessageId.set(chunk.messageId, pending);
+
+          let nextExpected =
+            nextExpectedSeqByMessageId.get(chunk.messageId) ?? chunk.seq;
+          while (pending.has(nextExpected)) {
+            const readyChunk = pending.get(nextExpected);
+            if (!readyChunk) break;
+            pending.delete(nextExpected);
+            appendStreamChunk(readyChunk);
+            nextExpected += 1;
+          }
+          nextExpectedSeqByMessageId.set(chunk.messageId, nextExpected);
+          if (pending.size === 0) {
+            pendingChunksByMessageId.delete(chunk.messageId);
+          }
         };
 
         const applyIncomingStreamData = (data: Record<string, unknown>) => {
           const chunk = extractStreamBlockUpdate(data);
           if (chunk) {
-            if (seenEventIds.has(chunk.eventId)) {
-              // Keep processing metadata on duplicate events, but skip chunk apply.
-            } else {
-              seenEventIds.add(chunk.eventId);
-              const lastSeq = lastSeqByMessageId.get(chunk.messageId);
-              if (typeof lastSeq === "number" && chunk.seq <= lastSeq) {
-                // Out-of-order / replayed chunks are ignored.
-              } else {
-                lastSeqByMessageId.set(chunk.messageId, chunk.seq);
-                appendStreamChunk(chunk);
-              }
-            }
+            queueIncomingChunk(chunk);
           }
 
           const meta = extractSessionMeta(data);
@@ -501,16 +654,54 @@ export const useChatStore = create<ChatState>()(
           }
         };
 
-        const completeStreamingMessage = () => {
-          messageStore.updateMessageWithUpdater(
+        const appendStreamError = (errorText: string) => {
+          if (terminalHandled) {
+            return;
+          }
+          terminalHandled = true;
+          closeStreamingMessages(errorText);
+          patchSession({
+            streamState: "error",
+            lastStreamError: errorText,
+          });
+          console.warn("[Chat Stream] error", {
             sessionId,
-            activeAgentMessageId,
-            (message) => ({
-              blocks: finalizeMessageBlocks(message.blocks),
-              status: "done",
-            }),
-          );
+            source: getSessionSource(sessionId),
+            message: errorText,
+            transport: get().sessions[sessionId]?.transport ?? "unknown",
+          });
+          attemptSessionRebind(errorText).catch(() => false);
+        };
+
+        const completeStreamingMessage = () => {
+          if (terminalHandled) {
+            return;
+          }
+          terminalHandled = true;
+          closeStreamingMessages();
           markSessionIdle();
+
+          if (
+            Array.from(pendingChunksByMessageId.values()).some(
+              (pending) => pending.size > 0,
+            )
+          ) {
+            backfillHistoryAfterSequenceGap().catch((error) => {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Sequence-gap recovery failed.";
+              patchSession({
+                streamState: "recoverable",
+                lastStreamError: message,
+              });
+              console.warn("[Chat Stream] sequence-gap recovery failed", {
+                sessionId,
+                source: getSessionSource(sessionId),
+                message,
+              });
+            });
+          }
         };
 
         const tryWebSocketTransport = async () =>

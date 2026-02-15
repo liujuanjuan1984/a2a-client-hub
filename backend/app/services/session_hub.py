@@ -1263,6 +1263,8 @@ class SessionHubService:
         response_content: str,
         success: bool,
         context_id: Optional[str],
+        user_message_id: Optional[str] = None,
+        client_agent_message_id: Optional[str] = None,
         invoke_metadata: Optional[Dict[str, Any]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
         response_metadata: Optional[Dict[str, Any]] = None,
@@ -1285,6 +1287,12 @@ class SessionHubService:
             metadata["external_session_id"] = external_session_id
         if extra_metadata:
             metadata.update(extra_metadata)
+        normalized_user_message_id = normalize_non_empty_text(user_message_id)
+        normalized_client_agent_message_id = normalize_non_empty_text(
+            client_agent_message_id
+        )
+        if normalized_user_message_id:
+            metadata["client_message_id"] = normalized_user_message_id
 
         conversation_id: UUID | None = None
         if source == "manual":
@@ -1345,6 +1353,8 @@ class SessionHubService:
             metadata=metadata,
         )
         agent_metadata = dict(metadata)
+        if normalized_client_agent_message_id:
+            agent_metadata["client_message_id"] = normalized_client_agent_message_id
         if response_metadata:
             for key, value in response_metadata.items():
                 if (
@@ -1616,7 +1626,8 @@ def _sender_to_role(sender: str) -> str:
 def _resolve_local_message_item_id(
     message: AgentMessage, metadata: dict[str, Any]
 ) -> str:
-    if _sender_to_role(getattr(message, "sender", "")) == "agent":
+    role = _sender_to_role(getattr(message, "sender", ""))
+    if role == "agent":
         upstream_message_id = normalize_non_empty_text(
             metadata.get("upstream_message_id")
             or metadata.get("message_id")
@@ -1624,6 +1635,15 @@ def _resolve_local_message_item_id(
         )
         if upstream_message_id:
             return upstream_message_id
+    if role in {"user", "agent"}:
+        client_message_id = normalize_non_empty_text(
+            metadata.get("client_message_id")
+            or metadata.get("clientMessageId")
+            or metadata.get("request_message_id")
+            or metadata.get("requestMessageId")
+        )
+        if client_message_id:
+            return client_message_id
     return str(message.id)
 
 

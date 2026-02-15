@@ -19,6 +19,16 @@ class A2AAgentInvokeRequest(BaseModel):
         alias="contextId",
         description="Optional A2A context identifier",
     )
+    user_message_id: Optional[str] = Field(
+        default=None,
+        alias="userMessageId",
+        description="Optional client-stable user message identifier",
+    )
+    client_agent_message_id: Optional[str] = Field(
+        default=None,
+        alias="clientAgentMessageId",
+        description="Optional client-side placeholder agent message identifier",
+    )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Optional A2A metadata forwarded with the message",

@@ -494,6 +494,14 @@ class A2AInvokeService:
             payload["validation_errors"] = validate_message(payload)
         return payload
 
+    @staticmethod
+    def _extract_artifact_validation_errors(
+        payload: dict[str, Any], *, validate_message: ValidateMessageFn
+    ) -> list[str]:
+        if payload.get("kind") != "artifact-update":
+            return []
+        return [str(item) for item in validate_message(payload)]
+
     def stream_sse(
         self,
         *,
@@ -523,6 +531,19 @@ class A2AInvokeService:
                     serialized = self.serialize_stream_event(
                         event, validate_message=validate_message
                     )
+                    validation_errors = self._extract_artifact_validation_errors(
+                        serialized,
+                        validate_message=validate_message,
+                    )
+                    if validation_errors:
+                        logger.warning(
+                            "Dropped invalid artifact-update event",
+                            extra={
+                                **log_extra,
+                                "validation_error_count": len(validation_errors),
+                            },
+                        )
+                        continue
                     await self._call_callback(on_event, serialized)
                     stream_text_accumulator.consume(serialized)
                     yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
@@ -589,6 +610,19 @@ class A2AInvokeService:
                 serialized = self.serialize_stream_event(
                     event, validate_message=validate_message
                 )
+                validation_errors = self._extract_artifact_validation_errors(
+                    serialized,
+                    validate_message=validate_message,
+                )
+                if validation_errors:
+                    logger.warning(
+                        "Dropped invalid artifact-update event",
+                        extra={
+                            **log_extra,
+                            "validation_error_count": len(validation_errors),
+                        },
+                    )
+                    continue
                 await self._call_callback(on_event, serialized)
                 stream_text_accumulator.consume(serialized)
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))

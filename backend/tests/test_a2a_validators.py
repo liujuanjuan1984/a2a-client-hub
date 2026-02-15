@@ -127,7 +127,27 @@ class TestValidateMessage:
     def test_valid_artifact_update(self):
         data = {
             "kind": "artifact-update",
+            "message_id": "msg-1",
+            "event_id": "evt-1",
+            "seq": 1,
             "artifact": {"parts": [{"text": "result"}]},
+        }
+        errors = validators.validate_message(data)
+        assert not errors
+
+    def test_valid_artifact_update_with_identity_in_artifact_metadata(self):
+        data = {
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"text": "result"}],
+                "metadata": {
+                    "opencode": {
+                        "message_id": "msg-1",
+                        "event_id": "evt-1",
+                        "seq": 1,
+                    }
+                },
+            },
         }
         errors = validators.validate_message(data)
         assert not errors
@@ -143,11 +163,47 @@ class TestValidateMessage:
         ids=["missing", "wrong_type", "empty"],
     )
     def test_artifact_update_invalid_parts(self, parts_value):
-        data = {"kind": "artifact-update", "artifact": {}}
+        data = {
+            "kind": "artifact-update",
+            "message_id": "msg-1",
+            "event_id": "evt-1",
+            "seq": 1,
+            "artifact": {},
+        }
         if parts_value is not None:
             data["artifact"]["parts"] = parts_value
         errors = validators.validate_message(data)
         assert "Artifact object must have a non-empty 'parts' array." in errors
+
+    def test_artifact_update_missing_message_id(self):
+        data = {
+            "kind": "artifact-update",
+            "event_id": "evt-1",
+            "seq": 1,
+            "artifact": {"parts": [{"text": "result"}]},
+        }
+        errors = validators.validate_message(data)
+        assert "ArtifactUpdate object missing required field: 'message_id'." in errors
+
+    def test_artifact_update_missing_event_id(self):
+        data = {
+            "kind": "artifact-update",
+            "message_id": "msg-1",
+            "seq": 1,
+            "artifact": {"parts": [{"text": "result"}]},
+        }
+        errors = validators.validate_message(data)
+        assert "ArtifactUpdate object missing required field: 'event_id'." in errors
+
+    def test_artifact_update_missing_seq(self):
+        data = {
+            "kind": "artifact-update",
+            "message_id": "msg-1",
+            "event_id": "evt-1",
+            "artifact": {"parts": [{"text": "result"}]},
+        }
+        errors = validators.validate_message(data)
+        assert "ArtifactUpdate object missing required field: 'seq'." in errors
 
     def test_valid_message(self):
         data = {"kind": "message", "parts": [{"text": "hello"}], "role": "agent"}

@@ -62,8 +62,18 @@ export const buildInvokePayload = (
   query: string,
   session: AgentSession,
   sessionId: string,
+  options?: {
+    userMessageId?: string;
+    clientAgentMessageId?: string;
+  },
 ): A2AAgentInvokeRequest => {
   const payload: A2AAgentInvokeRequest = { query, sessionId };
+  if (options?.userMessageId) {
+    payload.userMessageId = options.userMessageId;
+  }
+  if (options?.clientAgentMessageId) {
+    payload.clientAgentMessageId = options.clientAgentMessageId;
+  }
   if (session.contextId) {
     payload.contextId = session.contextId;
   }

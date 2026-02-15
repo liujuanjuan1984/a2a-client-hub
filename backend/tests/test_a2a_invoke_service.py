@@ -439,6 +439,49 @@ async def test_sse_on_complete_supports_block_type():
     assert completed == ["Hello alias"]
 
 
+@pytest.mark.asyncio
+async def test_sse_drops_invalid_artifact_update_events():
+    completed: list[str] = []
+    observed_events: list[dict] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    async def _on_event(payload: dict):
+        observed_events.append(payload)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-invalid:stream",
+                    text="dropped",
+                    block_type="text",
+                ),
+                {"content": "kept"},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda payload: (
+            ["invalid artifact event"]
+            if payload.get("kind") == "artifact-update"
+            else []
+        ),
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+        on_event=_on_event,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == ["kept"]
+    assert observed_events == [{"content": "kept"}]
+
+
 def test_extract_binding_hints_from_serialized_event():
     (
         context_id,
