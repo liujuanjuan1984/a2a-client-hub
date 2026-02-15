@@ -513,3 +513,44 @@ def test_extract_binding_hints_from_opencode_namespace_session_id():
     assert context_id is None
     assert metadata["provider"] == "opencode"
     assert metadata["externalSessionId"] == "nested-upstream-session"
+
+
+def test_extract_stream_identity_hints_from_serialized_event():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "event_id": "evt-1",
+            "seq": 9,
+            "artifact": {
+                "message_id": "msg-1",
+            },
+        }
+    )
+    assert hints == {
+        "upstream_message_id": "msg-1",
+        "upstream_event_id": "evt-1",
+        "upstream_event_seq": 9,
+    }
+
+
+def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
+    class _RawPayload:
+        def model_dump(self, **kwargs):  # noqa: ARG002
+            return {
+                "event_id": "evt-from-raw",
+                "seq": 12,
+                "message_id": "msg-from-raw",
+            }
+
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
+        {
+            "event_id": "evt-from-result",
+            "seq": 2,
+            "message_id": "msg-from-result",
+            "raw": _RawPayload(),
+        }
+    )
+    assert hints == {
+        "upstream_message_id": "msg-from-raw",
+        "upstream_event_id": "evt-from-raw",
+        "upstream_event_seq": 12,
+    }

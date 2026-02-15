@@ -198,7 +198,10 @@ export const useChatStore = create<ChatState>()(
         messageStore.addMessage(sessionId, userMessage);
         messageStore.addMessage(sessionId, agentMessage);
 
-        const activeAgentMessageId = agentMessageId;
+        let activeAgentMessageId = agentMessageId;
+        const streamMessageIdMap = new Map<string, string>();
+        const seenEventIds = new Set<string>();
+        const lastSeqByMessageId = new Map<string, number>();
 
         let rebindInFlight = false;
 
@@ -375,9 +378,52 @@ export const useChatStore = create<ChatState>()(
         };
 
         const appendStreamChunk = (chunk: StreamBlockUpdate) => {
+          const resolveChunkMessageId = () => {
+            const mapped = streamMessageIdMap.get(chunk.messageId);
+            if (mapped) {
+              activeAgentMessageId = mapped;
+              return mapped;
+            }
+
+            const currentMessages =
+              useMessageStore.getState().messages[sessionId] ?? [];
+            const hasExactTarget = currentMessages.some(
+              (message) => message.id === chunk.messageId,
+            );
+            if (hasExactTarget) {
+              streamMessageIdMap.set(chunk.messageId, chunk.messageId);
+              activeAgentMessageId = chunk.messageId;
+              return chunk.messageId;
+            }
+
+            const hasActivePlaceholder = currentMessages.some(
+              (message) => message.id === activeAgentMessageId,
+            );
+            if (hasActivePlaceholder) {
+              messageStore.rekeyMessage(
+                sessionId,
+                activeAgentMessageId,
+                chunk.messageId,
+              );
+            } else {
+              messageStore.addMessage(sessionId, {
+                id: chunk.messageId,
+                role: "agent",
+                content: "",
+                blocks: [],
+                createdAt: new Date().toISOString(),
+                status: "streaming",
+              });
+            }
+            streamMessageIdMap.set(chunk.messageId, chunk.messageId);
+            activeAgentMessageId = chunk.messageId;
+            return chunk.messageId;
+          };
+
+          const targetMessageId = resolveChunkMessageId();
           messageStore.updateMessageWithUpdater(
             sessionId,
-            activeAgentMessageId,
+            targetMessageId,
             (message) => {
               const nextBlocks = applyStreamBlockUpdate(message.blocks, chunk);
               return {
@@ -428,7 +474,18 @@ export const useChatStore = create<ChatState>()(
         const applyIncomingStreamData = (data: Record<string, unknown>) => {
           const chunk = extractStreamBlockUpdate(data);
           if (chunk) {
-            appendStreamChunk(chunk);
+            if (seenEventIds.has(chunk.eventId)) {
+              // Keep processing metadata on duplicate events, but skip chunk apply.
+            } else {
+              seenEventIds.add(chunk.eventId);
+              const lastSeq = lastSeqByMessageId.get(chunk.messageId);
+              if (typeof lastSeq === "number" && chunk.seq <= lastSeq) {
+                // Out-of-order / replayed chunks are ignored.
+              } else {
+                lastSeqByMessageId.set(chunk.messageId, chunk.seq);
+                appendStreamChunk(chunk);
+              }
+            }
           }
 
           const meta = extractSessionMeta(data);
@@ -518,7 +575,7 @@ export const useChatStore = create<ChatState>()(
             if (!response.success) {
               const message =
                 response.error || response.error_code || "Request failed.";
-              messageStore.updateMessage(sessionId, agentMessageId, {
+              messageStore.updateMessage(sessionId, activeAgentMessageId, {
                 content: message,
                 status: "done",
               });
@@ -529,7 +586,7 @@ export const useChatStore = create<ChatState>()(
               return;
             }
 
-            messageStore.updateMessage(sessionId, agentMessageId, {
+            messageStore.updateMessage(sessionId, activeAgentMessageId, {
               content: response.content ?? "",
               status: "done",
             });
@@ -537,7 +594,7 @@ export const useChatStore = create<ChatState>()(
           } catch (error) {
             const message =
               error instanceof Error ? error.message : "Request failed.";
-            messageStore.updateMessage(sessionId, agentMessageId, {
+            messageStore.updateMessage(sessionId, activeAgentMessageId, {
               content: message,
               status: "done",
             });

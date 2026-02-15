@@ -78,6 +78,71 @@ class A2AInvokeService:
                 resolved.update(value)
         return resolved
 
+    @staticmethod
+    def _pick_non_empty_str(
+        payload: dict[str, Any],
+        keys: tuple[str, ...],
+    ) -> str | None:
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    @staticmethod
+    def _pick_int(payload: dict[str, Any], keys: tuple[str, ...]) -> int | None:
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float) and value.is_integer():
+                return int(value)
+            if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+                return int(value.strip())
+        return None
+
+    @classmethod
+    def _extract_stream_identity_hints_from_payload(
+        cls, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        root = as_dict(payload)
+        artifact = as_dict(root.get("artifact"))
+        artifact_metadata = as_dict(artifact.get("metadata"))
+        opencode_metadata = as_dict(artifact_metadata.get("opencode"))
+        message = as_dict(root.get("message"))
+        result = as_dict(root.get("result"))
+
+        message_id = None
+        event_id = None
+        event_seq = None
+        for candidate in (
+            root,
+            artifact,
+            opencode_metadata,
+            message,
+            result,
+        ):
+            if message_id is None:
+                message_id = cls._pick_non_empty_str(
+                    candidate, ("message_id", "messageId")
+                )
+            if event_id is None:
+                event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
+            if event_seq is None:
+                event_seq = cls._pick_int(
+                    candidate,
+                    ("seq", "event_seq", "sequence", "eventSeq"),
+                )
+
+        hints: dict[str, Any] = {}
+        if message_id:
+            hints["upstream_message_id"] = message_id
+        if event_id:
+            hints["upstream_event_id"] = event_id
+        if event_seq is not None:
+            hints["upstream_event_seq"] = event_seq
+        return hints
+
     @classmethod
     def _extract_binding_hints_from_payload(
         cls, payload: dict[str, Any]
@@ -139,6 +204,12 @@ class A2AInvokeService:
         return cls._extract_binding_hints_from_payload(payload)
 
     @classmethod
+    def extract_stream_identity_hints_from_serialized_event(
+        cls, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return cls._extract_stream_identity_hints_from_payload(payload)
+
+    @classmethod
     def _coerce_payload_to_dict(cls, payload: Any) -> dict[str, Any]:
         resolved_payload = payload
         if isinstance(resolved_payload, tuple):
@@ -174,6 +245,16 @@ class A2AInvokeService:
             if raw_metadata:
                 metadata.update(raw_metadata)
         return context_id, metadata
+
+    @classmethod
+    def extract_stream_identity_hints_from_invoke_result(
+        cls, result: dict[str, Any]
+    ) -> dict[str, Any]:
+        hints = cls._extract_stream_identity_hints_from_payload(result)
+        raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
+        if raw_payload:
+            hints.update(cls._extract_stream_identity_hints_from_payload(raw_payload))
+        return hints
 
     class _StreamTextAccumulator:
         """Accumulates stream text for persistence.
@@ -321,9 +402,9 @@ class A2AInvokeService:
                 and last.get("is_finished") is False
             ):
                 current = last.get("content")
-                last["content"] = (
-                    f"{current if isinstance(current, str) else ''}{delta}"
-                )
+                last[
+                    "content"
+                ] = f"{current if isinstance(current, str) else ''}{delta}"
                 last["is_finished"] = done
                 return
 

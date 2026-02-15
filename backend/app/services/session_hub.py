@@ -796,16 +796,21 @@ class SessionHubService:
                 conversation_id=conversation_id,
             )
             pages = (total + size - 1) // size if size else 0
-            items = [
-                {
-                    "id": str(message.id),
-                    "role": _sender_to_role(getattr(message, "sender", "")),
-                    "content": message.content or "",
-                    "created_at": message.created_at,
-                    "metadata": dict(getattr(message, "message_metadata", None) or {}),
-                }
-                for message in messages
-            ]
+            items: list[dict[str, Any]] = []
+            for message in messages:
+                message_metadata = dict(
+                    getattr(message, "message_metadata", None) or {}
+                )
+                message_metadata.setdefault("local_message_id", str(message.id))
+                items.append(
+                    {
+                        "id": _resolve_local_message_item_id(message, message_metadata),
+                        "role": _sender_to_role(getattr(message, "sender", "")),
+                        "content": message.content or "",
+                        "created_at": message.created_at,
+                        "metadata": message_metadata,
+                    }
+                )
             meta = {
                 "session_id": session_key,
                 "conversationId": str(conversation_id) if conversation_id else None,
@@ -1606,6 +1611,20 @@ def _sender_to_role(sender: str) -> str:
     if normalized == "agent":
         return "agent"
     return "system"
+
+
+def _resolve_local_message_item_id(
+    message: AgentMessage, metadata: dict[str, Any]
+) -> str:
+    if _sender_to_role(getattr(message, "sender", "")) == "agent":
+        upstream_message_id = normalize_non_empty_text(
+            metadata.get("upstream_message_id")
+            or metadata.get("message_id")
+            or metadata.get("messageId")
+        )
+        if upstream_message_id:
+            return upstream_message_id
+    return str(message.id)
 
 
 def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:

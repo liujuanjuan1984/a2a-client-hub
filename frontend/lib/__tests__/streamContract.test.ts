@@ -13,6 +13,8 @@ const buildBlockUpdatePayload = (input: {
   artifactId: string;
   taskId?: string;
   messageId?: string;
+  eventId?: string;
+  seq?: number;
   append?: boolean;
   source?: string;
   lastChunk?: boolean;
@@ -20,6 +22,8 @@ const buildBlockUpdatePayload = (input: {
   kind: "artifact-update",
   task_id: input.taskId ?? "task-1",
   message_id: input.messageId ?? "msg-1",
+  event_id: input.eventId ?? "evt-1",
+  seq: input.seq ?? 1,
   append: input.append ?? true,
   lastChunk: input.lastChunk ?? false,
   artifact: {
@@ -171,6 +175,8 @@ describe("block-based stream parser and reducer", () => {
       kind: "artifact-update",
       task_id: "task-9",
       message_id: "msg-9",
+      event_id: "evt-9",
+      seq: 9,
       artifact: {
         artifact_id: "task-9:stream",
         parts: [{ kind: "text", text: "hello" }],
@@ -189,6 +195,8 @@ describe("block-based stream parser and reducer", () => {
       kind: "artifact-update",
       task_id: "task-8",
       message_id: "msg-8",
+      event_id: "evt-8",
+      seq: 8,
       artifact: {
         artifact_id: "task-8:stream",
         parts: [{ kind: "text", text: "noop" }],
@@ -210,6 +218,17 @@ describe("block-based stream parser and reducer", () => {
       messageId: "",
     }) as Record<string, unknown>;
     delete payload.message_id;
+    const parsed = extractStreamBlockUpdate(payload);
+    expect(parsed).toBeNull();
+  });
+
+  it("ignores chunks without event_id", () => {
+    const payload = buildBlockUpdatePayload({
+      blockType: "text",
+      delta: "hello",
+      artifactId: "task-1:stream",
+    }) as Record<string, unknown>;
+    delete payload.event_id;
     const parsed = extractStreamBlockUpdate(payload);
     expect(parsed).toBeNull();
   });

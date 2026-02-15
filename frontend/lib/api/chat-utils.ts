@@ -19,6 +19,8 @@ export type ChatMessage = {
 };
 
 export type StreamBlockUpdate = {
+  eventId: string;
+  seq: number;
   taskId: string;
   artifactId: string;
   blockType: "text" | "reasoning" | "tool_call";
@@ -116,6 +118,27 @@ const pickRawString = (
   return null;
 };
 
+const pickInteger = (
+  source: Record<string, unknown> | null,
+  keys: string[],
+): number | null => {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = source[key];
+    if (
+      typeof value === "number" &&
+      Number.isFinite(value) &&
+      Number.isInteger(value)
+    ) {
+      return value;
+    }
+    if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+      return Number(value.trim());
+    }
+  }
+  return null;
+};
+
 const normalizeRole = (raw: string | null): ChatRole => {
   const role = (raw ?? "").trim().toLowerCase();
   if (role === "user" || role === "human" || role === "automation") {
@@ -173,6 +196,29 @@ export const extractStreamBlockUpdate = (
     return null;
   }
 
+  const eventId =
+    pickString(data, ["event_id", "eventId"]) ??
+    pickString(artifact ?? null, ["event_id", "eventId"]) ??
+    pickString(opencodeMetadata, ["event_id", "eventId"]);
+  // V2 contract: every stream event must carry event_id.
+  if (!eventId) {
+    return null;
+  }
+
+  const seq =
+    pickInteger(data, ["seq", "event_seq", "sequence", "eventSeq"]) ??
+    pickInteger(artifact ?? null, [
+      "seq",
+      "event_seq",
+      "sequence",
+      "eventSeq",
+    ]) ??
+    pickInteger(opencodeMetadata, ["seq", "event_seq", "sequence", "eventSeq"]);
+  // V2 contract: every stream event must carry a monotonic seq.
+  if (seq === null) {
+    return null;
+  }
+
   const artifactId =
     pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ??
     `${messageId}:${blockType}`;
@@ -220,6 +266,8 @@ export const extractStreamBlockUpdate = (
   );
 
   return {
+    eventId,
+    seq,
     taskId,
     artifactId,
     blockType,

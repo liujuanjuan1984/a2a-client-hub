@@ -33,6 +33,7 @@ class _InvokeState:
     local_source: Any
     context_id: str | None
     metadata: dict[str, Any]
+    stream_identity: dict[str, Any]
 
 
 async def _prepare_state(
@@ -62,6 +63,7 @@ async def _prepare_state(
         local_source=local_source,
         context_id=resolved_context_id,
         metadata=resolved_invoke_metadata,
+        stream_identity={},
     )
 
 
@@ -95,10 +97,20 @@ def _build_stream_callbacks(
             next_context_id=event_context_id,
             next_metadata=event_metadata,
         )
+        identity_hints = (
+            a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+                event_payload
+            )
+        )
+        if identity_hints:
+            state.stream_identity.update(identity_hints)
 
     async def on_complete(stream_text: str) -> None:
         if state.local_session is None or state.local_source is None:
             return
+        final_response_metadata = dict(stream_response_metadata)
+        if state.stream_identity:
+            final_response_metadata.update(state.stream_identity)
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
@@ -112,7 +124,7 @@ def _build_stream_callbacks(
             context_id=state.context_id,
             invoke_metadata=state.metadata,
             extra_metadata={"transport": transport, "stream": True},
-            response_metadata=stream_response_metadata,
+            response_metadata=final_response_metadata,
         )
         await commit_safely(db)
 
@@ -125,6 +137,9 @@ def _build_stream_callbacks(
     async def on_error(error_message: str) -> None:
         if state.local_session is None or state.local_source is None:
             return
+        error_response_metadata = (
+            dict(state.stream_identity) if state.stream_identity else None
+        )
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
@@ -138,6 +153,7 @@ def _build_stream_callbacks(
             context_id=state.context_id,
             invoke_metadata=state.metadata,
             extra_metadata={"transport": transport, "stream": True},
+            response_metadata=error_response_metadata,
         )
         await commit_safely(db)
 
@@ -210,11 +226,17 @@ async def run_http_invoke(
             next_context_id=result_context_id,
             next_metadata=result_metadata,
         )
+        state.stream_identity.update(
+            a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(result)
+        )
         response_content = (
             result.get("content")
             if success
             else (result.get("error") or "A2A invocation failed")
         ) or ""
+        response_metadata = (
+            dict(state.stream_identity) if state.stream_identity else None
+        )
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
@@ -232,6 +254,7 @@ async def run_http_invoke(
                 "stream": False,
                 "error_code": result.get("error_code"),
             },
+            response_metadata=response_metadata,
         )
         await commit_safely(db)
 

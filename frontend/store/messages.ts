@@ -19,6 +19,11 @@ type MessageState = {
     messageId: string,
     updater: (message: ChatMessage) => Partial<ChatMessage>,
   ) => void;
+  rekeyMessage: (
+    sessionId: string,
+    fromMessageId: string,
+    toMessageId: string,
+  ) => void;
   removeMessages: (sessionId: string) => void;
   pruneMessages: (sessionId: string, limit: number) => void;
   migrateSessionKey: (fromSessionId: string, toSessionId: string) => void;
@@ -73,6 +78,34 @@ export const useMessageStore = create<MessageState>()(
                   ? { ...message, ...updater(message) }
                   : message,
               ),
+            },
+          };
+        });
+      },
+      rekeyMessage: (sessionId, fromMessageId, toMessageId) => {
+        const fromId = fromMessageId.trim();
+        const toId = toMessageId.trim();
+        if (!fromId || !toId || fromId === toId) return;
+
+        set((state) => {
+          const current = state.messages[sessionId] || [];
+          if (!current.some((message) => message.id === fromId)) {
+            return state;
+          }
+          const remapped = current.map((message) =>
+            message.id === fromId ? { ...message, id: toId } : message,
+          );
+          const merged = new Map<string, ChatMessage>();
+          remapped.forEach((message) => {
+            merged.set(message.id, message);
+          });
+          const next = Array.from(merged.values()).sort((left, right) =>
+            left.createdAt.localeCompare(right.createdAt),
+          );
+          return {
+            messages: {
+              ...state.messages,
+              [sessionId]: next,
             },
           };
         });

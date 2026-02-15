@@ -85,31 +85,10 @@ const isSameMessageList = (left: ChatMessage[], right: ChatMessage[]) => {
   });
 };
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const LIST_INITIAL_NUM_TO_RENDER = 16;
 const LIST_WINDOW_SIZE = 9;
 const LIST_MAX_TO_RENDER_PER_BATCH = 20;
-
-const isUuidLikeMessageId = (value: string) => UUID_PATTERN.test(value);
-
-const toEpochMs = (isoLike: string) => {
-  const parsed = Date.parse(isoLike);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-};
-
-const isSemanticallyDuplicatedWithRemote = (
-  localMessage: ChatMessage,
-  remoteMessage: ChatMessage,
-) => {
-  if (localMessage.role !== remoteMessage.role) return false;
-  if (localMessage.content !== remoteMessage.content) return false;
-  const localTs = toEpochMs(localMessage.createdAt);
-  const remoteTs = toEpochMs(remoteMessage.createdAt);
-  if (!Number.isFinite(localTs) || !Number.isFinite(remoteTs)) return false;
-  return Math.abs(localTs - remoteTs) <= 30_000;
-};
 
 export function ChatScreen({
   agentId: routeAgentId,
@@ -265,17 +244,11 @@ export function ChatScreen({
     (incoming: ChatMessage[]) => {
       if (!sessionId) return;
       const current = useMessageStore.getState().messages[sessionId] ?? [];
-      const retainedLocal = current.filter((message) => {
-        if (message.status === "streaming") return true;
-        if (isUuidLikeMessageId(message.id)) return true;
-        return !incoming.some(
-          (remoteMessage) =>
-            isUuidLikeMessageId(remoteMessage.id) &&
-            isSemanticallyDuplicatedWithRemote(message, remoteMessage),
-        );
-      });
       const merged = new Map<string, ChatMessage>();
-      [...retainedLocal, ...incoming].forEach((message) => {
+      current.forEach((message) => {
+        merged.set(message.id, message);
+      });
+      incoming.forEach((message) => {
         merged.set(message.id, message);
       });
       const nextMessages = Array.from(merged.values()).sort((a, b) =>
