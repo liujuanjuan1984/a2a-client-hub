@@ -214,6 +214,7 @@ export const useChatStore = create<ChatState>()(
           Map<number, StreamBlockUpdate>
         >();
         let terminalHandled = false;
+        let hasObservedStreamEvent = false;
 
         let rebindInFlight = false;
 
@@ -638,6 +639,7 @@ export const useChatStore = create<ChatState>()(
         const applyIncomingStreamData = (
           data: Record<string, unknown>,
         ): boolean => {
+          hasObservedStreamEvent = true;
           const chunk = extractStreamBlockUpdate(data);
           if (chunk) {
             queueIncomingChunk(chunk);
@@ -811,6 +813,12 @@ export const useChatStore = create<ChatState>()(
           return;
         }
         if (await trySseTransport()) {
+          return;
+        }
+        if (hasObservedStreamEvent) {
+          appendStreamError(
+            "Streaming transport interrupted before completion; skip blocking replay.",
+          );
           return;
         }
         await sendViaJsonFallback();

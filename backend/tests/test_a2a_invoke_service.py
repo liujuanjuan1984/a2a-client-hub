@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -29,6 +30,17 @@ class _GatewayWithEvents:
 
     async def stream(self, **kwargs):  # noqa: ARG002
         for event in self._events:
+            yield _DumpableEvent(event)
+
+
+class _GatewayWithDelayedEvents:
+    def __init__(self, events: list[dict], delay_seconds: float):
+        self._events = events
+        self._delay_seconds = delay_seconds
+
+    async def stream(self, **kwargs):  # noqa: ARG002
+        for event in self._events:
+            await asyncio.sleep(self._delay_seconds)
             yield _DumpableEvent(event)
 
 
@@ -551,6 +563,57 @@ async def test_ws_breaks_stream_after_terminal_status_update():
     assert not any(
         item.get("content") == "should-not-be-forwarded" for item in payloads
     )
+
+
+@pytest.mark.asyncio
+async def test_sse_emits_keepalive_heartbeat_when_upstream_is_idle(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithDelayedEvents(
+            [{"content": "late-event"}],
+            delay_seconds=0.03,
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    payload = "".join(chunks)
+    assert ": keep-alive" in payload
+    assert '"content": "late-event"' in payload
+    assert "event: stream_end" in payload
+
+
+@pytest.mark.asyncio
+async def test_ws_emits_keepalive_heartbeat_when_upstream_is_idle(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    websocket = _DummyWebSocket()
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithDelayedEvents(
+            [{"content": "late-event"}],
+            delay_seconds=0.03,
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+
+    payloads = [json.loads(item) for item in websocket.sent]
+    assert any(item.get("event") == "heartbeat" for item in payloads)
+    assert any(item.get("content") == "late-event" for item in payloads)
+    assert payloads[-1]["event"] == "stream_end"
 
 
 def test_extract_binding_hints_from_serialized_event():

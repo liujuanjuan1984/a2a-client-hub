@@ -259,6 +259,13 @@ export class ChatConnectionService {
               finalize("resolve");
               return;
             }
+            if (hasReceivedData) {
+              callbacks.onStreamError(
+                `WebSocket idle timeout after ${wsIdleTimeoutMs}ms`,
+              );
+              finalize("resolve");
+              return;
+            }
             finalize("reject", new Error("WebSocket idle timeout"));
           }, wsIdleTimeoutMs);
         };

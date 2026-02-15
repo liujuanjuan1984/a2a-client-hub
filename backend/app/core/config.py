@@ -474,6 +474,11 @@ class Settings(BaseSettings):
         alias="A2A_CLIENT_IDLE_TIMEOUT",
         description="Seconds of inactivity after which cached A2A HTTP clients are re-created (<=0 disables).",
     )
+    a2a_stream_heartbeat_interval: float = Field(
+        default=15.0,
+        alias="A2A_STREAM_HEARTBEAT_INTERVAL",
+        description="Seconds between heartbeat frames emitted by hub SSE/WS streams while upstream is idle (<=0 disables).",
+    )
     a2a_proxy_allowed_hosts: list[str] = Field(
         default_factory=list,
         alias="A2A_PROXY_ALLOWED_HOSTS",
@@ -571,6 +576,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 "OPENCODE_STREAM_METADATA_MAX_CHARS must not exceed 1000000"
             )
+        return value
+
+    @field_validator("a2a_stream_heartbeat_interval")
+    @classmethod
+    def validate_a2a_stream_heartbeat_interval(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("A2A_STREAM_HEARTBEAT_INTERVAL must be non-negative")
+        if value > 300:
+            raise ValueError("A2A_STREAM_HEARTBEAT_INTERVAL must not exceed 300")
         return value
 
 

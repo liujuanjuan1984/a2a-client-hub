@@ -6,7 +6,9 @@ transport logic to keep behavior consistent and reduce drift.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
+from contextlib import suppress
 from typing import Any, AsyncIterator, Callable
 
 from a2a.client.client import ClientEvent
@@ -34,6 +36,8 @@ class A2AInvokeService:
     # Keep client-facing stream errors generic. Internal errors go to logs.
     _STREAM_ERROR_MESSAGE = "Upstream streaming failed"
     _STREAM_ERROR_CODE = "upstream_stream_error"
+    _SSE_HEARTBEAT_FRAME = ": keep-alive\n\n"
+    _WS_HEARTBEAT_EVENT = {"event": "heartbeat", "data": {}}
 
     @classmethod
     def build_ws_error_event(
@@ -506,6 +510,51 @@ class A2AInvokeService:
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
         return payload.get("kind") == "status-update" and payload.get("final") is True
 
+    @staticmethod
+    def _stream_heartbeat_interval_seconds() -> float:
+        from app.core.config import settings
+
+        interval = float(settings.a2a_stream_heartbeat_interval)
+        if interval <= 0:
+            return 0.0
+        return interval
+
+    async def _iter_stream_events_with_heartbeat(
+        self,
+        stream: AsyncIterator[StreamEvent],
+        *,
+        heartbeat_interval_seconds: float,
+    ) -> AsyncIterator[StreamEvent | None]:
+        stream_iter = stream.__aiter__()
+        next_event_task: asyncio.Task[StreamEvent] = asyncio.create_task(
+            anext(stream_iter)
+        )
+        try:
+            while True:
+                if heartbeat_interval_seconds > 0:
+                    done, _ = await asyncio.wait(
+                        {next_event_task},
+                        timeout=heartbeat_interval_seconds,
+                    )
+                    if not done:
+                        yield None
+                        continue
+                else:
+                    await next_event_task
+
+                try:
+                    event = next_event_task.result()
+                except StopAsyncIteration:
+                    return
+
+                next_event_task = asyncio.create_task(anext(stream_iter))
+                yield event
+        finally:
+            if not next_event_task.done():
+                next_event_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await next_event_task
+
     def stream_sse(
         self,
         *,
@@ -525,13 +574,20 @@ class A2AInvokeService:
         async def event_generator() -> AsyncIterator[str]:
             stream_text_accumulator = self._StreamTextAccumulator()
             stream_failed = False
+            heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
             try:
-                async for event in gateway.stream(
-                    resolved=resolved,
-                    query=query,
-                    context_id=context_id,
-                    metadata=metadata,
+                async for event in self._iter_stream_events_with_heartbeat(
+                    gateway.stream(
+                        resolved=resolved,
+                        query=query,
+                        context_id=context_id,
+                        metadata=metadata,
+                    ),
+                    heartbeat_interval_seconds=heartbeat_interval_seconds,
                 ):
+                    if event is None:
+                        yield self._SSE_HEARTBEAT_FRAME
+                        continue
                     serialized = self.serialize_stream_event(
                         event, validate_message=validate_message
                     )
@@ -606,13 +662,22 @@ class A2AInvokeService:
     ) -> None:
         stream_text_accumulator = self._StreamTextAccumulator()
         stream_failed = False
+        heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
         try:
-            async for event in gateway.stream(
-                resolved=resolved,
-                query=query,
-                context_id=context_id,
-                metadata=metadata,
+            async for event in self._iter_stream_events_with_heartbeat(
+                gateway.stream(
+                    resolved=resolved,
+                    query=query,
+                    context_id=context_id,
+                    metadata=metadata,
+                ),
+                heartbeat_interval_seconds=heartbeat_interval_seconds,
             ):
+                if event is None:
+                    await websocket.send_text(
+                        json_dumps(self._WS_HEARTBEAT_EVENT, ensure_ascii=False)
+                    )
+                    continue
                 serialized = self.serialize_stream_event(
                     event, validate_message=validate_message
                 )
