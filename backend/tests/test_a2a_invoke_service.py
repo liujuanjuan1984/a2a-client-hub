@@ -32,6 +32,14 @@ class _GatewayWithEvents:
             yield _DumpableEvent(event)
 
 
+class _DummyWebSocket:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+
+    async def send_text(self, payload: str) -> None:
+        self.sent.append(payload)
+
+
 def _artifact_event(
     *,
     artifact_id: str,
@@ -480,6 +488,69 @@ async def test_sse_drops_invalid_artifact_update_events():
 
     assert completed == ["kept"]
     assert observed_events == [{"content": "kept"}]
+
+
+@pytest.mark.asyncio
+async def test_sse_breaks_stream_after_terminal_status_update():
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "status-update",
+                    "status": {"state": "input_required"},
+                    "final": True,
+                },
+                {"content": "should-not-be-forwarded"},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    payload = "".join(chunks)
+    assert '"kind": "status-update"' in payload
+    assert "should-not-be-forwarded" not in payload
+    assert "event: stream_end" in payload
+
+
+@pytest.mark.asyncio
+async def test_ws_breaks_stream_after_terminal_status_update():
+    websocket = _DummyWebSocket()
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "status-update",
+                    "status": {"state": "input_required"},
+                    "final": True,
+                },
+                {"content": "should-not-be-forwarded"},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+
+    payloads = [json.loads(item) for item in websocket.sent]
+    assert payloads[0]["kind"] == "status-update"
+    assert payloads[-1]["event"] == "stream_end"
+    assert not any(
+        item.get("content") == "should-not-be-forwarded" for item in payloads
+    )
 
 
 def test_extract_binding_hints_from_serialized_event():

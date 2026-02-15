@@ -1,5 +1,7 @@
 import {
   applyStreamBlockUpdate,
+  extractRuntimeStatus,
+  extractRuntimeStatusEvent,
   extractStreamBlockUpdate,
   finalizeMessageBlocks,
   projectPrimaryTextContent,
@@ -246,5 +248,23 @@ describe("block-based stream parser and reducer", () => {
     ];
     const finalized = finalizeMessageBlocks(blocks);
     expect(finalized?.[0]?.isFinished).toBe(true);
+  });
+
+  it("parses status-update terminal signal", () => {
+    const payload = {
+      kind: "status-update",
+      status: { state: "input_required" },
+      final: true,
+    };
+
+    expect(extractRuntimeStatus(payload)).toBe("input_required");
+    expect(extractRuntimeStatusEvent(payload)).toEqual({
+      state: "input_required",
+      isFinal: true,
+    });
+  });
+
+  it("returns null runtime status event for non-status payload", () => {
+    expect(extractRuntimeStatusEvent({ kind: "artifact-update" })).toBeNull();
   });
 });

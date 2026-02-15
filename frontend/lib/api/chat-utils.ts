@@ -32,6 +32,11 @@ export type StreamBlockUpdate = {
   done: boolean;
 };
 
+export type RuntimeStatusEvent = {
+  state: string;
+  isFinal: boolean;
+};
+
 const coerceStringArray = (value: unknown) =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
     ? (value as string[])
@@ -60,12 +65,22 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
 };
 
 export const extractRuntimeStatus = (data: Record<string, unknown>) => {
+  const statusEvent = extractRuntimeStatusEvent(data);
+  return statusEvent?.state ?? null;
+};
+
+export const extractRuntimeStatusEvent = (
+  data: Record<string, unknown>,
+): RuntimeStatusEvent | null => {
   if (data.kind !== "status-update") {
     return null;
   }
   const status = data.status as { state?: unknown } | undefined;
   if (status && typeof status.state === "string") {
-    return status.state;
+    return {
+      state: status.state,
+      isFinal: data.final === true,
+    };
   }
   return null;
 };

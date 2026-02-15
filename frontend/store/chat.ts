@@ -5,7 +5,7 @@ import { invokeAgent } from "@/lib/api/a2aAgents";
 import {
   applyStreamBlockUpdate,
   type ChatMessage,
-  extractRuntimeStatus,
+  extractRuntimeStatusEvent,
   extractSessionMeta,
   finalizeMessageBlocks,
   type StreamBlockUpdate,
@@ -635,14 +635,17 @@ export const useChatStore = create<ChatState>()(
           }
         };
 
-        const applyIncomingStreamData = (data: Record<string, unknown>) => {
+        const applyIncomingStreamData = (
+          data: Record<string, unknown>,
+        ): boolean => {
           const chunk = extractStreamBlockUpdate(data);
           if (chunk) {
             queueIncomingChunk(chunk);
           }
 
           const meta = extractSessionMeta(data);
-          const runtimeStatus = extractRuntimeStatus(data);
+          const runtimeStatusEvent = extractRuntimeStatusEvent(data);
+          const runtimeStatus = runtimeStatusEvent?.state ?? null;
           if (
             meta.contextId ||
             meta.transport ||
@@ -652,6 +655,12 @@ export const useChatStore = create<ChatState>()(
           ) {
             updateSessionMeta({ ...meta, runtimeStatus });
           }
+
+          if (runtimeStatusEvent?.isFinal) {
+            completeStreamingMessage();
+            return true;
+          }
+          return false;
         };
 
         const appendStreamError = (errorText: string) => {
@@ -727,7 +736,9 @@ export const useChatStore = create<ChatState>()(
                   return true;
                 }
 
-                applyIncomingStreamData(data);
+                if (applyIncomingStreamData(data)) {
+                  return true;
+                }
                 return false;
               },
               onDone: () => {
@@ -746,7 +757,7 @@ export const useChatStore = create<ChatState>()(
             payload,
             callbacks: {
               onData: (data) => {
-                applyIncomingStreamData(data);
+                return applyIncomingStreamData(data);
               },
               onDone: () => {
                 completeStreamingMessage();

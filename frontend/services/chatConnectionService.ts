@@ -361,7 +361,7 @@ export class ChatConnectionService {
         {
           onData: (data) => {
             hasReceivedData = true;
-            callbacks.onData(data);
+            return callbacks.onData(data);
           },
           onError: (error) => {
             if (!hasReceivedData) {

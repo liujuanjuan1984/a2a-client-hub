@@ -9,7 +9,7 @@ export type SSEEvent = {
 
 export type SSEHandlers = {
   onEvent?: (event: SSEEvent) => void;
-  onData?: (data: Record<string, unknown>) => void;
+  onData?: (data: Record<string, unknown>) => boolean | void;
   onError?: (error: Error) => void;
   onDone?: () => void;
 };
@@ -280,11 +280,15 @@ const consumeSseStream = async (
         helpers.markReceivedData();
         try {
           const parsed = JSON.parse(event.data);
-          handlers.onData?.(parsed);
+          if (handlers.onData?.(parsed) === true) {
+            return;
+          }
         } catch {
           // If not JSON, send as raw content if needed,
           // but usually our backend sends JSON
-          handlers.onData?.({ content: event.data });
+          if (handlers.onData?.({ content: event.data }) === true) {
+            return;
+          }
         }
       }
 

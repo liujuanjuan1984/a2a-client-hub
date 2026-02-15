@@ -502,6 +502,10 @@ class A2AInvokeService:
             return []
         return [str(item) for item in validate_message(payload)]
 
+    @staticmethod
+    def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
+        return payload.get("kind") == "status-update" and payload.get("final") is True
+
     def stream_sse(
         self,
         *,
@@ -547,6 +551,8 @@ class A2AInvokeService:
                     await self._call_callback(on_event, serialized)
                     stream_text_accumulator.consume(serialized)
                     yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
+                    if self._is_terminal_status_event(serialized):
+                        break
             except Exception:
                 stream_failed = True
                 logger.warning("A2A SSE stream failed", exc_info=True, extra=log_extra)
@@ -626,6 +632,8 @@ class A2AInvokeService:
                 await self._call_callback(on_event, serialized)
                 stream_text_accumulator.consume(serialized)
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
+                if self._is_terminal_status_event(serialized):
+                    break
         except Exception:
             stream_failed = True
             logger.warning("A2A WS stream failed", exc_info=True, extra=log_extra)
