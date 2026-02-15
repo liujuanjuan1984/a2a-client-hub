@@ -28,11 +28,9 @@ class SessionQueryRequest(BaseModel):
 
 
 class SessionViewItem(BaseModel):
-    id: str = Field(..., description="Unified session id")
-    conversation_id: Optional[UUID] = Field(
-        default=None,
+    conversation_id: UUID = Field(
         alias="conversationId",
-        description="Canonical conversation id for cross-source dedup.",
+        description="Canonical conversation id.",
     )
     source: SessionSource
     source_session_id: str = Field(..., description="Original source session id")
@@ -70,8 +68,7 @@ class SessionMessageItem(BaseModel):
 
 
 class SessionMessagesMeta(BaseModel):
-    session_id: str
-    conversation_id: Optional[str] = Field(default=None, alias="conversationId")
+    conversation_id: str = Field(alias="conversationId")
     source: SessionSource
     agent_id: Optional[str] = None
     agent_source: Optional[AgentSource] = None
@@ -87,8 +84,7 @@ class SessionMessagesListResponse(
 
 
 class SessionContinueResponse(BaseModel):
-    session_id: str
-    conversation_id: Optional[str] = Field(default=None, alias="conversationId")
+    conversation_id: str = Field(alias="conversationId")
     source: SessionSource
     context_id: Optional[str] = Field(default=None, alias="contextId")
     provider: Optional[str] = None

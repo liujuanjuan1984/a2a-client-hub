@@ -49,7 +49,7 @@ describe("chat store utils", () => {
       }),
     ).toEqual({
       query: "hello",
-      sessionId: "session-1",
+      conversationId: "session-1",
       contextId: "ctx-2",
       userMessageId: "user-msg-1",
       clientAgentMessageId: "agent-msg-1",
@@ -67,7 +67,7 @@ describe("chat store utils", () => {
 
     expect(buildInvokePayload("hello", session, "conversation:abc")).toEqual({
       query: "hello",
-      sessionId: "conversation:abc",
+      conversationId: "conversation:abc",
       metadata: {
         locale: "zh-CN",
         opencode_session_id: "ses-upstream-1",

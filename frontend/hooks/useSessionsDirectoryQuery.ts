@@ -25,7 +25,7 @@ export function useSessionsDirectoryQuery() {
   const query = usePaginatedList<SessionListItem>({
     queryKey: queryKeys.sessions.directory(),
     fetchPage,
-    getKey: (item) => item.id,
+    getKey: (item) => item.conversationId,
     errorTitle: "Load sessions failed",
     fallbackMessage: "Load failed.",
   });

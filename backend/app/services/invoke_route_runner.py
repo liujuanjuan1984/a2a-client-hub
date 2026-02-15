@@ -54,17 +54,19 @@ def _build_invoke_guard_key(
     agent_source: AgentSource,
     payload: A2AAgentInvokeRequest,
 ) -> str | None:
-    session_id = (
-        payload.session_id.strip() if isinstance(payload.session_id, str) else ""
+    conversation_id = (
+        payload.conversation_id.strip()
+        if isinstance(payload.conversation_id, str)
+        else ""
     )
     context_id = (
         payload.context_id.strip() if isinstance(payload.context_id, str) else ""
     )
-    if not session_id and not context_id:
+    if not conversation_id and not context_id:
         return None
     normalized_query = _normalize_query_for_invoke_guard(payload.query)
     return (
-        f"{user_id}:{agent_source}:{agent_id}:{session_id}:{context_id}:"
+        f"{user_id}:{agent_source}:{agent_id}:{conversation_id}:{context_id}:"
         f"{normalized_query}"
     )
 
@@ -121,7 +123,7 @@ async def _prepare_state(
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
-        session_key=payload.session_id,
+        conversation_id=payload.conversation_id,
     )
     resolved_context_id, resolved_invoke_metadata = normalize_invoke_binding_state(
         context_id=payload.context_id,

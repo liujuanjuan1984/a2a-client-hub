@@ -112,14 +112,14 @@ Notes:
 - Responses include a stable envelope with `success`, `result` (upstream
   envelope), `error_code`, and `upstream_error`.
 
-## Unified Session Domain API
+## Unified Conversation Domain API
 
-The backend now exposes a unified session read model for manual, scheduled,
-and OpenCode sessions:
+The backend now exposes a unified conversation read model for manual,
+scheduled, and OpenCode sessions:
 
-- `POST /api/v1/me/sessions:query`
-- `POST /api/v1/me/sessions/{session_id}/messages:query`
-- `POST /api/v1/me/sessions/{session_id}:continue`
+- `POST /api/v1/me/conversations:query`
+- `POST /api/v1/me/conversations/{conversation_id}/messages:query`
+- `POST /api/v1/me/conversations/{conversation_id}:continue`
 
 `continue` now returns canonical binding fields plus invoke metadata:
 
@@ -129,9 +129,8 @@ and OpenCode sessions:
 - `contextId` (A2A context id)
 - `metadata.opencode_session_id` (strict upstream session-binding key)
 
-Client-generated chat sessions should use unified IDs with the `conversation:`
-prefix and UUID payload, for example
-`conversation:550e8400-e29b-41d4-a716-446655440000`.
+Client-generated chat sessions should use raw UUID conversation IDs, for example
+`550e8400-e29b-41d4-a716-446655440000`.
 
 ## Checks (Before Pushing)
 

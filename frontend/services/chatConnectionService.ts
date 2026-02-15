@@ -137,36 +137,6 @@ export class ChatConnectionService {
     }
   }
 
-  migrateSessionKey(fromSessionId: string, toSessionId: string) {
-    const fromKey = fromSessionId.trim();
-    const toKey = toSessionId.trim();
-    if (!fromKey || !toKey || fromKey === toKey) return;
-
-    const controller = this.abortControllers.get(fromKey);
-    if (controller) {
-      if (!this.abortControllers.has(toKey)) {
-        this.abortControllers.set(toKey, controller);
-      }
-      this.abortControllers.delete(fromKey);
-    }
-
-    const ws = this.wsConnections.get(fromKey);
-    if (ws) {
-      const existing = this.wsConnections.get(toKey);
-      if (!existing) {
-        this.wsConnections.set(toKey, ws);
-      } else {
-        try {
-          ws.__cancelled = true;
-          ws.close();
-        } catch {
-          // Ignore close errors.
-        }
-      }
-      this.wsConnections.delete(fromKey);
-    }
-  }
-
   clearAll() {
     this.wsConnections.forEach((ws) => {
       try {

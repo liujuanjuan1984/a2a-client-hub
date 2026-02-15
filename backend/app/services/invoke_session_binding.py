@@ -18,7 +18,7 @@ def ws_error_code_for_invoke_session_error(detail: str) -> str:
         return "session_not_found"
     if detail == "invoke_inflight":
         return "invoke_inflight"
-    return "invalid_session_id"
+    return "invalid_conversation_id"
 
 
 def normalize_invoke_binding_state(

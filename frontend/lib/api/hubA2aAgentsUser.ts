@@ -21,7 +21,7 @@ export type HubA2AAgentUserListResponse = {
 
 export type HubA2AAgentInvokeRequest = {
   query: string;
-  sessionId?: string;
+  conversationId?: string;
   contextId?: string;
   userMessageId?: string;
   clientAgentMessageId?: string;

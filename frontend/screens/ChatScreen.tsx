@@ -26,11 +26,7 @@ import { continueSession } from "@/lib/api/sessions";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { buildChatRoute } from "@/lib/routes";
-import {
-  buildContinueBindingPayload,
-  resolveCanonicalSessionId,
-} from "@/lib/sessionBinding";
-import { getSessionSource } from "@/lib/sessionIds";
+import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
@@ -110,7 +106,6 @@ export function ChatScreen({
     [agents, activeAgentId],
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
-  const migrateSessionKey = useChatStore((state) => state.migrateSessionKey);
   const generateSessionId = useChatStore((state) => state.generateSessionId);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const session = useChatStore((state) =>
@@ -149,7 +144,7 @@ export function ChatScreen({
     session?.streamState === "rebinding";
 
   const sessionHistoryQuery = useSessionHistoryQuery({
-    sessionId,
+    conversationId: sessionId,
     enabled: Boolean(sessionId),
     paused: historyPaused,
   });
@@ -161,7 +156,7 @@ export function ChatScreen({
     sessionHistoryQuery.error instanceof Error
       ? sessionHistoryQuery.error.message
       : null;
-  const sessionSource = sessionId ? getSessionSource(sessionId) : null;
+  const sessionSource = session?.source ?? null;
 
   useEffect(() => {
     if (activeAgentId && sessionId) {
@@ -172,13 +167,9 @@ export function ChatScreen({
   useEffect(() => {
     if (!sessionId || !activeAgentId) return;
     const boundAgentId = activeAgentId;
-    const sessionSource = getSessionSource(sessionId);
     const hasHistory =
       messages.length > 0 || sessionHistoryQuery.messages.length > 0;
-    if (
-      (sessionSource === "manual" || sessionSource === "conversation") &&
-      !hasHistory
-    ) {
+    if (sessionSource === "manual" && !hasHistory) {
       return;
     }
 
@@ -186,13 +177,6 @@ export function ChatScreen({
     continueSession(sessionId)
       .then((binding) => {
         if (cancelled) return;
-        const canonicalSessionId = resolveCanonicalSessionId(
-          sessionId,
-          binding,
-        );
-        if (canonicalSessionId !== sessionId) {
-          migrateSessionKey(sessionId, canonicalSessionId);
-        }
         const current = useChatStore.getState().sessions[sessionId];
         const hasLocalBinding =
           (typeof current?.contextId === "string" &&
@@ -203,16 +187,13 @@ export function ChatScreen({
         if (hasLocalBinding && !binding.contextId) {
           return;
         }
-        ensureSession(canonicalSessionId, boundAgentId);
+        ensureSession(sessionId, boundAgentId);
         useChatStore
           .getState()
           .bindExternalSession(
-            canonicalSessionId,
+            sessionId,
             buildContinueBindingPayload(boundAgentId, binding),
           );
-        if (canonicalSessionId !== sessionId) {
-          router.replace(buildChatRoute(boundAgentId, canonicalSessionId));
-        }
       })
       .catch((error) => {
         if (cancelled) return;
@@ -234,10 +215,9 @@ export function ChatScreen({
     activeAgentId,
     ensureSession,
     messages.length,
-    migrateSessionKey,
-    router,
     sessionHistoryQuery.messages.length,
     sessionId,
+    sessionSource,
   ]);
 
   const mergeHistoryMessages = useCallback(

@@ -8,6 +8,7 @@ export type ExternalSessionRef = {
 
 export type AgentSession = {
   agentId: string;
+  source?: "manual" | "scheduled" | "opencode" | null;
   conversationId?: string | null;
   contextId: string | null;
   runtimeStatus?: string | null;
@@ -28,6 +29,7 @@ export const CHAT_SESSION_MAX_PERSISTED = 80;
 
 export const createAgentSession = (agentId: string): AgentSession => ({
   agentId,
+  source: null,
   contextId: null,
   runtimeStatus: null,
   streamState: "idle",
@@ -58,13 +60,13 @@ export const mergeExternalSessionRef = (
 export const buildInvokePayload = (
   query: string,
   session: AgentSession,
-  sessionId: string,
+  conversationId: string,
   options?: {
     userMessageId?: string;
     clientAgentMessageId?: string;
   },
 ): A2AAgentInvokeRequest => {
-  const payload: A2AAgentInvokeRequest = { query, sessionId };
+  const payload: A2AAgentInvokeRequest = { query, conversationId };
   if (options?.userMessageId) {
     payload.userMessageId = options.userMessageId;
   }
@@ -106,6 +108,7 @@ const normalizeSessionForPersistence = (
   session: AgentSession,
 ): AgentSession => ({
   agentId: session.agentId,
+  source: session.source ?? null,
   conversationId: session.conversationId ?? null,
   contextId: session.contextId ?? null,
   runtimeStatus: null,

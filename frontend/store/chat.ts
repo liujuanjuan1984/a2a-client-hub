@@ -29,7 +29,6 @@ import {
 } from "@/lib/chat-utils";
 import { generateId, generateUuid } from "@/lib/id";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
-import { buildConversationSessionId, getSessionSource } from "@/lib/sessionIds";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
@@ -50,6 +49,7 @@ type ChatState = {
     sessionId: string,
     payload: {
       agentId: string;
+      source?: "manual" | "scheduled" | "opencode" | null;
       conversationId?: string | null;
       provider?: string | null;
       externalSessionId?: string | null;
@@ -57,7 +57,6 @@ type ChatState = {
       metadata?: Record<string, unknown> | null;
     },
   ) => void;
-  migrateSessionKey: (fromSessionId: string, toSessionId: string) => void;
   getSessionsByAgentId: (agentId: string) => [string, AgentSession][];
   getLatestSessionIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
@@ -98,6 +97,10 @@ export const useChatStore = create<ChatState>()(
               ...(state.sessions[sessionId] ??
                 createAgentSession(payload.agentId)),
               agentId: payload.agentId,
+              source:
+                payload.source === undefined
+                  ? (state.sessions[sessionId]?.source ?? null)
+                  : payload.source,
               conversationId:
                 payload.conversationId === undefined
                   ? (state.sessions[sessionId]?.conversationId ?? null)
@@ -115,36 +118,6 @@ export const useChatStore = create<ChatState>()(
             },
           },
         }));
-      },
-      migrateSessionKey: (fromSessionId, toSessionId) => {
-        const fromKey = fromSessionId.trim();
-        const toKey = toSessionId.trim();
-        if (!fromKey || !toKey || fromKey === toKey) return;
-
-        set((state) => {
-          const fromSession = state.sessions[fromKey];
-          if (!fromSession && !state.sessions[toKey]) {
-            return state;
-          }
-
-          const nextSessions = { ...state.sessions };
-          const toSession = nextSessions[toKey];
-          if (fromSession) {
-            nextSessions[toKey] = {
-              ...(toSession ?? {}),
-              ...fromSession,
-              lastActiveAt: new Date().toISOString(),
-            };
-            delete nextSessions[fromKey];
-          }
-
-          return {
-            sessions: nextSessions,
-          };
-        });
-
-        chatConnectionService.migrateSessionKey(fromKey, toKey);
-        useMessageStore.getState().migrateSessionKey(fromKey, toKey);
       },
       resetSession: (sessionId, agentId) => {
         get().cancelMessage(sessionId);
@@ -248,12 +221,10 @@ export const useChatStore = create<ChatState>()(
         };
 
         const attemptSessionRebind = async (reason: string) => {
-          const source = getSessionSource(sessionId);
           const current = get().sessions[sessionId];
           const shouldRebind =
-            source === "opencode" ||
-            (source === "conversation" &&
-              current?.externalSessionRef?.provider === "opencode");
+            current?.source === "opencode" ||
+            current?.externalSessionRef?.provider === "opencode";
           if (!shouldRebind) {
             return false;
           }
@@ -267,7 +238,7 @@ export const useChatStore = create<ChatState>()(
           });
           console.info("[Session Rebind] start", {
             sessionId,
-            source: getSessionSource(sessionId),
+            source: current?.source ?? null,
             reason,
             transport: get().sessions[sessionId]?.transport ?? "unknown",
           });
@@ -279,6 +250,7 @@ export const useChatStore = create<ChatState>()(
               conversationId: binding.conversationId ?? current.conversationId,
               contextId: binding.contextId ?? current.contextId,
               metadata: binding.metadata ?? current.metadata,
+              source: binding.source ?? current.source ?? null,
               externalSessionRef: mergeExternalSessionRef(
                 current.externalSessionRef,
                 {
@@ -292,7 +264,7 @@ export const useChatStore = create<ChatState>()(
             });
             console.info("[Session Rebind] success", {
               sessionId,
-              source: getSessionSource(sessionId),
+              source: binding.source ?? current.source ?? null,
               contextId: binding.contextId ?? null,
             });
             return true;
@@ -305,7 +277,7 @@ export const useChatStore = create<ChatState>()(
             });
             console.warn("[Session Rebind] failed", {
               sessionId,
-              source: getSessionSource(sessionId),
+              source: current?.source ?? null,
               message,
             });
             return false;
@@ -315,9 +287,8 @@ export const useChatStore = create<ChatState>()(
         };
 
         if (
-          (getSessionSource(sessionId) === "opencode" ||
-            (getSessionSource(sessionId) === "conversation" &&
-              previousSession.externalSessionRef?.provider === "opencode")) &&
+          (previousSession.source === "opencode" ||
+            previousSession.externalSessionRef?.provider === "opencode") &&
           previousSession.streamState === "error"
         ) {
           await attemptSessionRebind(
@@ -686,7 +657,7 @@ export const useChatStore = create<ChatState>()(
           });
           console.warn("[Chat Stream] error", {
             sessionId,
-            source: getSessionSource(sessionId),
+            source: get().sessions[sessionId]?.source ?? null,
             message: errorText,
             transport: get().sessions[sessionId]?.transport ?? "unknown",
           });
@@ -717,7 +688,7 @@ export const useChatStore = create<ChatState>()(
               });
               console.warn("[Chat Stream] sequence-gap recovery failed", {
                 sessionId,
-                source: getSessionSource(sessionId),
+                source: get().sessions[sessionId]?.source ?? null,
                 message,
               });
             });
@@ -869,7 +840,7 @@ export const useChatStore = create<ChatState>()(
           return { sessions: cleanupPlan.sessions };
         });
       },
-      generateSessionId: () => buildConversationSessionId(generateUuid()),
+      generateSessionId: () => generateUuid(),
       clearAll: () => {
         chatConnectionService.clearAll();
         set({ sessions: {} });

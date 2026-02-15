@@ -3,8 +3,7 @@ import { parsePaginatedListResponse } from "@/lib/api/pagination";
 import { type UnifiedSessionSource } from "@/lib/sessionIds";
 
 export type SessionListItem = {
-  id: string;
-  conversationId?: string | null;
+  conversationId: string;
   source: UnifiedSessionSource;
   source_session_id: string;
   agent_id?: string | null;
@@ -23,8 +22,7 @@ export type SessionMessageItem = {
 };
 
 export type SessionContinueBinding = {
-  session_id: string;
-  conversationId?: string | null;
+  conversationId: string;
   source: UnifiedSessionSource;
   provider?: string | null;
   externalSessionId?: string | null;
@@ -52,7 +50,7 @@ export const listSessionsPage = async (options?: {
       refresh: boolean;
       source?: UnifiedSessionSource;
     }
-  >("/me/sessions:query", {
+  >("/me/conversations:query", {
     method: "POST",
     body: {
       page,
@@ -73,7 +71,7 @@ export const listSessionsPage = async (options?: {
 };
 
 export const listSessionMessagesPage = async (
-  sessionId: string,
+  conversationId: string,
   options?: { page?: number; size?: number },
 ) => {
   const page = options?.page ?? 1;
@@ -85,7 +83,7 @@ export const listSessionMessagesPage = async (
       meta?: unknown;
     },
     { page: number; size: number }
-  >(`/me/sessions/${encodeURIComponent(sessionId)}/messages:query`, {
+  >(`/me/conversations/${encodeURIComponent(conversationId)}/messages:query`, {
     method: "POST",
     body: { page, size },
   });
@@ -102,21 +100,17 @@ export const listSessionMessagesPage = async (
 };
 
 export const continueSession = async (
-  sessionId: string,
+  conversationId: string,
 ): Promise<SessionContinueBinding> => {
   const response = await apiRequest<SessionContinueBinding>(
-    `/me/sessions/${encodeURIComponent(sessionId)}:continue`,
+    `/me/conversations/${encodeURIComponent(conversationId)}:continue`,
     {
       method: "POST",
     },
   );
   return {
     ...response,
-    conversationId:
-      typeof response.conversationId === "string" &&
-      response.conversationId.trim()
-        ? response.conversationId.trim()
-        : null,
+    conversationId: response.conversationId.trim(),
     provider:
       typeof response.provider === "string" && response.provider.trim()
         ? response.provider.trim()
