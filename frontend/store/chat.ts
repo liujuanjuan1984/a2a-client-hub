@@ -639,14 +639,25 @@ export const useChatStore = create<ChatState>()(
         const applyIncomingStreamData = (
           data: Record<string, unknown>,
         ): boolean => {
-          hasObservedStreamEvent = true;
           const chunk = extractStreamBlockUpdate(data);
+          const runtimeStatusEvent = extractRuntimeStatusEvent(data);
+          const kind = typeof data.kind === "string" ? data.kind : "";
+          const isLegacyContentEvent =
+            typeof data.content === "string" && data.content.trim().length > 0;
+          if (
+            chunk ||
+            runtimeStatusEvent ||
+            kind === "artifact-update" ||
+            kind === "status-update" ||
+            isLegacyContentEvent
+          ) {
+            hasObservedStreamEvent = true;
+          }
           if (chunk) {
             queueIncomingChunk(chunk);
           }
 
           const meta = extractSessionMeta(data);
-          const runtimeStatusEvent = extractRuntimeStatusEvent(data);
           const runtimeStatus = runtimeStatusEvent?.state ?? null;
           if (
             meta.contextId ||
