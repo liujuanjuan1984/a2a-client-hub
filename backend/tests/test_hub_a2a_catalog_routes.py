@@ -12,8 +12,8 @@ from app.core.config import settings
 from app.db.models.conversation_binding import ConversationBinding
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
-from backend.tests.api_utils import create_test_client
-from backend.tests.utils import create_user
+from tests.api_utils import create_test_client
+from tests.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

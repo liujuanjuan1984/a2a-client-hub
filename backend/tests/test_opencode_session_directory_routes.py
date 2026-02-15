@@ -10,8 +10,8 @@ from app.db.models.a2a_agent import A2AAgent
 from app.db.models.hub_a2a_agent import HubA2AAgent
 from app.db.models.opencode_session_cache import OpencodeSessionCacheEntry
 from app.integrations.a2a_extensions.service import ExtensionCallResult
-from backend.tests.api_utils import create_test_client
-from backend.tests.utils import create_user
+from tests.api_utils import create_test_client
+from tests.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

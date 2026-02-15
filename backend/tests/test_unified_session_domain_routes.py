@@ -13,8 +13,8 @@ from app.db.models.agent_session import AgentSession
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
-from backend.tests.api_utils import create_test_client
-from backend.tests.utils import create_user
+from tests.api_utils import create_test_client
+from tests.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

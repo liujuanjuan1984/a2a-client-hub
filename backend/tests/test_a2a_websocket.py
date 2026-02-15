@@ -126,7 +126,9 @@ def test_invoke_agent_ws_success(monkeypatch, mock_user):
         app.dependency_overrides.clear()
 
 
-def test_invoke_agent_ws_invalid_session_id_returns_error_event(monkeypatch, mock_user):
+def test_invoke_agent_ws_invalid_conversation_id_returns_error_event(
+    monkeypatch, mock_user
+):
     """Verify WS preflight errors use the unified error event envelope."""
     app.dependency_overrides[get_async_db] = _override_get_async_db
     app.dependency_overrides[get_ws_ticket_user_me] = lambda: mock_user
@@ -149,10 +151,10 @@ def test_invoke_agent_ws_invalid_session_id_returns_error_event(monkeypatch, moc
             headers={"origin": "http://localhost:5173"},
             subprotocols=["mock-ticket-length-48-chars-minimum-1234567890"],
         ) as websocket:
-            websocket.send_json({"query": "ping", "sessionId": "invalid"})
+            websocket.send_json({"query": "ping", "conversationId": "invalid"})
             error_event = websocket.receive_json()
             assert error_event["event"] == "error"
-            assert error_event["data"]["error_code"] == "invalid_session_id"
-            assert error_event["data"]["message"] == "invalid_session_id"
+            assert error_event["data"]["error_code"] == "invalid_conversation_id"
+            assert error_event["data"]["message"] == "invalid_conversation_id"
     finally:
         app.dependency_overrides.clear()

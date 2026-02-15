@@ -5,7 +5,7 @@ from sqlalchemy import and_, select
 
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.services.a2a_agents import a2a_agent_service
-from backend.tests.utils import create_user
+from tests.utils import create_user
 
 
 async def _create_bearer_agent(async_db_session, *, user_id, suffix: str):

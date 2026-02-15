@@ -13,7 +13,7 @@ from app.core.security import create_user_token, get_password_hash
 from app.db.models.invitation import Invitation, InvitationStatus
 from app.db.models.user import User
 from app.utils.timezone_util import utc_now
-from backend.tests.api_utils import create_test_client
+from tests.api_utils import create_test_client
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

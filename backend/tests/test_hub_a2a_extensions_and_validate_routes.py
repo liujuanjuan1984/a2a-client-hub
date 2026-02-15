@@ -10,8 +10,8 @@ from app.api.routers import admin_a2a_agents as admin_router
 from app.api.routers import hub_a2a_agents as hub_router
 from app.api.routers import hub_a2a_extensions_opencode as hub_opencode_router
 from app.core.config import settings
-from backend.tests.api_utils import create_test_client
-from backend.tests.utils import create_user
+from tests.api_utils import create_test_client
+from tests.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
