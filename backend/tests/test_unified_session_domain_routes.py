@@ -713,6 +713,9 @@ async def test_unified_manual_continue_returns_stable_conversation_session_key(
         assert payload["source"] == "manual"
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] == "upstream-canonical-continue-1"
+        assert payload["metadata"] == {
+            "opencode_session_id": "upstream-canonical-continue-1"
+        }
 
 
 async def test_unified_manual_continue_canonicalizes_opencode_namespace_metadata(
@@ -770,6 +773,9 @@ async def test_unified_manual_continue_canonicalizes_opencode_namespace_metadata
         assert payload["source"] == "manual"
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] == "upstream-canonical-namespace-1"
+        assert payload["metadata"] == {
+            "opencode_session_id": "upstream-canonical-namespace-1"
+        }
 
 
 async def test_unified_session_list_uses_local_session_binding_when_metadata_missing(

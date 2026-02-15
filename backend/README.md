@@ -121,13 +121,13 @@ and OpenCode sessions:
 - `POST /api/v1/me/sessions/{session_id}/messages:query`
 - `POST /api/v1/me/sessions/{session_id}:continue`
 
-`continue` now returns canonical binding fields in addition to legacy metadata:
+`continue` now returns canonical binding fields plus invoke metadata:
 
 - `conversationId` (canonical conversation id)
 - `provider` (external provider key)
 - `externalSessionId` (external session identifier)
 - `contextId` (A2A context id)
-- `bindingMetadata` (normalized binding metadata)
+- `metadata.opencode_session_id` (strict upstream session-binding key)
 
 Client-generated chat sessions should use unified IDs with the `conversation:`
 prefix and UUID payload, for example

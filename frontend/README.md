@@ -115,4 +115,4 @@ The continue payload also includes canonical binding fields:
 - `conversationId`
 - `provider`
 - `externalSessionId`
-- `bindingMetadata`
+- `metadata.opencode_session_id` (for upstream opencode session binding)

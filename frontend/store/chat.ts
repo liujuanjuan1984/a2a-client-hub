@@ -54,7 +54,6 @@ type ChatState = {
       provider?: string | null;
       externalSessionId?: string | null;
       contextId?: string | null;
-      bindingMetadata?: Record<string, unknown> | null;
       metadata?: Record<string, unknown> | null;
     },
   ) => void;
@@ -286,7 +285,6 @@ export const useChatStore = create<ChatState>()(
                   provider: binding.provider,
                   externalSessionId: binding.externalSessionId,
                   contextId: binding.contextId,
-                  bindingMetadata: binding.bindingMetadata,
                 },
               ),
               streamState: "recoverable",

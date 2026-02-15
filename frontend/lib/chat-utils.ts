@@ -4,7 +4,6 @@ export type ExternalSessionRef = {
   provider?: string | null;
   externalSessionId?: string | null;
   contextId?: string | null;
-  bindingMetadata?: Record<string, unknown>;
 };
 
 export type AgentSession = {
@@ -48,14 +47,12 @@ export const mergeExternalSessionRef = (
     provider?: string | null;
     externalSessionId?: string | null;
     contextId?: string | null;
-    bindingMetadata?: Record<string, unknown> | null;
   },
 ): ExternalSessionRef => ({
   provider: incoming.provider ?? current?.provider ?? null,
   externalSessionId:
     incoming.externalSessionId ?? current?.externalSessionId ?? null,
   contextId: incoming.contextId ?? current?.contextId ?? null,
-  bindingMetadata: incoming.bindingMetadata ?? current?.bindingMetadata ?? {},
 });
 
 export const buildInvokePayload = (
@@ -77,8 +74,18 @@ export const buildInvokePayload = (
   if (session.contextId) {
     payload.contextId = session.contextId;
   }
-  if (Object.keys(session.metadata).length > 0) {
-    payload.metadata = session.metadata;
+  const metadata: Record<string, unknown> = { ...(session.metadata ?? {}) };
+  const externalProvider = session.externalSessionRef?.provider
+    ?.trim()
+    .toLowerCase();
+  const externalSessionId =
+    session.externalSessionRef?.externalSessionId?.trim();
+  if (externalProvider === "opencode" && externalSessionId) {
+    // Upstream opencode-a2a-serve requires this explicit key to continue a session.
+    metadata.opencode_session_id = externalSessionId;
+  }
+  if (Object.keys(metadata).length > 0) {
+    payload.metadata = metadata;
   }
   return payload;
 };

@@ -919,7 +919,6 @@ class SessionHubService:
                         provider=None,
                         external_session_id=None,
                         context_id=None,
-                        binding_metadata={},
                         metadata={},
                     ),
                     False,
@@ -966,11 +965,6 @@ class SessionHubService:
                 payload,
                 include_session_id_aliases=True,
             )
-            binding_metadata = (
-                payload.get("bindingMetadata")
-                if isinstance(payload.get("bindingMetadata"), dict)
-                else metadata
-            )
             (
                 provider,
                 external_session_id,
@@ -983,6 +977,10 @@ class SessionHubService:
                 or external_session_id
                 or parsed.upstream_session_id
             )
+            continue_metadata = _build_continue_invoke_metadata(
+                provider=resolved_provider,
+                external_session_id=resolved_external_session_id,
+            )
             bind_result = (
                 await conversation_identity_service.bind_external_session_with_state(
                     db,
@@ -994,7 +992,10 @@ class SessionHubService:
                     external_session_id=resolved_external_session_id,
                     context_id=context_id if isinstance(context_id, str) else None,
                     title="Session",
-                    binding_metadata=binding_metadata,
+                    binding_metadata={
+                        "provider": resolved_provider,
+                        "external_session_id": resolved_external_session_id,
+                    },
                 )
             )
             return (
@@ -1007,8 +1008,7 @@ class SessionHubService:
                     provider=resolved_provider,
                     external_session_id=resolved_external_session_id,
                     context_id=context_id if isinstance(context_id, str) else None,
-                    binding_metadata=binding_metadata,
-                    metadata=metadata,
+                    metadata=continue_metadata,
                 ),
                 bind_result.mutated,
             )
@@ -1032,7 +1032,6 @@ class SessionHubService:
                     provider=None,
                     external_session_id=None,
                     context_id=None,
-                    binding_metadata={},
                     metadata={},
                 ),
                 False,
@@ -1143,6 +1142,10 @@ class SessionHubService:
             db_mutated = db_mutated or updated > 0
         resolved_provider = normalize_provider(provider)
         resolved_external_session_id = normalize_non_empty_text(external_session_id)
+        continue_metadata = _build_continue_invoke_metadata(
+            provider=resolved_provider,
+            external_session_id=resolved_external_session_id,
+        )
         response_session_id = (
             build_conversation_session_key(conversation_id)
             if conversation_id
@@ -1160,8 +1163,7 @@ class SessionHubService:
                 provider=resolved_provider,
                 external_session_id=resolved_external_session_id,
                 context_id=context_id if isinstance(context_id, str) else None,
-                binding_metadata=metadata,
-                metadata=metadata,
+                metadata=continue_metadata,
             ),
             db_mutated,
         )
@@ -1599,7 +1601,6 @@ def _build_continue_response(
     provider: Optional[str],
     external_session_id: Optional[str],
     context_id: Optional[str],
-    binding_metadata: dict[str, Any],
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
     return {
@@ -1609,9 +1610,23 @@ def _build_continue_response(
         "provider": provider,
         "externalSessionId": external_session_id,
         "contextId": context_id,
-        "bindingMetadata": binding_metadata,
         "metadata": metadata,
     }
+
+
+def _build_continue_invoke_metadata(
+    *,
+    provider: str | None,
+    external_session_id: str | None,
+) -> dict[str, Any]:
+    if normalize_provider(provider) == "opencode" and isinstance(
+        external_session_id, str
+    ):
+        normalized = external_session_id.strip()
+        if normalized:
+            # Upstream opencode-a2a-serve contract requires this key explicitly.
+            return {"opencode_session_id": normalized}
+    return {}
 
 
 def _sender_to_role(sender: str) -> str:
