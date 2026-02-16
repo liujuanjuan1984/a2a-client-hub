@@ -24,12 +24,6 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     return {}
 
 
-def _require_str(value: Any, *, field: str) -> str:
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
-
-
 def _require_int(value: Any, *, field: str) -> int:
     if isinstance(value, bool):
         raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
@@ -55,6 +49,15 @@ def _normalize_error_token(name: str, *, code_value: int) -> str:
     if token:
         return token
     return f"business_code_{abs(code_value)}"
+
+
+def _normalize_method_name(value: Any, *, field: str) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise A2AExtensionContractError(f"'{field}' must be a string if provided")
+    normalized = value.strip()
+    return normalized or None
 
 
 def _resolve_jsonrpc_interface(card: AgentCard) -> JsonRpcInterface:
@@ -100,14 +103,17 @@ def resolve_opencode_interrupt_callback(
     required = bool(getattr(ext, "required", False))
     params = _as_dict(getattr(ext, "params", None))
     methods = _as_dict(params.get("methods"))
-    reply_permission_method = _require_str(
-        methods.get("reply_permission"), field="methods.reply_permission"
+    reply_permission_method = _normalize_method_name(
+        methods.get("reply_permission"),
+        field="methods.reply_permission",
     )
-    reply_question_method = _require_str(
-        methods.get("reply_question"), field="methods.reply_question"
+    reply_question_method = _normalize_method_name(
+        methods.get("reply_question"),
+        field="methods.reply_question",
     )
-    reject_question_method = _require_str(
-        methods.get("reject_question"), field="methods.reject_question"
+    reject_question_method = _normalize_method_name(
+        methods.get("reject_question"),
+        field="methods.reject_question",
     )
 
     errors = _as_dict(params.get("errors"))

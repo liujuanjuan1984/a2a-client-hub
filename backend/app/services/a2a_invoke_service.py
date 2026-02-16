@@ -190,8 +190,10 @@ class A2AInvokeService:
             result_status_message,
         ):
             candidate_usage = cls._extract_usage_from_candidate(candidate)
-            if candidate_usage and len(candidate_usage) >= len(usage):
-                usage = candidate_usage
+            if candidate_usage:
+                for k, v in candidate_usage.items():
+                    if v is not None:
+                        usage[k] = v
         return usage
 
     @classmethod

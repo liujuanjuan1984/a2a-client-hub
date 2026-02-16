@@ -10,6 +10,7 @@ import {
   finalizeMessageBlocks,
   type RuntimeInterrupt,
   type StreamBlockUpdate,
+  isInputRequiredRuntimeState,
   extractStreamBlockUpdate,
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
@@ -62,11 +63,6 @@ type ChatState = {
   cleanupSessions: () => void;
   generateConversationId: () => string;
   clearAll: () => void;
-};
-
-const isInputRequiredRuntimeStatus = (state: string) => {
-  const normalized = state.trim().toLowerCase();
-  return normalized === "input-required" || normalized === "input_required";
 };
 
 const isSamePendingInterrupt = (
@@ -763,7 +759,7 @@ export const useChatStore = create<ChatState>()(
           const hasRuntimeStatusEvent = runtimeStatusEvent !== null;
           const pendingInterrupt =
             runtimeStatusEvent &&
-            isInputRequiredRuntimeStatus(runtimeStatusEvent.state)
+            isInputRequiredRuntimeState(runtimeStatusEvent.state)
               ? runtimeStatusEvent.interrupt
               : null;
           if (

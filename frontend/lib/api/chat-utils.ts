@@ -207,7 +207,7 @@ const pickInteger = (
 
 const normalizeRuntimeState = (state: string) => state.trim().toLowerCase();
 
-const isInputRequiredRuntimeState = (state: string) => {
+export const isInputRequiredRuntimeState = (state: string) => {
   const normalized = normalizeRuntimeState(state);
   return normalized === "input-required" || normalized === "input_required";
 };

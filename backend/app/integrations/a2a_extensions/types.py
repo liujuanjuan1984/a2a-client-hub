@@ -26,7 +26,7 @@ class ResolvedExtension:
     uri: str
     required: bool
     jsonrpc: JsonRpcInterface
-    methods: Mapping[str, str]
+    methods: Mapping[str, Optional[str]]
     pagination: PageSizePagination
     business_code_map: Mapping[int, str]
     session_binding_metadata_key: Optional[str]
@@ -38,7 +38,7 @@ class ResolvedInterruptCallbackExtension:
     uri: str
     required: bool
     jsonrpc: JsonRpcInterface
-    methods: Mapping[str, str]
+    methods: Mapping[str, Optional[str]]
     business_code_map: Mapping[int, str]
 
 

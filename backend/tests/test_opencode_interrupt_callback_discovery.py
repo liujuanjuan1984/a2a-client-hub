@@ -3,10 +3,7 @@ from __future__ import annotations
 import pytest
 from a2a.types import AgentCard
 
-from app.integrations.a2a_extensions.errors import (
-    A2AExtensionContractError,
-    A2AExtensionNotSupportedError,
-)
+from app.integrations.a2a_extensions.errors import A2AExtensionNotSupportedError
 from app.integrations.a2a_extensions.opencode_interrupt_callback import (
     OPENCODE_INTERRUPT_CALLBACK_URI,
     resolve_opencode_interrupt_callback,
@@ -68,7 +65,7 @@ def test_resolve_extracts_methods_and_business_codes() -> None:
     assert resolved.jsonrpc.fallback_used is False
 
 
-def test_resolve_rejects_missing_interrupt_method_fields() -> None:
+def test_resolve_accepts_missing_interrupt_method_fields() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
@@ -84,5 +81,29 @@ def test_resolve_rejects_missing_interrupt_method_fields() -> None:
     ]
 
     card = AgentCard.model_validate(payload)
-    with pytest.raises(A2AExtensionContractError):
-        resolve_opencode_interrupt_callback(card)
+    resolved = resolve_opencode_interrupt_callback(card)
+    assert resolved.methods.get("reply_permission") == "opencode.permission.reply"
+    assert resolved.methods.get("reject_question") is None
+
+
+def test_resolve_treats_empty_or_blank_interrupt_method_as_missing() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_INTERRUPT_CALLBACK_URI,
+            "required": False,
+            "params": {
+                "methods": {
+                    "reply_permission": "   ",
+                    "reply_question": "",
+                    "reject_question": "\n\t",
+                },
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    resolved = resolve_opencode_interrupt_callback(card)
+    assert resolved.methods.get("reply_permission") is None
+    assert resolved.methods.get("reply_question") is None
+    assert resolved.methods.get("reject_question") is None

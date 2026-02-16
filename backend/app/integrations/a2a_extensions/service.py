@@ -581,7 +581,16 @@ class A2AExtensionsService:
         params: Dict[str, Any],
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        method_name = ext.methods[method_key]
+        method_name = ext.methods.get(method_key)
+        if not method_name:
+            return ExtensionCallResult(
+                success=False,
+                error_code="method_not_supported",
+                upstream_error={
+                    "message": f"Method {method_key} is not supported by upstream"
+                },
+                meta={"extension_uri": ext.uri},
+            )
         metric_key = f"{ext.uri}:{method_name}"
         await self._get_http()
         assert self._jsonrpc is not None  # constructed alongside _http
