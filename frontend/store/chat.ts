@@ -294,6 +294,8 @@ export const useChatStore = create<ChatState>()(
 
         const updateSessionMeta = (meta: {
           contextId?: string | null;
+          provider?: string | null;
+          externalSessionId?: string | null;
           runtimeStatus?: string | null;
           transport?: string;
           inputModes?: string[];
@@ -333,6 +335,29 @@ export const useChatStore = create<ChatState>()(
               meta.outputModes.join("|") !== current.outputModes.join("|")
             ) {
               nextPatch.outputModes = meta.outputModes;
+            }
+            if (
+              meta.provider !== undefined ||
+              meta.externalSessionId !== undefined
+            ) {
+              const mergedExternalSessionRef = mergeExternalSessionRef(
+                current.externalSessionRef,
+                {
+                  provider: meta.provider,
+                  externalSessionId: meta.externalSessionId,
+                },
+              );
+              const currentProvider =
+                current.externalSessionRef?.provider ?? null;
+              const currentExternalSessionId =
+                current.externalSessionRef?.externalSessionId ?? null;
+              if (
+                mergedExternalSessionRef.provider !== currentProvider ||
+                mergedExternalSessionRef.externalSessionId !==
+                  currentExternalSessionId
+              ) {
+                nextPatch.externalSessionRef = mergedExternalSessionRef;
+              }
             }
 
             if (Object.keys(nextPatch).length === 0) {
@@ -562,6 +587,11 @@ export const useChatStore = create<ChatState>()(
           }
           seenEventIds.add(chunk.eventId);
 
+          if (chunk.seq === null) {
+            appendStreamChunk(chunk);
+            return;
+          }
+
           const currentExpected = nextExpectedSeqByMessageId.get(
             chunk.messageId,
           );
@@ -623,6 +653,8 @@ export const useChatStore = create<ChatState>()(
           const runtimeStatus = runtimeStatusEvent?.state ?? null;
           if (
             meta.contextId ||
+            meta.provider !== undefined ||
+            meta.externalSessionId !== undefined ||
             meta.transport ||
             meta.inputModes ||
             meta.outputModes ||
