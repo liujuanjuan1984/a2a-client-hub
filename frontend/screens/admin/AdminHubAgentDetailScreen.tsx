@@ -1,32 +1,20 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
-import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import {
-  addHubAgentAllowlistAdmin,
   deleteHubAgentAdmin,
-  deleteHubAgentAllowlistEntryAdmin,
   getHubAgentAdmin,
-  listHubAgentAllowlistAdmin,
   updateHubAgentAdmin,
   type HubA2AAgentAdminResponse,
-  type HubA2AAllowlistEntryResponse,
 } from "@/lib/api/hubA2aAgentsAdmin";
 import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
@@ -51,14 +39,9 @@ export function AdminHubAgentDetailScreen({
   const { isReady, isAdmin } = useRequireAdmin();
 
   const [agent, setAgent] = useState<HubA2AAgentAdminResponse | null>(null);
-  const [allowlist, setAllowlist] = useState<HubA2AAllowlistEntryResponse[]>(
-    [],
-  );
-  const [allowlistEmail, setAllowlistEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const hasShownAgentLoadErrorRef = useRef(false);
-  const hasShownAllowlistLoadErrorRef = useRef(false);
   const formInitializedRef = useRef(false);
 
   const {
@@ -89,20 +72,7 @@ export function AdminHubAgentDetailScreen({
     enabled: isReady && isAdmin && Boolean(agentId),
   });
 
-  const shouldQueryAllowlist =
-    isReady &&
-    isAdmin &&
-    Boolean(agentId) &&
-    agentQuery.data?.availability_policy === "allowlist";
-
-  const allowlistQuery = useQuery({
-    queryKey: queryKeys.admin.hubAgentAllowlist(agentId),
-    queryFn: () => listHubAgentAllowlistAdmin(agentId),
-    enabled: shouldQueryAllowlist,
-  });
-
-  const loading = agentQuery.isLoading && !agentQuery.data && !agent;
-  const refreshing = agentQuery.isRefetching || allowlistQuery.isRefetching;
+  const refreshing = agentQuery.isRefetching;
 
   const dirty = useMemo(() => {
     if (!agent) return false;
@@ -153,40 +123,6 @@ export function AdminHubAgentDetailScreen({
     toast.error("Load shared agent failed", message);
   }, [agentQuery.error, agentQuery.isError]);
 
-  useEffect(() => {
-    if (!allowlistQuery.data) {
-      return;
-    }
-    setAllowlist(allowlistQuery.data.items);
-  }, [allowlistQuery.data]);
-
-  useEffect(() => {
-    if (agentQuery.data?.availability_policy === "allowlist") {
-      return;
-    }
-    setAllowlist([]);
-  }, [agentQuery.data?.availability_policy]);
-
-  useEffect(() => {
-    if (
-      !allowlistQuery.isError ||
-      !allowlistQuery.error ||
-      !shouldQueryAllowlist
-    ) {
-      hasShownAllowlistLoadErrorRef.current = false;
-      return;
-    }
-    if (hasShownAllowlistLoadErrorRef.current) {
-      return;
-    }
-    hasShownAllowlistLoadErrorRef.current = true;
-    const message =
-      allowlistQuery.error instanceof Error
-        ? allowlistQuery.error.message
-        : "Could not load allowlist.";
-    toast.error("Load allowlist failed", message);
-  }, [allowlistQuery.error, allowlistQuery.isError, shouldQueryAllowlist]);
-
   const refresh = useCallback(async () => {
     if (!agentId) return;
 
@@ -196,13 +132,7 @@ export function AdminHubAgentDetailScreen({
       hydrateFromRecord(agentResult.data);
       formInitializedRef.current = true;
     }
-
-    if (agentResult.data?.availability_policy === "allowlist") {
-      await allowlistQuery.refetch();
-      return;
-    }
-    setAllowlist([]);
-  }, [agentId, agentQuery.refetch, allowlistQuery.refetch, hydrateFromRecord]);
+  }, [agentId, agentQuery.refetch, hydrateFromRecord]);
 
   const handleSave = useCallback(async () => {
     if (!agentId || saving) return;
@@ -248,46 +178,6 @@ export function AdminHubAgentDetailScreen({
     }
   }, [agent, agentId, deleting, queryClient, router]);
 
-  const canAddAllowlist = useMemo(
-    () =>
-      values.availabilityPolicy === "allowlist" &&
-      Boolean(allowlistEmail.trim()),
-    [allowlistEmail, values.availabilityPolicy],
-  );
-
-  const handleAddAllowlist = useCallback(async () => {
-    if (!agentId || !canAddAllowlist) return;
-    blurActiveElement();
-    try {
-      await addHubAgentAllowlistAdmin(agentId, {
-        email: allowlistEmail.trim(),
-      });
-      setAllowlistEmail("");
-      toast.success("Allowlist updated", "User added.");
-      await refresh();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Add failed.";
-      toast.error("Add failed", message);
-    }
-  }, [agentId, allowlistEmail, canAddAllowlist, refresh]);
-
-  const handleDeleteAllowlistEntry = useCallback(
-    async (entryId: string) => {
-      if (!agentId) return;
-      blurActiveElement();
-      try {
-        await deleteHubAgentAllowlistEntryAdmin(agentId, entryId);
-        toast.success("Allowlist updated", "User removed.");
-        await refresh();
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Remove failed.";
-        toast.error("Remove failed", message);
-      }
-    },
-    [agentId, refresh],
-  );
-
   if (!isReady) {
     return <FullscreenLoader message="Checking permissions..." />;
   }
@@ -329,7 +219,7 @@ export function AdminHubAgentDetailScreen({
     <ScreenContainer>
       <PageHeader
         title="Shared agent"
-        subtitle="Update directory entry, credentials, and allowlists."
+        subtitle="Update directory entry and credentials."
         rightElement={
           <Button
             label="Back"
@@ -378,69 +268,21 @@ export function AdminHubAgentDetailScreen({
         {values.availabilityPolicy === "allowlist" ? (
           <View className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/30 p-5">
             <Text className="text-base font-semibold text-white">
-              Allowlist
+              Allowlist management has moved
             </Text>
             <Text className="mt-2 text-sm text-muted">
-              Only users in the allowlist can access this agent.
+              Use the dedicated allowlist page to add/remove entries.
             </Text>
-
-            <View className="mt-4 flex-row items-end gap-3">
-              <View className="flex-1">
-                <Input
-                  label="User email"
-                  placeholder="user@example.com"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  value={allowlistEmail}
-                  onChangeText={setAllowlistEmail}
-                />
-              </View>
-              <Button
-                label="Add"
-                size="sm"
-                onPress={handleAddAllowlist}
-                disabled={!canAddAllowlist || loading}
-                loading={loading}
-              />
-            </View>
-
-            {allowlist.length === 0 ? (
-              <View className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
-                <Text className="text-sm text-muted">
-                  No allowlist entries.
-                </Text>
-              </View>
-            ) : (
-              allowlist.map((entry) => (
-                <View
-                  key={entry.id}
-                  className="mt-3 flex-row items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/20 p-4"
-                >
-                  <View className="flex-1 pr-3">
-                    <Text
-                      className="text-sm font-semibold text-white"
-                      numberOfLines={1}
-                    >
-                      {entry.user_email ?? entry.user_name ?? entry.user_id}
-                    </Text>
-                    <Text className="mt-1 text-xs text-muted" numberOfLines={1}>
-                      {entry.user_id}
-                    </Text>
-                  </View>
-                  <Pressable
-                    className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
-                    onPress={() => handleDeleteAllowlistEntry(entry.id)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Remove from allowlist"
-                  >
-                    <Ionicons name="trash-outline" size={14} color="#f87171" />
-                    <Text className="text-xs font-medium text-red-300">
-                      Remove
-                    </Text>
-                  </Pressable>
-                </View>
-              ))
-            )}
+            <Button
+              className="mt-4 self-start"
+              label="Manage allowlist"
+              size="sm"
+              variant="secondary"
+              onPress={() => {
+                blurActiveElement();
+                router.push(`/admin/hub-a2a/allowlist/${agentId}`);
+              }}
+            />
           </View>
         ) : null}
 

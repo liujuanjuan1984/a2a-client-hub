@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ScrollView,
   Text,
+  type GestureResponderEvent,
   View,
 } from "react-native";
 
@@ -200,6 +201,22 @@ export function AdminHubAgentsScreen() {
                           )
                         : pill("Credential • none", "muted")}
                     </View>
+                    {agent.availability_policy === "allowlist" ? (
+                      <Pressable
+                        className="mt-3 self-start rounded-full border border-sky-400/40 bg-sky-500/15 px-3 py-1"
+                        onPress={(event: GestureResponderEvent) => {
+                          event.stopPropagation();
+                          blurActiveElement();
+                          router.push(`/admin/hub-a2a/allowlist/${agent.id}`);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Manage allowlist for ${agent.name}`}
+                      >
+                        <Text className="text-[11px] font-semibold text-sky-200">
+                          Manage allowlist
+                        </Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
                 </View>
