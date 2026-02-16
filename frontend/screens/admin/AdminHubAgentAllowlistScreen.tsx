@@ -149,11 +149,11 @@ export function AdminHubAgentAllowlistScreen({
 
     setSaving(true);
     try {
-      for (const email of changes.addEmails) {
-        await addHubAgentAllowlistAdmin(agentId, { email });
-      }
       for (const entryId of changes.removeEntryIds) {
         await deleteHubAgentAllowlistEntryAdmin(agentId, entryId);
+      }
+      for (const email of changes.addEmails) {
+        await addHubAgentAllowlistAdmin(agentId, { email });
       }
       await queryClient.invalidateQueries({
         queryKey: queryKeys.admin.hubAgentAllowlist(agentId),
