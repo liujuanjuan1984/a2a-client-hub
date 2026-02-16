@@ -16,7 +16,10 @@ from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
 )
-from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
+from app.integrations.a2a_extensions.errors import (
+    A2AExtensionContractError,
+    A2AExtensionUpstreamError,
+)
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
 from app.integrations.a2a_extensions.opencode_session_query import (
@@ -415,20 +418,37 @@ class A2AExtensionsService:
         This endpoint is intentionally conservative:
         - It validates the upstream session exists (best-effort) via the session
           query contract, returning stable error_code values on failure.
-        - It returns `metadata.opencode_session_id` as the strict invoke-time
-          binding key expected by opencode-a2a-serve.
+        - It returns `metadata.<metadata_key>` where `metadata_key` is discovered
+          from `urn:opencode-a2a:opencode-session-binding/v1`.
         """
 
         resolved_session_id = (session_id or "").strip()
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        validation = await self.opencode_get_session_messages(
+        ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
+        metadata_key = (ext.session_binding_metadata_key or "").strip()
+        if not metadata_key:
+            raise A2AExtensionContractError(
+                "Extension contract missing/invalid session binding metadata_key"
+            )
+
+        validation = await self._invoke_opencode_method(
             runtime=runtime,
-            session_id=resolved_session_id,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="get_session_messages",
+            params={
+                "session_id": resolved_session_id,
+                **self._build_pagination_params(
+                    mode=ext.pagination.mode,
+                    page=1,
+                    size=1,
+                ),
+            },
             page=1,
             size=1,
-            query=None,
+            meta_extra={"session_id": resolved_session_id},
         )
         if not validation.success:
             return validation
@@ -438,6 +458,7 @@ class A2AExtensionsService:
             {
                 "binding_mode": "contextId+metadata",
                 "validated": True,
+                "session_binding_metadata_key": metadata_key,
             }
         )
         return ExtensionCallResult(
@@ -446,7 +467,7 @@ class A2AExtensionsService:
                 "contextId": resolved_session_id,
                 "provider": "opencode",
                 "metadata": {
-                    "opencode_session_id": resolved_session_id,
+                    metadata_key: resolved_session_id,
                 },
             },
             meta=meta,

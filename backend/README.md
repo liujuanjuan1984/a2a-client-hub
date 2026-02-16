@@ -127,7 +127,8 @@ scheduled, and OpenCode sessions:
 - `provider` (external provider key)
 - `externalSessionId` (external session identifier)
 - `contextId` (A2A context id)
-- `metadata.opencode_session_id` (strict upstream session-binding key)
+- `metadata.<metadata_key>` (strict upstream session-binding key from
+  `urn:opencode-a2a:opencode-session-binding/v1`)
 
 Client-generated chat sessions should use raw UUID conversation IDs, for example
 `550e8400-e29b-41d4-a716-446655440000`.

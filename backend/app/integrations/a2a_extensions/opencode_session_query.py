@@ -17,6 +17,7 @@ from app.integrations.a2a_extensions.types import (
 )
 
 OPENCODE_SESSION_QUERY_URI = "urn:opencode-a2a:opencode-session-query/v1"
+OPENCODE_SESSION_BINDING_URI = "urn:opencode-a2a:opencode-session-binding/v1"
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:
@@ -61,6 +62,34 @@ def _resolve_pagination_size(
     raise A2AExtensionContractError(
         f"Extension contract missing/invalid 'pagination.{field}' for mode '{mode}'"
     )
+
+
+def _resolve_session_binding_metadata_key(
+    extensions: list[Any],
+) -> Optional[str]:
+    for candidate in extensions:
+        if getattr(candidate, "uri", None) != OPENCODE_SESSION_BINDING_URI:
+            continue
+        params = _as_dict(getattr(candidate, "params", None))
+        return _require_str(params.get("metadata_key"), field="params.metadata_key")
+    return None
+
+
+def _normalize_error_token(name: str, *, code_value: int) -> str:
+    normalized = []
+    pending_sep = False
+    for ch in name.strip().lower():
+        if ch.isalnum():
+            if pending_sep and normalized:
+                normalized.append("_")
+            normalized.append(ch)
+            pending_sep = False
+            continue
+        pending_sep = True
+    token = "".join(normalized).strip("_")
+    if token:
+        return token
+    return f"business_code_{abs(code_value)}"
 
 
 def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
@@ -128,24 +157,16 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
 
     errors = _as_dict(params.get("errors"))
     business_codes = _as_dict(errors.get("business_codes"))
-    # Map known business codes to stable API error_code values.
     code_to_error: Dict[int, str] = {}
-    for _, code in business_codes.items():
+    for name, code in business_codes.items():
         try:
             code_value = _require_int(code, field="errors.business_codes.*")
         except A2AExtensionContractError:
             continue
-        if code_value == -32001:
-            code_to_error[code_value] = "session_not_found"
-        elif code_value == -32002:
-            code_to_error[code_value] = "upstream_unreachable"
-        elif code_value == -32003:
-            code_to_error[code_value] = "upstream_http_error"
+        token = _normalize_error_token(str(name), code_value=code_value)
+        code_to_error.setdefault(code_value, token)
 
-    # Ensure the documented codes map even if upstream uses different keys.
-    code_to_error.setdefault(-32001, "session_not_found")
-    code_to_error.setdefault(-32002, "upstream_unreachable")
-    code_to_error.setdefault(-32003, "upstream_http_error")
+    session_binding_metadata_key = _resolve_session_binding_metadata_key(extensions)
 
     result_envelope = params.get("result_envelope")
     envelope_mapping: Optional[Mapping[str, Any]] = None
@@ -182,8 +203,13 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
             mode=mode, default_size=default_size, max_size=max_size
         ),
         business_code_map=code_to_error,
+        session_binding_metadata_key=session_binding_metadata_key,
         result_envelope=envelope_mapping,
     )
 
 
-__all__ = ["OPENCODE_SESSION_QUERY_URI", "resolve_opencode_session_query"]
+__all__ = [
+    "OPENCODE_SESSION_BINDING_URI",
+    "OPENCODE_SESSION_QUERY_URI",
+    "resolve_opencode_session_query",
+]
