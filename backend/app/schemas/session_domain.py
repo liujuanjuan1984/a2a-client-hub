@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.pagination import ListResponse, Pagination
 
-SessionSource = Literal["manual", "scheduled", "opencode"]
+SessionSource = Literal["manual", "scheduled"]
 AgentSource = Literal["personal", "shared"]
 
 
@@ -19,7 +19,7 @@ class SessionQueryRequest(BaseModel):
     size: int = Field(50, ge=1, le=200, description="Page size")
     source: Optional[SessionSource] = Field(
         None,
-        description="Filter by source (manual/scheduled/opencode)",
+        description="Filter by source (manual/scheduled)",
     )
 
 

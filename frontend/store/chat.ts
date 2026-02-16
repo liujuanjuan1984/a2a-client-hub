@@ -49,7 +49,7 @@ type ChatState = {
     conversationId: string,
     payload: {
       agentId: string;
-      source?: "manual" | "scheduled" | "opencode" | null;
+      source?: "manual" | "scheduled" | null;
       provider?: string | null;
       externalSessionId?: string | null;
       contextId?: string | null;
@@ -217,7 +217,6 @@ export const useChatStore = create<ChatState>()(
         const attemptSessionRebind = async (reason: string) => {
           const current = get().sessions[conversationId];
           const shouldRebind =
-            current?.source === "opencode" ||
             current?.externalSessionRef?.provider === "opencode";
           if (!shouldRebind) {
             return false;
@@ -278,8 +277,7 @@ export const useChatStore = create<ChatState>()(
         };
 
         if (
-          (previousSession.source === "opencode" ||
-            previousSession.externalSessionRef?.provider === "opencode") &&
+          previousSession.externalSessionRef?.provider === "opencode" &&
           previousSession.streamState === "error"
         ) {
           await attemptSessionRebind(

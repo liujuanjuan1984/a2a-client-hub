@@ -192,6 +192,7 @@ async def test_continue_includes_opencode_session_metadata(
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["conversationId"] == str(session.id)
+        assert payload["source"] == "manual"
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] == "ses_upstream_1"
         assert payload["contextId"] == "ctx-bound-1"
@@ -216,7 +217,7 @@ async def test_invalid_conversation_id_returns_400(
         assert resp.json()["detail"] == "invalid_conversation_id"
 
 
-async def test_list_sessions_can_filter_opencode_from_local_data(
+async def test_list_sessions_filters_use_conversation_source_only(
     async_db_session,
     async_session_maker,
 ):
@@ -258,22 +259,22 @@ async def test_list_sessions_can_filter_opencode_from_local_data(
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
-        opencode_resp = await client.post(
-            "/me/conversations:query",
-            json={"page": 1, "size": 20, "source": "opencode"},
-        )
-        assert opencode_resp.status_code == 200
-        opencode_payload = opencode_resp.json()
-        assert opencode_payload["pagination"]["total"] == 1
-        assert opencode_payload["items"][0]["conversationId"] == str(session.id)
-        assert opencode_payload["items"][0]["source"] == "opencode"
-
         manual_resp = await client.post(
             "/me/conversations:query",
             json={"page": 1, "size": 20, "source": "manual"},
         )
         assert manual_resp.status_code == 200
-        assert manual_resp.json()["pagination"]["total"] == 0
+        manual_payload = manual_resp.json()
+        assert manual_payload["pagination"]["total"] == 1
+        assert manual_payload["items"][0]["conversationId"] == str(session.id)
+        assert manual_payload["items"][0]["source"] == "manual"
+
+        scheduled_resp = await client.post(
+            "/me/conversations:query",
+            json={"page": 1, "size": 20, "source": "scheduled"},
+        )
+        assert scheduled_resp.status_code == 200
+        assert scheduled_resp.json()["pagination"]["total"] == 0
 
 
 async def test_messages_query_reads_local_history_for_opencode_bound_conversation(
@@ -335,7 +336,7 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["meta"]["conversationId"] == str(session.id)
-        assert payload["meta"]["source"] == "opencode"
+        assert payload["meta"]["source"] == "manual"
         assert payload["meta"]["upstream_session_id"] == "ses_local_hist_1"
         assert len(payload["items"]) == 2
         assert payload["items"][0]["content"] == "hello"
@@ -388,7 +389,7 @@ async def test_continue_keeps_external_session_id_empty_when_missing(
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["conversationId"] == str(session.id)
-        assert payload["source"] == "opencode"
+        assert payload["source"] == "manual"
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] is None
         assert payload["contextId"] == "ses_context_only_1"

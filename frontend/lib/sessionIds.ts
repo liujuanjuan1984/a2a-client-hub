@@ -1,1 +1,1 @@
-export type UnifiedSessionSource = "manual" | "scheduled" | "opencode";
+export type UnifiedSessionSource = "manual" | "scheduled";

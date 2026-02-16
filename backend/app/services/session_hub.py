@@ -24,8 +24,8 @@ from app.utils.payload_extract import extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import utc_now
 
-SessionSource = Literal["manual", "scheduled", "opencode"]
-ResolvedSource = Literal["manual", "scheduled", "opencode"]
+SessionSource = Literal["manual", "scheduled"]
+ResolvedSource = Literal["manual", "scheduled"]
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,6 @@ class SessionHubService:
                         [
                             ConversationThread.SOURCE_MANUAL,
                             ConversationThread.SOURCE_SCHEDULED,
-                            ConversationThread.SOURCE_OPENCODE,
                         ]
                     ),
                 )
@@ -89,14 +88,8 @@ class SessionHubService:
         items: list[dict[str, Any]] = []
 
         for thread in threads:
-            metadata_provider = normalize_provider(thread.external_provider)
-            metadata_external_id = normalize_non_empty_text(thread.external_session_id)
-            metadata_context_id = normalize_non_empty_text(thread.context_id)
             resolved_source = _resolve_session_source(
                 thread_source=thread.source,
-                provider=metadata_provider,
-                external_session_id=metadata_external_id,
-                context_id=metadata_context_id,
                 fallback_source=None,
             )
             if source and source != resolved_source:
@@ -104,8 +97,6 @@ class SessionHubService:
             title_fallback = (
                 "Scheduled Session"
                 if resolved_source == "scheduled"
-                else "OpenCode Session"
-                if resolved_source == "opencode"
                 else "Manual Session"
             )
             items.append(
@@ -138,17 +129,12 @@ class SessionHubService:
             conversation_id=resolved_conversation_id,
         )
         session = target.thread if target else None
-        provider = normalize_provider(session.external_provider if session else None)
         external_session_id = normalize_non_empty_text(
             session.external_session_id if session else None
         )
-        context_id = normalize_non_empty_text(session.context_id if session else None)
 
         resolved_source = _resolve_session_source(
             thread_source=session.source if session else None,
-            provider=provider,
-            external_session_id=external_session_id,
-            context_id=context_id,
             fallback_source=target.source if target else None,
         )
         offset = (page - 1) * size
@@ -235,14 +221,9 @@ class SessionHubService:
 
         resolved_provider = provider
         resolved_external_session_id = external_session_id
-        if target.source == "opencode" and not resolved_provider:
-            resolved_provider = "opencode"
 
         resolved_source = _resolve_session_source(
             thread_source=session.source if session else None,
-            provider=resolved_provider,
-            external_session_id=resolved_external_session_id,
-            context_id=context_id,
             fallback_source=target.source,
         )
         conversation_id = resolved_conversation_id
@@ -262,6 +243,7 @@ class SessionHubService:
                     db,
                     user_id=user_id,
                     conversation_id=conversation_id,
+                    source=resolved_source,
                     provider=resolved_provider,
                     external_session_id=resolved_external_session_id,
                     agent_id=(
@@ -342,18 +324,10 @@ class SessionHubService:
             session = ConversationThread(
                 id=local_session_id,
                 user_id=user_id,
-                source=(
-                    ConversationThread.SOURCE_OPENCODE
-                    if target and target.source == "opencode"
-                    else ConversationThread.SOURCE_MANUAL
-                ),
+                source=ConversationThread.SOURCE_MANUAL,
                 agent_id=agent_id,
                 agent_source=agent_source,
-                title=(
-                    f"OpenCode Session {str(local_session_id)[:8]}"
-                    if target and target.source == "opencode"
-                    else f"Manual Session {str(local_session_id)[:8]}"
-                ),
+                title=f"Manual Session {str(local_session_id)[:8]}",
                 last_active_at=utc_now(),
                 status=ConversationThread.STATUS_ACTIVE,
             )
@@ -369,8 +343,6 @@ class SessionHubService:
             local_source = "manual"
         elif session.source == ConversationThread.SOURCE_SCHEDULED:
             local_source = "scheduled"
-        elif session.source == ConversationThread.SOURCE_OPENCODE:
-            local_source = "opencode"
         else:
             raise ValueError("invalid_conversation_id")
 
@@ -419,8 +391,6 @@ class SessionHubService:
             provider_from_invoke,
             external_session_id,
         ) = extract_provider_and_external_session_id(invoke_metadata or {})
-        if not provider_from_invoke and source == "opencode":
-            provider_from_invoke = normalize_provider("opencode")
         if context_id and isinstance(context_id, str):
             metadata["context_id"] = context_id
         if provider_from_invoke:
@@ -452,6 +422,7 @@ class SessionHubService:
                 db,
                 user_id=user_id,
                 conversation_id=conversation_id,
+                source=source,
                 provider=provider_from_invoke,
                 external_session_id=external_session_id,
                 agent_id=agent_id,
@@ -466,11 +437,6 @@ class SessionHubService:
                 session.external_provider = normalized_provider
             if normalized_context_id and session.context_id != normalized_context_id:
                 session.context_id = normalized_context_id
-            if (
-                normalized_provider == "opencode"
-                and session.source == ConversationThread.SOURCE_MANUAL
-            ):
-                session.source = ConversationThread.SOURCE_OPENCODE
 
         await agent_message_handler.create_agent_message(
             db,
@@ -531,7 +497,6 @@ class SessionHubService:
                         [
                             ConversationThread.SOURCE_MANUAL,
                             ConversationThread.SOURCE_SCHEDULED,
-                            ConversationThread.SOURCE_OPENCODE,
                         ]
                     ),
                 )
@@ -561,11 +526,6 @@ class SessionHubService:
         if local_session.source == ConversationThread.SOURCE_SCHEDULED:
             return ResolvedConversationTarget(
                 source="scheduled",
-                thread=local_session,
-            )
-        if local_session.source == ConversationThread.SOURCE_OPENCODE:
-            return ResolvedConversationTarget(
-                source="opencode",
                 thread=local_session,
             )
         return None
@@ -661,22 +621,13 @@ def _build_continue_response(
 def _resolve_session_source(
     *,
     thread_source: str | None,
-    provider: str | None,
-    external_session_id: str | None,
-    context_id: str | None,
     fallback_source: ResolvedSource | None,
 ) -> ResolvedSource:
     if thread_source == ConversationThread.SOURCE_SCHEDULED:
         return "scheduled"
-    normalized_provider = normalize_provider(provider)
-    if normalized_provider == "opencode" and (
-        normalize_non_empty_text(external_session_id)
-        or normalize_non_empty_text(context_id)
-    ):
-        return "opencode"
-    if thread_source == ConversationThread.SOURCE_OPENCODE:
-        return "opencode"
-    if fallback_source in {"manual", "scheduled", "opencode"}:
+    if thread_source == ConversationThread.SOURCE_MANUAL:
+        return "manual"
+    if fallback_source in {"manual", "scheduled"}:
         return fallback_source
     return "manual"
 

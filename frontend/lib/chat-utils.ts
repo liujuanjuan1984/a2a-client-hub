@@ -7,7 +7,7 @@ export type ExternalSessionRef = {
 
 export type AgentSession = {
   agentId: string;
-  source?: "manual" | "scheduled" | "opencode" | null;
+  source?: "manual" | "scheduled" | null;
   contextId: string | null;
   runtimeStatus?: string | null;
   streamState?: "idle" | "streaming" | "rebinding" | "recoverable" | "error";

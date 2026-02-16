@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -56,6 +56,7 @@ class ConversationIdentityService:
         *,
         user_id: UUID,
         conversation_id: Optional[UUID],
+        source: Literal["manual", "scheduled"] | None,
         provider: str,
         external_session_id: str,
         agent_id: Optional[UUID],
@@ -67,6 +68,7 @@ class ConversationIdentityService:
             db,
             user_id=user_id,
             conversation_id=conversation_id,
+            source=source,
             provider=provider,
             external_session_id=external_session_id,
             agent_id=agent_id,
@@ -82,6 +84,7 @@ class ConversationIdentityService:
         *,
         user_id: UUID,
         conversation_id: Optional[UUID],
+        source: Literal["manual", "scheduled"] | None,
         provider: str,
         external_session_id: str,
         agent_id: Optional[UUID],
@@ -122,9 +125,6 @@ class ConversationIdentityService:
             ):
                 existing_by_external.context_id = normalized_context_id
                 mutated = True
-            if existing_by_external.source != ConversationThread.SOURCE_OPENCODE:
-                existing_by_external.source = ConversationThread.SOURCE_OPENCODE
-                mutated = True
             if mutated:
                 existing_by_external.last_active_at = now
             return ExternalBindingResult(
@@ -137,9 +137,10 @@ class ConversationIdentityService:
         try:
             async with db.begin_nested():
                 if resolved_conversation_id is None:
+                    resolved_source = _normalize_conversation_source(source)
                     thread = ConversationThread(
                         user_id=user_id,
-                        source=ConversationThread.SOURCE_OPENCODE,
+                        source=resolved_source,
                         agent_id=agent_id,
                         agent_source=agent_source,
                         title=title or "Session",
@@ -164,7 +165,6 @@ class ConversationIdentityService:
                 thread.external_provider = resolved_provider
                 thread.external_session_id = resolved_external_id
                 thread.context_id = normalize_non_empty_text(context_id)
-                thread.source = ConversationThread.SOURCE_OPENCODE
                 if agent_id:
                     thread.agent_id = agent_id
                 if agent_source:
@@ -189,6 +189,14 @@ class ConversationIdentityService:
 
 
 conversation_identity_service = ConversationIdentityService()
+
+
+def _normalize_conversation_source(
+    source: Literal["manual", "scheduled"] | None,
+) -> str:
+    if source == ConversationThread.SOURCE_SCHEDULED:
+        return ConversationThread.SOURCE_SCHEDULED
+    return ConversationThread.SOURCE_MANUAL
 
 
 __all__ = ["ConversationIdentityService", "conversation_identity_service"]

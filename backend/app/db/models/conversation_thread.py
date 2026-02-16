@@ -43,7 +43,6 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
     STATUS_ARCHIVED: ClassVar[str] = "archived"
     SOURCE_MANUAL: ClassVar[str] = "manual"
     SOURCE_SCHEDULED: ClassVar[str] = "scheduled"
-    SOURCE_OPENCODE: ClassVar[str] = "opencode"
     TITLE_MAX_LENGTH: ClassVar[int] = 255
 
     agent_id = Column(
@@ -62,7 +61,7 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
         nullable=False,
         default=SOURCE_MANUAL,
         server_default=SOURCE_MANUAL,
-        comment="Conversation source kind: manual/scheduled/opencode.",
+        comment="Conversation initiation kind: manual/scheduled.",
     )
     external_provider = Column(
         String(64),
