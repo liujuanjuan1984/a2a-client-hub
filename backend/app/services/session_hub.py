@@ -3,7 +3,7 @@
 This module provides a single read model for session list/history/continue across:
 - local manual chat sessions
 - local scheduled sessions
-- remote OpenCode sessions (via extension adapters)
+- local OpenCode-bound sessions
 """
 
 from __future__ import annotations
@@ -253,84 +253,6 @@ class SessionHubService:
             )
             mapped[conversation_id] = metadata
         return mapped
-
-    def _dedup_cross_source_sessions(
-        self,
-        local_items: list[dict[str, Any]],
-        opencode_items: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        merged = list(opencode_items)
-        provider_key = normalize_provider("opencode")
-        remote_conversation_ids = {
-            str(item.get("conversationId"))
-            for item in opencode_items
-            if isinstance(item.get("conversationId"), str)
-            and item.get("conversationId")
-        }
-        remote_external_keys: set[tuple[str, str]] = set()
-        remote_agent_external_keys: set[tuple[str, str]] = set()
-        remote_external_ids: set[str] = set()
-        remote_by_external_id: dict[str, dict[str, Any]] = {}
-        for item in opencode_items:
-            remote_external_id = normalize_non_empty_text(
-                item.get("external_session_id")
-            )
-            if not remote_external_id:
-                continue
-            remote_external_ids.add(remote_external_id)
-            if provider_key:
-                remote_external_keys.add((provider_key, remote_external_id))
-            raw_agent_id = item.get("agent_id")
-            if isinstance(raw_agent_id, UUID):
-                remote_agent_external_keys.add((str(raw_agent_id), remote_external_id))
-            remote_by_external_id.setdefault(remote_external_id, item)
-
-        for local_item in local_items:
-            local_conversation_id = local_item.get("conversationId")
-            if (
-                isinstance(local_conversation_id, str)
-                and local_conversation_id
-                and local_conversation_id in remote_conversation_ids
-            ):
-                continue
-
-            local_external_id = normalize_non_empty_text(
-                local_item.get("external_session_id")
-            )
-            local_provider = normalize_provider(local_item.get("provider"))
-            local_agent_id = local_item.get("agent_id")
-            local_context_id = normalize_non_empty_text(local_item.get("context_id"))
-
-            matched_remote: dict[str, Any] | None = None
-            if (
-                local_provider
-                and local_external_id
-                and (local_provider, local_external_id) in remote_external_keys
-            ):
-                matched_remote = remote_by_external_id.get(local_external_id)
-            elif (
-                isinstance(local_agent_id, UUID)
-                and local_external_id
-                and (str(local_agent_id), local_external_id)
-                in remote_agent_external_keys
-            ):
-                matched_remote = remote_by_external_id.get(local_external_id)
-            elif local_context_id and local_context_id in remote_external_ids:
-                matched_remote = remote_by_external_id.get(local_context_id)
-
-            if matched_remote is not None:
-                if (
-                    not matched_remote.get("conversationId")
-                    and isinstance(local_conversation_id, str)
-                    and local_conversation_id
-                ):
-                    matched_remote["conversationId"] = local_conversation_id
-                continue
-
-            merged.append(local_item)
-
-        merged.sort(key=_session_order_key, reverse=True)
-        return merged
 
     async def list_messages(
         self,
