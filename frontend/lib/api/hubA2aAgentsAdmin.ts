@@ -67,6 +67,10 @@ export type HubA2AAllowlistAddRequest = {
   email?: string | null;
 };
 
+export type HubA2AAllowlistReplaceRequest = {
+  entries: HubA2AAllowlistAddRequest[];
+};
+
 export const listHubAgentsAdmin = (page = 1, size = 200) =>
   apiRequest<HubA2AAgentAdminListResponse>("/admin/a2a/agents", {
     query: { page, size },
@@ -118,4 +122,13 @@ export const deleteHubAgentAllowlistEntryAdmin = (
   apiRequest<void>(
     `/admin/a2a/agents/${encodeURIComponent(agentId)}/allowlist/${encodeURIComponent(userId)}`,
     { method: "DELETE" },
+  );
+
+export const replaceHubAgentAllowlistAdmin = (
+  agentId: string,
+  payload: HubA2AAllowlistReplaceRequest,
+) =>
+  apiRequest<HubA2AAllowlistListResponse, HubA2AAllowlistReplaceRequest>(
+    `/admin/a2a/agents/${encodeURIComponent(agentId)}/allowlist:replace`,
+    { method: "PUT", body: payload },
   );

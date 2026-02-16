@@ -1,5 +1,6 @@
 import { type HubA2AAllowlistEntryResponse } from "@/lib/api/hubA2aAgentsAdmin";
 import {
+  buildAllowlistReplaceEntries,
   buildAllowlistDraftFromEntries,
   buildNewAllowlistDraftEntry,
   deriveAllowlistChanges,
@@ -58,5 +59,22 @@ describe("hubAgentAllowlistState", () => {
       addEmails: ["new@example.com"],
       removeUserIds: ["user-2"],
     });
+  });
+
+  it("builds replace payload entries from mixed draft rows", () => {
+    const draft = [
+      ...buildAllowlistDraftFromEntries([
+        existingEntry({
+          id: "entry-a",
+          user_id: "user-a",
+          user_email: "a@example.com",
+        }),
+      ]),
+      buildNewAllowlistDraftEntry("new@example.com", "new-1"),
+    ];
+    expect(buildAllowlistReplaceEntries(draft)).toEqual([
+      { user_id: "user-a" },
+      { email: "new@example.com" },
+    ]);
   });
 });

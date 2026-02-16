@@ -313,6 +313,89 @@ async def test_allowlisted_user_can_stream_sse(
 
 
 @pytest.mark.asyncio
+async def test_admin_replace_allowlist_is_atomic(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    admin = await create_user(
+        async_db_session, email="admin_replace_allowlist@example.com", is_superuser=True
+    )
+    alice = await create_user(
+        async_db_session,
+        email="alice_replace_allowlist@example.com",
+        is_superuser=False,
+    )
+    bob = await create_user(
+        async_db_session, email="bob_replace_allowlist@example.com", is_superuser=False
+    )
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        create_payload = {
+            "name": "Replace Allowlist Agent",
+            "card_url": "https://example.com/.well-known/agent-card.json",
+            "availability_policy": "allowlist",
+            "auth_type": "none",
+            "enabled": True,
+            "tags": [],
+            "extra_headers": {},
+        }
+        create_resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents", json=create_payload
+        )
+        assert create_resp.status_code == 201
+        agent_id = create_resp.json()["id"]
+
+        allow_resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}/allowlist",
+            json={"email": alice.email},
+        )
+        assert allow_resp.status_code == 201
+
+        replace_fail_resp = await admin_client.put(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}/allowlist:replace",
+            json={
+                "entries": [
+                    {"email": bob.email},
+                    {"email": "missing-user@example.com"},
+                ]
+            },
+        )
+        assert replace_fail_resp.status_code == 404
+
+        # Atomicity check: failed replace should not mutate existing allowlist.
+        list_after_fail = await admin_client.get(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}/allowlist"
+        )
+        assert list_after_fail.status_code == 200
+        fail_items = list_after_fail.json()["items"]
+        assert len(fail_items) == 1
+        assert fail_items[0]["user_id"] == str(alice.id)
+
+        replace_success_resp = await admin_client.put(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}/allowlist:replace",
+            json={"entries": [{"email": bob.email}]},
+        )
+        assert replace_success_resp.status_code == 200
+        success_items = replace_success_resp.json()["items"]
+        assert len(success_items) == 1
+        assert success_items[0]["user_id"] == str(bob.id)
+
+        list_after_success = await admin_client.get(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}/allowlist"
+        )
+        assert list_after_success.status_code == 200
+        final_items = list_after_success.json()["items"]
+        assert len(final_items) == 1
+        assert final_items[0]["user_id"] == str(bob.id)
+
+
+@pytest.mark.asyncio
 async def test_ws_token_404_for_non_allowlisted_user(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

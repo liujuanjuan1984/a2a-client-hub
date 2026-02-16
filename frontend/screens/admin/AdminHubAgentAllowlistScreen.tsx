@@ -19,10 +19,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import {
-  addHubAgentAllowlistAdmin,
-  deleteHubAgentAllowlistEntryAdmin,
   getHubAgentAdmin,
   listHubAgentAllowlistAdmin,
+  replaceHubAgentAllowlistAdmin,
   type HubA2AAllowlistEntryResponse,
 } from "@/lib/api/hubA2aAgentsAdmin";
 import { blurActiveElement } from "@/lib/focus";
@@ -31,6 +30,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
 import {
   buildAllowlistDraftFromEntries,
+  buildAllowlistReplaceEntries,
   buildNewAllowlistDraftEntry,
   deriveAllowlistChanges,
   hasAllowlistEmail,
@@ -149,12 +149,9 @@ export function AdminHubAgentAllowlistScreen({
 
     setSaving(true);
     try {
-      for (const userId of changes.removeUserIds) {
-        await deleteHubAgentAllowlistEntryAdmin(agentId, userId);
-      }
-      for (const email of changes.addEmails) {
-        await addHubAgentAllowlistAdmin(agentId, { email });
-      }
+      await replaceHubAgentAllowlistAdmin(agentId, {
+        entries: buildAllowlistReplaceEntries(draftEntries),
+      });
       await queryClient.invalidateQueries({
         queryKey: queryKeys.admin.hubAgentAllowlist(agentId),
       });
@@ -178,6 +175,7 @@ export function AdminHubAgentAllowlistScreen({
     allowNextNavigation,
     changes.addEmails,
     changes.removeUserIds,
+    draftEntries,
     dirty,
     queryClient,
     router,

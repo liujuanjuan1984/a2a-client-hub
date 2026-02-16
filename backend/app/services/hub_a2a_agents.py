@@ -396,6 +396,45 @@ class HubA2AAgentService(AgentValidationMixin):
         await db.execute(stmt)
         await commit_safely(db)
 
+    async def replace_allowlist_entries_admin(
+        self,
+        db: AsyncSession,
+        *,
+        admin_user_id: UUID,
+        agent_id: UUID,
+        entries: Sequence[dict[str, Optional[UUID | str]]],
+    ) -> List[HubA2AAllowlistRecord]:
+        await self._get_agent(db, agent_id=agent_id)
+
+        resolved_users: list[User] = []
+        seen_user_ids: set[UUID] = set()
+        for item in entries:
+            user = await self._resolve_user(
+                db,
+                user_id=item.get("user_id"),
+                email=item.get("email"),
+            )
+            if user.id in seen_user_ids:
+                continue
+            seen_user_ids.add(user.id)
+            resolved_users.append(user)
+
+        await db.execute(
+            delete(HubA2AAgentAllowlistEntry).where(
+                HubA2AAgentAllowlistEntry.agent_id == agent_id
+            )
+        )
+        for user in resolved_users:
+            db.add(
+                HubA2AAgentAllowlistEntry(
+                    agent_id=agent_id,
+                    user_id=user.id,
+                    created_by_user_id=admin_user_id,
+                )
+            )
+        await commit_safely(db)
+        return await self.list_allowlist_entries_admin(db, agent_id=agent_id)
+
     async def _get_agent(self, db: AsyncSession, *, agent_id: UUID) -> A2AAgent:
         stmt = select(A2AAgent).where(
             and_(

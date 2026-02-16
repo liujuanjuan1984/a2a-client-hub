@@ -69,3 +69,19 @@ export const deriveAllowlistChanges = (
 
   return { addEmails, removeUserIds };
 };
+
+export const buildAllowlistReplaceEntries = (
+  draftEntries: HubAgentAllowlistDraftEntry[],
+): { user_id?: string; email?: string }[] => {
+  const entries: { user_id?: string; email?: string }[] = [];
+  draftEntries.forEach((entry) => {
+    if (entry.existingUserId) {
+      entries.push({ user_id: entry.existingUserId });
+      return;
+    }
+    const normalizedEmail = normalizeEmail(entry.email);
+    if (!normalizedEmail) return;
+    entries.push({ email: normalizedEmail });
+  });
+  return entries;
+};
