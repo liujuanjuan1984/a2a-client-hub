@@ -53,6 +53,7 @@ async def test_schedule_routes_crud_and_toggle(
         task_id = created["id"]
         assert created["name"] == "Morning digest"
         assert created["enabled"] is True
+        assert created["consecutive_failures"] == 0
 
         list_resp = await client.get(
             "/me/a2a/schedules", params={"page": 1, "size": 20}

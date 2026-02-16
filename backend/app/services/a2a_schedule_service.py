@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
@@ -292,6 +293,28 @@ class A2AScheduleService:
         total = int(await db.scalar(count_stmt) or 0)
         return items, total
 
+    async def _running_execution_count_for_agent(
+        self,
+        db: AsyncSession,
+        *,
+        agent_id: UUID,
+    ) -> int:
+        stmt = (
+            select(func.count(A2AScheduleExecution.id))
+            .join(
+                A2AScheduleTask,
+                A2AScheduleTask.id == A2AScheduleExecution.task_id,
+            )
+            .where(
+                and_(
+                    A2AScheduleTask.agent_id == agent_id,
+                    A2AScheduleTask.deleted_at.is_(None),
+                    A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
+                )
+            )
+        )
+        return int((await db.scalar(stmt)) or 0)
+
     async def claim_next_due_task(
         self,
         db: AsyncSession,
@@ -299,6 +322,7 @@ class A2AScheduleService:
         now: Optional[datetime] = None,
     ) -> Optional[ClaimedA2AScheduleTask]:
         now_utc = ensure_utc(now or utc_now())
+        concurrency_limit = max(int(settings.a2a_schedule_agent_concurrency_limit), 1)
 
         stmt = (
             select(A2AScheduleTask)
@@ -311,44 +335,58 @@ class A2AScheduleService:
                 )
             )
             .order_by(A2AScheduleTask.next_run_at.asc(), A2AScheduleTask.id.asc())
-            .limit(1)
+            .limit(max(concurrency_limit * 3, 10))
             .with_for_update(skip_locked=True)
         )
-        task = await db.scalar(stmt)
-        if task is None:
+        candidates = list((await db.scalars(stmt)).all())
+        if not candidates:
+            return None
+
+        selected_task: Optional[A2AScheduleTask] = None
+        for task in candidates:
+            running_count = await self._running_execution_count_for_agent(
+                db,
+                agent_id=task.agent_id,
+            )
+            if running_count >= concurrency_limit:
+                continue
+            selected_task = task
+            break
+
+        if selected_task is None:
             return None
 
         timezone_value = await auth_handler.get_user_timezone(
             db,
-            user_id=task.user_id,
+            user_id=selected_task.user_id,
             default="UTC",
         )
 
-        scheduled_for = ensure_utc(task.next_run_at or now_utc)
+        scheduled_for = ensure_utc(selected_task.next_run_at or now_utc)
         next_run_at = self.compute_next_run_at(
-            cycle_type=task.cycle_type,
-            time_point=dict(task.time_point or {}),
+            cycle_type=selected_task.cycle_type,
+            time_point=dict(selected_task.time_point or {}),
             timezone_str=timezone_value,
             after_utc=scheduled_for,
             not_before_utc=now_utc,
         )
 
-        task.next_run_at = next_run_at
-        task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+        selected_task.next_run_at = next_run_at
+        selected_task.last_run_status = A2AScheduleTask.STATUS_RUNNING
         # Record the claim timestamp so we can recover stale runs if the worker crashes
         # before creating an execution row.
-        task.last_run_at = now_utc
+        selected_task.last_run_at = now_utc
         await commit_safely(db)
 
         return ClaimedA2AScheduleTask(
-            task_id=task.id,
-            user_id=task.user_id,
-            agent_id=task.agent_id,
-            conversation_id=task.conversation_id,
-            name=task.name,
-            prompt=task.prompt,
-            cycle_type=task.cycle_type,
-            time_point=dict(task.time_point or {}),
+            task_id=selected_task.id,
+            user_id=selected_task.user_id,
+            agent_id=selected_task.agent_id,
+            conversation_id=selected_task.conversation_id,
+            name=selected_task.name,
+            prompt=selected_task.prompt,
+            cycle_type=selected_task.cycle_type,
+            time_point=dict(selected_task.time_point or {}),
             scheduled_for=scheduled_for,
         )
 
