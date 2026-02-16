@@ -268,6 +268,8 @@ async def test_list_sessions_filters_use_conversation_source_only(
         assert manual_payload["pagination"]["total"] == 1
         assert manual_payload["items"][0]["conversationId"] == str(session.id)
         assert manual_payload["items"][0]["source"] == "manual"
+        assert manual_payload["items"][0]["external_provider"] == "opencode"
+        assert manual_payload["items"][0]["external_session_id"] == "ses_filter_1"
 
         scheduled_resp = await client.post(
             "/me/conversations:query",

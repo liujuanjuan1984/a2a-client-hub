@@ -29,6 +29,8 @@ class SessionViewItem(BaseModel):
         description="Canonical conversation id.",
     )
     source: SessionSource
+    external_provider: Optional[str] = None
+    external_session_id: Optional[str] = None
     agent_id: Optional[UUID] = None
     agent_source: Optional[AgentSource] = None
     title: str

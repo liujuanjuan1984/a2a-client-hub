@@ -103,6 +103,10 @@ class SessionHubService:
                 {
                     "conversationId": str(thread.id),
                     "source": resolved_source,
+                    "external_provider": normalize_provider(thread.external_provider),
+                    "external_session_id": normalize_non_empty_text(
+                        thread.external_session_id
+                    ),
                     "agent_id": thread.agent_id,
                     "agent_source": thread.agent_source or "personal",
                     "title": thread.title or title_fallback,

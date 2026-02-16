@@ -1,8 +1,9 @@
-"""reset unified schema baseline v2
+"""reset unified schema baseline v3
 
-Revision ID: f0270f496fb1
+Revision ID: 945d785bd00d
 Revises:
-Create Date: 2026-02-16 05:05:03.441947
+Create Date: 2026-02-16 05:53:19.142028
+
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from app.db.models.base import Base, SCHEMA_NAME
 
 
 # revision identifiers, used by Alembic.
-revision = "f0270f496fb1"
+revision = "945d785bd00d"
 down_revision = None
 branch_labels = None
 depends_on = None

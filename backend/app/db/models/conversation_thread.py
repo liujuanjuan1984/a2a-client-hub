@@ -32,6 +32,10 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
             name="uq_conversation_threads_user_provider_external_session",
         ),
         CheckConstraint(
+            "source IN ('manual', 'scheduled')",
+            name="ck_conversation_threads_source_allowed_values",
+        ),
+        CheckConstraint(
             "(external_session_id IS NULL) OR (external_provider IS NOT NULL)",
             name="ck_conversation_threads_external_session_requires_provider",
         ),
