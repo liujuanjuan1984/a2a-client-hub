@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -28,4 +28,30 @@ class A2AExtensionResponse(BaseModel):
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 
-__all__ = ["A2AExtensionQueryRequest", "A2AExtensionResponse"]
+class A2AExtensionPermissionReplyRequest(BaseModel):
+    request_id: str = Field(..., min_length=1, description="Interrupt request id")
+    reply: Literal["once", "always", "reject"] = Field(
+        ...,
+        description="Permission reply action",
+    )
+
+
+class A2AExtensionQuestionReplyRequest(BaseModel):
+    request_id: str = Field(..., min_length=1, description="Interrupt request id")
+    answers: List[List[str]] = Field(
+        ...,
+        description="Answer groups in the same order as asked questions",
+    )
+
+
+class A2AExtensionQuestionRejectRequest(BaseModel):
+    request_id: str = Field(..., min_length=1, description="Interrupt request id")
+
+
+__all__ = [
+    "A2AExtensionPermissionReplyRequest",
+    "A2AExtensionQueryRequest",
+    "A2AExtensionQuestionRejectRequest",
+    "A2AExtensionQuestionReplyRequest",
+    "A2AExtensionResponse",
+]

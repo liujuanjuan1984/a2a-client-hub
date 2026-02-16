@@ -24,7 +24,13 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
 )
-from app.schemas.a2a_extension import A2AExtensionQueryRequest, A2AExtensionResponse
+from app.schemas.a2a_extension import (
+    A2AExtensionPermissionReplyRequest,
+    A2AExtensionQueryRequest,
+    A2AExtensionQuestionRejectRequest,
+    A2AExtensionQuestionReplyRequest,
+    A2AExtensionResponse,
+)
 from app.utils.logging_redaction import redact_url_for_logging
 
 logger = get_logger(__name__)
@@ -179,6 +185,106 @@ def create_opencode_extension_router(
             get_a2a_extensions_service().opencode_continue_session(
                 runtime=runtime,
                 session_id=session_id,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/opencode/interrupts/permission:reply",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def opencode_reply_permission_interrupt(
+        *,
+        agent_id: UUID,
+        payload: A2AExtensionPermissionReplyRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime(db, current_user, agent_id)
+        logger.info(
+            _scope_message("OpenCode permission interrupt reply requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "request_id": payload.request_id,
+                "reply": payload.reply,
+            },
+        )
+        return await _run_extension_call(
+            get_a2a_extensions_service().opencode_reply_permission(
+                runtime=runtime,
+                request_id=payload.request_id,
+                reply=payload.reply,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/opencode/interrupts/question:reply",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def opencode_reply_question_interrupt(
+        *,
+        agent_id: UUID,
+        payload: A2AExtensionQuestionReplyRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime(db, current_user, agent_id)
+        logger.info(
+            _scope_message("OpenCode question interrupt reply requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "request_id": payload.request_id,
+                "answers_count": len(payload.answers),
+            },
+        )
+        return await _run_extension_call(
+            get_a2a_extensions_service().opencode_reply_question(
+                runtime=runtime,
+                request_id=payload.request_id,
+                answers=payload.answers,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/opencode/interrupts/question:reject",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def opencode_reject_question_interrupt(
+        *,
+        agent_id: UUID,
+        payload: A2AExtensionQuestionRejectRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime(db, current_user, agent_id)
+        logger.info(
+            _scope_message("OpenCode question interrupt reject requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "request_id": payload.request_id,
+            },
+        )
+        return await _run_extension_call(
+            get_a2a_extensions_service().opencode_reject_question(
+                runtime=runtime,
+                request_id=payload.request_id,
             )
         )
 

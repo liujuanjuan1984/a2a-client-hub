@@ -22,10 +22,16 @@ from app.integrations.a2a_extensions.errors import (
 )
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
+from app.integrations.a2a_extensions.opencode_interrupt_callback import (
+    resolve_opencode_interrupt_callback,
+)
 from app.integrations.a2a_extensions.opencode_session_query import (
     resolve_opencode_session_query,
 )
-from app.integrations.a2a_extensions.types import ResolvedExtension
+from app.integrations.a2a_extensions.types import (
+    ResolvedExtension,
+    ResolvedInterruptCallbackExtension,
+)
 from app.services.a2a_runtime import A2ARuntime
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
@@ -265,6 +271,19 @@ class A2AExtensionsService:
 
     @staticmethod
     def _map_business_error_code(error: Dict[str, Any], ext: ResolvedExtension) -> str:
+        code = error.get("code")
+        mapped = None
+        if isinstance(code, int):
+            mapped = ext.business_code_map.get(code)
+        elif isinstance(code, str) and code.strip().lstrip("-").isdigit():
+            mapped = ext.business_code_map.get(int(code.strip()))
+        return mapped or "upstream_error"
+
+    @staticmethod
+    def _map_interrupt_business_error_code(
+        error: Dict[str, Any],
+        ext: ResolvedInterruptCallbackExtension,
+    ) -> str:
         code = error.get("code")
         mapped = None
         if isinstance(code, int):
@@ -540,6 +559,160 @@ class A2AExtensionsService:
                 },
             },
             meta=meta,
+        )
+
+    async def _resolve_opencode_interrupt_extension(
+        self, runtime: A2ARuntime
+    ) -> tuple[ResolvedInterruptCallbackExtension, str]:
+        card = await self._fetch_card(runtime)
+        ext = resolve_opencode_interrupt_callback(card)
+        jsonrpc_url = self._ensure_outbound_allowed(
+            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+        )
+        return ext, jsonrpc_url
+
+    async def _invoke_opencode_interrupt_method(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedInterruptCallbackExtension,
+        jsonrpc_url: str,
+        method_key: str,
+        params: Dict[str, Any],
+        meta_extra: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        method_name = ext.methods[method_key]
+        metric_key = f"{ext.uri}:{method_name}"
+        await self._get_http()
+        assert self._jsonrpc is not None  # constructed alongside _http
+        try:
+            resp = await self._call_with_retry(
+                url=jsonrpc_url,
+                method=method_name,
+                params=params,
+                headers=dict(runtime.resolved.headers),
+                timeout_seconds=max(settings.a2a_default_timeout, 1.0),
+            )
+        except httpx.TransportError as exc:
+            raise A2AExtensionUpstreamError(
+                message=str(exc),
+                error_code="upstream_unreachable",
+                upstream_error={"message": str(exc), "type": type(exc).__name__},
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise A2AExtensionUpstreamError(
+                message=str(exc),
+                error_code="upstream_http_error",
+                upstream_error={
+                    "message": str(exc),
+                    "status_code": exc.response.status_code if exc.response else None,
+                },
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise A2AExtensionUpstreamError(
+                message=str(exc),
+                error_code="upstream_error",
+                upstream_error={"message": str(exc), "type": type(exc).__name__},
+            ) from exc
+
+        meta: Dict[str, Any] = {
+            "extension_uri": ext.uri,
+            "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
+        }
+        if meta_extra:
+            meta.update(meta_extra)
+
+        if resp.ok:
+            a2a_extension_metrics.record_call(
+                metric_key,
+                success=True,
+                error_code=None,
+            )
+            return ExtensionCallResult(success=True, result=resp.result, meta=meta)
+
+        error = resp.error or {}
+        error_code = self._map_interrupt_business_error_code(error, ext)
+        a2a_extension_metrics.record_call(
+            metric_key,
+            success=False,
+            error_code=error_code,
+        )
+        return ExtensionCallResult(
+            success=False,
+            error_code=error_code,
+            upstream_error=error,
+            meta=meta,
+        )
+
+    async def opencode_reply_permission(
+        self,
+        *,
+        runtime: A2ARuntime,
+        request_id: str,
+        reply: str,
+    ) -> ExtensionCallResult:
+        resolved_request_id = (request_id or "").strip()
+        if not resolved_request_id:
+            raise ValueError("request_id is required")
+        resolved_reply = (reply or "").strip().lower()
+        if resolved_reply not in {"once", "always", "reject"}:
+            raise ValueError("reply must be one of: once, always, reject")
+
+        ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        return await self._invoke_opencode_interrupt_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="reply_permission",
+            params={
+                "request_id": resolved_request_id,
+                "reply": resolved_reply,
+            },
+            meta_extra={"request_id": resolved_request_id},
+        )
+
+    async def opencode_reply_question(
+        self,
+        *,
+        runtime: A2ARuntime,
+        request_id: str,
+        answers: list[list[str]],
+    ) -> ExtensionCallResult:
+        resolved_request_id = (request_id or "").strip()
+        if not resolved_request_id:
+            raise ValueError("request_id is required")
+
+        ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        return await self._invoke_opencode_interrupt_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="reply_question",
+            params={
+                "request_id": resolved_request_id,
+                "answers": answers,
+            },
+            meta_extra={"request_id": resolved_request_id},
+        )
+
+    async def opencode_reject_question(
+        self,
+        *,
+        runtime: A2ARuntime,
+        request_id: str,
+    ) -> ExtensionCallResult:
+        resolved_request_id = (request_id or "").strip()
+        if not resolved_request_id:
+            raise ValueError("request_id is required")
+
+        ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        return await self._invoke_opencode_interrupt_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="reject_question",
+            params={"request_id": resolved_request_id},
+            meta_extra={"request_id": resolved_request_id},
         )
 
 

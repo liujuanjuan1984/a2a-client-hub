@@ -146,6 +146,50 @@ class _FakeExtensionsService:
             meta={},
         )
 
+    async def opencode_reply_permission(self, *, runtime, request_id: str, reply: str):
+        self.calls.append(
+            {
+                "fn": "opencode_reply_permission",
+                "runtime": runtime,
+                "request_id": request_id,
+                "reply": reply,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "request_id": request_id},
+            meta={},
+        )
+
+    async def opencode_reply_question(self, *, runtime, request_id: str, answers):
+        self.calls.append(
+            {
+                "fn": "opencode_reply_question",
+                "runtime": runtime,
+                "request_id": request_id,
+                "answers": answers,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "request_id": request_id},
+            meta={},
+        )
+
+    async def opencode_reject_question(self, *, runtime, request_id: str):
+        self.calls.append(
+            {
+                "fn": "opencode_reject_question",
+                "runtime": runtime,
+                "request_id": request_id,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "request_id": request_id},
+            meta={},
+        )
+
 
 async def _create_allowlisted_hub_agent(
     *,
@@ -324,7 +368,73 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         messages_payload = messages_resp.json()
         assert messages_payload["success"] is True
 
-    assert len(fake_extensions.calls) == 3
+        permission_reply_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply",
+            json={"request_id": "perm-1", "reply": "once"},
+        )
+        assert permission_reply_resp.status_code == 200
+        assert permission_reply_resp.json()["result"] == {
+            "ok": True,
+            "request_id": "perm-1",
+        }
+
+        question_reply_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reply",
+            json={"request_id": "q-1", "answers": [["A"], ["B"]]},
+        )
+        assert question_reply_resp.status_code == 200
+        assert question_reply_resp.json()["result"] == {
+            "ok": True,
+            "request_id": "q-1",
+        }
+
+        question_reject_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reject",
+            json={"request_id": "q-2"},
+        )
+        assert question_reject_resp.status_code == 200
+        assert question_reject_resp.json()["result"] == {
+            "ok": True,
+            "request_id": "q-2",
+        }
+
+    assert len(fake_extensions.calls) == 6
     for call in fake_extensions.calls:
         resolved = call["runtime"].resolved
         assert resolved.headers["Authorization"].endswith("secret-token-opencode")
+
+
+@pytest.mark.asyncio
+async def test_hub_interrupt_reply_rejects_legacy_payload_fields(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_interrupt_legacy@example.com",
+        user_email="alice_interrupt_legacy@example.com",
+        token="secret-token-opencode",
+    )
+
+    fake_extensions = _FakeExtensionsService()
+    monkeypatch.setattr(
+        opencode_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_opencode_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply",
+            json={"requestID": "perm-1", "decision": "allow"},
+        )
+        assert resp.status_code == 422
+
+    assert fake_extensions.calls == []
