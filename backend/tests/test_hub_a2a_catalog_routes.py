@@ -9,9 +9,9 @@ from sqlalchemy import select
 from app.api.routers import admin_a2a_agents as admin_router
 from app.api.routers import hub_a2a_agents as hub_router
 from app.core.config import settings
+from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.conversation_binding import ConversationBinding
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
-from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
 from tests.api_utils import create_test_client
 from tests.utils import create_user
 
@@ -462,7 +462,7 @@ async def test_admin_delete_purges_allowlist_and_credentials(
 
     # Credentials/allowlist rows should be purged on delete.
     credential = await async_db_session.scalar(
-        select(HubA2AAgentCredential).where(HubA2AAgentCredential.agent_id == agent_id)
+        select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
     )
     assert credential is None
 

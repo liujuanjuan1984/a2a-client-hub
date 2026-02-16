@@ -7,8 +7,9 @@ from sqlalchemy import select
 
 from app.api.routers import opencode_session_directory
 from app.db.models.a2a_agent import A2AAgent
-from app.db.models.hub_a2a_agent import HubA2AAgent
-from app.db.models.opencode_session_cache import OpencodeSessionCacheEntry
+from app.db.models.external_session_directory_cache import (
+    ExternalSessionDirectoryCacheEntry,
+)
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 from tests.api_utils import create_test_client
 from tests.utils import create_user
@@ -47,12 +48,12 @@ async def _create_personal_agent(
 
 async def _create_hub_agent(
     async_db_session, *, admin_user_id, card_url: str
-) -> HubA2AAgent:
-    agent = HubA2AAgent(
+) -> A2AAgent:
+    agent = A2AAgent(
         user_id=admin_user_id,
         name="Shared Agent",
         card_url=card_url,
-        agent_scope=HubA2AAgent.SCOPE_SHARED,
+        agent_scope=A2AAgent.SCOPE_SHARED,
         availability_policy="public",
         auth_type="none",
         enabled=True,
@@ -145,10 +146,11 @@ async def test_opencode_sessions_directory_caches_and_sorts(
 
         assert len(fake.calls) == 2
 
-        stmt = select(OpencodeSessionCacheEntry)
+        stmt = select(ExternalSessionDirectoryCacheEntry)
         result = await async_db_session.execute(stmt)
         cached = list(result.scalars().all())
         assert len(cached) == 2
+        assert all(item.provider == "opencode" for item in cached)
 
         # Second call within TTL should not refresh.
         resp2 = await client.post(

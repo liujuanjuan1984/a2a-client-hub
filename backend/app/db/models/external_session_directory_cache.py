@@ -1,8 +1,8 @@
-"""Cached OpenCode session listings per agent.
+"""Cached external provider session listings per agent.
 
 This cache is a best-effort performance optimization for the Sessions tab:
-- Source of truth remains the upstream agent (OpenCode A2A serve).
-- Entries are keyed by (user_id, agent_source, agent_id).
+- Source of truth remains the upstream provider.
+- Entries are keyed by (user_id, provider, agent_source, agent_id).
 - Payload stores a minimal, sanitized session snapshot suitable for listing.
 """
 
@@ -15,16 +15,17 @@ from sqlalchemy.sql import func
 from app.db.models.base import SCHEMA_NAME, Base, TimestampMixin
 
 
-class OpencodeSessionCacheEntry(Base, TimestampMixin):
-    """Cached OpenCode session listings for a single agent visible to a user."""
+class ExternalSessionDirectoryCacheEntry(Base, TimestampMixin):
+    """Cached external session listings for a single agent visible to a user."""
 
-    __tablename__ = "opencode_session_cache"
+    __tablename__ = "external_session_directory_cache"
     __table_args__ = (
         UniqueConstraint(
             "user_id",
+            "provider",
             "agent_source",
             "agent_id",
-            name="uq_opencode_session_cache_user_source_agent",
+            name="uq_external_session_directory_cache_user_provider_source_agent",
         ),
         {"schema": SCHEMA_NAME},
     )
@@ -35,6 +36,12 @@ class OpencodeSessionCacheEntry(Base, TimestampMixin):
         nullable=False,
         index=True,
         comment="Cache owner (UUID)",
+    )
+    provider = Column(
+        String(32),
+        nullable=False,
+        index=True,
+        comment="External provider key (e.g., opencode).",
     )
     agent_source = Column(
         String(16),
@@ -84,10 +91,11 @@ class OpencodeSessionCacheEntry(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return (
-            f"<OpencodeSessionCacheEntry(id={self.id}, user_id={self.user_id}, "
+            f"<ExternalSessionDirectoryCacheEntry(id={self.id}, user_id={self.user_id}, "
+            f"provider={self.provider}, "
             f"agent_source={self.agent_source}, agent_id={self.agent_id}, "
             f"expires_at={self.expires_at})>"
         )
 
 
-__all__ = ["OpencodeSessionCacheEntry"]
+__all__ = ["ExternalSessionDirectoryCacheEntry"]
