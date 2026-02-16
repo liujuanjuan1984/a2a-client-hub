@@ -22,6 +22,7 @@ from app.schemas.hub_a2a_agent import (
     HubA2AAllowlistAddRequest,
     HubA2AAllowlistEntryResponse,
     HubA2AAllowlistListResponse,
+    HubA2AAllowlistReplaceRequest,
 )
 from app.services.hub_a2a_agents import (
     HubA2AAgentNotFoundError,
@@ -303,6 +304,64 @@ async def add_hub_agent_allowlist_admin(
         user_name=record.user_name,
         created_by_user_id=record.entry.created_by_user_id,
         created_at=record.entry.created_at,
+    )
+
+
+@router.put(
+    "/{agent_id}/allowlist:replace",
+    response_model=HubA2AAllowlistListResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def replace_hub_agent_allowlist_admin(
+    *,
+    agent_id: UUID,
+    payload: HubA2AAllowlistReplaceRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_async_db),
+    current_admin: User = Depends(get_current_admin_user),
+) -> HubA2AAllowlistListResponse:
+    response.headers["Cache-Control"] = "no-store"
+    logger.info(
+        "Hub A2A agent allowlist replace requested (admin)",
+        extra={
+            "admin_user_id": str(current_admin.id),
+            "agent_id": str(agent_id),
+            "entries_count": len(payload.entries),
+        },
+    )
+    try:
+        records = await hub_a2a_agent_service.replace_allowlist_entries_admin(
+            db,
+            admin_user_id=current_admin.id,
+            agent_id=agent_id,
+            entries=[
+                {
+                    "user_id": item.user_id,
+                    "email": item.email,
+                }
+                for item in payload.entries
+            ],
+        )
+    except HubA2AAgentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HubA2AUserNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HubA2AAgentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return HubA2AAllowlistListResponse(
+        items=[
+            HubA2AAllowlistEntryResponse(
+                id=item.entry.id,
+                agent_id=item.entry.agent_id,
+                user_id=item.entry.user_id,
+                user_email=item.user_email,
+                user_name=item.user_name,
+                created_by_user_id=item.entry.created_by_user_id,
+                created_at=item.entry.created_at,
+            )
+            for item in records
+        ]
     )
 
 

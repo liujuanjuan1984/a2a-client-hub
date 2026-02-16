@@ -115,7 +115,7 @@ async def test_conversation_routes_use_conversation_id_only(
     ) as client:
         list_resp = await client.post(
             "/me/conversations:query",
-            json={"page": 1, "size": 50, "refresh": False},
+            json={"page": 1, "size": 50},
         )
         assert list_resp.status_code == 200
         list_payload = list_resp.json()
@@ -158,6 +158,9 @@ async def test_continue_includes_opencode_session_metadata(
         source=ConversationThread.SOURCE_MANUAL,
         agent_id=agent.id,
         agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses_upstream_1",
+        context_id="ctx-bound-1",
         title="Manual Thread",
         last_active_at=utc_now(),
         status=ConversationThread.STATUS_ACTIVE,
@@ -189,10 +192,10 @@ async def test_continue_includes_opencode_session_metadata(
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["conversationId"] == str(session.id)
+        assert payload["source"] == "manual"
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] == "ses_upstream_1"
         assert payload["contextId"] == "ctx-bound-1"
-        assert payload["metadata"] == {"opencode_session_id": "ses_upstream_1"}
 
 
 async def test_invalid_conversation_id_returns_400(
@@ -212,3 +215,183 @@ async def test_invalid_conversation_id_returns_400(
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "invalid_conversation_id"
+
+
+async def test_list_sessions_filters_use_conversation_source_only(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="op-filter")
+
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses_filter_1",
+        context_id="ctx-filter-1",
+        title="Bound Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            sender="agent",
+            content="bound",
+            conversation_id=session.id,
+            message_metadata={
+                "provider": "opencode",
+                "external_session_id": "ses_filter_1",
+                "context_id": "ctx-filter-1",
+            },
+        )
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        manual_resp = await client.post(
+            "/me/conversations:query",
+            json={"page": 1, "size": 20, "source": "manual"},
+        )
+        assert manual_resp.status_code == 200
+        manual_payload = manual_resp.json()
+        assert manual_payload["pagination"]["total"] == 1
+        assert manual_payload["items"][0]["conversationId"] == str(session.id)
+        assert manual_payload["items"][0]["source"] == "manual"
+        assert manual_payload["items"][0]["external_provider"] == "opencode"
+        assert manual_payload["items"][0]["external_session_id"] == "ses_filter_1"
+
+        scheduled_resp = await client.post(
+            "/me/conversations:query",
+            json={"page": 1, "size": 20, "source": "scheduled"},
+        )
+        assert scheduled_resp.status_code == 200
+        assert scheduled_resp.json()["pagination"]["total"] == 0
+
+
+async def test_messages_query_reads_local_history_for_opencode_bound_conversation(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="op-msg")
+
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        external_session_id="ses_local_hist_1",
+        context_id="ctx-local-hist-1",
+        title="Opencode Local History",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    metadata = {
+        "provider": "opencode",
+        "external_session_id": "ses_local_hist_1",
+        "context_id": "ctx-local-hist-1",
+    }
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            sender="user",
+            content="hello",
+            conversation_id=session.id,
+            message_metadata=metadata,
+        )
+    )
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            sender="agent",
+            content="world",
+            conversation_id=session.id,
+            message_metadata=metadata,
+        )
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/conversations/{session.id}/messages:query",
+            json={"page": 1, "size": 50},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["meta"]["conversationId"] == str(session.id)
+        assert payload["meta"]["source"] == "manual"
+        assert payload["meta"]["upstream_session_id"] == "ses_local_hist_1"
+        assert len(payload["items"]) == 2
+        assert payload["items"][0]["content"] == "hello"
+        assert payload["items"][1]["content"] == "world"
+
+
+async def test_continue_keeps_external_session_id_empty_when_missing(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="ctx-fallback"
+    )
+
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        external_provider="opencode",
+        context_id="ses_context_only_1",
+        title="Context Binding",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            sender="agent",
+            content="bound-by-context",
+            conversation_id=session.id,
+            message_metadata={
+                "provider": "opencode",
+                "context_id": "ses_context_only_1",
+            },
+        )
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(f"/me/conversations/{session.id}:continue")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["conversationId"] == str(session.id)
+        assert payload["source"] == "manual"
+        assert payload["provider"] == "opencode"
+        assert payload["externalSessionId"] is None
+        assert payload["contextId"] == "ses_context_only_1"

@@ -3,13 +3,11 @@ import type { A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
 export type ExternalSessionRef = {
   provider?: string | null;
   externalSessionId?: string | null;
-  contextId?: string | null;
 };
 
 export type AgentSession = {
   agentId: string;
-  source?: "manual" | "scheduled" | "opencode" | null;
-  conversationId?: string | null;
+  source?: "manual" | "scheduled" | null;
   contextId: string | null;
   runtimeStatus?: string | null;
   streamState?: "idle" | "streaming" | "rebinding" | "recoverable" | "error";
@@ -38,7 +36,6 @@ export const createAgentSession = (agentId: string): AgentSession => ({
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
   metadata: {},
-  conversationId: null,
   externalSessionRef: null,
   lastActiveAt: new Date().toISOString(),
 });
@@ -48,13 +45,11 @@ export const mergeExternalSessionRef = (
   incoming: {
     provider?: string | null;
     externalSessionId?: string | null;
-    contextId?: string | null;
   },
 ): ExternalSessionRef => ({
   provider: incoming.provider ?? current?.provider ?? null,
   externalSessionId:
     incoming.externalSessionId ?? current?.externalSessionId ?? null,
-  contextId: incoming.contextId ?? current?.contextId ?? null,
 });
 
 export const buildInvokePayload = (
@@ -83,8 +78,16 @@ export const buildInvokePayload = (
   const externalSessionId =
     session.externalSessionRef?.externalSessionId?.trim();
   if (externalProvider === "opencode" && externalSessionId) {
-    // Upstream opencode-a2a-serve requires this explicit key to continue a session.
-    metadata.opencode_session_id = externalSessionId;
+    // Strict upstream contract: metadata.opencode.session_id.
+    const opencodeMetadata =
+      metadata.opencode &&
+      typeof metadata.opencode === "object" &&
+      !Array.isArray(metadata.opencode)
+        ? { ...(metadata.opencode as Record<string, unknown>) }
+        : {};
+    opencodeMetadata.session_id = externalSessionId;
+    metadata.opencode = opencodeMetadata;
+    delete metadata.opencode_session_id;
   }
   if (Object.keys(metadata).length > 0) {
     payload.metadata = metadata;
@@ -109,7 +112,6 @@ const normalizeSessionForPersistence = (
 ): AgentSession => ({
   agentId: session.agentId,
   source: session.source ?? null,
-  conversationId: session.conversationId ?? null,
   contextId: session.contextId ?? null,
   runtimeStatus: null,
   streamState: "idle",

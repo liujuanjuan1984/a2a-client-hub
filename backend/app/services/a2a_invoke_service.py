@@ -114,7 +114,14 @@ class A2AInvokeService:
         artifact_metadata = as_dict(artifact.get("metadata"))
         opencode_metadata = as_dict(artifact_metadata.get("opencode"))
         message = as_dict(root.get("message"))
+        status = as_dict(root.get("status"))
+        status_message = as_dict(status.get("message"))
+        task = as_dict(root.get("task"))
+        task_status = as_dict(task.get("status"))
+        task_status_message = as_dict(task_status.get("message"))
         result = as_dict(root.get("result"))
+        result_status = as_dict(result.get("status"))
+        result_status_message = as_dict(result_status.get("message"))
 
         message_id = None
         event_id = None
@@ -124,7 +131,10 @@ class A2AInvokeService:
             artifact,
             opencode_metadata,
             message,
+            status_message,
+            task_status_message,
             result,
+            result_status_message,
         ):
             if message_id is None:
                 message_id = cls._pick_non_empty_str(

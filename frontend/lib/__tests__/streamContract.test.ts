@@ -1,5 +1,6 @@
 import {
   applyStreamBlockUpdate,
+  extractSessionMeta,
   extractRuntimeStatus,
   extractRuntimeStatusEvent,
   extractStreamBlockUpdate,
@@ -20,25 +21,30 @@ const buildBlockUpdatePayload = (input: {
   append?: boolean;
   source?: string;
   lastChunk?: boolean;
-}) => ({
-  kind: "artifact-update",
-  task_id: input.taskId ?? "task-1",
-  message_id: input.messageId ?? "msg-1",
-  event_id: input.eventId ?? "evt-1",
-  seq: input.seq ?? 1,
-  append: input.append ?? true,
-  lastChunk: input.lastChunk ?? false,
-  artifact: {
-    artifact_id: input.artifactId,
-    parts: [{ kind: "text", text: input.delta }],
-    metadata: {
-      opencode: {
-        block_type: input.blockType,
-        source: input.source ?? "stream",
+}) => {
+  const payload: Record<string, unknown> = {
+    kind: "artifact-update",
+    task_id: input.taskId ?? "task-1",
+    message_id: input.messageId ?? "msg-1",
+    event_id: input.eventId ?? "evt-1",
+    append: input.append ?? true,
+    lastChunk: input.lastChunk ?? false,
+    artifact: {
+      artifact_id: input.artifactId,
+      parts: [{ kind: "text", text: input.delta }],
+      metadata: {
+        opencode: {
+          block_type: input.blockType,
+          source: input.source ?? "stream",
+        },
       },
     },
-  },
-});
+  };
+  if (input.seq !== undefined) {
+    payload.seq = input.seq;
+  }
+  return payload;
+};
 
 const mustParse = (payload: Record<string, unknown>): StreamBlockUpdate => {
   const parsed = extractStreamBlockUpdate(payload);
@@ -56,6 +62,7 @@ describe("block-based stream parser and reducer", () => {
           blockType: "reasoning",
           delta: "thinking",
           artifactId: "task-1:stream:reasoning",
+          seq: 1,
         }),
       ),
     );
@@ -66,6 +73,7 @@ describe("block-based stream parser and reducer", () => {
           blockType: "reasoning",
           delta: " more",
           artifactId: "task-1:stream:reasoning",
+          seq: 2,
         }),
       ),
     );
@@ -84,6 +92,7 @@ describe("block-based stream parser and reducer", () => {
           blockType: "reasoning",
           delta: "plan",
           artifactId: "task-1:stream:reasoning",
+          seq: 1,
         }),
       ),
     );
@@ -94,6 +103,7 @@ describe("block-based stream parser and reducer", () => {
           blockType: "tool_call",
           delta: "search()",
           artifactId: "task-1:stream:tool",
+          seq: 2,
         }),
       ),
     );
@@ -113,6 +123,7 @@ describe("block-based stream parser and reducer", () => {
           blockType: "text",
           delta: "Hello",
           artifactId: "task-1:stream:text",
+          seq: 1,
         }),
       ),
     );
@@ -123,6 +134,7 @@ describe("block-based stream parser and reducer", () => {
           blockType: "reasoning",
           delta: "thought",
           artifactId: "task-1:stream:reasoning",
+          seq: 2,
         }),
       ),
     );
@@ -133,6 +145,7 @@ describe("block-based stream parser and reducer", () => {
           blockType: "text",
           delta: " world",
           artifactId: "task-1:stream:text",
+          seq: 3,
         }),
       ),
     );
@@ -151,6 +164,7 @@ describe("block-based stream parser and reducer", () => {
           artifactId: "task-2:stream:text",
           append: true,
           taskId: "task-2",
+          seq: 1,
         }),
       ),
     );
@@ -164,6 +178,7 @@ describe("block-based stream parser and reducer", () => {
           append: false,
           source: "final_snapshot",
           taskId: "task-2",
+          seq: 2,
         }),
       ),
     );
@@ -235,6 +250,18 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed).toBeNull();
   });
 
+  it("accepts chunks without seq and marks seq as null", () => {
+    const payload = buildBlockUpdatePayload({
+      blockType: "text",
+      delta: "hello",
+      artifactId: "task-1:stream",
+      seq: undefined,
+    });
+    const parsed = extractStreamBlockUpdate(payload);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.seq).toBeNull();
+  });
+
   it("finalizes the active block on stream completion", () => {
     const blocks: MessageBlock[] = [
       {
@@ -266,5 +293,19 @@ describe("block-based stream parser and reducer", () => {
 
   it("returns null runtime status event for non-status payload", () => {
     expect(extractRuntimeStatusEvent({ kind: "artifact-update" })).toBeNull();
+  });
+
+  it("extracts opencode external session from nested metadata", () => {
+    const meta = extractSessionMeta({
+      kind: "status-update",
+      final: true,
+      metadata: {
+        opencode: {
+          session_id: "ses_upstream_1",
+        },
+      },
+    });
+    expect(meta.provider).toBe("opencode");
+    expect(meta.externalSessionId).toBe("ses_upstream_1");
   });
 });

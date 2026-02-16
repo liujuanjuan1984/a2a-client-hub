@@ -20,7 +20,7 @@ export type ChatMessage = {
 
 export type StreamBlockUpdate = {
   eventId: string;
-  seq: number;
+  seq: number | null;
   taskId: string;
   artifactId: string;
   blockType: "text" | "reasoning" | "tool_call";
@@ -49,6 +49,28 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
       : typeof data.contextId === "string"
         ? data.contextId
         : null;
+  const metadata = asRecord(data.metadata);
+  const opencodeMetadata = asRecord(metadata?.opencode);
+  const nestedOpencodeSessionId = pickString(opencodeMetadata, [
+    "session_id",
+    "sessionId",
+  ]);
+  const externalSessionId =
+    pickString(data, ["externalSessionId"]) ??
+    pickString(metadata, ["externalSessionId"]) ??
+    nestedOpencodeSessionId ??
+    undefined;
+  const rawProvider =
+    pickString(data, ["provider"]) ??
+    pickString(metadata, ["provider"]) ??
+    (nestedOpencodeSessionId ? "opencode" : undefined);
+  const normalizedProvider = rawProvider?.trim().toLowerCase();
+  const provider =
+    normalizedProvider === undefined
+      ? undefined
+      : normalizedProvider.startsWith("opencode")
+        ? "opencode"
+        : normalizedProvider;
   const transport =
     typeof data.transport === "string" ? data.transport : undefined;
   const inputModes =
@@ -58,6 +80,8 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
 
   return {
     contextId,
+    provider,
+    externalSessionId,
     transport,
     inputModes,
     outputModes,
@@ -229,10 +253,6 @@ export const extractStreamBlockUpdate = (
       "eventSeq",
     ]) ??
     pickInteger(opencodeMetadata, ["seq", "event_seq", "sequence", "eventSeq"]);
-  // V2 contract: every stream event must carry a monotonic seq.
-  if (seq === null) {
-    return null;
-  }
 
   const artifactId =
     pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ??
@@ -282,7 +302,7 @@ export const extractStreamBlockUpdate = (
 
   return {
     eventId,
-    seq,
+    seq: seq ?? null,
     taskId,
     artifactId,
     blockType,

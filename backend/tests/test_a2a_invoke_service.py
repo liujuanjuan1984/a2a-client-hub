@@ -675,7 +675,7 @@ def test_extract_binding_hints_ignores_session_id_aliases():
     assert "externalSessionId" not in metadata
 
 
-def test_extract_binding_hints_ignores_nested_opencode_session_id():
+def test_extract_binding_hints_extracts_nested_opencode_session_id():
     context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
         {
             "success": True,
@@ -684,6 +684,21 @@ def test_extract_binding_hints_ignores_nested_opencode_session_id():
                 "opencode": {
                     "session_id": "nested-upstream-session",
                 }
+            },
+        }
+    )
+    assert context_id is None
+    assert metadata["provider"] == "opencode"
+    assert metadata["externalSessionId"] == "nested-upstream-session"
+
+
+def test_extract_binding_hints_ignores_legacy_flat_opencode_session_id():
+    context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
+        {
+            "success": True,
+            "content": "ok",
+            "metadata": {
+                "opencode_session_id": "legacy-flat-session-id",
             },
         }
     )
@@ -731,3 +746,16 @@ def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
         "upstream_event_id": "evt-from-raw",
         "upstream_event_seq": 12,
     }
+
+
+def test_extract_stream_identity_hints_from_status_message_message_id():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
+        {
+            "status": {
+                "message": {
+                    "messageId": "msg-from-status-message",
+                }
+            }
+        }
+    )
+    assert hints["upstream_message_id"] == "msg-from-status-message"

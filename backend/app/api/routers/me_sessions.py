@@ -11,7 +11,6 @@ from app.db.models.user import User
 from app.db.transaction import commit_safely
 from app.schemas.session_domain import (
     SessionContinueResponse,
-    SessionListMeta,
     SessionListResponse,
     SessionMessagesListResponse,
     SessionMessagesMeta,
@@ -51,7 +50,6 @@ async def list_unified_sessions(
         user_id=current_user.id,
         page=payload.page,
         size=payload.size,
-        refresh=payload.refresh,
         source=payload.source,
     )
     if db_mutated:
@@ -59,7 +57,6 @@ async def list_unified_sessions(
     return SessionListResponse(
         items=[SessionViewItem.model_validate(item) for item in items],
         pagination=extra["pagination"],
-        meta=SessionListMeta(**extra["meta"]),
     )
 
 

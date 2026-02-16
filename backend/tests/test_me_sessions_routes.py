@@ -111,14 +111,14 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
     ) as client:
         manual_resp = await client.post(
             "/me/conversations:query",
-            json={"page": 1, "size": 20, "source": "manual", "refresh": False},
+            json={"page": 1, "size": 20, "source": "manual"},
         )
         assert manual_resp.status_code == 200
         assert manual_resp.json()["pagination"]["total"] == 0
 
         list_resp = await client.post(
             "/me/conversations:query",
-            json={"page": 1, "size": 20, "source": "scheduled", "refresh": False},
+            json={"page": 1, "size": 20, "source": "scheduled"},
         )
         assert list_resp.status_code == 200
         payload = list_resp.json()
@@ -126,6 +126,8 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         item = payload["items"][0]
         assert item["conversationId"] == str(session.id)
         assert item["source"] == "scheduled"
+        assert item["external_provider"] is None
+        assert item["external_session_id"] is None
         assert item["agent_id"] == str(agent.id)
         assert "id" not in item
 

@@ -17,14 +17,15 @@ from tests.utils import create_user
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
-def _task(session_id: str, *, title: str, updated_ms: int) -> Dict[str, Any]:
+def _task(session_id: str, *, title: str, last_active_at: str) -> Dict[str, Any]:
     return {
         "kind": "task",
-        "contextId": session_id,
+        "contextId": f"ctx:opencode-session:{session_id}",
+        "last_active_at": last_active_at,
         "metadata": {
             "opencode": {
+                "session_id": session_id,
                 "title": title,
-                "raw": {"time": {"updated": updated_ms}},
             }
         },
     }
@@ -93,13 +94,15 @@ async def test_opencode_sessions_directory_caches_and_sorts(
                     _task(
                         "ses_personal",
                         title="Personal older",
-                        updated_ms=1_700_000_000_000,
+                        last_active_at="2024-01-01T00:00:00+00:00",
                     )
                 ]
             else:
                 items = [
                     _task(
-                        "ses_shared", title="Shared newer", updated_ms=1_700_000_100_000
+                        "ses_shared",
+                        title="Shared newer",
+                        last_active_at="2024-01-02T00:00:00+00:00",
                     )
                 ]
             return ExtensionCallResult(
@@ -151,6 +154,16 @@ async def test_opencode_sessions_directory_caches_and_sorts(
         cached = list(result.scalars().all())
         assert len(cached) == 2
         assert all(item.provider == "opencode" for item in cached)
+        for cache_item in cached:
+            cached_items = cache_item.payload.get("items", [])
+            assert isinstance(cached_items, list)
+            for task in cached_items:
+                opencode_meta = (
+                    ((task.get("metadata") or {}).get("opencode") or {})
+                    if isinstance(task, dict)
+                    else {}
+                )
+                assert "raw" not in opencode_meta
 
         # Second call within TTL should not refresh.
         resp2 = await client.post(
@@ -185,7 +198,13 @@ async def test_opencode_sessions_directory_deduplicates_across_same_upstream(
 
     class FakeExtensionsService:
         async def opencode_list_sessions(self, *, runtime, page: int, size: int, query):
-            items = [_task("ses_dup", title="Duplicated", updated_ms=1_700_000_000_000)]
+            items = [
+                _task(
+                    "ses_dup",
+                    title="Duplicated",
+                    last_active_at="2024-01-01T00:00:00+00:00",
+                )
+            ]
             return ExtensionCallResult(
                 success=True,
                 result={"items": items, "pagination": {"page": page, "size": size}},
@@ -219,3 +238,51 @@ async def test_opencode_sessions_directory_deduplicates_across_same_upstream(
         assert item["agent_id"] == str(personal.id)
         assert item["agent_source"] == "personal"
         assert item["agent_name"] == "Personal Agent"
+
+
+async def test_opencode_sessions_directory_does_not_treat_context_id_as_session_id(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    await _create_personal_agent(
+        async_db_session, user_id=user.id, card_url="https://personal.example.com"
+    )
+
+    class FakeExtensionsService:
+        async def opencode_list_sessions(self, *, runtime, page: int, size: int, query):
+            items = [
+                {
+                    "kind": "task",
+                    "contextId": "ctx:opencode-session:ses_only_in_context",
+                    "last_active_at": "2024-01-01T00:00:00+00:00",
+                    "metadata": {"opencode": {"title": "No binding id"}},
+                }
+            ]
+            return ExtensionCallResult(
+                success=True,
+                result={"items": items, "pagination": {"page": page, "size": size}},
+                error_code=None,
+                upstream_error=None,
+                meta=None,
+            )
+
+    monkeypatch.setattr(
+        "app.services.opencode_session_directory.get_a2a_extensions_service",
+        lambda: FakeExtensionsService(),
+    )
+
+    async with create_test_client(
+        opencode_session_directory.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": False},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["items"] == []
+        assert payload["pagination"]["total"] == 0

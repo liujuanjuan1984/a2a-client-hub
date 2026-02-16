@@ -93,11 +93,10 @@ describe("useContinueSession", () => {
   it("continues conversation and navigates to chat route", async () => {
     mockedContinueSession.mockResolvedValue({
       conversationId: "conv-1",
-      source: "opencode",
+      source: "manual",
       provider: "opencode",
       externalSessionId: "upstream-1",
       contextId: null,
-      metadata: { opencode_session_id: "upstream-1" },
     });
 
     const { result } = renderHook(() => useContinueSession());
@@ -115,12 +114,10 @@ describe("useContinueSession", () => {
     expect(mockEnsureSession).toHaveBeenCalledWith("conversation-1", "agent-1");
     expect(mockBindExternalSession).toHaveBeenCalledWith("conversation-1", {
       agentId: "agent-1",
-      source: "opencode",
-      conversationId: "conv-1",
+      source: "manual",
       provider: "opencode",
       externalSessionId: "upstream-1",
       contextId: undefined,
-      metadata: { opencode_session_id: "upstream-1" },
     });
     expect(mockedBlurActiveElement).toHaveBeenCalledTimes(1);
     expect(mockedBuildChatRoute).toHaveBeenCalledWith(

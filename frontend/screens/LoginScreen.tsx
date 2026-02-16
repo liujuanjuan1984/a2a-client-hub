@@ -6,7 +6,7 @@ import { AUTH_PAGE_TOP_OFFSET } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useLogin } from "@/hooks/useAuth";
-import { ApiRequestError } from "@/lib/api/client";
+import { getFriendlyAuthErrorMessage } from "@/lib/authErrorMessage";
 
 export function LoginScreen() {
   const login = useLogin();
@@ -20,12 +20,7 @@ export function LoginScreen() {
     login.mutate({ email, password });
   };
 
-  const errorMessage =
-    login.error instanceof ApiRequestError
-      ? login.error.message
-      : login.error instanceof Error
-        ? login.error.message
-        : null;
+  const errorMessage = getFriendlyAuthErrorMessage(login.error);
 
   return (
     <ScreenContainer topOffset={AUTH_PAGE_TOP_OFFSET}>

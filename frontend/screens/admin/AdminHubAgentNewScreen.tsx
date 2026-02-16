@@ -60,7 +60,7 @@ export function AdminHubAgentNewScreen() {
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.hubAgents() });
       toast.success("Shared agent created", created.name);
       allowNextNavigation();
-      router.replace(`/admin/hub-a2a/${created.id}`);
+      router.replace("/admin/hub-a2a");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Create failed.";
       toast.error("Create failed", message);

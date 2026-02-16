@@ -8,22 +8,18 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.schemas.pagination import ListResponse
+from app.schemas.pagination import ListResponse, Pagination
 
-SessionSource = Literal["manual", "scheduled", "opencode"]
+SessionSource = Literal["manual", "scheduled"]
 AgentSource = Literal["personal", "shared"]
 
 
 class SessionQueryRequest(BaseModel):
     page: int = Field(1, ge=1, description="Page number (1-indexed)")
     size: int = Field(50, ge=1, le=200, description="Page size")
-    refresh: bool = Field(
-        False,
-        description="Force refresh remote OpenCode cache before listing.",
-    )
     source: Optional[SessionSource] = Field(
         None,
-        description="Filter by source (manual/scheduled/opencode)",
+        description="Filter by source (manual/scheduled)",
     )
 
 
@@ -33,6 +29,8 @@ class SessionViewItem(BaseModel):
         description="Canonical conversation id.",
     )
     source: SessionSource
+    external_provider: Optional[str] = None
+    external_session_id: Optional[str] = None
     agent_id: Optional[UUID] = None
     agent_source: Optional[AgentSource] = None
     title: str
@@ -42,15 +40,9 @@ class SessionViewItem(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class SessionListMeta(BaseModel):
-    opencode_total_agents: int = 0
-    opencode_refreshed_agents: int = 0
-    opencode_cached_agents: int = 0
-    opencode_partial_failures: int = 0
-
-
-class SessionListResponse(ListResponse[SessionViewItem, SessionListMeta]):
-    pass
+class SessionListResponse(BaseModel):
+    items: list[SessionViewItem]
+    pagination: Pagination
 
 
 class SessionMessagesQueryRequest(BaseModel):
@@ -88,14 +80,12 @@ class SessionContinueResponse(BaseModel):
     context_id: Optional[str] = Field(default=None, alias="contextId")
     provider: Optional[str] = None
     external_session_id: Optional[str] = Field(default=None, alias="externalSessionId")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}
 
 
 __all__ = [
     "SessionContinueResponse",
-    "SessionListMeta",
     "SessionListResponse",
     "SessionMessageItem",
     "SessionMessagesListResponse",

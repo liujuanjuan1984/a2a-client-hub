@@ -121,6 +121,10 @@ class HubA2AAllowlistListResponse(BaseModel):
     items: List[HubA2AAllowlistEntryResponse]
 
 
+class HubA2AAllowlistReplaceRequest(BaseModel):
+    entries: List[HubA2AAllowlistAddRequest] = Field(default_factory=list)
+
+
 __all__ = [
     "HubA2AAuthType",
     "HubA2AAvailabilityPolicy",
@@ -133,4 +137,5 @@ __all__ = [
     "HubA2AAllowlistAddRequest",
     "HubA2AAllowlistEntryResponse",
     "HubA2AAllowlistListResponse",
+    "HubA2AAllowlistReplaceRequest",
 ]

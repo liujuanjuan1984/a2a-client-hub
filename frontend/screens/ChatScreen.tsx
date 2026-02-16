@@ -23,6 +23,7 @@ import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
+import { shouldStickToBottom } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { buildChatRoute } from "@/lib/routes";
@@ -85,6 +86,7 @@ const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const LIST_INITIAL_NUM_TO_RENDER = 16;
 const LIST_WINDOW_SIZE = 9;
 const LIST_MAX_TO_RENDER_PER_BATCH = 20;
+const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 
 export function ChatScreen({
   agentId: routeAgentId,
@@ -121,6 +123,11 @@ export function ChatScreen({
 
   const [input, setInput] = useState("");
   const suppressAutoScrollRef = useRef(false);
+  const shouldStickToBottomRef = useRef(true);
+  const forceScrollToBottomRef = useRef(false);
+  const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const [showDetails, setShowDetails] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
   const [expandedReasoningByBlockId, setExpandedReasoningByBlockId] = useState<
@@ -159,6 +166,34 @@ export function ChatScreen({
       ? sessionHistoryQuery.error.message
       : null;
   const sessionSource = session?.source ?? null;
+
+  const clearScrollSettleTimer = useCallback(() => {
+    if (scrollSettleTimerRef.current) {
+      clearTimeout(scrollSettleTimerRef.current);
+      scrollSettleTimerRef.current = null;
+    }
+  }, []);
+
+  const scrollToBottom = useCallback((animated: boolean) => {
+    listRef.current?.scrollToEnd({ animated });
+  }, []);
+
+  const scheduleStickToBottom = useCallback(
+    (animated: boolean) => {
+      if (!shouldStickToBottomRef.current && !forceScrollToBottomRef.current) {
+        return;
+      }
+      requestAnimationFrame(() => {
+        scrollToBottom(animated);
+      });
+      clearScrollSettleTimer();
+      scrollSettleTimerRef.current = setTimeout(() => {
+        scrollToBottom(false);
+        forceScrollToBottomRef.current = false;
+      }, SEND_SCROLL_SETTLE_MS);
+    },
+    [clearScrollSettleTimer, scrollToBottom],
+  );
 
   useEffect(() => {
     if (activeAgentId && conversationId) {
@@ -287,25 +322,38 @@ export function ChatScreen({
       suppressAutoScrollRef.current = false;
       return;
     }
-    listRef.current?.scrollToEnd({ animated: true });
-  }, [messages.length]);
+    scheduleStickToBottom(true);
+  }, [messages.length, scheduleStickToBottom]);
 
-  const handleListContentSizeChange = useCallback((_w: number, h: number) => {
-    const anchor = prependAnchorRef.current;
-    if (anchor) {
-      const delta = Math.max(0, h - anchor.contentHeight);
-      listRef.current?.scrollToOffset({
-        offset: Math.max(0, anchor.offset + delta),
-        animated: false,
-      });
-      prependAnchorRef.current = null;
-    }
-    contentHeightRef.current = h;
-  }, []);
+  const handleListContentSizeChange = useCallback(
+    (_w: number, h: number) => {
+      const anchor = prependAnchorRef.current;
+      if (anchor) {
+        const delta = Math.max(0, h - anchor.contentHeight);
+        listRef.current?.scrollToOffset({
+          offset: Math.max(0, anchor.offset + delta),
+          animated: false,
+        });
+        prependAnchorRef.current = null;
+        contentHeightRef.current = h;
+        return;
+      }
+      contentHeightRef.current = h;
+      scheduleStickToBottom(false);
+    },
+    [scheduleStickToBottom],
+  );
 
   const handleListScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = event.nativeEvent.contentOffset?.y ?? 0;
+      const viewportHeight = event.nativeEvent.layoutMeasurement?.height ?? 0;
+      const contentHeight = event.nativeEvent.contentSize?.height ?? 0;
+      shouldStickToBottomRef.current = shouldStickToBottom({
+        offsetY,
+        viewportHeight,
+        contentHeight,
+      });
       scrollOffsetRef.current = offsetY;
       if (
         offsetY <= HISTORY_AUTOLOAD_THRESHOLD &&
@@ -340,10 +388,15 @@ export function ChatScreen({
     if (!input.trim()) {
       return;
     }
+    forceScrollToBottomRef.current = true;
+    shouldStickToBottomRef.current = true;
     sendMessage(conversationId, activeAgentId, input, agent.source);
     setInput("");
     setInputHeight(minInputHeight);
+    scheduleStickToBottom(true);
   };
+
+  useEffect(() => () => clearScrollSettleTimer(), [clearScrollSettleTimer]);
 
   const handleSelectPreset = (value: string) => {
     setInput(value);
@@ -703,16 +756,6 @@ export function ChatScreen({
                   </Text>
                 </View>
               ) : null}
-              {session?.conversationId ? (
-                <View className="flex-1 min-w-[45%]">
-                  <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
-                    Conversation ID
-                  </Text>
-                  <Text className="mt-1 text-xs text-white" numberOfLines={1}>
-                    {session.conversationId}
-                  </Text>
-                </View>
-              ) : null}
             </View>
 
             <View className="h-[1px] bg-slate-800" />
@@ -785,10 +828,6 @@ export function ChatScreen({
         windowSize={LIST_WINDOW_SIZE}
         updateCellsBatchingPeriod={50}
         removeClippedSubviews={Platform.OS === "android"}
-        maintainVisibleContentPosition={{
-          minIndexForVisible: 0,
-          autoscrollToTopThreshold: 12,
-        }}
         onContentSizeChange={handleListContentSizeChange}
         onScroll={handleListScroll}
         scrollEventThrottle={16}

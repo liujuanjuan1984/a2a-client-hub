@@ -11,6 +11,8 @@ class PageSizePagination:
     mode: str
     default_size: int
     max_size: int
+    params: tuple[str, ...] = ()
+    supports_offset: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +29,7 @@ class ResolvedExtension:
     methods: Mapping[str, str]
     pagination: PageSizePagination
     business_code_map: Mapping[int, str]
+    session_binding_metadata_key: Optional[str]
     result_envelope: Optional[Mapping[str, Any]]
 
 

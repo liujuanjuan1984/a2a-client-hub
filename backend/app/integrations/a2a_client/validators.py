@@ -85,16 +85,6 @@ def _validate_artifact_update(data: dict[str, Any]) -> list[str]:
                     return True
         return False
 
-    def _has_integer(candidates: list[dict[str, Any]], keys: tuple[str, ...]) -> bool:
-        for candidate in candidates:
-            for key in keys:
-                value = candidate.get(key)
-                if isinstance(value, int):
-                    return True
-                if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-                    return True
-        return False
-
     errors: list[str] = []
     if "artifact" not in data:
         errors.append("ArtifactUpdate object missing required field: 'artifact'.")
@@ -113,8 +103,6 @@ def _validate_artifact_update(data: dict[str, Any]) -> list[str]:
         errors.append("ArtifactUpdate object missing required field: 'message_id'.")
     if not _has_non_empty_text(candidates, ("event_id", "eventId")):
         errors.append("ArtifactUpdate object missing required field: 'event_id'.")
-    if not _has_integer(candidates, ("seq", "event_seq", "sequence", "eventSeq")):
-        errors.append("ArtifactUpdate object missing required field: 'seq'.")
     return errors
 
 

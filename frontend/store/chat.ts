@@ -49,12 +49,10 @@ type ChatState = {
     conversationId: string,
     payload: {
       agentId: string;
-      source?: "manual" | "scheduled" | "opencode" | null;
-      conversationId?: string | null;
+      source?: "manual" | "scheduled" | null;
       provider?: string | null;
       externalSessionId?: string | null;
       contextId?: string | null;
-      metadata?: Record<string, unknown> | null;
     },
   ) => void;
   getSessionsByAgentId: (agentId: string) => [string, AgentSession][];
@@ -101,10 +99,6 @@ export const useChatStore = create<ChatState>()(
                 payload.source === undefined
                   ? (state.sessions[conversationId]?.source ?? null)
                   : payload.source,
-              conversationId:
-                payload.conversationId === undefined
-                  ? (state.sessions[conversationId]?.conversationId ?? null)
-                  : payload.conversationId,
               externalSessionRef: mergeExternalSessionRef(
                 state.sessions[conversationId]?.externalSessionRef,
                 payload,
@@ -113,7 +107,6 @@ export const useChatStore = create<ChatState>()(
                 payload.contextId === undefined
                   ? (state.sessions[conversationId]?.contextId ?? null)
                   : payload.contextId,
-              metadata: payload.metadata ?? {},
               lastActiveAt: new Date().toISOString(),
             },
           },
@@ -224,7 +217,6 @@ export const useChatStore = create<ChatState>()(
         const attemptSessionRebind = async (reason: string) => {
           const current = get().sessions[conversationId];
           const shouldRebind =
-            current?.source === "opencode" ||
             current?.externalSessionRef?.provider === "opencode";
           if (!shouldRebind) {
             return false;
@@ -248,16 +240,13 @@ export const useChatStore = create<ChatState>()(
             const current =
               get().sessions[conversationId] ?? createAgentSession(agentId);
             patchSession({
-              conversationId: binding.conversationId ?? current.conversationId,
               contextId: binding.contextId ?? current.contextId,
-              metadata: binding.metadata ?? current.metadata,
               source: binding.source ?? current.source ?? null,
               externalSessionRef: mergeExternalSessionRef(
                 current.externalSessionRef,
                 {
                   provider: binding.provider,
                   externalSessionId: binding.externalSessionId,
-                  contextId: binding.contextId,
                 },
               ),
               streamState: "recoverable",
@@ -288,8 +277,7 @@ export const useChatStore = create<ChatState>()(
         };
 
         if (
-          (previousSession.source === "opencode" ||
-            previousSession.externalSessionRef?.provider === "opencode") &&
+          previousSession.externalSessionRef?.provider === "opencode" &&
           previousSession.streamState === "error"
         ) {
           await attemptSessionRebind(
@@ -306,6 +294,8 @@ export const useChatStore = create<ChatState>()(
 
         const updateSessionMeta = (meta: {
           contextId?: string | null;
+          provider?: string | null;
+          externalSessionId?: string | null;
           runtimeStatus?: string | null;
           transport?: string;
           inputModes?: string[];
@@ -345,6 +335,29 @@ export const useChatStore = create<ChatState>()(
               meta.outputModes.join("|") !== current.outputModes.join("|")
             ) {
               nextPatch.outputModes = meta.outputModes;
+            }
+            if (
+              meta.provider !== undefined ||
+              meta.externalSessionId !== undefined
+            ) {
+              const mergedExternalSessionRef = mergeExternalSessionRef(
+                current.externalSessionRef,
+                {
+                  provider: meta.provider,
+                  externalSessionId: meta.externalSessionId,
+                },
+              );
+              const currentProvider =
+                current.externalSessionRef?.provider ?? null;
+              const currentExternalSessionId =
+                current.externalSessionRef?.externalSessionId ?? null;
+              if (
+                mergedExternalSessionRef.provider !== currentProvider ||
+                mergedExternalSessionRef.externalSessionId !==
+                  currentExternalSessionId
+              ) {
+                nextPatch.externalSessionRef = mergedExternalSessionRef;
+              }
             }
 
             if (Object.keys(nextPatch).length === 0) {
@@ -574,6 +587,11 @@ export const useChatStore = create<ChatState>()(
           }
           seenEventIds.add(chunk.eventId);
 
+          if (chunk.seq === null) {
+            appendStreamChunk(chunk);
+            return;
+          }
+
           const currentExpected = nextExpectedSeqByMessageId.get(
             chunk.messageId,
           );
@@ -635,6 +653,8 @@ export const useChatStore = create<ChatState>()(
           const runtimeStatus = runtimeStatusEvent?.state ?? null;
           if (
             meta.contextId ||
+            meta.provider !== undefined ||
+            meta.externalSessionId !== undefined ||
             meta.transport ||
             meta.inputModes ||
             meta.outputModes ||

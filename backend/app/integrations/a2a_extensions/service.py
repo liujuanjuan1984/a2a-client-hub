@@ -16,7 +16,10 @@ from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
 )
-from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
+from app.integrations.a2a_extensions.errors import (
+    A2AExtensionContractError,
+    A2AExtensionUpstreamError,
+)
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
 from app.integrations.a2a_extensions.opencode_session_query import (
@@ -207,6 +210,49 @@ class A2AExtensionsService:
             raise ValueError(f"size must be <= {max_size}")
         return resolved_page, resolved_size
 
+    @staticmethod
+    def _build_pagination_params(
+        *,
+        mode: str,
+        page: int,
+        size: int,
+        supports_offset: bool,
+    ) -> Dict[str, int]:
+        if mode == "page_size":
+            return {"page": page, "size": size}
+        if mode == "limit":
+            if supports_offset:
+                return {"offset": (page - 1) * size, "limit": size}
+            if page > 1:
+                raise ValueError(
+                    "limit pagination without offset does not support page > 1"
+                )
+            return {"limit": size}
+        raise ValueError(f"unsupported pagination mode: {mode}")
+
+    @staticmethod
+    def _build_call_meta(
+        *,
+        ext: ResolvedExtension,
+        page: int,
+        size: int,
+        meta_extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        meta = {
+            "extension_uri": ext.uri,
+            "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
+            "pagination_mode": ext.pagination.mode,
+            "pagination_params": list(ext.pagination.params),
+            "pagination_supports_offset": ext.pagination.supports_offset,
+            "page": page,
+            "size": size,
+            "max_size": ext.pagination.max_size,
+            "default_size": ext.pagination.default_size,
+        }
+        if meta_extra:
+            meta.update(meta_extra)
+        return meta
+
     async def _resolve_opencode_extension(
         self, runtime: A2ARuntime
     ) -> tuple[ResolvedExtension, str]:
@@ -273,16 +319,12 @@ class A2AExtensionsService:
                 upstream_error={"message": str(exc), "type": type(exc).__name__},
             ) from exc
 
-        meta = {
-            "extension_uri": ext.uri,
-            "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
-            "page": page,
-            "size": size,
-            "max_size": ext.pagination.max_size,
-            "default_size": ext.pagination.default_size,
-        }
-        if meta_extra:
-            meta.update(meta_extra)
+        meta = self._build_call_meta(
+            ext=ext,
+            page=page,
+            size=size,
+            meta_extra=meta_extra,
+        )
 
         if resp.ok:
             normalized = self._normalize_envelope(
@@ -327,8 +369,32 @@ class A2AExtensionsService:
             page=page,
             size=size,
         )
+        if (
+            ext.pagination.mode == "limit"
+            and resolved_page > 1
+            and not ext.pagination.supports_offset
+        ):
+            return ExtensionCallResult(
+                success=True,
+                result={
+                    "raw": [],
+                    "items": [],
+                    "pagination": {"page": resolved_page, "size": resolved_size},
+                },
+                meta=self._build_call_meta(
+                    ext=ext,
+                    page=resolved_page,
+                    size=resolved_size,
+                    meta_extra={"short_circuit_reason": "limit_without_offset"},
+                ),
+            )
 
-        params: Dict[str, Any] = {"page": resolved_page, "size": resolved_size}
+        params: Dict[str, Any] = self._build_pagination_params(
+            mode=ext.pagination.mode,
+            page=resolved_page,
+            size=resolved_size,
+            supports_offset=ext.pagination.supports_offset,
+        )
         if query is not None:
             params["query"] = query
 
@@ -363,11 +429,37 @@ class A2AExtensionsService:
             page=page,
             size=size,
         )
+        if (
+            ext.pagination.mode == "limit"
+            and resolved_page > 1
+            and not ext.pagination.supports_offset
+        ):
+            return ExtensionCallResult(
+                success=True,
+                result={
+                    "raw": [],
+                    "items": [],
+                    "pagination": {"page": resolved_page, "size": resolved_size},
+                },
+                meta=self._build_call_meta(
+                    ext=ext,
+                    page=resolved_page,
+                    size=resolved_size,
+                    meta_extra={
+                        "session_id": resolved_session_id,
+                        "short_circuit_reason": "limit_without_offset",
+                    },
+                ),
+            )
 
         params: Dict[str, Any] = {
             "session_id": resolved_session_id,
-            "page": resolved_page,
-            "size": resolved_size,
+            **self._build_pagination_params(
+                mode=ext.pagination.mode,
+                page=resolved_page,
+                size=resolved_size,
+                supports_offset=ext.pagination.supports_offset,
+            ),
         }
         if query is not None:
             params["query"] = query
@@ -394,20 +486,38 @@ class A2AExtensionsService:
         This endpoint is intentionally conservative:
         - It validates the upstream session exists (best-effort) via the session
           query contract, returning stable error_code values on failure.
-        - It returns `metadata.opencode_session_id` as the strict invoke-time
-          binding key expected by opencode-a2a-serve.
+        - It returns `metadata.<metadata_key>` where `metadata_key` is discovered
+          from `urn:opencode-a2a:opencode-session-binding/v1`.
         """
 
         resolved_session_id = (session_id or "").strip()
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        validation = await self.opencode_get_session_messages(
+        ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
+        metadata_key = (ext.session_binding_metadata_key or "").strip()
+        if not metadata_key:
+            raise A2AExtensionContractError(
+                "Extension contract missing/invalid session binding metadata_key"
+            )
+
+        validation = await self._invoke_opencode_method(
             runtime=runtime,
-            session_id=resolved_session_id,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="get_session_messages",
+            params={
+                "session_id": resolved_session_id,
+                **self._build_pagination_params(
+                    mode=ext.pagination.mode,
+                    page=1,
+                    size=1,
+                    supports_offset=ext.pagination.supports_offset,
+                ),
+            },
             page=1,
             size=1,
-            query=None,
+            meta_extra={"session_id": resolved_session_id},
         )
         if not validation.success:
             return validation
@@ -417,6 +527,7 @@ class A2AExtensionsService:
             {
                 "binding_mode": "contextId+metadata",
                 "validated": True,
+                "session_binding_metadata_key": metadata_key,
             }
         )
         return ExtensionCallResult(
@@ -425,7 +536,7 @@ class A2AExtensionsService:
                 "contextId": resolved_session_id,
                 "provider": "opencode",
                 "metadata": {
-                    "opencode_session_id": resolved_session_id,
+                    metadata_key: resolved_session_id,
                 },
             },
             meta=meta,

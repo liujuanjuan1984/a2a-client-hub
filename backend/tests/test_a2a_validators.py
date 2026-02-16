@@ -195,7 +195,7 @@ class TestValidateMessage:
         errors = validators.validate_message(data)
         assert "ArtifactUpdate object missing required field: 'event_id'." in errors
 
-    def test_artifact_update_missing_seq(self):
+    def test_artifact_update_missing_seq_is_allowed(self):
         data = {
             "kind": "artifact-update",
             "message_id": "msg-1",
@@ -203,7 +203,7 @@ class TestValidateMessage:
             "artifact": {"parts": [{"text": "result"}]},
         }
         errors = validators.validate_message(data)
-        assert "ArtifactUpdate object missing required field: 'seq'." in errors
+        assert not errors
 
     def test_valid_message(self):
         data = {"kind": "message", "parts": [{"text": "hello"}], "role": "agent"}

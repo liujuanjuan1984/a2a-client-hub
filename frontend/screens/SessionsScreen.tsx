@@ -5,13 +5,16 @@ import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useContinueSession } from "@/hooks/useContinueSession";
 import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
 import { type SessionListItem } from "@/lib/api/sessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
+import { resolveSessionAgentPresentation } from "@/lib/sessionDirectoryPresentation";
 
 export function SessionsScreen() {
   const { continueSession } = useContinueSession();
+  const { data: agents = [] } = useAgentsCatalogQuery(true);
 
   const {
     items,
@@ -24,6 +27,16 @@ export function SessionsScreen() {
   } = useSessionsDirectoryQuery();
 
   const sortedItems = useMemo(() => items, [items]);
+  const agentLookup = useMemo(
+    () =>
+      new Map(
+        agents.map((agent) => [
+          agent.id,
+          { name: agent.name, source: agent.source },
+        ]),
+      ),
+    [agents],
+  );
 
   const handleContinueSession = async (item: SessionListItem) => {
     if (!item.agent_id) return;
@@ -63,20 +76,44 @@ export function SessionsScreen() {
             {sortedItems.map((item) => {
               const title = item.title;
               const ts = item.last_active_at ?? null;
+              const agent = resolveSessionAgentPresentation(item, agentLookup);
+              const agentBadgeClass =
+                agent.tone === "shared"
+                  ? "bg-sky-500/20"
+                  : agent.tone === "personal"
+                    ? "bg-emerald-500/20"
+                    : "bg-slate-700";
+              const agentTextClass =
+                agent.tone === "shared"
+                  ? "text-sky-200"
+                  : agent.tone === "personal"
+                    ? "text-emerald-200"
+                    : "text-slate-200";
               return (
                 <View
                   key={item.conversationId}
                   className="mb-3 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30"
                 >
                   <View className="p-4">
+                    <View className="flex-row items-center justify-between gap-2">
+                      <View
+                        className={`max-w-[78%] rounded-full px-3 py-1 ${agentBadgeClass}`}
+                      >
+                        <Text
+                          className={`text-[11px] font-semibold ${agentTextClass}`}
+                          numberOfLines={1}
+                        >
+                          {agent.name}
+                        </Text>
+                      </View>
+                      <View className="rounded-full bg-slate-800 px-2 py-1">
+                        <Text className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                          {item.source}
+                        </Text>
+                      </View>
+                    </View>
                     <Text
-                      className="text-base font-semibold text-white"
-                      numberOfLines={1}
-                    >
-                      {item.source}
-                    </Text>
-                    <Text
-                      className="mt-1 text-sm text-slate-100"
+                      className="mt-2 text-base font-semibold text-white"
                       numberOfLines={1}
                     >
                       {title}

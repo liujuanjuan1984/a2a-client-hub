@@ -51,7 +51,7 @@ describe("useSessionsDirectoryQuery", () => {
     });
   });
 
-  it("uses directory key and toggles refresh flag only for the next first-page fetch", async () => {
+  it("uses directory key and fetches pages with stable query params", async () => {
     const { result } = renderHook(() => useSessionsDirectoryQuery());
 
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];
@@ -61,7 +61,6 @@ describe("useSessionsDirectoryQuery", () => {
     expect(mockedListDirectoryPage).toHaveBeenNthCalledWith(1, {
       page: 1,
       size: 50,
-      refresh: false,
     });
 
     await act(async () => {
@@ -73,14 +72,6 @@ describe("useSessionsDirectoryQuery", () => {
     expect(mockedListDirectoryPage).toHaveBeenNthCalledWith(2, {
       page: 1,
       size: 50,
-      refresh: true,
-    });
-
-    await options?.fetchPage(1);
-    expect(mockedListDirectoryPage).toHaveBeenNthCalledWith(3, {
-      page: 1,
-      size: 50,
-      refresh: false,
     });
   });
 });

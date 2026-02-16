@@ -80,7 +80,12 @@ def _to_iso_from_ms(value: Optional[int]) -> Optional[str]:
 
 def _extract_session_id(task: Any) -> Optional[str]:
     obj = _as_record(task)
-    return _pick_str(obj, ["contextId", "context_id", "id", "session_id", "sessionId"])
+    metadata = _as_record(obj.get("metadata")) if obj else {}
+    opencode = _as_record((metadata or {}).get("opencode")) or {}
+    return _pick_str(
+        opencode,
+        ["session_id", "sessionId", "external_session_id", "externalSessionId"],
+    ) or _pick_str(obj, ["id", "session_id", "sessionId"])
 
 
 def _extract_title(task: Any) -> str:
@@ -105,25 +110,20 @@ def _extract_last_active_at(task: Any) -> Optional[str]:
     )
     if direct:
         return direct
+    direct_ms = _pick_ms(obj, ["updated", "created", "timestamp", "ts"])
+    if direct_ms is not None:
+        return _to_iso_from_ms(direct_ms)
 
     metadata = _as_record(obj.get("metadata")) or {}
     opencode = _as_record(metadata.get("opencode")) or {}
-    raw = _as_record(opencode.get("raw")) or {}
-    raw_direct = _pick_str(
-        raw, ["last_active_at", "updated_at", "created_at", "timestamp", "ts"]
+    opencode_direct = _pick_str(
+        opencode,
+        ["last_active_at", "updated_at", "created_at", "timestamp", "ts"],
     )
-    if raw_direct:
-        return raw_direct
-
-    time_obj = _as_record(raw.get("time")) or {}
-    info = _as_record(raw.get("info")) or {}
-    info_time = _as_record(info.get("time")) or {}
-    ms = (
-        _pick_ms(time_obj, ["updated", "created"])
-        or _pick_ms(info_time, ["updated", "created", "completed"])
-        or _pick_ms(raw, ["updated", "created"])
-    )
-    return _to_iso_from_ms(ms)
+    if opencode_direct:
+        return opencode_direct
+    opencode_ms = _pick_ms(opencode, ["updated", "created", "timestamp", "ts"])
+    return _to_iso_from_ms(opencode_ms)
 
 
 def _normalize_agent_url(value: str) -> str:
@@ -159,37 +159,16 @@ def _prune_task_for_cache(task: Any) -> Optional[Dict[str, Any]]:
 
     metadata = _as_record(obj.get("metadata")) or {}
     opencode = _as_record(metadata.get("opencode")) or {}
-    raw = _as_record(opencode.get("raw")) or {}
-    raw_time = _as_record(raw.get("time")) or {}
-    raw_info_time = _as_record((_as_record(raw.get("info")) or {}).get("time")) or {}
-    updated = (
-        raw_time.get("updated")
-        if isinstance(raw_time.get("updated"), (int, float, str))
-        else None
-    )
-    created = (
-        raw_time.get("created")
-        if isinstance(raw_time.get("created"), (int, float, str))
-        else None
-    )
-    if updated is None and "updated" in raw_info_time:
-        updated = raw_info_time.get("updated")
-    if created is None and "created" in raw_info_time:
-        created = raw_info_time.get("created")
 
     # Only keep fields required for listing/sorting/binding.
     return {
         "id": obj.get("id"),
         "contextId": obj.get("contextId") or obj.get("context_id") or session_id,
+        "last_active_at": _extract_last_active_at(obj),
         "metadata": {
             "opencode": {
+                "session_id": session_id,
                 "title": opencode.get("title"),
-                "raw": {
-                    "time": {
-                        "updated": updated,
-                        "created": created,
-                    }
-                },
             }
         },
     }
