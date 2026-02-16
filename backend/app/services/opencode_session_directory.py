@@ -80,7 +80,12 @@ def _to_iso_from_ms(value: Optional[int]) -> Optional[str]:
 
 def _extract_session_id(task: Any) -> Optional[str]:
     obj = _as_record(task)
-    return _pick_str(obj, ["contextId", "context_id", "id", "session_id", "sessionId"])
+    metadata = _as_record(obj.get("metadata")) if obj else {}
+    opencode = _as_record((metadata or {}).get("opencode")) or {}
+    return _pick_str(
+        opencode,
+        ["session_id", "sessionId", "external_session_id", "externalSessionId"],
+    ) or _pick_str(obj, ["id", "session_id", "sessionId"])
 
 
 def _extract_title(task: Any) -> str:
@@ -162,6 +167,7 @@ def _prune_task_for_cache(task: Any) -> Optional[Dict[str, Any]]:
         "last_active_at": _extract_last_active_at(obj),
         "metadata": {
             "opencode": {
+                "session_id": session_id,
                 "title": opencode.get("title"),
             }
         },

@@ -20,10 +20,11 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 def _task(session_id: str, *, title: str, last_active_at: str) -> Dict[str, Any]:
     return {
         "kind": "task",
-        "contextId": session_id,
+        "contextId": f"ctx:opencode-session:{session_id}",
         "last_active_at": last_active_at,
         "metadata": {
             "opencode": {
+                "session_id": session_id,
                 "title": title,
             }
         },
@@ -237,3 +238,51 @@ async def test_opencode_sessions_directory_deduplicates_across_same_upstream(
         assert item["agent_id"] == str(personal.id)
         assert item["agent_source"] == "personal"
         assert item["agent_name"] == "Personal Agent"
+
+
+async def test_opencode_sessions_directory_does_not_treat_context_id_as_session_id(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    await _create_personal_agent(
+        async_db_session, user_id=user.id, card_url="https://personal.example.com"
+    )
+
+    class FakeExtensionsService:
+        async def opencode_list_sessions(self, *, runtime, page: int, size: int, query):
+            items = [
+                {
+                    "kind": "task",
+                    "contextId": "ctx:opencode-session:ses_only_in_context",
+                    "last_active_at": "2024-01-01T00:00:00+00:00",
+                    "metadata": {"opencode": {"title": "No binding id"}},
+                }
+            ]
+            return ExtensionCallResult(
+                success=True,
+                result={"items": items, "pagination": {"page": page, "size": size}},
+                error_code=None,
+                upstream_error=None,
+                meta=None,
+            )
+
+    monkeypatch.setattr(
+        "app.services.opencode_session_directory.get_a2a_extensions_service",
+        lambda: FakeExtensionsService(),
+    )
+
+    async with create_test_client(
+        opencode_session_directory.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/opencode/sessions:query",
+            json={"page": 1, "size": 50, "refresh": False},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["items"] == []
+        assert payload["pagination"]["total"] == 0
