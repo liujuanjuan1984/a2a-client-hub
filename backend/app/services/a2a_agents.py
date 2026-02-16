@@ -56,12 +56,12 @@ class A2AAgentService(AgentValidationMixin):
                 A2AAgentCredential,
                 and_(
                     A2AAgentCredential.agent_id == A2AAgent.id,
-                    A2AAgentCredential.deleted_at.is_(None),
                 ),
             )
             .where(
                 and_(
                     A2AAgent.user_id == user_id,
+                    A2AAgent.agent_scope == A2AAgent.SCOPE_PERSONAL,
                     A2AAgent.deleted_at.is_(None),
                 )
             )
@@ -109,6 +109,8 @@ class A2AAgentService(AgentValidationMixin):
             user_id=user_id,
             name=normalized_name,
             card_url=normalized_url,
+            agent_scope=A2AAgent.SCOPE_PERSONAL,
+            availability_policy="public",
             auth_type=normalized_auth_type,
             auth_header=auth_header_value,
             auth_scheme=auth_scheme_value,
@@ -203,7 +205,7 @@ class A2AAgentService(AgentValidationMixin):
     ) -> None:
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
         agent.soft_delete()
-        await self._delete_credentials(db, user_id=user_id, agent_id=agent.id)
+        await self._delete_credentials(db, agent_id=agent.id)
         await commit_safely(db)
 
     # ----------------------
@@ -216,6 +218,7 @@ class A2AAgentService(AgentValidationMixin):
             and_(
                 A2AAgent.id == agent_id,
                 A2AAgent.user_id == user_id,
+                A2AAgent.agent_scope == A2AAgent.SCOPE_PERSONAL,
                 A2AAgent.deleted_at.is_(None),
             )
         )
@@ -234,6 +237,7 @@ class A2AAgentService(AgentValidationMixin):
         stmt = select(A2AAgent.id).where(
             and_(
                 A2AAgent.user_id == user_id,
+                A2AAgent.agent_scope == A2AAgent.SCOPE_PERSONAL,
                 A2AAgent.card_url == card_url,
                 A2AAgent.deleted_at.is_(None),
             )
@@ -248,33 +252,20 @@ class A2AAgentService(AgentValidationMixin):
         self,
         db: AsyncSession,
         *,
-        user_id: UUID,
         agent_id: UUID,
     ) -> Optional[A2AAgentCredential]:
-        stmt = select(A2AAgentCredential).where(
-            and_(
-                A2AAgentCredential.user_id == user_id,
-                A2AAgentCredential.agent_id == agent_id,
-                A2AAgentCredential.deleted_at.is_(None),
-            )
-        )
+        stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
         return await db.scalar(stmt)
 
     async def _delete_credentials(
         self,
         db: AsyncSession,
         *,
-        user_id: UUID,
         agent_id: UUID,
     ) -> None:
         # Hard-delete credential rows to minimize secret retention.
         await db.execute(
-            delete(A2AAgentCredential).where(
-                and_(
-                    A2AAgentCredential.user_id == user_id,
-                    A2AAgentCredential.agent_id == agent_id,
-                )
-            )
+            delete(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
         )
 
     async def _sync_credentials(
@@ -286,13 +277,13 @@ class A2AAgentService(AgentValidationMixin):
         token: Optional[str],
     ) -> Optional[str]:
         if agent.auth_type == "none":
-            await self._delete_credentials(db, user_id=user_id, agent_id=agent.id)
+            await self._delete_credentials(db, agent_id=agent.id)
             return None
 
         if agent.auth_type != "bearer":
             raise A2AAgentValidationError("Unsupported auth_type")
 
-        credential = await self._get_credential(db, user_id=user_id, agent_id=agent.id)
+        credential = await self._get_credential(db, agent_id=agent.id)
         if token is None:
             if credential is None:
                 raise A2AAgentValidationError("Bearer token is required")
@@ -319,13 +310,13 @@ class A2AAgentService(AgentValidationMixin):
             validation_error_cls=A2AAgentValidationError,
         )
 
-        credential = await self._get_credential(db, user_id=user_id, agent_id=agent_id)
+        credential = await self._get_credential(db, agent_id=agent_id)
         if credential is None:
             # Purge legacy soft-deleted rows before insert to satisfy unique constraint.
-            await self._delete_credentials(db, user_id=user_id, agent_id=agent_id)
+            await self._delete_credentials(db, agent_id=agent_id)
             credential = A2AAgentCredential(
-                user_id=user_id,
                 agent_id=agent_id,
+                created_by_user_id=user_id,
                 encrypted_token=encrypted_value,
                 token_last4=last4,
                 encryption_version=1,
@@ -334,6 +325,7 @@ class A2AAgentService(AgentValidationMixin):
         else:
             credential.encrypted_token = encrypted_value
             credential.token_last4 = last4
+            credential.created_by_user_id = user_id
 
         return last4
 

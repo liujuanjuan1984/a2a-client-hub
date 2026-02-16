@@ -71,7 +71,12 @@ class HubA2AAgentService(AgentValidationMixin):
                 HubA2AAgentCredential,
                 HubA2AAgentCredential.agent_id == HubA2AAgent.id,
             )
-            .where(HubA2AAgent.deleted_at.is_(None))
+            .where(
+                and_(
+                    HubA2AAgent.agent_scope == HubA2AAgent.SCOPE_SHARED,
+                    HubA2AAgent.deleted_at.is_(None),
+                )
+            )
             .order_by(HubA2AAgent.created_at.asc())
         )
         result = await db.execute(stmt)
@@ -96,7 +101,13 @@ class HubA2AAgentService(AgentValidationMixin):
                 HubA2AAgentCredential,
                 HubA2AAgentCredential.agent_id == HubA2AAgent.id,
             )
-            .where(and_(HubA2AAgent.id == agent_id, HubA2AAgent.deleted_at.is_(None)))
+            .where(
+                and_(
+                    HubA2AAgent.id == agent_id,
+                    HubA2AAgent.agent_scope == HubA2AAgent.SCOPE_SHARED,
+                    HubA2AAgent.deleted_at.is_(None),
+                )
+            )
         )
         result = await db.execute(stmt)
         row = result.first()
@@ -134,8 +145,10 @@ class HubA2AAgentService(AgentValidationMixin):
             normalized_auth_type, auth_header, auth_scheme, existing=None
         )
         agent = HubA2AAgent(
+            user_id=admin_user_id,
             name=normalized_name,
             card_url=normalized_url,
+            agent_scope=HubA2AAgent.SCOPE_SHARED,
             availability_policy=normalized_policy,
             auth_type=normalized_auth_type,
             auth_header=auth_header_value,
@@ -265,6 +278,7 @@ class HubA2AAgentService(AgentValidationMixin):
             .where(
                 and_(
                     HubA2AAgentAllowlistEntry.user_id == user_id,
+                    HubA2AAgent.agent_scope == HubA2AAgent.SCOPE_SHARED,
                     HubA2AAgent.deleted_at.is_(None),
                     HubA2AAgent.enabled.is_(True),
                     HubA2AAgent.availability_policy == "allowlist",
@@ -273,6 +287,7 @@ class HubA2AAgentService(AgentValidationMixin):
         )
         public_stmt = select(HubA2AAgent.id).where(
             and_(
+                HubA2AAgent.agent_scope == HubA2AAgent.SCOPE_SHARED,
                 HubA2AAgent.deleted_at.is_(None),
                 HubA2AAgent.enabled.is_(True),
                 HubA2AAgent.availability_policy == "public",
@@ -281,6 +296,7 @@ class HubA2AAgentService(AgentValidationMixin):
         ids_stmt = select(HubA2AAgent).where(
             and_(
                 HubA2AAgent.id.in_(public_stmt.union_all(allowlisted_stmt)),
+                HubA2AAgent.agent_scope == HubA2AAgent.SCOPE_SHARED,
             )
         )
         result = await db.execute(ids_stmt.order_by(HubA2AAgent.created_at.asc()))
@@ -292,6 +308,7 @@ class HubA2AAgentService(AgentValidationMixin):
         stmt = select(HubA2AAgent).where(
             and_(
                 HubA2AAgent.id == agent_id,
+                HubA2AAgent.agent_scope == HubA2AAgent.SCOPE_SHARED,
                 HubA2AAgent.deleted_at.is_(None),
                 HubA2AAgent.enabled.is_(True),
             )
@@ -383,7 +400,11 @@ class HubA2AAgentService(AgentValidationMixin):
 
     async def _get_agent(self, db: AsyncSession, *, agent_id: UUID) -> HubA2AAgent:
         stmt = select(HubA2AAgent).where(
-            and_(HubA2AAgent.id == agent_id, HubA2AAgent.deleted_at.is_(None))
+            and_(
+                HubA2AAgent.id == agent_id,
+                HubA2AAgent.agent_scope == HubA2AAgent.SCOPE_SHARED,
+                HubA2AAgent.deleted_at.is_(None),
+            )
         )
         agent = await db.scalar(stmt)
         if agent is None:

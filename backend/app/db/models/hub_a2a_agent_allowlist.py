@@ -23,7 +23,7 @@ class HubA2AAgentAllowlistEntry(Base, TimestampMixin):
 
     agent_id = Column(
         UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.hub_a2a_agents.id", ondelete="CASCADE"),
+        ForeignKey(f"{SCHEMA_NAME}.a2a_agents.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
         comment="Related hub A2A agent id",

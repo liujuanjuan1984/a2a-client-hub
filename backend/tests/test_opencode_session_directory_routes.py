@@ -49,8 +49,10 @@ async def _create_hub_agent(
     async_db_session, *, admin_user_id, card_url: str
 ) -> HubA2AAgent:
     agent = HubA2AAgent(
+        user_id=admin_user_id,
         name="Shared Agent",
         card_url=card_url,
+        agent_scope=HubA2AAgent.SCOPE_SHARED,
         availability_policy="public",
         auth_type="none",
         enabled=True,

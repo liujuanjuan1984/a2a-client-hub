@@ -77,6 +77,7 @@ class A2ARuntimeBuilder:
             and_(
                 A2AAgent.id == agent_id,
                 A2AAgent.user_id == user_id,
+                A2AAgent.agent_scope == A2AAgent.SCOPE_PERSONAL,
                 A2AAgent.deleted_at.is_(None),
             )
         )
@@ -88,13 +89,7 @@ class A2ARuntimeBuilder:
     async def _get_credential(
         self, db: AsyncSession, *, user_id: UUID, agent_id: UUID
     ) -> Optional[A2AAgentCredential]:
-        stmt = select(A2AAgentCredential).where(
-            and_(
-                A2AAgentCredential.user_id == user_id,
-                A2AAgentCredential.agent_id == agent_id,
-                A2AAgentCredential.deleted_at.is_(None),
-            )
-        )
+        stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
         return await db.scalar(stmt)
 
 

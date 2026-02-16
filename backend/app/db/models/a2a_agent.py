@@ -1,7 +1,7 @@
-"""User-managed A2A agent configuration model."""
+"""Unified A2A agent configuration model."""
 
-from sqlalchemy import Boolean, Column, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy import Boolean, Column, ForeignKey, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSON, UUID
 
 from app.db.models.base import (
     SCHEMA_NAME,
@@ -13,17 +13,21 @@ from app.db.models.base import (
 
 
 class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
-    """User-managed A2A agent configuration."""
+    """Unified A2A agent configuration (personal + shared)."""
 
     __tablename__ = "a2a_agents"
     __table_args__ = (
         UniqueConstraint(
             "user_id",
+            "agent_scope",
             "card_url",
-            name="uq_a2a_agents_user_card_url",
+            name="uq_a2a_agents_user_scope_card_url",
         ),
         {"schema": SCHEMA_NAME},
     )
+
+    SCOPE_PERSONAL = "personal"
+    SCOPE_SHARED = "shared"
 
     name = Column(
         String(120),
@@ -34,6 +38,20 @@ class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         String(1024),
         nullable=False,
         comment="Agent card URL",
+    )
+    agent_scope = Column(
+        String(16),
+        nullable=False,
+        default=SCOPE_PERSONAL,
+        server_default=SCOPE_PERSONAL,
+        comment="Agent scope (personal/shared).",
+    )
+    availability_policy = Column(
+        String(32),
+        nullable=False,
+        default="public",
+        server_default="public",
+        comment="Availability policy (public/allowlist).",
     )
     auth_type = Column(
         String(32),
@@ -68,6 +86,18 @@ class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         JSON,
         nullable=True,
         comment="Additional headers to include when fetching card/invoking",
+    )
+    created_by_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_NAME}.users.id", ondelete="RESTRICT"),
+        nullable=True,
+        comment="Admin user id that created this shared agent.",
+    )
+    updated_by_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_NAME}.users.id", ondelete="RESTRICT"),
+        nullable=True,
+        comment="Admin user id that last updated this shared agent.",
     )
 
     def __repr__(self) -> str:

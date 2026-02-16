@@ -467,6 +467,7 @@ class A2AScheduleService:
             and_(
                 A2AAgent.id == agent_id,
                 A2AAgent.user_id == user_id,
+                A2AAgent.agent_scope == A2AAgent.SCOPE_PERSONAL,
                 A2AAgent.enabled.is_(True),
                 A2AAgent.deleted_at.is_(None),
             )
