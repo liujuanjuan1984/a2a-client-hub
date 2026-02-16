@@ -79,7 +79,7 @@ export function AdminHubAgentAllowlistScreen({
     [baseEntries, draftEntries],
   );
   const dirty =
-    changes.addEmails.length > 0 || changes.removeEntryIds.length > 0;
+    changes.addEmails.length > 0 || changes.removeUserIds.length > 0;
   const { allowNextNavigation } = usePreventRemoveWhenDirty({ dirty });
 
   useEffect(() => {
@@ -149,8 +149,8 @@ export function AdminHubAgentAllowlistScreen({
 
     setSaving(true);
     try {
-      for (const entryId of changes.removeEntryIds) {
-        await deleteHubAgentAllowlistEntryAdmin(agentId, entryId);
+      for (const userId of changes.removeUserIds) {
+        await deleteHubAgentAllowlistEntryAdmin(agentId, userId);
       }
       for (const email of changes.addEmails) {
         await addHubAgentAllowlistAdmin(agentId, { email });
@@ -163,7 +163,7 @@ export function AdminHubAgentAllowlistScreen({
       });
       toast.success(
         "Allowlist saved",
-        `${changes.addEmails.length + changes.removeEntryIds.length} changes applied.`,
+        `${changes.addEmails.length + changes.removeUserIds.length} changes applied.`,
       );
       allowNextNavigation();
       router.replace("/admin/hub-a2a");
@@ -177,7 +177,7 @@ export function AdminHubAgentAllowlistScreen({
     agentId,
     allowNextNavigation,
     changes.addEmails,
-    changes.removeEntryIds,
+    changes.removeUserIds,
     dirty,
     queryClient,
     router,
@@ -393,7 +393,7 @@ export function AdminHubAgentAllowlistScreen({
                     >
                       {entry.userLabel}
                     </Text>
-                    {entry.existingId == null ? (
+                    {entry.existingUserId == null ? (
                       <View className="rounded-full bg-emerald-500/20 px-2 py-0.5">
                         <Text className="text-[10px] font-semibold text-emerald-200">
                           NEW

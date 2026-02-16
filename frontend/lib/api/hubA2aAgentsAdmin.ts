@@ -113,9 +113,9 @@ export const addHubAgentAllowlistAdmin = (
 
 export const deleteHubAgentAllowlistEntryAdmin = (
   agentId: string,
-  entryId: string,
+  userId: string,
 ) =>
   apiRequest<void>(
-    `/admin/a2a/agents/${encodeURIComponent(agentId)}/allowlist/${encodeURIComponent(entryId)}`,
+    `/admin/a2a/agents/${encodeURIComponent(agentId)}/allowlist/${encodeURIComponent(userId)}`,
     { method: "DELETE" },
   );

@@ -27,7 +27,7 @@ describe("hubAgentAllowlistState", () => {
     expect(rows).toEqual([
       {
         id: "existing:entry-a",
-        existingId: "entry-a",
+        existingUserId: "user-1",
         email: "a@example.com",
         userLabel: "a@example.com",
         userId: "user-1",
@@ -56,7 +56,7 @@ describe("hubAgentAllowlistState", () => {
 
     expect(deriveAllowlistChanges(base, draft)).toEqual({
       addEmails: ["new@example.com"],
-      removeEntryIds: ["entry-b"],
+      removeUserIds: ["user-2"],
     });
   });
 });
