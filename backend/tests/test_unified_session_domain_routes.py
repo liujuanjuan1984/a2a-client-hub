@@ -212,3 +212,174 @@ async def test_invalid_conversation_id_returns_400(
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "invalid_conversation_id"
+
+
+async def test_list_sessions_can_filter_opencode_from_local_data(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="op-filter")
+
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Bound Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            sender="agent",
+            content="bound",
+            conversation_id=session.id,
+            message_metadata={
+                "provider": "opencode",
+                "external_session_id": "ses_filter_1",
+                "context_id": "ctx-filter-1",
+            },
+        )
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        opencode_resp = await client.post(
+            "/me/conversations:query",
+            json={"page": 1, "size": 20, "source": "opencode", "refresh": False},
+        )
+        assert opencode_resp.status_code == 200
+        opencode_payload = opencode_resp.json()
+        assert opencode_payload["pagination"]["total"] == 1
+        assert opencode_payload["items"][0]["conversationId"] == str(session.id)
+        assert opencode_payload["items"][0]["source"] == "opencode"
+
+        manual_resp = await client.post(
+            "/me/conversations:query",
+            json={"page": 1, "size": 20, "source": "manual", "refresh": False},
+        )
+        assert manual_resp.status_code == 200
+        assert manual_resp.json()["pagination"]["total"] == 0
+
+
+async def test_messages_query_reads_local_history_for_opencode_bound_conversation(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="op-msg")
+
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Opencode Local History",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    metadata = {
+        "provider": "opencode",
+        "external_session_id": "ses_local_hist_1",
+        "context_id": "ctx-local-hist-1",
+    }
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            sender="user",
+            content="hello",
+            conversation_id=session.id,
+            message_metadata=metadata,
+        )
+    )
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            sender="agent",
+            content="world",
+            conversation_id=session.id,
+            message_metadata=metadata,
+        )
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/conversations/{session.id}/messages:query",
+            json={"page": 1, "size": 50},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["meta"]["conversationId"] == str(session.id)
+        assert payload["meta"]["source"] == "opencode"
+        assert payload["meta"]["upstream_session_id"] == "ses_local_hist_1"
+        assert len(payload["items"]) == 2
+        assert payload["items"][0]["content"] == "hello"
+        assert payload["items"][1]["content"] == "world"
+
+
+async def test_continue_uses_context_as_opencode_session_id_when_external_missing(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="ctx-fallback"
+    )
+
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Context Binding",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+    async_db_session.add(
+        AgentMessage(
+            user_id=user.id,
+            sender="agent",
+            content="bound-by-context",
+            conversation_id=session.id,
+            message_metadata={
+                "provider": "opencode",
+                "context_id": "ses_context_only_1",
+            },
+        )
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(f"/me/conversations/{session.id}:continue")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["conversationId"] == str(session.id)
+        assert payload["source"] == "opencode"
+        assert payload["provider"] == "opencode"
+        assert payload["externalSessionId"] == "ses_context_only_1"
+        assert payload["contextId"] == "ses_context_only_1"
+        assert payload["metadata"] == {"opencode_session_id": "ses_context_only_1"}
