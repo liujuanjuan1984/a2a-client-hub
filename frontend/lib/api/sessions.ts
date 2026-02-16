@@ -5,7 +5,6 @@ import { type UnifiedSessionSource } from "@/lib/sessionIds";
 export type SessionListItem = {
   conversationId: string;
   source: UnifiedSessionSource;
-  source_session_id: string;
   agent_id?: string | null;
   agent_source?: "personal" | "shared" | null;
   title: string;

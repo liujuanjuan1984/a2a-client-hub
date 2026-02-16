@@ -177,7 +177,8 @@ class SessionHubService:
                     {
                         "conversationId": str(conversation_id),
                         "source": "opencode",
-                        "source_session_id": normalized_session_id,
+                        "provider": "opencode",
+                        "external_session_id": normalized_session_id,
                         "agent_id": raw_agent_id,
                         "agent_source": raw_agent_source,
                         "title": item.get("title") or "Session",
@@ -317,7 +318,6 @@ class SessionHubService:
                     {
                         "conversationId": str(conversation_id or thread.id),
                         "source": "manual",
-                        "source_session_id": str(thread.id),
                         "agent_id": thread.agent_id,
                         "agent_source": thread.agent_source,
                         "provider": metadata_provider,
@@ -337,7 +337,6 @@ class SessionHubService:
                     {
                         "conversationId": str(conversation_id or thread.id),
                         "source": "scheduled",
-                        "source_session_id": str(thread.id),
                         "agent_id": thread.agent_id,
                         "agent_source": thread.agent_source or "personal",
                         "provider": metadata_provider,
@@ -441,7 +440,9 @@ class SessionHubService:
         remote_external_ids: set[str] = set()
         remote_by_external_id: dict[str, dict[str, Any]] = {}
         for item in opencode_items:
-            remote_external_id = normalize_non_empty_text(item.get("source_session_id"))
+            remote_external_id = normalize_non_empty_text(
+                item.get("external_session_id")
+            )
             if not remote_external_id:
                 continue
             remote_external_ids.add(remote_external_id)
@@ -787,7 +788,6 @@ class SessionHubService:
                 external_from_payload,
             ) = extract_provider_and_external_session_id(
                 payload,
-                include_session_id_aliases=True,
             )
             (
                 provider,
@@ -1090,7 +1090,7 @@ class SessionHubService:
         metadata: Dict[str, Any] = {
             "source": source,
             "agent_id": str(agent_id),
-            "session_id": str(session.id),
+            "conversation_id": str(session.id),
             "success": success,
         }
         (

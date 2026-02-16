@@ -33,7 +33,6 @@ class SessionViewItem(BaseModel):
         description="Canonical conversation id.",
     )
     source: SessionSource
-    source_session_id: str = Field(..., description="Original source session id")
     agent_id: Optional[UUID] = None
     agent_source: Optional[AgentSource] = None
     title: str
