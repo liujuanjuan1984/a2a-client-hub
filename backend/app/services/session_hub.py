@@ -1357,34 +1357,47 @@ def _resolve_local_message_item_id(
 
 def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:
     obj = as_dict(item)
+    parsed_content = _try_parse_json_object(
+        pick_first_non_empty_str(obj, ["content", "message"]) or ""
+    )
+    raw_info = _extract_opencode_raw_info(obj, parsed_content)
     message_id = str(
         obj.get("id")
         or obj.get("message_id")
         or obj.get("messageId")
+        or raw_info.get("id")
+        or parsed_content.get("messageId")
         or f"opencode-{index}"
     )
 
     role = _map_role(
         pick_first_non_empty_str(obj, ["role", "type", "sender"])
-        or pick_first_non_empty_str(
-            as_dict(
-                as_dict(
-                    as_dict(as_dict(obj.get("metadata")).get("opencode")).get("raw")
-                ).get("info")
-            ),
-            ["role"],
-        )
+        or pick_first_non_empty_str(raw_info, ["role"])
+        or pick_first_non_empty_str(parsed_content, ["role"])
     )
 
-    content = _extract_content(obj)
-    created_at = _extract_timestamp(obj)
+    message_blocks = _extract_opencode_message_blocks(
+        obj, parsed_content=parsed_content
+    )
+    content = _extract_content(
+        obj,
+        parsed_content=parsed_content,
+        message_blocks=message_blocks,
+    )
+    created_at = _extract_timestamp(
+        obj, raw_info=raw_info, parsed_content=parsed_content
+    )
+
+    metadata: dict[str, Any] = {}
+    if message_blocks:
+        metadata["message_blocks"] = message_blocks
 
     return {
         "id": message_id,
         "role": role,
         "content": content,
         "created_at": created_at,
-        "metadata": {"raw": item},
+        "metadata": metadata,
     }
 
 
@@ -1397,28 +1410,40 @@ def _map_role(raw: Optional[str]) -> str:
     return "system"
 
 
-def _extract_content(obj: Dict[str, Any]) -> str:
+def _extract_content(
+    obj: Dict[str, Any],
+    *,
+    parsed_content: dict[str, Any],
+    message_blocks: list[dict[str, Any]],
+) -> str:
+    if message_blocks:
+        return "".join(
+            block.get("content", "")
+            for block in message_blocks
+            if block.get("type") == "text" and isinstance(block.get("content"), str)
+        )
+
     direct = pick_first_non_empty_str(obj, ["text", "content", "message"])
     if direct:
+        parsed_direct = _try_parse_json_object(direct)
+        if parsed_direct:
+            if _extract_opencode_message_parts(parsed_direct):
+                return ""
+            if parsed_direct.get("kind") == "message":
+                return ""
         return direct
 
-    if obj.get("kind") == "message":
-        parts = obj.get("parts") if isinstance(obj.get("parts"), list) else []
-        collected: list[str] = []
-        for part in parts:
-            if not isinstance(part, dict):
-                continue
-            kind = str(part.get("kind") or part.get("type") or "")
-            text = part.get("text")
-            if kind == "text" and isinstance(text, str) and text:
-                collected.append(text)
-        if collected:
-            return "".join(collected)
-
-    return json.dumps(obj, ensure_ascii=False)[:1200]
+    if parsed_content and parsed_content.get("kind") == "message":
+        return ""
+    return ""
 
 
-def _extract_timestamp(obj: Dict[str, Any]) -> datetime:
+def _extract_timestamp(
+    obj: Dict[str, Any],
+    *,
+    raw_info: dict[str, Any],
+    parsed_content: dict[str, Any],
+) -> datetime:
     direct = pick_first_non_empty_str(
         obj, ["created_at", "createdAt", "timestamp", "ts"]
     )
@@ -1430,15 +1455,17 @@ def _extract_timestamp(obj: Dict[str, Any]) -> datetime:
         except ValueError:
             pass
 
-    ms = None
-    for key in ["created", "updated"]:
-        value = obj.get(key)
-        if isinstance(value, int):
-            ms = value
-            break
-        if isinstance(value, float) and value.is_integer():
-            ms = int(value)
-            break
+    ms = _pick_epoch_millis(obj, keys=("created", "updated", "completed"))
+    if ms is None:
+        ms = _pick_epoch_millis(
+            as_dict(raw_info.get("time")), keys=("created", "updated", "completed")
+        )
+    if ms is None:
+        parsed_raw_info = _extract_opencode_raw_info(parsed_content, {})
+        ms = _pick_epoch_millis(
+            as_dict(parsed_raw_info.get("time")),
+            keys=("created", "updated", "completed"),
+        )
 
     if isinstance(ms, int):
         try:
@@ -1447,6 +1474,119 @@ def _extract_timestamp(obj: Dict[str, Any]) -> datetime:
             pass
 
     return utc_now()
+
+
+def _pick_epoch_millis(payload: dict[str, Any], *, keys: tuple[str, ...]) -> int | None:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        if isinstance(value, str) and value.strip().isdigit():
+            return int(value.strip())
+    return None
+
+
+def _try_parse_json_object(value: str) -> dict[str, Any]:
+    stripped = (value or "").strip()
+    if not stripped.startswith("{"):
+        return {}
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _extract_opencode_raw_info(
+    obj: dict[str, Any], parsed_content: dict[str, Any]
+) -> dict[str, Any]:
+    raw_info = as_dict(
+        as_dict(as_dict(as_dict(obj.get("metadata")).get("opencode")).get("raw")).get(
+            "info"
+        )
+    )
+    if raw_info:
+        return raw_info
+    return as_dict(
+        as_dict(
+            as_dict(as_dict(parsed_content.get("metadata")).get("opencode")).get("raw")
+        ).get("info")
+    )
+
+
+def _extract_opencode_message_parts(
+    obj: dict[str, Any],
+) -> list[dict[str, Any]]:
+    parts = obj.get("parts")
+    if isinstance(parts, list):
+        return [part for part in parts if isinstance(part, dict)]
+    raw_parts = as_dict(
+        as_dict(as_dict(as_dict(obj.get("metadata")).get("opencode")).get("raw"))
+    ).get("parts")
+    if isinstance(raw_parts, list):
+        return [part for part in raw_parts if isinstance(part, dict)]
+    return []
+
+
+def _extract_tool_call_block_content(part: dict[str, Any]) -> str:
+    state = as_dict(part.get("state"))
+    payload: dict[str, Any] = {}
+    for source_key, target_key in (
+        ("callID", "call_id"),
+        ("call_id", "call_id"),
+        ("tool", "tool"),
+    ):
+        value = part.get(source_key)
+        if isinstance(value, str) and value.strip():
+            payload[target_key] = value.strip()
+    for key in ("status", "title"):
+        value = state.get(key)
+        if isinstance(value, str) and value.strip():
+            payload[key] = value.strip()
+    if not payload:
+        return ""
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _extract_opencode_message_blocks(
+    obj: dict[str, Any], *, parsed_content: dict[str, Any]
+) -> list[dict[str, Any]]:
+    parts = _extract_opencode_message_parts(obj)
+    if not parts:
+        parts = _extract_opencode_message_parts(parsed_content)
+    blocks: list[dict[str, Any]] = []
+    for index, part in enumerate(parts):
+        raw_kind = str(part.get("kind") or part.get("type") or "").strip().lower()
+        if not raw_kind:
+            continue
+        block_type: str | None = None
+        content = ""
+        if raw_kind in {"text"}:
+            text = part.get("text")
+            if isinstance(text, str):
+                content = text
+            block_type = "text"
+        elif raw_kind in {"reasoning"}:
+            text = part.get("text")
+            if isinstance(text, str):
+                content = text
+            block_type = "reasoning"
+        elif raw_kind in {"tool"}:
+            content = _extract_tool_call_block_content(part)
+            block_type = "tool_call"
+        if not block_type or not content:
+            continue
+        blocks.append(
+            {
+                "id": f"history-block-{index + 1}",
+                "type": block_type,
+                "content": content,
+                "is_finished": True,
+            }
+        )
+    return blocks
 
 
 session_hub_service = SessionHubService()
