@@ -759,3 +759,71 @@ def test_extract_stream_identity_hints_from_status_message_message_id():
         }
     )
     assert hints["upstream_message_id"] == "msg-from-status-message"
+
+
+def test_extract_usage_hints_from_serialized_event():
+    usage = a2a_invoke_service.extract_usage_hints_from_serialized_event(
+        {
+            "kind": "status-update",
+            "final": True,
+            "metadata": {
+                "opencode": {
+                    "usage": {
+                        "input_tokens": 120,
+                        "outputTokens": "30",
+                        "total_tokens": 150,
+                        "reasoning_tokens": 12,
+                        "cache_tokens": 6,
+                        "cost": "0.0125",
+                    }
+                }
+            },
+        }
+    )
+    assert usage == {
+        "input_tokens": 120,
+        "output_tokens": 30,
+        "total_tokens": 150,
+        "reasoning_tokens": 12,
+        "cache_tokens": 6,
+        "cost": 0.0125,
+    }
+
+
+def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
+    class _RawPayload:
+        def model_dump(self, **kwargs):  # noqa: ARG002
+            return {
+                "metadata": {
+                    "opencode": {
+                        "usage": {
+                            "input_tokens": 66,
+                            "output_tokens": 11,
+                            "total_tokens": 77,
+                            "cost": 0.0077,
+                        }
+                    }
+                }
+            }
+
+    usage = a2a_invoke_service.extract_usage_hints_from_invoke_result(
+        {
+            "metadata": {
+                "opencode": {
+                    "usage": {
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "total_tokens": 2,
+                        "cost": 0.0002,
+                    }
+                }
+            },
+            "raw": _RawPayload(),
+        }
+    )
+    assert usage == {
+        "input_tokens": 66,
+        "output_tokens": 11,
+        "total_tokens": 77,
+        "cost": 0.0077,
+    }

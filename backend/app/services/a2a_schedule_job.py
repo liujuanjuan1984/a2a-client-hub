@@ -17,6 +17,7 @@ from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, rollback_safely
 from app.handlers import agent_message as agent_message_handler
 from app.integrations.a2a_client import get_a2a_service
+from app.services.a2a_invoke_service import a2a_invoke_service
 from app.services.a2a_runtime import a2a_runtime_builder
 from app.services.a2a_schedule_service import (
     A2A_SCHEDULE_SOURCE,
@@ -152,6 +153,11 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 "success": success,
                 "error_code": result.get("error_code"),
             }
+            usage_hints = a2a_invoke_service.extract_usage_hints_from_invoke_result(
+                result
+            )
+            if usage_hints:
+                agent_metadata["usage"] = usage_hints
             agent_message = await agent_message_handler.create_agent_message(
                 db,
                 user_id=task.user_id,
