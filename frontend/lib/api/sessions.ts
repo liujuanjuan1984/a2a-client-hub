@@ -26,7 +26,6 @@ export type SessionContinueBinding = {
   provider?: string | null;
   externalSessionId?: string | null;
   contextId?: string | null;
-  metadata: Record<string, unknown>;
 };
 
 export const listSessionsPage = async (options?: {
@@ -120,9 +119,5 @@ export const continueSession = async (
       typeof response.contextId === "string" && response.contextId.trim()
         ? response.contextId.trim()
         : null,
-    metadata:
-      response.metadata && typeof response.metadata === "object"
-        ? response.metadata
-        : {},
   };
 };

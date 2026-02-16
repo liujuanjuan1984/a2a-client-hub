@@ -38,11 +38,7 @@ class SessionViewItem(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class SessionListMeta(BaseModel):
-    pass
-
-
-class SessionListResponse(ListResponse[SessionViewItem, SessionListMeta]):
+class SessionListResponse(ListResponse[SessionViewItem, Dict[str, Any]]):
     pass
 
 
@@ -81,14 +77,12 @@ class SessionContinueResponse(BaseModel):
     context_id: Optional[str] = Field(default=None, alias="contextId")
     provider: Optional[str] = None
     external_session_id: Optional[str] = Field(default=None, alias="externalSessionId")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}
 
 
 __all__ = [
     "SessionContinueResponse",
-    "SessionListMeta",
     "SessionListResponse",
     "SessionMessageItem",
     "SessionMessagesListResponse",

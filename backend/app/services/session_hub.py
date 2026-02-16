@@ -58,11 +58,6 @@ def _session_order_key(item: dict[str, Any]) -> tuple[float, float, str]:
 
 
 class SessionHubService:
-    _LOCAL_SESSION_SOURCES: set[ResolvedSource] = {
-        "manual",
-        "scheduled",
-    }
-
     async def list_sessions(
         self,
         db: AsyncSession,
@@ -262,7 +257,6 @@ class SessionHubService:
                     provider=provider,
                     external_session_id=external_session_id,
                     context_id=context_id if isinstance(context_id, str) else None,
-                    metadata={},
                 ),
                 False,
             )
@@ -312,10 +306,6 @@ class SessionHubService:
             )
             conversation_id = bind_result.conversation_id
             db_mutated = bind_result.mutated
-        continue_metadata = _build_continue_invoke_metadata(
-            provider=resolved_provider,
-            external_session_id=resolved_external_session_id,
-        )
         return (
             _build_continue_response(
                 conversation_id=conversation_id or resolved_conversation_id,
@@ -323,7 +313,6 @@ class SessionHubService:
                 provider=resolved_provider,
                 external_session_id=resolved_external_session_id,
                 context_id=context_id if isinstance(context_id, str) else None,
-                metadata=continue_metadata,
             ),
             db_mutated,
         )
@@ -553,33 +542,6 @@ class SessionHubService:
                 target_session = rebound_session
         target_session.last_active_at = utc_now()
 
-    async def _get_local_session(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        local_session_id: UUID,
-        source: Literal["manual", "scheduled"],
-    ) -> ConversationThread:
-        expected_source = (
-            ConversationThread.SOURCE_MANUAL
-            if source == "manual"
-            else ConversationThread.SOURCE_SCHEDULED
-        )
-        session = await db.scalar(
-            select(ConversationThread).where(
-                and_(
-                    ConversationThread.id == local_session_id,
-                    ConversationThread.user_id == user_id,
-                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
-                    ConversationThread.source == expected_source,
-                )
-            )
-        )
-        if session is None:
-            raise ValueError("session_not_found")
-        return session
-
     async def _get_local_session_by_id(
         self,
         db: AsyncSession,
@@ -714,7 +676,6 @@ def _build_continue_response(
     provider: Optional[str],
     external_session_id: Optional[str],
     context_id: Optional[str],
-    metadata: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "conversationId": str(conversation_id),
@@ -722,23 +683,7 @@ def _build_continue_response(
         "provider": provider,
         "externalSessionId": external_session_id,
         "contextId": context_id,
-        "metadata": metadata,
     }
-
-
-def _build_continue_invoke_metadata(
-    *,
-    provider: str | None,
-    external_session_id: str | None,
-) -> dict[str, Any]:
-    if normalize_provider(provider) == "opencode" and isinstance(
-        external_session_id, str
-    ):
-        normalized = external_session_id.strip()
-        if normalized:
-            # Upstream opencode-a2a-serve contract requires this key explicitly.
-            return {"opencode_session_id": normalized}
-    return {}
 
 
 def _resolve_session_source(

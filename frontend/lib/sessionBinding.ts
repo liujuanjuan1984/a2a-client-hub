@@ -6,9 +6,7 @@ export const buildContinueBindingPayload = (
 ) => ({
   agentId,
   source: binding.source,
-  conversationId: binding.conversationId ?? undefined,
   provider: binding.provider ?? undefined,
   externalSessionId: binding.externalSessionId ?? undefined,
   contextId: binding.contextId ?? undefined,
-  metadata: binding.metadata,
 });

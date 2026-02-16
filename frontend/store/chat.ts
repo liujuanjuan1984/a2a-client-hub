@@ -50,7 +50,6 @@ type ChatState = {
     payload: {
       agentId: string;
       source?: "manual" | "scheduled" | "opencode" | null;
-      conversationId?: string | null;
       provider?: string | null;
       externalSessionId?: string | null;
       contextId?: string | null;
@@ -101,10 +100,6 @@ export const useChatStore = create<ChatState>()(
                 payload.source === undefined
                   ? (state.sessions[conversationId]?.source ?? null)
                   : payload.source,
-              conversationId:
-                payload.conversationId === undefined
-                  ? (state.sessions[conversationId]?.conversationId ?? null)
-                  : payload.conversationId,
               externalSessionRef: mergeExternalSessionRef(
                 state.sessions[conversationId]?.externalSessionRef,
                 payload,
@@ -113,7 +108,10 @@ export const useChatStore = create<ChatState>()(
                 payload.contextId === undefined
                   ? (state.sessions[conversationId]?.contextId ?? null)
                   : payload.contextId,
-              metadata: payload.metadata ?? {},
+              metadata:
+                payload.metadata ??
+                state.sessions[conversationId]?.metadata ??
+                {},
               lastActiveAt: new Date().toISOString(),
             },
           },
@@ -248,9 +246,7 @@ export const useChatStore = create<ChatState>()(
             const current =
               get().sessions[conversationId] ?? createAgentSession(agentId);
             patchSession({
-              conversationId: binding.conversationId ?? current.conversationId,
               contextId: binding.contextId ?? current.contextId,
-              metadata: binding.metadata ?? current.metadata,
               source: binding.source ?? current.source ?? null,
               externalSessionRef: mergeExternalSessionRef(
                 current.externalSessionRef,

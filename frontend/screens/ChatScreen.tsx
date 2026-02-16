@@ -756,16 +756,6 @@ export function ChatScreen({
                   </Text>
                 </View>
               ) : null}
-              {session?.conversationId ? (
-                <View className="flex-1 min-w-[45%]">
-                  <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
-                    Conversation ID
-                  </Text>
-                  <Text className="mt-1 text-xs text-white" numberOfLines={1}>
-                    {session.conversationId}
-                  </Text>
-                </View>
-              ) : null}
             </View>
 
             <View className="h-[1px] bg-slate-800" />

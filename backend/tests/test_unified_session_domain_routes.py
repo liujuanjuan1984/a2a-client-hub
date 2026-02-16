@@ -195,7 +195,6 @@ async def test_continue_includes_opencode_session_metadata(
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] == "ses_upstream_1"
         assert payload["contextId"] == "ctx-bound-1"
-        assert payload["metadata"] == {"opencode_session_id": "ses_upstream_1"}
 
 
 async def test_invalid_conversation_id_returns_400(
@@ -393,4 +392,3 @@ async def test_continue_keeps_external_session_id_empty_when_missing(
         assert payload["provider"] == "opencode"
         assert payload["externalSessionId"] is None
         assert payload["contextId"] == "ses_context_only_1"
-        assert payload["metadata"] == {}

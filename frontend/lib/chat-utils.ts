@@ -8,7 +8,6 @@ export type ExternalSessionRef = {
 export type AgentSession = {
   agentId: string;
   source?: "manual" | "scheduled" | "opencode" | null;
-  conversationId?: string | null;
   contextId: string | null;
   runtimeStatus?: string | null;
   streamState?: "idle" | "streaming" | "rebinding" | "recoverable" | "error";
@@ -37,7 +36,6 @@ export const createAgentSession = (agentId: string): AgentSession => ({
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
   metadata: {},
-  conversationId: null,
   externalSessionRef: null,
   lastActiveAt: new Date().toISOString(),
 });
@@ -106,7 +104,6 @@ const normalizeSessionForPersistence = (
 ): AgentSession => ({
   agentId: session.agentId,
   source: session.source ?? null,
-  conversationId: session.conversationId ?? null,
   contextId: session.contextId ?? null,
   runtimeStatus: null,
   streamState: "idle",
