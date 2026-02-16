@@ -57,6 +57,7 @@ export function AdminHubAgentAllowlistScreen({
   const [allowlistEmail, setAllowlistEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const initializedRef = useRef(false);
+  const draftEntryCounterRef = useRef(0);
 
   const agentQuery = useQuery({
     queryKey: queryKeys.admin.hubAgent(agentId),
@@ -125,9 +126,14 @@ export function AdminHubAgentAllowlistScreen({
       toast.error("Validation failed", "This email is already in allowlist.");
       return;
     }
+    draftEntryCounterRef.current += 1;
+    const idSeed =
+      typeof globalThis.crypto?.randomUUID === "function"
+        ? globalThis.crypto.randomUUID()
+        : `${Date.now()}-${draftEntryCounterRef.current}`;
     setDraftEntries((current) => [
       ...current,
-      buildNewAllowlistDraftEntry(trimmed, `${Date.now()}`),
+      buildNewAllowlistDraftEntry(trimmed, idSeed),
     ]);
     setAllowlistEmail("");
   }, [allowlistEmail, draftEntries]);
