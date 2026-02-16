@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from app.db.models.base import SCHEMA_NAME, Base, TimestampMixin, UserOwnedMixin
 from app.utils.timezone_util import utc_now
@@ -21,6 +21,7 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
     STATUS_ACTIVE: ClassVar[str] = "active"
     STATUS_MERGED: ClassVar[str] = "merged"
     STATUS_ARCHIVED: ClassVar[str] = "archived"
+    TITLE_MAX_LENGTH: ClassVar[int] = 255
 
     agent_id = Column(
         UUID(as_uuid=True),
@@ -61,6 +62,18 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
 
     bindings = relationship("ConversationBinding", back_populates="conversation")
     messages = relationship("AgentMessage", back_populates="conversation")
+
+    @staticmethod
+    def normalize_title(value: str | None) -> str:
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                return normalized[: ConversationThread.TITLE_MAX_LENGTH]
+        return "Session"
+
+    @validates("title")
+    def _validate_title(self, _: str, value: str | None) -> str:
+        return self.normalize_title(value)
 
 
 __all__ = ["ConversationThread"]
