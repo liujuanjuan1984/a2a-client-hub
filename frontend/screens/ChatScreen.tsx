@@ -438,6 +438,13 @@ export function ChatScreen({
     if (!activeAgentId || !conversationId || !agent) {
       return;
     }
+    if (pendingInterrupt) {
+      toast.info(
+        "Action required",
+        "Please resolve the interactive action card before sending a new message.",
+      );
+      return;
+    }
     if (!input.trim()) {
       return;
     }
@@ -815,6 +822,7 @@ export function ChatScreen({
             <Button
               size="sm"
               label="Allow once"
+              testID="interrupt-permission-once"
               loading={interruptAction === "permission:once"}
               disabled={Boolean(interruptAction)}
               onPress={() => handlePermissionReply("once")}
@@ -822,6 +830,7 @@ export function ChatScreen({
             <Button
               size="sm"
               label="Always allow"
+              testID="interrupt-permission-always"
               variant="secondary"
               loading={interruptAction === "permission:always"}
               disabled={Boolean(interruptAction)}
@@ -830,6 +839,7 @@ export function ChatScreen({
             <Button
               size="sm"
               label="Reject"
+              testID="interrupt-permission-reject"
               variant="danger"
               loading={interruptAction === "permission:reject"}
               disabled={Boolean(interruptAction)}
@@ -862,6 +872,7 @@ export function ChatScreen({
                 {question.question}
               </Text>
               <TextInput
+                testID={`interrupt-question-input-${index}`}
                 className="mt-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 value={answer}
                 editable={!interruptAction}
@@ -899,6 +910,7 @@ export function ChatScreen({
           <Button
             size="sm"
             label="Submit answers"
+            testID="interrupt-question-submit"
             loading={interruptAction === "question:reply"}
             disabled={Boolean(interruptAction)}
             onPress={handleQuestionReply}
@@ -906,6 +918,7 @@ export function ChatScreen({
           <Button
             size="sm"
             label="Reject"
+            testID="interrupt-question-reject"
             variant="danger"
             loading={interruptAction === "question:reject"}
             disabled={Boolean(interruptAction)}
@@ -1200,6 +1213,15 @@ export function ChatScreen({
       />
 
       <View className="relative border-t border-slate-800 px-6 py-4">
+        {pendingInterrupt ? (
+          <View className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+            <Text className="text-xs text-amber-200">
+              Agent is waiting for authorization/input. Resolve the action card
+              first.
+            </Text>
+          </View>
+        ) : null}
+
         {showPresets ? (
           <View className="absolute bottom-20 left-6 right-6 z-50 rounded-2xl border border-slate-800 bg-slate-900 p-2 shadow-2xl">
             <View className="max-h-64 overflow-hidden">
@@ -1289,7 +1311,12 @@ export function ChatScreen({
             blurOnSubmit={false}
             returnKeyType="default"
           />
-          <Button label="Send" onPress={handleSend} disabled={!input.trim()} />
+          <Button
+            label="Send"
+            testID="chat-send-button"
+            onPress={handleSend}
+            disabled={!input.trim() || Boolean(pendingInterrupt)}
+          />
         </View>
       </View>
     </KeyboardAvoidingView>
