@@ -84,6 +84,8 @@ def test_resolve_extracts_methods_pagination_and_interface() -> None:
     assert resolved.business_code_map[-32001] == "session_not_found"
     assert resolved.business_code_map[-32005] == "upstream_payload_error"
     assert resolved.session_binding_metadata_key == "opencode_session_id"
+    assert resolved.pagination.params == ("page", "size")
+    assert resolved.pagination.supports_offset is False
 
 
 def test_resolve_falls_back_to_card_url_when_interface_missing() -> None:
@@ -155,6 +157,36 @@ def test_resolve_accepts_limit_mode_with_default_limit_keys() -> None:
     assert resolved.pagination.mode == "limit"
     assert resolved.pagination.default_size == 20
     assert resolved.pagination.max_size == 100
+    assert resolved.pagination.params == ("limit",)
+    assert resolved.pagination.supports_offset is False
+
+
+def test_resolve_accepts_limit_mode_with_offset_param() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "methods": {
+                    "list_sessions": "opencode.sessions.list",
+                    "get_session_messages": "opencode.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "limit",
+                    "default_limit": 20,
+                    "max_limit": 100,
+                    "params": ["limit", "offset"],
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {"raw": True, "items": True, "pagination": True},
+            },
+        }
+    ]
+    card = AgentCard.model_validate(payload)
+    resolved = resolve_opencode_session_query(card)
+    assert resolved.pagination.params == ("limit", "offset")
+    assert resolved.pagination.supports_offset is True
 
 
 def test_resolve_rejects_invalid_session_binding_metadata_key() -> None:

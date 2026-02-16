@@ -16,7 +16,11 @@ from app.integrations.a2a_extensions.types import (
 )
 
 
-def _resolved_extension(*, metadata_key: str | None) -> ResolvedExtension:
+def _resolved_extension(
+    *,
+    metadata_key: str | None,
+    supports_offset: bool = False,
+) -> ResolvedExtension:
     return ResolvedExtension(
         uri="urn:opencode-a2a:opencode-session-query/v1",
         required=False,
@@ -27,7 +31,13 @@ def _resolved_extension(*, metadata_key: str | None) -> ResolvedExtension:
             "list_sessions": "opencode.sessions.list",
             "get_session_messages": "opencode.sessions.messages.list",
         },
-        pagination=PageSizePagination(mode="limit", default_size=20, max_size=100),
+        pagination=PageSizePagination(
+            mode="limit",
+            default_size=20,
+            max_size=100,
+            params=("limit", "offset") if supports_offset else ("limit",),
+            supports_offset=supports_offset,
+        ),
         business_code_map={
             -32001: "session_not_found",
             -32005: "upstream_payload_error",
@@ -60,7 +70,7 @@ async def test_continue_session_uses_dynamic_binding_metadata_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
-    ext = _resolved_extension(metadata_key="external_session_key")
+    ext = _resolved_extension(metadata_key="external_session_key", supports_offset=True)
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
@@ -109,3 +119,42 @@ async def test_continue_session_requires_binding_metadata_key(
 
     with pytest.raises(A2AExtensionContractError):
         await service.opencode_continue_session(runtime=runtime, session_id="ses_123")
+
+
+@pytest.mark.asyncio
+async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(
+        metadata_key="external_session_key", supports_offset=False
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_resolve(_runtime):
+        return ext, "https://example.com/jsonrpc"
+
+    async def _never_invoke(**_kwargs):
+        raise AssertionError("Upstream call should be short-circuited")
+
+    monkeypatch.setattr(service, "_resolve_opencode_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_invoke_opencode_method", _never_invoke)
+
+    result = await service.opencode_get_session_messages(
+        runtime=runtime,
+        session_id="ses_123",
+        page=2,
+        size=20,
+        query=None,
+    )
+
+    assert result.success is True
+    assert result.result == {
+        "raw": [],
+        "items": [],
+        "pagination": {"page": 2, "size": 20},
+    }
+    assert result.meta["session_id"] == "ses_123"
+    assert result.meta["short_circuit_reason"] == "limit_without_offset"

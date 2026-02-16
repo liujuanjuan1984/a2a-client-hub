@@ -92,6 +92,39 @@ def _normalize_error_token(name: str, *, code_value: int) -> str:
     return f"business_code_{abs(code_value)}"
 
 
+def _parse_pagination_params(
+    pagination: Dict[str, Any], *, mode: str
+) -> tuple[tuple[str, ...], bool]:
+    raw_params = pagination.get("params")
+    params: list[str] = []
+    if isinstance(raw_params, list):
+        for item in raw_params:
+            if not isinstance(item, str):
+                continue
+            token = item.strip().lower()
+            if not token:
+                continue
+            if token in params:
+                continue
+            params.append(token)
+
+    if not params:
+        params = ["page", "size"] if mode == "page_size" else ["limit"]
+
+    if mode == "page_size":
+        if "page" not in params or "size" not in params:
+            raise A2AExtensionContractError(
+                "Extension pagination.params must include page and size for mode 'page_size'"
+            )
+        return tuple(params), False
+
+    if "limit" not in params:
+        raise A2AExtensionContractError(
+            "Extension pagination.params must include limit for mode 'limit'"
+        )
+    return tuple(params), "offset" in params
+
+
 def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
     """Resolve the OpenCode session query extension from an Agent Card."""
 
@@ -154,6 +187,7 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
         )
     if default_size <= 0 or max_size <= 0 or default_size > max_size:
         raise A2AExtensionContractError("Extension pagination sizes are invalid")
+    pagination_params, supports_offset = _parse_pagination_params(pagination, mode=mode)
 
     errors = _as_dict(params.get("errors"))
     business_codes = _as_dict(errors.get("business_codes"))
@@ -200,7 +234,11 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
             "get_session_messages": get_messages_method,
         },
         pagination=PageSizePagination(
-            mode=mode, default_size=default_size, max_size=max_size
+            mode=mode,
+            default_size=default_size,
+            max_size=max_size,
+            params=pagination_params,
+            supports_offset=supports_offset,
         ),
         business_code_map=code_to_error,
         session_binding_metadata_key=session_binding_metadata_key,

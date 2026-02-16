@@ -11,6 +11,8 @@ class PageSizePagination:
     mode: str
     default_size: int
     max_size: int
+    params: tuple[str, ...] = ()
+    supports_offset: bool = False
 
 
 @dataclass(frozen=True, slots=True)

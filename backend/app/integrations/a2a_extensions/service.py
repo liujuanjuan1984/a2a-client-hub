@@ -216,12 +216,42 @@ class A2AExtensionsService:
         mode: str,
         page: int,
         size: int,
+        supports_offset: bool,
     ) -> Dict[str, int]:
         if mode == "page_size":
             return {"page": page, "size": size}
         if mode == "limit":
-            return {"offset": (page - 1) * size, "limit": size}
+            if supports_offset:
+                return {"offset": (page - 1) * size, "limit": size}
+            if page > 1:
+                raise ValueError(
+                    "limit pagination without offset does not support page > 1"
+                )
+            return {"limit": size}
         raise ValueError(f"unsupported pagination mode: {mode}")
+
+    @staticmethod
+    def _build_call_meta(
+        *,
+        ext: ResolvedExtension,
+        page: int,
+        size: int,
+        meta_extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        meta = {
+            "extension_uri": ext.uri,
+            "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
+            "pagination_mode": ext.pagination.mode,
+            "pagination_params": list(ext.pagination.params),
+            "pagination_supports_offset": ext.pagination.supports_offset,
+            "page": page,
+            "size": size,
+            "max_size": ext.pagination.max_size,
+            "default_size": ext.pagination.default_size,
+        }
+        if meta_extra:
+            meta.update(meta_extra)
+        return meta
 
     async def _resolve_opencode_extension(
         self, runtime: A2ARuntime
@@ -289,17 +319,12 @@ class A2AExtensionsService:
                 upstream_error={"message": str(exc), "type": type(exc).__name__},
             ) from exc
 
-        meta = {
-            "extension_uri": ext.uri,
-            "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
-            "pagination_mode": ext.pagination.mode,
-            "page": page,
-            "size": size,
-            "max_size": ext.pagination.max_size,
-            "default_size": ext.pagination.default_size,
-        }
-        if meta_extra:
-            meta.update(meta_extra)
+        meta = self._build_call_meta(
+            ext=ext,
+            page=page,
+            size=size,
+            meta_extra=meta_extra,
+        )
 
         if resp.ok:
             normalized = self._normalize_envelope(
@@ -344,11 +369,31 @@ class A2AExtensionsService:
             page=page,
             size=size,
         )
+        if (
+            ext.pagination.mode == "limit"
+            and resolved_page > 1
+            and not ext.pagination.supports_offset
+        ):
+            return ExtensionCallResult(
+                success=True,
+                result={
+                    "raw": [],
+                    "items": [],
+                    "pagination": {"page": resolved_page, "size": resolved_size},
+                },
+                meta=self._build_call_meta(
+                    ext=ext,
+                    page=resolved_page,
+                    size=resolved_size,
+                    meta_extra={"short_circuit_reason": "limit_without_offset"},
+                ),
+            )
 
         params: Dict[str, Any] = self._build_pagination_params(
             mode=ext.pagination.mode,
             page=resolved_page,
             size=resolved_size,
+            supports_offset=ext.pagination.supports_offset,
         )
         if query is not None:
             params["query"] = query
@@ -384,6 +429,28 @@ class A2AExtensionsService:
             page=page,
             size=size,
         )
+        if (
+            ext.pagination.mode == "limit"
+            and resolved_page > 1
+            and not ext.pagination.supports_offset
+        ):
+            return ExtensionCallResult(
+                success=True,
+                result={
+                    "raw": [],
+                    "items": [],
+                    "pagination": {"page": resolved_page, "size": resolved_size},
+                },
+                meta=self._build_call_meta(
+                    ext=ext,
+                    page=resolved_page,
+                    size=resolved_size,
+                    meta_extra={
+                        "session_id": resolved_session_id,
+                        "short_circuit_reason": "limit_without_offset",
+                    },
+                ),
+            )
 
         params: Dict[str, Any] = {
             "session_id": resolved_session_id,
@@ -391,6 +458,7 @@ class A2AExtensionsService:
                 mode=ext.pagination.mode,
                 page=resolved_page,
                 size=resolved_size,
+                supports_offset=ext.pagination.supports_offset,
             ),
         }
         if query is not None:
@@ -444,6 +512,7 @@ class A2AExtensionsService:
                     mode=ext.pagination.mode,
                     page=1,
                     size=1,
+                    supports_offset=ext.pagination.supports_offset,
                 ),
             },
             page=1,
