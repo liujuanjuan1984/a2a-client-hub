@@ -54,30 +54,15 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
   const nestedOpencodeSessionId = pickString(opencodeMetadata, [
     "session_id",
     "sessionId",
-    "external_session_id",
-    "externalSessionId",
-    "opencode_session_id",
   ]);
   const externalSessionId =
-    pickString(data, [
-      "externalSessionId",
-      "external_session_id",
-      "opencode_session_id",
-    ]) ??
-    pickString(metadata, [
-      "externalSessionId",
-      "external_session_id",
-      "opencode_session_id",
-    ]) ??
+    pickString(data, ["externalSessionId"]) ??
+    pickString(metadata, ["externalSessionId"]) ??
     nestedOpencodeSessionId ??
     undefined;
   const rawProvider =
-    pickString(data, ["provider", "session_provider", "external_provider"]) ??
-    pickString(metadata, [
-      "provider",
-      "session_provider",
-      "external_provider",
-    ]) ??
+    pickString(data, ["provider"]) ??
+    pickString(metadata, ["provider"]) ??
     (nestedOpencodeSessionId ? "opencode" : undefined);
   const normalizedProvider = rawProvider?.trim().toLowerCase();
   const provider =
