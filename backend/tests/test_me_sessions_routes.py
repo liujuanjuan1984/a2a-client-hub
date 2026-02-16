@@ -9,7 +9,6 @@ from app.api.routers import me_sessions
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
-from app.db.models.agent_session import AgentSession
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
@@ -52,27 +51,18 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
     )
 
     now = utc_now()
-    session = AgentSession(
+    session = ConversationThread(
         id=uuid4(),
         user_id=user.id,
-        name="[Scheduled] Nightly",
-        module_key="a2a",
-        session_type=AgentSession.TYPE_SCHEDULED,
-        last_activity_at=now,
+        source=ConversationThread.SOURCE_SCHEDULED,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="[Scheduled] Nightly",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
     )
     async_db_session.add(session)
     await async_db_session.flush()
-    async_db_session.add(
-        ConversationThread(
-            id=session.id,
-            user_id=user.id,
-            agent_id=agent.id,
-            agent_source="personal",
-            title="[Scheduled] Nightly",
-            status=ConversationThread.STATUS_ACTIVE,
-            last_active_at=now,
-        )
-    )
 
     task.session_id = session.id
     execution = A2AScheduleExecution(

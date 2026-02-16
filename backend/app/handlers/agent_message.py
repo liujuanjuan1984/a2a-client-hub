@@ -7,11 +7,9 @@ from uuid import UUID
 
 from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
 from app.db.models.agent_message import AgentMessage
-from app.db.models.agent_session import AgentSession
 from app.db.transaction import commit_safely
 
 logger = get_logger(__name__)
@@ -28,7 +26,6 @@ async def create_agent_message(
     content: str,
     sender: str,
     session_id: Optional[UUID] = None,
-    session: Optional[AgentSession] = None,
     sync_to_cardbox: bool = True,
     **kwargs,
 ) -> AgentMessage:
@@ -40,7 +37,7 @@ async def create_agent_message(
             content=content,
             sender=sender,
             user_id=user_id,
-            session_id=session_id or (session.id if session else None),
+            session_id=session_id,
             message_type=message_type,
             message_metadata=metadata,
             **kwargs,
@@ -71,11 +68,7 @@ async def list_agent_messages(
         else_=1,
     )
 
-    stmt = (
-        select(AgentMessage)
-        .options(selectinload(AgentMessage.session))
-        .where(AgentMessage.user_id == user_id)
-    )
+    stmt = select(AgentMessage).where(AgentMessage.user_id == user_id)
     if session_id:
         stmt = stmt.where(AgentMessage.session_id == session_id)
     if conversation_id:
@@ -102,11 +95,7 @@ async def list_recent_agent_messages(
     session_id: Optional[UUID] = None,
     conversation_id: Optional[UUID] = None,
 ) -> List[AgentMessage]:
-    stmt = (
-        select(AgentMessage)
-        .options(selectinload(AgentMessage.session))
-        .where(AgentMessage.user_id == user_id)
-    )
+    stmt = select(AgentMessage).where(AgentMessage.user_id == user_id)
     if session_id:
         stmt = stmt.where(AgentMessage.session_id == session_id)
     if conversation_id:
@@ -168,11 +157,7 @@ async def get_conversation_history(
     session_id: Optional[UUID] = None,
     conversation_id: Optional[UUID] = None,
 ) -> List[AgentMessage]:
-    stmt = (
-        select(AgentMessage)
-        .options(selectinload(AgentMessage.session))
-        .where(AgentMessage.user_id == user_id)
-    )
+    stmt = select(AgentMessage).where(AgentMessage.user_id == user_id)
     if session_id:
         stmt = stmt.where(AgentMessage.session_id == session_id)
     if conversation_id:

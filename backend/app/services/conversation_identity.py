@@ -509,6 +509,7 @@ class ConversationIdentityService:
                 if resolved_conversation_id is None:
                     thread = ConversationThread(
                         user_id=user_id,
+                        source=ConversationThread.SOURCE_OPENCODE,
                         agent_id=agent_id,
                         agent_source=agent_source,
                         title=title or "Session",

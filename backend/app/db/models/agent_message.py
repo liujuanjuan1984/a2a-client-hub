@@ -27,9 +27,9 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
     # id comes from TimestampMixin as UUID v4
     session_id = Column(
         UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.agent_sessions.id", ondelete="SET NULL"),
+        ForeignKey(f"{SCHEMA_NAME}.conversation_threads.id", ondelete="SET NULL"),
         nullable=True,
-        comment="Session identifier for grouping related messages",
+        comment="Local conversation identifier for grouping related messages",
         index=True,
     )
     conversation_id = Column(
@@ -80,8 +80,11 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
         String(64), nullable=True, comment="Identifier of the synced Cardbox card"
     )
 
-    session = relationship("AgentSession", back_populates="messages")
-    conversation = relationship("ConversationThread", back_populates="messages")
+    conversation = relationship(
+        "ConversationThread",
+        back_populates="messages",
+        foreign_keys=[conversation_id],
+    )
 
     def __repr__(self) -> str:
         preview = (self.content or "")[:50]

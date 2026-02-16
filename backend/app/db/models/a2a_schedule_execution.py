@@ -68,10 +68,10 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
     )
     session_id = Column(
         UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.agent_sessions.id", ondelete="SET NULL"),
+        ForeignKey(f"{SCHEMA_NAME}.conversation_threads.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Associated scheduled session",
+        comment="Associated scheduled conversation thread",
     )
     user_message_id = Column(
         UUID(as_uuid=True),

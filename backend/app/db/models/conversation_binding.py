@@ -71,10 +71,10 @@ class ConversationBinding(Base, TimestampMixin, UserOwnedMixin):
     )
     local_session_id = Column(
         UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.agent_sessions.id", ondelete="CASCADE"),
+        ForeignKey(f"{SCHEMA_NAME}.conversation_threads.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
-        comment="Optional local origin session id for diagnostics.",
+        comment="Optional local origin conversation id for diagnostics.",
     )
     external_session_id = Column(
         String(255),
@@ -127,7 +127,11 @@ class ConversationBinding(Base, TimestampMixin, UserOwnedMixin):
         index=True,
     )
 
-    conversation = relationship("ConversationThread", back_populates="bindings")
+    conversation = relationship(
+        "ConversationThread",
+        back_populates="bindings",
+        foreign_keys=[conversation_id],
+    )
 
 
 __all__ = ["ConversationBinding"]

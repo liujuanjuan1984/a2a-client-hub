@@ -12,7 +12,7 @@ from sqlalchemy import and_, select
 from app.core.logging import get_logger
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
-from app.db.models.agent_session import AgentSession
+from app.db.models.conversation_thread import ConversationThread
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, rollback_safely
 from app.handlers import agent_message as agent_message_handler
@@ -42,38 +42,42 @@ def _execution_metadata(task: A2AScheduleTask, execution_id: str) -> dict[str, o
 
 async def _ensure_task_session(
     *, db, task: A2AScheduleTask, agent_name: str
-) -> AgentSession:
-    session = None
+) -> ConversationThread:
+    thread = None
     if task.session_id is not None:
-        stmt = select(AgentSession).where(
+        stmt = select(ConversationThread).where(
             and_(
-                AgentSession.id == task.session_id,
-                AgentSession.user_id == task.user_id,
-                AgentSession.deleted_at.is_(None),
+                ConversationThread.id == task.session_id,
+                ConversationThread.user_id == task.user_id,
+                ConversationThread.status == ConversationThread.STATUS_ACTIVE,
             )
         )
-        session = await db.scalar(stmt)
+        thread = await db.scalar(stmt)
 
-    if session is None:
+    if thread is None:
         now = utc_now()
-        session = AgentSession(
+        thread = ConversationThread(
             id=uuid4(),
             user_id=task.user_id,
-            name=f"[Scheduled] {task.name}",
-            last_activity_at=now,
-            module_key=agent_name,
-            session_type=AgentSession.TYPE_SCHEDULED,
+            source=ConversationThread.SOURCE_SCHEDULED,
+            agent_id=task.agent_id,
+            agent_source="personal",
+            title=f"[Scheduled] {task.name}",
+            last_active_at=now,
+            status=ConversationThread.STATUS_ACTIVE,
         )
-        db.add(session)
+        db.add(thread)
         await db.flush()
-        task.session_id = session.id
+        task.session_id = thread.id
     else:
-        if session.session_type != AgentSession.TYPE_SCHEDULED:
-            session.session_type = AgentSession.TYPE_SCHEDULED
+        thread.source = ConversationThread.SOURCE_SCHEDULED
+        thread.agent_id = task.agent_id
+        thread.agent_source = "personal"
         if agent_name:
-            session.module_key = agent_name
+            thread.title = f"[Scheduled] {task.name}"
+        thread.last_active_at = utc_now()
 
-    return session
+    return thread
 
 
 async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
@@ -114,20 +118,20 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
             if not bool(getattr(runtime.agent, "enabled", True)):
                 raise RuntimeError("Target A2A agent is disabled")
-            session = await _ensure_task_session(
+            thread = await _ensure_task_session(
                 db=db,
                 task=task,
                 agent_name=runtime.resolved.name,
             )
-            execution.session_id = session.id
+            execution.session_id = thread.id
 
             user_message = await agent_message_handler.create_agent_message(
                 db,
                 user_id=task.user_id,
                 content=task.prompt,
                 sender="automation",
-                session_id=session.id,
-                session=session,
+                session_id=thread.id,
+                conversation_id=thread.id,
                 metadata=metadata,
             )
             execution.user_message_id = user_message.id
@@ -154,8 +158,8 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 user_id=task.user_id,
                 content=response_content,
                 sender="agent",
-                session_id=session.id,
-                session=session,
+                session_id=thread.id,
+                conversation_id=thread.id,
                 metadata=agent_metadata,
             )
             execution.agent_message_id = agent_message.id
@@ -176,7 +180,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 if success
                 else A2AScheduleTask.STATUS_FAILED
             )
-            session.touch()
+            thread.last_active_at = utc_now()
 
             await commit_safely(db)
 

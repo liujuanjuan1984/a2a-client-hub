@@ -54,10 +54,10 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
     )
     session_id = Column(
         UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.agent_sessions.id", ondelete="SET NULL"),
+        ForeignKey(f"{SCHEMA_NAME}.conversation_threads.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="Scheduled session used to store recurring conversation messages",
+        comment="Scheduled conversation thread used to store recurring messages",
     )
     prompt = Column(
         Text,

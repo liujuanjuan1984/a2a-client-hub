@@ -9,7 +9,6 @@ from app.api.routers import me_sessions
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
-from app.db.models.agent_session import AgentSession
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
@@ -41,46 +40,28 @@ async def test_conversation_routes_use_conversation_id_only(
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="conv-only")
 
     now = utc_now()
-    manual_session = AgentSession(
+    manual_session = ConversationThread(
         id=uuid4(),
         user_id=user.id,
-        name="Manual Thread",
-        module_key=str(agent.id),
-        session_type=AgentSession.TYPE_CHAT,
-        last_activity_at=now,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Manual Thread",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
     )
-    scheduled_session = AgentSession(
+    scheduled_session = ConversationThread(
         id=uuid4(),
         user_id=user.id,
-        name="Scheduled Thread",
-        module_key="a2a",
-        session_type=AgentSession.TYPE_SCHEDULED,
-        last_activity_at=now - timedelta(minutes=10),
+        source=ConversationThread.SOURCE_SCHEDULED,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Scheduled Thread",
+        last_active_at=now - timedelta(minutes=10),
+        status=ConversationThread.STATUS_ACTIVE,
     )
     async_db_session.add(manual_session)
     async_db_session.add(scheduled_session)
-    async_db_session.add(
-        ConversationThread(
-            id=manual_session.id,
-            user_id=user.id,
-            agent_id=agent.id,
-            agent_source="personal",
-            title="Manual Thread",
-            status=ConversationThread.STATUS_ACTIVE,
-            last_active_at=now,
-        )
-    )
-    async_db_session.add(
-        ConversationThread(
-            id=scheduled_session.id,
-            user_id=user.id,
-            agent_id=agent.id,
-            agent_source="personal",
-            title="Scheduled Thread",
-            status=ConversationThread.STATUS_ACTIVE,
-            last_active_at=now - timedelta(minutes=10),
-        )
-    )
     await async_db_session.flush()
 
     task = await a2a_schedule_service.create_task(
@@ -173,26 +154,17 @@ async def test_continue_includes_opencode_session_metadata(
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="binding")
 
-    session = AgentSession(
+    session = ConversationThread(
         id=uuid4(),
         user_id=user.id,
-        name="Manual Thread",
-        module_key=str(agent.id),
-        session_type=AgentSession.TYPE_CHAT,
-        last_activity_at=utc_now(),
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Manual Thread",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
     )
     async_db_session.add(session)
-    async_db_session.add(
-        ConversationThread(
-            id=session.id,
-            user_id=user.id,
-            agent_id=agent.id,
-            agent_source="personal",
-            title="Manual Thread",
-            status=ConversationThread.STATUS_ACTIVE,
-            last_active_at=utc_now(),
-        )
-    )
     await async_db_session.flush()
 
     async_db_session.add(

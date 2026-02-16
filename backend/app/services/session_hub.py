@@ -14,14 +14,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.a2a_schedule_execution import A2AScheduleExecution
-from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_message import AgentMessage
-from app.db.models.agent_session import AgentSession
 from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message as agent_message_handler
 from app.integrations.a2a_extensions import get_a2a_extensions_service
@@ -237,23 +234,27 @@ class SessionHubService:
         source: Optional[SessionSource],
     ) -> list[dict[str, Any]]:
         stmt = (
-            select(AgentSession)
+            select(ConversationThread)
             .where(
                 and_(
-                    AgentSession.user_id == user_id,
-                    AgentSession.deleted_at.is_(None),
-                    AgentSession.session_type.in_(
-                        [AgentSession.TYPE_CHAT, AgentSession.TYPE_SCHEDULED]
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    ConversationThread.source.in_(
+                        [
+                            ConversationThread.SOURCE_MANUAL,
+                            ConversationThread.SOURCE_SCHEDULED,
+                        ]
                     ),
                 )
             )
             .order_by(
-                AgentSession.last_activity_at.desc(), AgentSession.created_at.desc()
+                ConversationThread.last_active_at.desc(),
+                ConversationThread.created_at.desc(),
             )
         )
-        sessions = list((await db.execute(stmt)).scalars().all())
+        threads = list((await db.execute(stmt)).scalars().all())
 
-        session_ids = [session.id for session in sessions]
+        session_ids = [thread.id for thread in threads]
         latest_metadata_map = await self._latest_local_message_metadata_map(
             db, user_id=user_id, local_session_ids=session_ids
         )
@@ -274,7 +275,7 @@ class SessionHubService:
             context_id
             for context_id in (
                 extract_context_id(latest_metadata_map.get(session.id, {}))
-                for session in sessions
+                for session in threads
             )
             if isinstance(context_id, str) and context_id
         ]
@@ -285,77 +286,66 @@ class SessionHubService:
                 context_ids=context_ids,
             )
         )
-
-        scheduled_agent_map = await self._scheduled_session_agent_map(
-            db, user_id=user_id
-        )
         items: list[dict[str, Any]] = []
 
-        for session in sessions:
-            latest_metadata = latest_metadata_map.get(session.id, {})
+        for thread in threads:
+            latest_metadata = latest_metadata_map.get(thread.id, {})
             (
                 metadata_provider,
                 metadata_external_id,
             ) = extract_provider_and_external_session_id(latest_metadata)
             metadata_context_id = extract_context_id(latest_metadata)
-            binding_locator = binding_locator_map.get(session.id)
+            binding_locator = binding_locator_map.get(thread.id)
             if not metadata_provider and binding_locator:
                 metadata_provider = binding_locator.provider
             if not metadata_external_id and binding_locator:
                 metadata_external_id = binding_locator.external_session_id
             if not metadata_context_id and binding_locator:
                 metadata_context_id = binding_locator.context_id
-            conversation_id = latest_conversation_map.get(session.id)
+            conversation_id = latest_conversation_map.get(thread.id)
             if conversation_id is None:
-                conversation_id = binding_conversation_map.get(session.id)
+                conversation_id = binding_conversation_map.get(thread.id)
             if conversation_id is None and binding_locator:
                 conversation_id = binding_locator.conversation_id
             if conversation_id is None and metadata_context_id:
                 conversation_id = context_conversation_map.get(metadata_context_id)
 
-            if session.session_type == AgentSession.TYPE_CHAT:
+            if thread.source == ConversationThread.SOURCE_MANUAL:
                 if source not in {None, "manual"}:
                     continue
-                agent_id: UUID | None = None
-                if isinstance(session.module_key, str):
-                    try:
-                        agent_id = UUID(session.module_key.strip())
-                    except (ValueError, TypeError):
-                        agent_id = None
                 items.append(
                     {
-                        "conversationId": str(conversation_id or session.id),
+                        "conversationId": str(conversation_id or thread.id),
                         "source": "manual",
-                        "source_session_id": str(session.id),
-                        "agent_id": agent_id,
-                        "agent_source": None,
+                        "source_session_id": str(thread.id),
+                        "agent_id": thread.agent_id,
+                        "agent_source": thread.agent_source,
                         "provider": metadata_provider,
                         "external_session_id": metadata_external_id,
                         "context_id": metadata_context_id,
-                        "title": session.name or "Manual Session",
-                        "last_active_at": session.last_activity_at,
-                        "created_at": session.created_at,
+                        "title": thread.title or "Manual Session",
+                        "last_active_at": thread.last_active_at,
+                        "created_at": thread.created_at,
                     }
                 )
                 continue
 
-            if session.session_type == AgentSession.TYPE_SCHEDULED:
+            if thread.source == ConversationThread.SOURCE_SCHEDULED:
                 if source not in {None, "scheduled"}:
                     continue
-                scheduled_meta = scheduled_agent_map.get(session.id, {})
                 items.append(
                     {
-                        "conversationId": str(conversation_id or session.id),
+                        "conversationId": str(conversation_id or thread.id),
                         "source": "scheduled",
-                        "source_session_id": str(session.id),
-                        "agent_id": scheduled_meta.get("agent_id"),
-                        "agent_source": "personal",
+                        "source_session_id": str(thread.id),
+                        "agent_id": thread.agent_id,
+                        "agent_source": thread.agent_source or "personal",
                         "provider": metadata_provider,
                         "external_session_id": metadata_external_id,
                         "context_id": metadata_context_id,
-                        "title": session.name or "Scheduled Session",
-                        "last_active_at": session.last_activity_at,
-                        "created_at": session.created_at,
+                        "title": thread.title or "Scheduled Session",
+                        "last_active_at": thread.last_active_at,
+                        "created_at": thread.created_at,
                     }
                 )
 
@@ -508,55 +498,6 @@ class SessionHubService:
 
         merged.sort(key=_session_order_key, reverse=True)
         return merged
-
-    async def _scheduled_session_agent_map(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-    ) -> dict[UUID, dict[str, Any]]:
-        latest_exec_key = (
-            select(
-                A2AScheduleExecution.session_id.label("session_id"),
-                func.max(A2AScheduleExecution.created_at).label("max_created_at"),
-            )
-            .where(
-                and_(
-                    A2AScheduleExecution.user_id == user_id,
-                    A2AScheduleExecution.session_id.is_not(None),
-                )
-            )
-            .group_by(A2AScheduleExecution.session_id)
-            .subquery()
-        )
-        latest_exec = A2AScheduleExecution.__table__.alias("latest_exec")
-        stmt = (
-            select(
-                latest_exec.c.session_id.label("session_id"),
-                latest_exec.c.task_id.label("task_id"),
-                A2AScheduleTask.agent_id.label("agent_id"),
-                latest_exec.c.id.label("run_id"),
-            )
-            .join(
-                latest_exec_key,
-                and_(
-                    latest_exec.c.session_id == latest_exec_key.c.session_id,
-                    latest_exec.c.created_at == latest_exec_key.c.max_created_at,
-                ),
-            )
-            .outerjoin(A2AScheduleTask, A2AScheduleTask.id == latest_exec.c.task_id)
-        )
-        rows = (await db.execute(stmt)).all()
-        mapped: dict[UUID, dict[str, Any]] = {}
-        for row in rows:
-            session_id = row.session_id
-            if isinstance(session_id, UUID):
-                mapped[session_id] = {
-                    "agent_id": row.agent_id,
-                    "task_id": row.task_id,
-                    "run_id": row.run_id,
-                }
-        return mapped
 
     async def list_messages(
         self,
@@ -961,14 +902,15 @@ class SessionHubService:
                 db,
                 user_id=user_id,
                 conversation_id=resolved_conversation_id,
-                agent_id=_try_parse_uuid(session.module_key),
+                agent_id=session.agent_id,
                 agent_source=(
                     binding_locator.agent_source
                     if binding_locator
                     and binding_locator.agent_source in {"personal", "shared"}
-                    else "personal"
+                    else session.agent_source or "personal"
                 ),
-                title=session.name or "Session",
+                title=session.title or "Session",
+                source="manual",
             )
             conversation_id = resolved_conversation_id
             db_mutated = db_mutated or thread_mutated
@@ -984,7 +926,7 @@ class SessionHubService:
                         binding_locator.agent_id
                         if binding_locator
                         and isinstance(binding_locator.agent_id, UUID)
-                        else _try_parse_uuid(session.module_key)
+                        else session.agent_id
                     ),
                     agent_source=(
                         binding_locator.agent_source
@@ -993,7 +935,7 @@ class SessionHubService:
                         else "personal"
                     ),
                     context_id=context_id if isinstance(context_id, str) else None,
-                    title=session.name or "Session",
+                    title=session.title or "Session",
                     binding_metadata=metadata,
                     local_session_id=session.id,
                 )
@@ -1045,7 +987,7 @@ class SessionHubService:
         agent_id: UUID,
         agent_source: Literal["personal", "shared"],
         conversation_id: Optional[str],
-    ) -> tuple[Optional[AgentSession], Optional[SessionSource]]:
+    ) -> tuple[Optional[ConversationThread], Optional[SessionSource]]:
         if not conversation_id:
             return None, None
         try:
@@ -1068,28 +1010,32 @@ class SessionHubService:
         )
 
         session = await db.scalar(
-            select(AgentSession).where(
+            select(ConversationThread).where(
                 and_(
-                    AgentSession.id == local_session_id,
-                    AgentSession.user_id == user_id,
-                    AgentSession.deleted_at.is_(None),
+                    ConversationThread.id == local_session_id,
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
                 )
             )
         )
 
         if session is None:
             existing_session_id = await db.scalar(
-                select(AgentSession.id).where(AgentSession.id == local_session_id)
+                select(ConversationThread.id).where(
+                    ConversationThread.id == local_session_id
+                )
             )
             if existing_session_id is not None:
                 raise ValueError("invalid_conversation_id")
-            session = AgentSession(
+            session = ConversationThread(
                 id=local_session_id,
                 user_id=user_id,
-                name=f"Manual Session {str(local_session_id)[:8]}",
-                module_key=str(agent_id),
-                session_type=AgentSession.TYPE_CHAT,
-                last_activity_at=utc_now(),
+                source=ConversationThread.SOURCE_MANUAL,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                title=f"Manual Session {str(local_session_id)[:8]}",
+                last_active_at=utc_now(),
+                status=ConversationThread.STATUS_ACTIVE,
             )
             db.add(session)
             try:
@@ -1099,15 +1045,16 @@ class SessionHubService:
                 raise ValueError("invalid_conversation_id") from exc
 
         local_source: SessionSource
-        if session.session_type == AgentSession.TYPE_CHAT:
+        if session.source == ConversationThread.SOURCE_MANUAL:
             local_source = "manual"
-        elif session.session_type == AgentSession.TYPE_SCHEDULED:
+        elif session.source == ConversationThread.SOURCE_SCHEDULED:
             local_source = "scheduled"
         else:
             raise ValueError("invalid_conversation_id")
 
-        session.module_key = str(agent_id)
-        session.touch()
+        session.agent_id = agent_id
+        session.agent_source = agent_source
+        session.last_active_at = utc_now()
         if local_source == "manual":
             await self._ensure_local_conversation_thread(
                 db,
@@ -1115,7 +1062,8 @@ class SessionHubService:
                 conversation_id=session.id,
                 agent_id=agent_id,
                 agent_source=agent_source,
-                title=session.name or "Session",
+                title=session.title or "Session",
+                source="manual",
             )
             return session, "manual"
         return session, local_source
@@ -1124,7 +1072,7 @@ class SessionHubService:
         self,
         db: AsyncSession,
         *,
-        session: AgentSession,
+        session: ConversationThread,
         source: SessionSource,
         user_id: UUID,
         agent_id: UUID,
@@ -1172,7 +1120,8 @@ class SessionHubService:
                 conversation_id=session.id,
                 agent_id=agent_id,
                 agent_source=agent_source,
-                title=session.name or "Session",
+                title=session.title or "Session",
+                source="manual",
             )
             conversation_id = session.id
         if provider_from_invoke and external_session_id:
@@ -1185,7 +1134,7 @@ class SessionHubService:
                 agent_id=agent_id,
                 agent_source=agent_source,
                 context_id=context_id if isinstance(context_id, str) else None,
-                title=session.name or "Session",
+                title=session.title or "Session",
                 binding_metadata=invoke_metadata,
                 local_session_id=session.id,
             )
@@ -1218,7 +1167,6 @@ class SessionHubService:
             content=query,
             sender="user",
             session_id=session.id,
-            session=session,
             conversation_id=conversation_id,
             metadata=metadata,
         )
@@ -1243,11 +1191,10 @@ class SessionHubService:
             content=response_content,
             sender="agent",
             session_id=session.id,
-            session=session,
             conversation_id=conversation_id,
             metadata=agent_metadata,
         )
-        session.touch()
+        session.last_active_at = utc_now()
 
     async def _build_runtime(
         self,
@@ -1270,19 +1217,19 @@ class SessionHubService:
         user_id: UUID,
         local_session_id: UUID,
         source: Literal["manual", "scheduled"],
-    ) -> AgentSession:
-        expected_type = (
-            AgentSession.TYPE_CHAT
+    ) -> ConversationThread:
+        expected_source = (
+            ConversationThread.SOURCE_MANUAL
             if source == "manual"
-            else AgentSession.TYPE_SCHEDULED
+            else ConversationThread.SOURCE_SCHEDULED
         )
         session = await db.scalar(
-            select(AgentSession).where(
+            select(ConversationThread).where(
                 and_(
-                    AgentSession.id == local_session_id,
-                    AgentSession.user_id == user_id,
-                    AgentSession.session_type == expected_type,
-                    AgentSession.deleted_at.is_(None),
+                    ConversationThread.id == local_session_id,
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    ConversationThread.source == expected_source,
                 )
             )
         )
@@ -1296,13 +1243,19 @@ class SessionHubService:
         *,
         user_id: UUID,
         local_session_id: UUID,
-    ) -> AgentSession | None:
+    ) -> ConversationThread | None:
         return await db.scalar(
-            select(AgentSession).where(
+            select(ConversationThread).where(
                 and_(
-                    AgentSession.id == local_session_id,
-                    AgentSession.user_id == user_id,
-                    AgentSession.deleted_at.is_(None),
+                    ConversationThread.id == local_session_id,
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    ConversationThread.source.in_(
+                        [
+                            ConversationThread.SOURCE_MANUAL,
+                            ConversationThread.SOURCE_SCHEDULED,
+                        ]
+                    ),
                 )
             )
         )
@@ -1352,13 +1305,13 @@ class SessionHubService:
         )
         if local_session is None:
             return None
-        if local_session.session_type == AgentSession.TYPE_CHAT:
+        if local_session.source == ConversationThread.SOURCE_MANUAL:
             return ResolvedConversationTarget(
                 source="manual",
                 local_session_id=local_session.id,
                 conversation_id=conversation_id,
             )
-        if local_session.session_type == AgentSession.TYPE_SCHEDULED:
+        if local_session.source == ConversationThread.SOURCE_SCHEDULED:
             return ResolvedConversationTarget(
                 source="scheduled",
                 local_session_id=local_session.id,
@@ -1375,6 +1328,7 @@ class SessionHubService:
         agent_id: Optional[UUID],
         agent_source: Optional[Literal["personal", "shared"]],
         title: str,
+        source: Literal["manual", "scheduled"],
     ) -> bool:
         existing = await db.scalar(
             select(ConversationThread).where(
@@ -1395,6 +1349,14 @@ class SessionHubService:
             if title and existing.title != title:
                 existing.title = title
                 mutated = True
+            expected_source = (
+                ConversationThread.SOURCE_MANUAL
+                if source == "manual"
+                else ConversationThread.SOURCE_SCHEDULED
+            )
+            if existing.source != expected_source:
+                existing.source = expected_source
+                mutated = True
             existing.last_active_at = utc_now()
             return mutated
 
@@ -1404,6 +1366,11 @@ class SessionHubService:
                 user_id=user_id,
                 agent_id=agent_id,
                 agent_source=agent_source,
+                source=(
+                    ConversationThread.SOURCE_MANUAL
+                    if source == "manual"
+                    else ConversationThread.SOURCE_SCHEDULED
+                ),
                 title=title or "Session",
                 last_active_at=utc_now(),
                 status=ConversationThread.STATUS_ACTIVE,
@@ -1536,15 +1503,6 @@ def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:
         "created_at": created_at,
         "metadata": {"raw": item},
     }
-
-
-def _try_parse_uuid(value: Any) -> Optional[UUID]:
-    if not isinstance(value, str):
-        return None
-    try:
-        return UUID(value.strip())
-    except (ValueError, TypeError):
-        return None
 
 
 def _map_role(raw: Optional[str]) -> str:
