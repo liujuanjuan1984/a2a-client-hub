@@ -8,6 +8,7 @@ import {
   extractRuntimeStatusEvent,
   extractSessionMeta,
   finalizeMessageBlocks,
+  type RuntimeInterrupt,
   type StreamBlockUpdate,
   extractStreamBlockUpdate,
   projectPrimaryTextContent,
@@ -55,11 +56,84 @@ type ChatState = {
       contextId?: string | null;
     },
   ) => void;
+  clearPendingInterrupt: (conversationId: string, requestId?: string) => void;
   getSessionsByAgentId: (agentId: string) => [string, AgentSession][];
   getLatestConversationIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
   generateConversationId: () => string;
   clearAll: () => void;
+};
+
+const isInputRequiredRuntimeStatus = (state: string) => {
+  const normalized = state.trim().toLowerCase();
+  return normalized === "input-required" || normalized === "input_required";
+};
+
+const isSamePendingInterrupt = (
+  left: RuntimeInterrupt | null | undefined,
+  right: RuntimeInterrupt | null | undefined,
+) => {
+  const lhs = left ?? null;
+  const rhs = right ?? null;
+  if (lhs === rhs) return true;
+  if (!lhs || !rhs) return false;
+  if (lhs.requestId !== rhs.requestId || lhs.type !== rhs.type) {
+    return false;
+  }
+
+  if (lhs.type === "permission" && rhs.type === "permission") {
+    const leftPatterns = lhs.details.patterns ?? [];
+    const rightPatterns = rhs.details.patterns ?? [];
+    if (lhs.details.permission !== rhs.details.permission) {
+      return false;
+    }
+    return leftPatterns.join("|") === rightPatterns.join("|");
+  }
+
+  if (lhs.type === "question" && rhs.type === "question") {
+    const leftQuestions = lhs.details.questions ?? [];
+    const rightQuestions = rhs.details.questions ?? [];
+    if (leftQuestions.length !== rightQuestions.length) {
+      return false;
+    }
+    for (let index = 0; index < leftQuestions.length; index += 1) {
+      const leftQuestion = leftQuestions[index];
+      const rightQuestion = rightQuestions[index];
+      if (!leftQuestion || !rightQuestion) {
+        return false;
+      }
+      if (
+        leftQuestion.header !== rightQuestion.header ||
+        leftQuestion.question !== rightQuestion.question
+      ) {
+        return false;
+      }
+      if (leftQuestion.options.length !== rightQuestion.options.length) {
+        return false;
+      }
+      for (
+        let optionIndex = 0;
+        optionIndex < leftQuestion.options.length;
+        optionIndex += 1
+      ) {
+        const leftOption = leftQuestion.options[optionIndex];
+        const rightOption = rightQuestion.options[optionIndex];
+        if (!leftOption || !rightOption) {
+          return false;
+        }
+        if (
+          leftOption.label !== rightOption.label ||
+          leftOption.value !== rightOption.value ||
+          leftOption.description !== rightOption.description
+        ) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  return false;
 };
 
 export const useChatStore = create<ChatState>()(
@@ -112,6 +186,26 @@ export const useChatStore = create<ChatState>()(
           },
         }));
       },
+      clearPendingInterrupt: (conversationId, requestId) => {
+        set((state) => {
+          const current = state.sessions[conversationId];
+          if (!current?.pendingInterrupt) {
+            return state;
+          }
+          if (requestId && current.pendingInterrupt.requestId !== requestId) {
+            return state;
+          }
+          return {
+            sessions: {
+              ...state.sessions,
+              [conversationId]: {
+                ...current,
+                pendingInterrupt: null,
+              },
+            },
+          };
+        });
+      },
       resetSession: (conversationId, agentId) => {
         get().cancelMessage(conversationId);
         set((state) => ({
@@ -162,6 +256,7 @@ export const useChatStore = create<ChatState>()(
               streamState: "streaming",
               lastStreamError: null,
               transport: chatConnectionService.getPreferredTransport(),
+              pendingInterrupt: null,
             },
           },
         }));
@@ -211,6 +306,7 @@ export const useChatStore = create<ChatState>()(
           patchSession({
             streamState: "idle",
             lastStreamError: null,
+            pendingInterrupt: null,
           });
         };
 
@@ -228,6 +324,7 @@ export const useChatStore = create<ChatState>()(
           patchSession({
             streamState: "rebinding",
             lastStreamError: reason,
+            pendingInterrupt: null,
           });
           console.info("[Session Rebind] start", {
             conversationId,
@@ -251,6 +348,7 @@ export const useChatStore = create<ChatState>()(
               ),
               streamState: "recoverable",
               lastStreamError: reason,
+              pendingInterrupt: null,
             });
             console.info("[Session Rebind] success", {
               conversationId,
@@ -264,6 +362,7 @@ export const useChatStore = create<ChatState>()(
             patchSession({
               streamState: "error",
               lastStreamError: message,
+              pendingInterrupt: null,
             });
             console.warn("[Session Rebind] failed", {
               conversationId,
@@ -297,6 +396,7 @@ export const useChatStore = create<ChatState>()(
           provider?: string | null;
           externalSessionId?: string | null;
           runtimeStatus?: string | null;
+          pendingInterrupt?: RuntimeInterrupt | null;
           transport?: string;
           inputModes?: string[];
           outputModes?: string[];
@@ -317,6 +417,15 @@ export const useChatStore = create<ChatState>()(
               meta.runtimeStatus !== current.runtimeStatus
             ) {
               nextPatch.runtimeStatus = meta.runtimeStatus;
+            }
+            if (
+              meta.pendingInterrupt !== undefined &&
+              !isSamePendingInterrupt(
+                current.pendingInterrupt,
+                meta.pendingInterrupt,
+              )
+            ) {
+              nextPatch.pendingInterrupt = meta.pendingInterrupt;
             }
             if (
               meta.transport !== undefined &&
@@ -651,6 +760,12 @@ export const useChatStore = create<ChatState>()(
 
           const meta = extractSessionMeta(data);
           const runtimeStatus = runtimeStatusEvent?.state ?? null;
+          const hasRuntimeStatusEvent = runtimeStatusEvent !== null;
+          const pendingInterrupt =
+            runtimeStatusEvent &&
+            isInputRequiredRuntimeStatus(runtimeStatusEvent.state)
+              ? runtimeStatusEvent.interrupt
+              : null;
           if (
             meta.contextId ||
             meta.provider !== undefined ||
@@ -658,9 +773,14 @@ export const useChatStore = create<ChatState>()(
             meta.transport ||
             meta.inputModes ||
             meta.outputModes ||
-            runtimeStatus
+            hasRuntimeStatusEvent
           ) {
-            updateSessionMeta({ ...meta, runtimeStatus });
+            updateSessionMeta({
+              ...meta,
+              ...(hasRuntimeStatusEvent
+                ? { runtimeStatus, pendingInterrupt }
+                : {}),
+            });
           }
 
           if (runtimeStatusEvent?.isFinal) {
@@ -679,6 +799,7 @@ export const useChatStore = create<ChatState>()(
           patchSession({
             streamState: "error",
             lastStreamError: errorText,
+            pendingInterrupt: null,
           });
           console.warn("[Chat Stream] error", {
             conversationId,

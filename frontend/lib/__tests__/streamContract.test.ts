@@ -288,11 +288,84 @@ describe("block-based stream parser and reducer", () => {
     expect(extractRuntimeStatusEvent(payload)).toEqual({
       state: "input_required",
       isFinal: true,
+      interrupt: null,
     });
   });
 
   it("returns null runtime status event for non-status payload", () => {
     expect(extractRuntimeStatusEvent({ kind: "artifact-update" })).toBeNull();
+  });
+
+  it("parses permission interrupt metadata from status-update", () => {
+    const payload = {
+      kind: "status-update",
+      status: { state: "input-required" },
+      metadata: {
+        opencode: {
+          interrupt: {
+            request_id: "perm-1",
+            type: "permission",
+            details: {
+              permission: "read",
+              patterns: ["/repo/.env"],
+            },
+          },
+        },
+      },
+    };
+    expect(extractRuntimeStatusEvent(payload)).toEqual({
+      state: "input-required",
+      isFinal: false,
+      interrupt: {
+        requestId: "perm-1",
+        type: "permission",
+        details: {
+          permission: "read",
+          patterns: ["/repo/.env"],
+        },
+      },
+    });
+  });
+
+  it("parses question interrupt metadata from status-update", () => {
+    const payload = {
+      kind: "status-update",
+      status: { state: "input-required" },
+      metadata: {
+        opencode: {
+          interrupt: {
+            request_id: "q-1",
+            type: "question",
+            details: {
+              questions: [
+                {
+                  header: "Confirm",
+                  question: "Proceed?",
+                  options: [{ label: "Yes", value: "yes" }],
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    expect(extractRuntimeStatusEvent(payload)).toEqual({
+      state: "input-required",
+      isFinal: false,
+      interrupt: {
+        requestId: "q-1",
+        type: "question",
+        details: {
+          questions: [
+            {
+              header: "Confirm",
+              question: "Proceed?",
+              options: [{ label: "Yes", value: "yes", description: null }],
+            },
+          ],
+        },
+      },
+    });
   });
 
   it("extracts opencode external session from nested metadata", () => {

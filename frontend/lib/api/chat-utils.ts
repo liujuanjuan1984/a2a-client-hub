@@ -35,12 +35,35 @@ export type StreamBlockUpdate = {
 export type RuntimeStatusEvent = {
   state: string;
   isFinal: boolean;
+  interrupt: RuntimeInterrupt | null;
 };
 
 const coerceStringArray = (value: unknown) =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
     ? (value as string[])
     : undefined;
+
+export type OpencodeInterruptQuestionOption = {
+  label: string;
+  description: string | null;
+  value: string | null;
+};
+
+export type OpencodeInterruptQuestion = {
+  header: string | null;
+  question: string;
+  options: OpencodeInterruptQuestionOption[];
+};
+
+export type RuntimeInterrupt = {
+  requestId: string;
+  type: "permission" | "question";
+  details: {
+    permission?: string | null;
+    patterns?: string[];
+    questions?: OpencodeInterruptQuestion[];
+  };
+};
 
 export const extractSessionMeta = (data: Record<string, unknown>) => {
   const contextId =
@@ -100,10 +123,14 @@ export const extractRuntimeStatusEvent = (
     return null;
   }
   const status = data.status as { state?: unknown } | undefined;
-  if (status && typeof status.state === "string") {
+  if (status && typeof status.state === "string" && status.state.trim()) {
+    const state = status.state;
     return {
-      state: status.state,
+      state,
       isFinal: data.final === true,
+      interrupt: isInputRequiredRuntimeState(state)
+        ? extractRuntimeInterrupt(data)
+        : null,
     };
   }
   return null;
@@ -174,6 +201,97 @@ const pickInteger = (
     if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
       return Number(value.trim());
     }
+  }
+  return null;
+};
+
+const normalizeRuntimeState = (state: string) => state.trim().toLowerCase();
+
+const isInputRequiredRuntimeState = (state: string) => {
+  const normalized = normalizeRuntimeState(state);
+  return normalized === "input-required" || normalized === "input_required";
+};
+
+const parseInterruptQuestionOption = (
+  value: unknown,
+): OpencodeInterruptQuestionOption | null => {
+  const option = asRecord(value);
+  if (!option) {
+    return null;
+  }
+  const label = pickString(option, ["label"]);
+  if (!label) {
+    return null;
+  }
+  return {
+    label,
+    description: pickRawString(option, ["description"]) ?? null,
+    value: pickRawString(option, ["value"]) ?? null,
+  };
+};
+
+const parseInterruptQuestion = (
+  value: unknown,
+): OpencodeInterruptQuestion | null => {
+  const question = asRecord(value);
+  if (!question) {
+    return null;
+  }
+  const prompt = pickString(question, ["question"]);
+  if (!prompt) {
+    return null;
+  }
+  const rawOptions = Array.isArray(question.options) ? question.options : [];
+  const options = rawOptions
+    .map(parseInterruptQuestionOption)
+    .filter((item): item is OpencodeInterruptQuestionOption => Boolean(item));
+  return {
+    header: pickRawString(question, ["header"]) ?? null,
+    question: prompt,
+    options,
+  };
+};
+
+const extractRuntimeInterrupt = (
+  data: Record<string, unknown>,
+): RuntimeInterrupt | null => {
+  const metadata = asRecord(data.metadata);
+  const opencodeMetadata = asRecord(metadata?.opencode);
+  const interrupt = asRecord(opencodeMetadata?.interrupt);
+  if (!interrupt) {
+    return null;
+  }
+  const requestId = pickString(interrupt, ["request_id", "requestId"]);
+  const interruptType = pickString(interrupt, ["type"])?.toLowerCase();
+  if (!requestId || !interruptType) {
+    return null;
+  }
+
+  const details = asRecord(interrupt.details);
+  if (interruptType === "permission") {
+    return {
+      requestId,
+      type: "permission",
+      details: {
+        permission: pickRawString(details, ["permission"]) ?? null,
+        patterns: coerceStringArray(details?.patterns) ?? [],
+      },
+    };
+  }
+  if (interruptType === "question") {
+    const rawQuestions = Array.isArray(details?.questions)
+      ? details.questions
+      : [];
+    const questions = rawQuestions
+      .map(parseInterruptQuestion)
+      .filter((item): item is OpencodeInterruptQuestion => Boolean(item));
+    return {
+      requestId,
+      type: "question",
+      details: {
+        questions,
+      },
+    };
   }
   return null;
 };

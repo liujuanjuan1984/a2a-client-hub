@@ -21,6 +21,12 @@ import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
+import {
+  A2AExtensionCallError,
+  rejectOpencodeQuestionInterrupt,
+  replyOpencodePermissionInterrupt,
+  replyOpencodeQuestionInterrupt,
+} from "@/lib/api/a2aExtensions";
 import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
 import { shouldStickToBottom } from "@/lib/chatScroll";
@@ -112,6 +118,9 @@ export function ChatScreen({
     (state) => state.generateConversationId,
   );
   const sendMessage = useChatStore((state) => state.sendMessage);
+  const clearPendingInterrupt = useChatStore(
+    (state) => state.clearPendingInterrupt,
+  );
   const session = useChatStore((state) =>
     conversationId ? state.sessions[conversationId] : undefined,
   );
@@ -130,6 +139,8 @@ export function ChatScreen({
   );
   const [showDetails, setShowDetails] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
+  const [interruptAction, setInterruptAction] = useState<string | null>(null);
+  const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
   const [expandedReasoningByBlockId, setExpandedReasoningByBlockId] = useState<
     Record<string, boolean>
   >({});
@@ -166,6 +177,22 @@ export function ChatScreen({
       ? sessionHistoryQuery.error.message
       : null;
   const sessionSource = session?.source ?? null;
+  const pendingInterrupt = session?.pendingInterrupt ?? null;
+  const pendingQuestionCount =
+    pendingInterrupt?.type === "question"
+      ? (pendingInterrupt.details.questions?.length ?? 0)
+      : 0;
+
+  const buildInterruptErrorMessage = useCallback((error: unknown) => {
+    if (error instanceof A2AExtensionCallError) {
+      return error.errorCode
+        ? `${error.message}: ${error.errorCode}`
+        : error.message;
+    }
+    return error instanceof Error
+      ? error.message
+      : "Interrupt callback failed.";
+  }, []);
 
   const clearScrollSettleTimer = useCallback(() => {
     if (scrollSettleTimerRef.current) {
@@ -285,6 +312,32 @@ export function ChatScreen({
     mergeHistoryMessages(sessionHistoryQuery.messages);
   }, [mergeHistoryMessages, conversationId, sessionHistoryQuery.messages]);
 
+  useEffect(() => {
+    if (!pendingInterrupt || pendingInterrupt.type !== "question") {
+      setQuestionAnswers([]);
+      return;
+    }
+    setQuestionAnswers((current) =>
+      Array.from(
+        { length: pendingQuestionCount },
+        (_, index) => current[index] ?? "",
+      ),
+    );
+  }, [
+    pendingInterrupt?.requestId,
+    pendingInterrupt?.type,
+    pendingQuestionCount,
+  ]);
+
+  useEffect(() => {
+    if (!pendingInterrupt) {
+      return;
+    }
+    forceScrollToBottomRef.current = true;
+    shouldStickToBottomRef.current = true;
+    scheduleStickToBottom(true);
+  }, [pendingInterrupt?.requestId, scheduleStickToBottom]);
+
   const loadEarlierHistory = useCallback(async () => {
     if (!conversationId) return;
     if (historyPaused) return;
@@ -395,6 +448,152 @@ export function ChatScreen({
     setInputHeight(minInputHeight);
     scheduleStickToBottom(true);
   };
+
+  const runInterruptAction = useCallback(
+    async (
+      actionKey: string,
+      executor: () => Promise<void>,
+      successMessage: string,
+    ) => {
+      setInterruptAction(actionKey);
+      try {
+        await executor();
+        toast.success("Action submitted", successMessage);
+      } catch (error) {
+        toast.error(
+          "Interrupt callback failed",
+          buildInterruptErrorMessage(error),
+        );
+      } finally {
+        setInterruptAction(null);
+      }
+    },
+    [buildInterruptErrorMessage],
+  );
+
+  const handlePermissionReply = useCallback(
+    (reply: "once" | "always" | "reject") => {
+      if (!activeAgentId || !conversationId || !pendingInterrupt || !agent) {
+        return;
+      }
+      if (pendingInterrupt.type !== "permission") {
+        return;
+      }
+      const requestId = pendingInterrupt.requestId;
+      runInterruptAction(
+        `permission:${reply}`,
+        async () => {
+          await replyOpencodePermissionInterrupt({
+            source: agent.source,
+            agentId: activeAgentId,
+            requestId,
+            reply,
+          });
+          clearPendingInterrupt(conversationId, requestId);
+        },
+        "Permission reply delivered to upstream.",
+      ).catch(() => undefined);
+    },
+    [
+      activeAgentId,
+      agent,
+      clearPendingInterrupt,
+      conversationId,
+      pendingInterrupt,
+      runInterruptAction,
+    ],
+  );
+
+  const handleQuestionAnswerChange = useCallback(
+    (index: number, value: string) => {
+      setQuestionAnswers((current) => {
+        const next = [...current];
+        next[index] = value;
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleQuestionOptionPick = useCallback(
+    (index: number, value: string) => {
+      setQuestionAnswers((current) => {
+        const next = [...current];
+        next[index] = value;
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleQuestionReply = useCallback(() => {
+    if (!activeAgentId || !conversationId || !pendingInterrupt || !agent) {
+      return;
+    }
+    if (pendingInterrupt.type !== "question") {
+      return;
+    }
+    const questions = pendingInterrupt.details.questions ?? [];
+    const normalizedAnswers = questions.map((_, index) => {
+      const answer = questionAnswers[index]?.trim() ?? "";
+      return answer ? [answer] : [];
+    });
+    if (normalizedAnswers.some((group) => group.length === 0)) {
+      toast.error("Missing answer", "Please answer all questions first.");
+      return;
+    }
+    const requestId = pendingInterrupt.requestId;
+    runInterruptAction(
+      "question:reply",
+      async () => {
+        await replyOpencodeQuestionInterrupt({
+          source: agent.source,
+          agentId: activeAgentId,
+          requestId,
+          answers: normalizedAnswers,
+        });
+        clearPendingInterrupt(conversationId, requestId);
+      },
+      "Question answers delivered to upstream.",
+    ).catch(() => undefined);
+  }, [
+    activeAgentId,
+    agent,
+    clearPendingInterrupt,
+    conversationId,
+    pendingInterrupt,
+    questionAnswers,
+    runInterruptAction,
+  ]);
+
+  const handleQuestionReject = useCallback(() => {
+    if (!activeAgentId || !conversationId || !pendingInterrupt || !agent) {
+      return;
+    }
+    if (pendingInterrupt.type !== "question") {
+      return;
+    }
+    const requestId = pendingInterrupt.requestId;
+    runInterruptAction(
+      "question:reject",
+      async () => {
+        await rejectOpencodeQuestionInterrupt({
+          source: agent.source,
+          agentId: activeAgentId,
+          requestId,
+        });
+        clearPendingInterrupt(conversationId, requestId);
+      },
+      "Question request rejected.",
+    ).catch(() => undefined);
+  }, [
+    activeAgentId,
+    agent,
+    clearPendingInterrupt,
+    conversationId,
+    pendingInterrupt,
+    runInterruptAction,
+  ]);
 
   useEffect(() => () => clearScrollSettleTimer(), [clearScrollSettleTimer]);
 
@@ -587,6 +786,144 @@ export function ChatScreen({
       expandedToolCallByBlockId,
     ],
   );
+
+  const interruptActionCard = useMemo(() => {
+    if (!pendingInterrupt) {
+      return null;
+    }
+    if (pendingInterrupt.type === "permission") {
+      const permission = pendingInterrupt.details.permission ?? "unknown";
+      const patterns = pendingInterrupt.details.patterns ?? [];
+      return (
+        <View className="mt-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4">
+          <Text className="text-xs font-semibold uppercase tracking-wide text-amber-300">
+            Authorization Required
+          </Text>
+          <Text className="mt-2 text-sm text-white">
+            Permission: <Text className="font-semibold">{permission}</Text>
+          </Text>
+          {patterns.length > 0 ? (
+            <View className="mt-2 gap-1">
+              {patterns.map((pattern) => (
+                <Text key={pattern} className="text-xs text-amber-100">
+                  • {pattern}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+          <View className="mt-4 flex-row flex-wrap gap-2">
+            <Button
+              size="sm"
+              label="Allow once"
+              loading={interruptAction === "permission:once"}
+              disabled={Boolean(interruptAction)}
+              onPress={() => handlePermissionReply("once")}
+            />
+            <Button
+              size="sm"
+              label="Always allow"
+              variant="secondary"
+              loading={interruptAction === "permission:always"}
+              disabled={Boolean(interruptAction)}
+              onPress={() => handlePermissionReply("always")}
+            />
+            <Button
+              size="sm"
+              label="Reject"
+              variant="danger"
+              loading={interruptAction === "permission:reject"}
+              disabled={Boolean(interruptAction)}
+              onPress={() => handlePermissionReply("reject")}
+            />
+          </View>
+        </View>
+      );
+    }
+
+    const questions = pendingInterrupt.details.questions ?? [];
+    return (
+      <View className="mt-3 rounded-2xl border border-sky-500/40 bg-sky-500/10 p-4">
+        <Text className="text-xs font-semibold uppercase tracking-wide text-sky-300">
+          Additional Input Required
+        </Text>
+        {questions.map((question, index) => {
+          const answer = questionAnswers[index] ?? "";
+          return (
+            <View
+              key={`${pendingInterrupt.requestId}:${index}`}
+              className="mt-3"
+            >
+              {question.header ? (
+                <Text className="text-[11px] font-semibold text-sky-200">
+                  {question.header}
+                </Text>
+              ) : null}
+              <Text className="mt-1 text-sm text-white">
+                {question.question}
+              </Text>
+              <TextInput
+                className="mt-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                value={answer}
+                editable={!interruptAction}
+                placeholder="Type your answer"
+                placeholderTextColor="#6b7280"
+                onChangeText={(value) =>
+                  handleQuestionAnswerChange(index, value)
+                }
+              />
+              {question.options.length > 0 ? (
+                <View className="mt-2 flex-row flex-wrap gap-2">
+                  {question.options.map((option) => {
+                    const optionValue = option.value || option.label;
+                    return (
+                      <Pressable
+                        key={`${pendingInterrupt.requestId}:${index}:${option.label}`}
+                        className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1"
+                        disabled={Boolean(interruptAction)}
+                        onPress={() =>
+                          handleQuestionOptionPick(index, optionValue)
+                        }
+                      >
+                        <Text className="text-[11px] text-slate-200">
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
+        <View className="mt-4 flex-row flex-wrap gap-2">
+          <Button
+            size="sm"
+            label="Submit answers"
+            loading={interruptAction === "question:reply"}
+            disabled={Boolean(interruptAction)}
+            onPress={handleQuestionReply}
+          />
+          <Button
+            size="sm"
+            label="Reject"
+            variant="danger"
+            loading={interruptAction === "question:reject"}
+            disabled={Boolean(interruptAction)}
+            onPress={handleQuestionReject}
+          />
+        </View>
+      </View>
+    );
+  }, [
+    handlePermissionReply,
+    handleQuestionAnswerChange,
+    handleQuestionOptionPick,
+    handleQuestionReject,
+    handleQuestionReply,
+    interruptAction,
+    pendingInterrupt,
+    questionAnswers,
+  ]);
 
   if (!agent) {
     if (!hasFetchedAgents) {
@@ -856,6 +1193,9 @@ export function ChatScreen({
                   : "No messages yet."}
             </Text>
           </View>
+        }
+        ListFooterComponent={
+          interruptActionCard ? <View>{interruptActionCard}</View> : null
         }
       />
 
