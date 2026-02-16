@@ -7,7 +7,6 @@ import {
   RefreshControl,
   ScrollView,
   Text,
-  type GestureResponderEvent,
   View,
 } from "react-native";
 
@@ -153,17 +152,19 @@ export function AdminHubAgentsScreen() {
           </View>
         ) : (
           items.map((agent) => (
-            <Pressable
+            <View
               key={agent.id}
               className="mt-4 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/30"
-              onPress={() => {
-                blurActiveElement();
-                router.push(`/admin/hub-a2a/${agent.id}`);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Edit ${agent.name}`}
             >
-              <View className="p-5">
+              <Pressable
+                className="p-5"
+                onPress={() => {
+                  blurActiveElement();
+                  router.push(`/admin/hub-a2a/${agent.id}`);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${agent.name}`}
+              >
                 <View className="flex-row items-start justify-between">
                   <View className="flex-1 pr-4">
                     <Text
@@ -201,27 +202,29 @@ export function AdminHubAgentsScreen() {
                           )
                         : pill("Credential • none", "muted")}
                     </View>
-                    {agent.availability_policy === "allowlist" ? (
-                      <Pressable
-                        className="mt-3 self-start rounded-full border border-sky-400/40 bg-sky-500/15 px-3 py-1"
-                        onPress={(event: GestureResponderEvent) => {
-                          event.stopPropagation();
-                          blurActiveElement();
-                          router.push(`/admin/hub-a2a/allowlist/${agent.id}`);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Manage allowlist for ${agent.name}`}
-                      >
-                        <Text className="text-[11px] font-semibold text-sky-200">
-                          Manage allowlist
-                        </Text>
-                      </Pressable>
-                    ) : null}
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
                 </View>
-              </View>
-            </Pressable>
+              </Pressable>
+
+              {agent.availability_policy === "allowlist" ? (
+                <View className="border-t border-slate-800/60 px-5 py-3">
+                  <Pressable
+                    className="self-start rounded-full border border-sky-400/40 bg-sky-500/15 px-3 py-1"
+                    onPress={() => {
+                      blurActiveElement();
+                      router.push(`/admin/hub-a2a/allowlist/${agent.id}`);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Manage allowlist for ${agent.name}`}
+                  >
+                    <Text className="text-[11px] font-semibold text-sky-200">
+                      Manage allowlist
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
           ))
         )}
       </ScrollView>
