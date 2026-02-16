@@ -1009,7 +1009,7 @@ class SessionHubService:
         if normalized_user_message_id:
             metadata["client_message_id"] = normalized_user_message_id
 
-        conversation_id: UUID | None = session.id
+        conversation_id: UUID = session.id
         if source == "manual":
             await self._ensure_local_conversation_thread(
                 db,
@@ -1035,7 +1035,7 @@ class SessionHubService:
                 local_session_id=session.id,
             )
         elif context_id and isinstance(context_id, str):
-            conversation_id = (
+            resolved_conversation_id = (
                 await conversation_identity_service.find_conversation_id_for_context(
                     db,
                     user_id=user_id,
@@ -1043,6 +1043,8 @@ class SessionHubService:
                     provider=provider_from_invoke,
                 )
             )
+            if isinstance(resolved_conversation_id, UUID):
+                conversation_id = resolved_conversation_id
 
         await agent_message_handler.create_agent_message(
             db,

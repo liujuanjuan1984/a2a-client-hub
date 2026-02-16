@@ -16,8 +16,8 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
     # id comes from TimestampMixin as UUID v4
     conversation_id = Column(
         UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.conversation_threads.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey(f"{SCHEMA_NAME}.conversation_threads.id", ondelete="CASCADE"),
+        nullable=False,
         comment="Canonical conversation identifier used for message grouping.",
         index=True,
     )

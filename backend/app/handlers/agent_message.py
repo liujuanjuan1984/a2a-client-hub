@@ -25,7 +25,7 @@ async def create_agent_message(
     user_id: UUID,
     content: str,
     sender: str,
-    conversation_id: Optional[UUID] = None,
+    conversation_id: UUID,
     sync_to_cardbox: bool = True,
     **kwargs,
 ) -> AgentMessage:
