@@ -163,7 +163,7 @@ export function AgentListScreen() {
             </Text>
             <Button
               className="mt-6"
-              label="Create an agent"
+              label="Add an agent"
               onPress={() => {
                 blurActiveElement();
                 router.push("/agents/new");
