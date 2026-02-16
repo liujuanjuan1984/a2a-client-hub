@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -16,12 +16,12 @@ import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import {
+  addHubAgentAllowlistAdmin,
+  deleteHubAgentAllowlistEntryAdmin,
   getHubAgentAdmin,
   listHubAgentAllowlistAdmin,
-  replaceHubAgentAllowlistAdmin,
   type HubA2AAllowlistEntryResponse,
 } from "@/lib/api/hubA2aAgentsAdmin";
 import { blurActiveElement } from "@/lib/focus";
@@ -30,11 +30,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
 import {
   buildAllowlistDraftFromEntries,
-  buildAllowlistReplaceEntries,
-  buildNewAllowlistDraftEntry,
-  deriveAllowlistChanges,
   hasAllowlistEmail,
-  type HubAgentAllowlistDraftEntry,
 } from "@/screens/admin/hubAgentAllowlistState";
 
 type AdminHubAgentAllowlistScreenProps = {
@@ -48,16 +44,9 @@ export function AdminHubAgentAllowlistScreen({
   const queryClient = useQueryClient();
   const { isReady, isAdmin } = useRequireAdmin();
 
-  const [draftEntries, setDraftEntries] = useState<
-    HubAgentAllowlistDraftEntry[]
-  >([]);
-  const [baseEntries, setBaseEntries] = useState<
-    HubA2AAllowlistEntryResponse[]
-  >([]);
   const [allowlistEmail, setAllowlistEmail] = useState("");
-  const [saving, setSaving] = useState(false);
-  const initializedRef = useRef(false);
-  const draftEntryCounterRef = useRef(0);
+  const [mutating, setMutating] = useState(false);
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
 
   const agentQuery = useQuery({
     queryKey: queryKeys.admin.hubAgent(agentId),
@@ -75,32 +64,14 @@ export function AdminHubAgentAllowlistScreen({
       agentQuery.data?.availability_policy === "allowlist",
   });
 
-  const changes = useMemo(
-    () => deriveAllowlistChanges(baseEntries, draftEntries),
-    [baseEntries, draftEntries],
+  const entries: HubA2AAllowlistEntryResponse[] = useMemo(
+    () => allowlistQuery.data?.items ?? [],
+    [allowlistQuery.data?.items],
   );
-  const dirty =
-    changes.addEmails.length > 0 || changes.removeUserIds.length > 0;
-  const { allowNextNavigation } = usePreventRemoveWhenDirty({ dirty });
-
-  useEffect(() => {
-    initializedRef.current = false;
-  }, [agentId]);
-
-  useEffect(() => {
-    if (!allowlistQuery.data?.items) return;
-    if (!initializedRef.current) {
-      initializedRef.current = true;
-      setBaseEntries(allowlistQuery.data.items);
-      setDraftEntries(
-        buildAllowlistDraftFromEntries(allowlistQuery.data.items),
-      );
-      return;
-    }
-    if (dirty) return;
-    setBaseEntries(allowlistQuery.data.items);
-    setDraftEntries(buildAllowlistDraftFromEntries(allowlistQuery.data.items));
-  }, [allowlistQuery.data?.items, dirty]);
+  const draftEntries = useMemo(
+    () => buildAllowlistDraftFromEntries(entries),
+    [entries],
+  );
 
   const loading =
     (agentQuery.isLoading && !agentQuery.data) ||
@@ -113,50 +84,22 @@ export function AdminHubAgentAllowlistScreen({
     if (agentResult.data?.availability_policy !== "allowlist") {
       return;
     }
-    const allowlistResult = await allowlistQuery.refetch();
-    if (!allowlistResult.data || dirty) return;
-    setBaseEntries(allowlistResult.data.items);
-    setDraftEntries(buildAllowlistDraftFromEntries(allowlistResult.data.items));
-  }, [agentId, agentQuery, allowlistQuery, dirty]);
+    await allowlistQuery.refetch();
+  }, [agentId, agentQuery, allowlistQuery]);
 
-  const handleAddDraftEmail = useCallback(() => {
+  const handleAddEmail = useCallback(async () => {
+    if (mutating) return;
     const trimmed = allowlistEmail.trim().toLowerCase();
     if (!trimmed) return;
     if (hasAllowlistEmail(draftEntries, trimmed)) {
       toast.error("Validation failed", "This email is already in allowlist.");
       return;
     }
-    draftEntryCounterRef.current += 1;
-    const idSeed =
-      typeof globalThis.crypto?.randomUUID === "function"
-        ? globalThis.crypto.randomUUID()
-        : `${Date.now()}-${draftEntryCounterRef.current}`;
-    setDraftEntries((current) => [
-      ...current,
-      buildNewAllowlistDraftEntry(trimmed, idSeed),
-    ]);
-    setAllowlistEmail("");
-  }, [allowlistEmail, draftEntries]);
-
-  const handleRemoveDraftEntry = useCallback((entryId: string) => {
-    setDraftEntries((current) =>
-      current.filter((entry) => entry.id !== entryId),
-    );
-  }, []);
-
-  const handleSave = useCallback(async () => {
-    if (saving) return;
+    setMutating(true);
     blurActiveElement();
-    if (!dirty) {
-      allowNextNavigation();
-      router.replace("/admin/hub-a2a");
-      return;
-    }
-
-    setSaving(true);
     try {
-      await replaceHubAgentAllowlistAdmin(agentId, {
-        entries: buildAllowlistReplaceEntries(draftEntries),
+      await addHubAgentAllowlistAdmin(agentId, {
+        email: trimmed,
       });
       await queryClient.invalidateQueries({
         queryKey: queryKeys.admin.hubAgentAllowlist(agentId),
@@ -164,29 +107,52 @@ export function AdminHubAgentAllowlistScreen({
       await queryClient.invalidateQueries({
         queryKey: queryKeys.admin.hubAgents(),
       });
-      toast.success(
-        "Allowlist saved",
-        `${changes.addEmails.length + changes.removeUserIds.length} changes applied.`,
-      );
-      allowNextNavigation();
-      router.replace("/admin/hub-a2a");
+      await allowlistQuery.refetch();
+      setAllowlistEmail("");
+      toast.success("Allowlist updated", "Entry added.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Save failed.";
-      toast.error("Save failed", message);
+      const message =
+        error instanceof Error ? error.message : "Could not add entry.";
+      toast.error("Update failed", message);
     } finally {
-      setSaving(false);
+      setMutating(false);
     }
   }, [
     agentId,
-    allowNextNavigation,
-    changes.addEmails,
-    changes.removeUserIds,
     draftEntries,
-    dirty,
+    allowlistEmail,
+    allowlistQuery,
+    mutating,
     queryClient,
-    router,
-    saving,
   ]);
+
+  const handleRemoveEntry = useCallback(
+    async (userId: string) => {
+      if (mutating || removingUserId) return;
+      setMutating(true);
+      setRemovingUserId(userId);
+      blurActiveElement();
+      try {
+        await deleteHubAgentAllowlistEntryAdmin(agentId, userId);
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.admin.hubAgentAllowlist(agentId),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.admin.hubAgents(),
+        });
+        await allowlistQuery.refetch();
+        toast.success("Allowlist updated", "Entry removed.");
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Could not remove entry.";
+        toast.error("Update failed", message);
+      } finally {
+        setRemovingUserId(null);
+        setMutating(false);
+      }
+    },
+    [agentId, allowlistQuery, mutating, queryClient, removingUserId],
+  );
 
   if (!isReady) {
     return <FullscreenLoader message="Checking permissions..." />;
@@ -374,8 +340,11 @@ export function AdminHubAgentAllowlistScreen({
             <Button
               label="Add"
               size="sm"
-              onPress={handleAddDraftEmail}
-              disabled={!allowlistEmail.trim()}
+              onPress={() => {
+                handleAddEmail().catch(() => undefined);
+              }}
+              disabled={!allowlistEmail.trim() || mutating}
+              loading={mutating && !removingUserId}
             />
           </View>
 
@@ -390,21 +359,12 @@ export function AdminHubAgentAllowlistScreen({
                 className="mt-3 flex-row items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/20 p-4"
               >
                 <View className="flex-1 pr-3">
-                  <View className="flex-row items-center gap-2">
-                    <Text
-                      className="text-sm font-semibold text-white"
-                      numberOfLines={1}
-                    >
-                      {entry.userLabel}
-                    </Text>
-                    {entry.existingUserId == null ? (
-                      <View className="rounded-full bg-emerald-500/20 px-2 py-0.5">
-                        <Text className="text-[10px] font-semibold text-emerald-200">
-                          NEW
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
+                  <Text
+                    className="text-sm font-semibold text-white"
+                    numberOfLines={1}
+                  >
+                    {entry.userLabel}
+                  </Text>
                   {entry.userId ? (
                     <Text className="mt-1 text-xs text-muted" numberOfLines={1}>
                       {entry.userId}
@@ -413,35 +373,22 @@ export function AdminHubAgentAllowlistScreen({
                 </View>
                 <Pressable
                   className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
-                  onPress={() => handleRemoveDraftEntry(entry.id)}
+                  onPress={() => {
+                    handleRemoveEntry(entry.userId).catch(() => undefined);
+                  }}
+                  disabled={mutating}
+                  style={{ opacity: mutating ? 0.5 : 1 }}
                   accessibilityRole="button"
                   accessibilityLabel="Remove allowlist entry"
                 >
                   <Ionicons name="trash-outline" size={14} color="#f87171" />
                   <Text className="text-xs font-medium text-red-300">
-                    Remove
+                    {removingUserId === entry.userId ? "Removing..." : "Remove"}
                   </Text>
                 </Pressable>
               </View>
             ))
           )}
-        </View>
-
-        <View className="mt-10 flex-row items-center justify-between gap-3">
-          <Button
-            label="Cancel"
-            variant="outline"
-            onPress={() => {
-              blurActiveElement();
-              backOrHome(router, "/admin/hub-a2a");
-            }}
-          />
-          <Button
-            label={saving ? "Saving..." : "Save"}
-            onPress={handleSave}
-            loading={saving}
-            disabled={saving}
-          />
         </View>
       </ScrollView>
     </ScreenContainer>

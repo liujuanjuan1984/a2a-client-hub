@@ -82,7 +82,7 @@ export function AdminHubAgentDetailScreen({
     );
   }, [agent, comparablePayload]);
 
-  usePreventRemoveWhenDirty({ dirty });
+  const { allowNextNavigation } = usePreventRemoveWhenDirty({ dirty });
 
   useEffect(() => {
     formInitializedRef.current = false;
@@ -142,16 +142,30 @@ export function AdminHubAgentDetailScreen({
     setSaving(true);
     try {
       await updateHubAgentAdmin(agentId, buildPayload());
-      queryClient.invalidateQueries({ queryKey: queryKeys.admin.hubAgents() });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.hubAgents(),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.hubAgent(agentId),
+      });
       toast.success("Saved", "Shared agent updated.");
-      await refresh();
+      allowNextNavigation();
+      router.replace("/admin/hub-a2a");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed.";
       toast.error("Save failed", message);
     } finally {
       setSaving(false);
     }
-  }, [agentId, buildPayload, queryClient, refresh, saving, validate]);
+  }, [
+    agentId,
+    allowNextNavigation,
+    buildPayload,
+    queryClient,
+    router,
+    saving,
+    validate,
+  ]);
 
   const handleDelete = useCallback(async () => {
     if (!agentId || deleting || !agent) return;
@@ -267,14 +281,8 @@ export function AdminHubAgentDetailScreen({
 
         {values.availabilityPolicy === "allowlist" ? (
           <View className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/30 p-5">
-            <Text className="text-base font-semibold text-white">
-              Allowlist management has moved
-            </Text>
-            <Text className="mt-2 text-sm text-muted">
-              Use the dedicated allowlist page to add/remove entries.
-            </Text>
             <Button
-              className="mt-4 self-start"
+              className="self-start"
               label="Manage allowlist"
               size="sm"
               variant="secondary"
