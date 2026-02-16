@@ -23,6 +23,7 @@ import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
+import { shouldStickToBottom } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { buildChatRoute } from "@/lib/routes";
@@ -85,7 +86,6 @@ const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const LIST_INITIAL_NUM_TO_RENDER = 16;
 const LIST_WINDOW_SIZE = 9;
 const LIST_MAX_TO_RENDER_PER_BATCH = 20;
-const LIST_BOTTOM_STICK_THRESHOLD = 72;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 
 export function ChatScreen({
@@ -349,9 +349,11 @@ export function ChatScreen({
       const offsetY = event.nativeEvent.contentOffset?.y ?? 0;
       const viewportHeight = event.nativeEvent.layoutMeasurement?.height ?? 0;
       const contentHeight = event.nativeEvent.contentSize?.height ?? 0;
-      const distanceToBottom = contentHeight - (offsetY + viewportHeight);
-      shouldStickToBottomRef.current =
-        distanceToBottom <= LIST_BOTTOM_STICK_THRESHOLD;
+      shouldStickToBottomRef.current = shouldStickToBottom({
+        offsetY,
+        viewportHeight,
+        contentHeight,
+      });
       scrollOffsetRef.current = offsetY;
       if (
         offsetY <= HISTORY_AUTOLOAD_THRESHOLD &&
