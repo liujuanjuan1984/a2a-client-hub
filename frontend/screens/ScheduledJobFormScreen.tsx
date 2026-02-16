@@ -113,7 +113,10 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
 
   const { data: agents = [] } = useAgentsCatalogQuery(true);
   const agentOptions = useMemo(
-    () => agents.map((agent) => ({ id: agent.id, name: agent.name })),
+    () =>
+      agents
+        .filter((agent) => agent.source === "personal")
+        .map((agent) => ({ id: agent.id, name: agent.name })),
     [agents],
   );
 
@@ -197,7 +200,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
     return JSON.stringify(current) !== JSON.stringify(initial);
   }, [form]);
 
-  usePreventRemoveWhenDirty({ dirty });
+  const { allowNextNavigation } = usePreventRemoveWhenDirty({ dirty });
 
   const validateForm = () => {
     if (!form.name.trim()) {
@@ -301,6 +304,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       } else {
         await createScheduledJob(normalized);
       }
+      setForm(normalized);
       initialSnapshotRef.current = buildSnapshot(normalized);
       toast.success(
         editing ? "Job updated" : "Job created",
@@ -308,6 +312,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           ? "Scheduled job updated successfully."
           : "Scheduled job created successfully.",
       );
+      allowNextNavigation();
       await queryClient.invalidateQueries({
         queryKey: queryKeys.sessions.scheduledJobs(),
       });

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from sqlalchemy import and_, select
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
@@ -17,6 +19,7 @@ from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, rollback_safely
 from app.handlers import agent_message as agent_message_handler
 from app.integrations.a2a_client import get_a2a_service
+from app.services.a2a_invoke_service import a2a_invoke_service
 from app.services.a2a_runtime import a2a_runtime_builder
 from app.services.a2a_schedule_service import (
     A2A_SCHEDULE_SOURCE,
@@ -135,11 +138,15 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
             execution.user_message_id = user_message.id
 
-            result = await get_a2a_service().gateway.invoke(
-                resolved=runtime.resolved,
-                query=task.prompt,
-                metadata=metadata,
+            result = await asyncio.wait_for(
+                get_a2a_service().gateway.invoke(
+                    resolved=runtime.resolved,
+                    query=task.prompt,
+                    metadata=metadata,
+                ),
+                timeout=settings.a2a_schedule_task_invoke_timeout,
             )
+            # Wrapped in timeout below in issue #150 hardening.
             success = bool(result.get("success"))
             response_content = (
                 result.get("content")
@@ -152,6 +159,11 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 "success": success,
                 "error_code": result.get("error_code"),
             }
+            usage_hints = a2a_invoke_service.extract_usage_hints_from_invoke_result(
+                result
+            )
+            if usage_hints:
+                agent_metadata["usage"] = usage_hints
             agent_message = await agent_message_handler.create_agent_message(
                 db,
                 user_id=task.user_id,
@@ -178,13 +190,60 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 if success
                 else A2AScheduleTask.STATUS_FAILED
             )
+            if success:
+                task.consecutive_failures = 0
+            else:
+                task.consecutive_failures = (task.consecutive_failures or 0) + 1
+                if (
+                    task.consecutive_failures
+                    >= settings.a2a_schedule_task_failure_threshold
+                ):
+                    task.enabled = False
             thread.last_active_at = utc_now()
 
             await commit_safely(db)
 
+        except asyncio.TimeoutError:
+            task.last_run_at = utc_now()
+            task.last_run_status = A2AScheduleTask.STATUS_FAILED
+            task.consecutive_failures = (task.consecutive_failures or 0) + 1
+            if (
+                task.consecutive_failures
+                >= settings.a2a_schedule_task_failure_threshold
+            ):
+                task.enabled = False
+            execution.status = A2AScheduleExecution.STATUS_FAILED
+            execution.finished_at = task.last_run_at
+            execution.error_message = (
+                f"A2A invoke timeout after {settings.a2a_schedule_task_invoke_timeout}s"
+            )
+            if not execution.response_content:
+                execution.response_content = execution.error_message
+            try:
+                await commit_safely(db)
+            except Exception as commit_error:  # pragma: no cover - defensive
+                await rollback_safely(db)
+                logger.error(
+                    "Failed to persist schedule execution timeout task=%s err=%s",
+                    task.id,
+                    commit_error,
+                    exc_info=commit_error,
+                )
+            logger.error(
+                "Scheduled A2A execution timeout task=%s execution=%s",
+                task.id,
+                execution.id,
+            )
+
         except Exception as exc:  # pragma: no cover - defensive path
             task.last_run_at = utc_now()
             task.last_run_status = A2AScheduleTask.STATUS_FAILED
+            task.consecutive_failures = (task.consecutive_failures or 0) + 1
+            if (
+                task.consecutive_failures
+                >= settings.a2a_schedule_task_failure_threshold
+            ):
+                task.enabled = False
             execution.status = A2AScheduleExecution.STATUS_FAILED
             execution.finished_at = task.last_run_at
             execution.error_message = str(exc)[:2000]

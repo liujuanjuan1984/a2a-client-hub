@@ -474,6 +474,21 @@ class Settings(BaseSettings):
         alias="A2A_CLIENT_IDLE_TIMEOUT",
         description="Seconds of inactivity after which cached A2A HTTP clients are re-created (<=0 disables).",
     )
+    a2a_schedule_agent_concurrency_limit: int = Field(
+        default=3,
+        alias="A2A_SCHEDULE_AGENT_CONCURRENCY_LIMIT",
+        description="Maximum concurrent running scheduled executions per target agent.",
+    )
+    a2a_schedule_task_invoke_timeout: float = Field(
+        default=300.0,
+        alias="A2A_SCHEDULE_TASK_INVOKE_TIMEOUT",
+        description="Hard timeout in seconds for a single scheduled A2A invoke call.",
+    )
+    a2a_schedule_task_failure_threshold: int = Field(
+        default=3,
+        alias="A2A_SCHEDULE_TASK_FAILURE_THRESHOLD",
+        description="Consecutive failures before a scheduled task is automatically disabled.",
+    )
     a2a_stream_heartbeat_interval: float = Field(
         default=15.0,
         alias="A2A_STREAM_HEARTBEAT_INTERVAL",

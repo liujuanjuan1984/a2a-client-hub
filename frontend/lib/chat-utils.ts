@@ -1,4 +1,5 @@
 import type { A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
+import type { RuntimeInterrupt } from "@/lib/api/chat-utils";
 
 export type ExternalSessionRef = {
   provider?: string | null;
@@ -10,6 +11,7 @@ export type AgentSession = {
   source?: "manual" | "scheduled" | null;
   contextId: string | null;
   runtimeStatus?: string | null;
+  pendingInterrupt?: RuntimeInterrupt | null;
   streamState?: "idle" | "streaming" | "rebinding" | "recoverable" | "error";
   lastStreamError?: string | null;
   transport: string;
@@ -30,6 +32,7 @@ export const createAgentSession = (agentId: string): AgentSession => ({
   source: null,
   contextId: null,
   runtimeStatus: null,
+  pendingInterrupt: null,
   streamState: "idle",
   lastStreamError: null,
   transport: "http_json",
@@ -114,6 +117,7 @@ const normalizeSessionForPersistence = (
   source: session.source ?? null,
   contextId: session.contextId ?? null,
   runtimeStatus: null,
+  pendingInterrupt: null,
   streamState: "idle",
   lastStreamError: null,
   transport: "http_json",

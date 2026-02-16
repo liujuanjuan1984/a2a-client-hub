@@ -76,7 +76,7 @@ Credentials:
 
 - Configure `HUB_A2A_TOKEN_ENCRYPTION_KEY` (falls back to `USER_LLM_TOKEN_ENCRYPTION_KEY`).
 
-## OpenCode Session Query (A2A Extension)
+## OpenCode Session Query & Interrupt Callback (A2A Extension)
 
 This backend supports querying OpenCode sessions and message history via an A2A
 Agent Card extension declared by `opencode-a2a-serve`.
@@ -97,6 +97,13 @@ Endpoints:
 - List messages for a session:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages?page=1&size=50`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages:query`
+- Reply interrupt callbacks:
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply`
+    - body: `{ "request_id": "...", "reply": "once|always|reject" }`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reply`
+    - body: `{ "request_id": "...", "answers": [["A"], ["B"]] }`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reject`
+    - body: `{ "request_id": "..." }`
 
 Optional query (passthrough):
 
@@ -111,6 +118,9 @@ Notes:
   constraints (default size / max size).
 - Responses include a stable envelope with `success`, `result` (upstream
   envelope), `error_code`, and `upstream_error`.
+- Interrupt callback payloads intentionally follow the strict upstream contract:
+  `request_id` is required; legacy fields such as `requestID`, `decision`,
+  `allow` or `deny` are not accepted.
 
 ## Unified Conversation Domain API
 

@@ -52,6 +52,7 @@ class A2AScheduleTaskResponse(A2AScheduleTaskBase):
     next_run_at: Optional[datetime] = None
     last_run_at: Optional[datetime] = None
     last_run_status: A2AScheduleRunStatus = "idle"
+    consecutive_failures: int = 0
     created_at: datetime
     updated_at: datetime
 

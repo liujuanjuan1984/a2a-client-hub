@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.db.models.base import (
@@ -86,6 +95,13 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         nullable=True,
         index=True,
         comment="Next planned trigger time in UTC",
+    )
+    consecutive_failures = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Consecutive failed invocations before circuit break",
     )
     last_run_at = Column(
         DateTime(timezone=True),

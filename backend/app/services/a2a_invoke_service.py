@@ -105,6 +105,97 @@ class A2AInvokeService:
                 return int(value.strip())
         return None
 
+    @staticmethod
+    def _pick_number(payload: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                raw = value.strip()
+                if not raw:
+                    continue
+                try:
+                    return float(raw)
+                except ValueError:
+                    continue
+        return None
+
+    @classmethod
+    def _extract_usage_from_candidate(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        if not payload:
+            return {}
+
+        direct_usage = as_dict(payload.get("usage"))
+        metadata = as_dict(payload.get("metadata"))
+        opencode = as_dict(metadata.get("opencode"))
+        nested_usage = as_dict(opencode.get("usage"))
+
+        usage_payload: dict[str, Any] = {}
+        if direct_usage:
+            usage_payload.update(direct_usage)
+        if nested_usage:
+            usage_payload.update(nested_usage)
+        if not usage_payload:
+            return {}
+
+        normalized: dict[str, Any] = {}
+        token_field_map: dict[str, tuple[str, ...]] = {
+            "input_tokens": ("input_tokens", "inputTokens"),
+            "output_tokens": ("output_tokens", "outputTokens"),
+            "total_tokens": ("total_tokens", "totalTokens"),
+            "reasoning_tokens": ("reasoning_tokens", "reasoningTokens"),
+            "cache_tokens": ("cache_tokens", "cacheTokens"),
+        }
+        for field_name, keys in token_field_map.items():
+            value = cls._pick_int(usage_payload, keys)
+            if value is not None and value >= 0:
+                normalized[field_name] = value
+
+        cost = cls._pick_number(usage_payload, ("cost",))
+        if cost is not None and cost >= 0:
+            normalized["cost"] = cost
+        return normalized
+
+    @classmethod
+    def _extract_usage_hints_from_payload(
+        cls, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        root = as_dict(payload)
+        artifact = as_dict(root.get("artifact"))
+        message = as_dict(root.get("message"))
+        status = as_dict(root.get("status"))
+        status_message = as_dict(status.get("message"))
+        task = as_dict(root.get("task"))
+        task_status = as_dict(task.get("status"))
+        task_status_message = as_dict(task_status.get("message"))
+        result = as_dict(root.get("result"))
+        result_status = as_dict(result.get("status"))
+        result_status_message = as_dict(result_status.get("message"))
+
+        usage: dict[str, Any] = {}
+        for candidate in (
+            root,
+            artifact,
+            message,
+            status,
+            status_message,
+            task,
+            task_status,
+            task_status_message,
+            result,
+            result_status,
+            result_status_message,
+        ):
+            candidate_usage = cls._extract_usage_from_candidate(candidate)
+            if candidate_usage:
+                for k, v in candidate_usage.items():
+                    if v is not None:
+                        usage[k] = v
+        return usage
+
     @classmethod
     def _extract_stream_identity_hints_from_payload(
         cls, payload: dict[str, Any]
@@ -218,6 +309,12 @@ class A2AInvokeService:
         return cls._extract_stream_identity_hints_from_payload(payload)
 
     @classmethod
+    def extract_usage_hints_from_serialized_event(
+        cls, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return cls._extract_usage_hints_from_payload(payload)
+
+    @classmethod
     def _coerce_payload_to_dict(cls, payload: Any) -> dict[str, Any]:
         resolved_payload = payload
         if isinstance(resolved_payload, tuple):
@@ -263,6 +360,18 @@ class A2AInvokeService:
         if raw_payload:
             hints.update(cls._extract_stream_identity_hints_from_payload(raw_payload))
         return hints
+
+    @classmethod
+    def extract_usage_hints_from_invoke_result(
+        cls, result: dict[str, Any]
+    ) -> dict[str, Any]:
+        usage_hints = cls._extract_usage_hints_from_payload(result)
+        raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
+        if raw_payload:
+            raw_usage_hints = cls._extract_usage_hints_from_payload(raw_payload)
+            if raw_usage_hints:
+                usage_hints = raw_usage_hints
+        return usage_hints
 
     class _StreamTextAccumulator:
         """Accumulates stream text for persistence.

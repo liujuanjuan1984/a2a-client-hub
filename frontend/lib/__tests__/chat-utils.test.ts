@@ -13,6 +13,7 @@ describe("chat store utils", () => {
     expect(session.agentId).toBe("agent-1");
     expect(session.contextId).toBeNull();
     expect(session.streamState).toBe("idle");
+    expect(session.pendingInterrupt).toBeNull();
     expect(session.transport).toBe("http_json");
     expect(session.inputModes).toEqual(["text/plain"]);
     expect(session.outputModes).toEqual(["text/plain"]);
@@ -138,6 +139,11 @@ describe("chat store utils", () => {
     newest.streamState = "streaming";
     newest.lastStreamError = "temporary";
     newest.runtimeStatus = "working";
+    newest.pendingInterrupt = {
+      requestId: "perm-1",
+      type: "permission",
+      details: { permission: "read", patterns: ["/repo/.env"] },
+    };
 
     const older = createAgentSession("agent-2");
     older.lastActiveAt = "2026-02-14T11:00:00.000Z";
@@ -148,6 +154,7 @@ describe("chat store utils", () => {
     expect(persisted.newest.streamState).toBe("idle");
     expect(persisted.newest.lastStreamError).toBeNull();
     expect(persisted.newest.runtimeStatus).toBeNull();
+    expect(persisted.newest.pendingInterrupt).toBeNull();
     expect(persisted.newest.transport).toBe("http_json");
   });
 });

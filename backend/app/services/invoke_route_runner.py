@@ -39,6 +39,7 @@ class _InvokeState:
     context_id: str | None
     metadata: dict[str, Any]
     stream_identity: dict[str, Any]
+    stream_usage: dict[str, Any]
     user_message_id: str | None
     client_agent_message_id: str | None
 
@@ -135,6 +136,7 @@ async def _prepare_state(
         context_id=resolved_context_id,
         metadata=resolved_invoke_metadata,
         stream_identity={},
+        stream_usage={},
         user_message_id=payload.user_message_id,
         client_agent_message_id=payload.client_agent_message_id,
     )
@@ -177,6 +179,11 @@ def _build_stream_callbacks(
         )
         if identity_hints:
             state.stream_identity.update(identity_hints)
+        usage_hints = a2a_invoke_service.extract_usage_hints_from_serialized_event(
+            event_payload
+        )
+        if usage_hints:
+            state.stream_usage = usage_hints
 
     async def on_complete(stream_text: str) -> None:
         if state.local_session is None or state.local_source is None:
@@ -184,6 +191,8 @@ def _build_stream_callbacks(
         final_response_metadata = dict(stream_response_metadata)
         if state.stream_identity:
             final_response_metadata.update(state.stream_identity)
+        if state.stream_usage:
+            final_response_metadata["usage"] = dict(state.stream_usage)
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
@@ -215,6 +224,10 @@ def _build_stream_callbacks(
         error_response_metadata = (
             dict(state.stream_identity) if state.stream_identity else None
         )
+        if state.stream_usage:
+            if error_response_metadata is None:
+                error_response_metadata = {}
+            error_response_metadata["usage"] = dict(state.stream_usage)
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
@@ -314,6 +327,11 @@ async def run_http_invoke(
         response_metadata = (
             dict(state.stream_identity) if state.stream_identity else None
         )
+        usage_hints = a2a_invoke_service.extract_usage_hints_from_invoke_result(result)
+        if usage_hints:
+            if response_metadata is None:
+                response_metadata = {}
+            response_metadata["usage"] = usage_hints
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,

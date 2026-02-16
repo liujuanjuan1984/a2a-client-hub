@@ -26,15 +26,25 @@ class ResolvedExtension:
     uri: str
     required: bool
     jsonrpc: JsonRpcInterface
-    methods: Mapping[str, str]
+    methods: Mapping[str, Optional[str]]
     pagination: PageSizePagination
     business_code_map: Mapping[int, str]
     session_binding_metadata_key: Optional[str]
     result_envelope: Optional[Mapping[str, Any]]
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedInterruptCallbackExtension:
+    uri: str
+    required: bool
+    jsonrpc: JsonRpcInterface
+    methods: Mapping[str, Optional[str]]
+    business_code_map: Mapping[int, str]
+
+
 __all__ = [
     "JsonRpcInterface",
     "PageSizePagination",
     "ResolvedExtension",
+    "ResolvedInterruptCallbackExtension",
 ]
