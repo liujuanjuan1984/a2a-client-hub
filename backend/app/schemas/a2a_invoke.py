@@ -34,6 +34,17 @@ class A2AAgentInvokeRequest(BaseModel):
         alias="resumeFromSequence",
         description="Optional sequence number to resume streaming from after a disconnect",
     )
+    tools: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Optional tool declarations for upstream tool-enabled invocation",
+    )
+    tool_choice: Any | None = Field(
+        default=None,
+        alias="toolChoice",
+        description=(
+            "Optional tool selection policy for upstream model (e.g. auto/manual)"
+        ),
+    )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Optional A2A metadata forwarded with the message",

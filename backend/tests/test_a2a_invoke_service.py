@@ -901,3 +901,57 @@ def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
         "total_tokens": 77,
         "cost": 0.0077,
     }
+
+
+def test_extract_tool_calls_from_payload_supports_direct_tool_call():
+    tool_calls = a2a_invoke_service.extract_tool_calls_from_payload(
+        {
+            "kind": "tool-call",
+            "tool": {
+                "name": "hub_invoke_agent",
+                "arguments": '{"agent_id": "x", "prompt": "hi"}',
+            },
+            "toolCall": {
+                "name": "ignored",
+            },
+            "tool_call_id": "tc-1",
+        }
+    )
+    assert tool_calls == [
+        {
+            "tool_name": "hub_invoke_agent",
+            "tool_call_id": "tc-1",
+            "tool_args": {"agent_id": "x", "prompt": "hi"},
+        }
+    ]
+
+
+def test_extract_tool_calls_from_payload_supports_nested_artifact_tool_parts():
+    tool_calls = a2a_invoke_service.extract_tool_calls_from_payload(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [
+                    {
+                        "kind": "text",
+                        "text": '{"tool_name": "hub_invoke_agent", "tool_call_id": "tc-2", "tool_args": {"agent_id": "y", "prompt": "ok"}}',
+                    },
+                    {
+                        "kind": "text",
+                        "text": "ignored",
+                    },
+                ],
+            },
+            "metadata": {
+                "tool": {
+                    "name": "legacy",
+                    "arguments": '{"tool_name": "legacy", "tool_call_id": "legacy", "tool_args": {}}',
+                }
+            },
+        }
+    )
+    assert {
+        "tool_name": "hub_invoke_agent",
+        "tool_call_id": "tc-2",
+        "tool_args": {"agent_id": "y", "prompt": "ok"},
+    } in tool_calls

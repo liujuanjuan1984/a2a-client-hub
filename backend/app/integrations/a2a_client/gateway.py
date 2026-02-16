@@ -57,6 +57,8 @@ class A2AGateway:
         query: str,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        tools: Optional[list[dict[str, Any]]] = None,
+        tool_choice: Any | None = None,
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         timeout_seconds = float(max(timeout or self.settings.default_timeout, 1.0))
@@ -80,6 +82,8 @@ class A2AGateway:
                 query,
                 context_id=context_id,
                 metadata=metadata,
+                tools=tools,
+                tool_choice=tool_choice,
             )
         )
         watchdog_task: Optional[asyncio.Task[Any]] = None
@@ -233,6 +237,8 @@ class A2AGateway:
         query: str,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        tools: Optional[list[dict[str, Any]]] = None,
+        tool_choice: Any | None = None,
     ):
         logger.info(
             "A2A stream",
@@ -248,6 +254,8 @@ class A2AGateway:
             query,
             context_id=context_id,
             metadata=metadata,
+            tools=tools,
+            tool_choice=tool_choice,
         ):
             yield payload
 
