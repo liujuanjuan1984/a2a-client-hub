@@ -8,7 +8,6 @@ This module provides a single read model for session list/history/continue acros
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
@@ -22,12 +21,7 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message as agent_message_handler
 from app.services.conversation_identity import conversation_identity_service
-from app.utils.payload_extract import (
-    as_dict,
-    extract_context_id,
-    extract_provider_and_external_session_id,
-    pick_first_non_empty_str,
-)
+from app.utils.payload_extract import extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import utc_now
 
@@ -132,57 +126,12 @@ class SessionHubService:
             )
         )
         threads = list((await db.execute(stmt)).scalars().all())
-
-        session_ids = [thread.id for thread in threads]
-        latest_metadata_map = await self._latest_local_message_metadata_map(
-            db, user_id=user_id, local_conversation_ids=session_ids
-        )
-        binding_conversation_map = await conversation_identity_service.find_conversation_ids_for_local_sessions_batch(
-            db,
-            user_id=user_id,
-            local_session_ids=session_ids,
-        )
-        binding_locator_map = await conversation_identity_service.find_latest_external_bindings_for_local_sessions_batch(
-            db,
-            user_id=user_id,
-            local_session_ids=session_ids,
-        )
-        context_ids = [
-            context_id
-            for context_id in (
-                extract_context_id(latest_metadata_map.get(session.id, {}))
-                for session in threads
-            )
-            if isinstance(context_id, str) and context_id
-        ]
-        context_conversation_map = (
-            await conversation_identity_service.find_conversation_ids_for_context_batch(
-                db,
-                user_id=user_id,
-                context_ids=context_ids,
-            )
-        )
         items: list[dict[str, Any]] = []
 
         for thread in threads:
-            latest_metadata = latest_metadata_map.get(thread.id, {})
-            (
-                metadata_provider,
-                metadata_external_id,
-            ) = extract_provider_and_external_session_id(latest_metadata)
-            metadata_context_id = extract_context_id(latest_metadata)
-            binding_locator = binding_locator_map.get(thread.id)
-            if not metadata_provider and binding_locator:
-                metadata_provider = binding_locator.provider
-            if not metadata_external_id and binding_locator:
-                metadata_external_id = binding_locator.external_session_id
-            if not metadata_context_id and binding_locator:
-                metadata_context_id = binding_locator.context_id
-            conversation_id = binding_conversation_map.get(thread.id)
-            if conversation_id is None and binding_locator:
-                conversation_id = binding_locator.conversation_id
-            if conversation_id is None and metadata_context_id:
-                conversation_id = context_conversation_map.get(metadata_context_id)
+            metadata_provider = normalize_provider(thread.external_provider)
+            metadata_external_id = normalize_non_empty_text(thread.external_session_id)
+            metadata_context_id = normalize_non_empty_text(thread.context_id)
             resolved_source = _resolve_session_source(
                 thread_source=thread.source,
                 provider=metadata_provider,
@@ -201,13 +150,10 @@ class SessionHubService:
             )
             items.append(
                 {
-                    "conversationId": str(conversation_id or thread.id),
+                    "conversationId": str(thread.id),
                     "source": resolved_source,
                     "agent_id": thread.agent_id,
                     "agent_source": thread.agent_source or "personal",
-                    "provider": metadata_provider,
-                    "external_session_id": metadata_external_id,
-                    "context_id": metadata_context_id,
                     "title": thread.title or title_fallback,
                     "last_active_at": thread.last_active_at,
                     "created_at": thread.created_at,
@@ -215,44 +161,6 @@ class SessionHubService:
             )
 
         return items
-
-    async def _latest_local_message_metadata_map(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        local_conversation_ids: list[UUID],
-    ) -> dict[UUID, Dict[str, Any]]:
-        if not local_conversation_ids:
-            return {}
-        stmt = (
-            select(AgentMessage.conversation_id, AgentMessage.message_metadata)
-            .where(
-                and_(
-                    AgentMessage.user_id == user_id,
-                    AgentMessage.conversation_id.in_(local_conversation_ids),
-                )
-            )
-            .order_by(
-                AgentMessage.conversation_id.asc(),
-                AgentMessage.created_at.desc(),
-                AgentMessage.id.desc(),
-            )
-            .distinct(AgentMessage.conversation_id)
-        )
-        rows = (await db.execute(stmt)).all()
-        mapped: dict[UUID, Dict[str, Any]] = {}
-        for row in rows:
-            conversation_id = row.conversation_id
-            if not isinstance(conversation_id, UUID):
-                continue
-            metadata = (
-                dict(row.message_metadata)
-                if isinstance(row.message_metadata, dict)
-                else {}
-            )
-            mapped[conversation_id] = metadata
-        return mapped
 
     async def list_messages(
         self,
@@ -278,30 +186,14 @@ class SessionHubService:
                 )
             )
         )
-        latest_metadata_map = await self._latest_local_message_metadata_map(
-            db,
-            user_id=user_id,
-            local_conversation_ids=[resolved_conversation_id],
+        provider = normalize_provider(session.external_provider if session else None)
+        external_session_id = normalize_non_empty_text(
+            session.external_session_id if session else None
         )
-        latest_metadata = latest_metadata_map.get(resolved_conversation_id, {})
-        provider, external_session_id = extract_provider_and_external_session_id(
-            latest_metadata
-        )
-        context_id = extract_context_id(latest_metadata)
-        binding_locator = await conversation_identity_service.find_latest_external_binding_for_conversation(
-            db,
-            user_id=user_id,
-            conversation_id=resolved_conversation_id,
-        )
-        if not provider and binding_locator:
-            provider = binding_locator.provider
-        if not external_session_id and binding_locator:
-            external_session_id = binding_locator.external_session_id
-        if not context_id and binding_locator:
-            context_id = binding_locator.context_id
+        context_id = normalize_non_empty_text(session.context_id if session else None)
 
-        normalized_provider = normalize_provider(provider)
-        normalized_external_session_id = normalize_non_empty_text(external_session_id)
+        normalized_provider = provider
+        normalized_external_session_id = external_session_id
 
         resolved_source = _resolve_session_source(
             thread_source=session.source if session else None,
@@ -386,44 +278,27 @@ class SessionHubService:
                 )
             )
         )
-        latest_metadata_map = await self._latest_local_message_metadata_map(
-            db,
-            user_id=user_id,
-            local_conversation_ids=[resolved_conversation_id],
+        provider = normalize_provider(session.external_provider if session else None)
+        external_session_id = normalize_non_empty_text(
+            session.external_session_id if session else None
         )
-        latest_metadata = latest_metadata_map.get(resolved_conversation_id, {})
-        provider, external_session_id = extract_provider_and_external_session_id(
-            latest_metadata
-        )
-        context_id = extract_context_id(latest_metadata)
-
-        binding_locator = await conversation_identity_service.find_latest_external_binding_for_conversation(
-            db,
-            user_id=user_id,
-            conversation_id=resolved_conversation_id,
-        )
-        if not provider and binding_locator:
-            provider = binding_locator.provider
-        if not external_session_id and binding_locator:
-            external_session_id = binding_locator.external_session_id
-        if not context_id and binding_locator:
-            context_id = binding_locator.context_id
+        context_id = normalize_non_empty_text(session.context_id if session else None)
 
         if target is None:
             return (
                 _build_continue_response(
                     conversation_id=resolved_conversation_id,
                     source="manual",
-                    provider=normalize_provider(provider),
-                    external_session_id=normalize_non_empty_text(external_session_id),
+                    provider=provider,
+                    external_session_id=external_session_id,
                     context_id=context_id if isinstance(context_id, str) else None,
                     metadata={},
                 ),
                 False,
             )
 
-        resolved_provider = normalize_provider(provider)
-        resolved_external_session_id = normalize_non_empty_text(external_session_id)
+        resolved_provider = provider
+        resolved_external_session_id = external_session_id
         if target.source == "opencode" and not resolved_provider:
             resolved_provider = "opencode"
 
@@ -662,17 +537,18 @@ class SessionHubService:
                 binding_metadata=invoke_metadata,
                 local_session_id=session.id,
             )
-        elif context_id and isinstance(context_id, str):
-            resolved_conversation_id = (
-                await conversation_identity_service.find_conversation_id_for_context(
-                    db,
-                    user_id=user_id,
-                    context_id=context_id,
-                    provider=provider_from_invoke,
-                )
-            )
-            if isinstance(resolved_conversation_id, UUID):
-                conversation_id = resolved_conversation_id
+        else:
+            normalized_provider = normalize_provider(provider_from_invoke)
+            normalized_context_id = normalize_non_empty_text(context_id)
+            if normalized_provider and session.external_provider != normalized_provider:
+                session.external_provider = normalized_provider
+            if normalized_context_id and session.context_id != normalized_context_id:
+                session.context_id = normalized_context_id
+            if (
+                normalized_provider == "opencode"
+                and session.source == ConversationThread.SOURCE_MANUAL
+            ):
+                session.source = ConversationThread.SOURCE_OPENCODE
 
         await agent_message_handler.create_agent_message(
             db,
@@ -705,7 +581,16 @@ class SessionHubService:
             conversation_id=conversation_id,
             metadata=agent_metadata,
         )
-        session.last_active_at = utc_now()
+        target_session = session
+        if conversation_id != session.id:
+            rebound_session = await self._get_local_session_by_id(
+                db,
+                user_id=user_id,
+                local_session_id=conversation_id,
+            )
+            if rebound_session is not None:
+                target_session = rebound_session
+        target_session.last_active_at = utc_now()
 
     async def _get_local_session(
         self,
@@ -765,37 +650,7 @@ class SessionHubService:
         user_id: UUID,
         conversation_id: UUID,
     ) -> ResolvedConversationTarget | None:
-        binding_locator = await conversation_identity_service.find_latest_external_binding_for_conversation(
-            db,
-            user_id=user_id,
-            conversation_id=conversation_id,
-        )
-        if (
-            binding_locator
-            and normalize_provider(binding_locator.provider) == "opencode"
-            and isinstance(binding_locator.agent_id, UUID)
-            and binding_locator.agent_source in {"personal", "shared"}
-            and isinstance(binding_locator.external_session_id, str)
-            and binding_locator.external_session_id
-        ):
-            return ResolvedConversationTarget(
-                source="opencode",
-                conversation_id=conversation_id,
-                local_session_id=(
-                    binding_locator.local_session_id
-                    if isinstance(binding_locator.local_session_id, UUID)
-                    else None
-                ),
-                agent_id=binding_locator.agent_id,
-                agent_source=binding_locator.agent_source,  # type: ignore[arg-type]
-                external_session_id=binding_locator.external_session_id,
-            )
-
-        local_session_id = (
-            binding_locator.local_session_id
-            if binding_locator and isinstance(binding_locator.local_session_id, UUID)
-            else conversation_id
-        )
+        local_session_id = conversation_id
         local_session = await self._get_local_session_by_id(
             db,
             user_id=user_id,
@@ -825,6 +680,9 @@ class SessionHubService:
                     local_session.agent_source
                     if local_session.agent_source in {"personal", "shared"}
                     else None
+                ),
+                external_session_id=normalize_non_empty_text(
+                    local_session.external_session_id
                 ),
             )
         return None
@@ -988,240 +846,6 @@ def _resolve_local_message_item_id(
         if client_message_id:
             return client_message_id
     return str(message.id)
-
-
-def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:
-    obj = as_dict(item)
-    parsed_content = _try_parse_json_object(
-        pick_first_non_empty_str(obj, ["content", "message"]) or ""
-    )
-    raw_info = _extract_opencode_raw_info(obj, parsed_content)
-    message_id = str(
-        obj.get("id")
-        or obj.get("message_id")
-        or obj.get("messageId")
-        or raw_info.get("id")
-        or parsed_content.get("messageId")
-        or f"opencode-{index}"
-    )
-
-    role = _map_role(
-        pick_first_non_empty_str(obj, ["role", "type", "sender"])
-        or pick_first_non_empty_str(raw_info, ["role"])
-        or pick_first_non_empty_str(parsed_content, ["role"])
-    )
-
-    message_blocks = _extract_opencode_message_blocks(
-        obj, parsed_content=parsed_content
-    )
-    content = _extract_content(
-        obj,
-        parsed_content=parsed_content,
-        message_blocks=message_blocks,
-    )
-    created_at = _extract_timestamp(
-        obj, raw_info=raw_info, parsed_content=parsed_content
-    )
-
-    metadata: dict[str, Any] = {}
-    if message_blocks:
-        metadata["message_blocks"] = message_blocks
-
-    return {
-        "id": message_id,
-        "role": role,
-        "content": content,
-        "created_at": created_at,
-        "metadata": metadata,
-    }
-
-
-def _map_role(raw: Optional[str]) -> str:
-    normalized = (raw or "").strip().lower()
-    if normalized in {"assistant", "agent"}:
-        return "agent"
-    if normalized in {"user", "human", "automation"}:
-        return "user"
-    return "system"
-
-
-def _extract_content(
-    obj: Dict[str, Any],
-    *,
-    parsed_content: dict[str, Any],
-    message_blocks: list[dict[str, Any]],
-) -> str:
-    if message_blocks:
-        return "".join(
-            block.get("content", "")
-            for block in message_blocks
-            if block.get("type") == "text" and isinstance(block.get("content"), str)
-        )
-
-    direct = pick_first_non_empty_str(obj, ["text", "content", "message"])
-    if direct:
-        parsed_direct = _try_parse_json_object(direct)
-        if parsed_direct:
-            if _extract_opencode_message_parts(parsed_direct):
-                return ""
-            if parsed_direct.get("kind") == "message":
-                return ""
-        return direct
-
-    if parsed_content and parsed_content.get("kind") == "message":
-        return ""
-    return ""
-
-
-def _extract_timestamp(
-    obj: Dict[str, Any],
-    *,
-    raw_info: dict[str, Any],
-    parsed_content: dict[str, Any],
-) -> datetime:
-    direct = pick_first_non_empty_str(
-        obj, ["created_at", "createdAt", "timestamp", "ts"]
-    )
-    if direct:
-        try:
-            return datetime.fromisoformat(direct.replace("Z", "+00:00")).astimezone(
-                timezone.utc
-            )
-        except ValueError:
-            pass
-
-    ms = _pick_epoch_millis(obj, keys=("created", "updated", "completed"))
-    if ms is None:
-        ms = _pick_epoch_millis(
-            as_dict(raw_info.get("time")), keys=("created", "updated", "completed")
-        )
-    if ms is None:
-        parsed_raw_info = _extract_opencode_raw_info(parsed_content, {})
-        ms = _pick_epoch_millis(
-            as_dict(parsed_raw_info.get("time")),
-            keys=("created", "updated", "completed"),
-        )
-
-    if isinstance(ms, int):
-        try:
-            return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
-        except (OSError, OverflowError, ValueError):
-            pass
-
-    return utc_now()
-
-
-def _pick_epoch_millis(payload: dict[str, Any], *, keys: tuple[str, ...]) -> int | None:
-    for key in keys:
-        value = payload.get(key)
-        if isinstance(value, int):
-            return value
-        if isinstance(value, float) and value.is_integer():
-            return int(value)
-        if isinstance(value, str) and value.strip().isdigit():
-            return int(value.strip())
-    return None
-
-
-def _try_parse_json_object(value: str) -> dict[str, Any]:
-    stripped = (value or "").strip()
-    if not stripped.startswith("{"):
-        return {}
-    try:
-        parsed = json.loads(stripped)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _extract_opencode_raw_info(
-    obj: dict[str, Any], parsed_content: dict[str, Any]
-) -> dict[str, Any]:
-    raw_info = as_dict(
-        as_dict(as_dict(as_dict(obj.get("metadata")).get("opencode")).get("raw")).get(
-            "info"
-        )
-    )
-    if raw_info:
-        return raw_info
-    return as_dict(
-        as_dict(
-            as_dict(as_dict(parsed_content.get("metadata")).get("opencode")).get("raw")
-        ).get("info")
-    )
-
-
-def _extract_opencode_message_parts(
-    obj: dict[str, Any],
-) -> list[dict[str, Any]]:
-    parts = obj.get("parts")
-    if isinstance(parts, list):
-        return [part for part in parts if isinstance(part, dict)]
-    raw_parts = as_dict(
-        as_dict(as_dict(as_dict(obj.get("metadata")).get("opencode")).get("raw"))
-    ).get("parts")
-    if isinstance(raw_parts, list):
-        return [part for part in raw_parts if isinstance(part, dict)]
-    return []
-
-
-def _extract_tool_call_block_content(part: dict[str, Any]) -> str:
-    state = as_dict(part.get("state"))
-    payload: dict[str, Any] = {}
-    for source_key, target_key in (
-        ("callID", "call_id"),
-        ("call_id", "call_id"),
-        ("tool", "tool"),
-    ):
-        value = part.get(source_key)
-        if isinstance(value, str) and value.strip():
-            payload[target_key] = value.strip()
-    for key in ("status", "title"):
-        value = state.get(key)
-        if isinstance(value, str) and value.strip():
-            payload[key] = value.strip()
-    if not payload:
-        return ""
-    return json.dumps(payload, ensure_ascii=False)
-
-
-def _extract_opencode_message_blocks(
-    obj: dict[str, Any], *, parsed_content: dict[str, Any]
-) -> list[dict[str, Any]]:
-    parts = _extract_opencode_message_parts(obj)
-    if not parts:
-        parts = _extract_opencode_message_parts(parsed_content)
-    blocks: list[dict[str, Any]] = []
-    for index, part in enumerate(parts):
-        raw_kind = str(part.get("kind") or part.get("type") or "").strip().lower()
-        if not raw_kind:
-            continue
-        block_type: str | None = None
-        content = ""
-        if raw_kind in {"text"}:
-            text = part.get("text")
-            if isinstance(text, str):
-                content = text
-            block_type = "text"
-        elif raw_kind in {"reasoning"}:
-            text = part.get("text")
-            if isinstance(text, str):
-                content = text
-            block_type = "reasoning"
-        elif raw_kind in {"tool"}:
-            content = _extract_tool_call_block_content(part)
-            block_type = "tool_call"
-        if not block_type or not content:
-            continue
-        blocks.append(
-            {
-                "id": f"history-block-{index + 1}",
-                "type": block_type,
-                "content": content,
-                "is_finished": True,
-            }
-        )
-    return blocks
 
 
 session_hub_service = SessionHubService()

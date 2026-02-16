@@ -10,7 +10,7 @@ from app.api.routers import admin_a2a_agents as admin_router
 from app.api.routers import hub_a2a_agents as hub_router
 from app.core.config import settings
 from app.db.models.a2a_agent_credential import A2AAgentCredential
-from app.db.models.conversation_binding import ConversationBinding
+from app.db.models.conversation_thread import ConversationThread
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from tests.api_utils import create_test_client
 from tests.utils import create_user
@@ -199,14 +199,13 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
     resolved = fake_gateway.calls[0]["resolved"]
     assert resolved.headers["Authorization"].endswith("secret-token-9999")
     external_binding = await async_db_session.scalar(
-        select(ConversationBinding).where(
-            ConversationBinding.user_id == alice.id,
-            ConversationBinding.binding_kind
-            == ConversationBinding.KIND_EXTERNAL_SESSION,
-            ConversationBinding.provider == "opencode",
-            ConversationBinding.agent_id == agent_uuid,
-            ConversationBinding.agent_source == "shared",
-            ConversationBinding.external_session_id == "upstream-session-1",
+        select(ConversationThread).where(
+            ConversationThread.user_id == alice.id,
+            ConversationThread.id == UUID(conversation_id),
+            ConversationThread.external_provider == "opencode",
+            ConversationThread.agent_id == agent_uuid,
+            ConversationThread.agent_source == "shared",
+            ConversationThread.external_session_id == "upstream-session-1",
         )
     )
     assert external_binding is not None
@@ -298,14 +297,13 @@ async def test_allowlisted_user_can_stream_sse(
     resolved = fake_gateway.calls[0]["resolved"]
     assert resolved.headers["Authorization"].endswith("secret-token-stream")
     external_binding = await async_db_session.scalar(
-        select(ConversationBinding).where(
-            ConversationBinding.user_id == alice.id,
-            ConversationBinding.binding_kind
-            == ConversationBinding.KIND_EXTERNAL_SESSION,
-            ConversationBinding.provider == "opencode",
-            ConversationBinding.agent_id == agent_uuid,
-            ConversationBinding.agent_source == "shared",
-            ConversationBinding.external_session_id == "upstream-stream-1",
+        select(ConversationThread).where(
+            ConversationThread.user_id == alice.id,
+            ConversationThread.id == UUID(conversation_id),
+            ConversationThread.external_provider == "opencode",
+            ConversationThread.agent_id == agent_uuid,
+            ConversationThread.agent_source == "shared",
+            ConversationThread.external_session_id == "upstream-stream-1",
         )
     )
     assert external_binding is not None

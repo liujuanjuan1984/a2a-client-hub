@@ -10,7 +10,6 @@ from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.conversation_binding import ConversationBinding
 from app.db.models.conversation_thread import ConversationThread
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import utc_now
@@ -34,7 +33,10 @@ class ExternalBindingLocator:
 
 
 class ConversationIdentityService:
-    """Service that owns canonical conversation identity and binding rules."""
+    """Service that owns canonical conversation identity and binding rules.
+
+    External binding fields are persisted directly on ``conversation_threads``.
+    """
 
     async def find_conversation_id_for_external(
         self,
@@ -49,14 +51,12 @@ class ConversationIdentityService:
         if not resolved_provider or not resolved_external_id:
             return None
         return await db.scalar(
-            select(ConversationBinding.conversation_id).where(
+            select(ConversationThread.id).where(
                 and_(
-                    ConversationBinding.user_id == user_id,
-                    ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
-                    ConversationBinding.binding_kind
-                    == ConversationBinding.KIND_EXTERNAL_SESSION,
-                    ConversationBinding.provider == resolved_provider,
-                    ConversationBinding.external_session_id == resolved_external_id,
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    ConversationThread.external_provider == resolved_provider,
+                    ConversationThread.external_session_id == resolved_external_id,
                 )
             )
         )
@@ -84,16 +84,14 @@ class ConversationIdentityService:
 
         result = await db.execute(
             select(
-                ConversationBinding.external_session_id,
-                ConversationBinding.conversation_id,
+                ConversationThread.external_session_id,
+                ConversationThread.id,
             ).where(
                 and_(
-                    ConversationBinding.user_id == user_id,
-                    ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
-                    ConversationBinding.binding_kind
-                    == ConversationBinding.KIND_EXTERNAL_SESSION,
-                    ConversationBinding.provider == resolved_provider,
-                    ConversationBinding.external_session_id.in_(normalized_ids),
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    ConversationThread.external_provider == resolved_provider,
+                    ConversationThread.external_session_id.in_(normalized_ids),
                 )
             )
         )
@@ -145,27 +143,25 @@ class ConversationIdentityService:
         resolved_provider = normalize_provider(provider) if provider else None
 
         filters = [
-            ConversationBinding.user_id == user_id,
-            ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
-            ConversationBinding.binding_kind
-            == ConversationBinding.KIND_EXTERNAL_SESSION,
-            ConversationBinding.context_id.in_(normalized_context_ids),
+            ConversationThread.user_id == user_id,
+            ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+            ConversationThread.context_id.in_(normalized_context_ids),
         ]
         if resolved_provider:
-            filters.append(ConversationBinding.provider == resolved_provider)
+            filters.append(ConversationThread.external_provider == resolved_provider)
 
         result = await db.execute(
             select(
-                ConversationBinding.context_id,
-                ConversationBinding.conversation_id,
+                ConversationThread.context_id,
+                ConversationThread.id,
             )
             .where(and_(*filters))
             .order_by(
-                ConversationBinding.context_id.asc(),
-                ConversationBinding.last_seen_at.desc(),
-                ConversationBinding.id.desc(),
+                ConversationThread.context_id.asc(),
+                ConversationThread.last_active_at.desc(),
+                ConversationThread.id.desc(),
             )
-            .distinct(ConversationBinding.context_id)
+            .distinct(ConversationThread.context_id)
         )
         mapped: dict[str, UUID] = {}
         for context_id, conversation_id in result.all():
@@ -199,50 +195,18 @@ class ConversationIdentityService:
             return {}
 
         result = await db.execute(
-            select(
-                ConversationBinding.local_session_id,
-                ConversationBinding.conversation_id,
-            )
-            .where(
+            select(ConversationThread.id).where(
                 and_(
-                    ConversationBinding.user_id == user_id,
-                    ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
-                    ConversationBinding.binding_kind
-                    == ConversationBinding.KIND_EXTERNAL_SESSION,
-                    ConversationBinding.local_session_id.in_(
-                        normalized_local_session_ids
-                    ),
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.id.in_(normalized_local_session_ids),
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
                 )
             )
-            .order_by(
-                ConversationBinding.local_session_id.asc(),
-                ConversationBinding.last_seen_at.desc(),
-                ConversationBinding.id.desc(),
-            )
-            .distinct(ConversationBinding.local_session_id)
         )
         mapped: dict[UUID, UUID] = {}
-        for local_session_id, conversation_id in result.all():
-            if isinstance(local_session_id, UUID) and local_session_id not in mapped:
-                mapped[local_session_id] = conversation_id
-        unresolved_local_ids = [
-            local_id
-            for local_id in normalized_local_session_ids
-            if local_id not in mapped
-        ]
-        if unresolved_local_ids:
-            thread_rows = await db.execute(
-                select(ConversationThread.id).where(
-                    and_(
-                        ConversationThread.user_id == user_id,
-                        ConversationThread.id.in_(unresolved_local_ids),
-                        ConversationThread.status == ConversationThread.STATUS_ACTIVE,
-                    )
-                )
-            )
-            for (conversation_id,) in thread_rows.all():
-                if isinstance(conversation_id, UUID) and conversation_id not in mapped:
-                    mapped[conversation_id] = conversation_id
+        for (conversation_id,) in result.all():
+            if isinstance(conversation_id, UUID):
+                mapped[conversation_id] = conversation_id
         return mapped
 
     async def find_latest_external_binding_for_conversation(
@@ -272,31 +236,27 @@ class ConversationIdentityService:
 
         result = await db.execute(
             select(
-                ConversationBinding.conversation_id,
-                ConversationBinding.provider,
-                ConversationBinding.external_session_id,
-                ConversationBinding.context_id,
-                ConversationBinding.agent_id,
-                ConversationBinding.agent_source,
-                ConversationBinding.local_session_id,
+                ConversationThread.id,
+                ConversationThread.external_provider,
+                ConversationThread.external_session_id,
+                ConversationThread.context_id,
+                ConversationThread.agent_id,
+                ConversationThread.agent_source,
             )
             .where(
                 and_(
-                    ConversationBinding.user_id == user_id,
-                    ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
-                    ConversationBinding.binding_kind
-                    == ConversationBinding.KIND_EXTERNAL_SESSION,
-                    ConversationBinding.conversation_id.in_(
-                        normalized_conversation_ids
-                    ),
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    ConversationThread.id.in_(normalized_conversation_ids),
+                    ConversationThread.external_provider.is_not(None),
+                    ConversationThread.external_session_id.is_not(None),
                 )
             )
             .order_by(
-                ConversationBinding.conversation_id.asc(),
-                ConversationBinding.last_seen_at.desc(),
-                ConversationBinding.id.desc(),
+                ConversationThread.id.asc(),
+                ConversationThread.last_active_at.desc(),
             )
-            .distinct(ConversationBinding.conversation_id)
+            .distinct(ConversationThread.id)
         )
         mapped: dict[UUID, ExternalBindingLocator] = {}
         for (
@@ -306,7 +266,6 @@ class ConversationIdentityService:
             context_id,
             agent_id,
             agent_source,
-            local_session_id,
         ) in result.all():
             if (
                 not isinstance(conversation_id, UUID)
@@ -322,9 +281,7 @@ class ConversationIdentityService:
                 context_id=context_id if isinstance(context_id, str) else None,
                 agent_id=agent_id if isinstance(agent_id, UUID) else None,
                 agent_source=agent_source if isinstance(agent_source, str) else None,
-                local_session_id=(
-                    local_session_id if isinstance(local_session_id, UUID) else None
-                ),
+                local_session_id=conversation_id,
             )
         return mapped
 
@@ -353,62 +310,12 @@ class ConversationIdentityService:
         if not normalized_local_session_ids:
             return {}
 
-        result = await db.execute(
-            select(
-                ConversationBinding.local_session_id,
-                ConversationBinding.conversation_id,
-                ConversationBinding.provider,
-                ConversationBinding.external_session_id,
-                ConversationBinding.context_id,
-                ConversationBinding.agent_id,
-                ConversationBinding.agent_source,
-            )
-            .where(
-                and_(
-                    ConversationBinding.user_id == user_id,
-                    ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
-                    ConversationBinding.binding_kind
-                    == ConversationBinding.KIND_EXTERNAL_SESSION,
-                    ConversationBinding.local_session_id.in_(
-                        normalized_local_session_ids
-                    ),
-                )
-            )
-            .order_by(
-                ConversationBinding.local_session_id.asc(),
-                ConversationBinding.last_seen_at.desc(),
-                ConversationBinding.id.desc(),
-            )
-            .distinct(ConversationBinding.local_session_id)
+        mapped = await self.find_latest_external_bindings_for_conversations_batch(
+            db,
+            user_id=user_id,
+            conversation_ids=normalized_local_session_ids,
         )
-        mapped: dict[UUID, ExternalBindingLocator] = {}
-        for (
-            local_session_id,
-            conversation_id,
-            provider,
-            external_session_id,
-            context_id,
-            agent_id,
-            agent_source,
-        ) in result.all():
-            if (
-                not isinstance(local_session_id, UUID)
-                or local_session_id in mapped
-                or not isinstance(conversation_id, UUID)
-                or not isinstance(provider, str)
-                or not isinstance(external_session_id, str)
-            ):
-                continue
-            mapped[local_session_id] = ExternalBindingLocator(
-                conversation_id=conversation_id,
-                provider=provider,
-                external_session_id=external_session_id,
-                context_id=context_id if isinstance(context_id, str) else None,
-                agent_id=agent_id if isinstance(agent_id, UUID) else None,
-                agent_source=agent_source if isinstance(agent_source, str) else None,
-                local_session_id=local_session_id,
-            )
-        return mapped
+        return {conversation_id: locator for conversation_id, locator in mapped.items()}
 
     async def bind_external_session(
         self,
@@ -463,42 +370,38 @@ class ConversationIdentityService:
         if not resolved_external_id:
             raise ValueError("external_session_id is required")
 
-        existing = await db.scalar(
-            select(ConversationBinding).where(
+        existing_by_external = await db.scalar(
+            select(ConversationThread).where(
                 and_(
-                    ConversationBinding.user_id == user_id,
-                    ConversationBinding.status == ConversationBinding.STATUS_ACTIVE,
-                    ConversationBinding.binding_kind
-                    == ConversationBinding.KIND_EXTERNAL_SESSION,
-                    ConversationBinding.provider == resolved_provider,
-                    ConversationBinding.external_session_id == resolved_external_id,
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    ConversationThread.external_provider == resolved_provider,
+                    ConversationThread.external_session_id == resolved_external_id,
                 )
             )
         )
-        if existing:
+        if existing_by_external:
             mutated = False
-            if agent_id and existing.agent_id != agent_id:
-                existing.agent_id = agent_id
+            if agent_id and existing_by_external.agent_id != agent_id:
+                existing_by_external.agent_id = agent_id
                 mutated = True
-            if agent_source and existing.agent_source != agent_source:
-                existing.agent_source = agent_source
+            if agent_source and existing_by_external.agent_source != agent_source:
+                existing_by_external.agent_source = agent_source
                 mutated = True
             normalized_context_id = normalize_non_empty_text(context_id)
-            if normalized_context_id and existing.context_id != normalized_context_id:
-                existing.context_id = normalized_context_id
+            if (
+                normalized_context_id
+                and existing_by_external.context_id != normalized_context_id
+            ):
+                existing_by_external.context_id = normalized_context_id
                 mutated = True
-            if local_session_id and existing.local_session_id != local_session_id:
-                existing.local_session_id = local_session_id
+            if existing_by_external.source != ConversationThread.SOURCE_OPENCODE:
+                existing_by_external.source = ConversationThread.SOURCE_OPENCODE
                 mutated = True
-            if isinstance(binding_metadata, dict) and binding_metadata:
-                normalized_metadata = dict(binding_metadata)
-                if existing.binding_metadata != normalized_metadata:
-                    existing.binding_metadata = normalized_metadata
-                    mutated = True
             if mutated:
-                existing.last_seen_at = now
+                existing_by_external.last_active_at = now
             return ExternalBindingResult(
-                conversation_id=existing.conversation_id,
+                conversation_id=existing_by_external.id,
                 mutated=mutated,
             )
 
@@ -519,24 +422,27 @@ class ConversationIdentityService:
                     db.add(thread)
                     await db.flush()
                     resolved_conversation_id = thread.id
-                db.add(
-                    ConversationBinding(
-                        user_id=user_id,
-                        conversation_id=resolved_conversation_id,
-                        binding_kind=ConversationBinding.KIND_EXTERNAL_SESSION,
-                        provider=resolved_provider,
-                        agent_id=agent_id,
-                        agent_source=agent_source,
-                        local_session_id=local_session_id,
-                        external_session_id=resolved_external_id,
-                        context_id=normalize_non_empty_text(context_id),
-                        binding_metadata=dict(binding_metadata or {}),
-                        status=ConversationBinding.STATUS_ACTIVE,
-                        is_primary=True,
-                        first_seen_at=now,
-                        last_seen_at=now,
+                thread = await db.scalar(
+                    select(ConversationThread).where(
+                        and_(
+                            ConversationThread.id == resolved_conversation_id,
+                            ConversationThread.user_id == user_id,
+                            ConversationThread.status
+                            == ConversationThread.STATUS_ACTIVE,
+                        )
                     )
                 )
+                if thread is None:
+                    raise ValueError("session_not_found")
+                thread.external_provider = resolved_provider
+                thread.external_session_id = resolved_external_id
+                thread.context_id = normalize_non_empty_text(context_id)
+                thread.source = ConversationThread.SOURCE_OPENCODE
+                if agent_id:
+                    thread.agent_id = agent_id
+                if agent_source:
+                    thread.agent_source = agent_source
+                thread.last_active_at = now
                 await db.flush()
         except IntegrityError:
             rebound = await self.find_conversation_id_for_external(

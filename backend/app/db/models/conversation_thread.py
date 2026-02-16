@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, validates
 
@@ -16,7 +24,19 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
     """Canonical user conversation identity across local and external sources."""
 
     __tablename__ = "conversation_threads"
-    __table_args__ = {"schema": SCHEMA_NAME}
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "external_provider",
+            "external_session_id",
+            name="uq_conversation_threads_user_provider_external_session",
+        ),
+        CheckConstraint(
+            "(external_session_id IS NULL) OR (external_provider IS NOT NULL)",
+            name="ck_conversation_threads_external_session_requires_provider",
+        ),
+        {"schema": SCHEMA_NAME},
+    )
 
     STATUS_ACTIVE: ClassVar[str] = "active"
     STATUS_MERGED: ClassVar[str] = "merged"
@@ -44,6 +64,24 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
         server_default=SOURCE_MANUAL,
         comment="Conversation source kind: manual/scheduled/opencode.",
     )
+    external_provider = Column(
+        String(64),
+        nullable=True,
+        index=True,
+        comment="External provider key bound to this conversation (e.g., opencode).",
+    )
+    external_session_id = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="External provider session identifier.",
+    )
+    context_id = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="External protocol context identifier (e.g., A2A contextId).",
+    )
     title = Column(String(255), nullable=False, default="Session")
     last_active_at = Column(
         DateTime(timezone=True),
@@ -70,11 +108,6 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
         comment="Optional internal notes for merge/audit operations.",
     )
 
-    bindings = relationship(
-        "ConversationBinding",
-        back_populates="conversation",
-        foreign_keys="ConversationBinding.conversation_id",
-    )
     messages = relationship(
         "AgentMessage",
         back_populates="conversation",
