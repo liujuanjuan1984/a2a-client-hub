@@ -51,7 +51,6 @@ async def list_unified_sessions(
         user_id=current_user.id,
         page=payload.page,
         size=payload.size,
-        refresh=payload.refresh,
         source=payload.source,
     )
     if db_mutated:

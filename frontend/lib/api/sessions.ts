@@ -32,7 +32,6 @@ export type SessionContinueBinding = {
 export const listSessionsPage = async (options?: {
   page?: number;
   size?: number;
-  refresh?: boolean;
   source?: UnifiedSessionSource;
 }) => {
   const page = options?.page ?? 1;
@@ -46,7 +45,6 @@ export const listSessionsPage = async (options?: {
     {
       page: number;
       size: number;
-      refresh: boolean;
       source?: UnifiedSessionSource;
     }
   >("/me/conversations:query", {
@@ -54,7 +52,6 @@ export const listSessionsPage = async (options?: {
     body: {
       page,
       size,
-      refresh: options?.refresh ?? false,
       ...(options?.source ? { source: options.source } : {}),
     },
   });

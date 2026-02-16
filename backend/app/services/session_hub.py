@@ -32,11 +32,7 @@ ResolvedSource = Literal["manual", "scheduled", "opencode"]
 @dataclass(frozen=True)
 class ResolvedConversationTarget:
     source: ResolvedSource
-    local_session_id: Optional[UUID] = None
-    conversation_id: UUID | None = None
-    agent_id: Optional[UUID] = None
-    agent_source: Optional[Literal["personal", "shared"]] = None
-    external_session_id: Optional[str] = None
+    thread: ConversationThread
 
 
 def _to_utc_epoch_seconds(value: Any) -> float:
@@ -74,7 +70,6 @@ class SessionHubService:
         user_id: UUID,
         page: int,
         size: int,
-        refresh: bool,
         source: Optional[SessionSource],
     ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
         page_items = await self._list_local_sessions(db, user_id=user_id, source=source)
@@ -84,12 +79,7 @@ class SessionHubService:
         offset = (page - 1) * size
         page_items = page_items[offset : offset + size]
 
-        meta = {
-            "opencode_total_agents": 0,
-            "opencode_refreshed_agents": 0,
-            "opencode_cached_agents": 0,
-            "opencode_partial_failures": 0,
-        }
+        meta: dict[str, Any] = {}
         pagination = {
             "page": page,
             "size": size,
@@ -177,15 +167,7 @@ class SessionHubService:
             user_id=user_id,
             conversation_id=resolved_conversation_id,
         )
-        session = await db.scalar(
-            select(ConversationThread).where(
-                and_(
-                    ConversationThread.id == resolved_conversation_id,
-                    ConversationThread.user_id == user_id,
-                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
-                )
-            )
-        )
+        session = target.thread if target else None
         provider = normalize_provider(session.external_provider if session else None)
         external_session_id = normalize_non_empty_text(
             session.external_session_id if session else None
@@ -235,15 +217,11 @@ class SessionHubService:
             "agent_id": (
                 str(session.agent_id)
                 if session and isinstance(session.agent_id, UUID)
-                else str(target.agent_id)
-                if target and isinstance(target.agent_id, UUID)
                 else None
             ),
             "agent_source": (
                 session.agent_source
                 if session and isinstance(session.agent_source, str)
-                else target.agent_source
-                if target and isinstance(target.agent_source, str)
                 else None
             ),
             "upstream_session_id": normalized_external_session_id,
@@ -269,15 +247,7 @@ class SessionHubService:
             user_id=user_id,
             conversation_id=resolved_conversation_id,
         )
-        session = await db.scalar(
-            select(ConversationThread).where(
-                and_(
-                    ConversationThread.id == resolved_conversation_id,
-                    ConversationThread.user_id == user_id,
-                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
-                )
-            )
-        )
+        session = target.thread if target else None
         provider = normalize_provider(session.external_provider if session else None)
         external_session_id = normalize_non_empty_text(
             session.external_session_id if session else None
@@ -313,8 +283,8 @@ class SessionHubService:
         db_mutated = False
         if resolved_provider and resolved_external_session_id:
             resolved_agent_source: Literal["personal", "shared"] | None = None
-            if target.agent_source in {"personal", "shared"}:
-                resolved_agent_source = target.agent_source
+            if target.thread.agent_source in {"personal", "shared"}:
+                resolved_agent_source = target.thread.agent_source
             elif (
                 session
                 and isinstance(session.agent_source, str)
@@ -329,8 +299,8 @@ class SessionHubService:
                     provider=resolved_provider,
                     external_session_id=resolved_external_session_id,
                     agent_id=(
-                        target.agent_id
-                        if isinstance(target.agent_id, UUID)
+                        target.thread.agent_id
+                        if isinstance(target.thread.agent_id, UUID)
                         else session.agent_id
                         if session and isinstance(session.agent_id, UUID)
                         else None
@@ -338,17 +308,6 @@ class SessionHubService:
                     agent_source=resolved_agent_source,
                     context_id=context_id if isinstance(context_id, str) else None,
                     title=(session.title if session else "Session") or "Session",
-                    binding_metadata={
-                        "provider": resolved_provider,
-                        "external_session_id": resolved_external_session_id,
-                    },
-                    local_session_id=(
-                        target.local_session_id
-                        if isinstance(target.local_session_id, UUID)
-                        else session.id
-                        if session
-                        else None
-                    ),
                 )
             )
             conversation_id = bind_result.conversation_id
@@ -392,17 +351,21 @@ class SessionHubService:
         )
 
         local_session_id = (
-            target.local_session_id
-            if target and isinstance(target.local_session_id, UUID)
+            target.thread.id
+            if target and isinstance(target.thread.id, UUID)
             else normalized_conversation_id
         )
 
-        session = await db.scalar(
-            select(ConversationThread).where(
-                and_(
-                    ConversationThread.id == local_session_id,
-                    ConversationThread.user_id == user_id,
-                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+        session = (
+            target.thread
+            if target
+            else await db.scalar(
+                select(ConversationThread).where(
+                    and_(
+                        ConversationThread.id == local_session_id,
+                        ConversationThread.user_id == user_id,
+                        ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    )
                 )
             )
         )
@@ -534,8 +497,6 @@ class SessionHubService:
                 agent_source=agent_source,
                 context_id=context_id if isinstance(context_id, str) else None,
                 title=session.title or "Session",
-                binding_metadata=invoke_metadata,
-                local_session_id=session.id,
             )
         else:
             normalized_provider = normalize_provider(provider_from_invoke)
@@ -661,29 +622,17 @@ class SessionHubService:
         if local_session.source == ConversationThread.SOURCE_MANUAL:
             return ResolvedConversationTarget(
                 source="manual",
-                local_session_id=local_session.id,
-                conversation_id=conversation_id,
+                thread=local_session,
             )
         if local_session.source == ConversationThread.SOURCE_SCHEDULED:
             return ResolvedConversationTarget(
                 source="scheduled",
-                local_session_id=local_session.id,
-                conversation_id=conversation_id,
+                thread=local_session,
             )
         if local_session.source == ConversationThread.SOURCE_OPENCODE:
             return ResolvedConversationTarget(
                 source="opencode",
-                local_session_id=local_session.id,
-                conversation_id=conversation_id,
-                agent_id=local_session.agent_id,
-                agent_source=(
-                    local_session.agent_source
-                    if local_session.agent_source in {"personal", "shared"}
-                    else None
-                ),
-                external_session_id=normalize_non_empty_text(
-                    local_session.external_session_id
-                ),
+                thread=local_session,
             )
         return None
 

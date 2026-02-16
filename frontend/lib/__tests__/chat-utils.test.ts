@@ -23,7 +23,6 @@ describe("chat store utils", () => {
       {
         provider: "opencode",
         externalSessionId: "ext-1",
-        contextId: "ctx-1",
       },
       {
         externalSessionId: "ext-2",
@@ -33,7 +32,6 @@ describe("chat store utils", () => {
     expect(next).toEqual({
       provider: "opencode",
       externalSessionId: "ext-2",
-      contextId: "ctx-1",
     });
   });
 

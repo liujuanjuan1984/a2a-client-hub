@@ -115,7 +115,7 @@ async def test_conversation_routes_use_conversation_id_only(
     ) as client:
         list_resp = await client.post(
             "/me/conversations:query",
-            json={"page": 1, "size": 50, "refresh": False},
+            json={"page": 1, "size": 50},
         )
         assert list_resp.status_code == 200
         list_payload = list_resp.json()
@@ -261,7 +261,7 @@ async def test_list_sessions_can_filter_opencode_from_local_data(
     ) as client:
         opencode_resp = await client.post(
             "/me/conversations:query",
-            json={"page": 1, "size": 20, "source": "opencode", "refresh": False},
+            json={"page": 1, "size": 20, "source": "opencode"},
         )
         assert opencode_resp.status_code == 200
         opencode_payload = opencode_resp.json()
@@ -271,7 +271,7 @@ async def test_list_sessions_can_filter_opencode_from_local_data(
 
         manual_resp = await client.post(
             "/me/conversations:query",
-            json={"page": 1, "size": 20, "source": "manual", "refresh": False},
+            json={"page": 1, "size": 20, "source": "manual"},
         )
         assert manual_resp.status_code == 200
         assert manual_resp.json()["pagination"]["total"] == 0

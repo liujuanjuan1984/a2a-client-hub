@@ -257,7 +257,6 @@ export const useChatStore = create<ChatState>()(
                 {
                   provider: binding.provider,
                   externalSessionId: binding.externalSessionId,
-                  contextId: binding.contextId,
                 },
               ),
               streamState: "recoverable",

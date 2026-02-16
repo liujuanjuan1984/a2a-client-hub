@@ -17,10 +17,6 @@ AgentSource = Literal["personal", "shared"]
 class SessionQueryRequest(BaseModel):
     page: int = Field(1, ge=1, description="Page number (1-indexed)")
     size: int = Field(50, ge=1, le=200, description="Page size")
-    refresh: bool = Field(
-        False,
-        description="Force refresh remote OpenCode cache before listing.",
-    )
     source: Optional[SessionSource] = Field(
         None,
         description="Filter by source (manual/scheduled/opencode)",
@@ -43,10 +39,7 @@ class SessionViewItem(BaseModel):
 
 
 class SessionListMeta(BaseModel):
-    opencode_total_agents: int = 0
-    opencode_refreshed_agents: int = 0
-    opencode_cached_agents: int = 0
-    opencode_partial_failures: int = 0
+    pass
 
 
 class SessionListResponse(ListResponse[SessionViewItem, SessionListMeta]):

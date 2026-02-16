@@ -3,7 +3,6 @@ import type { A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
 export type ExternalSessionRef = {
   provider?: string | null;
   externalSessionId?: string | null;
-  contextId?: string | null;
 };
 
 export type AgentSession = {
@@ -48,13 +47,11 @@ export const mergeExternalSessionRef = (
   incoming: {
     provider?: string | null;
     externalSessionId?: string | null;
-    contextId?: string | null;
   },
 ): ExternalSessionRef => ({
   provider: incoming.provider ?? current?.provider ?? null,
   externalSessionId:
     incoming.externalSessionId ?? current?.externalSessionId ?? null,
-  contextId: incoming.contextId ?? current?.contextId ?? null,
 });
 
 export const buildInvokePayload = (
