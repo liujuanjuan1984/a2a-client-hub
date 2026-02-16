@@ -17,14 +17,14 @@ from tests.utils import create_user
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
-def _task(session_id: str, *, title: str, updated_ms: int) -> Dict[str, Any]:
+def _task(session_id: str, *, title: str, last_active_at: str) -> Dict[str, Any]:
     return {
         "kind": "task",
         "contextId": session_id,
+        "last_active_at": last_active_at,
         "metadata": {
             "opencode": {
                 "title": title,
-                "raw": {"time": {"updated": updated_ms}},
             }
         },
     }
@@ -93,13 +93,15 @@ async def test_opencode_sessions_directory_caches_and_sorts(
                     _task(
                         "ses_personal",
                         title="Personal older",
-                        updated_ms=1_700_000_000_000,
+                        last_active_at="2024-01-01T00:00:00+00:00",
                     )
                 ]
             else:
                 items = [
                     _task(
-                        "ses_shared", title="Shared newer", updated_ms=1_700_000_100_000
+                        "ses_shared",
+                        title="Shared newer",
+                        last_active_at="2024-01-02T00:00:00+00:00",
                     )
                 ]
             return ExtensionCallResult(
@@ -151,6 +153,16 @@ async def test_opencode_sessions_directory_caches_and_sorts(
         cached = list(result.scalars().all())
         assert len(cached) == 2
         assert all(item.provider == "opencode" for item in cached)
+        for cache_item in cached:
+            cached_items = cache_item.payload.get("items", [])
+            assert isinstance(cached_items, list)
+            for task in cached_items:
+                opencode_meta = (
+                    ((task.get("metadata") or {}).get("opencode") or {})
+                    if isinstance(task, dict)
+                    else {}
+                )
+                assert "raw" not in opencode_meta
 
         # Second call within TTL should not refresh.
         resp2 = await client.post(
@@ -185,7 +197,13 @@ async def test_opencode_sessions_directory_deduplicates_across_same_upstream(
 
     class FakeExtensionsService:
         async def opencode_list_sessions(self, *, runtime, page: int, size: int, query):
-            items = [_task("ses_dup", title="Duplicated", updated_ms=1_700_000_000_000)]
+            items = [
+                _task(
+                    "ses_dup",
+                    title="Duplicated",
+                    last_active_at="2024-01-01T00:00:00+00:00",
+                )
+            ]
             return ExtensionCallResult(
                 success=True,
                 result={"items": items, "pagination": {"page": page, "size": size}},
