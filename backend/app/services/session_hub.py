@@ -9,7 +9,6 @@ This module provides a single read model for session list/history/continue acros
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
@@ -35,28 +34,6 @@ class ResolvedConversationTarget:
     thread: ConversationThread
 
 
-def _to_utc_epoch_seconds(value: Any) -> float:
-    if isinstance(value, datetime):
-        normalized = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-        return normalized.astimezone(timezone.utc).timestamp()
-    if isinstance(value, str):
-        try:
-            normalized = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return float("-inf")
-        if normalized.tzinfo is None:
-            normalized = normalized.replace(tzinfo=timezone.utc)
-        return normalized.astimezone(timezone.utc).timestamp()
-    return float("-inf")
-
-
-def _session_order_key(item: dict[str, Any]) -> tuple[float, float, str]:
-    last_active = _to_utc_epoch_seconds(item.get("last_active_at"))
-    created = _to_utc_epoch_seconds(item.get("created_at"))
-    conversation_id = str(item.get("conversationId") or "")
-    return (last_active, created, conversation_id)
-
-
 class SessionHubService:
     async def list_sessions(
         self,
@@ -68,20 +45,18 @@ class SessionHubService:
         source: Optional[SessionSource],
     ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
         page_items = await self._list_local_sessions(db, user_id=user_id, source=source)
-        page_items.sort(key=_session_order_key, reverse=True)
         total = len(page_items)
         pages = (total + size - 1) // size if size else 0
         offset = (page - 1) * size
         page_items = page_items[offset : offset + size]
 
-        meta: dict[str, Any] = {}
         pagination = {
             "page": page,
             "size": size,
             "total": total,
             "pages": pages,
         }
-        return page_items, {"pagination": pagination, "meta": meta}, False
+        return page_items, {"pagination": pagination}, False
 
     async def _list_local_sessions(
         self,
@@ -169,13 +144,10 @@ class SessionHubService:
         )
         context_id = normalize_non_empty_text(session.context_id if session else None)
 
-        normalized_provider = provider
-        normalized_external_session_id = external_session_id
-
         resolved_source = _resolve_session_source(
             thread_source=session.source if session else None,
-            provider=normalized_provider,
-            external_session_id=normalized_external_session_id,
+            provider=provider,
+            external_session_id=external_session_id,
             context_id=context_id,
             fallback_source=target.source if target else None,
         )
@@ -219,7 +191,7 @@ class SessionHubService:
                 if session and isinstance(session.agent_source, str)
                 else None
             ),
-            "upstream_session_id": normalized_external_session_id,
+            "upstream_session_id": external_session_id,
         }
         pagination = {
             "page": page,
@@ -256,7 +228,7 @@ class SessionHubService:
                     source="manual",
                     provider=provider,
                     external_session_id=external_session_id,
-                    context_id=context_id if isinstance(context_id, str) else None,
+                    context_id=context_id,
                 ),
                 False,
             )
@@ -300,7 +272,7 @@ class SessionHubService:
                         else None
                     ),
                     agent_source=resolved_agent_source,
-                    context_id=context_id if isinstance(context_id, str) else None,
+                    context_id=context_id,
                     title=(session.title if session else "Session") or "Session",
                 )
             )
@@ -312,7 +284,7 @@ class SessionHubService:
                 source=resolved_source,
                 provider=resolved_provider,
                 external_session_id=resolved_external_session_id,
-                context_id=context_id if isinstance(context_id, str) else None,
+                context_id=context_id,
             ),
             db_mutated,
         )

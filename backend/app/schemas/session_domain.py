@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.schemas.pagination import ListResponse
+from app.schemas.pagination import ListResponse, Pagination
 
 SessionSource = Literal["manual", "scheduled", "opencode"]
 AgentSource = Literal["personal", "shared"]
@@ -38,8 +38,9 @@ class SessionViewItem(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class SessionListResponse(ListResponse[SessionViewItem, Dict[str, Any]]):
-    pass
+class SessionListResponse(BaseModel):
+    items: list[SessionViewItem]
+    pagination: Pagination
 
 
 class SessionMessagesQueryRequest(BaseModel):

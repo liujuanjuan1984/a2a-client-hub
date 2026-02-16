@@ -53,7 +53,6 @@ type ChatState = {
       provider?: string | null;
       externalSessionId?: string | null;
       contextId?: string | null;
-      metadata?: Record<string, unknown> | null;
     },
   ) => void;
   getSessionsByAgentId: (agentId: string) => [string, AgentSession][];
@@ -108,10 +107,6 @@ export const useChatStore = create<ChatState>()(
                 payload.contextId === undefined
                   ? (state.sessions[conversationId]?.contextId ?? null)
                   : payload.contextId,
-              metadata:
-                payload.metadata ??
-                state.sessions[conversationId]?.metadata ??
-                {},
               lastActiveAt: new Date().toISOString(),
             },
           },

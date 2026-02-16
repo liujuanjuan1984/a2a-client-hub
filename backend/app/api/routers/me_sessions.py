@@ -57,7 +57,6 @@ async def list_unified_sessions(
     return SessionListResponse(
         items=[SessionViewItem.model_validate(item) for item in items],
         pagination=extra["pagination"],
-        meta=extra["meta"],
     )
 
 
