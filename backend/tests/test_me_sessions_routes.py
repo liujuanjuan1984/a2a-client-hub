@@ -87,7 +87,6 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
     async_db_session.add(
         AgentMessage(
             user_id=user.id,
-            session_id=session.id,
             sender="automation",
             content="ping",
             conversation_id=session.id,
@@ -97,7 +96,6 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
     async_db_session.add(
         AgentMessage(
             user_id=user.id,
-            session_id=session.id,
             sender="agent",
             content="pong",
             conversation_id=session.id,

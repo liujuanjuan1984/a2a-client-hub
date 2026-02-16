@@ -91,7 +91,6 @@ async def test_conversation_routes_use_conversation_id_only(
     async_db_session.add(
         AgentMessage(
             user_id=user.id,
-            session_id=manual_session.id,
             sender="user",
             content="hello",
             conversation_id=manual_session.id,
@@ -101,7 +100,6 @@ async def test_conversation_routes_use_conversation_id_only(
     async_db_session.add(
         AgentMessage(
             user_id=user.id,
-            session_id=manual_session.id,
             sender="agent",
             content="world",
             conversation_id=manual_session.id,
@@ -170,7 +168,6 @@ async def test_continue_includes_opencode_session_metadata(
     async_db_session.add(
         AgentMessage(
             user_id=user.id,
-            session_id=session.id,
             sender="agent",
             content="bound",
             conversation_id=session.id,

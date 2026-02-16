@@ -257,10 +257,7 @@ class SessionHubService:
 
         session_ids = [thread.id for thread in threads]
         latest_metadata_map = await self._latest_local_message_metadata_map(
-            db, user_id=user_id, local_session_ids=session_ids
-        )
-        latest_conversation_map = await self._latest_local_message_conversation_map(
-            db, user_id=user_id, local_session_ids=session_ids
+            db, user_id=user_id, local_conversation_ids=session_ids
         )
         binding_conversation_map = await conversation_identity_service.find_conversation_ids_for_local_sessions_batch(
             db,
@@ -303,9 +300,7 @@ class SessionHubService:
                 metadata_external_id = binding_locator.external_session_id
             if not metadata_context_id and binding_locator:
                 metadata_context_id = binding_locator.context_id
-            conversation_id = latest_conversation_map.get(thread.id)
-            if conversation_id is None:
-                conversation_id = binding_conversation_map.get(thread.id)
+            conversation_id = binding_conversation_map.get(thread.id)
             if conversation_id is None and binding_locator:
                 conversation_id = binding_locator.conversation_id
             if conversation_id is None and metadata_context_id:
@@ -355,71 +350,37 @@ class SessionHubService:
         db: AsyncSession,
         *,
         user_id: UUID,
-        local_session_ids: list[UUID],
+        local_conversation_ids: list[UUID],
     ) -> dict[UUID, Dict[str, Any]]:
-        if not local_session_ids:
+        if not local_conversation_ids:
             return {}
         stmt = (
-            select(AgentMessage.session_id, AgentMessage.message_metadata)
+            select(AgentMessage.conversation_id, AgentMessage.message_metadata)
             .where(
                 and_(
                     AgentMessage.user_id == user_id,
-                    AgentMessage.session_id.in_(local_session_ids),
+                    AgentMessage.conversation_id.in_(local_conversation_ids),
                 )
             )
             .order_by(
-                AgentMessage.session_id.asc(),
+                AgentMessage.conversation_id.asc(),
                 AgentMessage.created_at.desc(),
                 AgentMessage.id.desc(),
             )
-            .distinct(AgentMessage.session_id)
+            .distinct(AgentMessage.conversation_id)
         )
         rows = (await db.execute(stmt)).all()
         mapped: dict[UUID, Dict[str, Any]] = {}
         for row in rows:
-            session_id = row.session_id
-            if not isinstance(session_id, UUID):
+            conversation_id = row.conversation_id
+            if not isinstance(conversation_id, UUID):
                 continue
             metadata = (
                 dict(row.message_metadata)
                 if isinstance(row.message_metadata, dict)
                 else {}
             )
-            mapped[session_id] = metadata
-        return mapped
-
-    async def _latest_local_message_conversation_map(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        local_session_ids: list[UUID],
-    ) -> dict[UUID, UUID]:
-        if not local_session_ids:
-            return {}
-        stmt = (
-            select(AgentMessage.session_id, AgentMessage.conversation_id)
-            .where(
-                and_(
-                    AgentMessage.user_id == user_id,
-                    AgentMessage.session_id.in_(local_session_ids),
-                    AgentMessage.conversation_id.is_not(None),
-                )
-            )
-            .order_by(
-                AgentMessage.session_id.asc(),
-                AgentMessage.created_at.desc(),
-                AgentMessage.id.desc(),
-            )
-            .distinct(AgentMessage.session_id)
-        )
-        rows = (await db.execute(stmt)).all()
-        mapped: dict[UUID, UUID] = {}
-        for row in rows:
-            session_id = row.session_id
-            conversation_id = row.conversation_id
-            if isinstance(session_id, UUID) and isinstance(conversation_id, UUID):
-                mapped[session_id] = conversation_id
+            mapped[conversation_id] = metadata
         return mapped
 
     def _dedup_cross_source_sessions(
@@ -555,12 +516,7 @@ class SessionHubService:
             latest_metadata_map = await self._latest_local_message_metadata_map(
                 db,
                 user_id=user_id,
-                local_session_ids=[session.id],
-            )
-            latest_conversation_map = await self._latest_local_message_conversation_map(
-                db,
-                user_id=user_id,
-                local_session_ids=[session.id],
+                local_conversation_ids=[session.id],
             )
             latest_metadata = latest_metadata_map.get(session.id, {})
             (
@@ -579,13 +535,11 @@ class SessionHubService:
                 external_session_id = binding_locator.external_session_id
             if not context_id and binding_locator:
                 context_id = binding_locator.context_id
-            conversation_id = latest_conversation_map.get(session.id)
-            if conversation_id is None:
-                conversation_id = await conversation_identity_service.find_conversation_id_for_local_session(
-                    db,
-                    user_id=user_id,
-                    local_session_id=session.id,
-                )
+            conversation_id = await conversation_identity_service.find_conversation_id_for_local_session(
+                db,
+                user_id=user_id,
+                local_session_id=session.id,
+            )
             if conversation_id is None and binding_locator:
                 conversation_id = binding_locator.conversation_id
             if conversation_id is None and provider and external_session_id:
@@ -602,28 +556,17 @@ class SessionHubService:
                     context_id=context_id,
                     provider=provider,
                 )
-            if conversation_id:
-                updated = await agent_message_handler.backfill_session_messages_conversation_id(
-                    db,
-                    user_id=user_id,
-                    session_id=session.id,
-                    conversation_id=conversation_id,
-                )
-                if updated > 0:
-                    db_mutated = True
             offset = (page - 1) * size
             messages = await agent_message_handler.list_agent_messages(
                 db,
                 user_id=user_id,
                 limit=size,
                 offset=offset,
-                session_id=None,
                 conversation_id=resolved_conversation_id,
             )
             total = await agent_message_handler.count_agent_messages(
                 db,
                 user_id=user_id,
-                session_id=None,
                 conversation_id=resolved_conversation_id,
             )
             pages = (total + size - 1) // size if size else 0
@@ -861,7 +804,7 @@ class SessionHubService:
             .where(
                 and_(
                     AgentMessage.user_id == user_id,
-                    AgentMessage.session_id == session.id,
+                    AgentMessage.conversation_id == session.id,
                 )
             )
             .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
@@ -885,35 +828,8 @@ class SessionHubService:
             external_session_id = binding_locator.external_session_id
         if not isinstance(context_id, str) and binding_locator:
             context_id = binding_locator.context_id
-        conversation_id = (
-            latest.conversation_id
-            if latest is not None and isinstance(latest.conversation_id, UUID)
-            else None
-        )
-        if conversation_id is None:
-            conversation_id = await conversation_identity_service.find_conversation_id_for_local_session(
-                db,
-                user_id=user_id,
-                local_session_id=session.id,
-            )
+        conversation_id = session.id
         db_mutated = False
-        if conversation_id is None and target.source == "manual":
-            thread_mutated = await self._ensure_local_conversation_thread(
-                db,
-                user_id=user_id,
-                conversation_id=resolved_conversation_id,
-                agent_id=session.agent_id,
-                agent_source=(
-                    binding_locator.agent_source
-                    if binding_locator
-                    and binding_locator.agent_source in {"personal", "shared"}
-                    else session.agent_source or "personal"
-                ),
-                title=session.title or "Session",
-                source="manual",
-            )
-            conversation_id = resolved_conversation_id
-            db_mutated = db_mutated or thread_mutated
         if provider and external_session_id:
             bind_result = (
                 await conversation_identity_service.bind_external_session_with_state(
@@ -942,25 +858,6 @@ class SessionHubService:
             )
             conversation_id = bind_result.conversation_id
             db_mutated = bind_result.mutated
-        elif conversation_id is None and isinstance(context_id, str):
-            conversation_id = (
-                await conversation_identity_service.find_conversation_id_for_context(
-                    db,
-                    user_id=user_id,
-                    context_id=context_id,
-                    provider=provider,
-                )
-            )
-        if conversation_id:
-            updated = (
-                await agent_message_handler.backfill_session_messages_conversation_id(
-                    db,
-                    user_id=user_id,
-                    session_id=session.id,
-                    conversation_id=conversation_id,
-                )
-            )
-            db_mutated = db_mutated or updated > 0
         resolved_provider = normalize_provider(provider)
         resolved_external_session_id = normalize_non_empty_text(external_session_id)
         continue_metadata = _build_continue_invoke_metadata(
@@ -1112,7 +1009,7 @@ class SessionHubService:
         if normalized_user_message_id:
             metadata["client_message_id"] = normalized_user_message_id
 
-        conversation_id: UUID | None = None
+        conversation_id: UUID | None = session.id
         if source == "manual":
             await self._ensure_local_conversation_thread(
                 db,
@@ -1123,7 +1020,6 @@ class SessionHubService:
                 title=session.title or "Session",
                 source="manual",
             )
-            conversation_id = session.id
         if provider_from_invoke and external_session_id:
             conversation_id = await conversation_identity_service.bind_external_session(
                 db,
@@ -1138,12 +1034,6 @@ class SessionHubService:
                 binding_metadata=invoke_metadata,
                 local_session_id=session.id,
             )
-            await agent_message_handler.backfill_session_messages_conversation_id(
-                db,
-                user_id=user_id,
-                session_id=session.id,
-                conversation_id=conversation_id,
-            )
         elif context_id and isinstance(context_id, str):
             conversation_id = (
                 await conversation_identity_service.find_conversation_id_for_context(
@@ -1153,20 +1043,12 @@ class SessionHubService:
                     provider=provider_from_invoke,
                 )
             )
-            if conversation_id:
-                await agent_message_handler.backfill_session_messages_conversation_id(
-                    db,
-                    user_id=user_id,
-                    session_id=session.id,
-                    conversation_id=conversation_id,
-                )
 
         await agent_message_handler.create_agent_message(
             db,
             user_id=user_id,
             content=query,
             sender="user",
-            session_id=session.id,
             conversation_id=conversation_id,
             metadata=metadata,
         )
@@ -1190,7 +1072,6 @@ class SessionHubService:
             user_id=user_id,
             content=response_content,
             sender="agent",
-            session_id=session.id,
             conversation_id=conversation_id,
             metadata=agent_metadata,
         )
