@@ -170,10 +170,7 @@ class A2AInvokeService:
                 (
                     candidate_provider,
                     candidate_external_session_id,
-                ) = extract_provider_and_external_session_id(
-                    candidate,
-                    include_session_id_aliases=True,
-                )
+                ) = extract_provider_and_external_session_id(candidate)
                 if provider is None:
                     provider = candidate_provider
                 if external_session_id is None:
@@ -185,10 +182,7 @@ class A2AInvokeService:
             (
                 metadata_provider,
                 metadata_external_session_id,
-            ) = extract_provider_and_external_session_id(
-                resolved_metadata,
-                include_session_id_aliases=True,
-            )
+            ) = extract_provider_and_external_session_id(resolved_metadata)
             if provider is None:
                 provider = metadata_provider
             if external_session_id is None:

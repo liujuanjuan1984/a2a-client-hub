@@ -9,12 +9,11 @@ from sqlalchemy import select
 from app.api.routers import admin_a2a_agents as admin_router
 from app.api.routers import hub_a2a_agents as hub_router
 from app.core.config import settings
+from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.conversation_binding import ConversationBinding
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
-from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
-from app.services.session_hub import build_manual_session_key
-from backend.tests.api_utils import create_test_client
-from backend.tests.utils import create_user
+from tests.api_utils import create_test_client
+from tests.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -173,8 +172,7 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
     )
-    local_session_id = uuid4()
-    session_key = build_manual_session_key(local_session_id)
+    conversation_id = str(uuid4())
     agent_uuid = UUID(agent_id)
 
     async with create_test_client(
@@ -192,7 +190,7 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
 
         invoke_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/invoke",
-            json={"query": "hi", "sessionId": session_key, "metadata": {}},
+            json={"query": "hi", "conversationId": conversation_id, "metadata": {}},
         )
         assert invoke_resp.status_code == 200
         assert invoke_resp.json()["success"] is True
@@ -271,8 +269,7 @@ async def test_allowlisted_user_can_stream_sse(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
     )
     monkeypatch.setattr(hub_router, "validate_message", lambda payload: [])
-    local_session_id = uuid4()
-    session_key = build_manual_session_key(local_session_id)
+    conversation_id = str(uuid4())
     agent_uuid = UUID(agent_id)
 
     async with create_test_client(
@@ -285,7 +282,11 @@ async def test_allowlisted_user_can_stream_sse(
             "POST",
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/invoke",
             params={"stream": "true"},
-            json={"query": "hi", "sessionId": session_key, "metadata": {}},
+            json={
+                "query": "hi",
+                "conversationId": conversation_id,
+                "metadata": {},
+            },
         ) as stream_resp:
             assert stream_resp.status_code == 200
             assert stream_resp.headers["content-type"].startswith("text/event-stream")
@@ -461,7 +462,7 @@ async def test_admin_delete_purges_allowlist_and_credentials(
 
     # Credentials/allowlist rows should be purged on delete.
     credential = await async_db_session.scalar(
-        select(HubA2AAgentCredential).where(HubA2AAgentCredential.agent_id == agent_id)
+        select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
     )
     assert credential is None
 

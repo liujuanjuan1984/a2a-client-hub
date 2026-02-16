@@ -9,12 +9,11 @@ from app.api.routers import me_sessions
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
-from app.db.models.agent_session import AgentSession
+from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_service import a2a_schedule_service
-from app.services.session_hub import build_scheduled_session_key
 from app.utils.timezone_util import utc_now
-from backend.tests.api_utils import create_test_client
-from backend.tests.utils import create_user
+from tests.api_utils import create_test_client
+from tests.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -52,22 +51,24 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
     )
 
     now = utc_now()
-    session = AgentSession(
+    session = ConversationThread(
         id=uuid4(),
         user_id=user.id,
-        name="[Scheduled] Nightly",
-        module_key="a2a",
-        session_type=AgentSession.TYPE_SCHEDULED,
-        last_activity_at=now,
+        source=ConversationThread.SOURCE_SCHEDULED,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="[Scheduled] Nightly",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
     )
     async_db_session.add(session)
     await async_db_session.flush()
 
-    task.session_id = session.id
+    task.conversation_id = session.id
     execution = A2AScheduleExecution(
         user_id=user.id,
         task_id=task.id,
-        session_id=session.id,
+        conversation_id=session.id,
         scheduled_for=now - timedelta(minutes=1),
         started_at=now - timedelta(minutes=1),
         finished_at=now,
@@ -86,18 +87,18 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
     async_db_session.add(
         AgentMessage(
             user_id=user.id,
-            session_id=session.id,
             sender="automation",
             content="ping",
+            conversation_id=session.id,
             message_metadata=metadata,
         )
     )
     async_db_session.add(
         AgentMessage(
             user_id=user.id,
-            session_id=session.id,
             sender="agent",
             content="pong",
+            conversation_id=session.id,
             message_metadata={**metadata, "success": True},
         )
     )
@@ -109,38 +110,39 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         current_user=user,
     ) as client:
         manual_resp = await client.post(
-            "/me/sessions:query",
+            "/me/conversations:query",
             json={"page": 1, "size": 20, "source": "manual", "refresh": False},
         )
         assert manual_resp.status_code == 200
         assert manual_resp.json()["pagination"]["total"] == 0
 
         list_resp = await client.post(
-            "/me/sessions:query",
+            "/me/conversations:query",
             json={"page": 1, "size": 20, "source": "scheduled", "refresh": False},
         )
         assert list_resp.status_code == 200
         payload = list_resp.json()
         assert payload["pagination"]["total"] >= 1
         item = payload["items"][0]
-        scheduled_key = build_scheduled_session_key(session.id)
-        assert item["id"] == scheduled_key
+        assert item["conversationId"] == str(session.id)
         assert item["source"] == "scheduled"
         assert item["agent_id"] == str(agent.id)
+        assert "id" not in item
 
-        continue_resp = await client.post(f"/me/sessions/{scheduled_key}:continue")
+        continue_resp = await client.post(f"/me/conversations/{session.id}:continue")
         assert continue_resp.status_code == 200
         continue_payload = continue_resp.json()
-        assert continue_payload["session_id"] == scheduled_key
+        assert continue_payload["conversationId"] == str(session.id)
         assert continue_payload["source"] == "scheduled"
+        assert "session_id" not in continue_payload
 
         msgs_resp = await client.post(
-            f"/me/sessions/{scheduled_key}/messages:query",
+            f"/me/conversations/{session.id}/messages:query",
             json={"page": 1, "size": 50},
         )
         assert msgs_resp.status_code == 200
         msgs_payload = msgs_resp.json()
-        assert msgs_payload["meta"]["session_id"] == scheduled_key
+        assert msgs_payload["meta"]["conversationId"] == str(session.id)
         assert msgs_payload["meta"]["source"] == "scheduled"
         assert len(msgs_payload["items"]) == 2
         assert msgs_payload["items"][0]["role"] == "user"

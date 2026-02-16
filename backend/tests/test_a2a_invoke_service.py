@@ -659,7 +659,7 @@ def test_extract_binding_hints_from_invoke_result_merges_raw_payload():
     assert metadata["externalSessionId"] == "raw-upstream"
 
 
-def test_extract_binding_hints_accepts_session_id_aliases():
+def test_extract_binding_hints_ignores_session_id_aliases():
     context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
         {
             "success": True,
@@ -672,10 +672,10 @@ def test_extract_binding_hints_accepts_session_id_aliases():
     )
     assert context_id is None
     assert metadata["provider"] == "opencode"
-    assert metadata["externalSessionId"] == "alias-upstream-session"
+    assert "externalSessionId" not in metadata
 
 
-def test_extract_binding_hints_from_opencode_namespace_session_id():
+def test_extract_binding_hints_ignores_nested_opencode_session_id():
     context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
         {
             "success": True,
@@ -688,8 +688,8 @@ def test_extract_binding_hints_from_opencode_namespace_session_id():
         }
     )
     assert context_id is None
-    assert metadata["provider"] == "opencode"
-    assert metadata["externalSessionId"] == "nested-upstream-session"
+    assert "provider" not in metadata
+    assert "externalSessionId" not in metadata
 
 
 def test_extract_stream_identity_hints_from_serialized_event():

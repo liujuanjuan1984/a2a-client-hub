@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.models.opencode_session_cache import OpencodeSessionCacheEntry
+from app.db.models.external_session_directory_cache import (
+    ExternalSessionDirectoryCacheEntry,
+)
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.service import ExtensionCallResult
@@ -29,6 +31,7 @@ from app.services.hub_a2a_agents import hub_a2a_agent_service
 from app.services.hub_a2a_runtime import hub_a2a_runtime_builder
 
 logger = get_logger(__name__)
+OPENCODE_PROVIDER = "opencode"
 
 
 def _utc_now() -> datetime:
@@ -476,14 +479,15 @@ class OpencodeSessionDirectoryService:
         *,
         user_id: UUID,
         agents: List[_AgentRef],
-    ) -> Dict[Tuple[str, UUID], OpencodeSessionCacheEntry]:
+    ) -> Dict[Tuple[str, UUID], ExternalSessionDirectoryCacheEntry]:
         if not agents:
             return {}
         agent_ids = [agent.agent_id for agent in agents]
-        stmt = select(OpencodeSessionCacheEntry).where(
+        stmt = select(ExternalSessionDirectoryCacheEntry).where(
             and_(
-                OpencodeSessionCacheEntry.user_id == user_id,
-                OpencodeSessionCacheEntry.agent_id.in_(agent_ids),
+                ExternalSessionDirectoryCacheEntry.user_id == user_id,
+                ExternalSessionDirectoryCacheEntry.provider == OPENCODE_PROVIDER,
+                ExternalSessionDirectoryCacheEntry.agent_id.in_(agent_ids),
             )
         )
         result = await db.execute(stmt)
@@ -553,8 +557,9 @@ class OpencodeSessionDirectoryService:
         last_error_code: Optional[str],
         last_error_at: Optional[datetime],
     ) -> None:
-        stmt = insert(OpencodeSessionCacheEntry).values(
+        stmt = insert(ExternalSessionDirectoryCacheEntry).values(
             user_id=user_id,
+            provider=OPENCODE_PROVIDER,
             agent_source=agent.agent_source,
             agent_id=agent.agent_id,
             payload=payload,
@@ -565,7 +570,7 @@ class OpencodeSessionDirectoryService:
             refreshed_at=_utc_now(),
         )
         stmt = stmt.on_conflict_do_update(
-            index_elements=["user_id", "agent_source", "agent_id"],
+            index_elements=["user_id", "provider", "agent_source", "agent_id"],
             set_={
                 "payload": payload,
                 "expires_at": expires_at,

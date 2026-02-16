@@ -77,17 +77,17 @@ Use `npm run publish:web` to export and serve the web build locally.
 - Override with env vars: `HOST`, `PORT`
 - Run in background: `DETACH=1 npm run publish:web`
 
-## Unified Sessions
+## Unified Conversations
 
-The Sessions tab now uses the backend unified session domain API
-(`POST /me/sessions:query`) and can include:
+The Sessions tab now uses the backend unified conversation domain API
+(`POST /me/conversations:query`) and can include:
 
 - `manual` sessions (local chat sessions persisted by backend)
 - `scheduled` sessions (task execution sessions)
 - `opencode` sessions (remote extension-backed sessions)
 
 History loading is unified via
-`POST /me/sessions/{session_id}/messages:query`.
+`POST /me/conversations/{conversation_id}/messages:query`.
 To avoid transport contention, chat history auto-refetch is paused while a
 message is actively streaming.
 
@@ -107,7 +107,7 @@ Rendering iterates blocks in order to preserve generation timeline and supports
 unknown block types with a fallback view.
 
 Continue binding is unified via
-`POST /me/sessions/{session_id}:continue` so Chat always restores
+`POST /me/conversations/{conversation_id}:continue` so Chat always restores
 `contextId`/`metadata` through one entrypoint.
 
 The continue payload also includes canonical binding fields:

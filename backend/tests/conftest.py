@@ -92,13 +92,10 @@ from app.db.models.base import Base
 # Import the minimal set of models required for tests to ensure SQLAlchemy
 # metadata is populated before schema setup runs.
 for module_path in [
-    "app.db.models.agent_session",
     "app.db.models.a2a_agent",
     "app.db.models.a2a_agent_credential",
-    "app.db.models.hub_a2a_agent",
-    "app.db.models.hub_a2a_agent_credential",
     "app.db.models.hub_a2a_agent_allowlist",
-    "app.db.models.opencode_session_cache",
+    "app.db.models.external_session_directory_cache",
     "app.db.models.a2a_schedule_task",
     "app.db.models.a2a_schedule_execution",
     "app.db.models.agent_message",

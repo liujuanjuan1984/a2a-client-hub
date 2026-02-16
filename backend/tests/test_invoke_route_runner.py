@@ -45,7 +45,7 @@ async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
     payload = A2AAgentInvokeRequest.model_validate(
         {
             "query": "run long task",
-            "sessionId": f"manual:{uuid4()}",
+            "conversationId": str(uuid4()),
             "metadata": {},
         }
     )

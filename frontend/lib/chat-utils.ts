@@ -8,6 +8,7 @@ export type ExternalSessionRef = {
 
 export type AgentSession = {
   agentId: string;
+  source?: "manual" | "scheduled" | "opencode" | null;
   conversationId?: string | null;
   contextId: string | null;
   runtimeStatus?: string | null;
@@ -28,6 +29,7 @@ export const CHAT_SESSION_MAX_PERSISTED = 80;
 
 export const createAgentSession = (agentId: string): AgentSession => ({
   agentId,
+  source: null,
   contextId: null,
   runtimeStatus: null,
   streamState: "idle",
@@ -58,13 +60,13 @@ export const mergeExternalSessionRef = (
 export const buildInvokePayload = (
   query: string,
   session: AgentSession,
-  sessionId: string,
+  conversationId: string,
   options?: {
     userMessageId?: string;
     clientAgentMessageId?: string;
   },
 ): A2AAgentInvokeRequest => {
-  const payload: A2AAgentInvokeRequest = { query, sessionId };
+  const payload: A2AAgentInvokeRequest = { query, conversationId };
   if (options?.userMessageId) {
     payload.userMessageId = options.userMessageId;
   }
@@ -106,6 +108,7 @@ const normalizeSessionForPersistence = (
   session: AgentSession,
 ): AgentSession => ({
   agentId: session.agentId,
+  source: session.source ?? null,
   conversationId: session.conversationId ?? null,
   contextId: session.contextId ?? null,
   runtimeStatus: null,
@@ -133,8 +136,8 @@ export const buildPersistedSessions = (
   );
 
   return sorted.reduce<Record<string, AgentSession>>(
-    (acc, [sessionId, session]) => {
-      acc[sessionId] = normalizeSessionForPersistence(session);
+    (acc, [conversationId, session]) => {
+      acc[conversationId] = normalizeSessionForPersistence(session);
       return acc;
     },
     {},
@@ -143,43 +146,43 @@ export const buildPersistedSessions = (
 
 export const buildSessionCleanupPlan = (
   sessions: Record<string, AgentSession>,
-  messageSessionIds: string[],
+  messageConversationIds: string[],
   now: Date = new Date(),
   maxActiveSessions = CHAT_SESSION_MAX_ACTIVE,
 ) => {
   const deadline = new Date(now.getTime() - CHAT_SESSION_TTL_MS).toISOString();
   const nextSessions = { ...sessions };
-  const expiredSessionIds: string[] = [];
-  const trimmedSessionIds: string[] = [];
+  const expiredConversationIds: string[] = [];
+  const trimmedConversationIds: string[] = [];
 
-  Object.entries(sessions).forEach(([sessionId, session]) => {
+  Object.entries(sessions).forEach(([conversationId, session]) => {
     if (session.lastActiveAt < deadline) {
-      delete nextSessions[sessionId];
-      expiredSessionIds.push(sessionId);
+      delete nextSessions[conversationId];
+      expiredConversationIds.push(conversationId);
     }
   });
 
   const activeEntries = sortSessionsByLastActive(Object.entries(nextSessions));
   if (maxActiveSessions > 0 && activeEntries.length > maxActiveSessions) {
-    activeEntries.slice(maxActiveSessions).forEach(([sessionId]) => {
-      delete nextSessions[sessionId];
-      trimmedSessionIds.push(sessionId);
+    activeEntries.slice(maxActiveSessions).forEach(([conversationId]) => {
+      delete nextSessions[conversationId];
+      trimmedConversationIds.push(conversationId);
     });
   }
 
-  const orphanedMessageSessionIds = messageSessionIds.filter(
-    (sessionId) => !nextSessions[sessionId],
+  const orphanedMessageConversationIds = messageConversationIds.filter(
+    (conversationId) => !nextSessions[conversationId],
   );
   const changed =
-    expiredSessionIds.length > 0 ||
-    trimmedSessionIds.length > 0 ||
-    orphanedMessageSessionIds.length > 0;
+    expiredConversationIds.length > 0 ||
+    trimmedConversationIds.length > 0 ||
+    orphanedMessageConversationIds.length > 0;
 
   return {
     sessions: nextSessions,
-    expiredSessionIds,
-    trimmedSessionIds,
-    orphanedMessageSessionIds,
+    expiredConversationIds,
+    trimmedConversationIds,
+    orphanedMessageConversationIds,
     changed,
   };
 };

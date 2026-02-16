@@ -29,7 +29,7 @@ export function SessionsScreen() {
     if (!item.agent_id) return;
     await continueSession({
       agentId: item.agent_id,
-      sessionId: item.id,
+      conversationId: item.conversationId,
     });
   };
 
@@ -65,7 +65,7 @@ export function SessionsScreen() {
               const ts = item.last_active_at ?? null;
               return (
                 <View
-                  key={item.id}
+                  key={item.conversationId}
                   className="mb-3 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30"
                 >
                   <View className="p-4">

@@ -30,8 +30,6 @@ _EXTERNAL_KEYS = (
     "upstream_session_id",
     "opencode_session_id",
 )
-_EXTERNAL_KEYS_WITH_SESSION_ALIASES = _EXTERNAL_KEYS + ("sessionId", "session_id")
-_OPENCODE_SESSION_KEYS = ("session_id", "sessionId", "id")
 _CONTEXT_KEYS = ("contextId", "context_id")
 
 
@@ -41,23 +39,11 @@ def extract_context_id(payload: Mapping[str, Any]) -> str | None:
 
 def extract_provider_and_external_session_id(
     payload: Mapping[str, Any],
-    *,
-    include_session_id_aliases: bool = False,
 ) -> tuple[str | None, str | None]:
     provider = normalize_provider(pick_first_non_empty_str(payload, _PROVIDER_KEYS))
-    external_keys = (
-        _EXTERNAL_KEYS_WITH_SESSION_ALIASES
-        if include_session_id_aliases
-        else _EXTERNAL_KEYS
-    )
-    external_session_id = pick_first_non_empty_str(payload, external_keys)
+    external_session_id = pick_first_non_empty_str(payload, _EXTERNAL_KEYS)
     if external_session_id and provider is None and "opencode_session_id" in payload:
         provider = normalize_provider("opencode")
-    if external_session_id is None:
-        opencode = as_dict(payload.get("opencode"))
-        external_session_id = pick_first_non_empty_str(opencode, _OPENCODE_SESSION_KEYS)
-        if external_session_id and provider is None:
-            provider = normalize_provider("opencode")
     return provider, external_session_id
 
 

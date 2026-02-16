@@ -105,7 +105,7 @@ export default function AppLayout() {
           options={{ title: "Edit Job", presentation: "modal" }}
         />
         <Stack.Screen
-          name="chat/[agentId]/[sessionId]"
+          name="chat/[agentId]/[conversationId]"
           options={{ title: "Chat" }}
         />
       </Stack>

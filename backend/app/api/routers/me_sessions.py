@@ -1,4 +1,4 @@
-"""A2A client unified session endpoints (/me/sessions)."""
+"""A2A client unified conversation endpoints (/me/conversations)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from app.schemas.session_domain import (
 )
 from app.services.session_hub import session_hub_service
 
-router = StrictAPIRouter(prefix="/me/sessions", tags=["me-sessions"])
+router = StrictAPIRouter(prefix="/me/conversations", tags=["me-conversations"])
 
 _UPSTREAM_ERRORS = {
     "upstream_unreachable",
@@ -46,7 +46,7 @@ async def list_unified_sessions(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> SessionListResponse:
-    items, extra = await session_hub_service.list_sessions(
+    items, extra, db_mutated = await session_hub_service.list_sessions(
         db,
         user_id=current_user.id,
         page=payload.page,
@@ -54,6 +54,8 @@ async def list_unified_sessions(
         refresh=payload.refresh,
         source=payload.source,
     )
+    if db_mutated:
+        await commit_safely(db)
     return SessionListResponse(
         items=[SessionViewItem.model_validate(item) for item in items],
         pagination=extra["pagination"],
@@ -62,12 +64,12 @@ async def list_unified_sessions(
 
 
 @router.post(
-    "/{session_id}/messages:query",
+    "/{conversation_id}/messages:query",
     response_model=SessionMessagesListResponse,
 )
 async def list_unified_session_messages(
     *,
-    session_id: str,
+    conversation_id: str,
     payload: SessionMessagesQueryRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
@@ -76,7 +78,7 @@ async def list_unified_session_messages(
         items, extra, db_mutated = await session_hub_service.list_messages(
             db,
             user_id=current_user.id,
-            session_key=session_id,
+            conversation_id=conversation_id,
             page=payload.page,
             size=payload.size,
         )
@@ -95,10 +97,10 @@ async def list_unified_session_messages(
     )
 
 
-@router.post("/{session_id}:continue", response_model=SessionContinueResponse)
+@router.post("/{conversation_id}:continue", response_model=SessionContinueResponse)
 async def continue_unified_session(
     *,
-    session_id: str,
+    conversation_id: str,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> SessionContinueResponse:
@@ -106,7 +108,7 @@ async def continue_unified_session(
         payload, db_mutated = await session_hub_service.continue_session(
             db,
             user_id=current_user.id,
-            session_key=session_id,
+            conversation_id=conversation_id,
         )
     except ValueError as exc:
         detail = str(exc)

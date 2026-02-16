@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from app.db.models.base import SCHEMA_NAME, Base, TimestampMixin, UserOwnedMixin
 from app.utils.timezone_util import utc_now
@@ -21,6 +21,10 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
     STATUS_ACTIVE: ClassVar[str] = "active"
     STATUS_MERGED: ClassVar[str] = "merged"
     STATUS_ARCHIVED: ClassVar[str] = "archived"
+    SOURCE_MANUAL: ClassVar[str] = "manual"
+    SOURCE_SCHEDULED: ClassVar[str] = "scheduled"
+    SOURCE_OPENCODE: ClassVar[str] = "opencode"
+    TITLE_MAX_LENGTH: ClassVar[int] = 255
 
     agent_id = Column(
         UUID(as_uuid=True),
@@ -32,6 +36,13 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
         String(16),
         nullable=True,
         comment="Agent source scope (personal/shared).",
+    )
+    source = Column(
+        String(16),
+        nullable=False,
+        default=SOURCE_MANUAL,
+        server_default=SOURCE_MANUAL,
+        comment="Conversation source kind: manual/scheduled/opencode.",
     )
     title = Column(String(255), nullable=False, default="Session")
     last_active_at = Column(
@@ -59,8 +70,28 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
         comment="Optional internal notes for merge/audit operations.",
     )
 
-    bindings = relationship("ConversationBinding", back_populates="conversation")
-    messages = relationship("AgentMessage", back_populates="conversation")
+    bindings = relationship(
+        "ConversationBinding",
+        back_populates="conversation",
+        foreign_keys="ConversationBinding.conversation_id",
+    )
+    messages = relationship(
+        "AgentMessage",
+        back_populates="conversation",
+        foreign_keys="AgentMessage.conversation_id",
+    )
+
+    @staticmethod
+    def normalize_title(value: str | None) -> str:
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                return normalized[: ConversationThread.TITLE_MAX_LENGTH]
+        return "Session"
+
+    @validates("title")
+    def _validate_title(self, _: str, value: str | None) -> str:
+        return self.normalize_title(value)
 
 
 __all__ = ["ConversationThread"]

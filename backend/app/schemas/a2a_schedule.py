@@ -47,7 +47,7 @@ class A2AScheduleTaskUpdate(BaseModel):
 
 class A2AScheduleTaskResponse(A2AScheduleTaskBase):
     id: UUID
-    session_id: Optional[UUID] = None
+    conversation_id: Optional[UUID] = None
     enabled: bool
     next_run_at: Optional[datetime] = None
     last_run_at: Optional[datetime] = None
@@ -83,7 +83,7 @@ class A2AScheduleExecutionResponse(BaseModel):
     finished_at: Optional[datetime] = None
     error_message: Optional[str] = None
     response_content: Optional[str] = None
-    session_id: Optional[UUID] = None
+    conversation_id: Optional[UUID] = None
     user_message_id: Optional[UUID] = None
     agent_message_id: Optional[UUID] = None
     created_at: datetime

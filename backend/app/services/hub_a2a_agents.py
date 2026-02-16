@@ -10,9 +10,9 @@ from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secret_vault import hub_a2a_secret_vault
-from app.db.models.hub_a2a_agent import HubA2AAgent
+from app.db.models.a2a_agent import A2AAgent
+from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
-from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
 from app.db.models.user import User
 from app.db.transaction import commit_safely
 from app.services.agent_common import AgentValidationMixin, encrypt_bearer_token
@@ -43,7 +43,7 @@ class HubA2AUserNotFoundError(HubA2AAgentError):
 
 @dataclass(frozen=True)
 class HubA2AAgentRecord:
-    agent: HubA2AAgent
+    agent: A2AAgent
     has_credential: bool
     token_last4: Optional[str]
 
@@ -66,13 +66,18 @@ class HubA2AAgentService(AgentValidationMixin):
 
     async def list_agents_admin(self, db: AsyncSession) -> List[HubA2AAgentRecord]:
         stmt = (
-            select(HubA2AAgent, HubA2AAgentCredential.token_last4)
+            select(A2AAgent, A2AAgentCredential.token_last4)
             .outerjoin(
-                HubA2AAgentCredential,
-                HubA2AAgentCredential.agent_id == HubA2AAgent.id,
+                A2AAgentCredential,
+                A2AAgentCredential.agent_id == A2AAgent.id,
             )
-            .where(HubA2AAgent.deleted_at.is_(None))
-            .order_by(HubA2AAgent.created_at.asc())
+            .where(
+                and_(
+                    A2AAgent.agent_scope == A2AAgent.SCOPE_SHARED,
+                    A2AAgent.deleted_at.is_(None),
+                )
+            )
+            .order_by(A2AAgent.created_at.asc())
         )
         result = await db.execute(stmt)
         rows = result.all()
@@ -91,12 +96,18 @@ class HubA2AAgentService(AgentValidationMixin):
         self, db: AsyncSession, *, agent_id: UUID
     ) -> HubA2AAgentRecord:
         stmt = (
-            select(HubA2AAgent, HubA2AAgentCredential.token_last4)
+            select(A2AAgent, A2AAgentCredential.token_last4)
             .outerjoin(
-                HubA2AAgentCredential,
-                HubA2AAgentCredential.agent_id == HubA2AAgent.id,
+                A2AAgentCredential,
+                A2AAgentCredential.agent_id == A2AAgent.id,
             )
-            .where(and_(HubA2AAgent.id == agent_id, HubA2AAgent.deleted_at.is_(None)))
+            .where(
+                and_(
+                    A2AAgent.id == agent_id,
+                    A2AAgent.agent_scope == A2AAgent.SCOPE_SHARED,
+                    A2AAgent.deleted_at.is_(None),
+                )
+            )
         )
         result = await db.execute(stmt)
         row = result.first()
@@ -133,9 +144,11 @@ class HubA2AAgentService(AgentValidationMixin):
         auth_header_value, auth_scheme_value = self._resolve_auth_fields(
             normalized_auth_type, auth_header, auth_scheme, existing=None
         )
-        agent = HubA2AAgent(
+        agent = A2AAgent(
+            user_id=admin_user_id,
             name=normalized_name,
             card_url=normalized_url,
+            agent_scope=A2AAgent.SCOPE_SHARED,
             availability_policy=normalized_policy,
             auth_type=normalized_auth_type,
             auth_header=auth_header_value,
@@ -242,9 +255,7 @@ class HubA2AAgentService(AgentValidationMixin):
         # Hub agents are admin-managed, and "delete" should also purge any stored
         # credential/allowlist rows to reduce long-term secret exposure.
         await db.execute(
-            delete(HubA2AAgentCredential).where(
-                HubA2AAgentCredential.agent_id == agent.id
-            )
+            delete(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent.id)
         )
         await db.execute(
             delete(HubA2AAgentAllowlistEntry).where(
@@ -255,45 +266,49 @@ class HubA2AAgentService(AgentValidationMixin):
 
     async def list_visible_agents_for_user(
         self, db: AsyncSession, *, user_id: UUID
-    ) -> List[HubA2AAgent]:
+    ) -> List[A2AAgent]:
         allowlisted_stmt = (
-            select(HubA2AAgent.id)
+            select(A2AAgent.id)
             .join(
                 HubA2AAgentAllowlistEntry,
-                HubA2AAgentAllowlistEntry.agent_id == HubA2AAgent.id,
+                HubA2AAgentAllowlistEntry.agent_id == A2AAgent.id,
             )
             .where(
                 and_(
                     HubA2AAgentAllowlistEntry.user_id == user_id,
-                    HubA2AAgent.deleted_at.is_(None),
-                    HubA2AAgent.enabled.is_(True),
-                    HubA2AAgent.availability_policy == "allowlist",
+                    A2AAgent.agent_scope == A2AAgent.SCOPE_SHARED,
+                    A2AAgent.deleted_at.is_(None),
+                    A2AAgent.enabled.is_(True),
+                    A2AAgent.availability_policy == "allowlist",
                 )
             )
         )
-        public_stmt = select(HubA2AAgent.id).where(
+        public_stmt = select(A2AAgent.id).where(
             and_(
-                HubA2AAgent.deleted_at.is_(None),
-                HubA2AAgent.enabled.is_(True),
-                HubA2AAgent.availability_policy == "public",
+                A2AAgent.agent_scope == A2AAgent.SCOPE_SHARED,
+                A2AAgent.deleted_at.is_(None),
+                A2AAgent.enabled.is_(True),
+                A2AAgent.availability_policy == "public",
             )
         )
-        ids_stmt = select(HubA2AAgent).where(
+        ids_stmt = select(A2AAgent).where(
             and_(
-                HubA2AAgent.id.in_(public_stmt.union_all(allowlisted_stmt)),
+                A2AAgent.id.in_(public_stmt.union_all(allowlisted_stmt)),
+                A2AAgent.agent_scope == A2AAgent.SCOPE_SHARED,
             )
         )
-        result = await db.execute(ids_stmt.order_by(HubA2AAgent.created_at.asc()))
+        result = await db.execute(ids_stmt.order_by(A2AAgent.created_at.asc()))
         return list(result.scalars().all())
 
     async def ensure_visible_for_user(
         self, db: AsyncSession, *, user_id: UUID, agent_id: UUID
-    ) -> HubA2AAgent:
-        stmt = select(HubA2AAgent).where(
+    ) -> A2AAgent:
+        stmt = select(A2AAgent).where(
             and_(
-                HubA2AAgent.id == agent_id,
-                HubA2AAgent.deleted_at.is_(None),
-                HubA2AAgent.enabled.is_(True),
+                A2AAgent.id == agent_id,
+                A2AAgent.agent_scope == A2AAgent.SCOPE_SHARED,
+                A2AAgent.deleted_at.is_(None),
+                A2AAgent.enabled.is_(True),
             )
         )
         agent = await db.scalar(stmt)
@@ -381,9 +396,13 @@ class HubA2AAgentService(AgentValidationMixin):
         await db.execute(stmt)
         await commit_safely(db)
 
-    async def _get_agent(self, db: AsyncSession, *, agent_id: UUID) -> HubA2AAgent:
-        stmt = select(HubA2AAgent).where(
-            and_(HubA2AAgent.id == agent_id, HubA2AAgent.deleted_at.is_(None))
+    async def _get_agent(self, db: AsyncSession, *, agent_id: UUID) -> A2AAgent:
+        stmt = select(A2AAgent).where(
+            and_(
+                A2AAgent.id == agent_id,
+                A2AAgent.agent_scope == A2AAgent.SCOPE_SHARED,
+                A2AAgent.deleted_at.is_(None),
+            )
         )
         agent = await db.scalar(stmt)
         if agent is None:
@@ -392,10 +411,8 @@ class HubA2AAgentService(AgentValidationMixin):
 
     async def _get_credential(
         self, db: AsyncSession, *, agent_id: UUID
-    ) -> Optional[HubA2AAgentCredential]:
-        stmt = select(HubA2AAgentCredential).where(
-            HubA2AAgentCredential.agent_id == agent_id
-        )
+    ) -> Optional[A2AAgentCredential]:
+        stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
         return await db.scalar(stmt)
 
     async def _sync_credentials(
@@ -403,15 +420,15 @@ class HubA2AAgentService(AgentValidationMixin):
         db: AsyncSession,
         *,
         admin_user_id: UUID,
-        agent: HubA2AAgent,
+        agent: A2AAgent,
         token: Optional[str],
     ) -> tuple[Optional[str], bool]:
         if agent.auth_type == "none":
             credential = await self._get_credential(db, agent_id=agent.id)
             if credential:
                 await db.execute(
-                    delete(HubA2AAgentCredential).where(
-                        HubA2AAgentCredential.agent_id == agent.id
+                    delete(A2AAgentCredential).where(
+                        A2AAgentCredential.agent_id == agent.id
                     )
                 )
             return None, False
@@ -449,7 +466,7 @@ class HubA2AAgentService(AgentValidationMixin):
 
         credential = await self._get_credential(db, agent_id=agent_id)
         if credential is None:
-            credential = HubA2AAgentCredential(
+            credential = A2AAgentCredential(
                 agent_id=agent_id,
                 encrypted_token=encrypted_value,
                 token_last4=last4,

@@ -9,39 +9,39 @@ import {
 } from "@/lib/sessionHistory";
 
 export function useSessionHistoryQuery(options: {
-  sessionId?: string;
+  conversationId?: string;
   enabled: boolean;
   paused?: boolean;
 }) {
-  const { sessionId, enabled, paused = false } = options;
+  const { conversationId, enabled, paused = false } = options;
 
   const fetchPage = useCallback(
     async (page: number) => {
-      if (!sessionId) {
-        throw new Error("Session id is required.");
+      if (!conversationId) {
+        throw new Error("Conversation id is required.");
       }
-      return await listSessionMessagesPage(sessionId, { page, size: 100 });
+      return await listSessionMessagesPage(conversationId, { page, size: 100 });
     },
-    [sessionId],
+    [conversationId],
   );
 
   const query = usePaginatedList<SessionMessageItem>({
-    queryKey: queryKeys.history.chat(sessionId ?? "missing"),
+    queryKey: queryKeys.history.chat(conversationId ?? "missing"),
     fetchPage,
     getKey: (item) => item.id ?? `${item.created_at}:${item.role}`,
     errorTitle: "Load history failed",
     fallbackMessage: "Load failed.",
-    enabled: enabled && Boolean(sessionId) && !paused,
+    enabled: enabled && Boolean(conversationId) && !paused,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
   const messages = useMemo(() => {
-    if (!sessionId) {
+    if (!conversationId) {
       return [];
     }
-    return mapSessionMessagesToChatMessages(query.items, sessionId);
-  }, [query.items, sessionId]);
+    return mapSessionMessagesToChatMessages(query.items, conversationId);
+  }, [query.items, conversationId]);
 
   return {
     ...query,

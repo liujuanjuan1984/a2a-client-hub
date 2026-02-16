@@ -11,7 +11,6 @@ import {
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
-import { buildScheduledSessionId } from "@/lib/sessionIds";
 import { toast } from "@/lib/toast";
 
 const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
@@ -54,7 +53,7 @@ export function ScheduledJobCard({
   const [togglingEnabled, setTogglingEnabled] = useState(false);
 
   const openExecutionSession = (execution: ScheduledJobExecution) => {
-    if (!execution.session_id) return;
+    if (!execution.conversation_id) return;
     const agentId = job.agent_id;
     if (!agentId) {
       toast.error(
@@ -65,9 +64,7 @@ export function ScheduledJobCard({
     }
 
     blurActiveElement();
-    router.push(
-      buildChatRoute(agentId, buildScheduledSessionId(execution.session_id)),
-    );
+    router.push(buildChatRoute(agentId, execution.conversation_id));
   };
 
   return (
@@ -181,7 +178,7 @@ export function ScheduledJobCard({
                         {execution.error_message}
                       </Text>
                     ) : null}
-                    {execution.session_id ? (
+                    {execution.conversation_id ? (
                       <Button
                         className="mt-2 self-start"
                         label="Open Session"

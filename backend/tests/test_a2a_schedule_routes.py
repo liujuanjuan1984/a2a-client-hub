@@ -4,8 +4,8 @@ import pytest
 
 from app.api.routers import a2a_schedules
 from app.db.models.a2a_agent import A2AAgent
-from backend.tests.api_utils import create_test_client
-from backend.tests.utils import create_user
+from tests.api_utils import create_test_client
+from tests.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secret_vault import hub_a2a_secret_vault
-from app.db.models.hub_a2a_agent_credential import HubA2AAgentCredential
+from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.integrations.a2a_client.service import ResolvedAgent
 from app.services.hub_a2a_agents import HubA2AAgentNotFoundError, hub_a2a_agent_service
 from app.services.runtime_auth import build_resolved_runtime_agent
@@ -80,10 +80,8 @@ class HubA2ARuntimeBuilder:
 
     async def _get_credential(
         self, db: AsyncSession, *, agent_id: UUID
-    ) -> Optional[HubA2AAgentCredential]:
-        stmt = select(HubA2AAgentCredential).where(
-            HubA2AAgentCredential.agent_id == agent_id
-        )
+    ) -> Optional[A2AAgentCredential]:
+        stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
         return await db.scalar(stmt)
 
 

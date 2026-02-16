@@ -29,7 +29,6 @@ import {
 } from "@/lib/chat-utils";
 import { generateId, generateUuid } from "@/lib/id";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
-import { buildConversationSessionId, getSessionSource } from "@/lib/sessionIds";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
@@ -37,19 +36,20 @@ import { useMessageStore } from "@/store/messages";
 
 type ChatState = {
   sessions: Record<string, AgentSession>;
-  ensureSession: (sessionId: string, agentId: string) => void;
+  ensureSession: (conversationId: string, agentId: string) => void;
   sendMessage: (
-    sessionId: string,
+    conversationId: string,
     agentId: string,
     content: string,
     agentSource: AgentSource,
   ) => Promise<void>;
-  cancelMessage: (sessionId: string) => void;
-  resetSession: (sessionId: string, agentId: string) => void;
+  cancelMessage: (conversationId: string) => void;
+  resetSession: (conversationId: string, agentId: string) => void;
   bindExternalSession: (
-    sessionId: string,
+    conversationId: string,
     payload: {
       agentId: string;
+      source?: "manual" | "scheduled" | "opencode" | null;
       conversationId?: string | null;
       provider?: string | null;
       externalSessionId?: string | null;
@@ -57,11 +57,10 @@ type ChatState = {
       metadata?: Record<string, unknown> | null;
     },
   ) => void;
-  migrateSessionKey: (fromSessionId: string, toSessionId: string) => void;
   getSessionsByAgentId: (agentId: string) => [string, AgentSession][];
-  getLatestSessionIdByAgentId: (agentId: string) => string | undefined;
+  getLatestConversationIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
-  generateSessionId: () => string;
+  generateConversationId: () => string;
   clearAll: () => void;
 };
 
@@ -69,14 +68,14 @@ export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
       sessions: {},
-      ensureSession: (sessionId, agentId) => {
+      ensureSession: (conversationId, agentId) => {
         set((state) => {
-          if (state.sessions[sessionId]) {
+          if (state.sessions[conversationId]) {
             return {
               sessions: {
                 ...state.sessions,
-                [sessionId]: {
-                  ...state.sessions[sessionId],
+                [conversationId]: {
+                  ...state.sessions[conversationId],
                   lastActiveAt: new Date().toISOString(),
                 },
               },
@@ -85,30 +84,34 @@ export const useChatStore = create<ChatState>()(
           return {
             sessions: {
               ...state.sessions,
-              [sessionId]: createAgentSession(agentId),
+              [conversationId]: createAgentSession(agentId),
             },
           };
         });
       },
-      bindExternalSession: (sessionId, payload) => {
+      bindExternalSession: (conversationId, payload) => {
         set((state) => ({
           sessions: {
             ...state.sessions,
-            [sessionId]: {
-              ...(state.sessions[sessionId] ??
+            [conversationId]: {
+              ...(state.sessions[conversationId] ??
                 createAgentSession(payload.agentId)),
               agentId: payload.agentId,
+              source:
+                payload.source === undefined
+                  ? (state.sessions[conversationId]?.source ?? null)
+                  : payload.source,
               conversationId:
                 payload.conversationId === undefined
-                  ? (state.sessions[sessionId]?.conversationId ?? null)
+                  ? (state.sessions[conversationId]?.conversationId ?? null)
                   : payload.conversationId,
               externalSessionRef: mergeExternalSessionRef(
-                state.sessions[sessionId]?.externalSessionRef,
+                state.sessions[conversationId]?.externalSessionRef,
                 payload,
               ),
               contextId:
                 payload.contextId === undefined
-                  ? (state.sessions[sessionId]?.contextId ?? null)
+                  ? (state.sessions[conversationId]?.contextId ?? null)
                   : payload.contextId,
               metadata: payload.metadata ?? {},
               lastActiveAt: new Date().toISOString(),
@@ -116,54 +119,24 @@ export const useChatStore = create<ChatState>()(
           },
         }));
       },
-      migrateSessionKey: (fromSessionId, toSessionId) => {
-        const fromKey = fromSessionId.trim();
-        const toKey = toSessionId.trim();
-        if (!fromKey || !toKey || fromKey === toKey) return;
-
-        set((state) => {
-          const fromSession = state.sessions[fromKey];
-          if (!fromSession && !state.sessions[toKey]) {
-            return state;
-          }
-
-          const nextSessions = { ...state.sessions };
-          const toSession = nextSessions[toKey];
-          if (fromSession) {
-            nextSessions[toKey] = {
-              ...(toSession ?? {}),
-              ...fromSession,
-              lastActiveAt: new Date().toISOString(),
-            };
-            delete nextSessions[fromKey];
-          }
-
-          return {
-            sessions: nextSessions,
-          };
-        });
-
-        chatConnectionService.migrateSessionKey(fromKey, toKey);
-        useMessageStore.getState().migrateSessionKey(fromKey, toKey);
-      },
-      resetSession: (sessionId, agentId) => {
-        get().cancelMessage(sessionId);
+      resetSession: (conversationId, agentId) => {
+        get().cancelMessage(conversationId);
         set((state) => ({
           sessions: {
             ...state.sessions,
-            [sessionId]: createAgentSession(agentId),
+            [conversationId]: createAgentSession(agentId),
           },
         }));
-        useMessageStore.getState().removeMessages(sessionId);
+        useMessageStore.getState().removeMessages(conversationId);
       },
-      cancelMessage: (sessionId) => {
-        chatConnectionService.cancelSession(sessionId);
+      cancelMessage: (conversationId) => {
+        chatConnectionService.cancelSession(conversationId);
       },
-      sendMessage: async (sessionId, agentId, content, agentSource) => {
+      sendMessage: async (conversationId, agentId, content, agentSource) => {
         const trimmed = content.trim();
         if (!trimmed) return;
 
-        get().cancelMessage(sessionId);
+        get().cancelMessage(conversationId);
 
         const userMessage = {
           id: generateId(),
@@ -184,13 +157,14 @@ export const useChatStore = create<ChatState>()(
         };
 
         const previousSession =
-          get().sessions[sessionId] ?? createAgentSession(agentId);
+          get().sessions[conversationId] ?? createAgentSession(agentId);
 
         set((state) => ({
           sessions: {
             ...state.sessions,
-            [sessionId]: {
-              ...(state.sessions[sessionId] ?? createAgentSession(agentId)),
+            [conversationId]: {
+              ...(state.sessions[conversationId] ??
+                createAgentSession(agentId)),
               lastActiveAt: new Date().toISOString(),
               streamState: "streaming",
               lastStreamError: null,
@@ -200,8 +174,8 @@ export const useChatStore = create<ChatState>()(
         }));
 
         const messageStore = useMessageStore.getState();
-        messageStore.addMessage(sessionId, userMessage);
-        messageStore.addMessage(sessionId, agentMessage);
+        messageStore.addMessage(conversationId, userMessage);
+        messageStore.addMessage(conversationId, agentMessage);
 
         let activeAgentMessageId = agentMessageId;
         const activeStreamMessageIds = new Set<string>([agentMessageId]);
@@ -219,7 +193,7 @@ export const useChatStore = create<ChatState>()(
 
         const patchSession = (patch: Partial<AgentSession>) => {
           set((state) => {
-            const current = state.sessions[sessionId];
+            const current = state.sessions[conversationId];
             if (!current) return state;
             const hasChanges = Object.entries(patch).some(
               ([key, value]) =>
@@ -231,7 +205,7 @@ export const useChatStore = create<ChatState>()(
             return {
               sessions: {
                 ...state.sessions,
-                [sessionId]: {
+                [conversationId]: {
                   ...current,
                   ...patch,
                 },
@@ -248,12 +222,10 @@ export const useChatStore = create<ChatState>()(
         };
 
         const attemptSessionRebind = async (reason: string) => {
-          const source = getSessionSource(sessionId);
-          const current = get().sessions[sessionId];
+          const current = get().sessions[conversationId];
           const shouldRebind =
-            source === "opencode" ||
-            (source === "conversation" &&
-              current?.externalSessionRef?.provider === "opencode");
+            current?.source === "opencode" ||
+            current?.externalSessionRef?.provider === "opencode";
           if (!shouldRebind) {
             return false;
           }
@@ -266,19 +238,20 @@ export const useChatStore = create<ChatState>()(
             lastStreamError: reason,
           });
           console.info("[Session Rebind] start", {
-            sessionId,
-            source: getSessionSource(sessionId),
+            conversationId,
+            source: current?.source ?? null,
             reason,
-            transport: get().sessions[sessionId]?.transport ?? "unknown",
+            transport: get().sessions[conversationId]?.transport ?? "unknown",
           });
           try {
-            const binding = await continueSessionBinding(sessionId);
+            const binding = await continueSessionBinding(conversationId);
             const current =
-              get().sessions[sessionId] ?? createAgentSession(agentId);
+              get().sessions[conversationId] ?? createAgentSession(agentId);
             patchSession({
               conversationId: binding.conversationId ?? current.conversationId,
               contextId: binding.contextId ?? current.contextId,
               metadata: binding.metadata ?? current.metadata,
+              source: binding.source ?? current.source ?? null,
               externalSessionRef: mergeExternalSessionRef(
                 current.externalSessionRef,
                 {
@@ -291,8 +264,8 @@ export const useChatStore = create<ChatState>()(
               lastStreamError: reason,
             });
             console.info("[Session Rebind] success", {
-              sessionId,
-              source: getSessionSource(sessionId),
+              conversationId,
+              source: binding.source ?? current.source ?? null,
               contextId: binding.contextId ?? null,
             });
             return true;
@@ -304,8 +277,8 @@ export const useChatStore = create<ChatState>()(
               lastStreamError: message,
             });
             console.warn("[Session Rebind] failed", {
-              sessionId,
-              source: getSessionSource(sessionId),
+              conversationId,
+              source: current?.source ?? null,
               message,
             });
             return false;
@@ -315,9 +288,8 @@ export const useChatStore = create<ChatState>()(
         };
 
         if (
-          (getSessionSource(sessionId) === "opencode" ||
-            (getSessionSource(sessionId) === "conversation" &&
-              previousSession.externalSessionRef?.provider === "opencode")) &&
+          (previousSession.source === "opencode" ||
+            previousSession.externalSessionRef?.provider === "opencode") &&
           previousSession.streamState === "error"
         ) {
           await attemptSessionRebind(
@@ -326,8 +298,8 @@ export const useChatStore = create<ChatState>()(
         }
 
         const session =
-          get().sessions[sessionId] ?? createAgentSession(agentId);
-        const payload = buildInvokePayload(trimmed, session, sessionId, {
+          get().sessions[conversationId] ?? createAgentSession(agentId);
+        const payload = buildInvokePayload(trimmed, session, conversationId, {
           userMessageId: userMessage.id,
           clientAgentMessageId: agentMessage.id,
         });
@@ -340,7 +312,7 @@ export const useChatStore = create<ChatState>()(
           outputModes?: string[];
         }) => {
           set((state) => {
-            const current = state.sessions[sessionId];
+            const current = state.sessions[conversationId];
             if (!current) return state;
 
             const nextPatch: Partial<AgentSession> = {};
@@ -382,7 +354,7 @@ export const useChatStore = create<ChatState>()(
             return {
               sessions: {
                 ...state.sessions,
-                [sessionId]: {
+                [conversationId]: {
                   ...current,
                   ...nextPatch,
                 },
@@ -398,7 +370,7 @@ export const useChatStore = create<ChatState>()(
 
         const resolveExistingTargetMessageIds = () => {
           const currentMessages =
-            useMessageStore.getState().messages[sessionId] ?? [];
+            useMessageStore.getState().messages[conversationId] ?? [];
           const existingIds = new Set(
             currentMessages.map((message) => message.id),
           );
@@ -416,7 +388,7 @@ export const useChatStore = create<ChatState>()(
           const now = new Date().toISOString();
           targetMessageIds.forEach((messageId) => {
             messageStore.updateMessageWithUpdater(
-              sessionId,
+              conversationId,
               messageId,
               (message) => {
                 const finalizedBlocks =
@@ -448,7 +420,8 @@ export const useChatStore = create<ChatState>()(
         };
 
         const mergeHistoryMessagesById = (incoming: ChatMessage[]) => {
-          const current = useMessageStore.getState().messages[sessionId] ?? [];
+          const current =
+            useMessageStore.getState().messages[conversationId] ?? [];
           const merged = new Map<string, ChatMessage>();
           current.forEach((message) => {
             merged.set(message.id, message);
@@ -459,7 +432,7 @@ export const useChatStore = create<ChatState>()(
           const nextMessages = Array.from(merged.values()).sort((left, right) =>
             left.createdAt.localeCompare(right.createdAt),
           );
-          messageStore.setMessages(sessionId, nextMessages);
+          messageStore.setMessages(conversationId, nextMessages);
         };
 
         const backfillHistoryAfterSequenceGap = async () => {
@@ -468,13 +441,16 @@ export const useChatStore = create<ChatState>()(
           const maxPages = 20;
 
           const collectPage = (items: SessionMessageItem[]) => {
-            const mapped = mapSessionMessagesToChatMessages(items, sessionId);
+            const mapped = mapSessionMessagesToChatMessages(
+              items,
+              conversationId,
+            );
             mapped.forEach((message) => {
               recovered.set(message.id, message);
             });
           };
 
-          const firstPage = await listSessionMessagesPage(sessionId, {
+          const firstPage = await listSessionMessagesPage(conversationId, {
             page: 1,
             size,
           });
@@ -495,7 +471,7 @@ export const useChatStore = create<ChatState>()(
                 collectPage(firstPage.items);
                 continue;
               }
-              const response = await listSessionMessagesPage(sessionId, {
+              const response = await listSessionMessagesPage(conversationId, {
                 page,
                 size,
               });
@@ -514,7 +490,7 @@ export const useChatStore = create<ChatState>()(
               requestCount < maxPages &&
               nextPage > 1
             ) {
-              const response = await listSessionMessagesPage(sessionId, {
+              const response = await listSessionMessagesPage(conversationId, {
                 page: nextPage,
                 size,
               });
@@ -541,7 +517,7 @@ export const useChatStore = create<ChatState>()(
             }
 
             const currentMessages =
-              useMessageStore.getState().messages[sessionId] ?? [];
+              useMessageStore.getState().messages[conversationId] ?? [];
             const hasExactTarget = currentMessages.some(
               (message) => message.id === chunk.messageId,
             );
@@ -557,13 +533,13 @@ export const useChatStore = create<ChatState>()(
             );
             if (hasActivePlaceholder) {
               messageStore.rekeyMessage(
-                sessionId,
+                conversationId,
                 placeholderId,
                 chunk.messageId,
               );
               activeStreamMessageIds.delete(placeholderId);
             } else {
-              messageStore.addMessage(sessionId, {
+              messageStore.addMessage(conversationId, {
                 id: chunk.messageId,
                 role: "agent",
                 content: "",
@@ -579,7 +555,7 @@ export const useChatStore = create<ChatState>()(
 
           const targetMessageId = resolveChunkMessageId();
           messageStore.updateMessageWithUpdater(
-            sessionId,
+            conversationId,
             targetMessageId,
             (message) => {
               const nextBlocks = applyStreamBlockUpdate(message.blocks, chunk);
@@ -685,10 +661,10 @@ export const useChatStore = create<ChatState>()(
             lastStreamError: errorText,
           });
           console.warn("[Chat Stream] error", {
-            sessionId,
-            source: getSessionSource(sessionId),
+            conversationId,
+            source: get().sessions[conversationId]?.source ?? null,
             message: errorText,
-            transport: get().sessions[sessionId]?.transport ?? "unknown",
+            transport: get().sessions[conversationId]?.transport ?? "unknown",
           });
           attemptSessionRebind(errorText).catch(() => false);
         };
@@ -716,8 +692,8 @@ export const useChatStore = create<ChatState>()(
                 lastStreamError: message,
               });
               console.warn("[Chat Stream] sequence-gap recovery failed", {
-                sessionId,
-                source: getSessionSource(sessionId),
+                conversationId,
+                source: get().sessions[conversationId]?.source ?? null,
                 message,
               });
             });
@@ -726,7 +702,7 @@ export const useChatStore = create<ChatState>()(
 
         const tryWebSocketTransport = async () =>
           chatConnectionService.tryWebSocketTransport({
-            sessionId,
+            conversationId,
             agentId,
             source: agentSource,
             payload,
@@ -762,7 +738,7 @@ export const useChatStore = create<ChatState>()(
         const trySseTransport = async () => {
           updateSessionMeta({ transport: "http_sse" });
           return chatConnectionService.trySseTransport({
-            sessionId,
+            conversationId,
             agentId,
             source: agentSource,
             payload,
@@ -788,7 +764,7 @@ export const useChatStore = create<ChatState>()(
             if (!response.success) {
               const message =
                 response.error || response.error_code || "Request failed.";
-              messageStore.updateMessage(sessionId, activeAgentMessageId, {
+              messageStore.updateMessage(conversationId, activeAgentMessageId, {
                 content: message,
                 status: "done",
               });
@@ -799,7 +775,7 @@ export const useChatStore = create<ChatState>()(
               return;
             }
 
-            messageStore.updateMessage(sessionId, activeAgentMessageId, {
+            messageStore.updateMessage(conversationId, activeAgentMessageId, {
               content: response.content ?? "",
               status: "done",
             });
@@ -807,7 +783,7 @@ export const useChatStore = create<ChatState>()(
           } catch (error) {
             const message =
               error instanceof Error ? error.message : "Request failed.";
-            messageStore.updateMessage(sessionId, activeAgentMessageId, {
+            messageStore.updateMessage(conversationId, activeAgentMessageId, {
               content: message,
               status: "done",
             });
@@ -838,7 +814,7 @@ export const useChatStore = create<ChatState>()(
         );
         return sortSessionsByLastActive(sessions);
       },
-      getLatestSessionIdByAgentId: (agentId) => {
+      getLatestConversationIdByAgentId: (agentId) => {
         const sessions = get().getSessionsByAgentId(agentId);
         return sessions[0]?.[0];
       },
@@ -853,23 +829,25 @@ export const useChatStore = create<ChatState>()(
             return state;
           }
 
-          cleanupPlan.expiredSessionIds.forEach((sessionId) => {
-            chatConnectionService.cancelSession(sessionId);
-            messageStore.removeMessages(sessionId);
+          cleanupPlan.expiredConversationIds.forEach((conversationId) => {
+            chatConnectionService.cancelSession(conversationId);
+            messageStore.removeMessages(conversationId);
           });
-          cleanupPlan.trimmedSessionIds.forEach((sessionId) => {
-            chatConnectionService.cancelSession(sessionId);
-            messageStore.removeMessages(sessionId);
+          cleanupPlan.trimmedConversationIds.forEach((conversationId) => {
+            chatConnectionService.cancelSession(conversationId);
+            messageStore.removeMessages(conversationId);
           });
 
-          cleanupPlan.orphanedMessageSessionIds.forEach((sessionId) => {
-            messageStore.removeMessages(sessionId);
-          });
+          cleanupPlan.orphanedMessageConversationIds.forEach(
+            (conversationId) => {
+              messageStore.removeMessages(conversationId);
+            },
+          );
 
           return { sessions: cleanupPlan.sessions };
         });
       },
-      generateSessionId: () => buildConversationSessionId(generateUuid()),
+      generateConversationId: () => generateUuid(),
       clearAll: () => {
         chatConnectionService.clearAll();
         set({ sessions: {} });

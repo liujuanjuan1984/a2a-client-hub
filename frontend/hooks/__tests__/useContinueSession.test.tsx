@@ -53,10 +53,9 @@ describe("useContinueSession", () => {
   const mockPush = jest.fn();
   const mockEnsureSession = jest.fn();
   const mockBindExternalSession = jest.fn();
-  const mockMigrateSessionKey = jest.fn();
   const chatHref = {
-    pathname: "/(app)/chat/[agentId]/[sessionId]",
-    params: { agentId: "agent-1", sessionId: "session-1" },
+    pathname: "/(app)/chat/[agentId]/[conversationId]",
+    params: { agentId: "agent-1", conversationId: "conversation-1" },
   };
 
   beforeEach(() => {
@@ -67,20 +66,19 @@ describe("useContinueSession", () => {
         selector({
           ensureSession: mockEnsureSession,
           bindExternalSession: mockBindExternalSession,
-          migrateSessionKey: mockMigrateSessionKey,
         }),
     );
     mockedBuildChatRoute.mockReturnValue(chatHref as never);
   });
 
-  it("returns false when session id is blank", async () => {
+  it("returns false when conversation id is blank", async () => {
     const { result } = renderHook(() => useContinueSession());
 
     let ok = true;
     await act(async () => {
       ok = await result.current.continueSession({
         agentId: "agent-1",
-        sessionId: "   ",
+        conversationId: "   ",
       });
     });
 
@@ -88,13 +86,12 @@ describe("useContinueSession", () => {
     expect(mockedContinueSession).not.toHaveBeenCalled();
     expect(mockedToast.error).toHaveBeenCalledWith(
       "Continue session failed",
-      "Missing session id.",
+      "Missing conversation id.",
     );
   });
 
-  it("continues session and navigates to chat route", async () => {
+  it("continues conversation and navigates to chat route", async () => {
     mockedContinueSession.mockResolvedValue({
-      session_id: "session-1",
       conversationId: "conv-1",
       source: "opencode",
       provider: "opencode",
@@ -109,16 +106,16 @@ describe("useContinueSession", () => {
     await act(async () => {
       ok = await result.current.continueSession({
         agentId: "agent-1",
-        sessionId: "  session-1  ",
+        conversationId: "  conversation-1  ",
       });
     });
 
     expect(ok).toBe(true);
-    expect(mockedContinueSession).toHaveBeenCalledWith("session-1");
-    expect(mockMigrateSessionKey).not.toHaveBeenCalled();
-    expect(mockEnsureSession).toHaveBeenCalledWith("session-1", "agent-1");
-    expect(mockBindExternalSession).toHaveBeenCalledWith("session-1", {
+    expect(mockedContinueSession).toHaveBeenCalledWith("conversation-1");
+    expect(mockEnsureSession).toHaveBeenCalledWith("conversation-1", "agent-1");
+    expect(mockBindExternalSession).toHaveBeenCalledWith("conversation-1", {
       agentId: "agent-1",
+      source: "opencode",
       conversationId: "conv-1",
       provider: "opencode",
       externalSessionId: "upstream-1",
@@ -126,55 +123,11 @@ describe("useContinueSession", () => {
       metadata: { opencode_session_id: "upstream-1" },
     });
     expect(mockedBlurActiveElement).toHaveBeenCalledTimes(1);
-    expect(mockedBuildChatRoute).toHaveBeenCalledWith("agent-1", "session-1");
-    expect(mockPush).toHaveBeenCalledWith(chatHref);
-  });
-
-  it("migrates to canonical conversation id from binding response", async () => {
-    mockedContinueSession.mockResolvedValue({
-      session_id: "conversation:canonical-session",
-      conversationId: "conv-1",
-      source: "opencode",
-      provider: "opencode",
-      externalSessionId: "upstream-1",
-      contextId: null,
-      metadata: {},
-    });
-    mockedBuildChatRoute.mockReturnValue({
-      pathname: "/(app)/chat/[agentId]/[sessionId]",
-      params: {
-        agentId: "agent-1",
-        sessionId: "conversation:canonical-session",
-      },
-    } as never);
-
-    const { result } = renderHook(() => useContinueSession());
-    await act(async () => {
-      await result.current.continueSession({
-        agentId: "agent-1",
-        sessionId: "manual:legacy-session",
-      });
-    });
-
-    expect(mockMigrateSessionKey).toHaveBeenCalledWith(
-      "manual:legacy-session",
-      "conversation:canonical-session",
-    );
-    expect(mockEnsureSession).toHaveBeenCalledWith(
-      "conversation:canonical-session",
-      "agent-1",
-    );
-    expect(mockBindExternalSession).toHaveBeenCalledWith(
-      "conversation:canonical-session",
-      expect.objectContaining({
-        agentId: "agent-1",
-        conversationId: "conv-1",
-      }),
-    );
     expect(mockedBuildChatRoute).toHaveBeenCalledWith(
       "agent-1",
-      "conversation:canonical-session",
+      "conversation-1",
     );
+    expect(mockPush).toHaveBeenCalledWith(chatHref);
   });
 
   it("returns false and shows toast when request fails", async () => {
@@ -186,7 +139,7 @@ describe("useContinueSession", () => {
     await act(async () => {
       ok = await result.current.continueSession({
         agentId: "agent-1",
-        sessionId: "session-1",
+        conversationId: "conversation-1",
       });
     });
 

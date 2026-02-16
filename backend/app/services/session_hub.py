@@ -1,4 +1,4 @@
-"""Unified session domain helpers and query service.
+"""Unified conversation domain helpers and query service.
 
 This module provides a single read model for session list/history/continue across:
 - local manual chat sessions
@@ -8,22 +8,17 @@ This module provides a single read model for session list/history/continue acros
 
 from __future__ import annotations
 
-import base64
-import binascii
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.a2a_schedule_execution import A2AScheduleExecution
-from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_message import AgentMessage
-from app.db.models.agent_session import AgentSession
 from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message as agent_message_handler
 from app.integrations.a2a_extensions import get_a2a_extensions_service
@@ -50,22 +45,17 @@ from app.utils.session_identity import normalize_non_empty_text, normalize_provi
 from app.utils.timezone_util import utc_now
 
 SessionSource = Literal["manual", "scheduled", "opencode"]
-ParsedSessionSource = Literal["manual", "scheduled", "opencode", "conversation"]
-
-_MANUAL_PREFIX = "manual:"
-_SCHEDULED_PREFIX = "scheduled:"
-_OPENCODE_PREFIX = "opencode:"
-_CONVERSATION_PREFIX = "conversation:"
+ResolvedSource = Literal["manual", "scheduled", "opencode"]
 
 
 @dataclass(frozen=True)
-class ParsedSessionKey:
-    source: ParsedSessionSource
+class ResolvedConversationTarget:
+    source: ResolvedSource
     local_session_id: Optional[UUID] = None
-    conversation_id: Optional[UUID] = None
+    conversation_id: UUID | None = None
     agent_id: Optional[UUID] = None
     agent_source: Optional[Literal["personal", "shared"]] = None
-    upstream_session_id: Optional[str] = None
+    external_session_id: Optional[str] = None
 
 
 def _to_utc_epoch_seconds(value: Any) -> float:
@@ -86,116 +76,14 @@ def _to_utc_epoch_seconds(value: Any) -> float:
 def _session_order_key(item: dict[str, Any]) -> tuple[float, float, str]:
     last_active = _to_utc_epoch_seconds(item.get("last_active_at"))
     created = _to_utc_epoch_seconds(item.get("created_at"))
-    session_id = str(item.get("id") or "")
-    return (last_active, created, session_id)
-
-
-def _urlsafe_b64encode_json(data: Dict[str, Any]) -> str:
-    raw = json.dumps(data, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
-
-
-def _urlsafe_b64decode_json(value: str) -> Dict[str, Any]:
-    try:
-        padded = value + "=" * (-len(value) % 4)
-        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
-        decoded = json.loads(raw.decode("utf-8"))
-    except (
-        ValueError,
-        TypeError,
-        UnicodeEncodeError,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-        binascii.Error,
-    ) as exc:
-        raise ValueError("invalid payload") from exc
-    if not isinstance(decoded, dict):
-        raise ValueError("invalid payload")
-    return decoded
-
-
-def build_manual_session_key(session_id: UUID) -> str:
-    return f"{_MANUAL_PREFIX}{session_id}"
-
-
-def build_scheduled_session_key(session_id: UUID) -> str:
-    return f"{_SCHEDULED_PREFIX}{session_id}"
-
-
-def build_conversation_session_key(conversation_id: UUID) -> str:
-    return f"{_CONVERSATION_PREFIX}{conversation_id}"
-
-
-def build_opencode_session_key(
-    *,
-    agent_id: UUID,
-    agent_source: Literal["personal", "shared"],
-    upstream_session_id: str,
-) -> str:
-    token = _urlsafe_b64encode_json(
-        {
-            "agent_id": str(agent_id),
-            "agent_source": agent_source,
-            "session_id": upstream_session_id,
-        }
-    )
-    return f"{_OPENCODE_PREFIX}{token}"
-
-
-def parse_session_key(value: str) -> ParsedSessionKey:
-    trimmed = (value or "").strip()
-    if not trimmed:
-        raise ValueError("session_id is required")
-
-    if trimmed.startswith(_MANUAL_PREFIX):
-        raw_uuid = trimmed[len(_MANUAL_PREFIX) :]
-        return ParsedSessionKey(source="manual", local_session_id=UUID(raw_uuid))
-
-    if trimmed.startswith(_SCHEDULED_PREFIX):
-        raw_uuid = trimmed[len(_SCHEDULED_PREFIX) :]
-        return ParsedSessionKey(source="scheduled", local_session_id=UUID(raw_uuid))
-
-    if trimmed.startswith(_CONVERSATION_PREFIX):
-        raw_uuid = trimmed[len(_CONVERSATION_PREFIX) :]
-        conversation_id = UUID(raw_uuid)
-        return ParsedSessionKey(
-            source="conversation",
-            conversation_id=conversation_id,
-        )
-
-    if trimmed.startswith(_OPENCODE_PREFIX):
-        token = trimmed[len(_OPENCODE_PREFIX) :]
-        try:
-            payload = _urlsafe_b64decode_json(token)
-        except ValueError as exc:
-            raise ValueError("invalid opencode session key") from exc
-        raw_agent_id = str(payload.get("agent_id") or "").strip()
-        raw_agent_source = str(payload.get("agent_source") or "").strip()
-        raw_session_id = str(payload.get("session_id") or "").strip()
-        if not raw_agent_id or raw_agent_source not in {"personal", "shared"}:
-            raise ValueError("invalid opencode session key")
-        if not raw_session_id:
-            raise ValueError("invalid opencode session key")
-        try:
-            agent_id = UUID(raw_agent_id)
-        except (ValueError, TypeError) as exc:
-            raise ValueError("invalid opencode session key") from exc
-        return ParsedSessionKey(
-            source="opencode",
-            agent_id=agent_id,
-            agent_source=raw_agent_source,  # type: ignore[arg-type]
-            upstream_session_id=raw_session_id,
-        )
-
-    # Fail fast: one-shot migration expects all clients to use unified keys.
-    raise ValueError("invalid unified session id")
+    conversation_id = str(item.get("conversationId") or "")
+    return (last_active, created, conversation_id)
 
 
 class SessionHubService:
-    _LOCAL_SESSION_SOURCES: set[ParsedSessionSource] = {
+    _LOCAL_SESSION_SOURCES: set[ResolvedSource] = {
         "manual",
         "scheduled",
-        "conversation",
     }
 
     async def list_sessions(
@@ -207,11 +95,12 @@ class SessionHubService:
         size: int,
         refresh: bool,
         source: Optional[SessionSource],
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
         local_items: list[dict[str, Any]] = []
         opencode_items: list[dict[str, Any]] = []
         merged_items: list[dict[str, Any]] = []
         opencode_meta: dict[str, Any] = {}
+        db_mutated = False
 
         if source in {None, "manual", "scheduled"}:
             local_items = await self._list_local_sessions(
@@ -264,22 +153,32 @@ class SessionHubService:
                 item,
             ) in normalized_lookup_items:
                 conversation_id = external_conversation_map.get(normalized_session_id)
+                if conversation_id is None:
+                    bind_result = await conversation_identity_service.bind_external_session_with_state(
+                        db,
+                        user_id=user_id,
+                        conversation_id=None,
+                        provider="opencode",
+                        external_session_id=normalized_session_id,
+                        agent_id=raw_agent_id,
+                        agent_source=raw_agent_source,
+                        context_id=(
+                            str(item.get("contextId")).strip()
+                            if isinstance(item.get("contextId"), str)
+                            else None
+                        ),
+                        title=str(item.get("title") or "Session"),
+                        binding_metadata={"provider": "opencode"},
+                    )
+                    conversation_id = bind_result.conversation_id
+                    db_mutated = db_mutated or bind_result.mutated
+                    external_conversation_map[normalized_session_id] = conversation_id
                 normalized_opencode_items.append(
                     {
-                        "id": (
-                            build_conversation_session_key(conversation_id)
-                            if conversation_id
-                            else build_opencode_session_key(
-                                agent_id=raw_agent_id,
-                                agent_source=raw_agent_source,
-                                upstream_session_id=normalized_session_id,
-                            )
-                        ),
-                        "conversationId": (
-                            str(conversation_id) if conversation_id else None
-                        ),
+                        "conversationId": str(conversation_id),
                         "source": "opencode",
-                        "source_session_id": normalized_session_id,
+                        "provider": "opencode",
+                        "external_session_id": normalized_session_id,
                         "agent_id": raw_agent_id,
                         "agent_source": raw_agent_source,
                         "title": item.get("title") or "Session",
@@ -326,7 +225,7 @@ class SessionHubService:
             "total": total,
             "pages": pages,
         }
-        return page_items, {"pagination": pagination, "meta": meta}
+        return page_items, {"pagination": pagination, "meta": meta}, db_mutated
 
     async def _list_local_sessions(
         self,
@@ -336,28 +235,29 @@ class SessionHubService:
         source: Optional[SessionSource],
     ) -> list[dict[str, Any]]:
         stmt = (
-            select(AgentSession)
+            select(ConversationThread)
             .where(
                 and_(
-                    AgentSession.user_id == user_id,
-                    AgentSession.deleted_at.is_(None),
-                    AgentSession.session_type.in_(
-                        [AgentSession.TYPE_CHAT, AgentSession.TYPE_SCHEDULED]
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    ConversationThread.source.in_(
+                        [
+                            ConversationThread.SOURCE_MANUAL,
+                            ConversationThread.SOURCE_SCHEDULED,
+                        ]
                     ),
                 )
             )
             .order_by(
-                AgentSession.last_activity_at.desc(), AgentSession.created_at.desc()
+                ConversationThread.last_active_at.desc(),
+                ConversationThread.created_at.desc(),
             )
         )
-        sessions = list((await db.execute(stmt)).scalars().all())
+        threads = list((await db.execute(stmt)).scalars().all())
 
-        session_ids = [session.id for session in sessions]
+        session_ids = [thread.id for thread in threads]
         latest_metadata_map = await self._latest_local_message_metadata_map(
-            db, user_id=user_id, local_session_ids=session_ids
-        )
-        latest_conversation_map = await self._latest_local_message_conversation_map(
-            db, user_id=user_id, local_session_ids=session_ids
+            db, user_id=user_id, local_conversation_ids=session_ids
         )
         binding_conversation_map = await conversation_identity_service.find_conversation_ids_for_local_sessions_batch(
             db,
@@ -373,7 +273,7 @@ class SessionHubService:
             context_id
             for context_id in (
                 extract_context_id(latest_metadata_map.get(session.id, {}))
-                for session in sessions
+                for session in threads
             )
             if isinstance(context_id, str) and context_id
         ]
@@ -384,83 +284,62 @@ class SessionHubService:
                 context_ids=context_ids,
             )
         )
-
-        scheduled_agent_map = await self._scheduled_session_agent_map(
-            db, user_id=user_id
-        )
         items: list[dict[str, Any]] = []
 
-        for session in sessions:
-            latest_metadata = latest_metadata_map.get(session.id, {})
+        for thread in threads:
+            latest_metadata = latest_metadata_map.get(thread.id, {})
             (
                 metadata_provider,
                 metadata_external_id,
             ) = extract_provider_and_external_session_id(latest_metadata)
             metadata_context_id = extract_context_id(latest_metadata)
-            binding_locator = binding_locator_map.get(session.id)
+            binding_locator = binding_locator_map.get(thread.id)
             if not metadata_provider and binding_locator:
                 metadata_provider = binding_locator.provider
             if not metadata_external_id and binding_locator:
                 metadata_external_id = binding_locator.external_session_id
             if not metadata_context_id and binding_locator:
                 metadata_context_id = binding_locator.context_id
-            conversation_id = latest_conversation_map.get(session.id)
-            if conversation_id is None:
-                conversation_id = binding_conversation_map.get(session.id)
+            conversation_id = binding_conversation_map.get(thread.id)
             if conversation_id is None and binding_locator:
                 conversation_id = binding_locator.conversation_id
             if conversation_id is None and metadata_context_id:
                 conversation_id = context_conversation_map.get(metadata_context_id)
 
-            if session.session_type == AgentSession.TYPE_CHAT:
+            if thread.source == ConversationThread.SOURCE_MANUAL:
                 if source not in {None, "manual"}:
                     continue
-                agent_id: UUID | None = None
-                if isinstance(session.module_key, str):
-                    try:
-                        agent_id = UUID(session.module_key.strip())
-                    except (ValueError, TypeError):
-                        agent_id = None
                 items.append(
                     {
-                        "id": build_conversation_session_key(session.id),
-                        "conversationId": (
-                            str(conversation_id) if conversation_id else None
-                        ),
+                        "conversationId": str(conversation_id or thread.id),
                         "source": "manual",
-                        "source_session_id": str(session.id),
-                        "agent_id": agent_id,
-                        "agent_source": None,
+                        "agent_id": thread.agent_id,
+                        "agent_source": thread.agent_source,
                         "provider": metadata_provider,
                         "external_session_id": metadata_external_id,
                         "context_id": metadata_context_id,
-                        "title": session.name or "Manual Session",
-                        "last_active_at": session.last_activity_at,
-                        "created_at": session.created_at,
+                        "title": thread.title or "Manual Session",
+                        "last_active_at": thread.last_active_at,
+                        "created_at": thread.created_at,
                     }
                 )
                 continue
 
-            if session.session_type == AgentSession.TYPE_SCHEDULED:
+            if thread.source == ConversationThread.SOURCE_SCHEDULED:
                 if source not in {None, "scheduled"}:
                     continue
-                scheduled_meta = scheduled_agent_map.get(session.id, {})
                 items.append(
                     {
-                        "id": build_scheduled_session_key(session.id),
-                        "conversationId": (
-                            str(conversation_id) if conversation_id else None
-                        ),
+                        "conversationId": str(conversation_id or thread.id),
                         "source": "scheduled",
-                        "source_session_id": str(session.id),
-                        "agent_id": scheduled_meta.get("agent_id"),
-                        "agent_source": "personal",
+                        "agent_id": thread.agent_id,
+                        "agent_source": thread.agent_source or "personal",
                         "provider": metadata_provider,
                         "external_session_id": metadata_external_id,
                         "context_id": metadata_context_id,
-                        "title": session.name or "Scheduled Session",
-                        "last_active_at": session.last_activity_at,
-                        "created_at": session.created_at,
+                        "title": thread.title or "Scheduled Session",
+                        "last_active_at": thread.last_active_at,
+                        "created_at": thread.created_at,
                     }
                 )
 
@@ -471,71 +350,37 @@ class SessionHubService:
         db: AsyncSession,
         *,
         user_id: UUID,
-        local_session_ids: list[UUID],
+        local_conversation_ids: list[UUID],
     ) -> dict[UUID, Dict[str, Any]]:
-        if not local_session_ids:
+        if not local_conversation_ids:
             return {}
         stmt = (
-            select(AgentMessage.session_id, AgentMessage.message_metadata)
+            select(AgentMessage.conversation_id, AgentMessage.message_metadata)
             .where(
                 and_(
                     AgentMessage.user_id == user_id,
-                    AgentMessage.session_id.in_(local_session_ids),
+                    AgentMessage.conversation_id.in_(local_conversation_ids),
                 )
             )
             .order_by(
-                AgentMessage.session_id.asc(),
+                AgentMessage.conversation_id.asc(),
                 AgentMessage.created_at.desc(),
                 AgentMessage.id.desc(),
             )
-            .distinct(AgentMessage.session_id)
+            .distinct(AgentMessage.conversation_id)
         )
         rows = (await db.execute(stmt)).all()
         mapped: dict[UUID, Dict[str, Any]] = {}
         for row in rows:
-            session_id = row.session_id
-            if not isinstance(session_id, UUID):
+            conversation_id = row.conversation_id
+            if not isinstance(conversation_id, UUID):
                 continue
             metadata = (
                 dict(row.message_metadata)
                 if isinstance(row.message_metadata, dict)
                 else {}
             )
-            mapped[session_id] = metadata
-        return mapped
-
-    async def _latest_local_message_conversation_map(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        local_session_ids: list[UUID],
-    ) -> dict[UUID, UUID]:
-        if not local_session_ids:
-            return {}
-        stmt = (
-            select(AgentMessage.session_id, AgentMessage.conversation_id)
-            .where(
-                and_(
-                    AgentMessage.user_id == user_id,
-                    AgentMessage.session_id.in_(local_session_ids),
-                    AgentMessage.conversation_id.is_not(None),
-                )
-            )
-            .order_by(
-                AgentMessage.session_id.asc(),
-                AgentMessage.created_at.desc(),
-                AgentMessage.id.desc(),
-            )
-            .distinct(AgentMessage.session_id)
-        )
-        rows = (await db.execute(stmt)).all()
-        mapped: dict[UUID, UUID] = {}
-        for row in rows:
-            session_id = row.session_id
-            conversation_id = row.conversation_id
-            if isinstance(session_id, UUID) and isinstance(conversation_id, UUID):
-                mapped[session_id] = conversation_id
+            mapped[conversation_id] = metadata
         return mapped
 
     def _dedup_cross_source_sessions(
@@ -556,7 +401,9 @@ class SessionHubService:
         remote_external_ids: set[str] = set()
         remote_by_external_id: dict[str, dict[str, Any]] = {}
         for item in opencode_items:
-            remote_external_id = normalize_non_empty_text(item.get("source_session_id"))
+            remote_external_id = normalize_non_empty_text(
+                item.get("external_session_id")
+            )
             if not remote_external_id:
                 continue
             remote_external_ids.add(remote_external_id)
@@ -614,104 +461,46 @@ class SessionHubService:
         merged.sort(key=_session_order_key, reverse=True)
         return merged
 
-    async def _scheduled_session_agent_map(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-    ) -> dict[UUID, dict[str, Any]]:
-        latest_exec_key = (
-            select(
-                A2AScheduleExecution.session_id.label("session_id"),
-                func.max(A2AScheduleExecution.created_at).label("max_created_at"),
-            )
-            .where(
-                and_(
-                    A2AScheduleExecution.user_id == user_id,
-                    A2AScheduleExecution.session_id.is_not(None),
-                )
-            )
-            .group_by(A2AScheduleExecution.session_id)
-            .subquery()
-        )
-        latest_exec = A2AScheduleExecution.__table__.alias("latest_exec")
-        stmt = (
-            select(
-                latest_exec.c.session_id.label("session_id"),
-                latest_exec.c.task_id.label("task_id"),
-                A2AScheduleTask.agent_id.label("agent_id"),
-                latest_exec.c.id.label("run_id"),
-            )
-            .join(
-                latest_exec_key,
-                and_(
-                    latest_exec.c.session_id == latest_exec_key.c.session_id,
-                    latest_exec.c.created_at == latest_exec_key.c.max_created_at,
-                ),
-            )
-            .outerjoin(A2AScheduleTask, A2AScheduleTask.id == latest_exec.c.task_id)
-        )
-        rows = (await db.execute(stmt)).all()
-        mapped: dict[UUID, dict[str, Any]] = {}
-        for row in rows:
-            session_id = row.session_id
-            if isinstance(session_id, UUID):
-                mapped[session_id] = {
-                    "agent_id": row.agent_id,
-                    "task_id": row.task_id,
-                    "run_id": row.run_id,
-                }
-        return mapped
-
     async def list_messages(
         self,
         db: AsyncSession,
         *,
         user_id: UUID,
-        session_key: str,
+        conversation_id: str,
         page: int,
         size: int,
     ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
         db_mutated = False
-        parsed = parse_session_key(session_key)
-        if parsed.source == "conversation":
-            assert parsed.conversation_id is not None
-            resolved = await self._resolve_local_session_key_for_conversation(
-                db,
-                user_id=user_id,
-                conversation_id=parsed.conversation_id,
-            )
-            if resolved is None:
-                resolved = await self._resolve_conversation_session_key(
-                    db,
-                    user_id=user_id,
-                    conversation_id=parsed.conversation_id,
-                )
-            if resolved is None:
-                pagination = {
-                    "page": page,
-                    "size": size,
-                    "total": 0,
-                    "pages": 0,
-                }
-                meta = {
-                    "session_id": session_key,
-                    "source": "manual",
-                    "conversationId": str(parsed.conversation_id),
-                }
-                return [], {"pagination": pagination, "meta": meta}, False
-            parsed = resolved
-        if parsed.source in {"manual", "scheduled"}:
-            assert parsed.local_session_id is not None
+        resolved_conversation_id = _parse_conversation_id(conversation_id)
+        target = await self._resolve_conversation_target(
+            db,
+            user_id=user_id,
+            conversation_id=resolved_conversation_id,
+        )
+        if target is None:
+            pagination = {
+                "page": page,
+                "size": size,
+                "total": 0,
+                "pages": 0,
+            }
+            meta = {
+                "conversationId": str(resolved_conversation_id),
+                "source": "manual",
+            }
+            return [], {"pagination": pagination, "meta": meta}, False
+
+        if target.source in {"manual", "scheduled"}:
+            assert target.local_session_id is not None
             try:
                 session = await self._get_local_session(
                     db,
                     user_id=user_id,
-                    local_session_id=parsed.local_session_id,
-                    source=parsed.source,
+                    local_session_id=target.local_session_id,
+                    source=target.source,
                 )
             except ValueError as exc:
-                if parsed.source != "manual" or str(exc) != "session_not_found":
+                if target.source != "manual" or str(exc) != "session_not_found":
                     raise
                 pagination = {
                     "page": page,
@@ -719,17 +508,15 @@ class SessionHubService:
                     "total": 0,
                     "pages": 0,
                 }
-                meta = {"session_id": session_key, "source": parsed.source}
+                meta = {
+                    "conversationId": str(resolved_conversation_id),
+                    "source": target.source,
+                }
                 return [], {"pagination": pagination, "meta": meta}, False
             latest_metadata_map = await self._latest_local_message_metadata_map(
                 db,
                 user_id=user_id,
-                local_session_ids=[session.id],
-            )
-            latest_conversation_map = await self._latest_local_message_conversation_map(
-                db,
-                user_id=user_id,
-                local_session_ids=[session.id],
+                local_conversation_ids=[session.id],
             )
             latest_metadata = latest_metadata_map.get(session.id, {})
             (
@@ -748,13 +535,11 @@ class SessionHubService:
                 external_session_id = binding_locator.external_session_id
             if not context_id and binding_locator:
                 context_id = binding_locator.context_id
-            conversation_id = latest_conversation_map.get(session.id)
-            if conversation_id is None:
-                conversation_id = await conversation_identity_service.find_conversation_id_for_local_session(
-                    db,
-                    user_id=user_id,
-                    local_session_id=session.id,
-                )
+            conversation_id = await conversation_identity_service.find_conversation_id_for_local_session(
+                db,
+                user_id=user_id,
+                local_session_id=session.id,
+            )
             if conversation_id is None and binding_locator:
                 conversation_id = binding_locator.conversation_id
             if conversation_id is None and provider and external_session_id:
@@ -771,29 +556,18 @@ class SessionHubService:
                     context_id=context_id,
                     provider=provider,
                 )
-            if conversation_id:
-                updated = await agent_message_handler.backfill_session_messages_conversation_id(
-                    db,
-                    user_id=user_id,
-                    session_id=session.id,
-                    conversation_id=conversation_id,
-                )
-                if updated > 0:
-                    db_mutated = True
             offset = (page - 1) * size
             messages = await agent_message_handler.list_agent_messages(
                 db,
                 user_id=user_id,
                 limit=size,
                 offset=offset,
-                session_id=None if conversation_id else session.id,
-                conversation_id=conversation_id,
+                conversation_id=resolved_conversation_id,
             )
             total = await agent_message_handler.count_agent_messages(
                 db,
                 user_id=user_id,
-                session_id=None if conversation_id else session.id,
-                conversation_id=conversation_id,
+                conversation_id=resolved_conversation_id,
             )
             pages = (total + size - 1) // size if size else 0
             items: list[dict[str, Any]] = []
@@ -812,9 +586,8 @@ class SessionHubService:
                     }
                 )
             meta = {
-                "session_id": session_key,
-                "conversationId": str(conversation_id) if conversation_id else None,
-                "source": parsed.source,
+                "conversationId": str(resolved_conversation_id),
+                "source": target.source,
             }
             pagination = {
                 "page": page,
@@ -824,18 +597,18 @@ class SessionHubService:
             }
             return items, {"pagination": pagination, "meta": meta}, db_mutated
 
-        assert parsed.source == "opencode"
-        assert parsed.agent_id is not None
-        assert parsed.agent_source in {"personal", "shared"}
-        assert parsed.upstream_session_id is not None
+        assert target.source == "opencode"
+        assert target.agent_id is not None
+        assert target.agent_source in {"personal", "shared"}
+        assert target.external_session_id is not None
 
         try:
             try:
                 runtime = await self._build_runtime(
                     db,
                     user_id=user_id,
-                    agent_source=parsed.agent_source,
-                    agent_id=parsed.agent_id,
+                    agent_source=target.agent_source,
+                    agent_id=target.agent_id,
                 )
             except (A2ARuntimeNotFoundError, HubA2ARuntimeNotFoundError) as exc:
                 raise ValueError("session_not_found") from exc
@@ -843,7 +616,7 @@ class SessionHubService:
                 raise ValueError("runtime_invalid") from exc
             result = await get_a2a_extensions_service().opencode_get_session_messages(
                 runtime=runtime,
-                session_id=parsed.upstream_session_id,
+                session_id=target.external_session_id,
                 page=page,
                 size=size,
                 query=None,
@@ -876,16 +649,15 @@ class SessionHubService:
                 db,
                 user_id=user_id,
                 provider="opencode",
-                external_session_id=parsed.upstream_session_id,
+                external_session_id=target.external_session_id,
             )
         )
         meta = {
-            "session_id": session_key,
-            "conversationId": str(conversation_id) if conversation_id else None,
+            "conversationId": str(conversation_id or resolved_conversation_id),
             "source": "opencode",
-            "agent_id": str(parsed.agent_id),
-            "agent_source": parsed.agent_source,
-            "upstream_session_id": parsed.upstream_session_id,
+            "agent_id": str(target.agent_id),
+            "agent_source": target.agent_source,
+            "upstream_session_id": target.external_session_id,
         }
         pagination = {
             "page": int(pagination_raw.get("page") or page),
@@ -900,42 +672,38 @@ class SessionHubService:
         db: AsyncSession,
         *,
         user_id: UUID,
-        session_key: str,
+        conversation_id: str,
     ) -> tuple[dict[str, Any], bool]:
-        parsed = parse_session_key(session_key)
-        if parsed.source == "conversation":
-            assert parsed.conversation_id is not None
-            resolved = await self._resolve_conversation_session_key(
-                db,
-                user_id=user_id,
-                conversation_id=parsed.conversation_id,
+        resolved_conversation_id = _parse_conversation_id(conversation_id)
+        target = await self._resolve_conversation_target(
+            db,
+            user_id=user_id,
+            conversation_id=resolved_conversation_id,
+        )
+        if target is None:
+            return (
+                _build_continue_response(
+                    conversation_id=resolved_conversation_id,
+                    source="manual",
+                    provider=None,
+                    external_session_id=None,
+                    context_id=None,
+                    metadata={},
+                ),
+                False,
             )
-            if resolved is None:
-                return (
-                    _build_continue_response(
-                        session_id=session_key,
-                        conversation_id=parsed.conversation_id,
-                        source="manual",
-                        provider=None,
-                        external_session_id=None,
-                        context_id=None,
-                        metadata={},
-                    ),
-                    False,
-                )
-            parsed = resolved
 
-        if parsed.source == "opencode":
-            assert parsed.agent_id is not None
-            assert parsed.agent_source in {"personal", "shared"}
-            assert parsed.upstream_session_id is not None
+        if target.source == "opencode":
+            assert target.agent_id is not None
+            assert target.agent_source in {"personal", "shared"}
+            assert target.external_session_id is not None
 
             try:
                 runtime = await self._build_runtime(
                     db,
                     user_id=user_id,
-                    agent_source=parsed.agent_source,
-                    agent_id=parsed.agent_id,
+                    agent_source=target.agent_source,
+                    agent_id=target.agent_id,
                 )
             except (A2ARuntimeNotFoundError, HubA2ARuntimeNotFoundError) as exc:
                 raise ValueError("session_not_found") from exc
@@ -945,7 +713,7 @@ class SessionHubService:
             try:
                 result = await get_a2a_extensions_service().opencode_continue_session(
                     runtime=runtime,
-                    session_id=parsed.upstream_session_id,
+                    session_id=target.external_session_id,
                 )
             except A2AExtensionUpstreamError as exc:
                 raise ValueError(exc.error_code or "upstream_error") from exc
@@ -963,7 +731,6 @@ class SessionHubService:
                 external_from_payload,
             ) = extract_provider_and_external_session_id(
                 payload,
-                include_session_id_aliases=True,
             )
             (
                 provider,
@@ -975,7 +742,7 @@ class SessionHubService:
             resolved_external_session_id = (
                 external_from_payload
                 or external_session_id
-                or parsed.upstream_session_id
+                or target.external_session_id
             )
             continue_metadata = _build_continue_invoke_metadata(
                 provider=resolved_provider,
@@ -985,10 +752,10 @@ class SessionHubService:
                 await conversation_identity_service.bind_external_session_with_state(
                     db,
                     user_id=user_id,
-                    conversation_id=None,
+                    conversation_id=resolved_conversation_id,
                     provider=resolved_provider,
-                    agent_id=parsed.agent_id,
-                    agent_source=parsed.agent_source,
+                    agent_id=target.agent_id,
+                    agent_source=target.agent_source,
                     external_session_id=resolved_external_session_id,
                     context_id=context_id if isinstance(context_id, str) else None,
                     title="Session",
@@ -1000,9 +767,6 @@ class SessionHubService:
             )
             return (
                 _build_continue_response(
-                    session_id=build_conversation_session_key(
-                        bind_result.conversation_id
-                    ),
                     conversation_id=bind_result.conversation_id,
                     source="opencode",
                     provider=resolved_provider,
@@ -1013,21 +777,20 @@ class SessionHubService:
                 bind_result.mutated,
             )
 
-        assert parsed.local_session_id is not None
+        assert target.local_session_id is not None
         try:
             session = await self._get_local_session(
                 db,
                 user_id=user_id,
-                local_session_id=parsed.local_session_id,
-                source=parsed.source,
+                local_session_id=target.local_session_id,
+                source=target.source,
             )
         except ValueError as exc:
-            if parsed.source != "manual" or str(exc) != "session_not_found":
+            if target.source != "manual" or str(exc) != "session_not_found":
                 raise
             return (
                 _build_continue_response(
-                    session_id=session_key,
-                    conversation_id=None,
+                    conversation_id=resolved_conversation_id,
                     source="manual",
                     provider=None,
                     external_session_id=None,
@@ -1041,7 +804,7 @@ class SessionHubService:
             .where(
                 and_(
                     AgentMessage.user_id == user_id,
-                    AgentMessage.session_id == session.id,
+                    AgentMessage.conversation_id == session.id,
                 )
             )
             .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
@@ -1065,47 +828,21 @@ class SessionHubService:
             external_session_id = binding_locator.external_session_id
         if not isinstance(context_id, str) and binding_locator:
             context_id = binding_locator.context_id
-        conversation_id = (
-            latest.conversation_id
-            if latest is not None and isinstance(latest.conversation_id, UUID)
-            else None
-        )
-        if conversation_id is None:
-            conversation_id = await conversation_identity_service.find_conversation_id_for_local_session(
-                db,
-                user_id=user_id,
-                local_session_id=session.id,
-            )
+        conversation_id = session.id
         db_mutated = False
-        if conversation_id is None and parsed.source == "manual":
-            thread_mutated = await self._ensure_local_conversation_thread(
-                db,
-                user_id=user_id,
-                conversation_id=session.id,
-                agent_id=_try_parse_uuid(session.module_key),
-                agent_source=(
-                    binding_locator.agent_source
-                    if binding_locator
-                    and binding_locator.agent_source in {"personal", "shared"}
-                    else "personal"
-                ),
-                title=session.name or "Session",
-            )
-            conversation_id = session.id
-            db_mutated = db_mutated or thread_mutated
         if provider and external_session_id:
             bind_result = (
                 await conversation_identity_service.bind_external_session_with_state(
                     db,
                     user_id=user_id,
-                    conversation_id=conversation_id,
+                    conversation_id=conversation_id or resolved_conversation_id,
                     provider=provider,
                     external_session_id=external_session_id,
                     agent_id=(
                         binding_locator.agent_id
                         if binding_locator
                         and isinstance(binding_locator.agent_id, UUID)
-                        else _try_parse_uuid(session.module_key)
+                        else session.agent_id
                     ),
                     agent_source=(
                         binding_locator.agent_source
@@ -1114,52 +851,23 @@ class SessionHubService:
                         else "personal"
                     ),
                     context_id=context_id if isinstance(context_id, str) else None,
-                    title=session.name or "Session",
+                    title=session.title or "Session",
                     binding_metadata=metadata,
                     local_session_id=session.id,
                 )
             )
             conversation_id = bind_result.conversation_id
             db_mutated = bind_result.mutated
-        elif conversation_id is None and isinstance(context_id, str):
-            conversation_id = (
-                await conversation_identity_service.find_conversation_id_for_context(
-                    db,
-                    user_id=user_id,
-                    context_id=context_id,
-                    provider=provider,
-                )
-            )
-        if conversation_id:
-            updated = (
-                await agent_message_handler.backfill_session_messages_conversation_id(
-                    db,
-                    user_id=user_id,
-                    session_id=session.id,
-                    conversation_id=conversation_id,
-                )
-            )
-            db_mutated = db_mutated or updated > 0
         resolved_provider = normalize_provider(provider)
         resolved_external_session_id = normalize_non_empty_text(external_session_id)
         continue_metadata = _build_continue_invoke_metadata(
             provider=resolved_provider,
             external_session_id=resolved_external_session_id,
         )
-        response_session_id = (
-            build_conversation_session_key(conversation_id)
-            if conversation_id
-            else (
-                build_scheduled_session_key(session.id)
-                if parsed.source == "scheduled"
-                else build_manual_session_key(session.id)
-            )
-        )
         return (
             _build_continue_response(
-                session_id=response_session_id,
-                conversation_id=conversation_id,
-                source=parsed.source,
+                conversation_id=conversation_id or resolved_conversation_id,
+                source=target.source,
                 provider=resolved_provider,
                 external_session_id=resolved_external_session_id,
                 context_id=context_id if isinstance(context_id, str) else None,
@@ -1175,88 +883,93 @@ class SessionHubService:
         user_id: UUID,
         agent_id: UUID,
         agent_source: Literal["personal", "shared"],
-        session_key: Optional[str],
-    ) -> tuple[Optional[AgentSession], Optional[SessionSource]]:
-        if not session_key:
+        conversation_id: Optional[str],
+    ) -> tuple[Optional[ConversationThread], Optional[SessionSource]]:
+        if not conversation_id:
             return None, None
         try:
-            parsed = parse_session_key(session_key)
+            normalized_conversation_id = _parse_conversation_id(conversation_id)
         except ValueError as exc:
-            raise ValueError("invalid_session_id") from exc
+            raise ValueError("invalid_conversation_id") from exc
 
-        if parsed.source not in self._LOCAL_SESSION_SOURCES:
-            return None, None
-        local_session_id = (
-            parsed.local_session_id
-            if isinstance(parsed.local_session_id, UUID)
-            else parsed.conversation_id
+        target = await self._resolve_conversation_target(
+            db,
+            user_id=user_id,
+            conversation_id=normalized_conversation_id,
         )
-        if not isinstance(local_session_id, UUID):
-            raise ValueError("invalid_session_id")
+        if target and target.source == "opencode":
+            return None, None
+
+        local_session_id = (
+            target.local_session_id
+            if target and isinstance(target.local_session_id, UUID)
+            else normalized_conversation_id
+        )
 
         session = await db.scalar(
-            select(AgentSession).where(
+            select(ConversationThread).where(
                 and_(
-                    AgentSession.id == local_session_id,
-                    AgentSession.user_id == user_id,
-                    AgentSession.deleted_at.is_(None),
+                    ConversationThread.id == local_session_id,
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
                 )
             )
         )
 
-        if session is None and parsed.source in {"manual", "conversation"}:
+        if session is None:
             existing_session_id = await db.scalar(
-                select(AgentSession.id).where(AgentSession.id == local_session_id)
+                select(ConversationThread.id).where(
+                    ConversationThread.id == local_session_id
+                )
             )
             if existing_session_id is not None:
-                raise ValueError("invalid_session_id")
-            session = AgentSession(
+                raise ValueError("invalid_conversation_id")
+            session = ConversationThread(
                 id=local_session_id,
                 user_id=user_id,
-                name=f"Manual Session {str(local_session_id)[:8]}",
-                module_key=str(agent_id),
-                session_type=AgentSession.TYPE_CHAT,
-                last_activity_at=utc_now(),
+                source=ConversationThread.SOURCE_MANUAL,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                title=f"Manual Session {str(local_session_id)[:8]}",
+                last_active_at=utc_now(),
+                status=ConversationThread.STATUS_ACTIVE,
             )
             db.add(session)
             try:
                 await db.flush()
             except IntegrityError as exc:
                 await db.rollback()
-                raise ValueError("invalid_session_id") from exc
+                raise ValueError("invalid_conversation_id") from exc
 
-        if session is None:
-            raise ValueError("session_not_found")
+        local_source: SessionSource
+        if session.source == ConversationThread.SOURCE_MANUAL:
+            local_source = "manual"
+        elif session.source == ConversationThread.SOURCE_SCHEDULED:
+            local_source = "scheduled"
+        else:
+            raise ValueError("invalid_conversation_id")
 
-        if parsed.source in {"manual", "conversation"} and (
-            session.session_type != AgentSession.TYPE_CHAT
-        ):
-            raise ValueError("invalid_session_id")
-        if (
-            parsed.source == "scheduled"
-            and session.session_type != AgentSession.TYPE_SCHEDULED
-        ):
-            raise ValueError("invalid_session_id")
-
-        session.module_key = str(agent_id)
-        session.touch()
-        if parsed.source in {"manual", "conversation"}:
+        session.agent_id = agent_id
+        session.agent_source = agent_source
+        session.last_active_at = utc_now()
+        if local_source == "manual":
             await self._ensure_local_conversation_thread(
                 db,
                 user_id=user_id,
                 conversation_id=session.id,
                 agent_id=agent_id,
                 agent_source=agent_source,
-                title=session.name or "Session",
+                title=session.title or "Session",
+                source="manual",
             )
             return session, "manual"
-        return session, parsed.source
+        return session, local_source
 
     async def record_local_invoke_messages(
         self,
         db: AsyncSession,
         *,
-        session: AgentSession,
+        session: ConversationThread,
         source: SessionSource,
         user_id: UUID,
         agent_id: UUID,
@@ -1274,7 +987,7 @@ class SessionHubService:
         metadata: Dict[str, Any] = {
             "source": source,
             "agent_id": str(agent_id),
-            "session_id": str(session.id),
+            "conversation_id": str(session.id),
             "success": success,
         }
         (
@@ -1296,7 +1009,7 @@ class SessionHubService:
         if normalized_user_message_id:
             metadata["client_message_id"] = normalized_user_message_id
 
-        conversation_id: UUID | None = None
+        conversation_id: UUID = session.id
         if source == "manual":
             await self._ensure_local_conversation_thread(
                 db,
@@ -1304,9 +1017,9 @@ class SessionHubService:
                 conversation_id=session.id,
                 agent_id=agent_id,
                 agent_source=agent_source,
-                title=session.name or "Session",
+                title=session.title or "Session",
+                source="manual",
             )
-            conversation_id = session.id
         if provider_from_invoke and external_session_id:
             conversation_id = await conversation_identity_service.bind_external_session(
                 db,
@@ -1317,18 +1030,12 @@ class SessionHubService:
                 agent_id=agent_id,
                 agent_source=agent_source,
                 context_id=context_id if isinstance(context_id, str) else None,
-                title=session.name or "Session",
+                title=session.title or "Session",
                 binding_metadata=invoke_metadata,
                 local_session_id=session.id,
             )
-            await agent_message_handler.backfill_session_messages_conversation_id(
-                db,
-                user_id=user_id,
-                session_id=session.id,
-                conversation_id=conversation_id,
-            )
         elif context_id and isinstance(context_id, str):
-            conversation_id = (
+            resolved_conversation_id = (
                 await conversation_identity_service.find_conversation_id_for_context(
                     db,
                     user_id=user_id,
@@ -1336,21 +1043,14 @@ class SessionHubService:
                     provider=provider_from_invoke,
                 )
             )
-            if conversation_id:
-                await agent_message_handler.backfill_session_messages_conversation_id(
-                    db,
-                    user_id=user_id,
-                    session_id=session.id,
-                    conversation_id=conversation_id,
-                )
+            if isinstance(resolved_conversation_id, UUID):
+                conversation_id = resolved_conversation_id
 
         await agent_message_handler.create_agent_message(
             db,
             user_id=user_id,
             content=query,
             sender="user",
-            session_id=session.id,
-            session=session,
             conversation_id=conversation_id,
             metadata=metadata,
         )
@@ -1374,12 +1074,10 @@ class SessionHubService:
             user_id=user_id,
             content=response_content,
             sender="agent",
-            session_id=session.id,
-            session=session,
             conversation_id=conversation_id,
             metadata=agent_metadata,
         )
-        session.touch()
+        session.last_active_at = utc_now()
 
     async def _build_runtime(
         self,
@@ -1402,19 +1100,19 @@ class SessionHubService:
         user_id: UUID,
         local_session_id: UUID,
         source: Literal["manual", "scheduled"],
-    ) -> AgentSession:
-        expected_type = (
-            AgentSession.TYPE_CHAT
+    ) -> ConversationThread:
+        expected_source = (
+            ConversationThread.SOURCE_MANUAL
             if source == "manual"
-            else AgentSession.TYPE_SCHEDULED
+            else ConversationThread.SOURCE_SCHEDULED
         )
         session = await db.scalar(
-            select(AgentSession).where(
+            select(ConversationThread).where(
                 and_(
-                    AgentSession.id == local_session_id,
-                    AgentSession.user_id == user_id,
-                    AgentSession.session_type == expected_type,
-                    AgentSession.deleted_at.is_(None),
+                    ConversationThread.id == local_session_id,
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    ConversationThread.source == expected_source,
                 )
             )
         )
@@ -1428,24 +1126,30 @@ class SessionHubService:
         *,
         user_id: UUID,
         local_session_id: UUID,
-    ) -> AgentSession | None:
+    ) -> ConversationThread | None:
         return await db.scalar(
-            select(AgentSession).where(
+            select(ConversationThread).where(
                 and_(
-                    AgentSession.id == local_session_id,
-                    AgentSession.user_id == user_id,
-                    AgentSession.deleted_at.is_(None),
+                    ConversationThread.id == local_session_id,
+                    ConversationThread.user_id == user_id,
+                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                    ConversationThread.source.in_(
+                        [
+                            ConversationThread.SOURCE_MANUAL,
+                            ConversationThread.SOURCE_SCHEDULED,
+                        ]
+                    ),
                 )
             )
         )
 
-    async def _resolve_conversation_session_key(
+    async def _resolve_conversation_target(
         self,
         db: AsyncSession,
         *,
         user_id: UUID,
         conversation_id: UUID,
-    ) -> ParsedSessionKey | None:
+    ) -> ResolvedConversationTarget | None:
         binding_locator = await conversation_identity_service.find_latest_external_binding_for_conversation(
             db,
             user_id=user_id,
@@ -1459,12 +1163,17 @@ class SessionHubService:
             and isinstance(binding_locator.external_session_id, str)
             and binding_locator.external_session_id
         ):
-            return ParsedSessionKey(
+            return ResolvedConversationTarget(
                 source="opencode",
                 conversation_id=conversation_id,
+                local_session_id=(
+                    binding_locator.local_session_id
+                    if isinstance(binding_locator.local_session_id, UUID)
+                    else None
+                ),
                 agent_id=binding_locator.agent_id,
                 agent_source=binding_locator.agent_source,  # type: ignore[arg-type]
-                upstream_session_id=binding_locator.external_session_id,
+                external_session_id=binding_locator.external_session_id,
             )
 
         local_session_id = (
@@ -1479,52 +1188,14 @@ class SessionHubService:
         )
         if local_session is None:
             return None
-        if local_session.session_type == AgentSession.TYPE_CHAT:
-            return ParsedSessionKey(
+        if local_session.source == ConversationThread.SOURCE_MANUAL:
+            return ResolvedConversationTarget(
                 source="manual",
                 local_session_id=local_session.id,
                 conversation_id=conversation_id,
             )
-        if local_session.session_type == AgentSession.TYPE_SCHEDULED:
-            return ParsedSessionKey(
-                source="scheduled",
-                local_session_id=local_session.id,
-                conversation_id=conversation_id,
-            )
-        return None
-
-    async def _resolve_local_session_key_for_conversation(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        conversation_id: UUID,
-    ) -> ParsedSessionKey | None:
-        binding_locator = await conversation_identity_service.find_latest_external_binding_for_conversation(
-            db,
-            user_id=user_id,
-            conversation_id=conversation_id,
-        )
-        local_session_id = (
-            binding_locator.local_session_id
-            if binding_locator and isinstance(binding_locator.local_session_id, UUID)
-            else conversation_id
-        )
-        local_session = await self._get_local_session_by_id(
-            db,
-            user_id=user_id,
-            local_session_id=local_session_id,
-        )
-        if local_session is None:
-            return None
-        if local_session.session_type == AgentSession.TYPE_CHAT:
-            return ParsedSessionKey(
-                source="manual",
-                local_session_id=local_session.id,
-                conversation_id=conversation_id,
-            )
-        if local_session.session_type == AgentSession.TYPE_SCHEDULED:
-            return ParsedSessionKey(
+        if local_session.source == ConversationThread.SOURCE_SCHEDULED:
+            return ResolvedConversationTarget(
                 source="scheduled",
                 local_session_id=local_session.id,
                 conversation_id=conversation_id,
@@ -1540,6 +1211,7 @@ class SessionHubService:
         agent_id: Optional[UUID],
         agent_source: Optional[Literal["personal", "shared"]],
         title: str,
+        source: Literal["manual", "scheduled"],
     ) -> bool:
         existing = await db.scalar(
             select(ConversationThread).where(
@@ -1560,6 +1232,14 @@ class SessionHubService:
             if title and existing.title != title:
                 existing.title = title
                 mutated = True
+            expected_source = (
+                ConversationThread.SOURCE_MANUAL
+                if source == "manual"
+                else ConversationThread.SOURCE_SCHEDULED
+            )
+            if existing.source != expected_source:
+                existing.source = expected_source
+                mutated = True
             existing.last_active_at = utc_now()
             return mutated
 
@@ -1569,6 +1249,11 @@ class SessionHubService:
                 user_id=user_id,
                 agent_id=agent_id,
                 agent_source=agent_source,
+                source=(
+                    ConversationThread.SOURCE_MANUAL
+                    if source == "manual"
+                    else ConversationThread.SOURCE_SCHEDULED
+                ),
                 title=title or "Session",
                 last_active_at=utc_now(),
                 status=ConversationThread.STATUS_ACTIVE,
@@ -1593,19 +1278,27 @@ class SessionHubService:
         return items, meta
 
 
+def _parse_conversation_id(value: str) -> UUID:
+    trimmed = (value or "").strip()
+    if not trimmed:
+        raise ValueError("conversation_id is required")
+    try:
+        return UUID(trimmed)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("invalid_conversation_id") from exc
+
+
 def _build_continue_response(
     *,
-    session_id: str,
-    conversation_id: Optional[UUID],
-    source: ParsedSessionSource,
+    conversation_id: UUID,
+    source: ResolvedSource,
     provider: Optional[str],
     external_session_id: Optional[str],
     context_id: Optional[str],
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
     return {
-        "session_id": session_id,
-        "conversationId": str(conversation_id) if conversation_id else None,
+        "conversationId": str(conversation_id),
         "source": source,
         "provider": provider,
         "externalSessionId": external_session_id,
@@ -1695,15 +1388,6 @@ def _map_opencode_message(item: Any, index: int) -> Dict[str, Any]:
     }
 
 
-def _try_parse_uuid(value: Any) -> Optional[UUID]:
-    if not isinstance(value, str):
-        return None
-    try:
-        return UUID(value.strip())
-    except (ValueError, TypeError):
-        return None
-
-
 def _map_role(raw: Optional[str]) -> str:
     normalized = (raw or "").strip().lower()
     if normalized in {"assistant", "agent"}:
@@ -1768,13 +1452,8 @@ def _extract_timestamp(obj: Dict[str, Any]) -> datetime:
 session_hub_service = SessionHubService()
 
 __all__ = [
-    "ParsedSessionKey",
+    "ResolvedConversationTarget",
     "SessionHubService",
     "SessionSource",
-    "build_conversation_session_key",
-    "build_manual_session_key",
-    "build_opencode_session_key",
-    "build_scheduled_session_key",
-    "parse_session_key",
     "session_hub_service",
 ]

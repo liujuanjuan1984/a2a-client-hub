@@ -10,7 +10,8 @@ export const queryKeys = {
       ["scheduled-jobs", "executions", taskId] as const,
   },
   history: {
-    chat: (sessionId: string) => ["history", "chat", sessionId] as const,
+    chat: (conversationId: string) =>
+      ["history", "chat", conversationId] as const,
   },
   admin: {
     hubAgents: () => ["admin", "hub-agents"] as const,

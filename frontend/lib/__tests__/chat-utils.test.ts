@@ -49,7 +49,7 @@ describe("chat store utils", () => {
       }),
     ).toEqual({
       query: "hello",
-      sessionId: "session-1",
+      conversationId: "session-1",
       contextId: "ctx-2",
       userMessageId: "user-msg-1",
       clientAgentMessageId: "agent-msg-1",
@@ -67,7 +67,7 @@ describe("chat store utils", () => {
 
     expect(buildInvokePayload("hello", session, "conversation:abc")).toEqual({
       query: "hello",
-      sessionId: "conversation:abc",
+      conversationId: "conversation:abc",
       metadata: {
         locale: "zh-CN",
         opencode_session_id: "ses-upstream-1",
@@ -105,9 +105,12 @@ describe("chat store utils", () => {
 
     expect(plan.changed).toBe(true);
     expect(Object.keys(plan.sessions)).toEqual(["active"]);
-    expect(plan.expiredSessionIds).toEqual(["expired"]);
-    expect(plan.trimmedSessionIds).toEqual([]);
-    expect(plan.orphanedMessageSessionIds).toEqual(["expired", "orphan-only"]);
+    expect(plan.expiredConversationIds).toEqual(["expired"]);
+    expect(plan.trimmedConversationIds).toEqual([]);
+    expect(plan.orphanedMessageConversationIds).toEqual([
+      "expired",
+      "orphan-only",
+    ]);
   });
 
   it("trims oldest sessions when active session cap is reached", () => {
@@ -126,7 +129,7 @@ describe("chat store utils", () => {
     );
 
     expect(Object.keys(plan.sessions).sort()).toEqual(["middle", "newest"]);
-    expect(plan.trimmedSessionIds).toEqual(["oldest"]);
+    expect(plan.trimmedConversationIds).toEqual(["oldest"]);
   });
 
   it("builds bounded persisted sessions and resets volatile fields", () => {
