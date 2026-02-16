@@ -113,7 +113,10 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
 
   const { data: agents = [] } = useAgentsCatalogQuery(true);
   const agentOptions = useMemo(
-    () => agents.map((agent) => ({ id: agent.id, name: agent.name })),
+    () =>
+      agents
+        .filter((agent) => agent.source === "personal")
+        .map((agent) => ({ id: agent.id, name: agent.name })),
     [agents],
   );
 

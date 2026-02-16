@@ -11,9 +11,19 @@ const mockToastSuccess = jest.fn();
 const mockToastError = jest.fn();
 const mockBackOrHome = jest.fn();
 const mockBlurActiveElement = jest.fn();
+const mockAgents = [
+  {
+    id: "agent-1",
+    source: "personal",
+    name: "Agent One",
+    cardUrl: "https://example.com/card",
+    status: "success",
+  },
+];
 
 let capturedSubmit: (() => void) | null = null;
 let capturedChange: ((patch: unknown) => void) | null = null;
+let capturedAgentOptions: { id: string; name: string }[] = [];
 
 jest.mock("react-native/Libraries/Utilities/Dimensions", () => ({
   get: () => ({
@@ -44,15 +54,7 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/hooks/useAgentsCatalogQuery", () => ({
   useAgentsCatalogQuery: () => ({
-    data: [
-      {
-        id: "agent-1",
-        source: "personal",
-        name: "Agent One",
-        cardUrl: "https://example.com/card",
-        status: "success",
-      },
-    ],
+    data: mockAgents,
     isFetched: true,
   }),
 }));
@@ -61,10 +63,13 @@ jest.mock("@/components/scheduled/ScheduledJobForm", () => ({
   ScheduledJobForm: ({
     onSubmit,
     onChange,
+    agentOptions,
   }: {
+    agentOptions: { id: string; name: string }[];
     onSubmit: () => void;
     onChange: (patch: unknown) => void;
   }) => {
+    capturedAgentOptions = agentOptions;
     capturedSubmit = onSubmit;
     capturedChange = onChange;
     return null;
@@ -95,11 +100,7 @@ jest.mock("@/lib/api/client", () => {
 });
 
 jest.mock("@/components/ui/PageHeader", () => ({
-  PageHeader: ({
-    rightElement,
-  }: {
-    rightElement: unknown;
-  }) => rightElement,
+  PageHeader: ({ rightElement }: { rightElement: unknown }) => rightElement,
 }));
 
 jest.mock("@/lib/api/scheduledJobs", () => ({
@@ -142,6 +143,14 @@ describe("ScheduledJobFormScreen", () => {
     mockBlurActiveElement.mockReset();
     capturedSubmit = null;
     capturedChange = null;
+    capturedAgentOptions = [];
+    mockAgents.splice(0, mockAgents.length, {
+      id: "agent-1",
+      source: "personal",
+      name: "Agent One",
+      cardUrl: "https://example.com/card",
+      status: "success",
+    });
   });
 
   it("does not keep dirty state lock after successfully creating a new job", async () => {
@@ -185,5 +194,34 @@ describe("ScheduledJobFormScreen", () => {
       enabled: true,
     });
     expect(mockAllowNextNavigation).toHaveBeenCalledTimes(1);
+  });
+
+  it("filters shared agents out from the selectable list on scheduled job form", async () => {
+    mockAgents.splice(
+      0,
+      mockAgents.length,
+      {
+        id: "agent-personal",
+        source: "personal",
+        name: "Personal Agent",
+        cardUrl: "https://example.com/card-personal",
+        status: "success",
+      },
+      {
+        id: "agent-shared",
+        source: "shared",
+        name: "Shared Agent",
+        cardUrl: "https://example.com/card-shared",
+        status: "success",
+      },
+    );
+
+    await act(async () => {
+      create(<ScheduledJobFormScreen />);
+    });
+
+    expect(capturedAgentOptions).toEqual([
+      { id: "agent-personal", name: "Personal Agent" },
+    ]);
   });
 });
