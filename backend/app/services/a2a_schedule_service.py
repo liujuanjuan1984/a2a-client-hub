@@ -38,7 +38,7 @@ class ClaimedA2AScheduleTask:
     task_id: UUID
     user_id: UUID
     agent_id: UUID
-    session_id: Optional[UUID]
+    conversation_id: Optional[UUID]
     name: str
     prompt: str
     cycle_type: str
@@ -344,7 +344,7 @@ class A2AScheduleService:
             task_id=task.id,
             user_id=task.user_id,
             agent_id=task.agent_id,
-            session_id=task.session_id,
+            conversation_id=task.conversation_id,
             name=task.name,
             prompt=task.prompt,
             cycle_type=task.cycle_type,
@@ -414,8 +414,8 @@ class A2AScheduleService:
                 execution.status = A2AScheduleExecution.STATUS_FAILED
                 execution.finished_at = now_utc
                 execution.error_message = error_message
-                if execution.session_id is None:
-                    execution.session_id = task.session_id
+                if execution.conversation_id is None:
+                    execution.conversation_id = task.conversation_id
             else:
                 # No running execution row exists (e.g., crash before execution creation).
                 started_at = ensure_utc(task.last_run_at or now_utc)
@@ -427,7 +427,7 @@ class A2AScheduleService:
                     finished_at=now_utc,
                     status=A2AScheduleExecution.STATUS_FAILED,
                     error_message=error_message,
-                    session_id=task.session_id,
+                    conversation_id=task.conversation_id,
                 )
                 db.add(recovered)
 

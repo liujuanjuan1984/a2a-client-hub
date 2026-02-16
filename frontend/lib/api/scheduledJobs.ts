@@ -24,7 +24,7 @@ export type ScheduledJob = {
   cycle_type: ScheduleCycleType;
   time_point: ScheduleTimePoint | Record<string, unknown>;
   enabled: boolean;
-  session_id?: string | null;
+  conversation_id?: string | null;
   next_run_at?: string | null;
   last_run_at?: string | null;
   last_run_status?: "idle" | "running" | "success" | "failed" | null;
@@ -41,7 +41,7 @@ export type ScheduledJobExecution = {
   finished_at?: string | null;
   error_message?: string | null;
   response_content?: string | null;
-  session_id?: string | null;
+  conversation_id?: string | null;
   user_message_id?: string | null;
   agent_message_id?: string | null;
   created_at?: string | null;

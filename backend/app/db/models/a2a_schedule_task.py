@@ -52,7 +52,7 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         index=True,
         comment="Target A2A agent identifier",
     )
-    session_id = Column(
+    conversation_id = Column(
         UUID(as_uuid=True),
         ForeignKey(f"{SCHEMA_NAME}.conversation_threads.id", ondelete="SET NULL"),
         nullable=True,

@@ -64,11 +64,11 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
     async_db_session.add(session)
     await async_db_session.flush()
 
-    task.session_id = session.id
+    task.conversation_id = session.id
     execution = A2AScheduleExecution(
         user_id=user.id,
         task_id=task.id,
-        session_id=session.id,
+        conversation_id=session.id,
         scheduled_for=now - timedelta(minutes=1),
         started_at=now - timedelta(minutes=1),
         finished_at=now,

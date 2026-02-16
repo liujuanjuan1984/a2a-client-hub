@@ -74,12 +74,12 @@ async def test_conversation_routes_use_conversation_id_only(
         time_point={"time": "00:00"},
         enabled=False,
     )
-    task.session_id = scheduled_session.id
+    task.conversation_id = scheduled_session.id
 
     execution = A2AScheduleExecution(
         user_id=user.id,
         task_id=task.id,
-        session_id=scheduled_session.id,
+        conversation_id=scheduled_session.id,
         scheduled_for=now - timedelta(minutes=1),
         started_at=now - timedelta(minutes=1),
         finished_at=now,

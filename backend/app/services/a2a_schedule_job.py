@@ -44,10 +44,10 @@ async def _ensure_task_session(
     *, db, task: A2AScheduleTask, agent_name: str
 ) -> ConversationThread:
     thread = None
-    if task.session_id is not None:
+    if task.conversation_id is not None:
         stmt = select(ConversationThread).where(
             and_(
-                ConversationThread.id == task.session_id,
+                ConversationThread.id == task.conversation_id,
                 ConversationThread.user_id == task.user_id,
                 ConversationThread.status == ConversationThread.STATUS_ACTIVE,
             )
@@ -68,7 +68,7 @@ async def _ensure_task_session(
         )
         db.add(thread)
         await db.flush()
-        task.session_id = thread.id
+        task.conversation_id = thread.id
     else:
         thread.source = ConversationThread.SOURCE_SCHEDULED
         thread.agent_id = task.agent_id
@@ -123,14 +123,13 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 task=task,
                 agent_name=runtime.resolved.name,
             )
-            execution.session_id = thread.id
+            execution.conversation_id = thread.id
 
             user_message = await agent_message_handler.create_agent_message(
                 db,
                 user_id=task.user_id,
                 content=task.prompt,
                 sender="automation",
-                session_id=thread.id,
                 conversation_id=thread.id,
                 metadata=metadata,
             )
@@ -158,7 +157,6 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 user_id=task.user_id,
                 content=response_content,
                 sender="agent",
-                session_id=thread.id,
                 conversation_id=thread.id,
                 metadata=agent_metadata,
             )

@@ -66,7 +66,7 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
         nullable=True,
         comment="Persisted response content returned by the target agent",
     )
-    session_id = Column(
+    conversation_id = Column(
         UUID(as_uuid=True),
         ForeignKey(f"{SCHEMA_NAME}.conversation_threads.id", ondelete="SET NULL"),
         nullable=True,
