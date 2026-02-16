@@ -334,7 +334,7 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
         assert payload["items"][1]["content"] == "world"
 
 
-async def test_continue_uses_context_as_opencode_session_id_when_external_missing(
+async def test_continue_keeps_external_session_id_empty_when_missing(
     async_db_session,
     async_session_maker,
 ):
@@ -380,6 +380,6 @@ async def test_continue_uses_context_as_opencode_session_id_when_external_missin
         assert payload["conversationId"] == str(session.id)
         assert payload["source"] == "opencode"
         assert payload["provider"] == "opencode"
-        assert payload["externalSessionId"] == "ses_context_only_1"
+        assert payload["externalSessionId"] is None
         assert payload["contextId"] == "ses_context_only_1"
-        assert payload["metadata"] == {"opencode_session_id": "ses_context_only_1"}
+        assert payload["metadata"] == {}

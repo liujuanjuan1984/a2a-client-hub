@@ -380,12 +380,6 @@ class SessionHubService:
 
         normalized_provider = normalize_provider(provider)
         normalized_external_session_id = normalize_non_empty_text(external_session_id)
-        if (
-            normalized_provider == "opencode"
-            and not normalized_external_session_id
-            and isinstance(context_id, str)
-        ):
-            normalized_external_session_id = normalize_non_empty_text(context_id)
 
         resolved_source = _resolve_session_source(
             thread_source=session.source if session else None,
@@ -508,16 +502,8 @@ class SessionHubService:
 
         resolved_provider = normalize_provider(provider)
         resolved_external_session_id = normalize_non_empty_text(external_session_id)
-        if (
-            resolved_provider == "opencode"
-            and not resolved_external_session_id
-            and isinstance(context_id, str)
-        ):
-            resolved_external_session_id = normalize_non_empty_text(context_id)
         if target.source == "opencode" and not resolved_provider:
             resolved_provider = "opencode"
-            if not resolved_external_session_id and isinstance(context_id, str):
-                resolved_external_session_id = normalize_non_empty_text(context_id)
 
         resolved_source = _resolve_session_source(
             thread_source=session.source if session else None,
@@ -714,13 +700,6 @@ class SessionHubService:
         ) = extract_provider_and_external_session_id(invoke_metadata or {})
         if not provider_from_invoke and source == "opencode":
             provider_from_invoke = normalize_provider("opencode")
-        if (
-            normalize_provider(provider_from_invoke) == "opencode"
-            and not external_session_id
-            and isinstance(context_id, str)
-            and context_id.strip()
-        ):
-            external_session_id = context_id.strip()
         if context_id and isinstance(context_id, str):
             metadata["context_id"] = context_id
         if provider_from_invoke:
