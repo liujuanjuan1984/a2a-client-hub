@@ -24,6 +24,7 @@ from app.services.invoke_session_binding import (
     ws_error_code_for_invoke_session_error,
 )
 from app.services.session_hub import session_hub_service
+from app.services.system_tools import ToolContext, system_tool_registry
 from app.services.ws_ticket_service import ws_ticket_service
 
 AgentSource = Literal["personal", "shared"]
@@ -36,6 +37,7 @@ _invoke_inflight_keys: dict[str, int] = {}
 class _InvokeState:
     local_session: Any
     local_source: Any
+    conversation_id: str | None
     context_id: str | None
     metadata: dict[str, Any]
     stream_identity: dict[str, Any]
@@ -69,6 +71,59 @@ def _build_invoke_guard_key(
     return (
         f"{user_id}:{agent_source}:{agent_id}:{conversation_id}:{context_id}:"
         f"{normalized_query}"
+    )
+
+
+def _pick_tool_name(tool_schema: dict[str, Any]) -> str | None:
+    function_node = tool_schema.get("function")
+    if isinstance(function_node, dict):
+        raw_name = function_node.get("name")
+    else:
+        raw_name = tool_schema.get("name")
+    if isinstance(raw_name, str):
+        return raw_name.strip()
+    return None
+
+
+def _merge_tool_schemas(
+    *,
+    request_tools: list[dict[str, Any]],
+    built_in_tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for schema in request_tools:
+        if not isinstance(schema, dict):
+            continue
+        raw_name = _pick_tool_name(schema)
+        if not raw_name:
+            continue
+        key = raw_name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(schema)
+
+    for schema in built_in_tools:
+        if not isinstance(schema, dict):
+            continue
+        raw_name = _pick_tool_name(schema)
+        if not raw_name:
+            continue
+        key = raw_name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(schema)
+
+    return merged
+
+
+def _build_upstream_tools(request_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return _merge_tool_schemas(
+        request_tools=request_tools,
+        built_in_tools=system_tool_registry.build_upstream_tool_schema(),
     )
 
 
@@ -133,6 +188,7 @@ async def _prepare_state(
     return _InvokeState(
         local_session=local_session,
         local_source=local_source,
+        conversation_id=payload.conversation_id,
         context_id=resolved_context_id,
         metadata=resolved_invoke_metadata,
         stream_identity={},
@@ -151,13 +207,26 @@ def _build_stream_callbacks(
     agent_source: AgentSource,
     query: str,
     transport: Literal["http_sse", "ws"],
+    logger: Any,
 ) -> tuple[
     Callable[[dict[str, Any]], Any],
     Callable[[str], Any],
     Callable[[str], Any],
     Callable[[dict[str, Any]], Any],
+    Callable[[dict[str, Any]], Any],
 ]:
     stream_response_metadata: dict[str, Any] = {}
+    stream_tool_calls: list[dict[str, Any]] = []
+    tool_context = ToolContext(
+        db=db,
+        user_id=user_id,
+        agent_source=agent_source,
+        query=query,
+        context_id=state.context_id,
+        conversation_id=state.conversation_id,
+        logger=logger,
+        metadata=state.metadata,
+    )
 
     async def on_event(event_payload: dict[str, Any]) -> None:
         (
@@ -185,6 +254,60 @@ def _build_stream_callbacks(
         if usage_hints:
             state.stream_usage = usage_hints
 
+    async def on_tool_call(tool_call: dict[str, Any]) -> None:
+        tool_name = str(tool_call.get("tool_name") or "").strip()
+        if not tool_name:
+            return
+
+        tool_call_id = tool_call.get("tool_call_id")
+        tool_call_id = (
+            str(tool_call_id).strip() if isinstance(tool_call_id, str) else None
+        )
+        tool_args = tool_call.get("tool_args")
+        if not isinstance(tool_args, dict):
+            tool_args = {}
+
+        result_payload: dict[str, Any] = {
+            "tool_name": tool_name,
+            "tool_call_id": tool_call_id,
+        }
+        tool = system_tool_registry.get_tool(tool_name)
+        if tool is None:
+            result_payload.update(
+                {
+                    "success": False,
+                    "error": f"Tool '{tool_name}' is not supported",
+                    "error_code": "method_not_supported",
+                }
+            )
+            stream_tool_calls.append(result_payload)
+            return
+
+        try:
+            tool_result = await tool.execute(tool_args, tool_context)
+        except Exception as exc:  # noqa: BLE001
+            result_payload.update(
+                {
+                    "success": False,
+                    "error": str(exc),
+                    "error_code": "tool_execution_failed",
+                }
+            )
+            stream_tool_calls.append(result_payload)
+            return
+
+        result_payload.update(
+            {
+                "success": bool(tool_result.success),
+                "content": tool_result.content,
+                "error": tool_result.error,
+                "error_code": tool_result.error_code,
+                "metadata": tool_result.metadata,
+                "args": tool_args,
+            }
+        )
+        stream_tool_calls.append(result_payload)
+
     async def on_complete(stream_text: str) -> None:
         if state.local_session is None or state.local_source is None:
             return
@@ -193,6 +316,8 @@ def _build_stream_callbacks(
             final_response_metadata.update(state.stream_identity)
         if state.stream_usage:
             final_response_metadata["usage"] = dict(state.stream_usage)
+        if stream_tool_calls:
+            final_response_metadata["tool_calls"] = list(stream_tool_calls)
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
@@ -228,6 +353,8 @@ def _build_stream_callbacks(
             if error_response_metadata is None:
                 error_response_metadata = {}
             error_response_metadata["usage"] = dict(state.stream_usage)
+        if stream_tool_calls:
+            error_response_metadata["tool_calls"] = list(stream_tool_calls)
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
@@ -247,7 +374,13 @@ def _build_stream_callbacks(
         )
         await commit_safely(db)
 
-    return on_event, on_complete, on_error, on_complete_metadata
+    return (
+        on_event,
+        on_complete,
+        on_error,
+        on_complete_metadata,
+        on_tool_call,
+    )
 
 
 async def run_http_invoke(
@@ -273,7 +406,13 @@ async def run_http_invoke(
     )
 
     if stream:
-        on_event, on_complete, on_error, on_complete_metadata = _build_stream_callbacks(
+        (
+            on_event,
+            on_complete,
+            on_error,
+            on_complete_metadata,
+            on_tool_call,
+        ) = _build_stream_callbacks(
             db=db,
             state=state,
             user_id=user_id,
@@ -281,6 +420,7 @@ async def run_http_invoke(
             agent_source=agent_source,
             query=payload.query,
             transport="http_sse",
+            logger=logger,
         )
         return a2a_invoke_service.stream_sse(
             gateway=gateway,
@@ -288,6 +428,8 @@ async def run_http_invoke(
             query=payload.query,
             context_id=payload.context_id,
             metadata=payload.metadata,
+            tools=_build_upstream_tools(payload.tools),
+            tool_choice=payload.tool_choice,
             validate_message=validate_message,
             logger=logger,
             log_extra=log_extra,
@@ -295,6 +437,7 @@ async def run_http_invoke(
             on_complete_metadata=on_complete_metadata,
             on_error=on_error,
             on_event=on_event,
+            on_tool_call=on_tool_call,
         )
 
     result = await gateway.invoke(
@@ -302,6 +445,8 @@ async def run_http_invoke(
         query=payload.query,
         context_id=payload.context_id,
         metadata=payload.metadata,
+        tools=_build_upstream_tools(payload.tools),
+        tool_choice=payload.tool_choice,
     )
 
     success = bool(result.get("success"))
@@ -386,7 +531,13 @@ async def run_ws_invoke(
         agent_source=agent_source,
         payload=payload,
     )
-    on_event, on_complete, on_error, on_complete_metadata = _build_stream_callbacks(
+    (
+        on_event,
+        on_complete,
+        on_error,
+        on_complete_metadata,
+        on_tool_call,
+    ) = _build_stream_callbacks(
         db=db,
         state=state,
         user_id=user_id,
@@ -394,6 +545,7 @@ async def run_ws_invoke(
         agent_source=agent_source,
         query=payload.query,
         transport="ws",
+        logger=logger,
     )
     await a2a_invoke_service.stream_ws(
         websocket=websocket,
@@ -402,6 +554,8 @@ async def run_ws_invoke(
         query=payload.query,
         context_id=payload.context_id,
         metadata=payload.metadata,
+        tools=_build_upstream_tools(payload.tools),
+        tool_choice=payload.tool_choice,
         validate_message=validate_message,
         logger=logger,
         log_extra=log_extra,
@@ -409,6 +563,7 @@ async def run_ws_invoke(
         on_complete_metadata=on_complete_metadata,
         on_error=on_error,
         on_event=on_event,
+        on_tool_call=on_tool_call,
     )
 
 

@@ -120,6 +120,8 @@ class A2AClient:
         *,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        tools: Optional[list[dict[str, Any]]] = None,
+        tool_choice: Any | None = None,
     ) -> Dict[str, Any]:
         """Execute a blocking request against the downstream agent."""
 
@@ -133,6 +135,12 @@ class A2AClient:
 
         try:
             client = await self._get_client(streaming=False)
+            request_metadata = None
+            if tools is not None or tool_choice is not None:
+                request_metadata = {
+                    "tools": tools,
+                    "toolChoice": tool_choice,
+                }
             message = self._build_message(
                 query,
                 context_id=context_id,
@@ -140,7 +148,10 @@ class A2AClient:
             )
 
             final_payload: Optional[ClientEvent | Message] = None
-            async for payload in client.send_message(message):
+            async for payload in client.send_message(
+                message,
+                request_metadata=request_metadata,
+            ):
                 final_payload = payload
 
             if final_payload is None:
@@ -195,6 +206,8 @@ class A2AClient:
         *,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        tools: Optional[list[dict[str, Any]]] = None,
+        tool_choice: Any | None = None,
     ) -> AsyncIterator[Any]:
         """Stream responses from the downstream agent."""
 
@@ -207,12 +220,21 @@ class A2AClient:
         )
 
         client = await self._get_client(streaming=True)
+        request_metadata = None
+        if tools is not None or tool_choice is not None:
+            request_metadata = {
+                "tools": tools,
+                "toolChoice": tool_choice,
+            }
         message = self._build_message(
             query,
             context_id=context_id,
             metadata=metadata,
         )
-        async for payload in client.send_message(message):
+        async for payload in client.send_message(
+            message,
+            request_metadata=request_metadata,
+        ):
             yield payload
 
     async def get_agent_card(self) -> AgentCard:

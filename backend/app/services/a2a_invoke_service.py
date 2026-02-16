@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from contextlib import suppress
 from typing import Any, AsyncIterator, Callable
 
@@ -28,6 +29,7 @@ ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
 StreamTextCallbackFn = Callable[[str], Any]
 StreamEventPayloadCallbackFn = Callable[[dict[str, Any]], Any]
 StreamMetadataCallbackFn = Callable[[dict[str, Any]], Any]
+StreamToolCallCallbackFn = Callable[[dict[str, Any]], Any]
 
 
 class A2AInvokeService:
@@ -122,6 +124,245 @@ class A2AInvokeService:
                 except ValueError:
                     continue
         return None
+
+    @classmethod
+    def _extract_tool_args(cls, args: Any) -> dict[str, Any]:
+        if isinstance(args, dict):
+            return args
+        if isinstance(args, str):
+            raw = args.strip()
+            if not raw:
+                return {}
+            with suppress(json.JSONDecodeError):
+                parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+            return {}
+        return {}
+
+    @classmethod
+    def _extract_single_tool_call_from_payload(
+        cls, payload: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        candidate = payload
+
+        if not isinstance(candidate, dict):
+            return None
+
+        function_node = as_dict(candidate.get("function"))
+        name = cls._pick_non_empty_str(
+            function_node if function_node else candidate,
+            ("name", "tool_name"),
+        )
+        raw_arguments = candidate.get("arguments")
+        if raw_arguments is None:
+            raw_arguments = candidate.get("input")
+            if raw_arguments is None:
+                raw_arguments = (
+                    candidate.get("tool_args")
+                    if candidate.get("tool_args") is not None
+                    else None
+                )
+                if raw_arguments is None:
+                    raw_arguments = (
+                        function_node.get("arguments") if function_node else None
+                    )
+                    if raw_arguments is None:
+                        raw_arguments = (
+                            function_node.get("tool_args") if function_node else None
+                        )
+                        if raw_arguments is None:
+                            raw_arguments = (
+                                function_node.get("input") if function_node else None
+                            )
+        if not name:
+            raw_arguments = None
+        if name:
+            tool_call_id = cls._pick_non_empty_str(
+                candidate,
+                (
+                    "tool_call_id",
+                    "toolCallId",
+                    "id",
+                    "call_id",
+                ),
+            )
+            if tool_call_id is None and function_node is not None:
+                tool_call_id = cls._pick_non_empty_str(
+                    function_node,
+                    (
+                        "tool_call_id",
+                        "toolCallId",
+                        "id",
+                        "call_id",
+                    ),
+                )
+            return {
+                "tool_name": name,
+                "tool_call_id": tool_call_id,
+                "tool_args": cls._extract_tool_args(raw_arguments),
+            }
+
+        if candidate.get("kind") in {"tool", "tool_call", "tool-call"}:
+            fallback = as_dict(candidate.get("tool")) or as_dict(
+                candidate.get("tool_call")
+            )
+            if fallback:
+                fallback_name = cls._pick_non_empty_str(
+                    fallback,
+                    ("name", "tool_name"),
+                )
+                if fallback_name:
+                    fallback_args = (
+                        fallback.get("arguments")
+                        if fallback.get("arguments") is not None
+                        else fallback.get("input")
+                    )
+                    if fallback_args is None:
+                        fallback_args = fallback.get("tool_args")
+                        if fallback_args is None:
+                            fallback_args = candidate.get("tool_args")
+                    return {
+                        "tool_name": fallback_name,
+                        "tool_call_id": cls._pick_non_empty_str(
+                            candidate
+                            if any(
+                                candidate.get(key)
+                                for key in (
+                                    "tool_call_id",
+                                    "toolCallId",
+                                    "id",
+                                    "call_id",
+                                )
+                            )
+                            else fallback,
+                            (
+                                "tool_call_id",
+                                "toolCallId",
+                                "id",
+                                "call_id",
+                            ),
+                        ),
+                        "tool_args": cls._extract_tool_args(fallback_args),
+                    }
+
+        return None
+
+    @classmethod
+    def _extract_tool_call_from_payload_parts(cls, parts: Any) -> dict[str, Any] | None:
+        if not isinstance(parts, list):
+            return None
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            direct = cls._extract_single_tool_call_from_payload(part)
+            if direct:
+                return direct
+            if isinstance(part.get("text"), str):
+                raw_text = part.get("text")
+                parsed = None
+                with suppress(json.JSONDecodeError):
+                    parsed = json.loads(str(raw_text))
+                if isinstance(parsed, dict):
+                    nested = cls._extract_single_tool_call_from_payload(parsed)
+                    if nested:
+                        return nested
+
+            tool_container = as_dict(part.get("tool")) or as_dict(part.get("tool_call"))
+            nested = cls._extract_single_tool_call_from_payload(tool_container)
+            if nested:
+                return nested
+        return None
+
+    @classmethod
+    def extract_tool_calls_from_payload(
+        cls, payload: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return []
+
+        calls: list[dict[str, Any]] = []
+
+        tool_calls = payload.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for item in tool_calls:
+                call = cls._extract_single_tool_call_from_payload(as_dict(item))
+                if call:
+                    calls.append(call)
+
+        direct_call = cls._extract_single_tool_call_from_payload(payload)
+        if direct_call:
+            calls.append(direct_call)
+
+        if payload.get("kind") == "tool-call" and not direct_call:
+            for key in ("tool", "tool_call", "toolCall"):
+                call = cls._extract_single_tool_call_from_payload(
+                    as_dict(payload.get(key))
+                )
+                if call:
+                    calls.append(call)
+                    break
+
+        artifact = as_dict(payload.get("artifact"))
+        if artifact:
+            artifact_parts = artifact.get("parts")
+            artifact_call = cls._extract_tool_call_from_payload_parts(artifact_parts)
+            if artifact_call:
+                calls.append(artifact_call)
+
+            metadata = as_dict(artifact.get("metadata"))
+            tool_block = as_dict(as_dict(metadata.get("tool")))
+            if tool_block:
+                block_call = cls._extract_single_tool_call_from_payload(tool_block)
+                if block_call:
+                    calls.append(block_call)
+
+        if payload.get("kind") == "artifact-update":
+            opencode_metadata = as_dict(
+                as_dict(artifact.get("metadata", {})).get("opencode", {})
+            )
+            for key in ("tool", "tool_call"):
+                opencode_call = cls._extract_single_tool_call_from_payload(
+                    as_dict(opencode_metadata.get(key))
+                )
+                if opencode_call:
+                    calls.append(opencode_call)
+
+        dedup: list[dict[str, Any]] = []
+        by_identity: dict[tuple[str, str], dict[str, Any]] = {}
+        by_payload: dict[tuple[str, str], dict[str, Any]] = {}
+
+        for call in calls:
+            args_key = json.dumps(
+                call.get("tool_args") or {}, sort_keys=True, ensure_ascii=False
+            )
+            tool_name = str(call.get("tool_name") or "")
+            tool_call_id = str(call.get("tool_call_id") or "")
+            identity_key = (tool_name, tool_call_id, args_key)
+            payload_key = (tool_name, args_key)
+
+            if tool_call_id and payload_key not in by_payload:
+                by_payload[payload_key] = call
+                by_identity[identity_key] = call
+                continue
+
+            if identity_key in by_identity:
+                continue
+
+            if payload_key in by_payload:
+                existing_call = by_payload[payload_key]
+                existing_call_id = existing_call.get("tool_call_id")
+                if tool_call_id and (
+                    existing_call_id is None or existing_call_id == ""
+                ):
+                    by_payload[payload_key] = call
+                continue
+
+            by_payload[payload_key] = call
+            by_identity[identity_key] = call
+
+        dedup = list(by_payload.values())
+        return dedup
 
     @classmethod
     def _extract_usage_from_candidate(cls, payload: dict[str, Any]) -> dict[str, Any]:
@@ -683,6 +924,7 @@ class A2AInvokeService:
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
         on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
+        on_tool_call: StreamToolCallCallbackFn | None = None,
     ) -> StreamingResponse:
         async def event_generator() -> AsyncIterator[str]:
             stream_text_accumulator = self._StreamTextAccumulator()
@@ -717,6 +959,8 @@ class A2AInvokeService:
                             },
                         )
                         continue
+                    for tool_call in self.extract_tool_calls_from_payload(serialized):
+                        await self._call_callback(on_tool_call, tool_call)
                     await self._call_callback(on_event, serialized)
                     stream_text_accumulator.consume(serialized)
                     yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
@@ -772,6 +1016,7 @@ class A2AInvokeService:
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
         on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
+        on_tool_call: StreamToolCallCallbackFn | None = None,
     ) -> None:
         stream_text_accumulator = self._StreamTextAccumulator()
         stream_failed = False
@@ -807,6 +1052,8 @@ class A2AInvokeService:
                         },
                     )
                     continue
+                for tool_call in self.extract_tool_calls_from_payload(serialized):
+                    await self._call_callback(on_tool_call, tool_call)
                 await self._call_callback(on_event, serialized)
                 stream_text_accumulator.consume(serialized)
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))

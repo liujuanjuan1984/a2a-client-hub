@@ -29,6 +29,17 @@ class A2AAgentInvokeRequest(BaseModel):
         alias="clientAgentMessageId",
         description="Optional client-side placeholder agent message identifier",
     )
+    tools: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Optional tool declarations for upstream tool-enabled invocation",
+    )
+    tool_choice: Any | None = Field(
+        default=None,
+        alias="toolChoice",
+        description=(
+            "Optional tool selection policy for upstream model (e.g. auto/manual)"
+        ),
+    )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Optional A2A metadata forwarded with the message",

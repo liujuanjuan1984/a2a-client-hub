@@ -39,6 +39,8 @@ class A2AService:
         query: str,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        tools: Optional[list[dict[str, Any]]] = None,
+        tool_choice: Any | None = None,
     ) -> Dict[str, Any]:
         timeout_override: Optional[float] = None
         metadata_timeout = resolved.metadata.get("timeout_seconds")
@@ -56,6 +58,8 @@ class A2AService:
             query=query,
             context_id=context_id,
             metadata=metadata,
+            tools=tools,
+            tool_choice=tool_choice,
             timeout=timeout_override,
         )
 
