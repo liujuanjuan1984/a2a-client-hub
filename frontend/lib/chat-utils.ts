@@ -78,8 +78,16 @@ export const buildInvokePayload = (
   const externalSessionId =
     session.externalSessionRef?.externalSessionId?.trim();
   if (externalProvider === "opencode" && externalSessionId) {
-    // Upstream opencode-a2a-serve requires this explicit key to continue a session.
-    metadata.opencode_session_id = externalSessionId;
+    // Strict upstream contract: metadata.opencode.session_id.
+    const opencodeMetadata =
+      metadata.opencode &&
+      typeof metadata.opencode === "object" &&
+      !Array.isArray(metadata.opencode)
+        ? { ...(metadata.opencode as Record<string, unknown>) }
+        : {};
+    opencodeMetadata.session_id = externalSessionId;
+    metadata.opencode = opencodeMetadata;
+    delete metadata.opencode_session_id;
   }
   if (Object.keys(metadata).length > 0) {
     payload.metadata = metadata;
