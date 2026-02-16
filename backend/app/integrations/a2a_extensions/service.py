@@ -207,6 +207,19 @@ class A2AExtensionsService:
             raise ValueError(f"size must be <= {max_size}")
         return resolved_page, resolved_size
 
+    @staticmethod
+    def _build_pagination_params(
+        *,
+        mode: str,
+        page: int,
+        size: int,
+    ) -> Dict[str, int]:
+        if mode == "page_size":
+            return {"page": page, "size": size}
+        if mode == "limit":
+            return {"offset": (page - 1) * size, "limit": size}
+        raise ValueError(f"unsupported pagination mode: {mode}")
+
     async def _resolve_opencode_extension(
         self, runtime: A2ARuntime
     ) -> tuple[ResolvedExtension, str]:
@@ -276,6 +289,7 @@ class A2AExtensionsService:
         meta = {
             "extension_uri": ext.uri,
             "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
+            "pagination_mode": ext.pagination.mode,
             "page": page,
             "size": size,
             "max_size": ext.pagination.max_size,
@@ -328,7 +342,11 @@ class A2AExtensionsService:
             size=size,
         )
 
-        params: Dict[str, Any] = {"page": resolved_page, "size": resolved_size}
+        params: Dict[str, Any] = self._build_pagination_params(
+            mode=ext.pagination.mode,
+            page=resolved_page,
+            size=resolved_size,
+        )
         if query is not None:
             params["query"] = query
 
@@ -366,8 +384,11 @@ class A2AExtensionsService:
 
         params: Dict[str, Any] = {
             "session_id": resolved_session_id,
-            "page": resolved_page,
-            "size": resolved_size,
+            **self._build_pagination_params(
+                mode=ext.pagination.mode,
+                page=resolved_page,
+                size=resolved_size,
+            ),
         }
         if query is not None:
             params["query"] = query

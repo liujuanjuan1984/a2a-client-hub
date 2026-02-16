@@ -117,3 +117,31 @@ def test_resolve_rejects_missing_pagination() -> None:
     card = AgentCard.model_validate(payload)
     with pytest.raises(A2AExtensionContractError):
         resolve_opencode_session_query(card)
+
+
+def test_resolve_accepts_limit_mode_with_default_limit_keys() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "methods": {
+                    "list_sessions": "opencode.sessions.list",
+                    "get_session_messages": "opencode.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "limit",
+                    "default_limit": 20,
+                    "max_limit": 100,
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {"raw": True, "items": True, "pagination": True},
+            },
+        }
+    ]
+    card = AgentCard.model_validate(payload)
+    resolved = resolve_opencode_session_query(card)
+    assert resolved.pagination.mode == "limit"
+    assert resolved.pagination.default_size == 20
+    assert resolved.pagination.max_size == 100

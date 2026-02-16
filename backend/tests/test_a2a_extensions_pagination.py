@@ -14,3 +14,31 @@ def test_extension_pagination_rejects_size_over_max() -> None:
             size=51,
         )
     assert "size must be <=" in str(exc.value)
+
+
+def test_build_pagination_params_page_size_mode() -> None:
+    params = A2AExtensionsService._build_pagination_params(  # noqa: SLF001
+        mode="page_size",
+        page=3,
+        size=20,
+    )
+    assert params == {"page": 3, "size": 20}
+
+
+def test_build_pagination_params_limit_mode() -> None:
+    params = A2AExtensionsService._build_pagination_params(  # noqa: SLF001
+        mode="limit",
+        page=3,
+        size=20,
+    )
+    assert params == {"offset": 40, "limit": 20}
+
+
+def test_build_pagination_params_rejects_unknown_mode() -> None:
+    with pytest.raises(ValueError) as exc:
+        A2AExtensionsService._build_pagination_params(  # noqa: SLF001
+            mode="cursor",
+            page=1,
+            size=20,
+        )
+    assert "unsupported pagination mode" in str(exc.value)

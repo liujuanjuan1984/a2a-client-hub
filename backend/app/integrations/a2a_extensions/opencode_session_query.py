@@ -41,6 +41,28 @@ def _require_int(value: Any, *, field: str) -> int:
     raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
 
 
+def _resolve_pagination_size(
+    pagination: Dict[str, Any],
+    *,
+    mode: str,
+    field: str,
+    legacy_field: str | None = None,
+) -> int:
+    candidates = [field]
+    if legacy_field:
+        candidates.append(legacy_field)
+    for key in candidates:
+        if key not in pagination:
+            continue
+        return _require_int(
+            pagination.get(key),
+            field=f"pagination.{key}",
+        )
+    raise A2AExtensionContractError(
+        f"Extension contract missing/invalid 'pagination.{field}' for mode '{mode}'"
+    )
+
+
 def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
     """Resolve the OpenCode session query extension from an Agent Card."""
 
@@ -73,12 +95,34 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
 
     pagination = _as_dict(params.get("pagination"))
     mode = _require_str(pagination.get("mode"), field="pagination.mode")
-    if mode != "page_size":
-        raise A2AExtensionContractError("Extension pagination.mode must be 'page_size'")
-    default_size = _require_int(
-        pagination.get("default_size"), field="pagination.default_size"
-    )
-    max_size = _require_int(pagination.get("max_size"), field="pagination.max_size")
+    if mode == "page_size":
+        default_size = _resolve_pagination_size(
+            pagination,
+            mode=mode,
+            field="default_size",
+        )
+        max_size = _resolve_pagination_size(
+            pagination,
+            mode=mode,
+            field="max_size",
+        )
+    elif mode == "limit":
+        default_size = _resolve_pagination_size(
+            pagination,
+            mode=mode,
+            field="default_limit",
+            legacy_field="default_size",
+        )
+        max_size = _resolve_pagination_size(
+            pagination,
+            mode=mode,
+            field="max_limit",
+            legacy_field="max_size",
+        )
+    else:
+        raise A2AExtensionContractError(
+            "Extension pagination.mode must be one of 'page_size' or 'limit'"
+        )
     if default_size <= 0 or max_size <= 0 or default_size > max_size:
         raise A2AExtensionContractError("Extension pagination sizes are invalid")
 
