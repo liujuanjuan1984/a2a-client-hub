@@ -474,6 +474,16 @@ class Settings(BaseSettings):
         alias="A2A_CLIENT_IDLE_TIMEOUT",
         description="Seconds of inactivity after which cached A2A HTTP clients are re-created (<=0 disables).",
     )
+    a2a_tool_call_timeout_seconds: float = Field(
+        default=20.0,
+        alias="A2A_TOOL_CALL_TIMEOUT_SECONDS",
+        description="Default timeout (seconds) for a single system tool execution.",
+    )
+    a2a_tool_call_max_depth: int = Field(
+        default=5,
+        alias="A2A_TOOL_CALL_MAX_DEPTH",
+        description="Maximum nested tool invocation depth to prevent recursive tool-call loops.",
+    )
     a2a_schedule_agent_concurrency_limit: int = Field(
         default=3,
         alias="A2A_SCHEDULE_AGENT_CONCURRENCY_LIMIT",

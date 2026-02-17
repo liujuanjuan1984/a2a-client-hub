@@ -6,11 +6,19 @@ import json
 from typing import Any
 from uuid import UUID
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.errors import A2AAgentUnavailableError
 from app.services import a2a_runtime, hub_a2a_runtime
-from app.services.system_tools.types import SystemTool, ToolContext, ToolExecutionResult
+from app.services.system_tools.types import (
+    TOOL_INVOCATION_CHAIN_METADATA_KEY,
+    TOOL_INVOCATION_DEPTH_METADATA_KEY,
+    TOOL_INVOCATION_MAX_DEPTH_METADATA_KEY,
+    SystemTool,
+    ToolContext,
+    ToolExecutionResult,
+)
 
 logger = get_logger(__name__)
 
@@ -94,6 +102,40 @@ class InvokeAnotherAgentTool(SystemTool):
             )
         prompt = raw_prompt.strip()
 
+        current_chain = tuple(context.tool_invocation_chain)
+        if context.agent_id is not None:
+            root_agent_id = str(context.agent_id)
+            if root_agent_id and root_agent_id not in current_chain:
+                current_chain = (root_agent_id, *current_chain)
+
+        max_depth = context.tool_max_invocation_depth
+        if max_depth <= 0:
+            max_depth = max(1, int(settings.a2a_tool_call_max_depth))
+        next_depth = context.tool_invocation_depth + 1
+        if next_depth > max_depth:
+            return ToolExecutionResult(
+                success=False,
+                error=f"Tool invocation depth exceeded (max {max_depth})",
+                error_code="tool_invocation_depth_exceeded",
+            )
+
+        target_agent_id = str(agent_uuid)
+        if target_agent_id in current_chain:
+            return ToolExecutionResult(
+                success=False,
+                error=f"Tool invocation cycle detected for agent {target_agent_id}",
+                error_code="tool_invocation_cycle_detected",
+            )
+
+        next_chain = (*current_chain, target_agent_id)
+        next_depth_metadata = {
+            TOOL_INVOCATION_CHAIN_METADATA_KEY: ",".join(next_chain),
+            TOOL_INVOCATION_DEPTH_METADATA_KEY: str(next_depth),
+            TOOL_INVOCATION_MAX_DEPTH_METADATA_KEY: str(max_depth),
+        }
+        tool_metadata = dict(context.metadata)
+        tool_metadata.update(next_depth_metadata)
+
         resolved_source = (
             str(agent_source).strip()
             if isinstance(agent_source, str)
@@ -134,7 +176,7 @@ class InvokeAnotherAgentTool(SystemTool):
             resolved=runtime.resolved,
             query=prompt,
             context_id=context.context_id,
-            metadata=context.metadata,
+            metadata=tool_metadata,
         )
         if not result.get("success"):
             return ToolExecutionResult(

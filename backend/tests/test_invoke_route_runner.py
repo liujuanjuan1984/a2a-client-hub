@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services import invoke_route_runner
-from app.services.system_tools import ToolExecutionResult
+from app.services.system_tools import ToolContext, ToolExecutionResult
 
 
 async def _consume_stream(response: StreamingResponse) -> None:
@@ -337,6 +337,160 @@ async def test_run_http_invoke_records_tool_call_result_metadata(
             "args": {"foo": "bar"},
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_executes_non_stream_tool_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeTool:
+        async def execute(self, params, context):  # noqa: ARG002
+            return ToolExecutionResult(
+                success=True,
+                content=f"tool:{params['task']}",
+                metadata={"source": "fake"},
+            )
+
+    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+        return invoke_route_runner._InvokeState(
+            local_session=object(),
+            local_source="manual",
+            conversation_id="conversation-1",
+            context_id=None,
+            metadata={},
+            stream_identity={},
+            stream_usage={},
+            user_message_id=None,
+            client_agent_message_id=None,
+        )
+
+    async def fake_record_local_invoke_messages(
+        db,  # noqa: ARG001
+        response_metadata=None,
+        **kwargs,  # noqa: ARG001
+    ):
+        captured["response_metadata"] = response_metadata
+
+    async def fake_commit_safely(db):  # noqa: ARG001
+        return None
+
+    class _Gateway:
+        async def invoke(self, **kwargs):  # noqa: ARG002
+            del kwargs
+            return {
+                "success": True,
+                "content": "assistant",
+                "tool_calls": [
+                    {
+                        "tool_name": "fake_tool",
+                        "tool_call_id": "tool-1",
+                        "tool_args": {"task": "calc"},
+                    }
+                ],
+            }
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+            "tools": [{"type": "function", "function": {"name": "fake_tool"}}],
+        }
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+
+    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.system_tool_registry,
+        "get_tool",
+        lambda name: FakeTool() if name == "fake_tool" else None,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_local_invoke_messages",
+        fake_record_local_invoke_messages,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    response = await invoke_route_runner.run_http_invoke(
+        db=object(),
+        gateway=_Gateway(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(
+            info=lambda *args, **kwargs: None, debug=lambda *args, **kwargs: None
+        ),
+        log_extra={},
+    )
+
+    assert response.success is True
+    response_metadata = captured["response_metadata"]
+    assert isinstance(response_metadata, dict)
+    assert response_metadata["tool_calls"] == [
+        {
+            "tool_name": "fake_tool",
+            "tool_call_id": "tool-1",
+            "success": True,
+            "content": "tool:calc",
+            "error": None,
+            "error_code": None,
+            "metadata": {"source": "fake"},
+            "args": {"task": "calc"},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_call_respects_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SlowTool:
+        async def execute(self, params, context):  # noqa: ARG002
+            del params
+            del context
+            await asyncio.sleep(1.0)
+            return ToolExecutionResult(success=True, content="ok")
+
+    tool_results: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        invoke_route_runner.system_tool_registry, "get_tool", lambda name: SlowTool()
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.settings, "a2a_tool_call_timeout_seconds", 0.001
+    )
+
+    context = ToolContext(
+        db=None,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        context_id=None,
+        conversation_id=None,
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        metadata={},
+    )
+
+    await invoke_route_runner._execute_tool_call(
+        tool_call={
+            "tool_name": "slow",
+            "tool_call_id": "tool-3",
+            "tool_args": {},
+        },
+        tool_context=context,
+        tool_results=tool_results,
+    )
+    assert tool_results[0]["tool_call_id"] == "tool-3"
+    assert tool_results[0]["success"] is False
+    assert tool_results[0]["error_code"] == "tool_execution_timeout"
 
 
 @pytest.mark.asyncio
