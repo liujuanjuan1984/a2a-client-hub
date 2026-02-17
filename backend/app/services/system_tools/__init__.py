@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from .invoke_another_agent import InvokeAnotherAgentTool
 from .registry import SystemToolRegistry, system_tool_registry
-from .types import SystemTool, ToolContext, ToolExecutionResult
+from .types import (
+    TOOL_INVOCATION_CHAIN_METADATA_KEY,
+    TOOL_INVOCATION_DEPTH_METADATA_KEY,
+    TOOL_INVOCATION_MAX_DEPTH_METADATA_KEY,
+    SystemTool,
+    ToolContext,
+    ToolExecutionResult,
+)
 
 _DEFAULT_TOOL_NAME = "hub_invoke_agent"
 
@@ -24,5 +31,8 @@ __all__ = [
     "ToolExecutionResult",
     "SystemToolRegistry",
     "system_tool_registry",
+    "TOOL_INVOCATION_CHAIN_METADATA_KEY",
+    "TOOL_INVOCATION_DEPTH_METADATA_KEY",
+    "TOOL_INVOCATION_MAX_DEPTH_METADATA_KEY",
     "register_default_tools",
 ]

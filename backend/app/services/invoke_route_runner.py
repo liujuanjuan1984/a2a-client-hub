@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.error_codes import status_code_for_invoke_error_code
+from app.core.config import settings
 from app.db.transaction import commit_safely
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.ws_ticket import WsTicketResponse
@@ -28,7 +29,13 @@ from app.services.invoke_session_binding import (
     ws_error_code_for_recovery_failed,
 )
 from app.services.session_hub import session_hub_service
-from app.services.system_tools import ToolContext, system_tool_registry
+from app.services.system_tools import (
+    TOOL_INVOCATION_CHAIN_METADATA_KEY,
+    TOOL_INVOCATION_DEPTH_METADATA_KEY,
+    TOOL_INVOCATION_MAX_DEPTH_METADATA_KEY,
+    ToolContext,
+    system_tool_registry,
+)
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.payload_extract import (
     as_dict,
@@ -50,6 +57,58 @@ _OPENCODE_PROVIDER = "opencode"
 _OPENCODE_SESSION_ID_METADATA_KEY = "opencode_session_id"
 
 
+def _coerce_tool_chain(raw_chain: object) -> tuple[str, ...]:
+    if isinstance(raw_chain, str):
+        parts = [item.strip() for item in raw_chain.split(",")]
+        return tuple(item for item in parts if item)
+    if not isinstance(raw_chain, (list, tuple)):
+        return ()
+    result: list[str] = []
+    for item in raw_chain:
+        if isinstance(item, str):
+            stripped = item.strip()
+            if stripped:
+                result.append(stripped)
+    return tuple(result)
+
+
+def _coerce_tool_int(raw_depth: object) -> int:
+    if isinstance(raw_depth, bool):
+        return 0
+    if isinstance(raw_depth, int):
+        return max(raw_depth, 0)
+    if isinstance(raw_depth, float):
+        return max(int(raw_depth), 0) if raw_depth >= 0 else 0
+    if isinstance(raw_depth, str):
+        try:
+            return max(int(raw_depth.strip()), 0)
+        except ValueError:
+            return 0
+    return 0
+
+
+def _parse_tool_invocation_state(
+    metadata: dict[str, Any],
+) -> tuple[tuple[str, ...], int, int]:
+    chain = _coerce_tool_chain(metadata.get(TOOL_INVOCATION_CHAIN_METADATA_KEY))
+    depth = _coerce_tool_int(metadata.get(TOOL_INVOCATION_DEPTH_METADATA_KEY))
+    max_depth = _coerce_tool_int(metadata.get(TOOL_INVOCATION_MAX_DEPTH_METADATA_KEY))
+    if max_depth <= 0:
+        max_depth = max(1, int(settings.a2a_tool_call_max_depth))
+    return chain, depth, max_depth
+
+
+def _strip_tool_invocation_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    cleaned = dict(metadata)
+    for key in (
+        TOOL_INVOCATION_CHAIN_METADATA_KEY,
+        TOOL_INVOCATION_DEPTH_METADATA_KEY,
+        TOOL_INVOCATION_MAX_DEPTH_METADATA_KEY,
+    ):
+        cleaned.pop(key, None)
+    return cleaned
+
+
 @dataclass
 class _InvokeState:
     local_session: Any
@@ -61,6 +120,9 @@ class _InvokeState:
     stream_usage: dict[str, Any]
     user_message_id: str | None
     client_agent_message_id: str | None
+    tool_invocation_chain: tuple[str, ...] = ()
+    tool_invocation_depth: int = 0
+    tool_max_invocation_depth: int = 0
 
 
 def _normalize_query_for_invoke_guard(query: str) -> str:
@@ -202,17 +264,135 @@ async def _prepare_state(
         context_id=payload.context_id,
         metadata=payload.metadata,
     )
+    (
+        tool_invocation_chain,
+        tool_invocation_depth,
+        tool_max_invocation_depth,
+    ) = _parse_tool_invocation_state(resolved_invoke_metadata)
     return _InvokeState(
         local_session=local_session,
         local_source=local_source,
         conversation_id=payload.conversation_id,
         context_id=resolved_context_id,
-        metadata=resolved_invoke_metadata,
+        metadata=_strip_tool_invocation_metadata(resolved_invoke_metadata),
         stream_identity={},
         stream_usage={},
         user_message_id=payload.user_message_id,
         client_agent_message_id=payload.client_agent_message_id,
+        tool_invocation_chain=tool_invocation_chain,
+        tool_invocation_depth=tool_invocation_depth,
+        tool_max_invocation_depth=tool_max_invocation_depth,
     )
+
+
+def _build_tool_context(
+    *,
+    db: AsyncSession,
+    state: _InvokeState,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    query: str,
+    logger: Any,
+) -> ToolContext:
+    if state.local_session is None:
+        tool_invocation_chain = ()
+    elif state.tool_invocation_chain:
+        tool_invocation_chain = state.tool_invocation_chain
+    else:
+        tool_invocation_chain = (str(agent_id),)
+    return ToolContext(
+        db=db,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        query=query,
+        context_id=state.context_id,
+        conversation_id=state.conversation_id,
+        logger=logger,
+        metadata=state.metadata,
+        tool_invocation_chain=tool_invocation_chain,
+        tool_invocation_depth=state.tool_invocation_depth,
+        tool_max_invocation_depth=state.tool_max_invocation_depth,
+    )
+
+
+async def _execute_tool_call(
+    *,
+    tool_call: dict[str, Any],
+    tool_context: ToolContext,
+    tool_results: list[dict[str, Any]],
+) -> None:
+    tool_name = str(tool_call.get("tool_name") or "").strip()
+    if not tool_name:
+        return
+
+    tool_call_id = tool_call.get("tool_call_id")
+    tool_call_id = str(tool_call_id).strip() if isinstance(tool_call_id, str) else None
+    tool_args = tool_call.get("tool_args")
+    if not isinstance(tool_args, dict):
+        tool_args = {}
+
+    result_payload: dict[str, Any] = {
+        "tool_name": tool_name,
+        "tool_call_id": tool_call_id,
+    }
+    tool = system_tool_registry.get_tool(tool_name)
+    if tool is None:
+        result_payload.update(
+            {
+                "success": False,
+                "error": f"Tool '{tool_name}' is not supported",
+                "error_code": "method_not_supported",
+            }
+        )
+        tool_results.append(result_payload)
+        return
+
+    tool_call_timeout_seconds = float(settings.a2a_tool_call_timeout_seconds)
+    try:
+        if tool_call_timeout_seconds > 0:
+            tool_result = await asyncio.wait_for(
+                tool.execute(tool_args, tool_context),
+                timeout=tool_call_timeout_seconds,
+            )
+        else:
+            tool_result = await tool.execute(tool_args, tool_context)
+    except TimeoutError:
+        result_payload.update(
+            {
+                "success": False,
+                "error": (
+                    f"Tool '{tool_name}' execution timed out after "
+                    f"{tool_call_timeout_seconds}s"
+                ),
+                "error_code": "tool_execution_timeout",
+            }
+        )
+        tool_results.append(result_payload)
+        return
+    except Exception as exc:  # noqa: BLE001
+        result_payload.update(
+            {
+                "success": False,
+                "error": str(exc),
+                "error_code": "tool_execution_failed",
+            }
+        )
+        tool_results.append(result_payload)
+        return
+
+    result_payload.update(
+        {
+            "success": bool(tool_result.success),
+            "content": tool_result.content,
+            "error": tool_result.error,
+            "error_code": tool_result.error_code,
+            "metadata": tool_result.metadata,
+            "args": tool_args,
+        }
+    )
+    tool_results.append(result_payload)
 
 
 def _build_stream_callbacks(
@@ -235,16 +415,6 @@ def _build_stream_callbacks(
 ]:
     stream_response_metadata: dict[str, Any] = {}
     stream_tool_calls: list[dict[str, Any]] = []
-    tool_context = ToolContext(
-        db=db,
-        user_id=user_id,
-        agent_source=agent_source,
-        query=query,
-        context_id=state.context_id,
-        conversation_id=state.conversation_id,
-        logger=logger,
-        metadata=state.metadata,
-    )
 
     async def on_event(event_payload: dict[str, Any]) -> None:
         (
@@ -272,59 +442,24 @@ def _build_stream_callbacks(
         if usage_hints:
             state.stream_usage = usage_hints
 
+        # Tool invocation chain/depth is derived from request metadata, which is
+        # already populated in _prepare_state. Upstream stream events do not need to
+        # mutate this state.
+
     async def on_tool_call(tool_call: dict[str, Any]) -> None:
-        tool_name = str(tool_call.get("tool_name") or "").strip()
-        if not tool_name:
-            return
-
-        tool_call_id = tool_call.get("tool_call_id")
-        tool_call_id = (
-            str(tool_call_id).strip() if isinstance(tool_call_id, str) else None
+        await _execute_tool_call(
+            tool_call=tool_call,
+            tool_context=_build_tool_context(
+                db=db,
+                state=state,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                query=query,
+                logger=logger,
+            ),
+            tool_results=stream_tool_calls,
         )
-        tool_args = tool_call.get("tool_args")
-        if not isinstance(tool_args, dict):
-            tool_args = {}
-
-        result_payload: dict[str, Any] = {
-            "tool_name": tool_name,
-            "tool_call_id": tool_call_id,
-        }
-        tool = system_tool_registry.get_tool(tool_name)
-        if tool is None:
-            result_payload.update(
-                {
-                    "success": False,
-                    "error": f"Tool '{tool_name}' is not supported",
-                    "error_code": "method_not_supported",
-                }
-            )
-            stream_tool_calls.append(result_payload)
-            return
-
-        try:
-            tool_result = await tool.execute(tool_args, tool_context)
-        except Exception as exc:  # noqa: BLE001
-            result_payload.update(
-                {
-                    "success": False,
-                    "error": str(exc),
-                    "error_code": "tool_execution_failed",
-                }
-            )
-            stream_tool_calls.append(result_payload)
-            return
-
-        result_payload.update(
-            {
-                "success": bool(tool_result.success),
-                "content": tool_result.content,
-                "error": tool_result.error,
-                "error_code": tool_result.error_code,
-                "metadata": tool_result.metadata,
-                "args": tool_args,
-            }
-        )
-        stream_tool_calls.append(result_payload)
 
     async def on_complete(stream_text: str) -> None:
         if state.local_session is None or state.local_source is None:
@@ -594,6 +729,23 @@ async def run_http_invoke(
         tool_choice=payload.tool_choice,
     )
 
+    tool_results: list[dict[str, Any]] = []
+    if result.get("success"):
+        for tool_call in a2a_invoke_service.extract_tool_calls_from_payload(result):
+            await _execute_tool_call(
+                tool_call=tool_call,
+                tool_context=_build_tool_context(
+                    db=db,
+                    state=state,
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    agent_source=agent_source,
+                    query=payload.query,
+                    logger=logger,
+                ),
+                tool_results=tool_results,
+            )
+
     success = bool(result.get("success"))
     if state.local_session is not None and state.local_source is not None:
         (
@@ -622,6 +774,10 @@ async def run_http_invoke(
             if response_metadata is None:
                 response_metadata = {}
             response_metadata["usage"] = usage_hints
+        if tool_results:
+            if response_metadata is None:
+                response_metadata = {}
+            response_metadata["tool_calls"] = list(tool_results)
         await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,

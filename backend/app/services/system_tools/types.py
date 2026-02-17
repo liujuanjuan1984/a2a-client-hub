@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
+TOOL_INVOCATION_CHAIN_METADATA_KEY = "__hub_tool_invocation_chain"
+TOOL_INVOCATION_DEPTH_METADATA_KEY = "__hub_tool_invocation_depth"
+TOOL_INVOCATION_MAX_DEPTH_METADATA_KEY = "__hub_tool_invocation_max_depth"
+
 
 @dataclass(frozen=True)
 class ToolContext:
@@ -14,12 +18,16 @@ class ToolContext:
 
     db: Any
     user_id: UUID
+    agent_id: UUID | None
     agent_source: str | None
     query: str
     context_id: str | None
     conversation_id: str | None
     logger: Any
     metadata: dict[str, Any]
+    tool_invocation_chain: tuple[str, ...] = ()
+    tool_invocation_depth: int = 0
+    tool_max_invocation_depth: int = 0
 
 
 @dataclass(frozen=True)
