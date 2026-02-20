@@ -18,23 +18,23 @@ body,
   width: 100%;
 }
 
-.ios-web {
+.app-web {
   -webkit-text-size-adjust: 100%;
 }
 
-.ios-web body {
+.app-web body {
   overscroll-behavior: none;
   touch-action: pan-x pan-y;
 }
 
-.ios-web #root {
+.app-web #root {
   min-height: var(--app-height, 100%);
   height: var(--app-height, 100%);
 }
 
-/* Prevent iOS auto-zoom on input focus */
-.ios-web input,
-.ios-web textarea,
-.ios-web select {
+/* Prevent mobile auto-zoom on input focus */
+.app-web input,
+.app-web textarea,
+.app-web select {
   font-size: 16px;
 }

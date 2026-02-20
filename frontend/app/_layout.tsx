@@ -28,13 +28,14 @@ export default function RootLayout() {
     if (Platform.OS !== "web") return;
     if (typeof document === "undefined" || typeof window === "undefined")
       return;
-    const isIOS =
+    const isMobile =
       typeof navigator !== "undefined" &&
-      /iPad|iPhone|iPod/.test(navigator.userAgent);
-    if (!isIOS) return;
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent,
+      );
 
     const root = document.documentElement;
-    root.classList.add("ios-web");
+    root.classList.add("app-web");
 
     const setAppHeight = () => {
       if (window.visualViewport) {
@@ -50,28 +51,37 @@ export default function RootLayout() {
     window.addEventListener("resize", setAppHeight);
     window.addEventListener("orientationchange", setAppHeight);
 
+    // Only prevent gesture zoom on iOS
+    const isIOS =
+      typeof navigator !== "undefined" &&
+      /iPad|iPhone|iPod/.test(navigator.userAgent);
+
     const preventGestureZoom = (event: Event) => {
       event.preventDefault();
     };
 
-    document.addEventListener("gesturestart", preventGestureZoom, {
-      passive: false,
-    });
-    document.addEventListener("gesturechange", preventGestureZoom, {
-      passive: false,
-    });
-    document.addEventListener("gestureend", preventGestureZoom, {
-      passive: false,
-    });
+    if (isIOS) {
+      document.addEventListener("gesturestart", preventGestureZoom, {
+        passive: false,
+      });
+      document.addEventListener("gesturechange", preventGestureZoom, {
+        passive: false,
+      });
+      document.addEventListener("gestureend", preventGestureZoom, {
+        passive: false,
+      });
+    }
 
     return () => {
       window.visualViewport?.removeEventListener("resize", setAppHeight);
       window.removeEventListener("resize", setAppHeight);
       window.removeEventListener("orientationchange", setAppHeight);
-      document.removeEventListener("gesturestart", preventGestureZoom);
-      document.removeEventListener("gesturechange", preventGestureZoom);
-      document.removeEventListener("gestureend", preventGestureZoom);
-      root.classList.remove("ios-web");
+      if (isIOS) {
+        document.removeEventListener("gesturestart", preventGestureZoom);
+        document.removeEventListener("gesturechange", preventGestureZoom);
+        document.removeEventListener("gestureend", preventGestureZoom);
+      }
+      root.classList.remove("app-web");
       root.style.removeProperty("--app-height");
     };
   }, []);
