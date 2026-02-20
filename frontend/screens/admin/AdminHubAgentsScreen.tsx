@@ -12,7 +12,6 @@ import {
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
-import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -79,11 +78,11 @@ export function AdminHubAgentsScreen() {
                 router.push("/admin/hub-a2a/new");
               }}
             />
-            <Button
-              label="Back"
-              size="xs"
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
               variant="secondary"
-              iconLeft="chevron-back"
               onPress={() => {
                 blurActiveElement();
                 if (router.canGoBack()) {

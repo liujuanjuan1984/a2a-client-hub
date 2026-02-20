@@ -369,7 +369,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
           rightElement={
             <IconButton
               accessibilityLabel="Go back"
-              icon="arrow-back"
+              icon="chevron-back"
               variant="outline"
               size="sm"
               onPress={handleCancel}
@@ -406,7 +406,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
         rightElement={
           <IconButton
             accessibilityLabel="Go back"
-            icon="arrow-back"
+            icon="chevron-back"
             variant="outline"
             size="sm"
             onPress={handleCancel}

@@ -1000,7 +1000,7 @@ export function ChatScreen({
               accessibilityLabel="Go back"
               accessibilityHint="Return to the previous screen"
             >
-              <Ionicons name="arrow-back" size={18} color="#ffffff" />
+              <Ionicons name="chevron-back" size={20} color="#ffffff" />
             </Pressable>
             <Pressable
               className="h-10 w-10 items-center justify-center rounded-full bg-primary"

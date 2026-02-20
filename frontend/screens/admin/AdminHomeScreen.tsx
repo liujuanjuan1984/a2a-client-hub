@@ -3,8 +3,8 @@ import { useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
-import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import { blurActiveElement } from "@/lib/focus";
@@ -60,11 +60,11 @@ export function AdminHomeScreen() {
         title="Admin"
         subtitle="System administration tools."
         rightElement={
-          <Button
-            label="Back"
-            size="xs"
+          <IconButton
+            accessibilityLabel="Go back"
+            icon="chevron-back"
+            size="sm"
             variant="secondary"
-            iconLeft="chevron-back"
             onPress={() => {
               blurActiveElement();
               if (router.canGoBack()) {

@@ -16,6 +16,7 @@ import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
@@ -178,11 +179,11 @@ export function AdminInvitationsScreen() {
         title="Invitations"
         subtitle="Create and manage invitation codes."
         rightElement={
-          <Button
-            label="Back"
-            size="xs"
+          <IconButton
+            accessibilityLabel="Go back"
+            icon="chevron-back"
+            size="sm"
             variant="secondary"
-            iconLeft="chevron-back"
             onPress={() => {
               blurActiveElement();
               if (router.canGoBack()) {
