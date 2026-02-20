@@ -714,12 +714,12 @@ export function ChatScreen({
           }`}
         >
           <View
-            className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+            className={`max-w-[94%] px-4 py-3 ${
               message.role === "user"
-                ? "bg-primary"
+                ? "rounded-2xl rounded-tr-sm bg-primary"
                 : message.role === "agent"
-                  ? "bg-slate-800"
-                  : "bg-slate-900"
+                  ? "rounded-2xl rounded-tl-sm bg-slate-800"
+                  : "rounded-2xl bg-slate-900"
             }`}
           >
             {hasBlocks ? (
