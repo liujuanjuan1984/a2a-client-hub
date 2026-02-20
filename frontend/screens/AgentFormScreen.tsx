@@ -1,4 +1,3 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -24,9 +23,8 @@ import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
-import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
-import { type AgentConfig, type AgentHeader } from "@/store/agents";
+import { type AgentHeader } from "@/store/agents";
 
 const authTypes: { label: string; value: AgentAuthType }[] = [
   { label: "No Auth", value: "none" },
@@ -92,7 +90,6 @@ const buildSnapshot = (value: {
 
 export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { data: agents = [], isFetched: hasFetchedAgents } =
     useAgentsCatalogQuery(true);
   const createAgentMutation = useCreateAgentMutation();
@@ -237,31 +234,18 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     goBackOrHome();
   }, [goBackOrHome]);
 
-  const handleSharedTest = useCallback(async () => {
+  const handleTest = useCallback(async () => {
     if (!agentId || !agent) return;
     blurActiveElement();
     try {
       await validateAgentMutation.mutateAsync(agentId);
+      toast.success("Connection OK", `${agent.name} is online.`);
     } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message === AGENT_ERROR_MESSAGES.notFound
-      ) {
-        toast.error("Agent unavailable", error.message);
-        return;
-      }
+      const message =
+        error instanceof Error ? error.message : "Connection failed.";
+      toast.error("Test failed", message);
     }
-
-    const updated = queryClient
-      .getQueryData<AgentConfig[]>(queryKeys.agents.catalog())
-      ?.find((item) => item.id === agentId);
-    if (!updated) return;
-    if (updated.status === "success") {
-      toast.success("Connection OK", `${updated.name} is online.`);
-    } else if (updated.status === "error") {
-      toast.error("Connection failed", updated.lastError);
-    }
-  }, [agent, agentId, queryClient, validateAgentMutation]);
+  }, [agent, agentId, validateAgentMutation]);
 
   const handleAddHeader = () => {
     setExtraHeaders((prev) => [...prev, createHeader()]);
@@ -399,12 +383,14 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
           <Text className="mt-2 text-sm text-muted">
             Please contact your administrator if you need changes to this agent.
           </Text>
-          <View className="mt-5 flex-row flex-wrap gap-3">
+          <View className="mt-6">
             <Button
               label="Test connection"
               size="sm"
               variant="secondary"
-              onPress={() => handleSharedTest()}
+              iconLeft="pulse-outline"
+              loading={validateAgentMutation.isPending}
+              onPress={handleTest}
             />
           </View>
         </View>
@@ -540,7 +526,18 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       </View>
 
       <View className="mt-10 flex-row items-center justify-between gap-3">
-        <Button label="Cancel" variant="outline" onPress={handleCancel} />
+        <View className="flex-row gap-2">
+          <Button label="Cancel" variant="outline" onPress={handleCancel} />
+          {agentId && (
+            <Button
+              label="Test"
+              variant="secondary"
+              iconLeft="pulse-outline"
+              loading={validateAgentMutation.isPending}
+              onPress={handleTest}
+            />
+          )}
+        </View>
         <Button
           label={saveStatus === "saving" ? "Saving..." : "Save"}
           onPress={handleSave}

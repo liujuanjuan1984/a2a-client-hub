@@ -19,7 +19,10 @@ import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
 import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
-import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
+import {
+  useAgentsCatalogQuery,
+  useValidateAgentMutation,
+} from "@/hooks/useAgentsCatalogQuery";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import {
   A2AExtensionCallError,
@@ -109,6 +112,8 @@ export function ChatScreen({
 
   const { data: agents = [], isFetched: hasFetchedAgents } =
     useAgentsCatalogQuery(true);
+  const validateAgentMutation = useValidateAgentMutation();
+
   const agent = useMemo(
     () => agents.find((item) => item.id === activeAgentId),
     [agents, activeAgentId],
@@ -436,19 +441,19 @@ export function ChatScreen({
     },
     [historyLoadingMore, historyNextPage, historyPaused, loadEarlierHistory],
   );
-  const statusColor = useMemo(() => {
-    if (agent?.status === "success") return "bg-emerald-500";
-    if (agent?.status === "error") return "bg-red-500";
-    if (agent?.status === "checking") return "bg-amber-500";
-    return "bg-slate-500";
-  }, [agent?.status]);
-  const statusLabel = useMemo(() => {
-    if (!agent) return "Idle";
-    if (agent.status === "success") return "Connected";
-    if (agent.status === "error") return "Failed";
-    if (agent.status === "checking") return "Checking";
-    return "Idle";
-  }, [agent]);
+
+  const handleTest = async () => {
+    if (!activeAgentId || !agent) return;
+    blurActiveElement();
+    try {
+      await validateAgentMutation.mutateAsync(activeAgentId);
+      toast.success("Connection OK", `${agent.name} is online.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Connection failed.";
+      toast.error("Test failed", message);
+    }
+  };
 
   const handleSend = () => {
     if (!activeAgentId || !conversationId || !agent) {
@@ -981,7 +986,6 @@ export function ChatScreen({
       >
         <View className="flex-row items-center justify-between">
           <View className="flex-1 flex-row items-center gap-2">
-            <View className={`h-2 w-2 rounded-full ${statusColor}`} />
             <View>
               <Text className="text-lg font-bold text-white" numberOfLines={1}>
                 {agent.name}
@@ -1068,12 +1072,6 @@ export function ChatScreen({
             <View className="h-[1px] bg-slate-800" />
 
             <View className="flex-row flex-wrap gap-4">
-              <View className="flex-1 min-w-[45%]">
-                <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
-                  Status
-                </Text>
-                <Text className="mt-1 text-xs text-white">{statusLabel}</Text>
-              </View>
               {session?.runtimeStatus ? (
                 <View className="flex-1 min-w-[45%]">
                   <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
@@ -1122,6 +1120,22 @@ export function ChatScreen({
                   </Text>
                 </View>
               ) : null}
+            </View>
+
+            <View className="h-[1px] bg-slate-800" />
+
+            <View className="flex-row items-center justify-between">
+              <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                Diagnostics
+              </Text>
+              <Button
+                label="Test Connection"
+                size="sm"
+                variant="secondary"
+                iconLeft="pulse-outline"
+                loading={validateAgentMutation.isPending}
+                onPress={handleTest}
+              />
             </View>
 
             <View className="h-[1px] bg-slate-800" />
