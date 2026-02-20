@@ -156,6 +156,7 @@ export function ChatScreen({
   } | null>(null);
   const loadingEarlierRef = useRef(false);
   const inputRef = useRef<TextInput>(null);
+  const isInitialLoadRef = useRef(true);
   const minInputHeight = 44;
   const maxInputHeight = 128;
   const [inputHeight, setInputHeight] = useState(minInputHeight);
@@ -375,8 +376,18 @@ export function ChatScreen({
       suppressAutoScrollRef.current = false;
       return;
     }
-    scheduleStickToBottom(true);
+    const animated = !isInitialLoadRef.current;
+    scheduleStickToBottom(animated);
+
+    if (isInitialLoadRef.current && messages.length > 0) {
+      isInitialLoadRef.current = false;
+    }
   }, [messages.length, scheduleStickToBottom]);
+
+  useEffect(() => {
+    // Reset initial load flag when conversation changes
+    isInitialLoadRef.current = true;
+  }, [conversationId]);
 
   const handleListContentSizeChange = useCallback(
     (_w: number, h: number) => {
