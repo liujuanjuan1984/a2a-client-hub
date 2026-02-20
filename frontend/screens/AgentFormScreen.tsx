@@ -4,6 +4,7 @@ import { Pressable, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { ScreenScrollView } from "@/components/layout/ScreenScrollView";
+import { BackButton } from "@/components/ui/BackButton";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
@@ -366,15 +367,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
         <PageHeader
           title="Agent"
           subtitle="This agent is provided by an admin and cannot be edited here."
-          rightElement={
-            <IconButton
-              accessibilityLabel="Go back"
-              icon="chevron-back"
-              variant="outline"
-              size="sm"
-              onPress={handleCancel}
-            />
-          }
+          rightElement={<BackButton variant="outline" onPress={handleCancel} />}
         />
         <View className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
           <Text className="text-base font-semibold text-white">
@@ -527,7 +520,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
 
       <View className="mt-10 flex-row items-center justify-between gap-3">
         <View className="flex-row gap-2">
-          <Button label="Cancel" variant="outline" onPress={handleCancel} />
+          <BackButton variant="outline" onPress={handleCancel} />
           {agentId && (
             <Button
               label="Test"

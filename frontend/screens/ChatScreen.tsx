@@ -17,6 +17,7 @@ import {
 
 import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
 import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
+import { BackButton } from "@/components/ui/BackButton";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import {
@@ -34,7 +35,6 @@ import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
 import { shouldStickToBottom } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
-import { backOrHome } from "@/lib/navigation";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
@@ -106,7 +106,6 @@ export function ChatScreen({
 }) {
   const router = useRouter();
   const insets = useAppSafeArea();
-  const goBackOrHome = useCallback(() => backOrHome(router), [router]);
   const storeActiveAgentId = useAgentStore((state) => state.activeAgentId);
   const activeAgentId = routeAgentId || storeActiveAgentId;
 
@@ -993,15 +992,7 @@ export function ChatScreen({
             </View>
           </View>
           <View className="flex-row items-center gap-3">
-            <Pressable
-              className="h-10 w-10 items-center justify-center rounded-full bg-slate-800/50"
-              onPress={goBackOrHome}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-              accessibilityHint="Return to the previous screen"
-            >
-              <Ionicons name="chevron-back" size={20} color="#ffffff" />
-            </Pressable>
+            <BackButton />
             <Pressable
               className="h-10 w-10 items-center justify-center rounded-full bg-primary"
               onPress={() => {
