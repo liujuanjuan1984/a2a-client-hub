@@ -1294,25 +1294,10 @@ export function ChatScreen({
           </View>
         ) : null}
 
-        <View className="flex-row items-end gap-3">
-          <Pressable
-            className={`h-11 w-11 items-center justify-center rounded-2xl ${
-              showPresets ? "bg-primary" : "bg-slate-800"
-            }`}
-            onPress={() => setShowPresets(!showPresets)}
-            accessibilityRole="button"
-            accessibilityLabel="Toggle shortcuts"
-            accessibilityHint="Show quick commands"
-          >
-            <Ionicons
-              name={showPresets ? "flash" : "flash-outline"}
-              size={20}
-              color={showPresets ? "#ffffff" : "#94a3b8"}
-            />
-          </Pressable>
+        <View className="flex-row items-end gap-2 bg-slate-900/50 p-2 rounded-3xl border border-slate-800">
           <TextInput
             ref={inputRef}
-            className="flex-1 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-white"
+            className="flex-1 px-3 py-2 text-white"
             placeholder="Type your message"
             placeholderTextColor="#6b7280"
             multiline
@@ -1330,19 +1315,35 @@ export function ChatScreen({
             blurOnSubmit={false}
             returnKeyType="default"
           />
-          <Pressable
-            className={`h-11 w-11 items-center justify-center rounded-2xl ${
-              !input.trim() || Boolean(pendingInterrupt)
-                ? "bg-slate-800 opacity-50"
-                : "bg-primary"
-            }`}
-            onPress={handleSend}
-            disabled={!input.trim() || Boolean(pendingInterrupt)}
-            accessibilityRole="button"
-            accessibilityLabel="Send message"
-          >
-            <Ionicons name="send" size={18} color="#ffffff" />
-          </Pressable>
+          <View className="flex-row items-center gap-1.5 pb-1">
+            <Pressable
+              className={`h-9 w-9 items-center justify-center rounded-xl ${
+                showPresets ? "bg-primary" : "bg-slate-800"
+              }`}
+              onPress={() => setShowPresets(!showPresets)}
+              accessibilityRole="button"
+              accessibilityLabel="Toggle shortcuts"
+            >
+              <Ionicons
+                name={showPresets ? "flash" : "flash-outline"}
+                size={18}
+                color={showPresets ? "#ffffff" : "#94a3b8"}
+              />
+            </Pressable>
+            <Pressable
+              className={`h-9 w-9 items-center justify-center rounded-xl ${
+                !input.trim() || Boolean(pendingInterrupt)
+                  ? "bg-slate-800 opacity-50"
+                  : "bg-primary"
+              }`}
+              onPress={handleSend}
+              disabled={!input.trim() || Boolean(pendingInterrupt)}
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+            >
+              <Ionicons name="send" size={16} color="#ffffff" />
+            </Pressable>
+          </View>
         </View>
       </View>
     </KeyboardAvoidingView>

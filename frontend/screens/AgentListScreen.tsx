@@ -133,12 +133,6 @@ export function AgentListScreen() {
                     >
                       {agent.name}
                     </Text>
-                    <Text
-                      className="mt-1 break-all text-xs text-muted"
-                      numberOfLines={1}
-                    >
-                      {agent.cardUrl}
-                    </Text>
                     {agent.source === "shared" ? (
                       <View className="mt-2 self-start rounded-full bg-slate-800/60 px-2.5 py-1">
                         <Text className="text-[11px] font-semibold text-slate-200">
@@ -172,7 +166,7 @@ export function AgentListScreen() {
                       name={
                         agent.source === "personal"
                           ? "create-outline"
-                          : "information-circle-outline"
+                          : "information-outline"
                       }
                       size={14}
                       color="#94a3b8"
