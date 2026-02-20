@@ -31,6 +31,20 @@ export default function RootLayout() {
     const root = document.documentElement;
     root.classList.add("ios-web");
 
+    const setAppHeight = () => {
+      if (window.visualViewport) {
+        const height = window.visualViewport.height;
+        root.style.setProperty("--app-height", `${height}px`);
+      } else {
+        root.style.setProperty("--app-height", `${window.innerHeight}px`);
+      }
+    };
+
+    setAppHeight();
+    window.visualViewport?.addEventListener("resize", setAppHeight);
+    window.addEventListener("resize", setAppHeight);
+    window.addEventListener("orientationchange", setAppHeight);
+
     const preventGestureZoom = (event: Event) => {
       event.preventDefault();
     };
@@ -46,10 +60,14 @@ export default function RootLayout() {
     });
 
     return () => {
+      window.visualViewport?.removeEventListener("resize", setAppHeight);
+      window.removeEventListener("resize", setAppHeight);
+      window.removeEventListener("orientationchange", setAppHeight);
       document.removeEventListener("gesturestart", preventGestureZoom);
       document.removeEventListener("gesturechange", preventGestureZoom);
       document.removeEventListener("gestureend", preventGestureZoom);
       root.classList.remove("ios-web");
+      root.style.removeProperty("--app-height");
     };
   }, []);
 
