@@ -403,9 +403,14 @@ export function ChatScreen({
         return;
       }
       contentHeightRef.current = h;
-      scheduleStickToBottom(false);
+      if (
+        session?.streamState === "streaming" ||
+        forceScrollToBottomRef.current
+      ) {
+        scheduleStickToBottom(false);
+      }
     },
-    [scheduleStickToBottom],
+    [scheduleStickToBottom, session?.streamState],
   );
 
   const handleListScroll = useCallback(
