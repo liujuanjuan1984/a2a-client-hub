@@ -1286,7 +1286,7 @@ export function ChatScreen({
 
         <View className="flex-row items-end gap-3">
           <Pressable
-            className={`rounded-2xl p-3 ${
+            className={`h-11 w-11 items-center justify-center rounded-2xl ${
               showPresets ? "bg-primary" : "bg-slate-800"
             }`}
             onPress={() => setShowPresets(!showPresets)}
@@ -1294,13 +1294,11 @@ export function ChatScreen({
             accessibilityLabel="Toggle shortcuts"
             accessibilityHint="Show quick commands"
           >
-            <Text
-              className={`text-[10px] font-bold ${
-                showPresets ? "text-white" : "text-slate-400"
-              }`}
-            >
-              Cmd
-            </Text>
+            <Ionicons
+              name={showPresets ? "flash" : "flash-outline"}
+              size={20}
+              color={showPresets ? "#ffffff" : "#94a3b8"}
+            />
           </Pressable>
           <TextInput
             ref={inputRef}
@@ -1322,12 +1320,19 @@ export function ChatScreen({
             blurOnSubmit={false}
             returnKeyType="default"
           />
-          <Button
-            label="Send"
-            testID="chat-send-button"
+          <Pressable
+            className={`h-11 w-11 items-center justify-center rounded-2xl ${
+              !input.trim() || Boolean(pendingInterrupt)
+                ? "bg-slate-800 opacity-50"
+                : "bg-primary"
+            }`}
             onPress={handleSend}
             disabled={!input.trim() || Boolean(pendingInterrupt)}
-          />
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+          >
+            <Ionicons name="send" size={18} color="#ffffff" />
+          </Pressable>
         </View>
       </View>
     </KeyboardAvoidingView>
