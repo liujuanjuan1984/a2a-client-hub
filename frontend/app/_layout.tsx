@@ -16,6 +16,11 @@ export default function RootLayout() {
     Platform.OS === "web" ? (
       <Head>
         <title>A2AClientHub</title>
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
       </Head>
     ) : null;
 
