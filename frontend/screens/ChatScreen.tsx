@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -706,10 +707,70 @@ export function ChatScreen({
     [],
   );
 
+  const handleRetry = useCallback(() => {
+    if (
+      !conversationId ||
+      !activeAgentId ||
+      session?.streamState === "streaming"
+    )
+      return;
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === "user") {
+      sendMessage(
+        conversationId,
+        activeAgentId,
+        lastMessage.content,
+        agent?.source || "personal",
+      );
+    } else {
+      const lastUserMessage = [...messages]
+        .reverse()
+        .find((m) => m.role === "user");
+      if (lastUserMessage) {
+        sendMessage(
+          conversationId,
+          activeAgentId,
+          lastUserMessage.content,
+          agent?.source || "personal",
+        );
+      }
+    }
+  }, [
+    activeAgentId,
+    agent?.source,
+    conversationId,
+    messages,
+    sendMessage,
+    session?.streamState,
+  ]);
+
+  const handleCopyMessage = useCallback(async (message: ChatMessage) => {
+    try {
+      let textToCopy = message.content;
+      if (message.role === "agent" && message.blocks?.length) {
+        const blockContent = message.blocks
+          .map((b) => `[${b.type}]\n${b.content}`)
+          .join("\n\n");
+        if (blockContent) {
+          textToCopy = `${blockContent}\n\n${textToCopy}`;
+        }
+      }
+      await Clipboard.setStringAsync(textToCopy.trim());
+      toast.success("Copied", "Message copied to clipboard.");
+    } catch {
+      toast.error("Copy failed", "Could not copy message.");
+    }
+  }, []);
+
   const renderChatMessage = useCallback(
-    ({ item: message }: { item: ChatMessage }) => {
+    ({ item: message, index }: { item: ChatMessage; index: number }) => {
       const renderableBlocks = deriveRenderableBlocks(message);
       const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
+      const isLastMessage = index === messages.length - 1;
+      const canRetry =
+        isLastMessage &&
+        message.role === "agent" &&
+        session?.streamState !== "streaming";
 
       return (
         <View
@@ -717,7 +778,9 @@ export function ChatScreen({
             message.role === "user" ? "items-end" : "items-start"
           }`}
         >
-          <View
+          <Pressable
+            onLongPress={() => handleCopyMessage(message)}
+            delayLongPress={500}
             className={`max-w-[94%] px-4 py-3 ${
               message.role === "user"
                 ? "rounded-2xl rounded-tr-sm bg-primary"
@@ -727,16 +790,18 @@ export function ChatScreen({
             }`}
           >
             {hasBlocks ? (
-              renderableBlocks.map((block, index) => {
+              renderableBlocks.map((block, blockIndex) => {
                 const blockText = block.content;
                 if (blockText.length === 0) return null;
-                const blockId = block.id || `${message.id}:${index}`;
+                const blockId = block.id || `${message.id}:${blockIndex}`;
                 if (block.type === "reasoning") {
                   const expanded = Boolean(expandedReasoningByBlockId[blockId]);
                   return (
                     <View
                       key={blockId}
-                      className={`${index > 0 ? "mt-3" : ""} rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                      className={`${
+                        blockIndex > 0 ? "mt-3" : ""
+                      } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
                     >
                       <Pressable onPress={() => toggleReasoning(blockId)}>
                         <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
@@ -756,7 +821,9 @@ export function ChatScreen({
                   return (
                     <View
                       key={blockId}
-                      className={`${index > 0 ? "mt-3" : ""} rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                      className={`${
+                        blockIndex > 0 ? "mt-3" : ""
+                      } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
                     >
                       <Pressable onPress={() => toggleToolCall(blockId)}>
                         <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
@@ -775,7 +842,9 @@ export function ChatScreen({
                   return (
                     <Text
                       key={blockId}
-                      className={`${index > 0 ? "mt-3" : ""} break-all text-sm text-white`}
+                      className={`${
+                        blockIndex > 0 ? "mt-3" : ""
+                      } break-all text-sm text-white`}
                     >
                       {blockText}
                     </Text>
@@ -784,7 +853,9 @@ export function ChatScreen({
                 return (
                   <View
                     key={blockId}
-                    className={`${index > 0 ? "mt-3" : ""} rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                    className={`${
+                      blockIndex > 0 ? "mt-3" : ""
+                    } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
                   >
                     <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
                       {block.type}
@@ -803,7 +874,18 @@ export function ChatScreen({
             {message.status === "streaming" ? (
               <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
             ) : null}
-          </View>
+          </Pressable>
+          {canRetry && (
+            <Pressable
+              onPress={handleRetry}
+              className="mt-1.5 flex-row items-center gap-1 opacity-70"
+            >
+              <Ionicons name="refresh" size={12} color="#94a3b8" />
+              <Text className="text-[10px] font-semibold text-slate-400">
+                Retry
+              </Text>
+            </Pressable>
+          )}
         </View>
       );
     },
@@ -811,6 +893,12 @@ export function ChatScreen({
       deriveRenderableBlocks,
       expandedReasoningByBlockId,
       expandedToolCallByBlockId,
+      handleCopyMessage,
+      handleRetry,
+      messages.length,
+      session?.streamState,
+      toggleReasoning,
+      toggleToolCall,
     ],
   );
 
