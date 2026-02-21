@@ -790,6 +790,8 @@ export function ChatScreen({
         message.role === "agent" &&
         session?.streamState &&
         ["error", "recoverable"].includes(session.streamState);
+      const userCopyButtonPositionClass =
+        message.role === "user" ? "right-2" : "right-2";
 
       return (
         <View
@@ -908,7 +910,7 @@ export function ChatScreen({
               ) : null}
             </Pressable>
             <Pressable
-              className="absolute bottom-2 right-2 rounded-lg px-2 py-2 opacity-45"
+              className={`absolute bottom-2 ${userCopyButtonPositionClass} rounded-lg px-2 py-2 opacity-45`}
               onPress={() => handleCopyMessage(message)}
               accessibilityRole="button"
               accessibilityLabel="Copy message"
