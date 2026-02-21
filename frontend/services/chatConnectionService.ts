@@ -108,7 +108,7 @@ const resolveWsText = async (data: unknown): Promise<string | null> => {
   return null;
 };
 
-export class ChatConnectionService {
+class ChatConnectionService {
   private readonly abortControllers = new Map<string, AbortController>();
   private readonly wsConnections = new Map<string, WsConnection>();
 
