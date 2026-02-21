@@ -796,11 +796,11 @@ export function ChatScreen({
             message.role === "user" ? "items-end" : "items-start"
           }`}
         >
-          <View className="max-w-[94%] flex-row items-start">
+          <View className="max-w-[94%]">
             <Pressable
               onLongPress={() => handleCopyMessage(message)}
               delayLongPress={500}
-              className={`flex-1 px-4 py-3 ${
+              className={`px-4 py-3 ${
                 message.role === "user"
                   ? "rounded-2xl rounded-tr-sm bg-primary"
                   : message.role === "agent"
@@ -906,18 +906,24 @@ export function ChatScreen({
                 </Text>
               ) : null}
             </Pressable>
-            <Pressable
-              className="ml-2 mt-1 rounded-lg px-2 py-2 opacity-60 hover:opacity-100"
-              onPress={() => handleCopyMessage(message)}
-              accessibilityRole="button"
-              accessibilityLabel="Copy message"
+            <View
+              className={`mt-2 flex-row ${
+                message.role === "user" ? "justify-start" : "justify-end"
+              }`}
             >
-              <Ionicons
-                name="copy-outline"
-                size={16}
-                color={message.role === "user" ? "#ffffff" : "#cbd5e1"}
-              />
-            </Pressable>
+              <Pressable
+                className="rounded-lg px-2 py-2 opacity-60"
+                onPress={() => handleCopyMessage(message)}
+                accessibilityRole="button"
+                accessibilityLabel="Copy message"
+              >
+                <Ionicons
+                  name="copy-outline"
+                  size={16}
+                  color={message.role === "user" ? "#ffffff" : "#cbd5e1"}
+                />
+              </Pressable>
+            </View>
           </View>
           {canRetry && (
             <Pressable
