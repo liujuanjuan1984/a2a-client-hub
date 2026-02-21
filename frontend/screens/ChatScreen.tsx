@@ -790,8 +790,7 @@ export function ChatScreen({
         message.role === "agent" &&
         session?.streamState &&
         ["error", "recoverable"].includes(session.streamState);
-      const userCopyButtonPositionClass =
-        message.role === "user" ? "right-2" : "right-2";
+      const userCopyButtonPositionClass = "right-0";
 
       return (
         <View
