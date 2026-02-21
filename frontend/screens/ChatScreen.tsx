@@ -176,7 +176,7 @@ export function ChatScreen({
     paused: historyPaused,
   });
 
-  useRefreshOnFocus(sessionHistoryQuery.loadFirstPage);
+  useRefreshOnFocus(() => sessionHistoryQuery.loadFirstPage("refreshing"));
 
   const historyLoading = sessionHistoryQuery.loading;
   const historyLoadingMore = sessionHistoryQuery.loadingMore;
@@ -302,6 +302,10 @@ export function ChatScreen({
         merged.set(message.id, message);
       });
       incoming.forEach((message) => {
+        const existing = merged.get(message.id);
+        if (existing && existing.status === "streaming") {
+          return;
+        }
         merged.set(message.id, message);
       });
       const nextMessages = Array.from(merged.values()).sort((a, b) =>

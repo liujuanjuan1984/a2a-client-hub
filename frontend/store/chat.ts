@@ -547,6 +547,10 @@ export const useChatStore = create<ChatState>()(
             merged.set(message.id, message);
           });
           incoming.forEach((message) => {
+            const existing = merged.get(message.id);
+            if (existing && existing.status === "streaming") {
+              return;
+            }
             merged.set(message.id, message);
           });
           const nextMessages = Array.from(merged.values()).sort((left, right) =>

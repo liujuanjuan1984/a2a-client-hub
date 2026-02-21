@@ -32,9 +32,10 @@ export function useSessionHistoryQuery(options: {
     errorTitle: "Load history failed",
     fallbackMessage: "Load failed.",
     enabled: enabled && Boolean(conversationId) && !paused,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     refetchOnMount: true,
+    staleTime: 0,
   });
 
   const messages = useMemo(() => {
