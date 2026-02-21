@@ -21,6 +21,9 @@ export function useRefreshOnFocus<T>(refetch: () => Promise<T>) {
   );
 
   useEffect(() => {
+    if (!AppState || typeof AppState.addEventListener !== "function") {
+      return;
+    }
     const subscription = AppState.addEventListener(
       "change",
       (status: AppStateStatus) => {
@@ -29,6 +32,6 @@ export function useRefreshOnFocus<T>(refetch: () => Promise<T>) {
         }
       },
     );
-    return () => subscription.remove();
+    return () => subscription?.remove?.();
   }, [refetch]);
 }
