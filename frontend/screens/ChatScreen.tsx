@@ -26,6 +26,7 @@ import {
   useValidateAgentMutation,
 } from "@/hooks/useAgentsCatalogQuery";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
+import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import {
   A2AExtensionCallError,
   rejectOpencodeQuestionInterrupt,
@@ -174,6 +175,8 @@ export function ChatScreen({
     enabled: Boolean(conversationId),
     paused: historyPaused,
   });
+
+  useRefreshOnFocus(sessionHistoryQuery.loadFirstPage);
 
   const historyLoading = sessionHistoryQuery.loading;
   const historyLoadingMore = sessionHistoryQuery.loadingMore;

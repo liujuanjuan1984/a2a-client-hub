@@ -32,7 +32,9 @@ import {
 import { generateId, generateUuid } from "@/lib/id";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import { createPersistStorage } from "@/lib/storage/mmkv";
+import { queryKeys } from "@/lib/queryKeys";
 import { chatConnectionService } from "@/services/chatConnectionService";
+import { queryClient } from "@/services/queryClient";
 import { type AgentSource } from "@/store/agents";
 import { useMessageStore } from "@/store/messages";
 
@@ -623,6 +625,9 @@ export const useChatStore = create<ChatState>()(
 
           if (recovered.size > 0) {
             mergeHistoryMessagesById(Array.from(recovered.values()));
+            queryClient.invalidateQueries({
+              queryKey: queryKeys.history.chat(conversationId),
+            });
           }
         };
 
