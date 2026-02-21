@@ -1,11 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
 
-export type A2AExtensionQueryRequest = {
-  page?: number;
-  size?: number | null;
-  query?: Record<string, unknown> | null;
-};
-
 export type A2AExtensionResponse = {
   success: boolean;
   result?: Record<string, unknown> | null;
