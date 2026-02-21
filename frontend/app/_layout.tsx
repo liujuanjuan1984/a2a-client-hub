@@ -34,6 +34,8 @@ export default function RootLayout() {
         navigator.userAgent,
       );
 
+    if (!isMobile) return;
+
     const root = document.documentElement;
     root.classList.add("app-web");
 

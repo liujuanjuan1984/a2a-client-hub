@@ -1424,6 +1424,7 @@ export function ChatScreen({
                   ? "bg-slate-800 opacity-50"
                   : "bg-primary"
               }`}
+              testID="chat-send-button"
               onPress={handleSend}
               disabled={!input.trim() || Boolean(pendingInterrupt)}
               accessibilityRole="button"

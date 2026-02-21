@@ -153,6 +153,10 @@ jest.mock("@/hooks/useAgentsCatalogQuery", () => ({
     ],
     isFetched: true,
   }),
+  useValidateAgentMutation: () => ({
+    mutateAsync: jest.fn(),
+    isPending: false,
+  }),
 }));
 
 jest.mock("@/hooks/useChatHistoryQuery", () => ({
