@@ -14,6 +14,7 @@ import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
@@ -167,11 +168,11 @@ export function AdminHubAgentAllowlistScreen({
           title="Allowlist"
           subtitle="Missing agent id."
           rightElement={
-            <Button
-              label="Back"
-              size="xs"
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
               variant="secondary"
-              iconLeft="chevron-back"
               onPress={() => backOrHome(router, "/admin/hub-a2a")}
             />
           }
@@ -195,11 +196,11 @@ export function AdminHubAgentAllowlistScreen({
           title="Allowlist"
           subtitle="Shared agent"
           rightElement={
-            <Button
-              label="Back"
-              size="xs"
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
               variant="secondary"
-              iconLeft="chevron-back"
               onPress={() => backOrHome(router, "/admin/hub-a2a")}
             />
           }
@@ -230,11 +231,11 @@ export function AdminHubAgentAllowlistScreen({
           title="Allowlist"
           subtitle={agentQuery.data?.name ?? "Shared agent"}
           rightElement={
-            <Button
-              label="Back"
-              size="xs"
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
               variant="secondary"
-              iconLeft="chevron-back"
               onPress={() => backOrHome(router, "/admin/hub-a2a")}
             />
           }
@@ -262,11 +263,11 @@ export function AdminHubAgentAllowlistScreen({
           title="Allowlist"
           subtitle={agentQuery.data?.name ?? "Shared agent"}
           rightElement={
-            <Button
-              label="Back"
-              size="xs"
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
               variant="secondary"
-              iconLeft="chevron-back"
               onPress={() => backOrHome(router, "/admin/hub-a2a")}
             />
           }
@@ -296,11 +297,11 @@ export function AdminHubAgentAllowlistScreen({
         title="Allowlist"
         subtitle={agentQuery.data?.name ?? "Shared agent"}
         rightElement={
-          <Button
-            label="Back"
-            size="xs"
+          <IconButton
+            accessibilityLabel="Go back"
+            icon="chevron-back"
+            size="sm"
             variant="secondary"
-            iconLeft="chevron-back"
             onPress={() => backOrHome(router, "/admin/hub-a2a")}
           />
         }

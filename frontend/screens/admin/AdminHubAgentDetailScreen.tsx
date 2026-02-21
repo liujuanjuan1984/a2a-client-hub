@@ -7,6 +7,7 @@ import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
@@ -206,11 +207,11 @@ export function AdminHubAgentDetailScreen({
           title="Shared agent"
           subtitle="Missing agent id."
           rightElement={
-            <Button
-              label="Back"
-              size="xs"
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
               variant="secondary"
-              iconLeft="chevron-back"
               onPress={() => backOrHome(router, "/admin/hub-a2a")}
             />
           }
@@ -235,11 +236,11 @@ export function AdminHubAgentDetailScreen({
         title="Shared agent"
         subtitle="Update directory entry and credentials."
         rightElement={
-          <Button
-            label="Back"
-            size="xs"
+          <IconButton
+            accessibilityLabel="Go back"
+            icon="chevron-back"
+            size="sm"
             variant="secondary"
-            iconLeft="chevron-back"
             onPress={() => backOrHome(router, "/admin/hub-a2a")}
           />
         }

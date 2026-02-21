@@ -1,5 +1,6 @@
 (globalThis as any).__DEV__ = true;
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as any).IS_REACT_NATIVE_TEST_ENVIRONMENT = true;
 (globalThis as any).__fbBatchedBridgeConfig = (globalThis as any)
   .__fbBatchedBridgeConfig ?? {
   remoteModuleConfig: [],
@@ -23,6 +24,19 @@
   });
 
 const NativeModules = require("react-native/Libraries/BatchedBridge/NativeModules");
+const originalTurboModuleProxy = (globalThis as any).__turboModuleProxy;
+
+NativeModules.KeyboardObserver = NativeModules.KeyboardObserver ?? {
+  addListener: jest.fn(),
+  removeListeners: jest.fn(),
+};
+
+(globalThis as any).__turboModuleProxy = (name: string) => {
+  if (name === "KeyboardObserver") {
+    return NativeModules.KeyboardObserver;
+  }
+  return originalTurboModuleProxy(name);
+};
 
 NativeModules.NativeUnimoduleProxy =
   NativeModules.NativeUnimoduleProxy ?? ({ viewManagersMetadata: {} } as any);

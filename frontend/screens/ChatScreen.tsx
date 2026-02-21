@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -17,9 +18,13 @@ import {
 
 import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
 import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
+import { BackButton } from "@/components/ui/BackButton";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
-import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
+import {
+  useAgentsCatalogQuery,
+  useValidateAgentMutation,
+} from "@/hooks/useAgentsCatalogQuery";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import {
   A2AExtensionCallError,
@@ -31,7 +36,6 @@ import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
 import { shouldStickToBottom } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
-import { backOrHome } from "@/lib/navigation";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
@@ -103,12 +107,13 @@ export function ChatScreen({
 }) {
   const router = useRouter();
   const insets = useAppSafeArea();
-  const goBackOrHome = useCallback(() => backOrHome(router), [router]);
   const storeActiveAgentId = useAgentStore((state) => state.activeAgentId);
   const activeAgentId = routeAgentId || storeActiveAgentId;
 
   const { data: agents = [], isFetched: hasFetchedAgents } =
     useAgentsCatalogQuery(true);
+  const validateAgentMutation = useValidateAgentMutation();
+
   const agent = useMemo(
     () => agents.find((item) => item.id === activeAgentId),
     [agents, activeAgentId],
@@ -156,6 +161,7 @@ export function ChatScreen({
   } | null>(null);
   const loadingEarlierRef = useRef(false);
   const inputRef = useRef<TextInput>(null);
+  const isInitialLoadRef = useRef(true);
   const minInputHeight = 44;
   const maxInputHeight = 128;
   const [inputHeight, setInputHeight] = useState(minInputHeight);
@@ -375,8 +381,18 @@ export function ChatScreen({
       suppressAutoScrollRef.current = false;
       return;
     }
-    scheduleStickToBottom(true);
+    const animated = !isInitialLoadRef.current;
+    scheduleStickToBottom(animated);
+
+    if (isInitialLoadRef.current && messages.length > 0) {
+      isInitialLoadRef.current = false;
+    }
   }, [messages.length, scheduleStickToBottom]);
+
+  useEffect(() => {
+    // Reset initial load flag when conversation changes
+    isInitialLoadRef.current = true;
+  }, [conversationId]);
 
   const handleListContentSizeChange = useCallback(
     (_w: number, h: number) => {
@@ -392,9 +408,14 @@ export function ChatScreen({
         return;
       }
       contentHeightRef.current = h;
-      scheduleStickToBottom(false);
+      if (
+        session?.streamState === "streaming" ||
+        forceScrollToBottomRef.current
+      ) {
+        scheduleStickToBottom(false);
+      }
     },
-    [scheduleStickToBottom],
+    [scheduleStickToBottom, session?.streamState],
   );
 
   const handleListScroll = useCallback(
@@ -420,19 +441,19 @@ export function ChatScreen({
     },
     [historyLoadingMore, historyNextPage, historyPaused, loadEarlierHistory],
   );
-  const statusColor = useMemo(() => {
-    if (agent?.status === "success") return "bg-emerald-500";
-    if (agent?.status === "error") return "bg-red-500";
-    if (agent?.status === "checking") return "bg-amber-500";
-    return "bg-slate-500";
-  }, [agent?.status]);
-  const statusLabel = useMemo(() => {
-    if (!agent) return "Idle";
-    if (agent.status === "success") return "Connected";
-    if (agent.status === "error") return "Failed";
-    if (agent.status === "checking") return "Checking";
-    return "Idle";
-  }, [agent]);
+
+  const handleTest = async () => {
+    if (!activeAgentId || !agent) return;
+    blurActiveElement();
+    try {
+      await validateAgentMutation.mutateAsync(activeAgentId);
+      toast.success("Connection OK", `${agent.name} is online.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Connection failed.";
+      toast.error("Test failed", message);
+    }
+  };
 
   const handleSend = () => {
     if (!activeAgentId || !conversationId || !agent) {
@@ -686,10 +707,90 @@ export function ChatScreen({
     [],
   );
 
+  const handleRetry = useCallback(() => {
+    if (
+      !conversationId ||
+      !activeAgentId ||
+      session?.streamState === "streaming"
+    )
+      return;
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === "user") {
+      sendMessage(
+        conversationId,
+        activeAgentId,
+        lastMessage.content,
+        agent?.source || "personal",
+      );
+    } else {
+      const lastUserMessage = [...messages]
+        .reverse()
+        .find((m) => m.role === "user");
+      if (lastUserMessage) {
+        sendMessage(
+          conversationId,
+          activeAgentId,
+          lastUserMessage.content,
+          agent?.source || "personal",
+        );
+      }
+    }
+  }, [
+    activeAgentId,
+    agent?.source,
+    conversationId,
+    messages,
+    sendMessage,
+    session?.streamState,
+  ]);
+
+  const handleCopyPayload = useCallback(async (text: string) => {
+    if (Platform.OS === "web" && typeof navigator !== "undefined") {
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return;
+        } catch {
+          // Fall back to Expo clipboard API when browser clipboard write is blocked.
+        }
+      }
+    }
+
+    await Clipboard.setStringAsync(text);
+  }, []);
+
+  const handleCopyMessage = useCallback(
+    async (message: ChatMessage) => {
+      try {
+        let textToCopy = message.content;
+        if (message.role === "agent" && message.blocks?.length) {
+          const blockContent = message.blocks
+            .map((b) => `[${b.type}]\n${b.content}`)
+            .join("\n\n");
+          if (blockContent) {
+            textToCopy = `${blockContent}\n\n${textToCopy}`;
+          }
+        }
+        await handleCopyPayload(textToCopy.trim());
+        toast.success("Copied", "Message copied to clipboard.");
+      } catch {
+        toast.error("Copy failed", "Could not copy message.");
+      }
+    },
+    [handleCopyPayload],
+  );
+
   const renderChatMessage = useCallback(
-    ({ item: message }: { item: ChatMessage }) => {
+    ({ item: message, index }: { item: ChatMessage; index: number }) => {
       const renderableBlocks = deriveRenderableBlocks(message);
       const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
+      const isLastMessage = index === messages.length - 1;
+      const canRetry =
+        isLastMessage &&
+        message.role === "agent" &&
+        session?.streamState &&
+        ["error", "recoverable"].includes(session.streamState);
+      const userCopyButtonPositionClass = "right-0";
 
       return (
         <View
@@ -697,93 +798,140 @@ export function ChatScreen({
             message.role === "user" ? "items-end" : "items-start"
           }`}
         >
-          <View
-            className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-              message.role === "user"
-                ? "bg-primary"
-                : message.role === "agent"
-                  ? "bg-slate-800"
-                  : "bg-slate-900"
-            }`}
-          >
-            {hasBlocks ? (
-              renderableBlocks.map((block, index) => {
-                const blockText = block.content;
-                if (blockText.length === 0) return null;
-                const blockId = block.id || `${message.id}:${index}`;
-                if (block.type === "reasoning") {
-                  const expanded = Boolean(expandedReasoningByBlockId[blockId]);
+          <View className="max-w-[94%] relative">
+            <Pressable
+              onLongPress={() => handleCopyMessage(message)}
+              delayLongPress={500}
+              className={`px-4 py-3 ${
+                message.role === "user"
+                  ? "rounded-2xl rounded-tr-sm bg-primary"
+                  : message.role === "agent"
+                    ? "rounded-2xl rounded-tl-sm bg-slate-800"
+                    : "rounded-2xl bg-slate-900"
+              }`}
+            >
+              {hasBlocks ? (
+                renderableBlocks.map((block, blockIndex) => {
+                  const blockText = block.content;
+                  if (blockText.length === 0) return null;
+                  const blockId = block.id || `${message.id}:${blockIndex}`;
+                  if (block.type === "reasoning") {
+                    const expanded = expandedReasoningByBlockId[blockId];
+                    return (
+                      <View
+                        key={blockId}
+                        className={`${
+                          blockIndex > 0 ? "mt-3" : ""
+                        } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                      >
+                        <Pressable onPress={() => toggleReasoning(blockId)}>
+                          <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                            {expanded ? "Hide Reasoning" : "Show Reasoning"}
+                          </Text>
+                        </Pressable>
+                        {expanded ? (
+                          <Text
+                            selectable
+                            className="mt-1 break-all text-xs text-slate-300"
+                          >
+                            {blockText}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  }
+                  if (block.type === "tool_call") {
+                    const expanded = expandedToolCallByBlockId[blockId];
+                    return (
+                      <View
+                        key={blockId}
+                        className={`${
+                          blockIndex > 0 ? "mt-3" : ""
+                        } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                      >
+                        <Pressable onPress={() => toggleToolCall(blockId)}>
+                          <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                            {expanded ? "Hide Tool Call" : "Show Tool Call"}
+                          </Text>
+                        </Pressable>
+                        {expanded ? (
+                          <Text
+                            selectable
+                            className="mt-1 break-all text-xs text-slate-300"
+                          >
+                            {blockText}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  }
+                  if (block.type === "text") {
+                    return (
+                      <Text
+                        key={blockId}
+                        selectable
+                        className={`${
+                          blockIndex > 0 ? "mt-3" : ""
+                        } break-all text-sm text-white`}
+                      >
+                        {blockText}
+                      </Text>
+                    );
+                  }
                   return (
                     <View
                       key={blockId}
-                      className={`${index > 0 ? "mt-3" : ""} rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                      className={`${
+                        blockIndex > 0 ? "mt-3" : ""
+                      } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
                     >
-                      <Pressable onPress={() => toggleReasoning(blockId)}>
-                        <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                          {expanded ? "Hide Reasoning" : "Show Reasoning"}
-                        </Text>
-                      </Pressable>
-                      {expanded ? (
-                        <Text className="mt-1 break-all text-xs text-slate-300">
-                          {blockText}
-                        </Text>
-                      ) : null}
+                      <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                        {block.type}
+                      </Text>
+                      <Text
+                        selectable
+                        className="mt-1 break-all text-xs text-slate-300"
+                      >
+                        {blockText}
+                      </Text>
                     </View>
                   );
-                }
-                if (block.type === "tool_call") {
-                  const expanded = Boolean(expandedToolCallByBlockId[blockId]);
-                  return (
-                    <View
-                      key={blockId}
-                      className={`${index > 0 ? "mt-3" : ""} rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                    >
-                      <Pressable onPress={() => toggleToolCall(blockId)}>
-                        <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                          {expanded ? "Hide Tool Call" : "Show Tool Call"}
-                        </Text>
-                      </Pressable>
-                      {expanded ? (
-                        <Text className="mt-1 break-all text-xs text-slate-300">
-                          {blockText}
-                        </Text>
-                      ) : null}
-                    </View>
-                  );
-                }
-                if (block.type === "text") {
-                  return (
-                    <Text
-                      key={blockId}
-                      className={`${index > 0 ? "mt-3" : ""} break-all text-sm text-white`}
-                    >
-                      {blockText}
-                    </Text>
-                  );
-                }
-                return (
-                  <View
-                    key={blockId}
-                    className={`${index > 0 ? "mt-3" : ""} rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                  >
-                    <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                      {block.type}
-                    </Text>
-                    <Text className="mt-1 break-all text-xs text-slate-300">
-                      {blockText}
-                    </Text>
-                  </View>
-                );
-              })
-            ) : (
-              <Text className="break-all text-sm text-white">
-                {message.content}
-              </Text>
-            )}
-            {message.status === "streaming" ? (
-              <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
-            ) : null}
+                })
+              ) : (
+                <Text selectable className="break-all text-sm text-white">
+                  {message.content}
+                </Text>
+              )}
+              {message.status === "streaming" ? (
+                <Text className="mt-1 text-[10px] text-muted">
+                  Streaming...
+                </Text>
+              ) : null}
+            </Pressable>
+            <Pressable
+              className={`absolute bottom-2 ${userCopyButtonPositionClass} rounded-lg px-2 py-2 opacity-45`}
+              onPress={() => handleCopyMessage(message)}
+              accessibilityRole="button"
+              accessibilityLabel="Copy message"
+            >
+              <Ionicons
+                name="copy-outline"
+                size={16}
+                color={message.role === "user" ? "#ffffff" : "#cbd5e1"}
+              />
+            </Pressable>
           </View>
+          {canRetry && (
+            <Pressable
+              onPress={handleRetry}
+              className="mt-1.5 flex-row items-center gap-1 opacity-70"
+            >
+              <Ionicons name="refresh" size={12} color="#94a3b8" />
+              <Text className="text-[10px] font-semibold text-slate-400">
+                Retry
+              </Text>
+            </Pressable>
+          )}
         </View>
       );
     },
@@ -791,6 +939,12 @@ export function ChatScreen({
       deriveRenderableBlocks,
       expandedReasoningByBlockId,
       expandedToolCallByBlockId,
+      handleCopyMessage,
+      handleRetry,
+      messages.length,
+      session?.streamState,
+      toggleReasoning,
+      toggleToolCall,
     ],
   );
 
@@ -965,7 +1119,6 @@ export function ChatScreen({
       >
         <View className="flex-row items-center justify-between">
           <View className="flex-1 flex-row items-center gap-2">
-            <View className={`h-2 w-2 rounded-full ${statusColor}`} />
             <View>
               <Text className="text-lg font-bold text-white" numberOfLines={1}>
                 {agent.name}
@@ -973,15 +1126,7 @@ export function ChatScreen({
             </View>
           </View>
           <View className="flex-row items-center gap-3">
-            <Pressable
-              className="h-10 w-10 items-center justify-center rounded-full bg-slate-800/50"
-              onPress={goBackOrHome}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-              accessibilityHint="Return to the previous screen"
-            >
-              <Ionicons name="arrow-back" size={18} color="#ffffff" />
-            </Pressable>
+            <BackButton />
             <Pressable
               className="h-10 w-10 items-center justify-center rounded-full bg-primary"
               onPress={() => {
@@ -1052,12 +1197,6 @@ export function ChatScreen({
             <View className="h-[1px] bg-slate-800" />
 
             <View className="flex-row flex-wrap gap-4">
-              <View className="flex-1 min-w-[45%]">
-                <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
-                  Status
-                </Text>
-                <Text className="mt-1 text-xs text-white">{statusLabel}</Text>
-              </View>
               {session?.runtimeStatus ? (
                 <View className="flex-1 min-w-[45%]">
                   <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
@@ -1106,6 +1245,22 @@ export function ChatScreen({
                   </Text>
                 </View>
               ) : null}
+            </View>
+
+            <View className="h-[1px] bg-slate-800" />
+
+            <View className="flex-row items-center justify-between">
+              <Text className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                Diagnostics
+              </Text>
+              <Button
+                label="Test Connection"
+                size="sm"
+                variant="secondary"
+                iconLeft="pulse-outline"
+                loading={validateAgentMutation.isPending}
+                onPress={handleTest}
+              />
             </View>
 
             <View className="h-[1px] bg-slate-800" />
@@ -1273,27 +1428,24 @@ export function ChatScreen({
           </View>
         ) : null}
 
-        <View className="flex-row items-end gap-3">
+        <View className="flex-row items-end gap-2 bg-slate-900/50 p-2 rounded-3xl border border-slate-800">
           <Pressable
-            className={`rounded-2xl p-3 ${
+            className={`h-9 w-9 items-center justify-center rounded-xl ${
               showPresets ? "bg-primary" : "bg-slate-800"
             }`}
             onPress={() => setShowPresets(!showPresets)}
             accessibilityRole="button"
             accessibilityLabel="Toggle shortcuts"
-            accessibilityHint="Show quick commands"
           >
-            <Text
-              className={`text-[10px] font-bold ${
-                showPresets ? "text-white" : "text-slate-400"
-              }`}
-            >
-              Cmd
-            </Text>
+            <Ionicons
+              name={showPresets ? "flash" : "flash-outline"}
+              size={18}
+              color={showPresets ? "#ffffff" : "#94a3b8"}
+            />
           </Pressable>
           <TextInput
             ref={inputRef}
-            className="flex-1 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-white"
+            className="flex-1 px-3 py-2 text-white"
             placeholder="Type your message"
             placeholderTextColor="#6b7280"
             multiline
@@ -1311,12 +1463,20 @@ export function ChatScreen({
             blurOnSubmit={false}
             returnKeyType="default"
           />
-          <Button
-            label="Send"
+          <Pressable
+            className={`h-9 w-9 items-center justify-center rounded-xl ${
+              !input.trim() || Boolean(pendingInterrupt)
+                ? "bg-slate-800 opacity-50"
+                : "bg-primary"
+            }`}
             testID="chat-send-button"
             onPress={handleSend}
             disabled={!input.trim() || Boolean(pendingInterrupt)}
-          />
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+          >
+            <Ionicons name="send" size={16} color="#ffffff" />
+          </Pressable>
         </View>
       </View>
     </KeyboardAvoidingView>

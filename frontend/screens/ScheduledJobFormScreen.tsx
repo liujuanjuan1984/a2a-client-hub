@@ -5,7 +5,7 @@ import { Text, View } from "react-native";
 
 import { ScreenScrollView } from "@/components/layout/ScreenScrollView";
 import { ScheduledJobForm } from "@/components/scheduled/ScheduledJobForm";
-import { IconButton } from "@/components/ui/IconButton";
+import { BackButton } from "@/components/ui/BackButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
@@ -330,15 +330,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       <PageHeader
         title={editing ? "Edit Job" : "New Job"}
         subtitle="Configure recurring prompts."
-        rightElement={
-          <IconButton
-            accessibilityLabel="Go back"
-            icon="arrow-back"
-            variant="outline"
-            size="sm"
-            onPress={handleCancel}
-          />
-        }
+        rightElement={<BackButton variant="outline" onPress={handleCancel} />}
       />
 
       {loadingJob ? (

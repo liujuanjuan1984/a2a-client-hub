@@ -7,6 +7,7 @@ import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
@@ -89,11 +90,11 @@ export function AdminHubAgentNewScreen() {
         title="New shared agent"
         subtitle="Create an admin-managed A2A service directory entry."
         rightElement={
-          <Button
-            label="Back"
-            size="xs"
+          <IconButton
+            accessibilityLabel="Go back"
+            icon="chevron-back"
+            size="sm"
             variant="secondary"
-            iconLeft="chevron-back"
             onPress={() => {
               blurActiveElement();
               backOrHome(router, "/admin/hub-a2a");
