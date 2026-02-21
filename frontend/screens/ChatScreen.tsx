@@ -910,7 +910,7 @@ export function ChatScreen({
             <Pressable
               className={`absolute bottom-2 ${
                 message.role === "user" ? "left-2" : "right-2"
-              } rounded-lg px-2 py-2 opacity-60`}
+              } rounded-lg px-2 py-2 opacity-45`}
               onPress={() => handleCopyMessage(message)}
               accessibilityRole="button"
               accessibilityLabel="Copy message"
