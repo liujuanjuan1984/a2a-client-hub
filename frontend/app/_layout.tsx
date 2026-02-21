@@ -28,35 +28,27 @@ export default function RootLayout() {
     if (Platform.OS !== "web") return;
     if (typeof document === "undefined" || typeof window === "undefined")
       return;
-    const isMobile =
+    const isIOS =
       typeof navigator !== "undefined" &&
-      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent,
-      );
+      /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-    if (!isMobile) return;
+    if (!isIOS) return;
 
     const root = document.documentElement;
     root.classList.add("app-web");
 
     const setAppHeight = () => {
-      if (window.visualViewport) {
-        const height = window.visualViewport.height;
-        root.style.setProperty("--app-height", `${height}px`);
-      } else {
-        root.style.setProperty("--app-height", `${window.innerHeight}px`);
-      }
+      const visualViewportHeight = window.visualViewport?.height;
+      const fallbackHeight = window.innerHeight;
+      root.style.setProperty(
+        "--app-height",
+        `${Math.max(1, Math.floor(visualViewportHeight ?? fallbackHeight))}px`,
+      );
     };
 
     setAppHeight();
     window.visualViewport?.addEventListener("resize", setAppHeight);
-    window.addEventListener("resize", setAppHeight);
     window.addEventListener("orientationchange", setAppHeight);
-
-    // Only prevent gesture zoom on iOS
-    const isIOS =
-      typeof navigator !== "undefined" &&
-      /iPad|iPhone|iPod/.test(navigator.userAgent);
 
     const preventGestureZoom = (event: Event) => {
       event.preventDefault();

@@ -744,23 +744,80 @@ export function ChatScreen({
     session?.streamState,
   ]);
 
-  const handleCopyMessage = useCallback(async (message: ChatMessage) => {
-    try {
-      let textToCopy = message.content;
-      if (message.role === "agent" && message.blocks?.length) {
-        const blockContent = message.blocks
-          .map((b) => `[${b.type}]\n${b.content}`)
-          .join("\n\n");
-        if (blockContent) {
-          textToCopy = `${blockContent}\n\n${textToCopy}`;
+  const handleCopyPayload = useCallback(async (text: string) => {
+    if (Platform.OS === "web" && typeof navigator !== "undefined") {
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return;
+        } catch {
+          // Fall back to Expo clipboard API when browser clipboard write is blocked.
         }
       }
-      await Clipboard.setStringAsync(textToCopy.trim());
-      toast.success("Copied", "Message copied to clipboard.");
-    } catch {
-      toast.error("Copy failed", "Could not copy message.");
     }
+
+    await Clipboard.setStringAsync(text);
   }, []);
+
+  const handlePastePayload = useCallback(async (): Promise<string> => {
+    if (Platform.OS === "web" && typeof navigator !== "undefined") {
+      if (navigator.clipboard?.readText) {
+        try {
+          return (await navigator.clipboard.readText()) ?? "";
+        } catch {
+          // Fall back to Expo clipboard API when browser clipboard read is blocked.
+        }
+      }
+    }
+
+    return Clipboard.getStringAsync();
+  }, []);
+
+  const handleCopyMessage = useCallback(
+    async (message: ChatMessage) => {
+      try {
+        let textToCopy = message.content;
+        if (message.role === "agent" && message.blocks?.length) {
+          const blockContent = message.blocks
+            .map((b) => `[${b.type}]\n${b.content}`)
+            .join("\n\n");
+          if (blockContent) {
+            textToCopy = `${blockContent}\n\n${textToCopy}`;
+          }
+        }
+        await handleCopyPayload(textToCopy.trim());
+        toast.success("Copied", "Message copied to clipboard.");
+      } catch {
+        toast.error("Copy failed", "Could not copy message.");
+      }
+    },
+    [handleCopyPayload],
+  );
+
+  const handlePasteInput = useCallback(async () => {
+    try {
+      const pastedText = await handlePastePayload();
+      if (!pastedText) {
+        toast.info("Paste failed", "Clipboard is empty.");
+        return;
+      }
+      setInput((previous) => {
+        if (!previous) return pastedText;
+        if (
+          previous.endsWith("\n") ||
+          pastedText.startsWith("\n") ||
+          previous.endsWith(" ")
+        ) {
+          return `${previous}${pastedText}`;
+        }
+        return `${previous}\n${pastedText}`;
+      });
+      inputRef.current?.focus();
+      toast.success("Pasted", "Clipboard content inserted.");
+    } catch {
+      toast.error("Paste failed", "Could not read clipboard.");
+    }
+  }, [handlePastePayload, inputRef]);
 
   const renderChatMessage = useCallback(
     ({ item: message, index }: { item: ChatMessage; index: number }) => {
@@ -1404,6 +1461,14 @@ export function ChatScreen({
             returnKeyType="default"
           />
           <View className="flex-row items-center gap-1.5 pb-1">
+            <Pressable
+              className="h-9 w-9 items-center justify-center rounded-xl bg-slate-800"
+              onPress={handlePasteInput}
+              accessibilityRole="button"
+              accessibilityLabel="Paste from clipboard"
+            >
+              <Text className="text-xs font-semibold text-slate-300">粘</Text>
+            </Pressable>
             <Pressable
               className={`h-9 w-9 items-center justify-center rounded-xl ${
                 showPresets ? "bg-primary" : "bg-slate-800"
