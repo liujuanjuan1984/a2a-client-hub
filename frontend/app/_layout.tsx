@@ -44,6 +44,9 @@ export default function RootLayout() {
         "--app-height",
         `${Math.max(1, Math.floor(visualViewportHeight ?? fallbackHeight))}px`,
       );
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
     };
 
     setAppHeight();
