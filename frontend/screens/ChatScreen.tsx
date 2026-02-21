@@ -1429,6 +1429,20 @@ export function ChatScreen({
         ) : null}
 
         <View className="flex-row items-end gap-2 bg-slate-900/50 p-2 rounded-3xl border border-slate-800">
+          <Pressable
+            className={`h-9 w-9 items-center justify-center rounded-xl ${
+              showPresets ? "bg-primary" : "bg-slate-800"
+            }`}
+            onPress={() => setShowPresets(!showPresets)}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle shortcuts"
+          >
+            <Ionicons
+              name={showPresets ? "flash" : "flash-outline"}
+              size={18}
+              color={showPresets ? "#ffffff" : "#94a3b8"}
+            />
+          </Pressable>
           <TextInput
             ref={inputRef}
             className="flex-1 px-3 py-2 text-white"
@@ -1449,36 +1463,20 @@ export function ChatScreen({
             blurOnSubmit={false}
             returnKeyType="default"
           />
-          <View className="flex-row items-center gap-1.5 pb-1">
-            <Pressable
-              className={`h-9 w-9 items-center justify-center rounded-xl ${
-                showPresets ? "bg-primary" : "bg-slate-800"
-              }`}
-              onPress={() => setShowPresets(!showPresets)}
-              accessibilityRole="button"
-              accessibilityLabel="Toggle shortcuts"
-            >
-              <Ionicons
-                name={showPresets ? "flash" : "flash-outline"}
-                size={18}
-                color={showPresets ? "#ffffff" : "#94a3b8"}
-              />
-            </Pressable>
-            <Pressable
-              className={`h-9 w-9 items-center justify-center rounded-xl ${
-                !input.trim() || Boolean(pendingInterrupt)
-                  ? "bg-slate-800 opacity-50"
-                  : "bg-primary"
-              }`}
-              testID="chat-send-button"
-              onPress={handleSend}
-              disabled={!input.trim() || Boolean(pendingInterrupt)}
-              accessibilityRole="button"
-              accessibilityLabel="Send message"
-            >
-              <Ionicons name="send" size={16} color="#ffffff" />
-            </Pressable>
-          </View>
+          <Pressable
+            className={`h-9 w-9 items-center justify-center rounded-xl ${
+              !input.trim() || Boolean(pendingInterrupt)
+                ? "bg-slate-800 opacity-50"
+                : "bg-primary"
+            }`}
+            testID="chat-send-button"
+            onPress={handleSend}
+            disabled={!input.trim() || Boolean(pendingInterrupt)}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+          >
+            <Ionicons name="send" size={16} color="#ffffff" />
+          </Pressable>
         </View>
       </View>
     </KeyboardAvoidingView>
