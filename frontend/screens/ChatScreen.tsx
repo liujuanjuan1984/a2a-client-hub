@@ -797,7 +797,7 @@ export function ChatScreen({
             message.role === "user" ? "items-end" : "items-start"
           }`}
         >
-          <View className="max-w-[94%]">
+          <View className="max-w-[94%] relative">
             <Pressable
               onLongPress={() => handleCopyMessage(message)}
               delayLongPress={500}
@@ -907,24 +907,20 @@ export function ChatScreen({
                 </Text>
               ) : null}
             </Pressable>
-            <View
-              className={`mt-2 flex-row ${
-                message.role === "user" ? "justify-start" : "justify-end"
-              }`}
+            <Pressable
+              className={`absolute bottom-2 ${
+                message.role === "user" ? "left-2" : "right-2"
+              } rounded-lg px-2 py-2 opacity-60`}
+              onPress={() => handleCopyMessage(message)}
+              accessibilityRole="button"
+              accessibilityLabel="Copy message"
             >
-              <Pressable
-                className="rounded-lg px-2 py-2 opacity-60"
-                onPress={() => handleCopyMessage(message)}
-                accessibilityRole="button"
-                accessibilityLabel="Copy message"
-              >
-                <Ionicons
-                  name="copy-outline"
-                  size={16}
-                  color={message.role === "user" ? "#ffffff" : "#cbd5e1"}
-                />
-              </Pressable>
-            </View>
+              <Ionicons
+                name="copy-outline"
+                size={16}
+                color={message.role === "user" ? "#ffffff" : "#cbd5e1"}
+              />
+            </Pressable>
           </View>
           {canRetry && (
             <Pressable
