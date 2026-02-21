@@ -176,7 +176,7 @@ export function ChatScreen({
     paused: historyPaused,
   });
 
-  useRefreshOnFocus(() => sessionHistoryQuery.loadFirstPage("refreshing"));
+  useRefreshOnFocus(sessionHistoryQuery.loadFirstPage);
 
   const historyLoading = sessionHistoryQuery.loading;
   const historyLoadingMore = sessionHistoryQuery.loadingMore;

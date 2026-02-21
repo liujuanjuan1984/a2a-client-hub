@@ -107,8 +107,8 @@ describe("useChatHistoryQuery", () => {
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];
     expect(options?.queryKey).toEqual(["history", "chat", "conversation-1"]);
     expect(options?.enabled).toBe(true);
-    expect(options?.refetchOnWindowFocus).toBe(false);
-    expect(options?.refetchOnReconnect).toBe(false);
+    expect(options?.refetchOnWindowFocus).toBe(true);
+    expect(options?.refetchOnReconnect).toBe(true);
     expect(options?.refetchOnMount).toBe(true);
     expect(options?.staleTime).toBe(0);
   });
