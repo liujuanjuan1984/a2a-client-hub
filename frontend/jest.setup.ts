@@ -46,3 +46,9 @@ jest.mock("expo-clipboard", () => ({
   setStringAsync: jest.fn(async () => {}),
   getStringAsync: jest.fn(async () => null),
 }));
+jest.mock("react-native/Libraries/AppState/AppState", () => ({
+  AppState: {
+    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+    currentState: "active"
+  }
+}));
