@@ -788,7 +788,8 @@ export function ChatScreen({
       const canRetry =
         isLastMessage &&
         message.role === "agent" &&
-        session?.streamState !== "streaming";
+        session?.streamState &&
+        ["error", "recoverable"].includes(session.streamState);
 
       return (
         <View
