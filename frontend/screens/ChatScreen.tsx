@@ -759,20 +759,6 @@ export function ChatScreen({
     await Clipboard.setStringAsync(text);
   }, []);
 
-  const handlePastePayload = useCallback(async (): Promise<string> => {
-    if (Platform.OS === "web" && typeof navigator !== "undefined") {
-      if (navigator.clipboard?.readText) {
-        try {
-          return (await navigator.clipboard.readText()) ?? "";
-        } catch {
-          // Fall back to Expo clipboard API when browser clipboard read is blocked.
-        }
-      }
-    }
-
-    return Clipboard.getStringAsync();
-  }, []);
-
   const handleCopyMessage = useCallback(
     async (message: ChatMessage) => {
       try {
@@ -794,31 +780,6 @@ export function ChatScreen({
     [handleCopyPayload],
   );
 
-  const handlePasteInput = useCallback(async () => {
-    try {
-      const pastedText = await handlePastePayload();
-      if (!pastedText) {
-        toast.info("Paste failed", "Clipboard is empty.");
-        return;
-      }
-      setInput((previous) => {
-        if (!previous) return pastedText;
-        if (
-          previous.endsWith("\n") ||
-          pastedText.startsWith("\n") ||
-          previous.endsWith(" ")
-        ) {
-          return `${previous}${pastedText}`;
-        }
-        return `${previous}\n${pastedText}`;
-      });
-      inputRef.current?.focus();
-      toast.success("Pasted", "Clipboard content inserted.");
-    } catch {
-      toast.error("Paste failed", "Could not read clipboard.");
-    }
-  }, [handlePastePayload, inputRef]);
-
   const renderChatMessage = useCallback(
     ({ item: message, index }: { item: ChatMessage; index: number }) => {
       const renderableBlocks = deriveRenderableBlocks(message);
@@ -835,24 +796,86 @@ export function ChatScreen({
             message.role === "user" ? "items-end" : "items-start"
           }`}
         >
-          <Pressable
-            onLongPress={() => handleCopyMessage(message)}
-            delayLongPress={500}
-            className={`max-w-[94%] px-4 py-3 ${
-              message.role === "user"
-                ? "rounded-2xl rounded-tr-sm bg-primary"
-                : message.role === "agent"
-                  ? "rounded-2xl rounded-tl-sm bg-slate-800"
-                  : "rounded-2xl bg-slate-900"
-            }`}
-          >
-            {hasBlocks ? (
-              renderableBlocks.map((block, blockIndex) => {
-                const blockText = block.content;
-                if (blockText.length === 0) return null;
-                const blockId = block.id || `${message.id}:${blockIndex}`;
-                if (block.type === "reasoning") {
-                  const expanded = Boolean(expandedReasoningByBlockId[blockId]);
+          <View className="max-w-[94%] flex-row items-start">
+            <Pressable
+              onLongPress={() => handleCopyMessage(message)}
+              delayLongPress={500}
+              className={`flex-1 px-4 py-3 ${
+                message.role === "user"
+                  ? "rounded-2xl rounded-tr-sm bg-primary"
+                  : message.role === "agent"
+                    ? "rounded-2xl rounded-tl-sm bg-slate-800"
+                    : "rounded-2xl bg-slate-900"
+              }`}
+            >
+              {hasBlocks ? (
+                renderableBlocks.map((block, blockIndex) => {
+                  const blockText = block.content;
+                  if (blockText.length === 0) return null;
+                  const blockId = block.id || `${message.id}:${blockIndex}`;
+                  if (block.type === "reasoning") {
+                    const expanded = expandedReasoningByBlockId[blockId];
+                    return (
+                      <View
+                        key={blockId}
+                        className={`${
+                          blockIndex > 0 ? "mt-3" : ""
+                        } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                      >
+                        <Pressable onPress={() => toggleReasoning(blockId)}>
+                          <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                            {expanded ? "Hide Reasoning" : "Show Reasoning"}
+                          </Text>
+                        </Pressable>
+                        {expanded ? (
+                          <Text
+                            selectable
+                            className="mt-1 break-all text-xs text-slate-300"
+                          >
+                            {blockText}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  }
+                  if (block.type === "tool_call") {
+                    const expanded = expandedToolCallByBlockId[blockId];
+                    return (
+                      <View
+                        key={blockId}
+                        className={`${
+                          blockIndex > 0 ? "mt-3" : ""
+                        } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                      >
+                        <Pressable onPress={() => toggleToolCall(blockId)}>
+                          <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                            {expanded ? "Hide Tool Call" : "Show Tool Call"}
+                          </Text>
+                        </Pressable>
+                        {expanded ? (
+                          <Text
+                            selectable
+                            className="mt-1 break-all text-xs text-slate-300"
+                          >
+                            {blockText}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  }
+                  if (block.type === "text") {
+                    return (
+                      <Text
+                        key={blockId}
+                        selectable
+                        className={`${
+                          blockIndex > 0 ? "mt-3" : ""
+                        } break-all text-sm text-white`}
+                      >
+                        {blockText}
+                      </Text>
+                    );
+                  }
                   return (
                     <View
                       key={blockId}
@@ -860,78 +883,42 @@ export function ChatScreen({
                         blockIndex > 0 ? "mt-3" : ""
                       } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
                     >
-                      <Pressable onPress={() => toggleReasoning(blockId)}>
-                        <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                          {expanded ? "Hide Reasoning" : "Show Reasoning"}
-                        </Text>
-                      </Pressable>
-                      {expanded ? (
-                        <Text className="mt-1 break-all text-xs text-slate-300">
-                          {blockText}
-                        </Text>
-                      ) : null}
+                      <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                        {block.type}
+                      </Text>
+                      <Text
+                        selectable
+                        className="mt-1 break-all text-xs text-slate-300"
+                      >
+                        {blockText}
+                      </Text>
                     </View>
                   );
-                }
-                if (block.type === "tool_call") {
-                  const expanded = Boolean(expandedToolCallByBlockId[blockId]);
-                  return (
-                    <View
-                      key={blockId}
-                      className={`${
-                        blockIndex > 0 ? "mt-3" : ""
-                      } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                    >
-                      <Pressable onPress={() => toggleToolCall(blockId)}>
-                        <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                          {expanded ? "Hide Tool Call" : "Show Tool Call"}
-                        </Text>
-                      </Pressable>
-                      {expanded ? (
-                        <Text className="mt-1 break-all text-xs text-slate-300">
-                          {blockText}
-                        </Text>
-                      ) : null}
-                    </View>
-                  );
-                }
-                if (block.type === "text") {
-                  return (
-                    <Text
-                      key={blockId}
-                      className={`${
-                        blockIndex > 0 ? "mt-3" : ""
-                      } break-all text-sm text-white`}
-                    >
-                      {blockText}
-                    </Text>
-                  );
-                }
-                return (
-                  <View
-                    key={blockId}
-                    className={`${
-                      blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                  >
-                    <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                      {block.type}
-                    </Text>
-                    <Text className="mt-1 break-all text-xs text-slate-300">
-                      {blockText}
-                    </Text>
-                  </View>
-                );
-              })
-            ) : (
-              <Text className="break-all text-sm text-white">
-                {message.content}
-              </Text>
-            )}
-            {message.status === "streaming" ? (
-              <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
-            ) : null}
-          </Pressable>
+                })
+              ) : (
+                <Text selectable className="break-all text-sm text-white">
+                  {message.content}
+                </Text>
+              )}
+              {message.status === "streaming" ? (
+                <Text className="mt-1 text-[10px] text-muted">
+                  Streaming...
+                </Text>
+              ) : null}
+            </Pressable>
+            <Pressable
+              className="ml-2 mt-1 rounded-lg px-2 py-2 opacity-60 hover:opacity-100"
+              onPress={() => handleCopyMessage(message)}
+              accessibilityRole="button"
+              accessibilityLabel="Copy message"
+            >
+              <Ionicons
+                name="copy-outline"
+                size={16}
+                color={message.role === "user" ? "#ffffff" : "#cbd5e1"}
+              />
+            </Pressable>
+          </View>
           {canRetry && (
             <Pressable
               onPress={handleRetry}
@@ -1461,14 +1448,6 @@ export function ChatScreen({
             returnKeyType="default"
           />
           <View className="flex-row items-center gap-1.5 pb-1">
-            <Pressable
-              className="h-9 w-9 items-center justify-center rounded-xl bg-slate-800"
-              onPress={handlePasteInput}
-              accessibilityRole="button"
-              accessibilityLabel="Paste from clipboard"
-            >
-              <Text className="text-xs font-semibold text-slate-300">粘</Text>
-            </Pressable>
             <Pressable
               className={`h-9 w-9 items-center justify-center rounded-xl ${
                 showPresets ? "bg-primary" : "bg-slate-800"
