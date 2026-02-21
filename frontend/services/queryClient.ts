@@ -19,4 +19,3 @@ function onAppStateChange(status: AppStateStatus) {
 if (AppState && typeof AppState.addEventListener === "function") {
   AppState.addEventListener("change", onAppStateChange);
 }
-
