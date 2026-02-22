@@ -180,9 +180,7 @@ export function ChatScreen({
   const minInputHeight = 44;
   const maxInputHeight = 128;
   const [inputHeight, setInputHeight] = useState(minInputHeight);
-  const historyPaused =
-    session?.streamState === "streaming" ||
-    session?.streamState === "rebinding";
+  const historyPaused = session?.streamState === "streaming";
 
   const sessionHistoryQuery = useSessionHistoryQuery({
     conversationId,
@@ -331,9 +329,7 @@ export function ChatScreen({
       });
       incoming.forEach((message) => {
         const existing = merged.get(message.id);
-        const isActivelyStreaming =
-          session?.streamState === "streaming" ||
-          session?.streamState === "rebinding";
+        const isActivelyStreaming = session?.streamState === "streaming";
         if (
           existing &&
           existing.status === "streaming" &&
@@ -1449,14 +1445,6 @@ export function ChatScreen({
           </View>
         ) : null}
       </View>
-
-      {session?.streamState === "rebinding" ? (
-        <View className="mx-6 mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-          <Text className="text-xs text-amber-300">
-            Connection dropped. Rebinding this session...
-          </Text>
-        </View>
-      ) : null}
 
       {session?.streamState === "recoverable" ? (
         <View className="mx-6 mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">

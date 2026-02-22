@@ -56,7 +56,7 @@ describe("chat store utils", () => {
     });
   });
 
-  it("always injects metadata.opencode.session_id for opencode-bound sessions", () => {
+  it("injects generic external session metadata for bound sessions", () => {
     const session = createAgentSession("agent-3");
     session.metadata = { locale: "zh-CN", opencode_session_id: "legacy-flat" };
     session.externalSessionRef = {
@@ -68,10 +68,11 @@ describe("chat store utils", () => {
       query: "hello",
       conversationId: "conversation:abc",
       metadata: {
+        opencode_session_id: "legacy-flat",
         locale: "zh-CN",
-        opencode: {
-          session_id: "ses-upstream-1",
-        },
+        provider: "opencode",
+        externalSessionId: "ses-upstream-1",
+        external_session_id: "ses-upstream-1",
       },
     });
   });

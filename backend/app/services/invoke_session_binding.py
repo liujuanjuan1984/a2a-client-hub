@@ -6,19 +6,42 @@ from typing import Any
 
 
 def status_code_for_invoke_session_error(detail: str) -> int:
-    if detail == "session_not_found":
+    normalized = normalize_error_code(detail)
+    if normalized == "session_not_found":
         return 404
-    if detail == "invoke_inflight":
+    if normalized == "invoke_inflight":
         return 409
     return 400
 
 
+def is_recoverable_invoke_session_error(detail: str | None) -> bool:
+    return normalize_error_code(detail) == "session_not_found"
+
+
+def ws_error_code_for_recovery_failed(detail: str) -> str:
+    normalized = normalize_error_code(detail)
+    if normalized == "session_not_found":
+        return "session_not_found_recovery_exhausted"
+    return normalized
+
+
 def ws_error_code_for_invoke_session_error(detail: str) -> str:
-    if detail == "session_not_found":
+    normalized = normalize_error_code(detail)
+    if normalized == "session_not_found":
         return "session_not_found"
-    if detail == "invoke_inflight":
+    if normalized == "invoke_inflight":
         return "invoke_inflight"
     return "invalid_conversation_id"
+
+
+def normalize_error_code(detail: str | None) -> str:
+    if not isinstance(detail, str):
+        return ""
+    return detail.strip().lower().replace("-", "_")
+
+
+def normalize_detail(detail: str | None) -> str:
+    return normalize_error_code(detail)
 
 
 def normalize_invoke_binding_state(
@@ -55,5 +78,7 @@ __all__ = [
     "merge_invoke_binding_state",
     "normalize_invoke_binding_state",
     "status_code_for_invoke_session_error",
+    "is_recoverable_invoke_session_error",
+    "ws_error_code_for_recovery_failed",
     "ws_error_code_for_invoke_session_error",
 ]

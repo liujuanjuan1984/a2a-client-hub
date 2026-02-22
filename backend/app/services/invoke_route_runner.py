@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Literal
@@ -19,10 +20,12 @@ from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.ws_ticket import WsTicketResponse
 from app.services.a2a_invoke_service import a2a_invoke_service
 from app.services.invoke_session_binding import (
+    is_recoverable_invoke_session_error,
     merge_invoke_binding_state,
     normalize_invoke_binding_state,
     status_code_for_invoke_session_error,
     ws_error_code_for_invoke_session_error,
+    ws_error_code_for_recovery_failed,
 )
 from app.services.session_hub import session_hub_service
 from app.services.ws_ticket_service import ws_ticket_service
@@ -31,6 +34,11 @@ AgentSource = Literal["personal", "shared"]
 
 _invoke_inflight_guard = asyncio.Lock()
 _invoke_inflight_keys: dict[str, int] = {}
+
+_SESSION_NOT_FOUND_RETRY_LIMIT = 1
+_SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
+    "Failed to recover conversation session. Please retry."
+)
 
 
 @dataclass
@@ -152,6 +160,7 @@ def _build_stream_callbacks(
     agent_source: AgentSource,
     query: str,
     transport: Literal["http_sse", "ws"],
+    on_error_metadata: Callable[[dict[str, Any]], Any] | None = None,
 ) -> tuple[
     Callable[[dict[str, Any]], Any],
     Callable[[str], Any],
@@ -247,8 +256,107 @@ def _build_stream_callbacks(
             response_metadata=error_response_metadata,
         )
         await commit_safely(db)
+        if on_error_metadata is not None:
+            outcome = on_error_metadata({"message": error_message, "error_code": None})
+            if inspect.isawaitable(outcome):
+                await outcome
 
     return on_event, on_complete, on_error, on_complete_metadata
+
+
+def _build_rebound_invoke_payload(
+    *,
+    payload: A2AAgentInvokeRequest,
+    continue_payload: dict[str, Any],
+) -> A2AAgentInvokeRequest:
+    external_session_id = continue_payload.get("externalSessionId")
+    provider = continue_payload.get("provider")
+    context_id = continue_payload.get("contextId")
+    conversation_id = continue_payload.get("conversationId")
+
+    next_metadata = dict(payload.metadata or {})
+    if isinstance(provider, str) and provider.strip():
+        next_metadata["provider"] = provider.strip()
+    if isinstance(external_session_id, str) and external_session_id.strip():
+        next_metadata["externalSessionId"] = external_session_id.strip()
+        next_metadata["external_session_id"] = external_session_id.strip()
+
+    next_context_id = (
+        context_id.strip()
+        if isinstance(context_id, str) and context_id.strip()
+        else payload.context_id
+    )
+    next_conversation_id = (
+        conversation_id.strip()
+        if isinstance(conversation_id, str) and conversation_id.strip()
+        else payload.conversation_id
+    )
+
+    return payload.model_copy(
+        update={
+            "conversation_id": next_conversation_id,
+            "context_id": next_context_id,
+            "metadata": next_metadata,
+        },
+    )
+
+
+async def run_http_invoke_with_session_recovery(
+    *,
+    db: AsyncSession,
+    gateway: Any,
+    runtime: Any,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    payload: A2AAgentInvokeRequest,
+    stream: bool,
+    validate_message: Callable[[dict[str, Any]], list[Any]],
+    logger: Any,
+    log_extra: dict[str, Any],
+    max_recovery_attempts: int = _SESSION_NOT_FOUND_RETRY_LIMIT,
+) -> A2AAgentInvokeResponse | StreamingResponse:
+    current_payload = payload
+    remaining_retries = max_recovery_attempts
+
+    while True:
+        response = await run_http_invoke(
+            db=db,
+            gateway=gateway,
+            runtime=runtime,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            payload=current_payload,
+            stream=stream,
+            validate_message=validate_message,
+            logger=logger,
+            log_extra=log_extra,
+        )
+        if stream or response.success:
+            return response
+        if not is_recoverable_invoke_session_error(response.error_code):
+            return response
+        if remaining_retries <= 0:
+            return response
+        if not isinstance(current_payload.conversation_id, str):
+            return response
+
+        remaining_retries -= 1
+        try:
+            continue_binding, db_mutated = await session_hub_service.continue_session(
+                db,
+                user_id=user_id,
+                conversation_id=current_payload.conversation_id,
+            )
+        except ValueError:
+            return response
+        if db_mutated:
+            await commit_safely(db)
+        current_payload = _build_rebound_invoke_payload(
+            payload=current_payload,
+            continue_payload=continue_binding,
+        )
 
 
 async def run_http_invoke(
@@ -379,6 +487,8 @@ async def run_ws_invoke(
     validate_message: Callable[[dict[str, Any]], list[Any]],
     logger: Any,
     log_extra: dict[str, Any],
+    on_error_metadata: Callable[[dict[str, Any]], Any] | None = None,
+    send_stream_end: bool = True,
 ) -> None:
     state = await _prepare_state(
         db=db,
@@ -395,6 +505,7 @@ async def run_ws_invoke(
         agent_source=agent_source,
         query=payload.query,
         transport="ws",
+        on_error_metadata=on_error_metadata,
     )
     await a2a_invoke_service.stream_ws(
         websocket=websocket,
@@ -410,7 +521,96 @@ async def run_ws_invoke(
         on_complete_metadata=on_complete_metadata,
         on_error=on_error,
         on_event=on_event,
+        on_error_metadata=on_error_metadata,
+        send_stream_end=send_stream_end,
     )
+
+
+async def run_ws_invoke_with_session_recovery(
+    *,
+    websocket: WebSocket,
+    db: AsyncSession,
+    gateway: Any,
+    runtime: Any,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    payload: A2AAgentInvokeRequest,
+    validate_message: Callable[[dict[str, Any]], list[Any]],
+    logger: Any,
+    log_extra: dict[str, Any],
+    max_recovery_attempts: int = _SESSION_NOT_FOUND_RETRY_LIMIT,
+) -> None:
+    current_payload = payload
+    remaining_retries = max_recovery_attempts
+    while True:
+        stream_error_code: str | None = None
+        stream_error_message: str | None = None
+
+        def _remember_stream_error(error_event: dict[str, Any]) -> None:
+            nonlocal stream_error_code
+            nonlocal stream_error_message
+            raw_code = error_event.get("error_code")
+            if isinstance(raw_code, str):
+                stream_error_code = raw_code.strip() or None
+            raw_message = error_event.get("message")
+            if isinstance(raw_message, str):
+                stream_error_message = raw_message
+
+        def _send_recovery_failed_error() -> None:
+            return a2a_invoke_service.send_ws_error(
+                websocket=websocket,
+                message=stream_error_message
+                or _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE,
+                error_code=ws_error_code_for_recovery_failed(stream_error_code or ""),
+            )
+
+        await run_ws_invoke(
+            websocket=websocket,
+            db=db,
+            gateway=gateway,
+            runtime=runtime,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            payload=current_payload,
+            validate_message=validate_message,
+            logger=logger,
+            log_extra=log_extra,
+            on_error_metadata=_remember_stream_error,
+            send_stream_end=False,
+        )
+        if stream_error_code is None:
+            await a2a_invoke_service.send_ws_stream_end(websocket)
+            return
+
+        if not is_recoverable_invoke_session_error(stream_error_code):
+            await a2a_invoke_service.send_ws_stream_end(websocket)
+            return
+        if remaining_retries <= 0:
+            await _send_recovery_failed_error()
+            await a2a_invoke_service.send_ws_stream_end(websocket)
+            return
+        if not isinstance(current_payload.conversation_id, str):
+            await a2a_invoke_service.send_ws_stream_end(websocket)
+            return
+
+        remaining_retries -= 1
+        try:
+            continue_binding, db_mutated = await session_hub_service.continue_session(
+                db,
+                user_id=user_id,
+                conversation_id=current_payload.conversation_id,
+            )
+        except ValueError:
+            await a2a_invoke_service.send_ws_stream_end(websocket)
+            return
+        if db_mutated:
+            await commit_safely(db)
+        current_payload = _build_rebound_invoke_payload(
+            payload=current_payload,
+            continue_payload=continue_binding,
+        )
 
 
 async def run_ws_invoke_route(
@@ -494,7 +694,7 @@ async def run_ws_invoke_route(
 
         try:
             async with _guard_inflight_invoke(guard_key):
-                await run_ws_invoke(
+                await run_ws_invoke_with_session_recovery(
                     websocket=websocket,
                     db=db,
                     gateway=gateway,
@@ -509,6 +709,7 @@ async def run_ws_invoke_route(
                         "user_id": str(user_id),
                         "agent_id": str(agent_id),
                     },
+                    max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
                 )
         except ValueError as exc:
             await a2a_invoke_service.send_ws_error(
@@ -592,7 +793,7 @@ async def run_http_invoke_route(
                 detail="invoke_inflight",
             )
         try:
-            response = await run_http_invoke(
+            response = await run_http_invoke_with_session_recovery(
                 db=db,
                 gateway=gateway,
                 runtime=runtime,
@@ -607,6 +808,7 @@ async def run_http_invoke_route(
                     "user_id": str(user_id),
                     "agent_id": str(agent_id),
                 },
+                max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
             )
         except Exception:
             await _release_invoke_guard(guard_key)
@@ -636,7 +838,7 @@ async def run_http_invoke_route(
 
     try:
         async with _guard_inflight_invoke(guard_key):
-            response = await run_http_invoke(
+            response = await run_http_invoke_with_session_recovery(
                 db=db,
                 gateway=gateway,
                 runtime=runtime,
@@ -651,6 +853,7 @@ async def run_http_invoke_route(
                     "user_id": str(user_id),
                     "agent_id": str(agent_id),
                 },
+                max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
             )
             if response.success:
                 return response
@@ -699,6 +902,7 @@ async def run_issue_ws_ticket_route(
 
 __all__ = [
     "run_http_invoke",
+    "run_http_invoke_with_session_recovery",
     "run_http_invoke_route",
     "run_issue_ws_ticket_route",
     "run_ws_invoke",

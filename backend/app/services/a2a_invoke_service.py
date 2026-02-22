@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 from contextlib import suppress
 from typing import Any, AsyncIterator, Callable
 
@@ -28,6 +29,7 @@ ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
 StreamTextCallbackFn = Callable[[str], Any]
 StreamEventPayloadCallbackFn = Callable[[dict[str, Any]], Any]
 StreamMetadataCallbackFn = Callable[[dict[str, Any]], Any]
+StreamErrorMetadataCallbackFn = Callable[[dict[str, Any]], Any]
 
 
 class A2AInvokeService:
@@ -38,6 +40,8 @@ class A2AInvokeService:
     _STREAM_ERROR_CODE = "upstream_stream_error"
     _SSE_HEARTBEAT_FRAME = ": keep-alive\n\n"
     _WS_HEARTBEAT_EVENT = {"event": "heartbeat", "data": {}}
+    _WS_STREAM_END_EVENT = {"event": "stream_end", "data": {}}
+    _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,64}$")
 
     @classmethod
     def build_ws_error_event(
@@ -63,6 +67,11 @@ class A2AInvokeService:
                 self.build_ws_error_event(message=message, error_code=error_code),
                 ensure_ascii=False,
             )
+        )
+
+    async def send_ws_stream_end(self, websocket: WebSocket) -> None:
+        await websocket.send_text(
+            json_dumps(self._WS_STREAM_END_EVENT, ensure_ascii=False)
         )
 
     @staticmethod
@@ -632,6 +641,46 @@ class A2AInvokeService:
             return 0.0
         return interval
 
+    @classmethod
+    def _extract_error_code_from_exception(cls, exc: BaseException) -> str | None:
+        candidate = getattr(exc, "error_code", None)
+        normalized = cls._normalize_error_code(candidate)
+        if normalized is not None:
+            return normalized
+
+        detail = getattr(exc, "detail", None)
+        normalized = cls._normalize_error_code(detail)
+        if normalized is not None:
+            return normalized
+
+        candidate = getattr(exc, "code", None)
+        normalized = cls._normalize_error_code(candidate)
+        if normalized is not None:
+            return normalized
+
+        for arg in getattr(exc, "args", ()):
+            if isinstance(arg, dict):
+                mapped = arg.get("error_code") or arg.get("code")
+                normalized = cls._normalize_error_code(mapped)
+                if normalized is not None:
+                    return normalized
+                if isinstance(mapped, int):
+                    return str(mapped)
+            normalized = cls._normalize_error_code(arg)
+            if normalized is not None:
+                return normalized
+
+        return None
+
+    @classmethod
+    def _normalize_error_code(cls, value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        candidate = value.strip().replace("-", "_").lower()
+        if not cls._ERROR_CODE_PATTERN.fullmatch(candidate):
+            return None
+        return candidate
+
     async def _iter_stream_events_with_heartbeat(
         self,
         stream: AsyncIterator[StreamEvent],
@@ -772,6 +821,8 @@ class A2AInvokeService:
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
         on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
+        on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
+        send_stream_end: bool = True,
     ) -> None:
         stream_text_accumulator = self._StreamTextAccumulator()
         stream_failed = False
@@ -812,14 +863,22 @@ class A2AInvokeService:
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
                 if self._is_terminal_status_event(serialized):
                     break
-        except Exception:
+        except Exception as exc:
             stream_failed = True
             logger.warning("A2A WS stream failed", exc_info=True, extra=log_extra)
+            error_code = (
+                self._extract_error_code_from_exception(exc) or self._STREAM_ERROR_CODE
+            )
+            error_payload = {
+                "message": self._STREAM_ERROR_MESSAGE,
+                "error_code": error_code,
+            }
             await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
+            await self._call_callback(on_error_metadata, error_payload)
             await self.send_ws_error(
                 websocket,
                 message=self._STREAM_ERROR_MESSAGE,
-                error_code=self._STREAM_ERROR_CODE,
+                error_code=error_code,
             )
         finally:
             if not stream_failed:
@@ -828,7 +887,8 @@ class A2AInvokeService:
                     stream_text_accumulator.result_metadata(),
                 )
                 await self._call_callback(on_complete, stream_text_accumulator.result())
-            await websocket.send_text(json_dumps({"event": "stream_end", "data": {}}))
+            if send_stream_end:
+                await self.send_ws_stream_end(websocket)
 
 
 a2a_invoke_service = A2AInvokeService()
