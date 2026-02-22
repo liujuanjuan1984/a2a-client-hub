@@ -276,26 +276,18 @@ def _extract_rebound_continue_binding_fields(
     *,
     continue_payload: dict[str, Any],
 ) -> tuple[str | None, str | None, str | None]:
-    """Resolve provider/context binding from the continue payload.
-
-    Preference:
-    1. Top-level continue fields.
-    2. continue metadata fields.
-    """
+    """Resolve provider/context binding from the continue payload metadata."""
     continue_payload_dict = as_dict(continue_payload)
     continue_metadata = as_dict(continue_payload_dict.get("metadata"))
 
     provider, external_session_id = extract_provider_and_external_session_id(
-        {**continue_metadata, **continue_payload_dict}
+        continue_metadata
     )
-    context_id = extract_context_id(continue_payload_dict)
-    if context_id is None:
-        context_id = extract_context_id(continue_metadata)
+    context_id = extract_context_id(continue_metadata)
 
     if external_session_id is None:
         opencode_session_id = normalize_non_empty_text(
             continue_metadata.get(_OPENCODE_SESSION_ID_METADATA_KEY)
-            or continue_payload_dict.get(_OPENCODE_SESSION_ID_METADATA_KEY)
         )
         if opencode_session_id is not None:
             external_session_id = opencode_session_id
