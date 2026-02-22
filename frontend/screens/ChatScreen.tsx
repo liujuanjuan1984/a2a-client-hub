@@ -100,7 +100,7 @@ const LIST_WINDOW_SIZE = 9;
 const LIST_MAX_TO_RENDER_PER_BATCH = 20;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const COLLAPSED_TEXT_LINES = 5;
-const COLLAPSED_TEXT_CHAR_LIMIT = 1200;
+const COLLAPSED_TEXT_CHAR_LIMIT = 700;
 
 const shouldCollapseByLength = (value: string) => {
   return value.length > COLLAPSED_TEXT_CHAR_LIMIT;
