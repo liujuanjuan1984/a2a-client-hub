@@ -199,6 +199,7 @@ async def test_schedule_create_weekly_uses_iso_weekday(
         assert payload["cycle_type"] == "weekly"
         assert payload["time_point"] == {"weekday": 1, "time": "09:15"}
 
+
 async def test_schedule_create_rejects_over_quota(
     async_db_session,
     async_session_maker,
@@ -294,7 +295,9 @@ async def test_schedule_interval_enforces_minimum(
     monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 60)
 
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
-    agent = await _create_agent(async_db_session, user_id=user.id, suffix="min_interval")
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="min_interval"
+    )
 
     async with create_test_client(
         a2a_schedules.router,
