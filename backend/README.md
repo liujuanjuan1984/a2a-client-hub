@@ -122,6 +122,25 @@ Notes:
   `request_id` is required; legacy fields such as `requestID`, `decision`,
   `allow` or `deny` are not accepted.
 
+统一错误语义（`error_code` -> HTTP 状态码）：
+
+| 场景 | error_code | HTTP Status |
+|---|---|---|
+| 会话未找到 | `session_not_found` | 404 |
+| 出站域名未放行 / 非法配置 | `outbound_not_allowed` | 403 |
+| 上游不可达 | `upstream_unreachable` | 503 |
+| 上游 HTTP 非 2xx | `upstream_http_error` | 502 |
+| 上游 JSON-RPC 业务错误 | `upstream_error` | 502 |
+| 超时 | `timeout` | 504 |
+| 执行时契约不支持/不兼容 | `not_supported` | 400 |
+| 扩展契约校验失败 | `extension_contract_error` | 400 |
+| 同一会话重复并发调用 | `invoke_inflight` | 409 |
+
+默认映射：
+
+- 未被识别的 `error_code` 返回 `502`（A2A invoke / extension 统一按上游故障处理）
+- 其余 4xx/5xx 参照上表
+
 ## Unified Conversation Domain API
 
 The backend now exposes a unified conversation read model for manual,

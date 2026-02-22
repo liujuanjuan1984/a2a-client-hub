@@ -9,11 +9,12 @@ from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.transaction import commit_safely
+from app.api.error_codes import status_code_for_invoke_error_code
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.ws_ticket import WsTicketResponse
 from app.services.a2a_invoke_service import a2a_invoke_service
@@ -555,7 +556,7 @@ async def run_http_invoke_route(
     logger: Any,
     invoke_log_message: str,
     invoke_log_extra_builder: Callable[[A2AAgentInvokeRequest, Any], dict[str, Any]],
-) -> A2AAgentInvokeResponse | StreamingResponse:
+) -> A2AAgentInvokeResponse | StreamingResponse | JSONResponse:
     if not payload.query.strip():
         raise HTTPException(status_code=400, detail="Query must be a non-empty string")
 
@@ -624,12 +625,18 @@ async def run_http_invoke_route(
             response.body_iterator = guarded_iterator()
             return response
 
+        if not response.success:
+            await _release_invoke_guard(guard_key)
+            return JSONResponse(
+                status_code=status_code_for_invoke_error_code(response.error_code),
+                content=response.model_dump(),
+            )
         await _release_invoke_guard(guard_key)
         return response
 
     try:
         async with _guard_inflight_invoke(guard_key):
-            return await run_http_invoke(
+            response = await run_http_invoke(
                 db=db,
                 gateway=gateway,
                 runtime=runtime,
@@ -644,6 +651,12 @@ async def run_http_invoke_route(
                     "user_id": str(user_id),
                     "agent_id": str(agent_id),
                 },
+            )
+            if response.success:
+                return response
+            return JSONResponse(
+                status_code=status_code_for_invoke_error_code(response.error_code),
+                content=response.model_dump(),
             )
     except ValueError as exc:
         raise HTTPException(

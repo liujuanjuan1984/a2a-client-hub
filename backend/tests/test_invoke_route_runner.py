@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.schemas.a2a_invoke import A2AAgentInvokeRequest
+from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.services import invoke_route_runner
 
 
@@ -174,3 +175,69 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
         "total_tokens": 120,
         "cost": 0.01,
     }
+
+
+@pytest.mark.parametrize(
+    "error_code, expected_status",
+    [
+        ("session_not_found", 404),
+        ("outbound_not_allowed", 403),
+        ("upstream_unreachable", 503),
+        ("upstream_http_error", 502),
+        ("upstream_error", 502),
+        ("timeout", 504),
+    ],
+)
+@pytest.mark.asyncio
+async def test_run_http_invoke_route_returns_status_for_error_code(
+    monkeypatch: pytest.MonkeyPatch,
+    error_code: str,
+    expected_status: int,
+) -> None:
+    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+        return A2AAgentInvokeResponse(
+            success=False,
+            error="synthetic upstream error",
+            error_code=error_code,
+            agent_name="Demo Agent",
+            agent_url="https://example.com",
+        )
+
+    monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
+
+    runtime = SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+
+    async def runtime_builder():
+        return runtime
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "test invoke route",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke_route(
+        db=object(),
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=False,
+        gateway=object(),
+        runtime_builder=runtime_builder,
+        runtime_not_found_errors=(RuntimeError,),
+        runtime_not_found_status_code=404,
+        runtime_validation_errors=(ValueError,),
+        runtime_validation_status_code=400,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        invoke_log_message="test invoke",
+        invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+    )
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == expected_status
+    response_payload = json.loads(response.body.decode())
+    assert response_payload["success"] is False
+    assert response_payload["error_code"] == error_code

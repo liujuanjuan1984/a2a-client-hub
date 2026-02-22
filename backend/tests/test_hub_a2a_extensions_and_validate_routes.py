@@ -9,6 +9,10 @@ from app.api.routers import _opencode_extension_router as opencode_router_common
 from app.api.routers import admin_a2a_agents as admin_router
 from app.api.routers import hub_a2a_agents as hub_router
 from app.api.routers import hub_a2a_extensions_opencode as hub_opencode_router
+from app.integrations.a2a_extensions.errors import (
+    A2AExtensionContractError,
+    A2AExtensionNotSupportedError,
+)
 from app.core.config import settings
 from tests.api_utils import create_test_client
 from tests.utils import create_user
@@ -160,6 +164,44 @@ class _FakeExtensionsService:
             result={"ok": True, "request_id": request_id},
             meta={},
         )
+
+
+class _FakeExtensionsErrorService:
+    def __init__(self, *, error_code: str, message: str) -> None:
+        self.calls: list[Dict[str, Any]] = []
+        self.error_code = error_code
+        self.message = message
+
+    async def opencode_continue_session(self, *, runtime, session_id: str):
+        self.calls.append(
+            {
+                "fn": "opencode_continue_session",
+                "runtime": runtime,
+                "session_id": session_id,
+            }
+        )
+        return _FakeExtensionResult(
+            success=False,
+            error_code=self.error_code,
+            upstream_error={"message": self.message},
+            meta={},
+        )
+
+
+class _FakeExtensionsExceptionService:
+    def __init__(self, error: Exception) -> None:
+        self.calls: list[Dict[str, Any]] = []
+        self.error = error
+
+    async def opencode_continue_session(self, *, runtime, session_id: str):
+        self.calls.append(
+            {
+                "fn": "opencode_continue_session",
+                "runtime": runtime,
+                "session_id": session_id,
+            }
+        )
+        raise self.error
 
     async def opencode_reply_question(self, *, runtime, request_id: str, answers):
         self.calls.append(
@@ -438,3 +480,90 @@ async def test_hub_interrupt_reply_rejects_legacy_payload_fields(
         assert resp.status_code == 422
 
     assert fake_extensions.calls == []
+
+
+@pytest.mark.asyncio
+async def test_hub_opencode_session_continue_maps_extension_error_to_http_status(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_extension_status_map@example.com",
+        user_email="alice_extension_status_map@example.com",
+        token="secret-token-opencode-status",
+    )
+
+    fake_extensions = _FakeExtensionsErrorService(
+        error_code="session_not_found",
+        message="Session not found",
+    )
+    monkeypatch.setattr(
+        opencode_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_opencode_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-404:continue"
+        )
+        assert resp.status_code == 404
+        payload = resp.json()
+        assert payload["success"] is False
+        assert payload["error_code"] == "session_not_found"
+        assert payload["upstream_error"] == {"message": "Session not found"}
+
+
+@pytest.mark.parametrize(
+    ("exception", "error_code"),
+    [
+        (A2AExtensionContractError("extension contract is invalid"), "extension_contract_error"),
+        (A2AExtensionNotSupportedError("extension method is not supported"), "not_supported"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_hub_opencode_session_continue_contract_or_support_errors_use_4xx(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    exception: Exception,
+    error_code: str,
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_extension_exc_map@example.com",
+        user_email="alice_extension_exc_map@example.com",
+        token="secret-token-opencode-exc",
+    )
+
+    fake_extensions = _FakeExtensionsExceptionService(exception)
+    monkeypatch.setattr(
+        opencode_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_opencode_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-500:continue"
+        )
+        assert resp.status_code == 400
+        payload = resp.json()
+        assert payload["success"] is False
+        assert payload["error_code"] == error_code
