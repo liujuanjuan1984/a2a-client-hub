@@ -78,12 +78,20 @@ export const buildInvokePayload = (
   const externalProvider = session.externalSessionRef?.provider?.trim();
   const externalSessionId =
     session.externalSessionRef?.externalSessionId?.trim();
+  const metadataProvider =
+    typeof metadata.provider === "string" ? metadata.provider.trim() : "";
+  const providerForSessionBinding = (
+    externalProvider ?? metadataProvider
+  ).toLowerCase();
   if (externalProvider) {
     metadata.provider = externalProvider;
   }
   if (externalSessionId) {
     metadata.externalSessionId = externalSessionId;
     metadata.external_session_id = externalSessionId;
+    if (providerForSessionBinding === "opencode") {
+      metadata.opencode_session_id = externalSessionId;
+    }
   }
   if (Object.keys(metadata).length > 0) {
     payload.metadata = metadata;

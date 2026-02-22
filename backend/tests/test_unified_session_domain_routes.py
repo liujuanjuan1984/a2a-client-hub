@@ -194,9 +194,9 @@ async def test_continue_includes_opencode_session_metadata(
         payload = resp.json()
         assert payload["conversationId"] == str(session.id)
         assert payload["source"] == "manual"
-        assert payload["provider"] == "opencode"
-        assert payload["externalSessionId"] == "ses_upstream_1"
-        assert payload["contextId"] == "ctx-bound-1"
+        assert payload.get("metadata", {}).get("provider") == "opencode"
+        assert payload.get("metadata", {}).get("externalSessionId") == "ses_upstream_1"
+        assert payload.get("metadata", {}).get("contextId") == "ctx-bound-1"
 
 
 async def test_invalid_conversation_id_returns_400(
@@ -393,6 +393,6 @@ async def test_continue_keeps_external_session_id_empty_when_missing(
         payload = resp.json()
         assert payload["conversationId"] == str(session.id)
         assert payload["source"] == "manual"
-        assert payload["provider"] == "opencode"
-        assert payload["externalSessionId"] is None
-        assert payload["contextId"] == "ses_context_only_1"
+        assert payload.get("metadata", {}).get("provider") == "opencode"
+        assert payload.get("metadata", {}).get("externalSessionId") is None
+        assert payload.get("metadata", {}).get("contextId") == "ses_context_only_1"

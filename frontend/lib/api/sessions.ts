@@ -25,9 +25,7 @@ export type SessionMessageItem = {
 export type SessionContinueBinding = {
   conversationId: string;
   source: UnifiedSessionSource;
-  provider?: string | null;
-  externalSessionId?: string | null;
-  contextId?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 export const listSessionsPage = async (options?: {
@@ -108,18 +106,9 @@ export const continueSession = async (
   return {
     ...response,
     conversationId: response.conversationId.trim(),
-    provider:
-      typeof response.provider === "string" && response.provider.trim()
-        ? response.provider.trim()
-        : null,
-    externalSessionId:
-      typeof response.externalSessionId === "string" &&
-      response.externalSessionId.trim()
-        ? response.externalSessionId.trim()
-        : null,
-    contextId:
-      typeof response.contextId === "string" && response.contextId.trim()
-        ? response.contextId.trim()
+    metadata:
+      typeof response.metadata === "object" && response.metadata !== null
+        ? (response.metadata as Record<string, unknown>)
         : null,
   };
 };

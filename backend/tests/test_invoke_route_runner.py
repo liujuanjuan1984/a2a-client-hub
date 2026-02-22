@@ -199,7 +199,12 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
 
     async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
         payload = kwargs["payload"]
-        attempts.append({"conversationId": payload.conversation_id})
+        attempts.append(
+            {
+                "conversationId": payload.conversation_id,
+                "metadata": dict(payload.metadata or {}),
+            }
+        )
         if len(attempts) == 1:
             return A2AAgentInvokeResponse(
                 success=False,
@@ -227,9 +232,11 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
             {
                 "conversationId": rebound_conversation_id,
                 "source": "manual",
-                "provider": "opencode",
-                "externalSessionId": "upstream-sid-2",
-                "contextId": "ctx-2",
+                "metadata": {
+                    "provider": "opencode",
+                    "externalSessionId": "upstream-sid-2",
+                    "contextId": "ctx-2",
+                },
             },
             True,
         )
@@ -281,6 +288,9 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     assert len(attempts) == 2
     assert attempts[0]["conversationId"] == original_conversation_id
     assert attempts[1]["conversationId"] == rebound_conversation_id
+    assert attempts[1]["metadata"].get("provider") == "opencode"
+    assert attempts[1]["metadata"].get("externalSessionId") == "upstream-sid-2"
+    assert attempts[1]["metadata"].get("opencode_session_id") == "upstream-sid-2"
 
 
 @pytest.mark.asyncio
@@ -314,9 +324,11 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
             {
                 "conversationId": conversation_id,
                 "source": "manual",
-                "provider": "opencode",
-                "externalSessionId": "upstream-sid-2",
-                "contextId": "ctx-2",
+                "metadata": {
+                    "provider": "opencode",
+                    "externalSessionId": "upstream-sid-2",
+                    "contextId": "ctx-2",
+                },
             },
             True,
         )
@@ -379,12 +391,17 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     )
     original_conversation_id = str(uuid4())
     rebound_conversation_id = str(uuid4())
-    prepare_payloads: list[str | None] = []
+    prepare_payloads: list[dict[str, object]] = []
     stream_calls = 0
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
         payload = kwargs["payload"]
-        prepare_payloads.append(payload.conversation_id)
+        prepare_payloads.append(
+            {
+                "conversationId": payload.conversation_id,
+                "metadata": dict(payload.metadata or {}),
+            }
+        )
         return invoke_route_runner._InvokeState(
             local_session=object(),
             local_source="manual",
@@ -420,9 +437,11 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
             {
                 "conversationId": rebound_conversation_id,
                 "source": "manual",
-                "provider": "opencode",
-                "externalSessionId": "upstream-sid-2",
-                "contextId": "ctx-2",
+                "metadata": {
+                    "provider": "opencode",
+                    "externalSessionId": "upstream-sid-2",
+                    "contextId": "ctx-2",
+                },
             },
             True,
         )
@@ -476,8 +495,19 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     )
 
     assert prepare_payloads == [
-        original_conversation_id,
-        rebound_conversation_id,
+        {
+            "conversationId": original_conversation_id,
+            "metadata": {},
+        },
+        {
+            "conversationId": rebound_conversation_id,
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "upstream-sid-2",
+                "external_session_id": "upstream-sid-2",
+                "opencode_session_id": "upstream-sid-2",
+            },
+        },
     ]
     assert stream_calls == 2
     assert len(websocket.sent) == 1
@@ -493,13 +523,18 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     )
     original_conversation_id = str(uuid4())
     rebound_conversation_id = str(uuid4())
-    prepare_payloads: list[str | None] = []
+    prepare_payloads: list[dict[str, object]] = []
     stream_calls = 0
     observed_error_codes: list[str] = []
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
         payload = kwargs["payload"]
-        prepare_payloads.append(payload.conversation_id)
+        prepare_payloads.append(
+            {
+                "conversationId": payload.conversation_id,
+                "metadata": dict(payload.metadata or {}),
+            }
+        )
         return invoke_route_runner._InvokeState(
             local_session=object(),
             local_source="manual",
@@ -536,9 +571,11 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             {
                 "conversationId": rebound_conversation_id,
                 "source": "manual",
-                "provider": "opencode",
-                "externalSessionId": "upstream-sid-2",
-                "contextId": "ctx-2",
+                "metadata": {
+                    "provider": "opencode",
+                    "externalSessionId": "upstream-sid-2",
+                    "contextId": "ctx-2",
+                },
             },
             True,
         )
@@ -594,11 +631,37 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     sent = [json.loads(item) for item in websocket.sent]
     error_events = [event for event in sent if event["event"] == "error"]
     assert prepare_payloads == [
-        original_conversation_id,
-        rebound_conversation_id,
+        {
+            "conversationId": original_conversation_id,
+            "metadata": {},
+        },
+        {
+            "conversationId": rebound_conversation_id,
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "upstream-sid-2",
+                "external_session_id": "upstream-sid-2",
+                "opencode_session_id": "upstream-sid-2",
+            },
+        },
     ]
     assert stream_calls == 2
     assert observed_error_codes == ["session_not_found", "session_not_found"]
+    assert prepare_payloads == [
+        {
+            "conversationId": original_conversation_id,
+            "metadata": {},
+        },
+        {
+            "conversationId": rebound_conversation_id,
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "upstream-sid-2",
+                "external_session_id": "upstream-sid-2",
+                "opencode_session_id": "upstream-sid-2",
+            },
+        },
+    ]
     assert len(error_events) == 1
     assert (
         error_events[0]["data"]["error_code"] == "session_not_found_recovery_exhausted"
