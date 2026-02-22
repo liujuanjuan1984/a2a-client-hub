@@ -125,6 +125,15 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
                 return normalized[: ConversationThread.TITLE_MAX_LENGTH]
         return "Session"
 
+    @staticmethod
+    def is_placeholder_title(value: str | None) -> bool:
+        normalized = value.strip() if isinstance(value, str) else ""
+        if not normalized:
+            return True
+        if normalized == "Session":
+            return True
+        return normalized.lower().startswith("manual session")
+
     @validates("title")
     def _validate_title(self, _: str, value: str | None) -> str:
         return self.normalize_title(value)

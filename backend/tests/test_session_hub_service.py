@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+
+from app.db.models.conversation_thread import ConversationThread
+from app.services.conversation_identity import conversation_identity_service
+from app.services.session_hub import session_hub_service
+from app.utils.timezone_util import utc_now
+from tests.utils import create_user
+
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+
+
+async def test_record_local_invoke_messages_updates_manual_placeholder_title(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Manual Session c81dceba",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="How do I list all invoices?",
+        response_content="ok",
+        success=True,
+        context_id=None,
+    )
+
+    assert thread.title == "How do I list all invoices?"
+
+
+async def test_list_sessions_falls_back_to_session_title_for_placeholder_thread_title(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Manual Session deadbeef",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    items, _, _ = await session_hub_service.list_sessions(
+        async_db_session,
+        user_id=user.id,
+        page=1,
+        size=50,
+        source="manual",
+    )
+
+    assert len(items) == 1
+    assert items[0]["title"] == "Session"
+
+
+async def test_bind_external_session_with_state_updates_title_from_invoke_hints(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    existing = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        external_provider="opencode",
+        external_session_id="ext-1",
+        title="Manual Session b7f2a1",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    new_thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(existing)
+    async_db_session.add(new_thread)
+    await async_db_session.flush()
+
+    bind_result = await conversation_identity_service.bind_external_session_with_state(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=new_thread.id,
+        source="manual",
+        provider="opencode",
+        external_session_id="ext-1",
+        agent_id=uuid4(),
+        agent_source="personal",
+        context_id="ctx-1",
+        title="Upstream Bound Session",
+    )
+
+    await async_db_session.flush()
+
+    assert bind_result.conversation_id == existing.id
+    assert bind_result.mutated is True
+    assert existing.title == "Upstream Bound Session"

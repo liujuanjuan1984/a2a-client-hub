@@ -125,6 +125,13 @@ class ConversationIdentityService:
             ):
                 existing_by_external.context_id = normalized_context_id
                 mutated = True
+            if existing_by_external.title != title:
+                normalized_title = ConversationThread.normalize_title(title)
+                if ConversationThread.is_placeholder_title(
+                    existing_by_external.title
+                ) and not ConversationThread.is_placeholder_title(normalized_title):
+                    existing_by_external.title = normalized_title
+                    mutated = True
             if mutated:
                 existing_by_external.last_active_at = now
             return ExternalBindingResult(

@@ -99,6 +99,11 @@ class SessionHubService:
                 if resolved_source == "scheduled"
                 else "Manual Session"
             )
+            thread_title = thread.title if thread.title else title_fallback
+            if ConversationThread.is_placeholder_title(thread_title):
+                thread_title = (
+                    "Session" if resolved_source == "manual" else title_fallback
+                )
             items.append(
                 {
                     "conversationId": str(thread.id),
@@ -109,7 +114,7 @@ class SessionHubService:
                     ),
                     "agent_id": thread.agent_id,
                     "agent_source": thread.agent_source or "personal",
-                    "title": thread.title or title_fallback,
+                    "title": thread_title,
                     "last_active_at": thread.last_active_at,
                     "created_at": thread.created_at,
                 }
@@ -331,7 +336,7 @@ class SessionHubService:
                 source=ConversationThread.SOURCE_MANUAL,
                 agent_id=agent_id,
                 agent_source=agent_source,
-                title=f"Manual Session {str(local_session_id)[:8]}",
+                title="Session",
                 last_active_at=utc_now(),
                 status=ConversationThread.STATUS_ACTIVE,
             )
@@ -409,6 +414,12 @@ class SessionHubService:
         )
         if normalized_user_message_id:
             metadata["client_message_id"] = normalized_user_message_id
+        if (
+            source == "manual"
+            and (session_title := _derive_session_title_from_query(query))
+            and ConversationThread.is_placeholder_title(session.title)
+        ):
+            session.title = session_title
 
         conversation_id: UUID = session.id
         if source == "manual":
@@ -422,6 +433,8 @@ class SessionHubService:
                 source="manual",
             )
         if provider_from_invoke and external_session_id:
+            invoke_title = _derive_session_title_from_invoke_metadata(invoke_metadata)
+            bind_title = invoke_title if invoke_title else session.title
             conversation_id = await conversation_identity_service.bind_external_session(
                 db,
                 user_id=user_id,
@@ -432,7 +445,7 @@ class SessionHubService:
                 agent_id=agent_id,
                 agent_source=agent_source,
                 context_id=context_id if isinstance(context_id, str) else None,
-                title=session.title or "Session",
+                title=bind_title or "Session",
             )
         else:
             normalized_provider = normalize_provider(provider_from_invoke)
@@ -667,6 +680,29 @@ def _resolve_local_message_item_id(
         if client_message_id:
             return client_message_id
     return str(message.id)
+
+
+def _derive_session_title_from_query(query: str) -> str | None:
+    trimmed_query = query.strip() if isinstance(query, str) else ""
+    if not trimmed_query:
+        return None
+    return trimmed_query[: ConversationThread.TITLE_MAX_LENGTH]
+
+
+def _derive_session_title_from_invoke_metadata(
+    metadata: Optional[Dict[str, Any]],
+) -> str | None:
+    if not isinstance(metadata, dict):
+        return None
+    root_title = normalize_non_empty_text(metadata.get("title"))
+    if root_title:
+        return root_title[: ConversationThread.TITLE_MAX_LENGTH]
+    nested = metadata.get("opencode")
+    if isinstance(nested, dict):
+        nested_title = normalize_non_empty_text(nested.get("title"))
+        if nested_title:
+            return nested_title[: ConversationThread.TITLE_MAX_LENGTH]
+    return None
 
 
 session_hub_service = SessionHubService()
