@@ -5,7 +5,6 @@ export type ShortcutItem = {
   title: string;
   prompt: string;
   is_default: boolean;
-  isDefault?: boolean;
   order: number;
 };
 
@@ -37,11 +36,7 @@ const normalizeShortcutItem = (item: Record<string, unknown>): ShortcutItem => {
   const title = typeof item.title === "string" ? item.title : "";
   const prompt = typeof item.prompt === "string" ? item.prompt : "";
   const isDefault =
-    typeof item.is_default === "boolean"
-      ? item.is_default
-      : typeof item.isDefault === "boolean"
-        ? item.isDefault
-        : false;
+    typeof item.is_default === "boolean" ? item.is_default : false;
   const orderRaw = item.order;
   const order =
     typeof orderRaw === "number" && Number.isFinite(orderRaw)
@@ -52,7 +47,6 @@ const normalizeShortcutItem = (item: Record<string, unknown>): ShortcutItem => {
     id,
     title,
     prompt,
-    isDefault,
     is_default: isDefault,
     order: Number.isFinite(order) ? order : 0,
   };

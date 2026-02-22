@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, ClassVar, List
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.pagination import ListResponse, Pagination
 
@@ -27,22 +27,6 @@ class ShortcutCreateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=_MAX_PROMPT_LENGTH)
     order: int | None = Field(default=None, ge=0)
 
-    # Legacy compatibility keys for clients still posting old payload shape.
-    label: str | None = None
-    value: str | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_compat_payload(cls, values: Any) -> Any:
-        if not isinstance(values, dict):
-            return values
-        payload = dict(values)
-        if payload.get("title") is None and payload.get("label") is not None:
-            payload["title"] = payload["label"]
-        if payload.get("prompt") is None and payload.get("value") is not None:
-            payload["prompt"] = payload["value"]
-        return payload
-
     @model_validator(mode="after")
     def _normalize_fields(self: "ShortcutCreateRequest") -> "ShortcutCreateRequest":
         normalized_title = _strip_text(self.title)
@@ -63,22 +47,6 @@ class ShortcutUpdateRequest(BaseModel):
     )
     order: int | None = Field(default=None, ge=0)
 
-    # Legacy compatibility keys for clients still posting old payload shape.
-    label: str | None = None
-    value: str | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_compat_payload(cls, values: Any) -> Any:
-        if not isinstance(values, dict):
-            return values
-        payload = dict(values)
-        if payload.get("title") is None and payload.get("label") is not None:
-            payload["title"] = payload["label"]
-        if payload.get("prompt") is None and payload.get("value") is not None:
-            payload["prompt"] = payload["value"]
-        return payload
-
     @model_validator(mode="after")
     def _normalize_fields(self: "ShortcutUpdateRequest") -> "ShortcutUpdateRequest":
         self.title = _strip_text(self.title)
@@ -95,16 +63,6 @@ class ShortcutResponse(BaseModel):
     prompt: str = Field(max_length=4000)
     is_default: bool = Field(default=False)
     order: int
-
-    @computed_field
-    @property
-    def label(self) -> str:
-        return self.title
-
-    @computed_field
-    @property
-    def value(self) -> str:
-        return self.prompt
 
 
 class ShortcutListMeta(BaseModel):

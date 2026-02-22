@@ -59,7 +59,7 @@ async def test_shortcuts_list_and_mutations(async_db_session, async_session_make
         assert all(item["id"] != custom_id for item in items)
 
 
-async def test_shortcuts_legacy_payload_and_default_protection(
+async def test_shortcuts_default_protection_and_not_found(
     async_db_session,
     async_session_maker,
 ):
@@ -70,15 +70,14 @@ async def test_shortcuts_legacy_payload_and_default_protection(
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
-        compat_create_resp = await client.post(
+        create_resp = await client.post(
             "/me/shortcuts",
-            json={"label": "Legacy", "value": "Legacy value"},
+            json={"title": "Custom", "prompt": "Custom value"},
         )
-        assert compat_create_resp.status_code == 201
-        compat_payload = compat_create_resp.json()
-        assert compat_payload["title"] == "Legacy"
-        assert compat_payload["prompt"] == "Legacy value"
-        await client.get("/me/shortcuts")
+        assert create_resp.status_code == 201
+        custom = create_resp.json()
+        assert custom["title"] == "Custom"
+        assert custom["prompt"] == "Custom value"
 
         default_resp = await client.patch(
             "/me/shortcuts/11111111-1111-1111-1111-111111111111",
@@ -89,7 +88,5 @@ async def test_shortcuts_legacy_payload_and_default_protection(
         not_found_resp = await client.delete(f"/me/shortcuts/{uuid4()}")
         assert not_found_resp.status_code == 404
 
-        delete_default_resp = await client.delete(
-            f"/me/shortcuts/{compat_payload['id']}"
-        )
-        assert delete_default_resp.status_code == 204
+        delete_custom_resp = await client.delete(f"/me/shortcuts/{custom['id']}")
+        assert delete_custom_resp.status_code == 204

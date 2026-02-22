@@ -65,15 +65,8 @@ type ShortcutState = {
   clearAll: () => void;
 };
 
-type LegacyShortcut = {
-  id: string;
-  label?: string;
-  value?: string;
-  isCustom?: boolean;
-};
-
 type PersistedShortcutState = {
-  shortcuts: (Shortcut | LegacyShortcut)[];
+  shortcuts: Shortcut[];
   isSyncing?: boolean;
   syncError?: string | null;
 };
@@ -106,22 +99,14 @@ const normalizeFromPersisted = (
   const id = normalizeString(source.id) ?? `${fallbackIdPrefix}${index + 1}`;
   const title =
     normalizeString(source.title) ??
-    normalizeString(source.label) ??
     (typeof source.name === "string" ? source.name : null);
   const prompt =
     normalizeString(source.prompt) ??
-    normalizeString(source.value) ??
     (typeof source.text === "string" ? source.text : null);
   if (!title || !prompt) return null;
 
   const isDefault =
-    typeof source.isDefault === "boolean"
-      ? source.isDefault
-      : typeof source.is_default === "boolean"
-        ? source.is_default
-        : typeof source.isCustom === "boolean"
-          ? !source.isCustom
-          : false;
+    typeof source.isDefault === "boolean" ? source.isDefault : false;
 
   return {
     id,
