@@ -30,9 +30,11 @@ import {
   type AgentSession,
 } from "@/lib/chat-utils";
 import { generateId, generateUuid } from "@/lib/id";
+import { queryKeys } from "@/lib/queryKeys";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { chatConnectionService } from "@/services/chatConnectionService";
+import { queryClient } from "@/services/queryClient";
 import { type AgentSource } from "@/store/agents";
 import { useMessageStore } from "@/store/messages";
 
@@ -545,6 +547,18 @@ export const useChatStore = create<ChatState>()(
             merged.set(message.id, message);
           });
           incoming.forEach((message) => {
+            const existing = merged.get(message.id);
+            const session = get().sessions[conversationId];
+            const isActivelyStreaming =
+              session?.streamState === "streaming" ||
+              session?.streamState === "rebinding";
+            if (
+              existing &&
+              existing.status === "streaming" &&
+              isActivelyStreaming
+            ) {
+              return;
+            }
             merged.set(message.id, message);
           });
           const nextMessages = Array.from(merged.values()).sort((left, right) =>
@@ -623,6 +637,9 @@ export const useChatStore = create<ChatState>()(
 
           if (recovered.size > 0) {
             mergeHistoryMessagesById(Array.from(recovered.values()));
+            queryClient.invalidateQueries({
+              queryKey: queryKeys.history.chat(conversationId),
+            });
           }
         };
 

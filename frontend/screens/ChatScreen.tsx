@@ -26,6 +26,7 @@ import {
   useValidateAgentMutation,
 } from "@/hooks/useAgentsCatalogQuery";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
+import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import {
   A2AExtensionCallError,
   rejectOpencodeQuestionInterrupt,
@@ -175,6 +176,8 @@ export function ChatScreen({
     paused: historyPaused,
   });
 
+  useRefreshOnFocus(sessionHistoryQuery.loadFirstPage);
+
   const historyLoading = sessionHistoryQuery.loading;
   const historyLoadingMore = sessionHistoryQuery.loadingMore;
   const historyNextPage = sessionHistoryQuery.nextPage;
@@ -299,6 +302,17 @@ export function ChatScreen({
         merged.set(message.id, message);
       });
       incoming.forEach((message) => {
+        const existing = merged.get(message.id);
+        const isActivelyStreaming =
+          session?.streamState === "streaming" ||
+          session?.streamState === "rebinding";
+        if (
+          existing &&
+          existing.status === "streaming" &&
+          isActivelyStreaming
+        ) {
+          return;
+        }
         merged.set(message.id, message);
       });
       const nextMessages = Array.from(merged.values()).sort((a, b) =>

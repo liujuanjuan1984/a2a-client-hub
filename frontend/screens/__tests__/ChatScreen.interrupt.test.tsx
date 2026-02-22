@@ -134,6 +134,7 @@ jest.mock("expo-router", () => ({
     replace: jest.fn(),
     back: jest.fn(),
   }),
+  useFocusEffect: jest.fn(),
 }));
 
 jest.mock("@/components/layout/useAppSafeArea", () => ({
