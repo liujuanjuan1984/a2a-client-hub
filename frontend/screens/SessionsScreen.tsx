@@ -106,15 +106,15 @@ export function SessionsScreen() {
                           {agent.name}
                         </Text>
                       </View>
-                      <View className="rounded-full bg-slate-800 px-2 py-1">
-                        <Text className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                      <View className="px-1 py-0.5">
+                        <Text className="text-[10px] text-slate-500">
                           {item.source}
                         </Text>
                       </View>
                     </View>
                     <Text
-                      className="mt-2 text-base font-semibold text-white"
-                      numberOfLines={1}
+                      className="mt-2 text-sm text-slate-300"
+                      numberOfLines={2}
                     >
                       {title}
                     </Text>

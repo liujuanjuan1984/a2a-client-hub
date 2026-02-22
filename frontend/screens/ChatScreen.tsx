@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -11,18 +10,20 @@ import React, {
 import {
   FlatList,
   KeyboardAvoidingView,
-  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   TextInputKeyPressEventData,
   View,
 } from "react-native";
 
+import { ChatMessageItem } from "@/components/chat/ChatMessageItem";
+import { InterruptActionCard } from "@/components/chat/InterruptActionCard";
+import { SessionPickerModal } from "@/components/chat/SessionPickerModal";
+import { ShortcutManagerModal } from "@/components/chat/ShortcutManagerModal";
 import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
 import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 import { BackButton } from "@/components/ui/BackButton";
@@ -40,10 +41,10 @@ import {
   replyOpencodePermissionInterrupt,
   replyOpencodeQuestionInterrupt,
 } from "@/lib/api/a2aExtensions";
-import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
+import { type ChatMessage } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
 import { continueSession } from "@/lib/api/sessions";
-import { type AgentSession } from "@/lib/chat-utils";
+import { isSameMessageList } from "@/lib/chat-utils";
 import { shouldStickToBottom } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
@@ -54,29 +55,6 @@ import { useChatStore } from "@/store/chat";
 import { useMessageStore } from "@/store/messages";
 import { useShortcutStore } from "@/store/shortcuts";
 
-const isSameBlockList = (
-  left: MessageBlock[] = [],
-  right: MessageBlock[] = [],
-) => {
-  if (left.length !== right.length) return false;
-  for (let index = 0; index < left.length; index += 1) {
-    const lhs = left[index];
-    const rhs = right[index];
-    if (!lhs || !rhs) return false;
-    if (
-      lhs.id !== rhs.id ||
-      lhs.type !== rhs.type ||
-      lhs.content !== rhs.content ||
-      lhs.isFinished !== rhs.isFinished ||
-      lhs.createdAt !== rhs.createdAt ||
-      lhs.updatedAt !== rhs.updatedAt
-    ) {
-      return false;
-    }
-  }
-  return true;
-};
-
 type WebTextInputKeyPressEvent =
   NativeSyntheticEvent<TextInputKeyPressEventData> & {
     nativeEvent: TextInputKeyPressEventData & {
@@ -86,162 +64,11 @@ type WebTextInputKeyPressEvent =
     preventDefault?: () => void;
   };
 
-const isSameMessageList = (left: ChatMessage[], right: ChatMessage[]) => {
-  if (left.length !== right.length) return false;
-  return left.every((message, index) => {
-    const next = right[index];
-    if (!next) return false;
-    return (
-      message.id === next.id &&
-      message.role === next.role &&
-      message.content === next.content &&
-      message.createdAt === next.createdAt &&
-      isSameBlockList(message.blocks, next.blocks) &&
-      message.status === next.status
-    );
-  });
-};
-
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const LIST_INITIAL_NUM_TO_RENDER = 16;
 const LIST_WINDOW_SIZE = 9;
 const LIST_MAX_TO_RENDER_PER_BATCH = 20;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
-const COLLAPSED_TEXT_LINES = 10;
-const COLLAPSED_TEXT_CHAR_LIMIT = 300;
-
-const shouldCollapseByLength = (value: string) => {
-  return value.length > COLLAPSED_TEXT_CHAR_LIMIT;
-};
-
-function SessionItem({
-  conversationId,
-  session,
-  isActive,
-  onSelect,
-}: {
-  conversationId: string;
-  session: AgentSession;
-  isActive: boolean;
-  onSelect: (id: string) => void;
-}) {
-  const messages = useMessageStore((state) => state.messages[conversationId]);
-  const firstUserMessage = messages?.find((m) => m.role === "user");
-  const title = firstUserMessage?.content?.trim() || "New Session";
-  const date = new Date(session.lastActiveAt).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  return (
-    <Pressable
-      className={`mb-2 flex-row items-center justify-between rounded-xl border p-3 ${
-        isActive
-          ? "border-primary bg-primary/10"
-          : "border-slate-800 bg-slate-900"
-      }`}
-      onPress={() => onSelect(conversationId)}
-    >
-      <Text className="flex-1 text-sm font-medium text-white" numberOfLines={1}>
-        {title}
-      </Text>
-      <Text className="ml-2 text-[10px] text-slate-400">{date}</Text>
-    </Pressable>
-  );
-}
-
-function SessionPickerModal({
-  visible,
-  onClose,
-  agentId,
-  currentConversationId,
-  onSelect,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  agentId?: string | null;
-  currentConversationId?: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const generateConversationId = useChatStore(
-    (state) => state.generateConversationId,
-  );
-  const getSessionsByAgentId = useChatStore(
-    (state) => state.getSessionsByAgentId,
-  );
-  const sessions = useChatStore((state) => state.sessions);
-
-  const agentSessions = React.useMemo(() => {
-    if (!agentId) return [];
-    return getSessionsByAgentId(agentId);
-  }, [agentId, getSessionsByAgentId, sessions]);
-
-  return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View className="flex-1 justify-end bg-black/60 sm:items-center sm:justify-center">
-        <Pressable
-          className="absolute inset-0"
-          accessibilityRole="button"
-          accessibilityLabel="Close session picker"
-          onPress={onClose}
-        />
-        <View className="w-full max-h-[80%] min-h-[50%] rounded-t-3xl border-t border-slate-800 bg-slate-950 p-6 sm:w-[480px] sm:rounded-3xl sm:border">
-          <View className="mb-6 flex-row items-center justify-between">
-            <Text className="text-lg font-semibold text-white">
-              Chat History
-            </Text>
-            <Pressable
-              onPress={onClose}
-              className="rounded-full bg-slate-800 p-2"
-              accessibilityRole="button"
-              accessibilityLabel="Close session picker"
-            >
-              <Ionicons name="close" size={20} color="#cbd5e1" />
-            </Pressable>
-          </View>
-          <Button
-            className="mb-4"
-            label="New Session"
-            iconLeft="add"
-            onPress={() => {
-              onSelect(generateConversationId());
-              onClose();
-            }}
-          />
-          {agentSessions.length === 0 ? (
-            <View className="py-8 items-center">
-              <Text className="text-slate-400">No previous sessions.</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={agentSessions}
-              keyExtractor={(item) => item[0]}
-              renderItem={({ item }) => (
-                <SessionItem
-                  conversationId={item[0]}
-                  session={item[1]}
-                  isActive={item[0] === currentConversationId}
-                  onSelect={(id) => {
-                    onSelect(id);
-                    onClose();
-                  }}
-                />
-              )}
-              contentContainerStyle={{ paddingBottom: 24 }}
-            />
-          )}
-        </View>
-      </View>
-    </Modal>
-  );
-}
 
 export function ChatScreen({
   agentId: routeAgentId,
@@ -275,13 +102,7 @@ export function ChatScreen({
   const messages = useMessageStore((state) =>
     conversationId ? (state.messages[conversationId] ?? []) : [],
   );
-  const {
-    shortcuts,
-    addShortcut,
-    updateShortcut,
-    removeShortcut,
-    syncShortcuts,
-  } = useShortcutStore();
+  const { syncShortcuts } = useShortcutStore();
 
   const [input, setInput] = useState("");
   const suppressAutoScrollRef = useRef(false);
@@ -293,25 +114,9 @@ export function ChatScreen({
   const [showDetails, setShowDetails] = useState(false);
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
-  const [shortcutManagerMode, setShortcutManagerMode] = useState<
-    "list" | "create" | "edit"
-  >("list");
-  const [editingShortcutId, setEditingShortcutId] = useState<string | null>(
-    null,
-  );
-  const [shortcutTitle, setShortcutTitle] = useState("");
-  const [shortcutPrompt, setShortcutPrompt] = useState("");
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
   const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
-  const [expandedReasoningByBlockId, setExpandedReasoningByBlockId] = useState<
-    Record<string, boolean>
-  >({});
-  const [expandedToolCallByBlockId, setExpandedToolCallByBlockId] = useState<
-    Record<string, boolean>
-  >({});
-  const [expandedTextByBlockId, setExpandedTextByBlockId] = useState<
-    Record<string, boolean>
-  >({});
+
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
@@ -502,7 +307,7 @@ export function ChatScreen({
       }
       setMessages(conversationId, nextMessages);
     },
-    [conversationId, setMessages],
+    [conversationId, setMessages, session?.streamState],
   );
 
   useEffect(() => {
@@ -558,7 +363,7 @@ export function ChatScreen({
     historyLoadingMore,
     historyNextPage,
     historyPaused,
-    sessionHistoryQuery.loadMore,
+    sessionHistoryQuery,
     conversationId,
   ]);
 
@@ -837,92 +642,15 @@ export function ChatScreen({
 
   useEffect(() => () => clearScrollSettleTimer(), [clearScrollSettleTimer]);
 
-  const resetShortcutDraft = () => {
-    setEditingShortcutId(null);
-    setShortcutTitle("");
-    setShortcutPrompt("");
-  };
-
-  const openShortcutManager = () => {
-    setShortcutManagerMode("list");
-    setShowShortcutManager(true);
-  };
-
-  const openSessionPicker = () => {
-    setShowSessionPicker(true);
-  };
-
-  const closeSessionPicker = () => {
-    setShowSessionPicker(false);
-  };
-
-  const closeShortcutManager = () => {
-    setShowShortcutManager(false);
-    resetShortcutDraft();
-  };
-
-  const openCreateShortcut = () => {
-    const inferredTitle = input.trim().slice(0, 20) || "New Shortcut";
-    setShortcutManagerMode("create");
-    setEditingShortcutId(null);
-    setShortcutTitle(inferredTitle);
-    setShortcutPrompt(input.trim());
-  };
-
-  const openEditShortcut = (
-    shortcutId: string,
-    title: string,
-    prompt: string,
-  ) => {
-    setShortcutManagerMode("edit");
-    setEditingShortcutId(shortcutId);
-    setShortcutTitle(title);
-    setShortcutPrompt(prompt);
-  };
-
-  const exitShortcutManagerForm = () => {
-    setShortcutManagerMode("list");
-    resetShortcutDraft();
-  };
+  const openShortcutManager = () => setShowShortcutManager(true);
+  const openSessionPicker = () => setShowSessionPicker(true);
+  const closeSessionPicker = () => setShowSessionPicker(false);
+  const closeShortcutManager = () => setShowShortcutManager(false);
 
   const handleUseShortcut = (prompt: string) => {
     setInput(prompt);
     closeShortcutManager();
     inputRef.current?.focus();
-  };
-
-  const handleSubmitShortcut = async () => {
-    const normalizedTitle = shortcutTitle.trim();
-    const normalizedPrompt = shortcutPrompt.trim();
-    if (!normalizedTitle || !normalizedPrompt) {
-      toast.error("Shortcut invalid", "Title and prompt are required.");
-      return;
-    }
-    try {
-      if (editingShortcutId) {
-        await updateShortcut(
-          editingShortcutId,
-          normalizedTitle,
-          normalizedPrompt,
-        );
-        toast.success(
-          "Shortcut updated",
-          `"${normalizedTitle}" has been updated.`,
-        );
-      } else {
-        await addShortcut(normalizedTitle, normalizedPrompt);
-        toast.success(
-          "Shortcut saved",
-          `"${normalizedTitle}" is now available.`,
-        );
-      }
-      exitShortcutManagerForm();
-    } catch (error) {
-      toast.error(
-        editingShortcutId ? "Update shortcut failed" : "Save shortcut failed",
-        error instanceof Error ? error.message : "Unknown error",
-      );
-    }
   };
 
   const handleInputChange = (value: string) => {
@@ -954,63 +682,6 @@ export function ChatScreen({
       handleSend();
     }
   };
-
-  const toggleReasoning = useCallback(
-    (blockId: string) => {
-      captureContentSizeAnchor();
-      setExpandedReasoningByBlockId((current) => ({
-        ...current,
-        [blockId]: !current[blockId],
-      }));
-    },
-    [captureContentSizeAnchor],
-  );
-
-  const toggleToolCall = useCallback(
-    (blockId: string) => {
-      captureContentSizeAnchor();
-      setExpandedToolCallByBlockId((current) => ({
-        ...current,
-        [blockId]: !current[blockId],
-      }));
-    },
-    [captureContentSizeAnchor],
-  );
-
-  const toggleTextExpansion = useCallback(
-    (blockId: string) => {
-      captureContentSizeAnchor();
-      setExpandedTextByBlockId((current) => ({
-        ...current,
-        [blockId]: !current[blockId],
-      }));
-    },
-    [captureContentSizeAnchor],
-  );
-
-  const deriveRenderableBlocks = useCallback(
-    (message: ChatMessage): MessageBlock[] => {
-      const persisted = message.blocks ?? [];
-      if (persisted.length > 0) {
-        return persisted;
-      }
-      if (message.role === "agent" && message.content.trim()) {
-        const now = message.createdAt;
-        return [
-          {
-            id: `${message.id}:text`,
-            type: "text",
-            content: message.content,
-            isFinished: message.status !== "streaming",
-            createdAt: now,
-            updatedAt: now,
-          },
-        ];
-      }
-      return [];
-    },
-    [],
-  );
 
   const handleRetry = useCallback(() => {
     if (
@@ -1047,429 +718,6 @@ export function ChatScreen({
     messages,
     sendMessage,
     session?.streamState,
-  ]);
-
-  const handleCopyPayload = useCallback(async (text: string) => {
-    if (Platform.OS === "web" && typeof navigator !== "undefined") {
-      if (navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(text);
-          return;
-        } catch {
-          // Fall back to Expo clipboard API when browser clipboard write is blocked.
-        }
-      }
-    }
-
-    await Clipboard.setStringAsync(text);
-  }, []);
-
-  const handleCopyMessage = useCallback(
-    async (message: ChatMessage) => {
-      try {
-        let textToCopy = message.content;
-        if (message.role === "agent" && message.blocks?.length) {
-          const blockContent = message.blocks
-            .map((b) => `[${b.type}]\n${b.content}`)
-            .join("\n\n");
-          if (blockContent) {
-            textToCopy = `${blockContent}\n\n${textToCopy}`;
-          }
-        }
-        await handleCopyPayload(textToCopy.trim());
-        toast.success("Copied", "Message copied to clipboard.");
-      } catch {
-        toast.error("Copy failed", "Could not copy message.");
-      }
-    },
-    [handleCopyPayload],
-  );
-
-  const renderChatMessage = useCallback(
-    ({ item: message, index }: { item: ChatMessage; index: number }) => {
-      const renderableBlocks = deriveRenderableBlocks(message);
-      const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
-      const isLastMessage = index === messages.length - 1;
-      const canRetry =
-        isLastMessage &&
-        message.role === "agent" &&
-        session?.streamState &&
-        ["error", "recoverable"].includes(session.streamState);
-      const userCopyButtonPositionClass = "right-0";
-
-      return (
-        <View
-          className={`mb-3 flex ${
-            message.role === "user" ? "items-end" : "items-start"
-          }`}
-        >
-          <View className="max-w-[94%] relative">
-            <Pressable
-              onLongPress={() => handleCopyMessage(message)}
-              delayLongPress={500}
-              className={`px-4 py-3 ${
-                message.role === "user"
-                  ? "rounded-2xl rounded-tr-sm bg-primary"
-                  : message.role === "agent"
-                    ? "rounded-2xl rounded-tl-sm bg-slate-800"
-                    : "rounded-2xl bg-slate-900"
-              }`}
-            >
-              {hasBlocks ? (
-                renderableBlocks.map((block, blockIndex) => {
-                  const blockText = block.content;
-                  if (blockText.length === 0) return null;
-                  const blockId = block.id || `${message.id}:${blockIndex}`;
-                  if (block.type === "reasoning") {
-                    const expanded = expandedReasoningByBlockId[blockId];
-                    return (
-                      <View
-                        key={blockId}
-                        className={`${
-                          blockIndex > 0 ? "mt-3" : ""
-                        } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                      >
-                        <Pressable
-                          onPress={() => toggleReasoning(blockId)}
-                          accessibilityRole="button"
-                          accessibilityLabel={
-                            expanded
-                              ? "Hide reasoning details"
-                              : "Show reasoning details"
-                          }
-                        >
-                          <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                            {expanded ? "Hide Reasoning" : "Show Reasoning"}
-                          </Text>
-                        </Pressable>
-                        {expanded ? (
-                          <Text
-                            selectable
-                            className="mt-1 break-all text-xs text-slate-300"
-                          >
-                            {blockText}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  }
-                  if (block.type === "tool_call") {
-                    const expanded = expandedToolCallByBlockId[blockId];
-                    return (
-                      <View
-                        key={blockId}
-                        className={`${
-                          blockIndex > 0 ? "mt-3" : ""
-                        } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                      >
-                        <Pressable
-                          onPress={() => toggleToolCall(blockId)}
-                          accessibilityRole="button"
-                          accessibilityLabel={
-                            expanded
-                              ? "Hide tool call details"
-                              : "Show tool call details"
-                          }
-                        >
-                          <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                            {expanded ? "Hide Tool Call" : "Show Tool Call"}
-                          </Text>
-                        </Pressable>
-                        {expanded ? (
-                          <Text
-                            selectable
-                            className="mt-1 break-all text-xs text-slate-300"
-                          >
-                            {blockText}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  }
-                  if (block.type === "text") {
-                    const blockExpanded =
-                      expandedTextByBlockId[blockId] ?? false;
-                    const shouldCollapse = shouldCollapseByLength(blockText);
-
-                    return (
-                      <View key={blockId} className="rounded-xl">
-                        <Text
-                          selectable
-                          className={`${
-                            blockIndex > 0 ? "mt-3" : ""
-                          } break-all text-sm text-white`}
-                          numberOfLines={
-                            shouldCollapse && !blockExpanded
-                              ? COLLAPSED_TEXT_LINES
-                              : undefined
-                          }
-                        >
-                          {blockText}
-                        </Text>
-                        {shouldCollapse ? (
-                          <Pressable
-                            className="mt-2 rounded-md px-2 py-1"
-                            accessibilityRole="button"
-                            accessibilityLabel={
-                              blockExpanded
-                                ? "Collapse full text"
-                                : "Expand full text"
-                            }
-                            testID={`chat-message-${blockId}-expand`}
-                            onPress={() => toggleTextExpansion(blockId)}
-                          >
-                            <Text className="text-xs font-semibold text-slate-300">
-                              {blockExpanded ? "Show less" : "Read more"}
-                            </Text>
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    );
-                  }
-                  return (
-                    <View
-                      key={blockId}
-                      className={`${
-                        blockIndex > 0 ? "mt-3" : ""
-                      } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                    >
-                      <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                        {block.type}
-                      </Text>
-                      <Text
-                        selectable
-                        className="mt-1 break-all text-xs text-slate-300"
-                      >
-                        {blockText}
-                      </Text>
-                    </View>
-                  );
-                })
-              ) : (
-                <View className="rounded-xl">
-                  <Text
-                    selectable
-                    className="break-all text-sm text-white"
-                    numberOfLines={
-                      shouldCollapseByLength(message.content) &&
-                      !(expandedTextByBlockId[message.id] ?? false)
-                        ? COLLAPSED_TEXT_LINES
-                        : undefined
-                    }
-                  >
-                    {message.content}
-                  </Text>
-                  {shouldCollapseByLength(message.content) ? (
-                    <Pressable
-                      className="mt-2 rounded-md px-2 py-1"
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        expandedTextByBlockId[message.id]
-                          ? "Collapse full text"
-                          : "Expand full text"
-                      }
-                      testID={`chat-message-${message.id}-expand`}
-                      onPress={() => toggleTextExpansion(message.id)}
-                    >
-                      <Text className="text-xs font-semibold text-slate-300">
-                        {expandedTextByBlockId[message.id]
-                          ? "Show less"
-                          : "Read more"}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-              )}
-              {message.status === "streaming" ? (
-                <Text className="mt-1 text-[10px] text-muted">
-                  Streaming...
-                </Text>
-              ) : null}
-            </Pressable>
-            <Pressable
-              className={`absolute bottom-2 ${userCopyButtonPositionClass} rounded-lg px-2 py-2 opacity-45`}
-              onPress={() => handleCopyMessage(message)}
-              accessibilityRole="button"
-              accessibilityLabel="Copy message"
-            >
-              <Ionicons
-                name="copy-outline"
-                size={16}
-                color={message.role === "user" ? "#ffffff" : "#cbd5e1"}
-              />
-            </Pressable>
-          </View>
-          {canRetry && (
-            <Pressable
-              onPress={handleRetry}
-              className="mt-1.5 flex-row items-center gap-1 opacity-70"
-            >
-              <Ionicons name="refresh" size={12} color="#94a3b8" />
-              <Text className="text-[10px] font-semibold text-slate-400">
-                Retry
-              </Text>
-            </Pressable>
-          )}
-        </View>
-      );
-    },
-    [
-      deriveRenderableBlocks,
-      expandedReasoningByBlockId,
-      expandedToolCallByBlockId,
-      expandedTextByBlockId,
-      handleCopyMessage,
-      handleRetry,
-      messages.length,
-      session?.streamState,
-      toggleReasoning,
-      toggleToolCall,
-      toggleTextExpansion,
-    ],
-  );
-
-  const interruptActionCard = useMemo(() => {
-    if (!pendingInterrupt) {
-      return null;
-    }
-    if (pendingInterrupt.type === "permission") {
-      const permission = pendingInterrupt.details.permission ?? "unknown";
-      const patterns = pendingInterrupt.details.patterns ?? [];
-      return (
-        <View className="mt-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-amber-300">
-            Authorization Required
-          </Text>
-          <Text className="mt-2 text-sm text-white">
-            Permission: <Text className="font-semibold">{permission}</Text>
-          </Text>
-          {patterns.length > 0 ? (
-            <View className="mt-2 gap-1">
-              {patterns.map((pattern) => (
-                <Text key={pattern} className="text-xs text-amber-100">
-                  • {pattern}
-                </Text>
-              ))}
-            </View>
-          ) : null}
-          <View className="mt-4 flex-row flex-wrap gap-2">
-            <Button
-              size="sm"
-              label="Allow once"
-              testID="interrupt-permission-once"
-              loading={interruptAction === "permission:once"}
-              disabled={Boolean(interruptAction)}
-              onPress={() => handlePermissionReply("once")}
-            />
-            <Button
-              size="sm"
-              label="Always allow"
-              testID="interrupt-permission-always"
-              variant="secondary"
-              loading={interruptAction === "permission:always"}
-              disabled={Boolean(interruptAction)}
-              onPress={() => handlePermissionReply("always")}
-            />
-            <Button
-              size="sm"
-              label="Reject"
-              testID="interrupt-permission-reject"
-              variant="danger"
-              loading={interruptAction === "permission:reject"}
-              disabled={Boolean(interruptAction)}
-              onPress={() => handlePermissionReply("reject")}
-            />
-          </View>
-        </View>
-      );
-    }
-
-    const questions = pendingInterrupt.details.questions ?? [];
-    return (
-      <View className="mt-3 rounded-2xl border border-sky-500/40 bg-sky-500/10 p-4">
-        <Text className="text-xs font-semibold uppercase tracking-wide text-sky-300">
-          Additional Input Required
-        </Text>
-        {questions.map((question, index) => {
-          const answer = questionAnswers[index] ?? "";
-          return (
-            <View
-              key={`${pendingInterrupt.requestId}:${index}`}
-              className="mt-3"
-            >
-              {question.header ? (
-                <Text className="text-[11px] font-semibold text-sky-200">
-                  {question.header}
-                </Text>
-              ) : null}
-              <Text className="mt-1 text-sm text-white">
-                {question.question}
-              </Text>
-              <TextInput
-                testID={`interrupt-question-input-${index}`}
-                className="mt-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-                value={answer}
-                editable={!interruptAction}
-                placeholder="Type your answer"
-                placeholderTextColor="#6b7280"
-                onChangeText={(value) =>
-                  handleQuestionAnswerChange(index, value)
-                }
-              />
-              {question.options.length > 0 ? (
-                <View className="mt-2 flex-row flex-wrap gap-2">
-                  {question.options.map((option) => {
-                    const optionValue = option.value || option.label;
-                    return (
-                      <Pressable
-                        key={`${pendingInterrupt.requestId}:${index}:${option.label}`}
-                        className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1"
-                        disabled={Boolean(interruptAction)}
-                        onPress={() =>
-                          handleQuestionOptionPick(index, optionValue)
-                        }
-                      >
-                        <Text className="text-[11px] text-slate-200">
-                          {option.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              ) : null}
-            </View>
-          );
-        })}
-        <View className="mt-4 flex-row flex-wrap gap-2">
-          <Button
-            size="sm"
-            label="Submit answers"
-            testID="interrupt-question-submit"
-            loading={interruptAction === "question:reply"}
-            disabled={Boolean(interruptAction)}
-            onPress={handleQuestionReply}
-          />
-          <Button
-            size="sm"
-            label="Reject"
-            testID="interrupt-question-reject"
-            variant="danger"
-            loading={interruptAction === "question:reject"}
-            disabled={Boolean(interruptAction)}
-            onPress={handleQuestionReject}
-          />
-        </View>
-      </View>
-    );
-  }, [
-    handlePermissionReply,
-    handleQuestionAnswerChange,
-    handleQuestionOptionPick,
-    handleQuestionReject,
-    handleQuestionReply,
-    interruptAction,
-    pendingInterrupt,
-    questionAnswers,
   ]);
 
   if (!agent) {
@@ -1693,7 +941,16 @@ export function ChatScreen({
         className="mt-2 flex-1 px-6"
         data={messages ?? []}
         keyExtractor={(item) => item.id}
-        renderItem={renderChatMessage}
+        renderItem={({ item, index }) => (
+          <ChatMessageItem
+            message={item}
+            index={index}
+            isLastMessage={index === messages.length - 1}
+            sessionStreamState={session?.streamState}
+            onLayoutChangeStart={captureContentSizeAnchor}
+            onRetry={handleRetry}
+          />
+        )}
         contentContainerStyle={{ paddingBottom: 24 }}
         keyboardShouldPersistTaps="handled"
         initialNumToRender={LIST_INITIAL_NUM_TO_RENDER}
@@ -1731,7 +988,18 @@ export function ChatScreen({
           </View>
         }
         ListFooterComponent={
-          interruptActionCard ? <View>{interruptActionCard}</View> : null
+          pendingInterrupt ? (
+            <InterruptActionCard
+              pendingInterrupt={pendingInterrupt}
+              interruptAction={interruptAction}
+              questionAnswers={questionAnswers}
+              onPermissionReply={handlePermissionReply}
+              onQuestionAnswerChange={handleQuestionAnswerChange}
+              onQuestionOptionPick={handleQuestionOptionPick}
+              onQuestionReply={handleQuestionReply}
+              onQuestionReject={handleQuestionReject}
+            />
+          ) : null
         }
       />
 
@@ -1745,158 +1013,12 @@ export function ChatScreen({
           </View>
         ) : null}
 
-        <Modal
-          transparent
+        <ShortcutManagerModal
           visible={showShortcutManager}
-          animationType="fade"
-          onRequestClose={closeShortcutManager}
-        >
-          <View className="flex-1 items-center justify-center bg-black/60 px-6">
-            <Pressable
-              className="absolute inset-0"
-              accessibilityRole="button"
-              accessibilityLabel="Close shortcut manager"
-              onPress={closeShortcutManager}
-            />
-
-            <View className="rounded-3xl border border-slate-800 bg-slate-950 p-4">
-              <View className="mb-4 flex-row items-center justify-between">
-                <Text className="text-base font-semibold text-white">
-                  Shortcut Manager
-                </Text>
-                <Pressable
-                  onPress={closeShortcutManager}
-                  className="rounded-lg bg-slate-800 px-2 py-1"
-                  accessibilityRole="button"
-                  accessibilityLabel="Close shortcut manager"
-                >
-                  <Ionicons name="close" size={16} color="#cbd5e1" />
-                </Pressable>
-              </View>
-
-              {shortcutManagerMode === "list" ? (
-                <>
-                  {shortcuts.length === 0 ? (
-                    <Text className="text-sm text-muted">
-                      No shortcuts yet.
-                    </Text>
-                  ) : (
-                    <ScrollView
-                      className="max-h-80"
-                      keyboardShouldPersistTaps="handled"
-                    >
-                      {shortcuts.map((cmd) => (
-                        <View
-                          key={cmd.id}
-                          className="mb-2 flex-row items-start rounded-xl border border-slate-800 p-2"
-                        >
-                          <Pressable
-                            className="mr-2 flex-1 px-2 py-1"
-                            onPress={() => handleUseShortcut(cmd.prompt)}
-                          >
-                            <Text
-                              className="text-sm text-white"
-                              numberOfLines={1}
-                            >
-                              {cmd.title}
-                            </Text>
-                            <Text
-                              className="mt-1 text-xs text-slate-400"
-                              numberOfLines={2}
-                            >
-                              {cmd.prompt}
-                            </Text>
-                          </Pressable>
-                          {!cmd.isDefault ? (
-                            <Pressable
-                              className="rounded-lg px-2 py-1"
-                              accessibilityRole="button"
-                              accessibilityLabel={`Edit shortcut ${cmd.title}`}
-                              onPress={() =>
-                                openEditShortcut(cmd.id, cmd.title, cmd.prompt)
-                              }
-                            >
-                              <Text className="text-xs font-semibold text-sky-300">
-                                Edit
-                              </Text>
-                            </Pressable>
-                          ) : null}
-                          {!cmd.isDefault && (
-                            <Pressable
-                              className="rounded-lg px-2 py-1"
-                              accessibilityRole="button"
-                              accessibilityLabel={`Delete shortcut ${cmd.title}`}
-                              onPress={async () => {
-                                await removeShortcut(cmd.id).catch(() => {
-                                  toast.error("Failed to remove shortcut");
-                                });
-                              }}
-                            >
-                              <Text className="text-xs font-semibold text-red-400">
-                                Del
-                              </Text>
-                            </Pressable>
-                          )}
-                        </View>
-                      ))}
-                    </ScrollView>
-                  )}
-
-                  <View className="mt-4 flex-row gap-2">
-                    <Button
-                      label="New Shortcut"
-                      onPress={openCreateShortcut}
-                      className="flex-1"
-                    />
-                    <Button
-                      label="Close"
-                      variant="secondary"
-                      onPress={closeShortcutManager}
-                      className="flex-1"
-                    />
-                  </View>
-                </>
-              ) : (
-                <>
-                  <Text className="text-sm text-white">
-                    {shortcutManagerMode === "edit"
-                      ? "Edit shortcut"
-                      : "Create shortcut"}
-                  </Text>
-                  <TextInput
-                    className="mt-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-                    placeholder="Shortcut title"
-                    placeholderTextColor="#6b7280"
-                    value={shortcutTitle}
-                    onChangeText={setShortcutTitle}
-                  />
-                  <TextInput
-                    className="mt-3 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-                    placeholder="Prompt"
-                    placeholderTextColor="#6b7280"
-                    multiline
-                    value={shortcutPrompt}
-                    onChangeText={setShortcutPrompt}
-                    style={{ minHeight: 120 }}
-                  />
-                  <View className="mt-4 flex-row gap-2">
-                    <Button
-                      label="Cancel"
-                      variant="secondary"
-                      onPress={exitShortcutManagerForm}
-                      className="flex-1"
-                    />
-                    <Button
-                      label={shortcutManagerMode === "edit" ? "Update" : "Save"}
-                      onPress={handleSubmitShortcut}
-                      className="flex-1"
-                    />
-                  </View>
-                </>
-              )}
-            </View>
-          </View>
-        </Modal>
+          onClose={closeShortcutManager}
+          onUseShortcut={handleUseShortcut}
+          initialPrompt={input}
+        />
 
         <SessionPickerModal
           visible={showSessionPicker}

@@ -1,5 +1,58 @@
 import type { A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
-import type { RuntimeInterrupt } from "@/lib/api/chat-utils";
+import type {
+  ChatMessage,
+  MessageBlock,
+  RuntimeInterrupt,
+} from "@/lib/api/chat-utils";
+
+export const isSameBlockList = (
+  left: MessageBlock[] = [],
+  right: MessageBlock[] = [],
+) => {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const lhs = left[index];
+    const rhs = right[index];
+    if (!lhs || !rhs) return false;
+    if (
+      lhs.id !== rhs.id ||
+      lhs.type !== rhs.type ||
+      lhs.content !== rhs.content ||
+      lhs.isFinished !== rhs.isFinished ||
+      lhs.createdAt !== rhs.createdAt ||
+      lhs.updatedAt !== rhs.updatedAt
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+export const isSameMessageList = (
+  left: ChatMessage[],
+  right: ChatMessage[],
+) => {
+  if (left.length !== right.length) return false;
+  return left.every((message, index) => {
+    const next = right[index];
+    if (!next) return false;
+    return (
+      message.id === next.id &&
+      message.role === next.role &&
+      message.content === next.content &&
+      message.createdAt === next.createdAt &&
+      isSameBlockList(message.blocks, next.blocks) &&
+      message.status === next.status
+    );
+  });
+};
+
+export const COLLAPSED_TEXT_LINES = 10;
+export const COLLAPSED_TEXT_CHAR_LIMIT = 300;
+
+export const shouldCollapseByLength = (value: string) => {
+  return value.length > COLLAPSED_TEXT_CHAR_LIMIT;
+};
 
 export type ExternalSessionRef = {
   provider?: string | null;
