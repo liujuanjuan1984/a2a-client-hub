@@ -44,10 +44,7 @@ class ShortcutCreateRequest(BaseModel):
         return payload
 
     @model_validator(mode="after")
-    @classmethod
-    def _normalize_fields(
-        cls, self: "ShortcutCreateRequest"
-    ) -> "ShortcutCreateRequest":
+    def _normalize_fields(self: "ShortcutCreateRequest") -> "ShortcutCreateRequest":
         normalized_title = _strip_text(self.title)
         normalized_prompt = _strip_text(self.prompt)
         if normalized_title is None or normalized_prompt is None:
@@ -83,10 +80,7 @@ class ShortcutUpdateRequest(BaseModel):
         return payload
 
     @model_validator(mode="after")
-    @classmethod
-    def _normalize_fields(
-        cls, self: "ShortcutUpdateRequest"
-    ) -> "ShortcutUpdateRequest":
+    def _normalize_fields(self: "ShortcutUpdateRequest") -> "ShortcutUpdateRequest":
         self.title = _strip_text(self.title)
         self.prompt = _strip_text(self.prompt)
 
