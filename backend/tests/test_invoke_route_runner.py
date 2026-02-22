@@ -314,9 +314,11 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
             {
                 "conversationId": conversation_id,
                 "source": "manual",
-                "provider": "opencode",
-                "externalSessionId": "upstream-sid-2",
-                "contextId": "ctx-2",
+                "metadata": {
+                    "provider": "opencode",
+                    "externalSessionId": "upstream-sid-2",
+                    "contextId": "ctx-2",
+                }
             },
             True,
         )
