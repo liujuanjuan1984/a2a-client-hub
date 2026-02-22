@@ -141,6 +141,9 @@ async def test_schedule_create_interval_normalizes_minutes(
     async_session_maker,
     monkeypatch,
 ):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 1)
+    
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="interval")
 
