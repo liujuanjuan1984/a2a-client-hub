@@ -1,84 +1,261 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import { generateId } from "@/lib/id";
+import {
+  createShortcut,
+  updateShortcut as updateShortcutApi,
+  deleteShortcut,
+  listShortcuts,
+  type ShortcutItem as ServerShortcutItem,
+} from "@/lib/api/shortcuts";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 
 type Shortcut = {
   id: string;
-  label: string;
-  value: string;
-  isCustom: boolean;
-};
-
-type ShortcutState = {
-  shortcuts: Shortcut[];
-  addShortcut: (label: string, value: string) => void;
-  removeShortcut: (id: string) => void;
-  clearAll: () => void;
+  title: string;
+  prompt: string;
+  isDefault: boolean;
+  order: number;
 };
 
 const DEFAULT_SHORTCUTS: Shortcut[] = [
   {
-    id: "s1",
-    label: "📝 Summarize",
-    value: "Please summarize our conversation so far.",
-    isCustom: false,
+    id: "11111111-1111-1111-1111-111111111111",
+    title: "📝 Summarize",
+    prompt: "Please summarize our conversation so far.",
+    isDefault: true,
+    order: 0,
   },
   {
-    id: "s2",
-    label: "🔍 Explain",
-    value: "Can you explain this in more detail?",
-    isCustom: false,
+    id: "22222222-2222-2222-2222-222222222222",
+    title: "🔍 Explain",
+    prompt: "Can you explain this in more detail?",
+    isDefault: true,
+    order: 1,
   },
   {
-    id: "s3",
-    label: "💡 Next Steps",
-    value: "What should be our next steps?",
-    isCustom: false,
+    id: "33333333-3333-3333-3333-333333333333",
+    title: "💡 Next Steps",
+    prompt: "What should be our next steps?",
+    isDefault: true,
+    order: 2,
   },
   {
-    id: "s4",
-    label: "✨ Polish",
-    value: "Please polish the text I just sent.",
-    isCustom: false,
+    id: "44444444-4444-4444-4444-444444444444",
+    title: "✨ Polish",
+    prompt: "Please polish the text I just sent.",
+    isDefault: true,
+    order: 3,
   },
   {
-    id: "s5",
-    label: "❓ Help",
-    value: "What are your main capabilities?",
-    isCustom: false,
+    id: "55555555-5555-5555-5555-555555555555",
+    title: "❓ Help",
+    prompt: "What are your main capabilities?",
+    isDefault: true,
+    order: 4,
   },
 ];
 
+type ShortcutState = {
+  shortcuts: Shortcut[];
+  isSyncing: boolean;
+  syncError: string | null;
+  syncShortcuts: () => Promise<void>;
+  addShortcut: (title: string, prompt: string) => Promise<void>;
+  updateShortcut: (
+    shortcutId: string,
+    title: string,
+    prompt: string,
+  ) => Promise<void>;
+  removeShortcut: (id: string) => Promise<void>;
+  clearAll: () => void;
+};
+
+type PersistedShortcutState = {
+  shortcuts: Shortcut[];
+  isSyncing?: boolean;
+  syncError?: string | null;
+};
+
+const normalizeString = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const normalizeOrder = (value: unknown, fallback: number): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value >= 0 ? value : fallback;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value.trim(), 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  }
+  return fallback;
+};
+
+const normalizeFromPersisted = (value: unknown): Shortcut | null => {
+  if (!value || typeof value !== "object") return null;
+  const source = value as Record<string, unknown>;
+
+  const id = normalizeString(source.id);
+  const title = normalizeString(source.title);
+  const prompt = normalizeString(source.prompt);
+  if (!id || !title || !prompt) return null;
+
+  const isDefault =
+    typeof source.isDefault === "boolean" ? source.isDefault : false;
+
+  return {
+    id,
+    title,
+    prompt,
+    isDefault,
+    order: normalizeOrder(source.sort_order, normalizeOrder(source.order, 0)),
+  };
+};
+
+const normalizePersistedShortcuts = (raw: unknown): Shortcut[] => {
+  const fallback = [...DEFAULT_SHORTCUTS];
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    !Array.isArray((raw as PersistedShortcutState).shortcuts)
+  ) {
+    return fallback;
+  }
+
+  const parsedItems = (raw as PersistedShortcutState).shortcuts
+    .map((item) => normalizeFromPersisted(item))
+    .filter((item): item is Shortcut => item !== null);
+
+  if (!parsedItems.length) {
+    return fallback;
+  }
+
+  const hasDefault = parsedItems.some((item) => item.isDefault);
+  const normalizedCustoms = parsedItems.filter((item) => !item.isDefault);
+  const normalizedDefaults = hasDefault
+    ? parsedItems
+        .filter((item) => item.isDefault)
+        .map((item) => ({
+          ...item,
+          isDefault: true,
+        }))
+    : [...DEFAULT_SHORTCUTS];
+
+  const merged = [...normalizedDefaults, ...normalizedCustoms];
+  const seen = new Set<string>();
+  const deduped: Shortcut[] = [];
+  for (const item of merged) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    deduped.push(item);
+  }
+  deduped.sort((left, right) => {
+    if (left.order !== right.order) return left.order - right.order;
+    return left.title.localeCompare(right.title);
+  });
+  return deduped;
+};
+
+const toShortcutFromServer = (item: ServerShortcutItem): Shortcut => ({
+  id: item.id,
+  title: item.title,
+  prompt: item.prompt,
+  isDefault: item.is_default,
+  order: item.order,
+});
+
+const extractErrorMessage = (error: unknown): string | null => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return null;
+};
+
 export const useShortcutStore = create<ShortcutState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       shortcuts: DEFAULT_SHORTCUTS,
-      addShortcut: (label, value) =>
+      isSyncing: false,
+      syncError: null,
+
+      syncShortcuts: async () => {
+        if (get().isSyncing) {
+          return;
+        }
+        set({ isSyncing: true, syncError: null });
+        try {
+          const serverShortcuts = await listShortcuts();
+          set({
+            shortcuts: serverShortcuts.map(toShortcutFromServer),
+            syncError: null,
+          });
+        } catch (error) {
+          set({
+            syncError: extractErrorMessage(error) ?? "Unable to sync shortcuts",
+          });
+        } finally {
+          set({ isSyncing: false });
+        }
+      },
+
+      addShortcut: async (title, prompt) => {
+        const result = await createShortcut({
+          title,
+          prompt,
+        });
+        const next = toShortcutFromServer(result);
         set((state) => ({
           shortcuts: [
-            ...state.shortcuts,
-            {
-              id: generateId(),
-              label: `👤 ${label}`,
-              value,
-              isCustom: true,
-            },
+            ...state.shortcuts.filter((item) => item.id !== next.id),
+            next,
           ],
-        })),
-      removeShortcut: (id) =>
+        }));
+      },
+
+      updateShortcut: async (shortcutId, title, prompt) => {
+        const result = await updateShortcutApi(shortcutId, {
+          title,
+          prompt,
+        });
+        const next = toShortcutFromServer(result);
         set((state) => ({
-          shortcuts: state.shortcuts.filter((s) => s.id !== id || !s.isCustom),
-        })),
-      clearAll: () =>
-        set({
-          shortcuts: DEFAULT_SHORTCUTS,
-        }),
+          shortcuts: state.shortcuts.map((item) =>
+            item.id === next.id ? next : item,
+          ),
+        }));
+      },
+
+      removeShortcut: async (id) => {
+        const existing = get().shortcuts.find((item) => item.id === id);
+        if (!existing) return;
+        if (existing.isDefault) {
+          throw new Error("Cannot remove default shortcut");
+        }
+        await deleteShortcut(id);
+        set((state) => ({
+          shortcuts: state.shortcuts.filter((item) => item.id !== id),
+        }));
+      },
+
+      clearAll: () => set({ shortcuts: [...DEFAULT_SHORTCUTS] }),
     }),
     {
       name: "a2a-client-hub.shortcuts",
       storage: createPersistStorage(),
+      version: 2,
+      migrate: (state) => {
+        const migrated = normalizePersistedShortcuts(state);
+        return {
+          shortcuts: migrated,
+          isSyncing: false,
+          syncError: null,
+        };
+      },
     },
   ),
 );
+
+export type { Shortcut };

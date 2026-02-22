@@ -50,9 +50,9 @@ export const mergeExternalSessionRef = (
     externalSessionId?: string | null;
   },
 ): ExternalSessionRef => ({
-  provider: incoming.provider ?? current?.provider ?? null,
+  provider: current?.provider ?? incoming.provider ?? null,
   externalSessionId:
-    incoming.externalSessionId ?? current?.externalSessionId ?? null,
+    current?.externalSessionId ?? incoming.externalSessionId ?? null,
 });
 
 export const buildInvokePayload = (

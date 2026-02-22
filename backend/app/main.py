@@ -104,6 +104,7 @@ def include_all_routers() -> None:
         "app.api.routers.a2a_schedules",
         "app.api.routers.me_sessions",
         "app.api.routers.invitations",
+        "app.api.routers.shortcuts",
     )
     for module_name in router_modules:
         module = importlib.import_module(module_name)

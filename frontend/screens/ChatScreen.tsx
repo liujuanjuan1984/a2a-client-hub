@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -141,7 +142,13 @@ export function ChatScreen({
   const messages = useMessageStore((state) =>
     conversationId ? (state.messages[conversationId] ?? []) : [],
   );
-  const { shortcuts, addShortcut, removeShortcut } = useShortcutStore();
+  const {
+    shortcuts,
+    addShortcut,
+    updateShortcut,
+    removeShortcut,
+    syncShortcuts,
+  } = useShortcutStore();
 
   const [input, setInput] = useState("");
   const suppressAutoScrollRef = useRef(false);
@@ -151,7 +158,15 @@ export function ChatScreen({
     null,
   );
   const [showDetails, setShowDetails] = useState(false);
-  const [showPresets, setShowPresets] = useState(false);
+  const [showShortcutManager, setShowShortcutManager] = useState(false);
+  const [shortcutManagerMode, setShortcutManagerMode] = useState<
+    "list" | "create" | "edit"
+  >("list");
+  const [editingShortcutId, setEditingShortcutId] = useState<string | null>(
+    null,
+  );
+  const [shortcutTitle, setShortcutTitle] = useState("");
+  const [shortcutPrompt, setShortcutPrompt] = useState("");
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
   const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
   const [expandedReasoningByBlockId, setExpandedReasoningByBlockId] = useState<
@@ -262,6 +277,12 @@ export function ChatScreen({
       ensureSession(conversationId, activeAgentId);
     }
   }, [activeAgentId, conversationId, ensureSession]);
+
+  useEffect(() => {
+    syncShortcuts().catch(() => {
+      // Keep shortcut sync failure non-blocking for UX.
+    });
+  }, [syncShortcuts]);
 
   useEffect(() => {
     if (!conversationId || !activeAgentId) return;
@@ -682,18 +703,84 @@ export function ChatScreen({
 
   useEffect(() => () => clearScrollSettleTimer(), [clearScrollSettleTimer]);
 
-  const handleSelectPreset = (value: string) => {
-    setInput(value);
-    setShowPresets(false);
+  const resetShortcutDraft = () => {
+    setEditingShortcutId(null);
+    setShortcutTitle("");
+    setShortcutPrompt("");
+  };
+
+  const openShortcutManager = () => {
+    setShortcutManagerMode("list");
+    setShowShortcutManager(true);
+  };
+
+  const closeShortcutManager = () => {
+    setShowShortcutManager(false);
+    resetShortcutDraft();
+  };
+
+  const openCreateShortcut = () => {
+    const inferredTitle = input.trim().slice(0, 20) || "New Shortcut";
+    setShortcutManagerMode("create");
+    setEditingShortcutId(null);
+    setShortcutTitle(inferredTitle);
+    setShortcutPrompt(input.trim());
+  };
+
+  const openEditShortcut = (
+    shortcutId: string,
+    title: string,
+    prompt: string,
+  ) => {
+    setShortcutManagerMode("edit");
+    setEditingShortcutId(shortcutId);
+    setShortcutTitle(title);
+    setShortcutPrompt(prompt);
+  };
+
+  const exitShortcutManagerForm = () => {
+    setShortcutManagerMode("list");
+    resetShortcutDraft();
+  };
+
+  const handleUseShortcut = (prompt: string) => {
+    setInput(prompt);
+    closeShortcutManager();
     inputRef.current?.focus();
   };
 
-  const handleSaveShortcut = () => {
-    if (!input.trim()) return;
-    const label = input.slice(0, 15) + (input.length > 15 ? "..." : "");
-    addShortcut(label, input.trim());
-    setShowPresets(true);
-    toast.success("Shortcut saved", `"${label}" is now available.`);
+  const handleSubmitShortcut = async () => {
+    const normalizedTitle = shortcutTitle.trim();
+    const normalizedPrompt = shortcutPrompt.trim();
+    if (!normalizedTitle || !normalizedPrompt) {
+      toast.error("Shortcut invalid", "Title and prompt are required.");
+      return;
+    }
+    try {
+      if (editingShortcutId) {
+        await updateShortcut(
+          editingShortcutId,
+          normalizedTitle,
+          normalizedPrompt,
+        );
+        toast.success(
+          "Shortcut updated",
+          `"${normalizedTitle}" has been updated.`,
+        );
+      } else {
+        await addShortcut(normalizedTitle, normalizedPrompt);
+        toast.success(
+          "Shortcut saved",
+          `"${normalizedTitle}" is now available.`,
+        );
+      }
+      exitShortcutManagerForm();
+    } catch (error) {
+      toast.error(
+        editingShortcutId ? "Update shortcut failed" : "Save shortcut failed",
+        error instanceof Error ? error.message : "Unknown error",
+      );
+    }
   };
 
   const handleInputChange = (value: string) => {
@@ -1520,70 +1607,172 @@ export function ChatScreen({
           </View>
         ) : null}
 
-        {showPresets ? (
-          <View className="absolute bottom-20 left-6 right-6 z-50 rounded-2xl border border-slate-800 bg-slate-900 p-2 shadow-2xl">
-            <View className="max-h-64 overflow-hidden">
-              <ScrollView keyboardShouldPersistTaps="handled">
-                {shortcuts.map((cmd) => (
-                  <View
-                    key={cmd.id}
-                    className="flex-row items-center justify-between rounded-xl active:bg-slate-800"
-                  >
-                    <Pressable
-                      className="flex-1 px-4 py-3"
-                      onPress={() => handleSelectPreset(cmd.value)}
-                    >
-                      <Text className="text-sm text-white" numberOfLines={1}>
-                        {cmd.label}
-                      </Text>
-                    </Pressable>
-                    {cmd.isCustom && (
-                      <Pressable
-                        className="px-4 py-3"
-                        onPress={() => removeShortcut(cmd.id)}
-                      >
-                        <Text className="text-xs font-semibold text-red-400">
-                          Del
-                        </Text>
-                      </Pressable>
-                    )}
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-            <View className="mt-2 border-t border-slate-800 pt-2">
-              <Pressable
-                className={`rounded-xl px-4 py-3 ${
-                  input.trim() ? "bg-primary/20" : "opacity-50"
-                }`}
-                onPress={handleSaveShortcut}
-                disabled={!input.trim()}
-              >
-                <Text
-                  className={`text-xs font-bold ${
-                    input.trim() ? "text-primary" : "text-muted"
-                  }`}
-                >
-                  Save current input as shortcut
+        <Modal
+          transparent
+          visible={showShortcutManager}
+          animationType="fade"
+          onRequestClose={closeShortcutManager}
+        >
+          <View className="flex-1 items-center justify-center bg-black/60 px-6">
+            <Pressable
+              className="absolute inset-0"
+              accessibilityRole="button"
+              accessibilityLabel="Close shortcut manager"
+              onPress={closeShortcutManager}
+            />
+
+            <View className="rounded-3xl border border-slate-800 bg-slate-950 p-4">
+              <View className="mb-4 flex-row items-center justify-between">
+                <Text className="text-base font-semibold text-white">
+                  Shortcut Manager
                 </Text>
-              </Pressable>
+                <Pressable
+                  onPress={closeShortcutManager}
+                  className="rounded-lg bg-slate-800 px-2 py-1"
+                  accessibilityRole="button"
+                  accessibilityLabel="Close shortcut manager"
+                >
+                  <Ionicons name="close" size={16} color="#cbd5e1" />
+                </Pressable>
+              </View>
+
+              {shortcutManagerMode === "list" ? (
+                <>
+                  {shortcuts.length === 0 ? (
+                    <Text className="text-sm text-muted">
+                      No shortcuts yet.
+                    </Text>
+                  ) : (
+                    <ScrollView
+                      className="max-h-80"
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {shortcuts.map((cmd) => (
+                        <View
+                          key={cmd.id}
+                          className="mb-2 flex-row items-start rounded-xl border border-slate-800 p-2"
+                        >
+                          <Pressable
+                            className="mr-2 flex-1 px-2 py-1"
+                            onPress={() => handleUseShortcut(cmd.prompt)}
+                          >
+                            <Text
+                              className="text-sm text-white"
+                              numberOfLines={1}
+                            >
+                              {cmd.title}
+                            </Text>
+                            <Text
+                              className="mt-1 text-xs text-slate-400"
+                              numberOfLines={2}
+                            >
+                              {cmd.prompt}
+                            </Text>
+                          </Pressable>
+                          {!cmd.isDefault ? (
+                            <Pressable
+                              className="rounded-lg px-2 py-1"
+                              accessibilityRole="button"
+                              accessibilityLabel={`Edit shortcut ${cmd.title}`}
+                              onPress={() =>
+                                openEditShortcut(cmd.id, cmd.title, cmd.prompt)
+                              }
+                            >
+                              <Text className="text-xs font-semibold text-sky-300">
+                                Edit
+                              </Text>
+                            </Pressable>
+                          ) : null}
+                          {!cmd.isDefault && (
+                            <Pressable
+                              className="rounded-lg px-2 py-1"
+                              accessibilityRole="button"
+                              accessibilityLabel={`Delete shortcut ${cmd.title}`}
+                              onPress={async () => {
+                                await removeShortcut(cmd.id).catch(() => {
+                                  toast.error("Failed to remove shortcut");
+                                });
+                              }}
+                            >
+                              <Text className="text-xs font-semibold text-red-400">
+                                Del
+                              </Text>
+                            </Pressable>
+                          )}
+                        </View>
+                      ))}
+                    </ScrollView>
+                  )}
+
+                  <View className="mt-4 flex-row gap-2">
+                    <Button
+                      label="New Shortcut"
+                      onPress={openCreateShortcut}
+                      className="flex-1"
+                    />
+                    <Button
+                      label="Close"
+                      variant="secondary"
+                      onPress={closeShortcutManager}
+                      className="flex-1"
+                    />
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text className="text-sm text-white">
+                    {shortcutManagerMode === "edit"
+                      ? "Edit shortcut"
+                      : "Create shortcut"}
+                  </Text>
+                  <TextInput
+                    className="mt-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                    placeholder="Shortcut title"
+                    placeholderTextColor="#6b7280"
+                    value={shortcutTitle}
+                    onChangeText={setShortcutTitle}
+                  />
+                  <TextInput
+                    className="mt-3 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                    placeholder="Prompt"
+                    placeholderTextColor="#6b7280"
+                    multiline
+                    value={shortcutPrompt}
+                    onChangeText={setShortcutPrompt}
+                    style={{ minHeight: 120 }}
+                  />
+                  <View className="mt-4 flex-row gap-2">
+                    <Button
+                      label="Cancel"
+                      variant="secondary"
+                      onPress={exitShortcutManagerForm}
+                      className="flex-1"
+                    />
+                    <Button
+                      label={shortcutManagerMode === "edit" ? "Update" : "Save"}
+                      onPress={handleSubmitShortcut}
+                      className="flex-1"
+                    />
+                  </View>
+                </>
+              )}
             </View>
           </View>
-        ) : null}
+        </Modal>
 
         <View className="flex-row items-end gap-2 bg-slate-900/50 p-2 rounded-3xl border border-slate-800">
           <Pressable
             className={`h-9 w-9 items-center justify-center rounded-xl ${
-              showPresets ? "bg-primary" : "bg-slate-800"
+              showShortcutManager ? "bg-primary" : "bg-slate-800"
             }`}
-            onPress={() => setShowPresets(!showPresets)}
+            onPress={openShortcutManager}
             accessibilityRole="button"
-            accessibilityLabel="Toggle shortcuts"
+            accessibilityLabel="Open shortcut manager"
           >
             <Ionicons
-              name={showPresets ? "flash" : "flash-outline"}
+              name={showShortcutManager ? "flash" : "flash-outline"}
               size={18}
-              color={showPresets ? "#ffffff" : "#94a3b8"}
+              color={showShortcutManager ? "#ffffff" : "#94a3b8"}
             />
           </Pressable>
           <TextInput

@@ -80,6 +80,8 @@ class A2AClient:
         *,
         timeout: Optional[httpx.Timeout] = None,
         timeout_seconds: Optional[float] = None,
+        http_client: Optional[httpx.AsyncClient] = None,
+        owns_http_client: Optional[bool] = None,
         interceptors: Optional[List[ClientCallInterceptor]] = None,
         consumers: Optional[List[Consumer]] = None,
         use_client_preference: bool = False,
@@ -90,6 +92,12 @@ class A2AClient:
         self.agent_url = agent_url.rstrip("/")
         self._agent_card: Optional[AgentCard] = None
         self._timeout = timeout or self._build_timeout(timeout_seconds)
+        self._http_client = http_client
+        self._owns_http_client = (
+            owns_http_client
+            if owns_http_client is not None
+            else (http_client is not None)
+        )
 
         self._interceptors = list(interceptors or [])
         self._consumers = list(consumers or [])
@@ -306,17 +314,37 @@ class A2AClient:
         return card
 
     async def close(self) -> None:
-        """Dispose cached transports."""
+        """Dispose cached transport wrappers.
+
+        When this instance owns the HTTP client, transport and owned HTTP resources
+        are fully closed. Otherwise, only in-memory cache/state is cleared.
+        """
 
         async with self._client_lock:
-            for entry in self._clients.values():
-                try:
-                    await entry.client.close()
-                except Exception:  # pragma: no cover - defensive cleanup
-                    logger.debug("Failed to close A2A client transport", exc_info=True)
+            entries = list(self._clients.values())
             self._clients.clear()
-
             self._agent_card = None
+            owns_http_client = self._owns_http_client
+            http_client = self._http_client if owns_http_client else None
+
+        if not owns_http_client:
+            return
+
+        for entry in entries:
+            try:
+                await entry.client.close()
+            except Exception:  # pragma: no cover - defensive cleanup
+                logger.debug("Failed to close A2A client transport", exc_info=True)
+        if http_client is None:
+            return
+
+        try:
+            await http_client.aclose()
+        except Exception:  # pragma: no cover - defensive cleanup
+            logger.debug(
+                "Failed to close dedicated A2A HTTP client",
+                exc_info=True,
+            )
 
     async def _get_client(self, *, streaming: bool) -> Client:
         async with self._client_lock:
@@ -358,7 +386,11 @@ class A2AClient:
             return client
 
     async def _get_http_client(self) -> httpx.AsyncClient:
-        return get_global_http_client()
+        return (
+            self._http_client
+            if self._http_client is not None
+            else get_global_http_client()
+        )
 
     def _build_card_resolver(self, httpx_client: httpx.AsyncClient) -> A2ACardResolver:
         """Create a resolver that avoids duplicating well-known paths."""
