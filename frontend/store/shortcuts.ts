@@ -88,22 +88,14 @@ const normalizeOrder = (value: unknown, fallback: number): number => {
   return fallback;
 };
 
-const normalizeFromPersisted = (
-  value: unknown,
-  index: number,
-  fallbackIdPrefix: string,
-): Shortcut | null => {
+const normalizeFromPersisted = (value: unknown): Shortcut | null => {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
 
-  const id = normalizeString(source.id) ?? `${fallbackIdPrefix}${index + 1}`;
-  const title =
-    normalizeString(source.title) ??
-    (typeof source.name === "string" ? source.name : null);
-  const prompt =
-    normalizeString(source.prompt) ??
-    (typeof source.text === "string" ? source.text : null);
-  if (!title || !prompt) return null;
+  const id = normalizeString(source.id);
+  const title = normalizeString(source.title);
+  const prompt = normalizeString(source.prompt);
+  if (!id || !title || !prompt) return null;
 
   const isDefault =
     typeof source.isDefault === "boolean" ? source.isDefault : false;
@@ -113,10 +105,7 @@ const normalizeFromPersisted = (
     title,
     prompt,
     isDefault,
-    order: normalizeOrder(
-      source.sort_order,
-      normalizeOrder(source.order, index),
-    ),
+    order: normalizeOrder(source.sort_order, normalizeOrder(source.order, 0)),
   };
 };
 
@@ -131,9 +120,7 @@ const normalizePersistedShortcuts = (raw: unknown): Shortcut[] => {
   }
 
   const parsedItems = (raw as PersistedShortcutState).shortcuts
-    .map((item, index) =>
-      normalizeFromPersisted(item, index, "local-shortcut-"),
-    )
+    .map((item) => normalizeFromPersisted(item))
     .filter((item): item is Shortcut => item !== null);
 
   if (!parsedItems.length) {
