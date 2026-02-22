@@ -2,6 +2,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useMemo } from "react";
 
 import { buildGeneratingTitle, PageTitle } from "@/components/layout/PageTitle";
+import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { ChatScreen } from "@/screens/ChatScreen";
 import { useChatStore } from "@/store/chat";
 
@@ -13,18 +14,24 @@ export default function ChatSession() {
   const session = useChatStore((state) =>
     conversationId ? state.sessions[conversationId] : undefined,
   );
+  const { data: agents = [] } = useAgentsCatalogQuery(true);
 
   const isGenerating =
     session?.streamState === "streaming" ||
     session?.streamState === "rebinding";
 
+  const agentName = useMemo(() => {
+    const matchedAgent = agents.find((item) => item.id === agentId);
+    return matchedAgent?.name?.trim() || agentId;
+  }, [agents, agentId]);
+
   const title = useMemo(() => {
-    const baseTitle = `Chat with ${agentId}`;
+    const baseTitle = `Chat with ${agentName}`;
     return buildGeneratingTitle({
       baseTitle,
       isGenerating,
     });
-  }, [agentId, isGenerating]);
+  }, [agentName, isGenerating]);
 
   return (
     <>
