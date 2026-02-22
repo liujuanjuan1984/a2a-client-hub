@@ -94,9 +94,10 @@ describe("useContinueSession", () => {
     mockedContinueSession.mockResolvedValue({
       conversationId: "conv-1",
       source: "manual",
-      provider: "opencode",
-      externalSessionId: "upstream-1",
-      contextId: null,
+      metadata: {
+        provider: "opencode",
+        externalSessionId: "upstream-1",
+      },
     });
 
     const { result } = renderHook(() => useContinueSession());

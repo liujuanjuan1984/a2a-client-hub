@@ -283,7 +283,7 @@ export function ChatScreen({
           (typeof current?.externalSessionRef?.externalSessionId === "string" &&
             current.externalSessionRef.externalSessionId.trim()) ||
           Object.keys(current?.metadata ?? {}).length > 0;
-        if (hasLocalBinding && !binding.contextId) {
+        if (hasLocalBinding && !binding.metadata?.contextId) {
           return;
         }
         ensureSession(conversationId, boundAgentId);

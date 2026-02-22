@@ -221,9 +221,15 @@ class SessionHubService:
                 _build_continue_response(
                     conversation_id=resolved_conversation_id,
                     source="manual",
-                    provider=provider,
-                    external_session_id=external_session_id,
-                    context_id=context_id,
+                    metadata={
+                        k: v
+                        for k, v in [
+                            ("provider", provider),
+                            ("externalSessionId", external_session_id),
+                            ("contextId", context_id),
+                        ]
+                        if v is not None
+                    },
                 ),
                 False,
             )
@@ -273,9 +279,15 @@ class SessionHubService:
             _build_continue_response(
                 conversation_id=conversation_id or resolved_conversation_id,
                 source=resolved_source,
-                provider=resolved_provider,
-                external_session_id=resolved_external_session_id,
-                context_id=context_id,
+                metadata={
+                    k: v
+                    for k, v in [
+                        ("provider", resolved_provider),
+                        ("externalSessionId", resolved_external_session_id),
+                        ("contextId", context_id),
+                    ]
+                    if v is not None
+                },
             ),
             db_mutated,
         )
@@ -622,16 +634,12 @@ def _build_continue_response(
     *,
     conversation_id: UUID,
     source: ResolvedSource,
-    provider: Optional[str],
-    external_session_id: Optional[str],
-    context_id: Optional[str],
+    metadata: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "conversationId": str(conversation_id),
         "source": source,
-        "provider": provider,
-        "externalSessionId": external_session_id,
-        "contextId": context_id,
+        "metadata": metadata,
     }
 
 
