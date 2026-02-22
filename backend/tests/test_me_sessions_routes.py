@@ -42,6 +42,7 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
     task = await a2a_schedule_service.create_task(
         async_db_session,
         user_id=user.id,
+        is_superuser=user.is_superuser,
         name="Nightly",
         agent_id=agent.id,
         prompt="ping",
