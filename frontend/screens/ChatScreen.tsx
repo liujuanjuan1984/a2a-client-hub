@@ -4,7 +4,6 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
-  useWindowDimensions,
   KeyboardAvoidingView,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -100,6 +99,12 @@ const LIST_INITIAL_NUM_TO_RENDER = 16;
 const LIST_WINDOW_SIZE = 9;
 const LIST_MAX_TO_RENDER_PER_BATCH = 20;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
+const COLLAPSED_TEXT_LINES = 8;
+const COLLAPSED_TEXT_CHAR_LIMIT = 1200;
+
+const shouldCollapseByLength = (value: string) => {
+  return value.length > COLLAPSED_TEXT_CHAR_LIMIT;
+};
 
 export function ChatScreen({
   agentId: routeAgentId,
@@ -139,7 +144,6 @@ export function ChatScreen({
   const { shortcuts, addShortcut, removeShortcut } = useShortcutStore();
 
   const [input, setInput] = useState("");
-  const maxBlockHeight = Math.floor(useWindowDimensions().height * 0.7);
   const suppressAutoScrollRef = useRef(false);
   const shouldStickToBottomRef = useRef(true);
   const forceScrollToBottomRef = useRef(false);
@@ -154,6 +158,9 @@ export function ChatScreen({
     Record<string, boolean>
   >({});
   const [expandedToolCallByBlockId, setExpandedToolCallByBlockId] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedTextByBlockId, setExpandedTextByBlockId] = useState<
     Record<string, boolean>
   >({});
   const listRef = useRef<FlatList<ChatMessage>>(null);
@@ -714,6 +721,13 @@ export function ChatScreen({
     }));
   };
 
+  const toggleTextExpansion = (blockId: string) => {
+    setExpandedTextByBlockId((current) => ({
+      ...current,
+      [blockId]: !current[blockId],
+    }));
+  };
+
   const deriveRenderableBlocks = useCallback(
     (message: ChatMessage): MessageBlock[] => {
       const persisted = message.blocks ?? [];
@@ -855,24 +869,26 @@ export function ChatScreen({
                           blockIndex > 0 ? "mt-3" : ""
                         } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
                       >
-                        <Pressable onPress={() => toggleReasoning(blockId)}>
+                        <Pressable
+                          onPress={() => toggleReasoning(blockId)}
+                          accessibilityRole="button"
+                          accessibilityLabel={
+                            expanded
+                              ? "Hide reasoning details"
+                              : "Show reasoning details"
+                          }
+                        >
                           <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
                             {expanded ? "Hide Reasoning" : "Show Reasoning"}
                           </Text>
                         </Pressable>
                         {expanded ? (
-                          <ScrollView
-                            nestedScrollEnabled
-                            style={{ maxHeight: maxBlockHeight }}
-                            showsVerticalScrollIndicator
+                          <Text
+                            selectable
+                            className="mt-1 break-all text-xs text-slate-300"
                           >
-                            <Text
-                              selectable
-                              className="mt-1 break-all text-xs text-slate-300"
-                            >
-                              {blockText}
-                            </Text>
-                          </ScrollView>
+                            {blockText}
+                          </Text>
                         ) : null}
                       </View>
                     );
@@ -886,45 +902,68 @@ export function ChatScreen({
                           blockIndex > 0 ? "mt-3" : ""
                         } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
                       >
-                        <Pressable onPress={() => toggleToolCall(blockId)}>
+                        <Pressable
+                          onPress={() => toggleToolCall(blockId)}
+                          accessibilityRole="button"
+                          accessibilityLabel={
+                            expanded
+                              ? "Hide tool call details"
+                              : "Show tool call details"
+                          }
+                        >
                           <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
                             {expanded ? "Hide Tool Call" : "Show Tool Call"}
                           </Text>
                         </Pressable>
                         {expanded ? (
-                          <ScrollView
-                            nestedScrollEnabled
-                            style={{ maxHeight: maxBlockHeight }}
-                            showsVerticalScrollIndicator
+                          <Text
+                            selectable
+                            className="mt-1 break-all text-xs text-slate-300"
                           >
-                            <Text
-                              selectable
-                              className="mt-1 break-all text-xs text-slate-300"
-                            >
-                              {blockText}
-                            </Text>
-                          </ScrollView>
+                            {blockText}
+                          </Text>
                         ) : null}
                       </View>
                     );
                   }
                   if (block.type === "text") {
+                    const blockExpanded =
+                      expandedTextByBlockId[blockId] ?? false;
+                    const shouldCollapse = shouldCollapseByLength(blockText);
+
                     return (
-                      <ScrollView
-                        key={blockId}
-                        style={{ maxHeight: maxBlockHeight }}
-                        nestedScrollEnabled
-                        showsVerticalScrollIndicator
-                      >
+                      <View key={blockId} className="rounded-xl">
                         <Text
                           selectable
                           className={`${
                             blockIndex > 0 ? "mt-3" : ""
                           } break-all text-sm text-white`}
+                          numberOfLines={
+                            shouldCollapse && !blockExpanded
+                              ? COLLAPSED_TEXT_LINES
+                              : undefined
+                          }
                         >
                           {blockText}
                         </Text>
-                      </ScrollView>
+                        {shouldCollapse ? (
+                          <Pressable
+                            className="mt-2 rounded-md px-2 py-1"
+                            accessibilityRole="button"
+                            accessibilityLabel={
+                              blockExpanded
+                                ? "Collapse full text"
+                                : "Expand full text"
+                            }
+                            testID={`chat-message-${blockId}-expand`}
+                            onPress={() => toggleTextExpansion(blockId)}
+                          >
+                            <Text className="text-xs font-semibold text-slate-300">
+                              {blockExpanded ? "Show less" : "Read more"}
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
                     );
                   }
                   return (
@@ -947,15 +986,39 @@ export function ChatScreen({
                   );
                 })
               ) : (
-                <ScrollView
-                  style={{ maxHeight: maxBlockHeight }}
-                  nestedScrollEnabled
-                  showsVerticalScrollIndicator
-                >
-                  <Text selectable className="break-all text-sm text-white">
+                <View className="rounded-xl">
+                  <Text
+                    selectable
+                    className="break-all text-sm text-white"
+                    numberOfLines={
+                      shouldCollapseByLength(message.content) &&
+                      !(expandedTextByBlockId[message.id] ?? false)
+                        ? COLLAPSED_TEXT_LINES
+                        : undefined
+                    }
+                  >
                     {message.content}
                   </Text>
-                </ScrollView>
+                  {shouldCollapseByLength(message.content) ? (
+                    <Pressable
+                      className="mt-2 rounded-md px-2 py-1"
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        expandedTextByBlockId[message.id]
+                          ? "Collapse full text"
+                          : "Expand full text"
+                      }
+                      testID={`chat-message-${message.id}-expand`}
+                      onPress={() => toggleTextExpansion(message.id)}
+                    >
+                      <Text className="text-xs font-semibold text-slate-300">
+                        {expandedTextByBlockId[message.id]
+                          ? "Show less"
+                          : "Read more"}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               )}
               {message.status === "streaming" ? (
                 <Text className="mt-1 text-[10px] text-muted">
@@ -994,12 +1057,14 @@ export function ChatScreen({
       deriveRenderableBlocks,
       expandedReasoningByBlockId,
       expandedToolCallByBlockId,
+      expandedTextByBlockId,
       handleCopyMessage,
       handleRetry,
       messages.length,
       session?.streamState,
       toggleReasoning,
       toggleToolCall,
+      toggleTextExpansion,
     ],
   );
 

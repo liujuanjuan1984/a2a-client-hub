@@ -1,4 +1,3 @@
-import { ScrollView } from "react-native";
 import {
   act,
   create,
@@ -404,7 +403,7 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("limits long plain text messages with internal scrolling", async () => {
+  it("uses explicit expand/collapse for long plain text messages", async () => {
     mockMessageState.messages = {
       [conversationId]: [
         {
@@ -418,22 +417,25 @@ describe("ChatScreen interrupt handling", () => {
 
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
-    const expectedHeight = Math.floor(812 * 0.7);
-
-    const constrainedScrollViews = root.findAll((node) => {
+    const expandButton = root.findAll((node) => {
       return (
-        node.type === ScrollView &&
-        node.props?.style &&
-        typeof node.props.style === "object" &&
-        node.props.style.maxHeight === expectedHeight
+        node.type === Object({}) ||
+        node.props?.testID === "chat-message-message-1:text-expand"
       );
+    })[0];
+
+    expect(expandButton).toBeDefined();
+    expect(expandButton?.props.accessibilityLabel).toBe("Expand full text");
+
+    act(() => {
+      expandButton.props.onPress();
     });
 
-    expect(constrainedScrollViews).toHaveLength(1);
-    expect(constrainedScrollViews[0]?.props.nestedScrollEnabled).toBe(true);
-    expect(constrainedScrollViews[0]?.props.showsVerticalScrollIndicator).toBe(
-      true,
-    );
+    const collapseButton = root.findByProps({
+      testID: "chat-message-message-1:text-expand",
+      accessibilityLabel: "Collapse full text",
+    });
+    expect(collapseButton).toBeDefined();
     act(() => {
       tree.unmount();
     });
