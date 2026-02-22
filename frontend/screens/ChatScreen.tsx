@@ -1669,18 +1669,20 @@ export function ChatScreen({
                               {cmd.prompt}
                             </Text>
                           </Pressable>
-                          <Pressable
-                            className="rounded-lg px-2 py-1"
-                            accessibilityRole="button"
-                            accessibilityLabel={`Edit shortcut ${cmd.title}`}
-                            onPress={() =>
-                              openEditShortcut(cmd.id, cmd.title, cmd.prompt)
-                            }
-                          >
-                            <Text className="text-xs font-semibold text-sky-300">
-                              Edit
-                            </Text>
-                          </Pressable>
+                          {!cmd.isDefault ? (
+                            <Pressable
+                              className="rounded-lg px-2 py-1"
+                              accessibilityRole="button"
+                              accessibilityLabel={`Edit shortcut ${cmd.title}`}
+                              onPress={() =>
+                                openEditShortcut(cmd.id, cmd.title, cmd.prompt)
+                              }
+                            >
+                              <Text className="text-xs font-semibold text-sky-300">
+                                Edit
+                              </Text>
+                            </Pressable>
+                          ) : null}
                           {!cmd.isDefault && (
                             <Pressable
                               className="rounded-lg px-2 py-1"
@@ -1765,8 +1767,8 @@ export function ChatScreen({
             }`}
             onPress={openShortcutManager}
             accessibilityRole="button"
-            accessibilityLabel="Toggle shortcuts"
-          >
+              accessibilityLabel="Open shortcut manager"
+            >
             <Ionicons
               name={showShortcutManager ? "flash" : "flash-outline"}
               size={18}

@@ -496,7 +496,7 @@ describe("ChatScreen interrupt handling", () => {
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
     const toggleShortcutButton = root.findByProps({
-      accessibilityLabel: "Toggle shortcuts",
+      accessibilityLabel: "Open shortcut manager",
     });
 
     act(() => {
@@ -547,7 +547,7 @@ describe("ChatScreen interrupt handling", () => {
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
     const toggleShortcutButton = root.findByProps({
-      accessibilityLabel: "Toggle shortcuts",
+      accessibilityLabel: "Open shortcut manager",
     });
 
     act(() => {
@@ -582,6 +582,40 @@ describe("ChatScreen interrupt handling", () => {
       "Shortcut updated",
       '"Updated title" has been updated.',
     );
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("does not show edit action for default shortcut", () => {
+    mockShortcutState.shortcuts = [
+      {
+        id: "shortcut-default",
+        title: "Default title",
+        prompt: "Default prompt",
+        isDefault: true,
+        order: 0,
+      },
+    ];
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const toggleShortcutButton = root.findByProps({
+      accessibilityLabel: "Open shortcut manager",
+    });
+
+    act(() => {
+      toggleShortcutButton.props.onPress();
+    });
+
+    const editActions = root.findAll((node) => {
+      return (
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Edit shortcut")
+      );
+    });
+
+    expect(editActions).toHaveLength(0);
     act(() => {
       tree.unmount();
     });
