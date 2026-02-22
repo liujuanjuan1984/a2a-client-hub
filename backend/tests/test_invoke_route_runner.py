@@ -631,8 +631,19 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     sent = [json.loads(item) for item in websocket.sent]
     error_events = [event for event in sent if event["event"] == "error"]
     assert prepare_payloads == [
-        original_conversation_id,
-        rebound_conversation_id,
+        {
+            "conversationId": original_conversation_id,
+            "metadata": {},
+        },
+        {
+            "conversationId": rebound_conversation_id,
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "upstream-sid-2",
+                "external_session_id": "upstream-sid-2",
+                "opencode_session_id": "upstream-sid-2",
+            },
+        },
     ]
     assert stream_calls == 2
     assert observed_error_codes == ["session_not_found", "session_not_found"]

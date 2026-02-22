@@ -310,9 +310,11 @@ def _build_rebound_invoke_payload(
     payload: A2AAgentInvokeRequest,
     continue_payload: dict[str, Any],
 ) -> A2AAgentInvokeRequest:
-    provider, external_session_id, context_id = _extract_rebound_continue_binding_fields(
-        continue_payload=continue_payload
-    )
+    (
+        provider,
+        external_session_id,
+        context_id,
+    ) = _extract_rebound_continue_binding_fields(continue_payload=continue_payload)
     conversation_id = continue_payload.get("conversationId")
 
     normalized_provider = provider.lower() if provider else ""
@@ -324,9 +326,9 @@ def _build_rebound_invoke_payload(
         next_metadata["externalSessionId"] = normalized_external_session_id
         next_metadata["external_session_id"] = normalized_external_session_id
         if normalized_provider == _OPENCODE_PROVIDER:
-            next_metadata[_OPENCODE_SESSION_ID_METADATA_KEY] = (
-                normalized_external_session_id
-            )
+            next_metadata[
+                _OPENCODE_SESSION_ID_METADATA_KEY
+            ] = normalized_external_session_id
     next_context_id = normalize_non_empty_text(context_id) or payload.context_id
     next_conversation_id = (
         normalize_non_empty_text(conversation_id) or payload.conversation_id

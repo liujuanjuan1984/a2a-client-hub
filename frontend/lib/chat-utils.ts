@@ -80,8 +80,9 @@ export const buildInvokePayload = (
     session.externalSessionRef?.externalSessionId?.trim();
   const metadataProvider =
     typeof metadata.provider === "string" ? metadata.provider.trim() : "";
-  const providerForSessionBinding =
-    (externalProvider ?? metadataProvider).toLowerCase();
+  const providerForSessionBinding = (
+    externalProvider ?? metadataProvider
+  ).toLowerCase();
   if (externalProvider) {
     metadata.provider = externalProvider;
   }
