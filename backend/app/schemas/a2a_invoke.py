@@ -29,6 +29,11 @@ class A2AAgentInvokeRequest(BaseModel):
         alias="clientAgentMessageId",
         description="Optional client-side placeholder agent message identifier",
     )
+    resume_from_sequence: Optional[int] = Field(
+        default=None,
+        alias="resumeFromSequence",
+        description="Optional sequence number to resume streaming from after a disconnect",
+    )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Optional A2A metadata forwarded with the message",

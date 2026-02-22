@@ -24,6 +24,15 @@ export default function AppLayout() {
     const handleLifecycleGc = (nextState: AppStateStatus) => {
       if (nextState !== "active") {
         cleanupSessions();
+      } else {
+        // Automatically try to resume recoverable sessions
+        const chatStore = useChatStore.getState();
+        const activeSessions = Object.entries(chatStore.sessions);
+        activeSessions.forEach(([conversationId, session]) => {
+          if (session.streamState === "recoverable") {
+            chatStore.resumeMessage(conversationId).catch(() => {});
+          }
+        });
       }
     };
     const appStateSub = AppState.addEventListener("change", handleLifecycleGc);

@@ -47,6 +47,7 @@ type ChatState = {
     content: string,
     agentSource: AgentSource,
   ) => Promise<void>;
+  resumeMessage: (conversationId: string) => Promise<void>;
   cancelMessage: (conversationId: string) => void;
   resetSession: (conversationId: string, agentId: string) => void;
   bindExternalSession: (
@@ -745,13 +746,14 @@ export const useChatStore = create<ChatState>()(
             return;
           }
           terminalHandled = true;
-          closeStreamingMessages(errorText);
+          // DO NOT close streaming messages to error immediately to allow resumption
+          // But we need a visual cue. We will mark streamState as recoverable.
           patchSession({
-            streamState: "error",
+            streamState: "recoverable",
             lastStreamError: errorText,
             pendingInterrupt: null,
           });
-          console.warn("[Chat Stream] error", {
+          console.warn("[Chat Stream] error (marked recoverable for resume)", {
             conversationId,
             source: get().sessions[conversationId]?.source ?? null,
             message: errorText,
