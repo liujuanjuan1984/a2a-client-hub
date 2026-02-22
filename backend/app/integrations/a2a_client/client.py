@@ -90,12 +90,17 @@ class A2AClient:
     ) -> None:
         self.agent_url = agent_url.rstrip("/")
         self._agent_card: Optional[AgentCard] = None
+        self._timeout = timeout or self._build_timeout(timeout_seconds)
+        self._max_connections = max_connections
 
         self._interceptors = list(interceptors or [])
         self._consumers = list(consumers or [])
         self._use_client_preference = use_client_preference
         self._default_headers = dict(default_headers or {})
-        if self._default_headers:
+        if self._default_headers and not any(
+            isinstance(interceptor, StaticHeaderInterceptor)
+            for interceptor in self._interceptors
+        ):
             self._interceptors.append(StaticHeaderInterceptor(self._default_headers))
 
         self._card_fetch_timeout = card_fetch_timeout
@@ -228,6 +233,10 @@ class A2AClient:
             raise A2AOutboundNotAllowedError(str(exc)) from exc
 
         httpx_client = await self._get_http_client()
+        request_http_kwargs: Dict[str, Any] = {}
+        if self._default_headers:
+            request_http_kwargs["headers"] = dict(self._default_headers)
+        request_http_kwargs["timeout"] = self._timeout
         resolver = self._build_card_resolver(httpx_client)
         logger.info(
             "Requesting A2A agent card",
@@ -242,10 +251,11 @@ class A2AClient:
         try:
             if fetch_timeout and fetch_timeout > 0:
                 card = await asyncio.wait_for(
-                    resolver.get_agent_card(), timeout=fetch_timeout
+                    resolver.get_agent_card(http_kwargs=request_http_kwargs),
+                    timeout=fetch_timeout,
                 )
             else:
-                card = await resolver.get_agent_card()
+                card = await resolver.get_agent_card(http_kwargs=request_http_kwargs)
         except asyncio.TimeoutError as exc:
             logger.warning(
                 "Timed out requesting A2A agent card",

@@ -16,11 +16,10 @@ def init_global_http_client() -> None:
     """Initialize the global httpx client with connection pooling."""
     global _global_http_client
     if _global_http_client is None:
-        # Reasonably large limits for global reuse
-        max_conn = max(settings.a2a_max_connections, 100)
+        max_conn = max(settings.a2a_max_connections, 1)
         limits = httpx.Limits(
             max_connections=max_conn,
-            max_keepalive_connections=max(max_conn // 2, 20),
+            max_keepalive_connections=max(1, max_conn // 2),
         )
         timeout = httpx.Timeout(max(settings.a2a_default_timeout, 1.0), connect=10.0)
 
