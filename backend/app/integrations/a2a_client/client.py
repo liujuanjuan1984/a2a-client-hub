@@ -80,7 +80,6 @@ class A2AClient:
         *,
         timeout: Optional[httpx.Timeout] = None,
         timeout_seconds: Optional[float] = None,
-        max_connections: int = 20,
         interceptors: Optional[List[ClientCallInterceptor]] = None,
         consumers: Optional[List[Consumer]] = None,
         use_client_preference: bool = False,
@@ -91,7 +90,6 @@ class A2AClient:
         self.agent_url = agent_url.rstrip("/")
         self._agent_card: Optional[AgentCard] = None
         self._timeout = timeout or self._build_timeout(timeout_seconds)
-        self._max_connections = max_connections
 
         self._interceptors = list(interceptors or [])
         self._consumers = list(consumers or [])

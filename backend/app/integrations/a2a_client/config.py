@@ -10,7 +10,6 @@ class A2ASettings:
     """Runtime settings for the A2A integration layer."""
 
     default_timeout: float
-    max_connections: int
     use_client_preference: bool
     card_fetch_timeout: float = 5.0
     invoke_watchdog_interval: float = 5.0
@@ -22,7 +21,6 @@ def load_settings(raw_settings) -> A2ASettings:
 
     return A2ASettings(
         default_timeout=float(getattr(raw_settings, "a2a_default_timeout", 30.0)),
-        max_connections=int(getattr(raw_settings, "a2a_max_connections", 20)),
         use_client_preference=bool(
             getattr(raw_settings, "a2a_use_client_preference", False)
         ),
