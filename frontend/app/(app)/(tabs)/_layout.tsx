@@ -9,6 +9,7 @@ export default function TabsLayout() {
   const fallbackBottomInset = Platform.OS === "web" ? 16 : 0;
   const tabBarBottomInset = Math.max(insets.bottom, fallbackBottomInset);
   const tabBarPaddingBottom = Math.max(tabBarBottomInset, 8);
+  const tabBarHeight = 58 + tabBarPaddingBottom;
 
   return (
     <Tabs
@@ -25,9 +26,14 @@ export default function TabsLayout() {
           backgroundColor: "#05070a",
           borderTopColor: "rgba(148, 163, 184, 0.18)",
           borderTopWidth: 1,
-          minHeight: 58 + tabBarPaddingBottom,
+          height: tabBarHeight,
+          minHeight: tabBarHeight,
           paddingTop: 0,
           paddingBottom: tabBarPaddingBottom,
+          elevation: 0,
+        },
+        tabBarItemStyle: {
+          minHeight: 56,
         },
       }}
     >

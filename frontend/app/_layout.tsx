@@ -28,58 +28,12 @@ export default function RootLayout() {
     if (Platform.OS !== "web") return;
     if (typeof document === "undefined" || typeof window === "undefined")
       return;
-    const isIOS =
-      typeof navigator !== "undefined" &&
-      /iPad|iPhone|iPod/.test(navigator.userAgent);
-
-    if (!isIOS) return;
 
     const root = document.documentElement;
     root.classList.add("app-web");
 
-    const setAppHeight = () => {
-      const visualViewportHeight = window.visualViewport?.height;
-      const fallbackHeight = window.innerHeight;
-      root.style.setProperty(
-        "--app-height",
-        `${Math.max(1, Math.floor(visualViewportHeight ?? fallbackHeight))}px`,
-      );
-      window.scrollTo(0, 0);
-      document.documentElement.scrollTop = 0;
-      document.body.scrollTop = 0;
-    };
-
-    setAppHeight();
-    window.visualViewport?.addEventListener("resize", setAppHeight);
-    window.addEventListener("orientationchange", setAppHeight);
-
-    const preventGestureZoom = (event: Event) => {
-      event.preventDefault();
-    };
-
-    if (isIOS) {
-      document.addEventListener("gesturestart", preventGestureZoom, {
-        passive: false,
-      });
-      document.addEventListener("gesturechange", preventGestureZoom, {
-        passive: false,
-      });
-      document.addEventListener("gestureend", preventGestureZoom, {
-        passive: false,
-      });
-    }
-
     return () => {
-      window.visualViewport?.removeEventListener("resize", setAppHeight);
-      window.removeEventListener("resize", setAppHeight);
-      window.removeEventListener("orientationchange", setAppHeight);
-      if (isIOS) {
-        document.removeEventListener("gesturestart", preventGestureZoom);
-        document.removeEventListener("gesturechange", preventGestureZoom);
-        document.removeEventListener("gestureend", preventGestureZoom);
-      }
       root.classList.remove("app-web");
-      root.style.removeProperty("--app-height");
     };
   }, []);
 
