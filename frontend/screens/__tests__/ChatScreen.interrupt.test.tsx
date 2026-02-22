@@ -1,3 +1,4 @@
+import { ScrollView } from "react-native";
 import {
   act,
   create,
@@ -398,6 +399,41 @@ describe("ChatScreen interrupt handling", () => {
       "q-1",
     );
     expect(mockToastSuccess).toHaveBeenCalled();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("limits long plain text messages with internal scrolling", async () => {
+    mockMessageState.messages = {
+      [conversationId]: [
+        {
+          id: "message-1",
+          role: "agent",
+          content: "A".repeat(5000),
+          createdAt: "2026-02-16T00:00:00.000Z",
+        },
+      ],
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const expectedHeight = Math.floor(812 * 0.7);
+
+    const constrainedScrollViews = root.findAll((node) => {
+      return (
+        node.type === ScrollView &&
+        node.props?.style &&
+        typeof node.props.style === "object" &&
+        node.props.style.maxHeight === expectedHeight
+      );
+    });
+
+    expect(constrainedScrollViews).toHaveLength(1);
+    expect(constrainedScrollViews[0]?.props.nestedScrollEnabled).toBe(true);
+    expect(constrainedScrollViews[0]?.props.showsVerticalScrollIndicator).toBe(
+      true,
+    );
     act(() => {
       tree.unmount();
     });

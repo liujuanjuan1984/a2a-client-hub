@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  useWindowDimensions,
   KeyboardAvoidingView,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -137,6 +138,7 @@ export function ChatScreen({
   const { shortcuts, addShortcut, removeShortcut } = useShortcutStore();
 
   const [input, setInput] = useState("");
+  const maxBlockHeight = Math.floor(useWindowDimensions().height * 0.7);
   const suppressAutoScrollRef = useRef(false);
   const shouldStickToBottomRef = useRef(true);
   const forceScrollToBottomRef = useRef(false);
@@ -844,12 +846,18 @@ export function ChatScreen({
                           </Text>
                         </Pressable>
                         {expanded ? (
-                          <Text
-                            selectable
-                            className="mt-1 break-all text-xs text-slate-300"
+                          <ScrollView
+                            nestedScrollEnabled
+                            style={{ maxHeight: maxBlockHeight }}
+                            showsVerticalScrollIndicator
                           >
-                            {blockText}
-                          </Text>
+                            <Text
+                              selectable
+                              className="mt-1 break-all text-xs text-slate-300"
+                            >
+                              {blockText}
+                            </Text>
+                          </ScrollView>
                         ) : null}
                       </View>
                     );
@@ -869,27 +877,39 @@ export function ChatScreen({
                           </Text>
                         </Pressable>
                         {expanded ? (
-                          <Text
-                            selectable
-                            className="mt-1 break-all text-xs text-slate-300"
+                          <ScrollView
+                            nestedScrollEnabled
+                            style={{ maxHeight: maxBlockHeight }}
+                            showsVerticalScrollIndicator
                           >
-                            {blockText}
-                          </Text>
+                            <Text
+                              selectable
+                              className="mt-1 break-all text-xs text-slate-300"
+                            >
+                              {blockText}
+                            </Text>
+                          </ScrollView>
                         ) : null}
                       </View>
                     );
                   }
                   if (block.type === "text") {
                     return (
-                      <Text
+                      <ScrollView
                         key={blockId}
-                        selectable
-                        className={`${
-                          blockIndex > 0 ? "mt-3" : ""
-                        } break-all text-sm text-white`}
+                        style={{ maxHeight: maxBlockHeight }}
+                        nestedScrollEnabled
+                        showsVerticalScrollIndicator
                       >
-                        {blockText}
-                      </Text>
+                        <Text
+                          selectable
+                          className={`${
+                            blockIndex > 0 ? "mt-3" : ""
+                          } break-all text-sm text-white`}
+                        >
+                          {blockText}
+                        </Text>
+                      </ScrollView>
                     );
                   }
                   return (
@@ -912,9 +932,15 @@ export function ChatScreen({
                   );
                 })
               ) : (
-                <Text selectable className="break-all text-sm text-white">
-                  {message.content}
-                </Text>
+                <ScrollView
+                  style={{ maxHeight: maxBlockHeight }}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                >
+                  <Text selectable className="break-all text-sm text-white">
+                    {message.content}
+                  </Text>
+                </ScrollView>
               )}
               {message.status === "streaming" ? (
                 <Text className="mt-1 text-[10px] text-muted">
