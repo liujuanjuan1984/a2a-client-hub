@@ -122,6 +122,6 @@ Continue binding is unified via
 The continue payload also includes canonical binding fields:
 
 - `conversationId`
-- `provider`
-- `externalSessionId`
-- `contextId`
+- `metadata.provider`
+- `metadata.externalSessionId`
+- `metadata.contextId`

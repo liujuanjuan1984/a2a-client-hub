@@ -91,6 +91,7 @@ describe("chat store utils", () => {
         provider: "opencode",
         externalSessionId: "ses-upstream-1",
         external_session_id: "ses-upstream-1",
+        opencode_session_id: "ses-upstream-1",
       },
     });
   });

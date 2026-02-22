@@ -150,14 +150,16 @@ scheduled, and OpenCode sessions:
 - `POST /api/v1/me/conversations/{conversation_id}/messages:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
 
-`continue` now returns canonical binding fields plus invoke metadata:
+`continue` now returns the canonical fields and binding metadata:
 
 - `conversationId` (canonical conversation id)
-- `provider` (external provider key)
-- `externalSessionId` (external session identifier)
-- `contextId` (A2A context id)
-- `metadata.<metadata_key>` (strict upstream session-binding key from
-  `urn:opencode-a2a:opencode-session-binding/v1`)
+- `source` (canonical source)
+- `metadata`:
+  - `provider` (external provider key)
+  - `externalSessionId` (external session identifier)
+  - `contextId` (A2A context id)
+  - `<metadata_key>` (strict upstream session-binding key from
+    `urn:opencode-a2a:opencode-session-binding/v1`, e.g. `opencode_session_id`)
 
 Client-generated chat sessions should use raw UUID conversation IDs, for example
 `550e8400-e29b-41d4-a716-446655440000`.

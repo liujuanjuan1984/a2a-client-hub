@@ -29,6 +29,12 @@ from app.services.invoke_session_binding import (
 )
 from app.services.session_hub import session_hub_service
 from app.services.ws_ticket_service import ws_ticket_service
+from app.utils.payload_extract import (
+    as_dict,
+    extract_context_id,
+    extract_provider_and_external_session_id,
+)
+from app.utils.session_identity import normalize_non_empty_text
 
 AgentSource = Literal["personal", "shared"]
 
@@ -39,6 +45,8 @@ _SESSION_NOT_FOUND_RETRY_LIMIT = 1
 _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
 )
+_OPENCODE_PROVIDER = "opencode"
+_OPENCODE_SESSION_ID_METADATA_KEY = "opencode_session_id"
 
 
 @dataclass
@@ -264,32 +272,64 @@ def _build_stream_callbacks(
     return on_event, on_complete, on_error, on_complete_metadata
 
 
+def _extract_rebound_continue_binding_fields(
+    *,
+    continue_payload: dict[str, Any],
+) -> tuple[str | None, str | None, str | None]:
+    """Resolve provider/context binding from the continue payload.
+
+    Preference:
+    1. Top-level continue fields.
+    2. continue metadata fields.
+    """
+    continue_payload_dict = as_dict(continue_payload)
+    continue_metadata = as_dict(continue_payload_dict.get("metadata"))
+
+    provider, external_session_id = extract_provider_and_external_session_id(
+        {**continue_metadata, **continue_payload_dict}
+    )
+    context_id = extract_context_id(continue_payload_dict)
+    if context_id is None:
+        context_id = extract_context_id(continue_metadata)
+
+    if external_session_id is None:
+        opencode_session_id = normalize_non_empty_text(
+            continue_metadata.get(_OPENCODE_SESSION_ID_METADATA_KEY)
+            or continue_payload_dict.get(_OPENCODE_SESSION_ID_METADATA_KEY)
+        )
+        if opencode_session_id is not None:
+            external_session_id = opencode_session_id
+            if provider is None:
+                provider = _OPENCODE_PROVIDER
+
+    return provider, external_session_id, context_id
+
+
 def _build_rebound_invoke_payload(
     *,
     payload: A2AAgentInvokeRequest,
     continue_payload: dict[str, Any],
 ) -> A2AAgentInvokeRequest:
-    external_session_id = continue_payload.get("externalSessionId")
-    provider = continue_payload.get("provider")
-    context_id = continue_payload.get("contextId")
+    provider, external_session_id, context_id = _extract_rebound_continue_binding_fields(
+        continue_payload=continue_payload
+    )
     conversation_id = continue_payload.get("conversationId")
 
+    normalized_provider = provider.lower() if provider else ""
+    normalized_external_session_id = external_session_id or ""
     next_metadata = dict(payload.metadata or {})
-    if isinstance(provider, str) and provider.strip():
-        next_metadata["provider"] = provider.strip()
-    if isinstance(external_session_id, str) and external_session_id.strip():
-        next_metadata["externalSessionId"] = external_session_id.strip()
-        next_metadata["external_session_id"] = external_session_id.strip()
-
-    next_context_id = (
-        context_id.strip()
-        if isinstance(context_id, str) and context_id.strip()
-        else payload.context_id
-    )
+    if normalized_provider:
+        next_metadata["provider"] = normalized_provider
+    if normalized_external_session_id:
+        next_metadata["externalSessionId"] = normalized_external_session_id
+        next_metadata["external_session_id"] = normalized_external_session_id
+        if normalized_provider == _OPENCODE_PROVIDER:
+            next_metadata[_OPENCODE_SESSION_ID_METADATA_KEY] = (
+                normalized_external_session_id
+            )
+    next_context_id = normalize_non_empty_text(context_id) or payload.context_id
     next_conversation_id = (
-        conversation_id.strip()
-        if isinstance(conversation_id, str) and conversation_id.strip()
-        else payload.conversation_id
+        normalize_non_empty_text(conversation_id) or payload.conversation_id
     )
 
     return payload.model_copy(
