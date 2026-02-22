@@ -10,6 +10,7 @@ import httpx
 from a2a.types import AgentCard
 
 from app.core.config import settings
+from app.core.http_client import get_global_http_client
 from app.core.logging import get_logger
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.errors import (
@@ -53,32 +54,18 @@ class ExtensionCallResult:
 class A2AExtensionsService:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
-        self._http: Optional[httpx.AsyncClient] = None
         self._jsonrpc: Optional[JsonRpcClient] = None
 
     async def _get_http(self) -> httpx.AsyncClient:
         async with self._lock:
-            if self._http and not self._http.is_closed:
-                return self._http
-            timeout = httpx.Timeout(
-                max(settings.a2a_default_timeout, 1.0),
-                connect=10.0,
-            )
-            limits = httpx.Limits(
-                max_connections=max(settings.a2a_max_connections, 1),
-                max_keepalive_connections=max(1, settings.a2a_max_connections // 2),
-            )
-            self._http = httpx.AsyncClient(timeout=timeout, limits=limits)
-            self._jsonrpc = JsonRpcClient(self._http)
-            return self._http
+            http = get_global_http_client()
+            if self._jsonrpc is None:
+                self._jsonrpc = JsonRpcClient(http)
+            return http
 
     async def shutdown(self) -> None:
         async with self._lock:
-            http = self._http
-            self._http = None
             self._jsonrpc = None
-        if http and not http.is_closed:
-            await http.aclose()
 
     async def _fetch_card(self, runtime: A2ARuntime) -> AgentCard:
         # Validate the agent card URL before any outbound request.
