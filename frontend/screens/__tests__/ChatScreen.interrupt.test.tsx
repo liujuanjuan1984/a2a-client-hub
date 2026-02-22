@@ -48,7 +48,7 @@ type MockAgentSession = {
   contextId: string | null;
   runtimeStatus: string | null;
   pendingInterrupt: unknown;
-  streamState: "idle" | "streaming" | "rebinding" | "recoverable" | "error";
+  streamState: "idle" | "streaming" | "recoverable" | "error";
   lastStreamError: string | null;
   transport: string;
   inputModes: string[];

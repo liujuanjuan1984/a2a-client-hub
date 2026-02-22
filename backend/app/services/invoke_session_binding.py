@@ -13,12 +13,20 @@ def status_code_for_invoke_session_error(detail: str) -> int:
     return 400
 
 
+def is_recoverable_invoke_session_error(detail: str | None) -> bool:
+    return normalize_detail(detail) == "session_not_found"
+
+
 def ws_error_code_for_invoke_session_error(detail: str) -> str:
     if detail == "session_not_found":
         return "session_not_found"
     if detail == "invoke_inflight":
         return "invoke_inflight"
     return "invalid_conversation_id"
+
+
+def normalize_detail(detail: str | None) -> str:
+    return detail.strip() if isinstance(detail, str) else ""
 
 
 def normalize_invoke_binding_state(
@@ -55,5 +63,6 @@ __all__ = [
     "merge_invoke_binding_state",
     "normalize_invoke_binding_state",
     "status_code_for_invoke_session_error",
+    "is_recoverable_invoke_session_error",
     "ws_error_code_for_invoke_session_error",
 ]

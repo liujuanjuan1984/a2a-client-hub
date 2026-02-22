@@ -12,7 +12,7 @@ export type AgentSession = {
   contextId: string | null;
   runtimeStatus?: string | null;
   pendingInterrupt?: RuntimeInterrupt | null;
-  streamState?: "idle" | "streaming" | "rebinding" | "recoverable" | "error";
+  streamState?: "idle" | "streaming" | "recoverable" | "error";
   lastStreamError?: string | null;
   transport: string;
   inputModes: string[];
@@ -75,22 +75,15 @@ export const buildInvokePayload = (
     payload.contextId = session.contextId;
   }
   const metadata: Record<string, unknown> = { ...(session.metadata ?? {}) };
-  const externalProvider = session.externalSessionRef?.provider
-    ?.trim()
-    .toLowerCase();
+  const externalProvider = session.externalSessionRef?.provider?.trim();
   const externalSessionId =
     session.externalSessionRef?.externalSessionId?.trim();
-  if (externalProvider === "opencode" && externalSessionId) {
-    // Strict upstream contract: metadata.opencode.session_id.
-    const opencodeMetadata =
-      metadata.opencode &&
-      typeof metadata.opencode === "object" &&
-      !Array.isArray(metadata.opencode)
-        ? { ...(metadata.opencode as Record<string, unknown>) }
-        : {};
-    opencodeMetadata.session_id = externalSessionId;
-    metadata.opencode = opencodeMetadata;
-    delete metadata.opencode_session_id;
+  if (externalProvider) {
+    metadata.provider = externalProvider;
+  }
+  if (externalSessionId) {
+    metadata.externalSessionId = externalSessionId;
+    metadata.external_session_id = externalSessionId;
   }
   if (Object.keys(metadata).length > 0) {
     payload.metadata = metadata;

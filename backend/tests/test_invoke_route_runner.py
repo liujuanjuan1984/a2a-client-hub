@@ -177,6 +177,186 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
     }
 
 
+@pytest.mark.asyncio
+async def test_run_http_invoke_route_retries_session_not_found_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    original_conversation_id = str(uuid4())
+    rebound_conversation_id = str(uuid4())
+    attempts: list[dict[str, str]] = []
+
+    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+        payload = kwargs["payload"]
+        attempts.append({"conversationId": payload.conversation_id})
+        if len(attempts) == 1:
+            return A2AAgentInvokeResponse(
+                success=False,
+                error="session missing",
+                error_code="session_not_found",
+                agent_name="Demo Agent",
+                agent_url="https://example.com",
+            )
+        return A2AAgentInvokeResponse(
+            success=True,
+            content="ok",
+            error_code=None,
+            agent_name="Demo Agent",
+            agent_url="https://example.com",
+        )
+
+    async def fake_continue_session(
+        *_,
+        user_id: object,  # noqa: ARG002
+        conversation_id: str,
+        **__,  # noqa: ARG001
+    ) -> tuple[dict[str, object], bool]:
+        assert conversation_id == original_conversation_id
+        return (
+            {
+                "conversationId": rebound_conversation_id,
+                "source": "manual",
+                "provider": "opencode",
+                "externalSessionId": "upstream-sid-2",
+                "contextId": "ctx-2",
+            },
+            True,
+        )
+
+    async def fake_commit_safely(_: object) -> None:
+        return None
+
+    monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "continue_session",
+        fake_continue_session,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    async def runtime_builder():
+        return runtime
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "test invoke route",
+            "conversationId": original_conversation_id,
+            "metadata": {},
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke_route(
+        db=object(),
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=False,
+        gateway=object(),
+        runtime_builder=runtime_builder,
+        runtime_not_found_errors=(RuntimeError,),
+        runtime_not_found_status_code=404,
+        runtime_validation_errors=(ValueError,),
+        runtime_validation_status_code=400,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        invoke_log_message="test invoke",
+        invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+    )
+
+    assert isinstance(response, A2AAgentInvokeResponse)
+    assert response.success is True
+    assert response.content == "ok"
+    assert len(attempts) == 2
+    assert attempts[0]["conversationId"] == original_conversation_id
+    assert attempts[1]["conversationId"] == rebound_conversation_id
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_route_retries_once_for_session_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    attempt = 0
+
+    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+        nonlocal attempt
+        attempt += 1
+        return A2AAgentInvokeResponse(
+            success=False,
+            error="session missing",
+            error_code="session_not_found",
+            agent_name="Demo Agent",
+            agent_url="https://example.com",
+        )
+
+    async def fake_continue_session(
+        *_,
+        user_id: object,  # noqa: ARG002
+        conversation_id: str,
+        **__,  # noqa: ARG001
+    ) -> tuple[dict[str, object], bool]:
+        assert conversation_id
+        return (
+            {
+                "conversationId": conversation_id,
+                "source": "manual",
+                "provider": "opencode",
+                "externalSessionId": "upstream-sid-2",
+                "contextId": "ctx-2",
+            },
+            True,
+        )
+
+    async def fake_commit_safely(_: object) -> None:
+        return None
+
+    monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "continue_session",
+        fake_continue_session,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    async def runtime_builder():
+        return runtime
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "test invoke route",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke_route(
+        db=object(),
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=False,
+        gateway=object(),
+        runtime_builder=runtime_builder,
+        runtime_not_found_errors=(RuntimeError,),
+        runtime_not_found_status_code=404,
+        runtime_validation_errors=(ValueError,),
+        runtime_validation_status_code=400,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        invoke_log_message="test invoke",
+        invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+    )
+
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 404
+    response_payload = json.loads(response.body.decode())
+    assert response_payload["success"] is False
+    assert response_payload["error_code"] == "session_not_found"
+    assert attempt == 2
+
+
 @pytest.mark.parametrize(
     "error_code, expected_status",
     [

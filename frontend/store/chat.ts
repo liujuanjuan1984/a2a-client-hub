@@ -17,7 +17,6 @@ import {
 import { ApiRequestError } from "@/lib/api/client";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import {
-  continueSession as continueSessionBinding,
   listSessionMessagesPage,
   type SessionMessageItem,
 } from "@/lib/api/sessions";
@@ -260,9 +259,6 @@ export const useChatStore = create<ChatState>()(
           status: "streaming" as const,
         };
 
-        const previousSession =
-          get().sessions[conversationId] ?? createAgentSession(agentId);
-
         set((state) => ({
           sessions: {
             ...state.sessions,
@@ -294,8 +290,6 @@ export const useChatStore = create<ChatState>()(
         let terminalHandled = false;
         let hasObservedStreamEvent = false;
 
-        let rebindInFlight = false;
-
         const patchSession = (patch: Partial<AgentSession>) => {
           set((state) => {
             const current = state.sessions[conversationId];
@@ -326,80 +320,6 @@ export const useChatStore = create<ChatState>()(
             pendingInterrupt: null,
           });
         };
-
-        const attemptSessionRebind = async (reason: string) => {
-          const current = get().sessions[conversationId];
-          const shouldRebind =
-            current?.externalSessionRef?.provider === "opencode";
-          if (!shouldRebind) {
-            return false;
-          }
-          if (rebindInFlight) {
-            return false;
-          }
-          rebindInFlight = true;
-          patchSession({
-            streamState: "rebinding",
-            lastStreamError: reason,
-            pendingInterrupt: null,
-          });
-          console.info("[Session Rebind] start", {
-            conversationId,
-            source: current?.source ?? null,
-            reason,
-            transport: get().sessions[conversationId]?.transport ?? "unknown",
-          });
-          try {
-            const binding = await continueSessionBinding(conversationId);
-            const current =
-              get().sessions[conversationId] ?? createAgentSession(agentId);
-            patchSession({
-              contextId: binding.contextId ?? current.contextId,
-              source: binding.source ?? current.source ?? null,
-              externalSessionRef: mergeExternalSessionRef(
-                current.externalSessionRef,
-                {
-                  provider: binding.provider,
-                  externalSessionId: binding.externalSessionId,
-                },
-              ),
-              streamState: "recoverable",
-              lastStreamError: reason,
-              pendingInterrupt: null,
-            });
-            console.info("[Session Rebind] success", {
-              conversationId,
-              source: binding.source ?? current.source ?? null,
-              contextId: binding.contextId ?? null,
-            });
-            return true;
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : "Session rebind failed.";
-            patchSession({
-              streamState: "error",
-              lastStreamError: message,
-              pendingInterrupt: null,
-            });
-            console.warn("[Session Rebind] failed", {
-              conversationId,
-              source: current?.source ?? null,
-              message,
-            });
-            return false;
-          } finally {
-            rebindInFlight = false;
-          }
-        };
-
-        if (
-          previousSession.externalSessionRef?.provider === "opencode" &&
-          previousSession.streamState === "error"
-        ) {
-          await attemptSessionRebind(
-            previousSession.lastStreamError ?? "Recover before sending",
-          );
-        }
 
         const session =
           get().sessions[conversationId] ?? createAgentSession(agentId);
@@ -569,8 +489,7 @@ export const useChatStore = create<ChatState>()(
             const existing = merged.get(message.id);
             const session = get().sessions[conversationId];
             const isActivelyStreaming =
-              session?.streamState === "streaming" ||
-              session?.streamState === "rebinding";
+              session?.streamState === "streaming";
             if (
               existing &&
               existing.status === "streaming" &&
@@ -839,7 +758,6 @@ export const useChatStore = create<ChatState>()(
             message: errorText,
             transport: get().sessions[conversationId]?.transport ?? "unknown",
           });
-          attemptSessionRebind(errorText).catch(() => false);
         };
 
         const completeStreamingMessage = () => {
