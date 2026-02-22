@@ -244,7 +244,7 @@ async def test_schedule_create_rejects_over_quota(
             },
         )
         assert resp2.status_code == 403
-        assert "quota" in resp2.json()["detail"].lower()
+        assert "limit" in resp2.json()["detail"].lower()
 
 
 async def test_schedule_admin_bypasses_quota_and_interval(
