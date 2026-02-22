@@ -68,6 +68,7 @@ describe("chat store utils", () => {
       query: "hello",
       conversationId: "conversation:abc",
       metadata: {
+        opencode_session_id: "legacy-flat",
         locale: "zh-CN",
         provider: "opencode",
         externalSessionId: "ses-upstream-1",
