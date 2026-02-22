@@ -479,6 +479,11 @@ class Settings(BaseSettings):
         alias="A2A_SCHEDULE_AGENT_CONCURRENCY_LIMIT",
         description="Maximum concurrent running scheduled executions per target agent.",
     )
+    a2a_schedule_global_concurrency_limit: int = Field(
+        default=3,
+        alias="A2A_SCHEDULE_GLOBAL_CONCURRENCY_LIMIT",
+        description="Maximum concurrent running scheduled executions globally.",
+    )
     a2a_schedule_task_invoke_timeout: float = Field(
         default=300.0,
         alias="A2A_SCHEDULE_TASK_INVOKE_TIMEOUT",
@@ -488,6 +493,16 @@ class Settings(BaseSettings):
         default=3,
         alias="A2A_SCHEDULE_TASK_FAILURE_THRESHOLD",
         description="Consecutive failures before a scheduled task is automatically disabled.",
+    )
+    a2a_schedule_min_interval_minutes: int = Field(
+        default=60,
+        alias="A2A_SCHEDULE_MIN_INTERVAL_MINUTES",
+        description="Minimum allowed scheduling interval in minutes (to prevent rapid invocations).",
+    )
+    a2a_schedule_max_active_tasks_per_user: int = Field(
+        default=3,
+        alias="A2A_SCHEDULE_MAX_ACTIVE_TASKS_PER_USER",
+        description="Maximum number of active scheduled tasks permitted per non-admin user.",
     )
     a2a_stream_heartbeat_interval: float = Field(
         default=15.0,

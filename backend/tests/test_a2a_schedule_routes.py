@@ -141,6 +141,10 @@ async def test_schedule_create_interval_normalizes_minutes(
     async_session_maker,
     monkeypatch,
 ):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 1)
+
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="interval")
 
@@ -194,3 +198,123 @@ async def test_schedule_create_weekly_uses_iso_weekday(
         payload = resp.json()
         assert payload["cycle_type"] == "weekly"
         assert payload["time_point"] == {"weekday": 1, "time": "09:15"}
+
+
+async def test_schedule_create_rejects_over_quota(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "a2a_schedule_max_active_tasks_per_user", 1)
+
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="quota")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        # First task should succeed
+        resp1 = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Task 1",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "cycle_type": "daily",
+                "time_point": {"time": "09:00"},
+                "enabled": True,
+            },
+        )
+        assert resp1.status_code == 201
+
+        # Second task should fail due to quota
+        resp2 = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Task 2",
+                "agent_id": str(agent.id),
+                "prompt": "ping 2",
+                "cycle_type": "daily",
+                "time_point": {"time": "10:00"},
+                "enabled": True,
+            },
+        )
+        assert resp2.status_code == 403
+        assert "limit" in resp2.json()["detail"].lower()
+
+
+async def test_schedule_admin_bypasses_quota_and_interval(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "a2a_schedule_max_active_tasks_per_user", 0)
+    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 60)
+
+    admin_user = await create_user(
+        async_db_session, skip_onboarding_defaults=True, is_superuser=True
+    )
+    agent = await _create_agent(async_db_session, user_id=admin_user.id, suffix="admin")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=admin_user,
+    ) as client:
+        # Admin should be able to create task despite quota=0
+        # Admin should also be able to use interval < min_interval_minutes and not rounded to 5
+        resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Admin Task",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "cycle_type": "interval",
+                "time_point": {"minutes": 1},
+                "enabled": True,
+            },
+        )
+        assert resp.status_code == 201
+        payload = resp.json()
+        assert payload["time_point"] == {"minutes": 1}
+
+
+async def test_schedule_interval_enforces_minimum(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 60)
+
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="min_interval"
+    )
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        # Should fail if minutes < min_interval_minutes
+        resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Invalid interval",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "cycle_type": "interval",
+                "time_point": {"minutes": 30},
+                "enabled": True,
+            },
+        )
+        assert resp.status_code == 400
+        assert "cannot be less than" in resp.json()["detail"].lower()

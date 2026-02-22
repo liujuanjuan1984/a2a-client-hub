@@ -21,6 +21,7 @@ from app.schemas.a2a_schedule import (
 )
 from app.services.a2a_schedule_service import (
     A2AScheduleNotFoundError,
+    A2AScheduleQuotaError,
     A2AScheduleValidationError,
     a2a_schedule_service,
 )
@@ -40,6 +41,7 @@ async def create_schedule_task(
         task = await a2a_schedule_service.create_task(
             db,
             user_id=current_user.id,
+            is_superuser=current_user.is_superuser,
             name=payload.name,
             agent_id=payload.agent_id,
             prompt=payload.prompt,
@@ -47,6 +49,10 @@ async def create_schedule_task(
             time_point=payload.time_point,
             enabled=payload.enabled,
         )
+    except A2AScheduleQuotaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
     except A2AScheduleValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return A2AScheduleTaskResponse.model_validate(task)
@@ -112,6 +118,7 @@ async def patch_schedule_task(
             db,
             user_id=current_user.id,
             task_id=task_id,
+            is_superuser=current_user.is_superuser,
             name=payload.name,
             agent_id=payload.agent_id,
             prompt=payload.prompt,
@@ -119,6 +126,10 @@ async def patch_schedule_task(
             time_point=payload.time_point,
             enabled=payload.enabled,
         )
+    except A2AScheduleQuotaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
     except A2AScheduleNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except A2AScheduleValidationError as exc:
@@ -158,7 +169,12 @@ async def enable_schedule_task(
             user_id=current_user.id,
             task_id=task_id,
             enabled=True,
+            is_superuser=current_user.is_superuser,
         )
+    except A2AScheduleQuotaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
     except A2AScheduleNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except A2AScheduleValidationError as exc:
@@ -183,6 +199,7 @@ async def disable_schedule_task(
             user_id=current_user.id,
             task_id=task_id,
             enabled=False,
+            is_superuser=current_user.is_superuser,
         )
     except A2AScheduleNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
