@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 
-import { AdminHubAgentAllowlistScreen } from "@/screens/admin/AdminHubAgentAllowlistScreen";
 import { PageTitle } from "@/components/layout/PageTitle";
+import { AdminHubAgentAllowlistScreen } from "@/screens/admin/AdminHubAgentAllowlistScreen";
 
 export default function AdminHubAgentAllowlistRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();

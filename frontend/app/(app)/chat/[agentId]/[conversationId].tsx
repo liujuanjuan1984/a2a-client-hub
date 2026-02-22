@@ -1,10 +1,7 @@
-import { useMemo } from "react";
 import { useLocalSearchParams } from "expo-router";
+import { useMemo } from "react";
 
-import {
-  buildGeneratingTitle,
-  PageTitle,
-} from "@/components/layout/PageTitle";
+import { buildGeneratingTitle, PageTitle } from "@/components/layout/PageTitle";
 import { ChatScreen } from "@/screens/ChatScreen";
 import { useChatStore } from "@/store/chat";
 
@@ -18,7 +15,8 @@ export default function ChatSession() {
   );
 
   const isGenerating =
-    session?.streamState === "streaming" || session?.streamState === "rebinding";
+    session?.streamState === "streaming" ||
+    session?.streamState === "rebinding";
 
   const title = useMemo(() => {
     const baseTitle = `Chat with ${agentId}`;

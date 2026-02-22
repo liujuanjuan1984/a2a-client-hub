@@ -1,5 +1,5 @@
-import { SessionsScreen } from "@/screens/SessionsScreen";
 import { PageTitle } from "@/components/layout/PageTitle";
+import { SessionsScreen } from "@/screens/SessionsScreen";
 
 export default function SessionsPage() {
   return (

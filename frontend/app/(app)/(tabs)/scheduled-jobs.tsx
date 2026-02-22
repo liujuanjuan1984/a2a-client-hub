@@ -1,5 +1,5 @@
-import { ScheduledJobsScreen } from "@/screens/ScheduledJobsScreen";
 import { PageTitle } from "@/components/layout/PageTitle";
+import { ScheduledJobsScreen } from "@/screens/ScheduledJobsScreen";
 
 export default function ScheduledJobsPage() {
   return (

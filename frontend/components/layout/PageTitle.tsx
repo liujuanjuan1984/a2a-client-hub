@@ -1,4 +1,5 @@
 import Head from "expo-router/head";
+import { type ReactElement } from "react";
 
 type PageTitleProps = {
   title: string;
@@ -6,7 +7,7 @@ type PageTitleProps = {
 
 const APP_TITLE_SUFFIX = "A2AClientHub";
 
-export function PageTitle({ title }: PageTitleProps): JSX.Element {
+export function PageTitle({ title }: PageTitleProps): ReactElement {
   const normalizedTitle = title.includes("|")
     ? title
     : `${title} | ${APP_TITLE_SUFFIX}`;

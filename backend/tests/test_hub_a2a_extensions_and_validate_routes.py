@@ -9,11 +9,11 @@ from app.api.routers import _opencode_extension_router as opencode_router_common
 from app.api.routers import admin_a2a_agents as admin_router
 from app.api.routers import hub_a2a_agents as hub_router
 from app.api.routers import hub_a2a_extensions_opencode as hub_opencode_router
+from app.core.config import settings
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
-from app.core.config import settings
 from tests.api_utils import create_test_client
 from tests.utils import create_user
 
@@ -157,6 +157,35 @@ class _FakeExtensionsService:
                 "runtime": runtime,
                 "request_id": request_id,
                 "reply": reply,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "request_id": request_id},
+            meta={},
+        )
+
+    async def opencode_reply_question(self, *, runtime, request_id: str, answers):
+        self.calls.append(
+            {
+                "fn": "opencode_reply_question",
+                "runtime": runtime,
+                "request_id": request_id,
+                "answers": answers,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "request_id": request_id},
+            meta={},
+        )
+
+    async def opencode_reject_question(self, *, runtime, request_id: str):
+        self.calls.append(
+            {
+                "fn": "opencode_reject_question",
+                "runtime": runtime,
+                "request_id": request_id,
             }
         )
         return _FakeExtensionResult(
@@ -525,8 +554,14 @@ async def test_hub_opencode_session_continue_maps_extension_error_to_http_status
 @pytest.mark.parametrize(
     ("exception", "error_code"),
     [
-        (A2AExtensionContractError("extension contract is invalid"), "extension_contract_error"),
-        (A2AExtensionNotSupportedError("extension method is not supported"), "not_supported"),
+        (
+            A2AExtensionContractError("extension contract is invalid"),
+            "extension_contract_error",
+        ),
+        (
+            A2AExtensionNotSupportedError("extension method is not supported"),
+            "not_supported",
+        ),
     ],
 )
 @pytest.mark.asyncio

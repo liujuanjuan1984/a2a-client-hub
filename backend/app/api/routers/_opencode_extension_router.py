@@ -119,7 +119,9 @@ def create_opencode_extension_router(
             content=payload.model_dump(),
         )
 
-    async def _run_extension_call(call: Awaitable[Any]) -> A2AExtensionResponse | JSONResponse:
+    async def _run_extension_call(
+        call: Awaitable[Any],
+    ) -> A2AExtensionResponse | JSONResponse:
         try:
             result = await call
         except ValueError as exc:

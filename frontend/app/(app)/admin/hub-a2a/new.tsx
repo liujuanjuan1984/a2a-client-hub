@@ -1,5 +1,5 @@
-import { AdminHubAgentNewScreen } from "@/screens/admin/AdminHubAgentNewScreen";
 import { PageTitle } from "@/components/layout/PageTitle";
+import { AdminHubAgentNewScreen } from "@/screens/admin/AdminHubAgentNewScreen";
 
 export default function AdminHubAgentNewRoute() {
   return (
