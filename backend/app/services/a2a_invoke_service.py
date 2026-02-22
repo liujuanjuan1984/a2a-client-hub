@@ -28,6 +28,7 @@ ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
 StreamTextCallbackFn = Callable[[str], Any]
 StreamEventPayloadCallbackFn = Callable[[dict[str, Any]], Any]
 StreamMetadataCallbackFn = Callable[[dict[str, Any]], Any]
+StreamErrorMetadataCallbackFn = Callable[[dict[str, Any]], Any]
 
 
 class A2AInvokeService:
@@ -632,6 +633,42 @@ class A2AInvokeService:
             return 0.0
         return interval
 
+    @classmethod
+    def _extract_error_code_from_exception(cls, exc: BaseException) -> str | None:
+        candidate = getattr(exc, "error_code", None)
+        if isinstance(candidate, str):
+            normalized = candidate.strip()
+            if normalized:
+                return normalized
+
+        detail = getattr(exc, "detail", None)
+        if isinstance(detail, str):
+            normalized = detail.strip()
+            if normalized:
+                return normalized
+
+        candidate = getattr(exc, "code", None)
+        if isinstance(candidate, str):
+            normalized = candidate.strip()
+            if normalized:
+                return normalized
+
+        for arg in getattr(exc, "args", ()):
+            if isinstance(arg, str):
+                normalized = arg.strip()
+                if normalized:
+                    return normalized
+            if isinstance(arg, dict):
+                mapped = arg.get("error_code") or arg.get("code")
+                if isinstance(mapped, str):
+                    normalized = mapped.strip()
+                    if normalized:
+                        return normalized
+                if isinstance(mapped, int):
+                    return str(mapped)
+
+        return None
+
     async def _iter_stream_events_with_heartbeat(
         self,
         stream: AsyncIterator[StreamEvent],
@@ -772,6 +809,7 @@ class A2AInvokeService:
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
         on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
+        on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
     ) -> None:
         stream_text_accumulator = self._StreamTextAccumulator()
         stream_failed = False
@@ -812,14 +850,22 @@ class A2AInvokeService:
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
                 if self._is_terminal_status_event(serialized):
                     break
-        except Exception:
+        except Exception as exc:
             stream_failed = True
             logger.warning("A2A WS stream failed", exc_info=True, extra=log_extra)
+            error_code = (
+                self._extract_error_code_from_exception(exc) or self._STREAM_ERROR_CODE
+            )
+            error_payload = {
+                "message": self._STREAM_ERROR_MESSAGE,
+                "error_code": error_code,
+            }
             await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
+            await self._call_callback(on_error_metadata, error_payload)
             await self.send_ws_error(
                 websocket,
                 message=self._STREAM_ERROR_MESSAGE,
-                error_code=self._STREAM_ERROR_CODE,
+                error_code=error_code,
             )
         finally:
             if not stream_failed:

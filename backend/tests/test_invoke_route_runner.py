@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 from types import SimpleNamespace
 from uuid import uuid4
@@ -16,6 +17,14 @@ from app.services import invoke_route_runner
 async def _consume_stream(response: StreamingResponse) -> None:
     async for _ in response.body_iterator:
         pass
+
+
+class _NoopWebSocket:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+
+    async def send_text(self, payload: str) -> None:
+        self.sent.append(payload)
 
 
 @pytest.mark.asyncio
@@ -178,7 +187,9 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_run_http_invoke_route_retries_session_not_found_once(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_http_invoke_route_retries_session_not_found_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
     )
@@ -273,7 +284,9 @@ async def test_run_http_invoke_route_retries_session_not_found_once(monkeypatch:
 
 
 @pytest.mark.asyncio
-async def test_run_http_invoke_route_retries_once_for_session_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_http_invoke_route_retries_once_for_session_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
     )
@@ -357,6 +370,118 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(monkeypa
     assert attempt == 2
 
 
+@pytest.mark.asyncio
+async def test_run_ws_invoke_route_retries_session_not_found_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    original_conversation_id = str(uuid4())
+    rebound_conversation_id = str(uuid4())
+    prepare_payloads: list[str | None] = []
+    stream_calls = 0
+
+    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+        payload = kwargs["payload"]
+        prepare_payloads.append(payload.conversation_id)
+        return invoke_route_runner._InvokeState(
+            local_session=object(),
+            local_source="manual",
+            context_id=None,
+            metadata={},
+            stream_identity={},
+            stream_usage={},
+            user_message_id=None,
+            client_agent_message_id=None,
+        )
+
+    async def fake_stream_ws(*, on_error_metadata=None, **kwargs):  # noqa: ARG001
+        nonlocal stream_calls
+        stream_calls += 1
+        if stream_calls == 1 and on_error_metadata:
+            result = on_error_metadata(
+                {
+                    "message": "Upstream streaming failed",
+                    "error_code": "session_not_found",
+                }
+            )
+            if inspect.isawaitable(result):
+                await result
+
+    async def fake_continue_session(
+        *_,
+        user_id: object,  # noqa: ARG002
+        conversation_id: str,
+        **__,  # noqa: ARG001
+    ) -> tuple[dict[str, object], bool]:
+        assert conversation_id == original_conversation_id
+        return (
+            {
+                "conversationId": rebound_conversation_id,
+                "source": "manual",
+                "provider": "opencode",
+                "externalSessionId": "upstream-sid-2",
+                "contextId": "ctx-2",
+            },
+            True,
+        )
+
+    async def fake_commit_safely(_: object) -> None:
+        return None
+
+    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service,
+        "stream_ws",
+        fake_stream_ws,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "continue_session",
+        fake_continue_session,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_local_invoke_messages",
+        lambda **kwargs: None,  # noqa: ARG005
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "test invoke route",
+            "conversationId": original_conversation_id,
+            "metadata": {},
+        }
+    )
+    websocket = _NoopWebSocket()
+
+    await invoke_route_runner.run_ws_invoke_with_session_recovery(
+        websocket=websocket,
+        db=object(),
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={
+            "user_id": str(uuid4()),
+            "agent_id": str(uuid4()),
+        },
+        max_recovery_attempts=1,
+    )
+
+    assert prepare_payloads == [
+        original_conversation_id,
+        rebound_conversation_id,
+    ]
+    assert stream_calls == 2
+
+
 @pytest.mark.parametrize(
     "error_code, expected_status",
     [
@@ -384,6 +509,28 @@ async def test_run_http_invoke_route_returns_status_for_error_code(
         )
 
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
+    if error_code == "session_not_found":
+
+        async def fake_continue_session(
+            *_,
+            user_id: object,  # noqa: ARG002
+            conversation_id: str,
+            **__,  # noqa: ARG001
+        ) -> tuple[dict[str, object], bool]:
+            return (
+                {"conversationId": conversation_id},
+                False,
+            )
+
+        async def fake_commit_safely(_: object) -> None:
+            return None
+
+        monkeypatch.setattr(
+            invoke_route_runner.session_hub_service,
+            "continue_session",
+            fake_continue_session,
+        )
+        monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
     runtime = SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
 
