@@ -35,8 +35,8 @@ import {
   replyOpencodeQuestionInterrupt,
 } from "@/lib/api/a2aExtensions";
 import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
-import { continueSession } from "@/lib/api/sessions";
 import { ApiRequestError } from "@/lib/api/client";
+import { continueSession } from "@/lib/api/sessions";
 import { shouldStickToBottom } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";

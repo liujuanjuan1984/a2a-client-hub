@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import { ApiRequestError } from "@/lib/api/client";
 import { invokeAgent } from "@/lib/api/a2aAgents";
 import {
   applyStreamBlockUpdate,
@@ -15,6 +14,7 @@ import {
   extractStreamBlockUpdate,
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
+import { ApiRequestError } from "@/lib/api/client";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import {
   continueSession as continueSessionBinding,
