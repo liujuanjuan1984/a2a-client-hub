@@ -25,5 +25,5 @@ export function buildGeneratingTitle({
   baseTitle: string;
   isGenerating: boolean;
 }) {
-  return isGenerating ? `[Generating...] ${baseTitle}` : baseTitle;
+  return isGenerating ? `⟳ ${baseTitle}` : baseTitle;
 }
