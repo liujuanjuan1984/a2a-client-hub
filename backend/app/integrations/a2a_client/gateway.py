@@ -372,7 +372,6 @@ class A2AGateway:
             client = A2AClient(
                 resolved.url,
                 timeout=timeout,
-                max_connections=self.settings.max_connections,
                 use_client_preference=self.settings.use_client_preference,
                 interceptors=self._build_interceptors(resolved),
                 default_headers=resolved.headers,

@@ -403,27 +403,6 @@ class OpencodeSessionDirectoryService:
         }
         return page_items, {"pagination": pagination, "meta": meta}
 
-    async def list_directory_all(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        refresh: bool,
-    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        directory_items, meta = await self._build_directory_snapshot(
-            db,
-            user_id=user_id,
-            refresh=refresh,
-        )
-        total = len(directory_items)
-        pagination = {
-            "page": 1,
-            "size": total,
-            "total": total,
-            "pages": 1 if total > 0 else 0,
-        }
-        return directory_items, {"pagination": pagination, "meta": meta}
-
     async def _list_visible_agents(
         self, db: AsyncSession, *, user_id: UUID
     ) -> List[_AgentRef]:
