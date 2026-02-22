@@ -1,7 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -37,6 +43,7 @@ import {
 import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
 import { continueSession } from "@/lib/api/sessions";
+import { type AgentSession } from "@/lib/chat-utils";
 import { shouldStickToBottom } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
@@ -107,11 +114,140 @@ const shouldCollapseByLength = (value: string) => {
   return value.length > COLLAPSED_TEXT_CHAR_LIMIT;
 };
 
+function SessionItem({
+  conversationId,
+  session,
+  isActive,
+  onSelect,
+}: {
+  conversationId: string;
+  session: AgentSession;
+  isActive: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const messages = useMessageStore((state) => state.messages[conversationId]);
+  const firstUserMessage = messages?.find((m) => m.role === "user");
+  const title = firstUserMessage?.content?.trim() || "New Session";
+  const date = new Date(session.lastActiveAt).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return (
+    <Pressable
+      className={`mb-2 flex-row items-center justify-between rounded-xl border p-3 ${
+        isActive
+          ? "border-primary bg-primary/10"
+          : "border-slate-800 bg-slate-900"
+      }`}
+      onPress={() => onSelect(conversationId)}
+    >
+      <Text className="flex-1 text-sm font-medium text-white" numberOfLines={1}>
+        {title}
+      </Text>
+      <Text className="ml-2 text-[10px] text-slate-400">{date}</Text>
+    </Pressable>
+  );
+}
+
+function SessionPickerModal({
+  visible,
+  onClose,
+  agentId,
+  currentConversationId,
+  onSelect,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  agentId?: string | null;
+  currentConversationId?: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const generateConversationId = useChatStore(
+    (state) => state.generateConversationId,
+  );
+  const getSessionsByAgentId = useChatStore(
+    (state) => state.getSessionsByAgentId,
+  );
+  const sessions = useChatStore((state) => state.sessions);
+
+  const agentSessions = React.useMemo(() => {
+    if (!agentId) return [];
+    return getSessionsByAgentId(agentId);
+  }, [agentId, getSessionsByAgentId, sessions]);
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View className="flex-1 justify-end bg-black/60 sm:items-center sm:justify-center">
+        <Pressable
+          className="absolute inset-0"
+          accessibilityRole="button"
+          accessibilityLabel="Close session picker"
+          onPress={onClose}
+        />
+        <View className="w-full max-h-[80%] min-h-[50%] rounded-t-3xl border-t border-slate-800 bg-slate-950 p-6 sm:w-[480px] sm:rounded-3xl sm:border">
+          <View className="mb-6 flex-row items-center justify-between">
+            <Text className="text-lg font-semibold text-white">
+              Chat History
+            </Text>
+            <Pressable
+              onPress={onClose}
+              className="rounded-full bg-slate-800 p-2"
+              accessibilityRole="button"
+              accessibilityLabel="Close session picker"
+            >
+              <Ionicons name="close" size={20} color="#cbd5e1" />
+            </Pressable>
+          </View>
+          <Button
+            className="mb-4"
+            label="New Session"
+            iconLeft="add"
+            onPress={() => {
+              onSelect(generateConversationId());
+              onClose();
+            }}
+          />
+          {agentSessions.length === 0 ? (
+            <View className="py-8 items-center">
+              <Text className="text-slate-400">No previous sessions.</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={agentSessions}
+              keyExtractor={(item) => item[0]}
+              renderItem={({ item }) => (
+                <SessionItem
+                  conversationId={item[0]}
+                  session={item[1]}
+                  isActive={item[0] === currentConversationId}
+                  onSelect={(id) => {
+                    onSelect(id);
+                    onClose();
+                  }}
+                />
+              )}
+              contentContainerStyle={{ paddingBottom: 24 }}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export function ChatScreen({
   agentId: routeAgentId,
   conversationId,
 }: {
-  agentId?: string;
+  agentId?: string | null;
   conversationId?: string;
 }) {
   const router = useRouter();
@@ -128,9 +264,6 @@ export function ChatScreen({
     [agents, activeAgentId],
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
-  const generateConversationId = useChatStore(
-    (state) => state.generateConversationId,
-  );
   const sendMessage = useChatStore((state) => state.sendMessage);
   const clearPendingInterrupt = useChatStore(
     (state) => state.clearPendingInterrupt,
@@ -159,6 +292,7 @@ export function ChatScreen({
   );
   const [showDetails, setShowDetails] = useState(false);
   const [showShortcutManager, setShowShortcutManager] = useState(false);
+  const [showSessionPicker, setShowSessionPicker] = useState(false);
   const [shortcutManagerMode, setShortcutManagerMode] = useState<
     "list" | "create" | "edit"
   >("list");
@@ -712,6 +846,14 @@ export function ChatScreen({
   const openShortcutManager = () => {
     setShortcutManagerMode("list");
     setShowShortcutManager(true);
+  };
+
+  const openSessionPicker = () => {
+    setShowSessionPicker(true);
+  };
+
+  const closeSessionPicker = () => {
+    setShowSessionPicker(false);
   };
 
   const closeShortcutManager = () => {
@@ -1367,16 +1509,12 @@ export function ChatScreen({
             <BackButton />
             <Pressable
               className="h-10 w-10 items-center justify-center rounded-full bg-primary"
-              onPress={() => {
-                const nextConversationId = generateConversationId();
-                blurActiveElement();
-                router.replace(buildChatRoute(agent.id, nextConversationId));
-              }}
+              onPress={openSessionPicker}
               accessibilityRole="button"
-              accessibilityLabel="Start new session"
-              accessibilityHint="Clear the current chat session"
+              accessibilityLabel="Show sessions"
+              accessibilityHint="View and switch chat sessions"
             >
-              <Ionicons name="add" size={20} color="#ffffff" />
+              <Ionicons name="list" size={20} color="#ffffff" />
             </Pressable>
             <Pressable
               className={`h-10 w-10 items-center justify-center rounded-full border border-slate-700 ${
@@ -1759,6 +1897,17 @@ export function ChatScreen({
             </View>
           </View>
         </Modal>
+
+        <SessionPickerModal
+          visible={showSessionPicker}
+          onClose={closeSessionPicker}
+          agentId={activeAgentId}
+          currentConversationId={conversationId}
+          onSelect={(nextConversationId) => {
+            blurActiveElement();
+            router.replace(buildChatRoute(agent.id, nextConversationId));
+          }}
+        />
 
         <View className="flex-row items-end gap-2 bg-slate-900/50 p-2 rounded-3xl border border-slate-800">
           <Pressable

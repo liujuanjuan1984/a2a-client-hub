@@ -108,6 +108,7 @@ const mockChatState: {
   sendMessage: jest.Mock;
   clearPendingInterrupt: jest.Mock;
   bindExternalSession: jest.Mock;
+  getSessionsByAgentId: jest.Mock;
 } = {
   sessions: {},
   ensureSession: jest.fn(),
@@ -115,6 +116,7 @@ const mockChatState: {
   sendMessage: jest.fn(),
   clearPendingInterrupt: jest.fn(),
   bindExternalSession: jest.fn(),
+  getSessionsByAgentId: jest.fn(() => []),
 };
 
 const mockMessageState: {
