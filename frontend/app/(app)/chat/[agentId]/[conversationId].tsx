@@ -26,7 +26,7 @@ export default function ChatSession() {
   }, [agents, agentId]);
 
   const title = useMemo(() => {
-    const baseTitle = `Chat with ${agentName}`;
+    const baseTitle = agentName;
     return buildGeneratingTitle({
       baseTitle,
       isGenerating,
