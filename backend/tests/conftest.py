@@ -102,6 +102,7 @@ for module_path in [
     "app.db.models.user",
     "app.db.models.invitation",
     "app.db.models.ws_ticket",
+    "app.db.models.shortcut",
 ]:
     importlib.import_module(module_path)
 

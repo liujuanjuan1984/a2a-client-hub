@@ -16,6 +16,7 @@ from app.db.models.external_session_directory_cache import (
 )
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.db.models.invitation import Invitation, InvitationStatus
+from app.db.models.shortcut import Shortcut
 from app.db.models.user import User
 from app.db.models.ws_ticket import WsTicket
 
@@ -31,5 +32,6 @@ __all__ = [
     "InvitationStatus",
     "ExternalSessionDirectoryCacheEntry",
     "User",
+    "Shortcut",
     "WsTicket",
 ]
