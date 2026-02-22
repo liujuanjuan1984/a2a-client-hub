@@ -52,25 +52,9 @@ const normalizeShortcutItem = (item: Record<string, unknown>): ShortcutItem => {
   };
 };
 
-const isShortcutListEnvelope = (
-  value: unknown,
-): value is ShortcutListEnvelope => {
-  return (
-    Boolean(value) &&
-    typeof value === "object" &&
-    "items" in (value as Record<string, unknown>) &&
-    Array.isArray((value as Record<string, unknown>).items)
-  );
-};
-
 export const listShortcuts = async (): Promise<ShortcutItem[]> => {
-  const response = await apiRequest<ShortcutListEnvelope | ShortcutItem[]>(
-    "/me/shortcuts",
-  );
-  const payload = isShortcutListEnvelope(response) ? response.items : response;
-  if (!Array.isArray(payload)) {
-    return [];
-  }
+  const response = await apiRequest<ShortcutListEnvelope>("/me/shortcuts");
+  const payload = response.items;
   return payload
     .map((item) => normalizeShortcutItem(item as Record<string, unknown>))
     .filter((item) => Boolean(item.id));
