@@ -1018,6 +1018,7 @@ export function ChatScreen({
           onClose={closeShortcutManager}
           onUseShortcut={handleUseShortcut}
           initialPrompt={input}
+          agentId={activeAgentId}
         />
 
         <SessionPickerModal

@@ -4,6 +4,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Switch,
   Text,
   TextInput,
   View,
@@ -18,13 +19,15 @@ export function ShortcutManagerModal({
   onClose,
   onUseShortcut,
   initialPrompt,
+  agentId,
 }: {
   visible: boolean;
   onClose: () => void;
   onUseShortcut: (prompt: string) => void;
   initialPrompt: string;
+  agentId?: string | null;
 }) {
-  const { shortcuts, addShortcut, updateShortcut, removeShortcut } =
+  const { getShortcutsForAgent, addShortcut, updateShortcut, removeShortcut } =
     useShortcutStore();
 
   const [shortcutManagerMode, setShortcutManagerMode] = useState<
@@ -35,12 +38,16 @@ export function ShortcutManagerModal({
   );
   const [shortcutTitle, setShortcutTitle] = useState("");
   const [shortcutPrompt, setShortcutPrompt] = useState("");
+  const [isAgentSpecific, setIsAgentSpecific] = useState(false);
+
+  const shortcuts = getShortcutsForAgent(agentId ?? null);
 
   useEffect(() => {
     if (visible && shortcutManagerMode === "list") {
       setEditingShortcutId(null);
       setShortcutTitle("");
       setShortcutPrompt("");
+      setIsAgentSpecific(false);
     }
   }, [visible, shortcutManagerMode]);
 
@@ -48,6 +55,7 @@ export function ShortcutManagerModal({
     setEditingShortcutId(null);
     setShortcutTitle("");
     setShortcutPrompt("");
+    setIsAgentSpecific(false);
   };
 
   const closeShortcutManager = () => {
@@ -62,17 +70,20 @@ export function ShortcutManagerModal({
     setEditingShortcutId(null);
     setShortcutTitle(inferredTitle);
     setShortcutPrompt(initialPrompt.trim());
+    setIsAgentSpecific(false);
   };
 
   const openEditShortcut = (
     shortcutId: string,
     title: string,
     prompt: string,
+    specificAgentId: string | null,
   ) => {
     setShortcutManagerMode("edit");
     setEditingShortcutId(shortcutId);
     setShortcutTitle(title);
     setShortcutPrompt(prompt);
+    setIsAgentSpecific(specificAgentId !== null);
   };
 
   const exitShortcutManagerForm = () => {
@@ -87,19 +98,24 @@ export function ShortcutManagerModal({
       toast.error("Shortcut invalid", "Title and prompt are required.");
       return;
     }
+
+    const targetAgentId = isAgentSpecific ? (agentId ?? null) : null;
+
     try {
       if (editingShortcutId) {
         await updateShortcut(
           editingShortcutId,
           normalizedTitle,
           normalizedPrompt,
+          targetAgentId,
+          !isAgentSpecific, // clearAgent
         );
         toast.success(
           "Shortcut updated",
           `"${normalizedTitle}" has been updated.`,
         );
       } else {
-        await addShortcut(normalizedTitle, normalizedPrompt);
+        await addShortcut(normalizedTitle, normalizedPrompt, targetAgentId);
         toast.success(
           "Shortcut saved",
           `"${normalizedTitle}" is now available.`,
@@ -129,7 +145,7 @@ export function ShortcutManagerModal({
           onPress={closeShortcutManager}
         />
 
-        <View className="rounded-3xl border border-slate-800 bg-slate-950 p-4">
+        <View className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-950 p-4">
           <View className="mb-4 flex-row items-center justify-between">
             <Text className="text-base font-semibold text-white">
               Shortcut Manager
@@ -164,6 +180,7 @@ export function ShortcutManagerModal({
                       >
                         <Text className="text-sm text-white" numberOfLines={1}>
                           {cmd.title}
+                          {cmd.agentId ? " (Agent Specific)" : ""}
                         </Text>
                         <Text
                           className="mt-1 text-xs text-slate-400"
@@ -178,7 +195,12 @@ export function ShortcutManagerModal({
                           accessibilityRole="button"
                           accessibilityLabel={`Edit shortcut ${cmd.title}`}
                           onPress={() =>
-                            openEditShortcut(cmd.id, cmd.title, cmd.prompt)
+                            openEditShortcut(
+                              cmd.id,
+                              cmd.title,
+                              cmd.prompt,
+                              cmd.agentId,
+                            )
                           }
                         >
                           <Text className="text-xs font-semibold text-sky-300">
@@ -244,6 +266,19 @@ export function ShortcutManagerModal({
                 onChangeText={setShortcutPrompt}
                 style={{ minHeight: 120 }}
               />
+              {agentId ? (
+                <View className="mt-3 flex-row items-center justify-between">
+                  <Text className="text-sm text-white">
+                    Specific to this agent only
+                  </Text>
+                  <Switch
+                    value={isAgentSpecific}
+                    onValueChange={setIsAgentSpecific}
+                    trackColor={{ false: "#334155", true: "#38bdf8" }}
+                    thumbColor="#ffffff"
+                  />
+                </View>
+              ) : null}
               <View className="mt-4 flex-row gap-2">
                 <Button
                   label="Cancel"

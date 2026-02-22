@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
@@ -65,6 +65,8 @@ def _list_shortcuts_error(
 
 @router.get("", response_model=ShortcutListResponse)
 async def list_shortcuts(
+    agent_id: UUID
+    | None = Query(None, description="Optional agent ID to filter shortcuts"),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> ShortcutListResponse:
@@ -72,6 +74,7 @@ async def list_shortcuts(
         items = await shortcuts_service.list_shortcuts(
             db=db,
             user_id=current_user.id,
+            agent_id=agent_id,
         )
     except Exception as exc:
         raise _list_shortcuts_error(
@@ -104,6 +107,7 @@ async def create_shortcut(
             title=payload.title,
             prompt=payload.prompt,
             order=payload.order,
+            agent_id=payload.agent_id,
         )
     except Exception as exc:
         raise _list_shortcuts_error(
@@ -129,6 +133,8 @@ async def update_shortcut(
             title=payload.title,
             prompt=payload.prompt,
             order=payload.order,
+            agent_id=payload.agent_id,
+            clear_agent=payload.clear_agent,
         )
     except Exception as exc:
         raise _list_shortcuts_error(

@@ -16,6 +16,7 @@ type Shortcut = {
   prompt: string;
   isDefault: boolean;
   order: number;
+  agentId: string | null;
 };
 
 const DEFAULT_SHORTCUTS: Shortcut[] = [
@@ -25,6 +26,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
     prompt: "Please summarize our conversation so far.",
     isDefault: true,
     order: 0,
+    agentId: null,
   },
   {
     id: "22222222-2222-2222-2222-222222222222",
@@ -32,6 +34,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
     prompt: "Can you explain this in more detail?",
     isDefault: true,
     order: 1,
+    agentId: null,
   },
   {
     id: "33333333-3333-3333-3333-333333333333",
@@ -39,6 +42,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
     prompt: "What should be our next steps?",
     isDefault: true,
     order: 2,
+    agentId: null,
   },
   {
     id: "44444444-4444-4444-4444-444444444444",
@@ -46,6 +50,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
     prompt: "Please polish the text I just sent.",
     isDefault: true,
     order: 3,
+    agentId: null,
   },
   {
     id: "55555555-5555-5555-5555-555555555555",
@@ -53,6 +58,7 @@ const DEFAULT_SHORTCUTS: Shortcut[] = [
     prompt: "What are your main capabilities?",
     isDefault: true,
     order: 4,
+    agentId: null,
   },
 ];
 
@@ -61,14 +67,21 @@ type ShortcutState = {
   isSyncing: boolean;
   syncError: string | null;
   syncShortcuts: () => Promise<void>;
-  addShortcut: (title: string, prompt: string) => Promise<void>;
+  addShortcut: (
+    title: string,
+    prompt: string,
+    agentId?: string | null,
+  ) => Promise<void>;
   updateShortcut: (
     shortcutId: string,
     title: string,
     prompt: string,
+    agentId?: string | null,
+    clearAgent?: boolean,
   ) => Promise<void>;
   removeShortcut: (id: string) => Promise<void>;
   clearAll: () => void;
+  getShortcutsForAgent: (agentId: string | null) => Shortcut[];
 };
 
 type PersistedShortcutState = {
@@ -106,12 +119,15 @@ const normalizeFromPersisted = (value: unknown): Shortcut | null => {
   const isDefault =
     typeof source.isDefault === "boolean" ? source.isDefault : false;
 
+  const agentId = normalizeString(source.agentId);
+
   return {
     id,
     title,
     prompt,
     isDefault,
     order: normalizeOrder(source.sort_order, normalizeOrder(source.order, 0)),
+    agentId,
   };
 };
 
@@ -165,6 +181,7 @@ const toShortcutFromServer = (item: ServerShortcutItem): Shortcut => ({
   prompt: item.prompt,
   isDefault: item.is_default,
   order: item.order,
+  agentId: item.agent_id,
 });
 
 const extractErrorMessage = (error: unknown): string | null => {
@@ -201,10 +218,11 @@ export const useShortcutStore = create<ShortcutState>()(
         }
       },
 
-      addShortcut: async (title, prompt) => {
+      addShortcut: async (title, prompt, agentId) => {
         const result = await createShortcut({
           title,
           prompt,
+          agent_id: agentId,
         });
         const next = toShortcutFromServer(result);
         set((state) => ({
@@ -215,10 +233,18 @@ export const useShortcutStore = create<ShortcutState>()(
         }));
       },
 
-      updateShortcut: async (shortcutId, title, prompt) => {
+      updateShortcut: async (
+        shortcutId,
+        title,
+        prompt,
+        agentId,
+        clearAgent,
+      ) => {
         const result = await updateShortcutApi(shortcutId, {
           title,
           prompt,
+          agent_id: agentId,
+          clear_agent: clearAgent,
         });
         const next = toShortcutFromServer(result);
         set((state) => ({
@@ -241,11 +267,21 @@ export const useShortcutStore = create<ShortcutState>()(
       },
 
       clearAll: () => set({ shortcuts: [...DEFAULT_SHORTCUTS] }),
+
+      getShortcutsForAgent: (agentId: string | null) => {
+        const { shortcuts } = get();
+        if (!agentId) {
+          return shortcuts.filter((s) => s.agentId === null);
+        }
+        return shortcuts.filter(
+          (s) => s.agentId === null || s.agentId === agentId,
+        );
+      },
     }),
     {
       name: "a2a-client-hub.shortcuts",
       storage: createPersistStorage(),
-      version: 2,
+      version: 3,
       migrate: (state) => {
         const migrated = normalizePersistedShortcuts(state);
         return {

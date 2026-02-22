@@ -6,6 +6,7 @@ export type ShortcutItem = {
   prompt: string;
   is_default: boolean;
   order: number;
+  agent_id: string | null;
 };
 
 export type ShortcutListEnvelope = {
@@ -23,12 +24,15 @@ export type ShortcutCreatePayload = {
   title: string;
   prompt: string;
   order?: number;
+  agent_id?: string | null;
 };
 
 export type ShortcutUpdatePayload = {
   title?: string;
   prompt?: string;
   order?: number;
+  agent_id?: string | null;
+  clear_agent?: boolean;
 };
 
 const normalizeShortcutItem = (item: Record<string, unknown>): ShortcutItem => {
@@ -42,6 +46,7 @@ const normalizeShortcutItem = (item: Record<string, unknown>): ShortcutItem => {
     typeof orderRaw === "number" && Number.isFinite(orderRaw)
       ? orderRaw
       : Number.parseInt(String(orderRaw), 10);
+  const agentId = typeof item.agent_id === "string" ? item.agent_id : null;
 
   return {
     id,
@@ -49,11 +54,17 @@ const normalizeShortcutItem = (item: Record<string, unknown>): ShortcutItem => {
     prompt,
     is_default: isDefault,
     order: Number.isFinite(order) ? order : 0,
+    agent_id: agentId,
   };
 };
 
-export const listShortcuts = async (): Promise<ShortcutItem[]> => {
-  const response = await apiRequest<ShortcutListEnvelope>("/me/shortcuts");
+export const listShortcuts = async (
+  agentId?: string | null,
+): Promise<ShortcutItem[]> => {
+  const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : "";
+  const response = await apiRequest<ShortcutListEnvelope>(
+    `/me/shortcuts${query}`,
+  );
   const payload = response.items;
   return payload
     .map((item) => normalizeShortcutItem(item as Record<string, unknown>))
