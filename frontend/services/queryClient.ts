@@ -1,5 +1,4 @@
-import { focusManager, QueryClient } from "@tanstack/react-query";
-import { AppState, type AppStateStatus, Platform } from "react-native";
+import { QueryClient } from "@tanstack/react-query";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -9,13 +8,3 @@ export const queryClient = new QueryClient({
     },
   },
 });
-
-function onAppStateChange(status: AppStateStatus) {
-  if (Platform.OS !== "web") {
-    focusManager.setFocused(status === "active");
-  }
-}
-
-if (AppState && typeof AppState.addEventListener === "function") {
-  AppState.addEventListener("change", onAppStateChange);
-}

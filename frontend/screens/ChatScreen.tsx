@@ -303,7 +303,14 @@ export function ChatScreen({
       });
       incoming.forEach((message) => {
         const existing = merged.get(message.id);
-        if (existing && existing.status === "streaming") {
+        const isActivelyStreaming =
+          session?.streamState === "streaming" ||
+          session?.streamState === "rebinding";
+        if (
+          existing &&
+          existing.status === "streaming" &&
+          isActivelyStreaming
+        ) {
           return;
         }
         merged.set(message.id, message);
