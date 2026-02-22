@@ -480,6 +480,8 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
         rebound_conversation_id,
     ]
     assert stream_calls == 2
+    assert len(websocket.sent) == 1
+    assert json.loads(websocket.sent[0]) == {"event": "stream_end", "data": {}}
 
 
 @pytest.mark.parametrize(

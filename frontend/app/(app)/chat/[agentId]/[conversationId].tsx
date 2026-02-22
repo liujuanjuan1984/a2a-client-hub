@@ -16,8 +16,7 @@ export default function ChatSession() {
   );
   const { data: agents = [] } = useAgentsCatalogQuery(true);
 
-  const isGenerating =
-    session?.streamState === "streaming";
+  const isGenerating = session?.streamState === "streaming";
 
   const agentName = useMemo(() => {
     const matchedAgent = agents.find((item) => item.id === agentId);

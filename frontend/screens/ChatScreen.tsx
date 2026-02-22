@@ -180,8 +180,7 @@ export function ChatScreen({
   const minInputHeight = 44;
   const maxInputHeight = 128;
   const [inputHeight, setInputHeight] = useState(minInputHeight);
-  const historyPaused =
-    session?.streamState === "streaming";
+  const historyPaused = session?.streamState === "streaming";
 
   const sessionHistoryQuery = useSessionHistoryQuery({
     conversationId,
@@ -330,8 +329,7 @@ export function ChatScreen({
       });
       incoming.forEach((message) => {
         const existing = merged.get(message.id);
-        const isActivelyStreaming =
-          session?.streamState === "streaming";
+        const isActivelyStreaming = session?.streamState === "streaming";
         if (
           existing &&
           existing.status === "streaming" &&

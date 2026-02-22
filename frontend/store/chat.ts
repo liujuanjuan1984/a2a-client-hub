@@ -488,8 +488,7 @@ export const useChatStore = create<ChatState>()(
           incoming.forEach((message) => {
             const existing = merged.get(message.id);
             const session = get().sessions[conversationId];
-            const isActivelyStreaming =
-              session?.streamState === "streaming";
+            const isActivelyStreaming = session?.streamState === "streaming";
             if (
               existing &&
               existing.status === "streaming" &&
@@ -800,10 +799,25 @@ export const useChatStore = create<ChatState>()(
             callbacks: {
               onData: (data) => {
                 if (data.event === "error") {
+                  const maybePayload = data.data as
+                    | {
+                        message?: unknown;
+                        error_code?: unknown;
+                      }
+                    | undefined;
+                  const rawErrorCode = maybePayload?.error_code;
+                  const normalizedErrorCode =
+                    typeof rawErrorCode === "string" ? rawErrorCode.trim() : "";
+                  if (normalizedErrorCode === "session_not_found") {
+                    console.info("[Chat Stream] recoverable error received", {
+                      conversationId,
+                      errorCode: normalizedErrorCode,
+                    });
+                    return false;
+                  }
                   const message =
-                    typeof (data.data as { message?: unknown } | undefined)
-                      ?.message === "string"
-                      ? (data.data as { message: string }).message
+                    typeof maybePayload?.message === "string"
+                      ? (maybePayload as { message: string }).message
                       : "Stream error.";
                   appendStreamError(message);
                   return true;

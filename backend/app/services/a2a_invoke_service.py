@@ -39,6 +39,7 @@ class A2AInvokeService:
     _STREAM_ERROR_CODE = "upstream_stream_error"
     _SSE_HEARTBEAT_FRAME = ": keep-alive\n\n"
     _WS_HEARTBEAT_EVENT = {"event": "heartbeat", "data": {}}
+    _WS_STREAM_END_EVENT = {"event": "stream_end", "data": {}}
 
     @classmethod
     def build_ws_error_event(
@@ -64,6 +65,11 @@ class A2AInvokeService:
                 self.build_ws_error_event(message=message, error_code=error_code),
                 ensure_ascii=False,
             )
+        )
+
+    async def send_ws_stream_end(self, websocket: WebSocket) -> None:
+        await websocket.send_text(
+            json_dumps(self._WS_STREAM_END_EVENT, ensure_ascii=False)
         )
 
     @staticmethod
@@ -810,6 +816,7 @@ class A2AInvokeService:
         on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
         on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
+        send_stream_end: bool = True,
     ) -> None:
         stream_text_accumulator = self._StreamTextAccumulator()
         stream_failed = False
@@ -874,7 +881,8 @@ class A2AInvokeService:
                     stream_text_accumulator.result_metadata(),
                 )
                 await self._call_callback(on_complete, stream_text_accumulator.result())
-            await websocket.send_text(json_dumps({"event": "stream_end", "data": {}}))
+            if send_stream_end:
+                await self.send_ws_stream_end(websocket)
 
 
 a2a_invoke_service = A2AInvokeService()

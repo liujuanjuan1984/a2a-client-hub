@@ -484,6 +484,7 @@ async def run_ws_invoke(
     logger: Any,
     log_extra: dict[str, Any],
     on_error_metadata: Callable[[dict[str, Any]], Any] | None = None,
+    send_stream_end: bool = True,
 ) -> None:
     state = await _prepare_state(
         db=db,
@@ -517,6 +518,7 @@ async def run_ws_invoke(
         on_error=on_error,
         on_event=on_event,
         on_error_metadata=on_error_metadata,
+        send_stream_end=send_stream_end,
     )
 
 
@@ -559,12 +561,20 @@ async def run_ws_invoke_with_session_recovery(
             logger=logger,
             log_extra=log_extra,
             on_error_metadata=_remember_stream_error,
+            send_stream_end=False,
         )
+        if stream_error_code is None:
+            await a2a_invoke_service.send_ws_stream_end(websocket)
+            return
+
         if not is_recoverable_invoke_session_error(stream_error_code):
+            await a2a_invoke_service.send_ws_stream_end(websocket)
             return
         if remaining_retries <= 0:
+            await a2a_invoke_service.send_ws_stream_end(websocket)
             return
         if not isinstance(current_payload.conversation_id, str):
+            await a2a_invoke_service.send_ws_stream_end(websocket)
             return
 
         remaining_retries -= 1
@@ -575,6 +585,7 @@ async def run_ws_invoke_with_session_recovery(
                 conversation_id=current_payload.conversation_id,
             )
         except ValueError:
+            await a2a_invoke_service.send_ws_stream_end(websocket)
             return
         if db_mutated:
             await commit_safely(db)
