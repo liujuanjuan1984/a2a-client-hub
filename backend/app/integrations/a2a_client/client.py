@@ -26,6 +26,7 @@ from a2a.utils.constants import (
 )
 
 from app.core.config import settings
+from app.core.http_client import get_global_http_client
 from app.core.logging import get_logger
 from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.errors import (
@@ -88,19 +89,15 @@ class A2AClient:
         supported_transports: Optional[List[TransportProtocol | str]] = None,
     ) -> None:
         self.agent_url = agent_url.rstrip("/")
-        self._timeout = timeout or self._build_timeout(timeout_seconds)
-        self._limits = httpx.Limits(
-            max_connections=max_connections,
-            max_keepalive_connections=max(1, max_connections // 2),
-        )
-
-        self._httpx_client: Optional[httpx.AsyncClient] = None
         self._agent_card: Optional[AgentCard] = None
 
         self._interceptors = interceptors or []
         self._consumers = consumers or []
         self._use_client_preference = use_client_preference
         self._default_headers = dict(default_headers or {})
+        if self._default_headers:
+            self._interceptors.append(StaticHeaderInterceptor(self._default_headers))
+
         self._card_fetch_timeout = card_fetch_timeout
         self._supported_transports = supported_transports or [
             TransportProtocol.jsonrpc,
@@ -301,7 +298,7 @@ class A2AClient:
         return card
 
     async def close(self) -> None:
-        """Dispose httpx client and cached transports."""
+        """Dispose cached transports."""
 
         async with self._client_lock:
             for entry in self._clients.values():
@@ -311,9 +308,6 @@ class A2AClient:
                     logger.debug("Failed to close A2A client transport", exc_info=True)
             self._clients.clear()
 
-            if self._httpx_client and not self._httpx_client.is_closed:
-                await self._httpx_client.aclose()
-            self._httpx_client = None
             self._agent_card = None
 
     async def _get_client(self, *, streaming: bool) -> Client:
@@ -356,25 +350,7 @@ class A2AClient:
             return client
 
     async def _get_http_client(self) -> httpx.AsyncClient:
-        if self._httpx_client and not self._httpx_client.is_closed:
-            logger.debug(
-                "Reusing shared httpx client",
-                extra={"agent_url": redact_url_for_logging(self.agent_url)},
-            )
-            return self._httpx_client
-
-        self._httpx_client = httpx.AsyncClient(
-            timeout=self._timeout, limits=self._limits, headers=self._default_headers
-        )
-        logger.info(
-            "Instantiated new httpx client for A2A agent",
-            extra={
-                "agent_url": redact_url_for_logging(self.agent_url),
-                "timeout": getattr(self._timeout, "read", None),
-                "default_headers": list(self._default_headers.keys()),
-            },
-        )
-        return self._httpx_client
+        return get_global_http_client()
 
     def _build_card_resolver(self, httpx_client: httpx.AsyncClient) -> A2ACardResolver:
         """Create a resolver that avoids duplicating well-known paths."""

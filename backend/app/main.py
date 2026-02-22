@@ -17,6 +17,7 @@ from app.api.error_handlers import (
     validation_exception_handler,
 )
 from app.core.config import settings
+from app.core.http_client import close_global_http_client, init_global_http_client
 from app.core.logging import get_logger, setup_logging
 from app.integrations.a2a_client import get_a2a_service, shutdown_a2a_service
 from app.integrations.a2a_extensions import (
@@ -39,6 +40,7 @@ logger = get_logger(__name__)
 # Lifecycle management for the FastAPI application.
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
+    init_global_http_client()
     start_scheduler()
     ensure_a2a_schedule_job()
     ensure_ws_ticket_cleanup_job()
@@ -60,6 +62,7 @@ async def app_lifespan(_: FastAPI):
         await shutdown_a2a_extensions_service()
         await shutdown_a2a_service()
         shutdown_scheduler()
+        await close_global_http_client()
 
 
 # Create FastAPI application instance
