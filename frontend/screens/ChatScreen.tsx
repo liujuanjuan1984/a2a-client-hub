@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
@@ -167,6 +167,10 @@ export function ChatScreen({
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
   const prependAnchorRef = useRef<{
+    offset: number;
+    contentHeight: number;
+  } | null>(null);
+  const contentSizeAnchorRef = useRef<{
     offset: number;
     contentHeight: number;
   } | null>(null);
@@ -414,6 +418,17 @@ export function ChatScreen({
     }
   }, [agent, hasFetchedAgents, router]);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) {
+        return;
+      }
+      forceScrollToBottomRef.current = true;
+      shouldStickToBottomRef.current = true;
+      scheduleStickToBottom(true);
+    }, [conversationId, scheduleStickToBottom]),
+  );
+
   useEffect(() => {
     if (suppressAutoScrollRef.current) {
       suppressAutoScrollRef.current = false;
@@ -434,14 +449,15 @@ export function ChatScreen({
 
   const handleListContentSizeChange = useCallback(
     (_w: number, h: number) => {
-      const anchor = prependAnchorRef.current;
+      const anchor = prependAnchorRef.current ?? contentSizeAnchorRef.current;
       if (anchor) {
-        const delta = Math.max(0, h - anchor.contentHeight);
+        const delta = h - anchor.contentHeight;
         listRef.current?.scrollToOffset({
           offset: Math.max(0, anchor.offset + delta),
           animated: false,
         });
         prependAnchorRef.current = null;
+        contentSizeAnchorRef.current = null;
         contentHeightRef.current = h;
         return;
       }
@@ -455,6 +471,13 @@ export function ChatScreen({
     },
     [scheduleStickToBottom, session?.streamState],
   );
+
+  const captureContentSizeAnchor = useCallback(() => {
+    contentSizeAnchorRef.current = {
+      offset: scrollOffsetRef.current,
+      contentHeight: contentHeightRef.current,
+    };
+  }, []);
 
   const handleListScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -707,26 +730,38 @@ export function ChatScreen({
     }
   };
 
-  const toggleReasoning = (blockId: string) => {
-    setExpandedReasoningByBlockId((current) => ({
-      ...current,
-      [blockId]: !current[blockId],
-    }));
-  };
+  const toggleReasoning = useCallback(
+    (blockId: string) => {
+      captureContentSizeAnchor();
+      setExpandedReasoningByBlockId((current) => ({
+        ...current,
+        [blockId]: !current[blockId],
+      }));
+    },
+    [captureContentSizeAnchor],
+  );
 
-  const toggleToolCall = (blockId: string) => {
-    setExpandedToolCallByBlockId((current) => ({
-      ...current,
-      [blockId]: !current[blockId],
-    }));
-  };
+  const toggleToolCall = useCallback(
+    (blockId: string) => {
+      captureContentSizeAnchor();
+      setExpandedToolCallByBlockId((current) => ({
+        ...current,
+        [blockId]: !current[blockId],
+      }));
+    },
+    [captureContentSizeAnchor],
+  );
 
-  const toggleTextExpansion = (blockId: string) => {
-    setExpandedTextByBlockId((current) => ({
-      ...current,
-      [blockId]: !current[blockId],
-    }));
-  };
+  const toggleTextExpansion = useCallback(
+    (blockId: string) => {
+      captureContentSizeAnchor();
+      setExpandedTextByBlockId((current) => ({
+        ...current,
+        [blockId]: !current[blockId],
+      }));
+    },
+    [captureContentSizeAnchor],
+  );
 
   const deriveRenderableBlocks = useCallback(
     (message: ChatMessage): MessageBlock[] => {
