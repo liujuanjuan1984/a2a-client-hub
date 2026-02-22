@@ -32,6 +32,24 @@ describe("chat store utils", () => {
 
     expect(next).toEqual({
       provider: "opencode",
+      externalSessionId: "ext-1",
+    });
+  });
+
+  it("falls back to incoming external session id when existing is empty", () => {
+    const next = mergeExternalSessionRef(
+      {
+        provider: null,
+        externalSessionId: null,
+      },
+      {
+        provider: "opencode",
+        externalSessionId: "ext-2",
+      },
+    );
+
+    expect(next).toEqual({
+      provider: "opencode",
       externalSessionId: "ext-2",
     });
   });
