@@ -22,10 +22,7 @@ def init_global_http_client() -> None:
             max_connections=max_conn,
             max_keepalive_connections=max(max_conn // 2, 20),
         )
-        timeout = httpx.Timeout(
-            max(settings.a2a_default_timeout, 1.0), 
-            connect=10.0
-        )
+        timeout = httpx.Timeout(max(settings.a2a_default_timeout, 1.0), connect=10.0)
 
         _global_http_client = httpx.AsyncClient(
             limits=limits,

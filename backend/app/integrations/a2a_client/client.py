@@ -91,8 +91,8 @@ class A2AClient:
         self.agent_url = agent_url.rstrip("/")
         self._agent_card: Optional[AgentCard] = None
 
-        self._interceptors = interceptors or []
-        self._consumers = consumers or []
+        self._interceptors = list(interceptors or [])
+        self._consumers = list(consumers or [])
         self._use_client_preference = use_client_preference
         self._default_headers = dict(default_headers or {})
         if self._default_headers:
