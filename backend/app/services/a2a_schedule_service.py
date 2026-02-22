@@ -100,6 +100,7 @@ class A2AScheduleService:
         db: AsyncSession,
         *,
         user_id: UUID,
+        is_superuser: bool,
         name: str,
         agent_id: UUID,
         prompt: str,
@@ -108,6 +109,8 @@ class A2AScheduleService:
         enabled: bool,
     ) -> A2AScheduleTask:
         await self._ensure_agent_owned(db, user_id=user_id, agent_id=agent_id)
+        if enabled:
+            await self._ensure_active_quota(db, user_id=user_id, is_superuser=is_superuser)
 
         normalized_name = self._normalize_name(name)
         normalized_prompt = self._normalize_prompt(prompt)
@@ -115,6 +118,7 @@ class A2AScheduleService:
         normalized_point = self._normalize_time_point(
             cycle_type=normalized_cycle,
             time_point=time_point,
+            is_superuser=is_superuser,
         )
 
         next_run_at: Optional[datetime] = None
@@ -129,6 +133,7 @@ class A2AScheduleService:
                 time_point=normalized_point,
                 timezone_str=timezone_value,
                 after_utc=utc_now(),
+                is_superuser=is_superuser,
             )
 
         task = A2AScheduleTask(
@@ -153,6 +158,7 @@ class A2AScheduleService:
         *,
         user_id: UUID,
         task_id: UUID,
+        is_superuser: bool,
         name: Optional[str] = None,
         agent_id: Optional[UUID] = None,
         prompt: Optional[str] = None,
@@ -161,6 +167,9 @@ class A2AScheduleService:
         enabled: Optional[bool] = None,
     ) -> A2AScheduleTask:
         task = await self._get_task(db, user_id=user_id, task_id=task_id)
+
+        if enabled is True and not task.enabled:
+            await self._ensure_active_quota(db, user_id=user_id, is_superuser=is_superuser)
 
         if name is not None:
             task.name = self._normalize_name(name)
@@ -186,6 +195,7 @@ class A2AScheduleService:
             normalized_point = self._normalize_time_point(
                 cycle_type=next_cycle_type,
                 time_point=next_time_point,
+                is_superuser=is_superuser,
             )
             task.cycle_type = next_cycle_type
             task.time_point = normalized_point
@@ -210,6 +220,7 @@ class A2AScheduleService:
                 time_point=dict(task.time_point or {}),
                 timezone_str=timezone_value,
                 after_utc=utc_now(),
+                is_superuser=is_superuser,
             )
 
         await commit_safely(db)
@@ -223,8 +234,12 @@ class A2AScheduleService:
         user_id: UUID,
         task_id: UUID,
         enabled: bool,
+        is_superuser: bool,
     ) -> A2AScheduleTask:
         task = await self._get_task(db, user_id=user_id, task_id=task_id)
+        if enabled and not task.enabled:
+            await self._ensure_active_quota(db, user_id=user_id, is_superuser=is_superuser)
+        
         task.enabled = enabled
         if enabled:
             timezone_value = await auth_handler.get_user_timezone(
@@ -237,6 +252,7 @@ class A2AScheduleService:
                 time_point=dict(task.time_point or {}),
                 timezone_str=timezone_value,
                 after_utc=utc_now(),
+                is_superuser=is_superuser,
             )
         else:
             task.next_run_at = None
@@ -516,6 +532,34 @@ class A2AScheduleService:
                 "Target agent is missing, disabled, or not owned by current user"
             )
 
+    async def _ensure_active_quota(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        is_superuser: bool,
+    ) -> None:
+        if is_superuser:
+            return
+        
+        limit = max(settings.a2a_schedule_max_active_tasks_per_user, 0)
+        if limit == 0:
+            raise A2AScheduleQuotaError("Scheduled tasks are currently disabled for non-admin users.")
+        
+        stmt = select(func.count(A2AScheduleTask.id)).where(
+            and_(
+                A2AScheduleTask.user_id == user_id,
+                A2AScheduleTask.enabled.is_(True),
+                A2AScheduleTask.deleted_at.is_(None),
+            )
+        )
+        active_count = int((await db.scalar(stmt)) or 0)
+        
+        if active_count >= limit:
+            raise A2AScheduleQuotaError(
+                f"Maximum active schedule tasks limit ({limit}) reached."
+            )
+
     def _normalize_name(self, value: str) -> str:
         normalized = (value or "").strip()
         if not normalized:
@@ -545,13 +589,14 @@ class A2AScheduleService:
         *,
         cycle_type: str,
         time_point: Dict[str, Any],
+        is_superuser: bool = False,
     ) -> Dict[str, Any]:
         if not isinstance(time_point, dict):
             raise A2AScheduleValidationError("time_point must be an object")
 
         if cycle_type == A2AScheduleTask.CYCLE_INTERVAL:
             minutes_raw = time_point.get("minutes", time_point.get("interval_minutes"))
-            minutes = self._normalize_interval_minutes(minutes_raw)
+            minutes = self._normalize_interval_minutes(minutes_raw, is_superuser=is_superuser)
             return {"minutes": minutes}
 
         hh, mm = self._parse_hhmm(time_point.get("time"))
@@ -588,17 +633,26 @@ class A2AScheduleService:
             return value
         return ((value + base - 1) // base) * base
 
-    def _normalize_interval_minutes(self, value: Any) -> int:
+    def _normalize_interval_minutes(self, value: Any, *, is_superuser: bool = False) -> int:
         minutes = self._coerce_int(value)
         if minutes is None:
             raise A2AScheduleValidationError("interval time_point requires minutes")
 
+        min_interval = 1 if is_superuser else max(settings.a2a_schedule_min_interval_minutes, 1)
+
         # Soft normalization:
-        # - round up to the next multiple of 5 (e.g. 6 -> 10, 9 -> 10)
-        # - clamp to [5, 1440] (5 minutes .. 24 hours)
-        minutes = max(minutes, 5)
+        # - round up to the next multiple of 5 if not superuser
+        # - clamp to [min_interval, 1440]
+        if minutes < min_interval:
+            raise A2AScheduleValidationError(f"interval minutes cannot be less than {min_interval}")
+            
         minutes = min(minutes, 24 * 60)
-        normalized = self._ceil_to_multiple(minutes, 5)
+        
+        if not is_superuser:
+            normalized = self._ceil_to_multiple(minutes, 5)
+        else:
+            normalized = minutes
+            
         if normalized > 24 * 60:
             normalized = 24 * 60
         return normalized
@@ -646,10 +700,12 @@ class A2AScheduleService:
         cycle_type: str,
         time_point: Dict[str, Any],
         after_local: datetime,
+        is_superuser: bool = False,
     ) -> datetime:
         if cycle_type == A2AScheduleTask.CYCLE_INTERVAL:
             minutes = self._normalize_interval_minutes(
-                time_point.get("minutes", time_point.get("interval_minutes"))
+                time_point.get("minutes", time_point.get("interval_minutes")),
+                is_superuser=is_superuser,
             )
             return after_local + timedelta(minutes=minutes)
 
@@ -724,18 +780,21 @@ class A2AScheduleService:
         timezone_str: str,
         after_utc: datetime,
         not_before_utc: Optional[datetime] = None,
+        is_superuser: bool = False,
     ) -> datetime:
         normalized_cycle = self._normalize_cycle_type(cycle_type)
         normalized_point = self._normalize_time_point(
             cycle_type=normalized_cycle,
             time_point=time_point,
+            is_superuser=is_superuser,
         )
 
         if normalized_cycle == A2AScheduleTask.CYCLE_INTERVAL:
             minutes = self._normalize_interval_minutes(
                 normalized_point.get(
                     "minutes", normalized_point.get("interval_minutes")
-                )
+                ),
+                is_superuser=is_superuser,
             )
             interval = timedelta(minutes=minutes)
             after = ensure_utc(after_utc)
@@ -758,12 +817,14 @@ class A2AScheduleService:
             cycle_type=normalized_cycle,
             time_point=normalized_point,
             after_local=after_local,
+            is_superuser=is_superuser,
         )
         while candidate_local <= guard_local:
             candidate_local = self._next_occurrence_local(
                 cycle_type=normalized_cycle,
                 time_point=normalized_point,
                 after_local=candidate_local,
+                is_superuser=is_superuser,
             )
 
         return candidate_local.astimezone(timezone.utc)
