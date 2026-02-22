@@ -32,6 +32,10 @@ class A2AScheduleValidationError(A2AScheduleError):
     """Raised when schedule payload validation fails."""
 
 
+class A2AScheduleQuotaError(A2AScheduleError):
+    """Raised when a schedule task operation exceeds user quotas."""
+
+
 @dataclass(frozen=True)
 class ClaimedA2AScheduleTask:
     """Snapshot describing a due task claimed by the scheduler."""
@@ -110,7 +114,9 @@ class A2AScheduleService:
     ) -> A2AScheduleTask:
         await self._ensure_agent_owned(db, user_id=user_id, agent_id=agent_id)
         if enabled:
-            await self._ensure_active_quota(db, user_id=user_id, is_superuser=is_superuser)
+            await self._ensure_active_quota(
+                db, user_id=user_id, is_superuser=is_superuser
+            )
 
         normalized_name = self._normalize_name(name)
         normalized_prompt = self._normalize_prompt(prompt)
@@ -169,7 +175,9 @@ class A2AScheduleService:
         task = await self._get_task(db, user_id=user_id, task_id=task_id)
 
         if enabled is True and not task.enabled:
-            await self._ensure_active_quota(db, user_id=user_id, is_superuser=is_superuser)
+            await self._ensure_active_quota(
+                db, user_id=user_id, is_superuser=is_superuser
+            )
 
         if name is not None:
             task.name = self._normalize_name(name)
@@ -238,8 +246,10 @@ class A2AScheduleService:
     ) -> A2AScheduleTask:
         task = await self._get_task(db, user_id=user_id, task_id=task_id)
         if enabled and not task.enabled:
-            await self._ensure_active_quota(db, user_id=user_id, is_superuser=is_superuser)
-        
+            await self._ensure_active_quota(
+                db, user_id=user_id, is_superuser=is_superuser
+            )
+
         task.enabled = enabled
         if enabled:
             timezone_value = await auth_handler.get_user_timezone(
@@ -541,11 +551,13 @@ class A2AScheduleService:
     ) -> None:
         if is_superuser:
             return
-        
+
         limit = max(settings.a2a_schedule_max_active_tasks_per_user, 0)
         if limit == 0:
-            raise A2AScheduleQuotaError("Scheduled tasks are currently disabled for non-admin users.")
-        
+            raise A2AScheduleQuotaError(
+                "Scheduled tasks are currently disabled for non-admin users."
+            )
+
         stmt = select(func.count(A2AScheduleTask.id)).where(
             and_(
                 A2AScheduleTask.user_id == user_id,
@@ -554,7 +566,7 @@ class A2AScheduleService:
             )
         )
         active_count = int((await db.scalar(stmt)) or 0)
-        
+
         if active_count >= limit:
             raise A2AScheduleQuotaError(
                 f"Maximum active schedule tasks limit ({limit}) reached."
@@ -596,7 +608,9 @@ class A2AScheduleService:
 
         if cycle_type == A2AScheduleTask.CYCLE_INTERVAL:
             minutes_raw = time_point.get("minutes", time_point.get("interval_minutes"))
-            minutes = self._normalize_interval_minutes(minutes_raw, is_superuser=is_superuser)
+            minutes = self._normalize_interval_minutes(
+                minutes_raw, is_superuser=is_superuser
+            )
             return {"minutes": minutes}
 
         hh, mm = self._parse_hhmm(time_point.get("time"))
@@ -633,26 +647,32 @@ class A2AScheduleService:
             return value
         return ((value + base - 1) // base) * base
 
-    def _normalize_interval_minutes(self, value: Any, *, is_superuser: bool = False) -> int:
+    def _normalize_interval_minutes(
+        self, value: Any, *, is_superuser: bool = False
+    ) -> int:
         minutes = self._coerce_int(value)
         if minutes is None:
             raise A2AScheduleValidationError("interval time_point requires minutes")
 
-        min_interval = 1 if is_superuser else max(settings.a2a_schedule_min_interval_minutes, 1)
+        min_interval = (
+            1 if is_superuser else max(settings.a2a_schedule_min_interval_minutes, 1)
+        )
 
         # Soft normalization:
         # - round up to the next multiple of 5 if not superuser
         # - clamp to [min_interval, 1440]
         if minutes < min_interval:
-            raise A2AScheduleValidationError(f"interval minutes cannot be less than {min_interval}")
-            
+            raise A2AScheduleValidationError(
+                f"interval minutes cannot be less than {min_interval}"
+            )
+
         minutes = min(minutes, 24 * 60)
-        
+
         if not is_superuser:
             normalized = self._ceil_to_multiple(minutes, 5)
         else:
             normalized = minutes
-            
+
         if normalized > 24 * 60:
             normalized = 24 * 60
         return normalized
@@ -841,6 +861,7 @@ __all__ = [
     "A2A_SCHEDULE_SOURCE",
     "A2AScheduleError",
     "A2AScheduleNotFoundError",
+    "A2AScheduleQuotaError",
     "A2AScheduleService",
     "A2AScheduleValidationError",
     "ClaimedA2AScheduleTask",

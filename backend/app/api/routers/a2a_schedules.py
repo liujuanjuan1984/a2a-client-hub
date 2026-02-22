@@ -21,6 +21,7 @@ from app.schemas.a2a_schedule import (
 )
 from app.services.a2a_schedule_service import (
     A2AScheduleNotFoundError,
+    A2AScheduleQuotaError,
     A2AScheduleValidationError,
     a2a_schedule_service,
 )
@@ -121,7 +122,9 @@ async def patch_schedule_task(
             enabled=payload.enabled,
         )
     except A2AScheduleQuotaError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
     except A2AScheduleNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except A2AScheduleValidationError as exc:
@@ -164,7 +167,9 @@ async def enable_schedule_task(
             is_superuser=current_user.is_superuser,
         )
     except A2AScheduleQuotaError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
     except A2AScheduleNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except A2AScheduleValidationError as exc:
