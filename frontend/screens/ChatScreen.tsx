@@ -1767,8 +1767,8 @@ export function ChatScreen({
             }`}
             onPress={openShortcutManager}
             accessibilityRole="button"
-              accessibilityLabel="Open shortcut manager"
-            >
+            accessibilityLabel="Open shortcut manager"
+          >
             <Ionicons
               name={showShortcutManager ? "flash" : "flash-outline"}
               size={18}
