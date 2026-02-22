@@ -1,5 +1,11 @@
+import { PageTitle } from "@/components/layout/PageTitle";
 import { AgentListScreen } from "@/screens/AgentListScreen";
 
 export default function Home() {
-  return <AgentListScreen />;
+  return (
+    <>
+      <PageTitle title="Agents" />
+      <AgentListScreen />
+    </>
+  );
 }

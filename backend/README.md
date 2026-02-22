@@ -122,6 +122,25 @@ Notes:
   `request_id` is required; legacy fields such as `requestID`, `decision`,
   `allow` or `deny` are not accepted.
 
+Unified error semantics (`error_code` -> HTTP status):
+
+| Scenario | error_code | HTTP Status |
+|---|---|---|
+| Session not found | `session_not_found` | 404 |
+| Outbound domain not allowed / invalid configuration | `outbound_not_allowed` | 403 |
+| Upstream unreachable | `upstream_unreachable` | 503 |
+| Upstream HTTP non-2xx | `upstream_http_error` | 502 |
+| Upstream JSON-RPC business error | `upstream_error` | 502 |
+| Request timeout | `timeout` | 504 |
+| Contract unsupported / incompatible during execution | `not_supported` | 400 |
+| Extension contract validation failed | `extension_contract_error` | 400 |
+| Duplicate concurrent call in the same session | `invoke_inflight` | 409 |
+
+Default mapping:
+
+- Unrecognized `error_code` returns `502` (A2A invoke / extension treated as upstream failure).
+- Other `4xx/5xx` values follow the table above.
+
 ## Unified Conversation Domain API
 
 The backend now exposes a unified conversation read model for manual,

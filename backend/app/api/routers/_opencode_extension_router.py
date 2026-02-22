@@ -12,9 +12,11 @@ from typing import Any, Awaitable, Callable, Dict, Optional, Type
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
+from app.api.error_codes import status_code_for_extension_error_code
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
@@ -95,21 +97,67 @@ def create_opencode_extension_router(
             meta=result.meta or {},
         )
 
-    async def _run_extension_call(call: Awaitable[Any]) -> A2AExtensionResponse:
+    def _to_extension_error_response(
+        *,
+        error_code: str,
+        message: str,
+        upstream_error: Optional[Dict[str, Any]] = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> JSONResponse:
+        payload = A2AExtensionResponse(
+            success=False,
+            result=None,
+            error_code=error_code,
+            upstream_error=upstream_error
+            if upstream_error is not None
+            else {"message": message},
+            meta=meta or {},
+        )
+        status_code = status_code_for_extension_error_code(error_code)
+        return JSONResponse(
+            status_code=status_code,
+            content=payload.model_dump(),
+        )
+
+    async def _run_extension_call(
+        call: Awaitable[Any],
+    ) -> A2AExtensionResponse | JSONResponse:
         try:
             result = await call
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except (A2AExtensionNotSupportedError, A2AExtensionContractError) as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            error_code = (
+                "not_supported"
+                if isinstance(exc, A2AExtensionNotSupportedError)
+                else "extension_contract_error"
+            )
+            return _to_extension_error_response(
+                error_code=error_code,
+                message=str(exc),
+            )
         except A2AExtensionUpstreamError as exc:
-            return A2AExtensionResponse(
+            response = A2AExtensionResponse(
                 success=False,
                 error_code=exc.error_code,
                 upstream_error=exc.upstream_error,
                 meta={},
             )
-        return _to_extension_response(result)
+            status_code = status_code_for_extension_error_code(response.error_code)
+            if status_code == status.HTTP_200_OK:
+                return response
+            return JSONResponse(
+                status_code=status_code,
+                content=response.model_dump(),
+            )
+        response = _to_extension_response(result)
+        status_code = status_code_for_extension_error_code(response.error_code)
+        if response.success or status_code == status.HTTP_200_OK:
+            return response
+        return JSONResponse(
+            status_code=status_code,
+            content=response.model_dump(),
+        )
 
     @router.get(
         "/{agent_id}/extensions/opencode/sessions",

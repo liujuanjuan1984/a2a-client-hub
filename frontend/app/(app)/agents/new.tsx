@@ -1,5 +1,11 @@
+import { PageTitle } from "@/components/layout/PageTitle";
 import { AgentFormScreen } from "@/screens/AgentFormScreen";
 
 export default function NewAgent() {
-  return <AgentFormScreen />;
+  return (
+    <>
+      <PageTitle title="New Agent" />
+      <AgentFormScreen />
+    </>
+  );
 }

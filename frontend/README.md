@@ -54,6 +54,15 @@ Authentication conventions are shared between frontend and backend:
 - If local debugging requires HTTP endpoints, scope any ATS relaxations to
   development-only builds and do not ship them in production artifacts.
 
+## Web Zoom and Accessibility Policy
+
+- iOS/Android Web keeps browser zoom enabled (no `user-scalable=no`, no
+  `maximum-scale=1`) so users can enlarge content when needed.
+- The bottom tab bar is stabilized by safe-area-aware fixed heights so key
+  navigation targets remain reachable under zoom.
+- Keep input fonts at 16px on web (`frontend/global.css`) to reduce
+  unexpected form zoom when focusing inputs.
+
 ## Time Display Strategy
 
 - This project does not introduce a frontend i18n framework for date formatting.

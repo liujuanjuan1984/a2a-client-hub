@@ -14,6 +14,7 @@ import {
   extractStreamBlockUpdate,
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
+import { ApiRequestError } from "@/lib/api/client";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import {
   continueSession as continueSessionBinding,
@@ -132,6 +133,24 @@ const isSamePendingInterrupt = (
   }
 
   return false;
+};
+
+const buildApiErrorMessage = (error: unknown): string => {
+  if (!(error instanceof ApiRequestError)) {
+    return error instanceof Error ? error.message : "Request failed.";
+  }
+
+  const codeSuffix = error.errorCode ? ` [${error.errorCode}]` : "";
+  const upstreamMessage =
+    error.upstreamError &&
+    typeof error.upstreamError === "object" &&
+    typeof error.upstreamError.message === "string"
+      ? error.upstreamError.message
+      : null;
+
+  return upstreamMessage
+    ? `${error.message}${codeSuffix}：${upstreamMessage}`
+    : `${error.message}${codeSuffix}`;
 };
 
 export const useChatStore = create<ChatState>()(
@@ -935,8 +954,7 @@ export const useChatStore = create<ChatState>()(
             });
             markSessionIdle();
           } catch (error) {
-            const message =
-              error instanceof Error ? error.message : "Request failed.";
+            const message = buildApiErrorMessage(error);
             messageStore.updateMessage(conversationId, activeAgentMessageId, {
               content: message,
               status: "done",

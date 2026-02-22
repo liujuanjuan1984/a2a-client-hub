@@ -1,5 +1,11 @@
+import { PageTitle } from "@/components/layout/PageTitle";
 import { ScheduledJobFormScreen } from "@/screens/ScheduledJobFormScreen";
 
 export default function NewScheduledJobPage() {
-  return <ScheduledJobFormScreen />;
+  return (
+    <>
+      <PageTitle title="New Job" />
+      <ScheduledJobFormScreen />
+    </>
+  );
 }

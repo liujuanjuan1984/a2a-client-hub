@@ -402,4 +402,42 @@ describe("ChatScreen interrupt handling", () => {
       tree.unmount();
     });
   });
+
+  it("uses explicit expand/collapse for long plain text messages", async () => {
+    mockMessageState.messages = {
+      [conversationId]: [
+        {
+          id: "message-1",
+          role: "agent",
+          content: "A".repeat(5000),
+          createdAt: "2026-02-16T00:00:00.000Z",
+        },
+      ],
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const expandButton = root.findAll((node) => {
+      return (
+        node.type === Object({}) ||
+        node.props?.testID === "chat-message-message-1:text-expand"
+      );
+    })[0];
+
+    expect(expandButton).toBeDefined();
+    expect(expandButton?.props.accessibilityLabel).toBe("Expand full text");
+
+    act(() => {
+      expandButton.props.onPress();
+    });
+
+    const collapseButton = root.findByProps({
+      testID: "chat-message-message-1:text-expand",
+      accessibilityLabel: "Collapse full text",
+    });
+    expect(collapseButton).toBeDefined();
+    act(() => {
+      tree.unmount();
+    });
+  });
 });

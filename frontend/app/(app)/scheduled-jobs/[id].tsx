@@ -1,10 +1,14 @@
 import { useLocalSearchParams } from "expo-router";
 
+import { PageTitle } from "@/components/layout/PageTitle";
 import { ScheduledJobFormScreen } from "@/screens/ScheduledJobFormScreen";
 
 export default function EditScheduledJobPage() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   return (
-    <ScheduledJobFormScreen jobId={typeof id === "string" ? id : undefined} />
+    <>
+      <PageTitle title="Edit Job" />
+      <ScheduledJobFormScreen jobId={typeof id === "string" ? id : undefined} />
+    </>
   );
 }

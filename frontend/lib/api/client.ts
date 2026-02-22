@@ -16,11 +16,22 @@ export class ApiConfigError extends Error {
 
 export class ApiRequestError extends Error {
   status: number;
+  errorCode: string | null;
+  upstreamError: Record<string, unknown> | null;
 
-  constructor(message: string, status: number) {
+  constructor(
+    message: string,
+    status: number,
+    options?: {
+      errorCode?: string | null;
+      upstreamError?: Record<string, unknown> | null;
+    },
+  ) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
+    this.errorCode = options?.errorCode ?? null;
+    this.upstreamError = options?.upstreamError ?? null;
     Object.setPrototypeOf(this, ApiRequestError.prototype);
   }
 }
@@ -193,6 +204,32 @@ export async function apiRequest<Response, Body = unknown>(
     }
 
     const errorBody = details?.detail || details?.message || details?.error;
+    const detailsRecord =
+      details && typeof details === "object" && !Array.isArray(details)
+        ? (details as Record<string, unknown>)
+        : undefined;
+    const detailRecord =
+      details?.detail &&
+      typeof details.detail === "object" &&
+      !Array.isArray(details.detail)
+        ? (details.detail as Record<string, unknown>)
+        : undefined;
+    const errorCode =
+      typeof detailsRecord?.error_code === "string"
+        ? detailsRecord.error_code
+        : typeof detailRecord?.error_code === "string"
+          ? detailRecord.error_code
+          : null;
+    const upstreamError =
+      detailRecord?.upstream_error &&
+      typeof detailRecord.upstream_error === "object" &&
+      !Array.isArray(detailRecord.upstream_error)
+        ? (detailRecord.upstream_error as Record<string, unknown>)
+        : detailsRecord?.upstream_error &&
+            typeof detailsRecord.upstream_error === "object" &&
+            !Array.isArray(detailsRecord.upstream_error)
+          ? (detailsRecord.upstream_error as Record<string, unknown>)
+          : null;
     let errorMessage: string;
 
     if (typeof errorBody === "string") {
@@ -211,7 +248,14 @@ export async function apiRequest<Response, Body = unknown>(
       errorMessage = `Request failed (${response.status})`;
     }
 
-    throw new ApiRequestError(errorMessage, response.status);
+    if (errorCode) {
+      errorMessage = `${errorMessage} [${errorCode}]`;
+    }
+
+    throw new ApiRequestError(errorMessage, response.status, {
+      errorCode,
+      upstreamError,
+    });
   }
 
   if (response.status === 204) {
