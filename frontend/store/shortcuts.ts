@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 
 import {
   createShortcut,
+  updateShortcut as updateShortcutApi,
   deleteShortcut,
   listShortcuts,
   type ShortcutItem as ServerShortcutItem,
@@ -61,6 +62,11 @@ type ShortcutState = {
   syncError: string | null;
   syncShortcuts: () => Promise<void>;
   addShortcut: (title: string, prompt: string) => Promise<void>;
+  updateShortcut: (
+    shortcutId: string,
+    title: string,
+    prompt: string,
+  ) => Promise<void>;
   removeShortcut: (id: string) => Promise<void>;
   clearAll: () => void;
 };
@@ -206,6 +212,19 @@ export const useShortcutStore = create<ShortcutState>()(
             ...state.shortcuts.filter((item) => item.id !== next.id),
             next,
           ],
+        }));
+      },
+
+      updateShortcut: async (shortcutId, title, prompt) => {
+        const result = await updateShortcutApi(shortcutId, {
+          title,
+          prompt,
+        });
+        const next = toShortcutFromServer(result);
+        set((state) => ({
+          shortcuts: state.shortcuts.map((item) =>
+            item.id === next.id ? next : item,
+          ),
         }));
       },
 

@@ -38,6 +38,26 @@ jest.mock("react-native/Libraries/Utilities/Dimensions", () => {
   };
 });
 
+jest.mock("react-native/Libraries/Modal/Modal", () => {
+  return {
+    __esModule: true,
+    default: ({
+      children,
+      visible = false,
+    }: {
+      children?: unknown;
+      visible?: boolean;
+    }) => (visible ? children : null),
+    Modal: ({
+      children,
+      visible = false,
+    }: {
+      children?: unknown;
+      visible?: boolean;
+    }) => (visible ? children : null),
+  };
+});
+
 jest.mock("@expo/vector-icons", () => ({
   Ionicons: () => null,
 }));
@@ -186,6 +206,7 @@ jest.mock("@/store/shortcuts", () => ({
     syncError: null,
     syncShortcuts: jest.fn().mockResolvedValue(undefined),
     addShortcut: jest.fn().mockResolvedValue(undefined),
+    updateShortcut: jest.fn().mockResolvedValue(undefined),
     removeShortcut: jest.fn().mockResolvedValue(undefined),
   }),
 }));
