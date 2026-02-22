@@ -99,7 +99,7 @@ const LIST_INITIAL_NUM_TO_RENDER = 16;
 const LIST_WINDOW_SIZE = 9;
 const LIST_MAX_TO_RENDER_PER_BATCH = 20;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
-const COLLAPSED_TEXT_LINES = 8;
+const COLLAPSED_TEXT_LINES = 5;
 const COLLAPSED_TEXT_CHAR_LIMIT = 1200;
 
 const shouldCollapseByLength = (value: string) => {
