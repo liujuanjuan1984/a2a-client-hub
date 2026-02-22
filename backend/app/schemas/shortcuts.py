@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, ClassVar, List
 from uuid import UUID
 
-from pydantic import BaseModel, computed_field, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 from app.schemas.pagination import ListResponse, Pagination
 
@@ -45,7 +45,9 @@ class ShortcutCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     @classmethod
-    def _normalize_fields(cls, self: "ShortcutCreateRequest") -> "ShortcutCreateRequest":
+    def _normalize_fields(
+        cls, self: "ShortcutCreateRequest"
+    ) -> "ShortcutCreateRequest":
         normalized_title = _strip_text(self.title)
         normalized_prompt = _strip_text(self.prompt)
         if normalized_title is None or normalized_prompt is None:
@@ -59,7 +61,9 @@ class ShortcutUpdateRequest(BaseModel):
     """Payload for updating a shortcut."""
 
     title: str | None = Field(default=None, min_length=1, max_length=_MAX_TITLE_LENGTH)
-    prompt: str | None = Field(default=None, min_length=1, max_length=_MAX_PROMPT_LENGTH)
+    prompt: str | None = Field(
+        default=None, min_length=1, max_length=_MAX_PROMPT_LENGTH
+    )
     order: int | None = Field(default=None, ge=0)
 
     # Legacy compatibility keys for clients still posting old payload shape.
@@ -80,7 +84,9 @@ class ShortcutUpdateRequest(BaseModel):
 
     @model_validator(mode="after")
     @classmethod
-    def _normalize_fields(cls, self: "ShortcutUpdateRequest") -> "ShortcutUpdateRequest":
+    def _normalize_fields(
+        cls, self: "ShortcutUpdateRequest"
+    ) -> "ShortcutUpdateRequest":
         self.title = _strip_text(self.title)
         self.prompt = _strip_text(self.prompt)
 

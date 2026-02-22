@@ -141,12 +141,8 @@ export function ChatScreen({
   const messages = useMessageStore((state) =>
     conversationId ? (state.messages[conversationId] ?? []) : [],
   );
-  const {
-    shortcuts,
-    addShortcut,
-    removeShortcut,
-    syncShortcuts,
-  } = useShortcutStore();
+  const { shortcuts, addShortcut, removeShortcut, syncShortcuts } =
+    useShortcutStore();
 
   const [input, setInput] = useState("");
   const suppressAutoScrollRef = useRef(false);
@@ -269,7 +265,9 @@ export function ChatScreen({
   }, [activeAgentId, conversationId, ensureSession]);
 
   useEffect(() => {
-    void syncShortcuts();
+    syncShortcuts().catch(() => {
+      // Keep shortcut sync failure non-blocking for UX.
+    });
   }, [syncShortcuts]);
 
   useEffect(() => {
@@ -1556,8 +1554,8 @@ export function ChatScreen({
                     {!cmd.isDefault && (
                       <Pressable
                         className="px-4 py-3"
-                        onPress={() => {
-                          void removeShortcut(cmd.id).catch(() => {
+                        onPress={async () => {
+                          await removeShortcut(cmd.id).catch(() => {
                             toast.error("Failed to remove shortcut");
                           });
                         }}

@@ -53,6 +53,7 @@ const normalizeShortcutItem = (item: Record<string, unknown>): ShortcutItem => {
     title,
     prompt,
     isDefault,
+    is_default: isDefault,
     order: Number.isFinite(order) ? order : 0,
   };
 };
@@ -77,9 +78,7 @@ export const listShortcuts = async (): Promise<ShortcutItem[]> => {
     return [];
   }
   return payload
-    .map((item) =>
-      normalizeShortcutItem(item as Record<string, unknown>),
-    )
+    .map((item) => normalizeShortcutItem(item as Record<string, unknown>))
     .filter((item) => Boolean(item.id));
 };
 

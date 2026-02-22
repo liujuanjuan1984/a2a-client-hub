@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from sqlalchemy import Boolean, Column, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Column, Index, Integer, String, Text
 
 from app.db.models.base import SCHEMA_NAME, Base, TimestampMixin, UserOwnedMixin
 
@@ -14,7 +13,11 @@ class Shortcut(Base, TimestampMixin, UserOwnedMixin):
     """User-defined shortcut/preset entries for chat prompt augmentation."""
 
     __tablename__ = "user_shortcuts"
-    __table_args__ = {"schema": SCHEMA_NAME}
+    __table_args__ = (
+        Index("ix_user_shortcuts_user_id", "user_id"),
+        Index("ix_user_shortcuts_user_sort_order", "user_id", "sort_order"),
+        {"schema": SCHEMA_NAME},
+    )
 
     TITLE_MAX_LENGTH: ClassVar[int] = 120
     PROMPT_MAX_LENGTH: ClassVar[int] = 4000

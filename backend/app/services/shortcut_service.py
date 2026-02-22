@@ -146,13 +146,19 @@ class ShortcutService:
     ) -> list[ShortcutResponse]:
         del user
         rows = (
-            await db.execute(
-                select(ShortcutModel)
-                .where(ShortcutModel.user_id == user_id)
-                .where(ShortcutModel.is_default.is_(False))
-                .order_by(ShortcutModel.sort_order.asc(), ShortcutModel.created_at.asc())
+            (
+                await db.execute(
+                    select(ShortcutModel)
+                    .where(ShortcutModel.user_id == user_id)
+                    .where(ShortcutModel.is_default.is_(False))
+                    .order_by(
+                        ShortcutModel.sort_order.asc(), ShortcutModel.created_at.asc()
+                    )
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         customs = [_shortcut_to_payload(row) for row in rows]
         return [*_default_shortcuts(), *customs]
@@ -170,13 +176,19 @@ class ShortcutService:
         normalized_prompt = _normalize_prompt(prompt)
 
         custom_rows = (
-            await db.execute(
-                select(ShortcutModel)
-                .where(ShortcutModel.user_id == user_id)
-                .where(ShortcutModel.is_default.is_(False))
-                .order_by(ShortcutModel.sort_order.asc(), ShortcutModel.created_at.asc())
+            (
+                await db.execute(
+                    select(ShortcutModel)
+                    .where(ShortcutModel.user_id == user_id)
+                    .where(ShortcutModel.is_default.is_(False))
+                    .order_by(
+                        ShortcutModel.sort_order.asc(), ShortcutModel.created_at.asc()
+                    )
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         normalized_order = _normalize_order(order, default=_next_order(custom_rows))
 

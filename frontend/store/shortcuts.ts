@@ -128,20 +128,27 @@ const normalizeFromPersisted = (
     title,
     prompt,
     isDefault,
-    order: normalizeOrder(source.sort_order, normalizeOrder(source.order, index)),
+    order: normalizeOrder(
+      source.sort_order,
+      normalizeOrder(source.order, index),
+    ),
   };
 };
 
-const normalizePersistedShortcuts = (
-  raw: unknown,
-): Shortcut[] => {
+const normalizePersistedShortcuts = (raw: unknown): Shortcut[] => {
   const fallback = [...DEFAULT_SHORTCUTS];
-  if (!raw || typeof raw !== "object" || !Array.isArray((raw as PersistedShortcutState).shortcuts)) {
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    !Array.isArray((raw as PersistedShortcutState).shortcuts)
+  ) {
     return fallback;
   }
 
   const parsedItems = (raw as PersistedShortcutState).shortcuts
-    .map((item, index) => normalizeFromPersisted(item, index, "local-shortcut-"))
+    .map((item, index) =>
+      normalizeFromPersisted(item, index, "local-shortcut-"),
+    )
     .filter((item): item is Shortcut => item !== null);
 
   if (!parsedItems.length) {
@@ -151,10 +158,12 @@ const normalizePersistedShortcuts = (
   const hasDefault = parsedItems.some((item) => item.isDefault);
   const normalizedCustoms = parsedItems.filter((item) => !item.isDefault);
   const normalizedDefaults = hasDefault
-    ? parsedItems.filter((item) => item.isDefault).map((item) => ({
-        ...item,
-        isDefault: true,
-      }))
+    ? parsedItems
+        .filter((item) => item.isDefault)
+        .map((item) => ({
+          ...item,
+          isDefault: true,
+        }))
     : [...DEFAULT_SHORTCUTS];
 
   const merged = [...normalizedDefaults, ...normalizedCustoms];
@@ -201,7 +210,7 @@ export const useShortcutStore = create<ShortcutState>()(
         set({ isSyncing: true, syncError: null });
         try {
           const serverShortcuts = await listShortcuts();
-        set({
+          set({
             shortcuts: serverShortcuts.map(toShortcutFromServer),
             syncError: null,
           });
@@ -221,7 +230,10 @@ export const useShortcutStore = create<ShortcutState>()(
         });
         const next = toShortcutFromServer(result);
         set((state) => ({
-          shortcuts: [...state.shortcuts.filter((item) => item.id !== next.id), next],
+          shortcuts: [
+            ...state.shortcuts.filter((item) => item.id !== next.id),
+            next,
+          ],
         }));
       },
 

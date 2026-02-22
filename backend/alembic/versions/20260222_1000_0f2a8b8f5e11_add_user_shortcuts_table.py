@@ -48,7 +48,29 @@ def upgrade() -> None:
         ),
         schema=SCHEMA_NAME,
     )
+    op.create_index(
+        "ix_user_shortcuts_user_id",
+        "user_shortcuts",
+        ["user_id"],
+        schema=SCHEMA_NAME,
+    )
+    op.create_index(
+        "ix_user_shortcuts_user_sort_order",
+        "user_shortcuts",
+        ["user_id", "sort_order"],
+        schema=SCHEMA_NAME,
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "ix_user_shortcuts_user_sort_order",
+        table_name="user_shortcuts",
+        schema=SCHEMA_NAME,
+    )
+    op.drop_index(
+        "ix_user_shortcuts_user_id",
+        table_name="user_shortcuts",
+        schema=SCHEMA_NAME,
+    )
     op.drop_table("user_shortcuts", schema=SCHEMA_NAME)
