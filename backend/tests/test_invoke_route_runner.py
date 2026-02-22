@@ -484,6 +484,128 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     assert json.loads(websocket.sent[0]) == {"event": "stream_end", "data": {}}
 
 
+@pytest.mark.asyncio
+async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    original_conversation_id = str(uuid4())
+    rebound_conversation_id = str(uuid4())
+    prepare_payloads: list[str | None] = []
+    stream_calls = 0
+    observed_error_codes: list[str] = []
+
+    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+        payload = kwargs["payload"]
+        prepare_payloads.append(payload.conversation_id)
+        return invoke_route_runner._InvokeState(
+            local_session=object(),
+            local_source="manual",
+            context_id=None,
+            metadata={},
+            stream_identity={},
+            stream_usage={},
+            user_message_id=None,
+            client_agent_message_id=None,
+        )
+
+    async def fake_stream_ws(*, on_error_metadata=None, **kwargs):  # noqa: ARG001
+        nonlocal stream_calls
+        stream_calls += 1
+        if on_error_metadata:
+            observed_error_codes.append("session_not_found")
+            result = on_error_metadata(
+                {
+                    "message": "Upstream streaming failed",
+                    "error_code": "session_not_found",
+                }
+            )
+            if inspect.isawaitable(result):
+                await result
+
+    async def fake_continue_session(
+        *_,
+        user_id: object,  # noqa: ARG002
+        conversation_id: str,
+        **__,  # noqa: ARG001
+    ) -> tuple[dict[str, object], bool]:
+        assert conversation_id == original_conversation_id
+        return (
+            {
+                "conversationId": rebound_conversation_id,
+                "source": "manual",
+                "provider": "opencode",
+                "externalSessionId": "upstream-sid-2",
+                "contextId": "ctx-2",
+            },
+            True,
+        )
+
+    async def fake_commit_safely(_: object) -> None:
+        return None
+
+    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service,
+        "stream_ws",
+        fake_stream_ws,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "continue_session",
+        fake_continue_session,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_local_invoke_messages",
+        lambda **kwargs: None,  # noqa: ARG005
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "test invoke route",
+            "conversationId": original_conversation_id,
+            "metadata": {},
+        }
+    )
+    websocket = _NoopWebSocket()
+
+    await invoke_route_runner.run_ws_invoke_with_session_recovery(
+        websocket=websocket,
+        db=object(),
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={
+            "user_id": str(uuid4()),
+            "agent_id": str(uuid4()),
+        },
+        max_recovery_attempts=1,
+    )
+
+    sent = [json.loads(item) for item in websocket.sent]
+    error_events = [event for event in sent if event["event"] == "error"]
+    assert prepare_payloads == [
+        original_conversation_id,
+        rebound_conversation_id,
+    ]
+    assert stream_calls == 2
+    assert observed_error_codes == ["session_not_found", "session_not_found"]
+    assert len(error_events) == 1
+    assert (
+        error_events[0]["data"]["error_code"] == "session_not_found_recovery_exhausted"
+    )
+    assert sent[-1] == {"event": "stream_end", "data": {}}
+
+
 @pytest.mark.parametrize(
     "error_code, expected_status",
     [

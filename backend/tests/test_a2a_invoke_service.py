@@ -65,6 +65,13 @@ class _BrokenGatewayWithSessionNotFound:
         raise _SessionNotFoundError("session not found", "session_not_found")
 
 
+class _GatewayWithUnstructuredError:
+    async def stream(self, **kwargs):  # noqa: ARG001
+        if False:
+            yield  # pragma: no cover
+        raise RuntimeError("session missing")
+
+
 def _artifact_event(
     *,
     artifact_id: str,
@@ -603,6 +610,33 @@ async def test_ws_error_metadata_callback_receives_session_not_found_code():
     assert observed["error_code"] == "session_not_found"
     assert payloads[-2]["event"] == "error"
     assert payloads[-2]["data"]["error_code"] == "session_not_found"
+
+
+@pytest.mark.asyncio
+async def test_ws_error_metadata_callback_falls_back_to_default_code_for_unstructured_error():
+    websocket = _DummyWebSocket()
+    observed: dict[str, object] = {}
+
+    async def _on_error_metadata(payload: dict[str, object]) -> None:
+        observed.update(payload)
+
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithUnstructuredError(),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_error_metadata=_on_error_metadata,
+    )
+
+    payloads = [json.loads(item) for item in websocket.sent]
+    assert observed["error_code"] == "upstream_stream_error"
+    assert payloads[-2]["event"] == "error"
+    assert payloads[-2]["data"]["error_code"] == "upstream_stream_error"
 
 
 @pytest.mark.asyncio

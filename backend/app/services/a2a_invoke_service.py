@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 from contextlib import suppress
 from typing import Any, AsyncIterator, Callable
 
@@ -40,6 +41,7 @@ class A2AInvokeService:
     _SSE_HEARTBEAT_FRAME = ": keep-alive\n\n"
     _WS_HEARTBEAT_EVENT = {"event": "heartbeat", "data": {}}
     _WS_STREAM_END_EVENT = {"event": "stream_end", "data": {}}
+    _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,64}$")
 
     @classmethod
     def build_ws_error_event(
@@ -642,38 +644,42 @@ class A2AInvokeService:
     @classmethod
     def _extract_error_code_from_exception(cls, exc: BaseException) -> str | None:
         candidate = getattr(exc, "error_code", None)
-        if isinstance(candidate, str):
-            normalized = candidate.strip()
-            if normalized:
-                return normalized
+        normalized = cls._normalize_error_code(candidate)
+        if normalized is not None:
+            return normalized
 
         detail = getattr(exc, "detail", None)
-        if isinstance(detail, str):
-            normalized = detail.strip()
-            if normalized:
-                return normalized
+        normalized = cls._normalize_error_code(detail)
+        if normalized is not None:
+            return normalized
 
         candidate = getattr(exc, "code", None)
-        if isinstance(candidate, str):
-            normalized = candidate.strip()
-            if normalized:
-                return normalized
+        normalized = cls._normalize_error_code(candidate)
+        if normalized is not None:
+            return normalized
 
         for arg in getattr(exc, "args", ()):
-            if isinstance(arg, str):
-                normalized = arg.strip()
-                if normalized:
-                    return normalized
             if isinstance(arg, dict):
                 mapped = arg.get("error_code") or arg.get("code")
-                if isinstance(mapped, str):
-                    normalized = mapped.strip()
-                    if normalized:
-                        return normalized
+                normalized = cls._normalize_error_code(mapped)
+                if normalized is not None:
+                    return normalized
                 if isinstance(mapped, int):
                     return str(mapped)
+            normalized = cls._normalize_error_code(arg)
+            if normalized is not None:
+                return normalized
 
         return None
+
+    @classmethod
+    def _normalize_error_code(cls, value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        candidate = value.strip().replace("-", "_").lower()
+        if not cls._ERROR_CODE_PATTERN.fullmatch(candidate):
+            return None
+        return candidate
 
     async def _iter_stream_events_with_heartbeat(
         self,

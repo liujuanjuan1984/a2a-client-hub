@@ -17,6 +17,12 @@ def is_recoverable_invoke_session_error(detail: str | None) -> bool:
     return normalize_detail(detail) == "session_not_found"
 
 
+def ws_error_code_for_recovery_failed(detail: str) -> str:
+    if detail == "session_not_found":
+        return "session_not_found_recovery_exhausted"
+    return detail
+
+
 def ws_error_code_for_invoke_session_error(detail: str) -> str:
     if detail == "session_not_found":
         return "session_not_found"
@@ -64,5 +70,6 @@ __all__ = [
     "normalize_invoke_binding_state",
     "status_code_for_invoke_session_error",
     "is_recoverable_invoke_session_error",
+    "ws_error_code_for_recovery_failed",
     "ws_error_code_for_invoke_session_error",
 ]

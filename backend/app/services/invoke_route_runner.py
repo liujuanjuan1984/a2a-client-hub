@@ -25,6 +25,7 @@ from app.services.invoke_session_binding import (
     normalize_invoke_binding_state,
     status_code_for_invoke_session_error,
     ws_error_code_for_invoke_session_error,
+    ws_error_code_for_recovery_failed,
 )
 from app.services.session_hub import session_hub_service
 from app.services.ws_ticket_service import ws_ticket_service
@@ -35,6 +36,9 @@ _invoke_inflight_guard = asyncio.Lock()
 _invoke_inflight_keys: dict[str, int] = {}
 
 _SESSION_NOT_FOUND_RETRY_LIMIT = 1
+_SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
+    "Failed to recover conversation session. Please retry."
+)
 
 
 @dataclass
@@ -541,12 +545,25 @@ async def run_ws_invoke_with_session_recovery(
     remaining_retries = max_recovery_attempts
     while True:
         stream_error_code: str | None = None
+        stream_error_message: str | None = None
 
         def _remember_stream_error(error_event: dict[str, Any]) -> None:
             nonlocal stream_error_code
+            nonlocal stream_error_message
             raw_code = error_event.get("error_code")
             if isinstance(raw_code, str):
                 stream_error_code = raw_code.strip() or None
+            raw_message = error_event.get("message")
+            if isinstance(raw_message, str):
+                stream_error_message = raw_message
+
+        def _send_recovery_failed_error() -> None:
+            return a2a_invoke_service.send_ws_error(
+                websocket=websocket,
+                message=stream_error_message
+                or _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE,
+                error_code=ws_error_code_for_recovery_failed(stream_error_code or ""),
+            )
 
         await run_ws_invoke(
             websocket=websocket,
@@ -571,6 +588,7 @@ async def run_ws_invoke_with_session_recovery(
             await a2a_invoke_service.send_ws_stream_end(websocket)
             return
         if remaining_retries <= 0:
+            await _send_recovery_failed_error()
             await a2a_invoke_service.send_ws_stream_end(websocket)
             return
         if not isinstance(current_payload.conversation_id, str):
