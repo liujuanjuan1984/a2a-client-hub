@@ -388,6 +388,14 @@ class A2AScheduleService:
             default="UTC",
         )
 
+        from app.db.models.user import User
+
+        is_superuser = (
+            await db.scalar(
+                select(User.is_superuser).where(User.id == selected_task.user_id)
+            )
+        ) or False
+
         scheduled_for = ensure_utc(selected_task.next_run_at or now_utc)
         next_run_at = self.compute_next_run_at(
             cycle_type=selected_task.cycle_type,
@@ -395,6 +403,7 @@ class A2AScheduleService:
             timezone_str=timezone_value,
             after_utc=scheduled_for,
             not_before_utc=now_utc,
+            is_superuser=is_superuser,
         )
 
         selected_task.next_run_at = next_run_at
