@@ -36,6 +36,7 @@ import {
 } from "@/lib/api/a2aExtensions";
 import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
+import { ApiRequestError } from "@/lib/api/client";
 import { shouldStickToBottom } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
@@ -195,6 +196,20 @@ export function ChatScreen({
       : 0;
 
   const buildInterruptErrorMessage = useCallback((error: unknown) => {
+    if (error instanceof ApiRequestError) {
+      const codeSuffix = error.errorCode ? ` [${error.errorCode}]` : "";
+      const upstreamMessage =
+        error.upstreamError &&
+        typeof error.upstreamError === "object" &&
+        typeof error.upstreamError.message === "string"
+          ? error.upstreamError.message
+          : null;
+
+      return upstreamMessage
+        ? `${error.message}${codeSuffix}：${upstreamMessage}`
+        : `${error.message}${codeSuffix}`;
+    }
+
     if (error instanceof A2AExtensionCallError) {
       return error.errorCode
         ? `${error.message}: ${error.errorCode}`
