@@ -14,6 +14,10 @@ const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
 const mockToastError = jest.fn();
 const mockContinueSession = jest.fn();
+const mockSyncShortcuts = jest.fn();
+const mockAddShortcut = jest.fn();
+const mockUpdateShortcut = jest.fn();
+const mockRemoveShortcut = jest.fn();
 const mockAgentStoreState = {
   activeAgentId: "agent-1",
 };
@@ -35,6 +39,26 @@ jest.mock("react-native/Libraries/Utilities/Dimensions", () => {
     __esModule: true,
     default: dimensionsModule,
     ...dimensionsModule,
+  };
+});
+
+jest.mock("react-native/Libraries/Modal/Modal", () => {
+  return {
+    __esModule: true,
+    default: ({
+      children,
+      visible = false,
+    }: {
+      children?: unknown;
+      visible?: boolean;
+    }) => (visible ? children : null),
+    Modal: ({
+      children,
+      visible = false,
+    }: {
+      children?: unknown;
+      visible?: boolean;
+    }) => (visible ? children : null),
   };
 });
 
@@ -102,6 +126,32 @@ const mockMessageState: {
 } = {
   messages: {},
   setMessages: jest.fn(),
+};
+
+type MockShortcut = {
+  id: string;
+  title: string;
+  prompt: string;
+  isDefault: boolean;
+  order: number;
+};
+
+const mockShortcutState: {
+  shortcuts: MockShortcut[];
+  isSyncing: boolean;
+  syncError: string | null;
+  syncShortcuts: jest.Mock;
+  addShortcut: jest.Mock;
+  updateShortcut: jest.Mock;
+  removeShortcut: jest.Mock;
+} = {
+  shortcuts: [],
+  isSyncing: false,
+  syncError: null,
+  syncShortcuts: mockSyncShortcuts,
+  addShortcut: mockAddShortcut,
+  updateShortcut: mockUpdateShortcut,
+  removeShortcut: mockRemoveShortcut,
 };
 
 const mockSessionHistoryState = {
@@ -180,14 +230,7 @@ jest.mock("@/store/messages", () => ({
 }));
 
 jest.mock("@/store/shortcuts", () => ({
-  useShortcutStore: () => ({
-    shortcuts: [],
-    isSyncing: false,
-    syncError: null,
-    syncShortcuts: jest.fn().mockResolvedValue(undefined),
-    addShortcut: jest.fn().mockResolvedValue(undefined),
-    removeShortcut: jest.fn().mockResolvedValue(undefined),
-  }),
+  useShortcutStore: () => mockShortcutState,
 }));
 
 jest.mock("@/lib/api/sessions", () => ({
@@ -249,6 +292,10 @@ describe("ChatScreen interrupt handling", () => {
   const conversationId = "conversation-1";
 
   beforeEach(() => {
+    mockSyncShortcuts.mockReset().mockResolvedValue(undefined);
+    mockAddShortcut.mockReset().mockResolvedValue(undefined);
+    mockUpdateShortcut.mockReset().mockResolvedValue(undefined);
+    mockRemoveShortcut.mockReset().mockResolvedValue(undefined);
     mockReplyPermission.mockReset();
     mockReplyQuestion.mockReset();
     mockRejectQuestion.mockReset();
@@ -271,6 +318,7 @@ describe("ChatScreen interrupt handling", () => {
     mockSessionHistoryState.loading = false;
     mockSessionHistoryState.loadingMore = false;
     mockSessionHistoryState.nextPage = undefined;
+    mockShortcutState.shortcuts = [];
     mockContinueSession.mockResolvedValue({});
     mockReplyPermission.mockResolvedValue({ ok: true, requestId: "perm-1" });
     mockReplyQuestion.mockResolvedValue({ ok: true, requestId: "q-1" });
@@ -439,6 +487,135 @@ describe("ChatScreen interrupt handling", () => {
       accessibilityLabel: "Collapse full text",
     });
     expect(collapseButton).toBeDefined();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("creates shortcut through modal with separate title and prompt", async () => {
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const toggleShortcutButton = root.findByProps({
+      accessibilityLabel: "Open shortcut manager",
+    });
+
+    act(() => {
+      toggleShortcutButton.props.onPress();
+    });
+
+    const createShortcutButton = root.findByProps({ label: "New Shortcut" });
+    await act(async () => {
+      await createShortcutButton.props.onPress();
+    });
+
+    const titleInput = root.findByProps({ placeholder: "Shortcut title" });
+    const promptInput = root.findByProps({ placeholder: "Prompt" });
+    act(() => {
+      titleInput.props.onChangeText("Daily Summary");
+      promptInput.props.onChangeText("Summarize today in 3 points.");
+    });
+
+    const saveButton = root.findByProps({ label: "Save" });
+    await act(async () => {
+      await saveButton.props.onPress();
+    });
+
+    expect(mockAddShortcut).toHaveBeenCalledWith(
+      "Daily Summary",
+      "Summarize today in 3 points.",
+    );
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      "Shortcut saved",
+      '"Daily Summary" is now available.',
+    );
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("edits existing shortcut and updates title/prompt", async () => {
+    mockShortcutState.shortcuts = [
+      {
+        id: "shortcut-1",
+        title: "Old title",
+        prompt: "Old prompt",
+        isDefault: false,
+        order: 0,
+      },
+    ];
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const toggleShortcutButton = root.findByProps({
+      accessibilityLabel: "Open shortcut manager",
+    });
+
+    act(() => {
+      toggleShortcutButton.props.onPress();
+    });
+
+    const editShortcutButton = root.findByProps({
+      accessibilityLabel: "Edit shortcut Old title",
+    });
+    await act(async () => {
+      await editShortcutButton.props.onPress();
+    });
+
+    const titleInput = root.findByProps({ placeholder: "Shortcut title" });
+    const promptInput = root.findByProps({ placeholder: "Prompt" });
+    act(() => {
+      titleInput.props.onChangeText("Updated title");
+      promptInput.props.onChangeText("Updated prompt");
+    });
+
+    const updateButton = root.findByProps({ label: "Update" });
+    await act(async () => {
+      await updateButton.props.onPress();
+    });
+
+    expect(mockUpdateShortcut).toHaveBeenCalledWith(
+      "shortcut-1",
+      "Updated title",
+      "Updated prompt",
+    );
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      "Shortcut updated",
+      '"Updated title" has been updated.',
+    );
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("does not show edit action for default shortcut", () => {
+    mockShortcutState.shortcuts = [
+      {
+        id: "shortcut-default",
+        title: "Default title",
+        prompt: "Default prompt",
+        isDefault: true,
+        order: 0,
+      },
+    ];
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const toggleShortcutButton = root.findByProps({
+      accessibilityLabel: "Open shortcut manager",
+    });
+
+    act(() => {
+      toggleShortcutButton.props.onPress();
+    });
+
+    const editActions = root.findAll((node) => {
+      return (
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Edit shortcut")
+      );
+    });
+
+    expect(editActions).toHaveLength(0);
     act(() => {
       tree.unmount();
     });
