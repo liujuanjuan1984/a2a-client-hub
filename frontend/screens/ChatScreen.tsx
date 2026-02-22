@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   NativeScrollEvent,
@@ -920,9 +921,10 @@ export function ChatScreen({
       </View>
 
       {session?.streamState === "recoverable" ? (
-        <View className="mx-6 mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
-          <Text className="text-xs text-emerald-300">
-            Session recovered. You can continue chatting in this session.
+        <View className="mx-6 mt-3 flex-row items-center rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-3 py-2">
+          <ActivityIndicator size="small" color="#fcd34d" className="mr-2" />
+          <Text className="text-xs text-yellow-300">
+            Connection lost. Trying to recover the stream...
           </Text>
         </View>
       ) : null}

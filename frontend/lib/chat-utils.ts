@@ -67,6 +67,9 @@ export type AgentSession = {
   pendingInterrupt?: RuntimeInterrupt | null;
   streamState?: "idle" | "streaming" | "recoverable" | "error";
   lastStreamError?: string | null;
+  lastReceivedSequence?: number;
+  lastUserMessageId?: string;
+  lastAgentMessageId?: string;
   transport: string;
   inputModes: string[];
   outputModes: string[];
