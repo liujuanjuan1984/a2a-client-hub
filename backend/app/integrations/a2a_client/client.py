@@ -306,16 +306,14 @@ class A2AClient:
         return card
 
     async def close(self) -> None:
-        """Dispose cached transports."""
+        """Dispose cached transport wrappers.
+
+        We intentionally avoid closing the underlying HTTP client because it is
+        shared at the service scope and managed by app lifecycle utilities.
+        """
 
         async with self._client_lock:
-            for entry in self._clients.values():
-                try:
-                    await entry.client.close()
-                except Exception:  # pragma: no cover - defensive cleanup
-                    logger.debug("Failed to close A2A client transport", exc_info=True)
             self._clients.clear()
-
             self._agent_card = None
 
     async def _get_client(self, *, streaming: bool) -> Client:
