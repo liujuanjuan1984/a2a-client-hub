@@ -341,6 +341,25 @@ class A2AScheduleService:
         )
         return int((await db.scalar(stmt)) or 0)
 
+    async def _global_running_execution_count(
+        self,
+        db: AsyncSession,
+    ) -> int:
+        stmt = (
+            select(func.count(A2AScheduleExecution.id))
+            .join(
+                A2AScheduleTask,
+                A2AScheduleTask.id == A2AScheduleExecution.task_id,
+            )
+            .where(
+                and_(
+                    A2AScheduleTask.deleted_at.is_(None),
+                    A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
+                )
+            )
+        )
+        return int((await db.scalar(stmt)) or 0)
+
     async def claim_next_due_task(
         self,
         db: AsyncSession,
@@ -348,6 +367,14 @@ class A2AScheduleService:
         now: Optional[datetime] = None,
     ) -> Optional[ClaimedA2AScheduleTask]:
         now_utc = ensure_utc(now or utc_now())
+
+        global_concurrency_limit = max(
+            int(settings.a2a_schedule_global_concurrency_limit), 1
+        )
+        global_running_count = await self._global_running_execution_count(db)
+        if global_running_count >= global_concurrency_limit:
+            return None
+
         concurrency_limit = max(int(settings.a2a_schedule_agent_concurrency_limit), 1)
 
         stmt = (
