@@ -182,8 +182,11 @@ jest.mock("@/store/messages", () => ({
 jest.mock("@/store/shortcuts", () => ({
   useShortcutStore: () => ({
     shortcuts: [],
-    addShortcut: jest.fn(),
-    removeShortcut: jest.fn(),
+    isSyncing: false,
+    syncError: null,
+    syncShortcuts: jest.fn().mockResolvedValue(undefined),
+    addShortcut: jest.fn().mockResolvedValue(undefined),
+    removeShortcut: jest.fn().mockResolvedValue(undefined),
   }),
 }));
 

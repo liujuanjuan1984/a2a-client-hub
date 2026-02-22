@@ -141,7 +141,8 @@ export function ChatScreen({
   const messages = useMessageStore((state) =>
     conversationId ? (state.messages[conversationId] ?? []) : [],
   );
-  const { shortcuts, addShortcut, removeShortcut } = useShortcutStore();
+  const { shortcuts, addShortcut, removeShortcut, syncShortcuts } =
+    useShortcutStore();
 
   const [input, setInput] = useState("");
   const suppressAutoScrollRef = useRef(false);
@@ -262,6 +263,12 @@ export function ChatScreen({
       ensureSession(conversationId, activeAgentId);
     }
   }, [activeAgentId, conversationId, ensureSession]);
+
+  useEffect(() => {
+    syncShortcuts().catch(() => {
+      // Keep shortcut sync failure non-blocking for UX.
+    });
+  }, [syncShortcuts]);
 
   useEffect(() => {
     if (!conversationId || !activeAgentId) return;
@@ -682,18 +689,25 @@ export function ChatScreen({
 
   useEffect(() => () => clearScrollSettleTimer(), [clearScrollSettleTimer]);
 
-  const handleSelectPreset = (value: string) => {
-    setInput(value);
+  const handleSelectPreset = (prompt: string) => {
+    setInput(prompt);
     setShowPresets(false);
     inputRef.current?.focus();
   };
 
-  const handleSaveShortcut = () => {
+  const handleSaveShortcut = async () => {
     if (!input.trim()) return;
     const label = input.slice(0, 15) + (input.length > 15 ? "..." : "");
-    addShortcut(label, input.trim());
-    setShowPresets(true);
-    toast.success("Shortcut saved", `"${label}" is now available.`);
+    try {
+      await addShortcut(`👤 ${label}`, input.trim());
+      setShowPresets(true);
+      toast.success("Shortcut saved", `"${label}" is now available.`);
+    } catch (error) {
+      toast.error(
+        "Save shortcut failed",
+        error instanceof Error ? error.message : "Unknown error",
+      );
+    }
   };
 
   const handleInputChange = (value: string) => {
@@ -1531,16 +1545,20 @@ export function ChatScreen({
                   >
                     <Pressable
                       className="flex-1 px-4 py-3"
-                      onPress={() => handleSelectPreset(cmd.value)}
+                      onPress={() => handleSelectPreset(cmd.prompt)}
                     >
                       <Text className="text-sm text-white" numberOfLines={1}>
-                        {cmd.label}
+                        {cmd.title}
                       </Text>
                     </Pressable>
-                    {cmd.isCustom && (
+                    {!cmd.isDefault && (
                       <Pressable
                         className="px-4 py-3"
-                        onPress={() => removeShortcut(cmd.id)}
+                        onPress={async () => {
+                          await removeShortcut(cmd.id).catch(() => {
+                            toast.error("Failed to remove shortcut");
+                          });
+                        }}
                       >
                         <Text className="text-xs font-semibold text-red-400">
                           Del
