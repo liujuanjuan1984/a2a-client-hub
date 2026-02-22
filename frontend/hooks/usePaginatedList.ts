@@ -27,6 +27,7 @@ type Options<T> = {
   refetchOnWindowFocus?: boolean;
   refetchOnReconnect?: boolean;
   refetchOnMount?: boolean;
+  staleTime?: number;
 };
 
 const mergeUniqueByKey = <T>(
@@ -71,6 +72,7 @@ export function usePaginatedList<T>({
   refetchOnWindowFocus,
   refetchOnReconnect,
   refetchOnMount,
+  staleTime,
 }: Options<T>) {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
@@ -95,6 +97,7 @@ export function usePaginatedList<T>({
     refetchOnWindowFocus,
     refetchOnReconnect,
     refetchOnMount,
+    staleTime,
   });
 
   const pages = query.data?.pages ?? [];
