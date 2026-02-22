@@ -37,7 +37,7 @@ function SessionItem({
       }`}
       onPress={() => onSelect(conversationId)}
     >
-      <Text className="flex-1 text-sm font-medium text-white" numberOfLines={1}>
+      <Text className="flex-1 text-sm text-slate-300" numberOfLines={2}>
         {title}
       </Text>
       <Text className="ml-2 text-[10px] text-slate-400">{date}</Text>
