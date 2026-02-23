@@ -17,7 +17,6 @@ from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, rollback_safely
-from app.handlers import agent_message as agent_message_handler
 from app.integrations.a2a_client import get_a2a_service
 from app.services.a2a_invoke_service import a2a_invoke_service
 from app.services.a2a_runtime import a2a_runtime_builder
@@ -27,6 +26,7 @@ from app.services.a2a_schedule_service import (
     a2a_schedule_service,
 )
 from app.services.scheduler import get_scheduler
+from app.services.session_hub import session_hub_service
 from app.utils.timezone_util import utc_now
 
 logger = get_logger(__name__)
@@ -43,9 +43,7 @@ def _execution_metadata(task: A2AScheduleTask, execution_id: str) -> dict[str, o
     }
 
 
-async def _ensure_task_session(
-    *, db, task: A2AScheduleTask, agent_name: str
-) -> ConversationThread:
+async def _ensure_task_session(*, db, task: A2AScheduleTask) -> ConversationThread:
     thread = None
     if task.conversation_id is not None:
         stmt = select(ConversationThread).where(
@@ -76,8 +74,7 @@ async def _ensure_task_session(
         thread.source = ConversationThread.SOURCE_SCHEDULED
         thread.agent_id = task.agent_id
         thread.agent_source = "personal"
-        if agent_name:
-            thread.title = f"[Scheduled] {task.name}"
+        thread.title = f"[Scheduled] {task.name}"
         thread.last_active_at = utc_now()
 
     return thread
@@ -108,12 +105,16 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             started_at=started_at,
             status=A2AScheduleExecution.STATUS_RUNNING,
         )
-        db.add(execution)
-        await db.flush()
-
-        metadata = _execution_metadata(task, str(execution.id))
+        thread = await _ensure_task_session(
+            db=db,
+            task=task,
+        )
+        execution.conversation_id = thread.id
 
         try:
+            db.add(execution)
+            await db.flush()
+            metadata = _execution_metadata(task, str(execution.id))
             runtime = await a2a_runtime_builder.build(
                 db,
                 user_id=task.user_id,
@@ -121,22 +122,6 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
             if not bool(getattr(runtime.agent, "enabled", True)):
                 raise RuntimeError("Target A2A agent is disabled")
-            thread = await _ensure_task_session(
-                db=db,
-                task=task,
-                agent_name=runtime.resolved.name,
-            )
-            execution.conversation_id = thread.id
-
-            user_message = await agent_message_handler.create_agent_message(
-                db,
-                user_id=task.user_id,
-                content=task.prompt,
-                sender="automation",
-                conversation_id=thread.id,
-                metadata=metadata,
-            )
-            execution.user_message_id = user_message.id
 
             result = await asyncio.wait_for(
                 get_a2a_service().gateway.invoke(
@@ -154,25 +139,42 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 else (result.get("error") or "A2A invocation failed")
             ) or ""
 
-            agent_metadata = {
-                **metadata,
-                "success": success,
-                "error_code": result.get("error_code"),
-            }
+            (
+                result_context_id,
+                invoke_metadata,
+            ) = a2a_invoke_service.extract_binding_hints_from_invoke_result(result)
+            response_metadata = (
+                a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
+                    result
+                )
+            )
             usage_hints = a2a_invoke_service.extract_usage_hints_from_invoke_result(
                 result
             )
             if usage_hints:
-                agent_metadata["usage"] = usage_hints
-            agent_message = await agent_message_handler.create_agent_message(
+                response_metadata = dict(response_metadata)
+                response_metadata["usage"] = usage_hints
+            message_refs = await session_hub_service.record_local_invoke_messages(
                 db,
                 user_id=task.user_id,
-                content=response_content,
-                sender="agent",
-                conversation_id=thread.id,
-                metadata=agent_metadata,
+                session=thread,
+                source="scheduled",
+                agent_id=task.agent_id,
+                agent_source="personal",
+                query=task.prompt,
+                response_content=response_content,
+                success=success,
+                context_id=result_context_id,
+                invoke_metadata=invoke_metadata,
+                extra_metadata={
+                    **metadata,
+                    "error_code": result.get("error_code"),
+                },
+                response_metadata=response_metadata,
             )
-            execution.agent_message_id = agent_message.id
+            execution.conversation_id = message_refs["conversation_id"]
+            execution.user_message_id = message_refs["user_message_id"]
+            execution.agent_message_id = message_refs["agent_message_id"]
             execution.response_content = response_content
             execution.finished_at = utc_now()
             execution.status = (

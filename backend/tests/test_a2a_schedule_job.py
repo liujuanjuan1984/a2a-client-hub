@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
+from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_job import _execute_claimed_task
 from app.services.a2a_schedule_service import (
     ClaimedA2AScheduleTask,
@@ -191,6 +192,9 @@ async def test_execute_claimed_task_resets_consecutive_failures_on_success(
     assert last_exec is not None
     assert last_exec.status == A2AScheduleExecution.STATUS_SUCCESS
     assert last_exec.response_content == "all good"
+    assert last_exec.conversation_id is not None
+    assert last_exec.user_message_id is not None
+    assert last_exec.agent_message_id is not None
 
 
 async def test_execute_claimed_task_timeout_trips_failure_threshold(
@@ -247,3 +251,125 @@ async def test_execute_claimed_task_timeout_trips_failure_threshold(
     assert refreshed.last_run_status == A2AScheduleTask.STATUS_FAILED
     assert refreshed.consecutive_failures == 1
     assert refreshed.enabled is False
+
+    async with async_session_maker() as check_db:
+        last_exec = await check_db.scalar(
+            select(A2AScheduleExecution)
+            .where(A2AScheduleExecution.task_id == task_id)
+            .order_by(A2AScheduleExecution.started_at.desc())
+        )
+
+    assert last_exec is not None
+    assert last_exec.conversation_id is not None
+
+
+async def test_execute_claimed_task_runtime_failure_still_persists_conversation_id(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="runtime-fail"
+    )
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    task_id = task.id
+
+    async def _build(_db, user_id, agent_id):  # noqa: ARG001
+        raise RuntimeError("runtime build failed")
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        SimpleNamespace(build=_build),
+    )
+
+    await _execute_claimed_task(claim=_build_claim(task))
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
+        )
+        last_exec = await check_db.scalar(
+            select(A2AScheduleExecution)
+            .where(A2AScheduleExecution.task_id == task_id)
+            .order_by(A2AScheduleExecution.started_at.desc())
+        )
+
+    assert refreshed_task is not None
+    assert refreshed_task.conversation_id is not None
+    assert last_exec is not None
+    assert last_exec.status == A2AScheduleExecution.STATUS_FAILED
+    assert last_exec.conversation_id == refreshed_task.conversation_id
+
+
+async def test_execute_claimed_task_binds_external_session_identity_when_present(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="bind")
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    task_id = task.id
+
+    async def _invoke(**_kwargs) -> dict:
+        return {
+            "success": True,
+            "content": "bound",
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "ses_bind_1",
+            },
+        }
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        _mock_runtime_builder(),
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.get_a2a_service",
+        lambda: SimpleNamespace(
+            gateway=SimpleNamespace(invoke=_invoke),
+        ),
+    )
+
+    await _execute_claimed_task(claim=_build_claim(task))
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
+        )
+        assert refreshed_task is not None
+        assert refreshed_task.conversation_id is not None
+
+        thread = await check_db.scalar(
+            select(ConversationThread).where(
+                ConversationThread.id == refreshed_task.conversation_id
+            )
+        )
+        last_exec = await check_db.scalar(
+            select(A2AScheduleExecution)
+            .where(A2AScheduleExecution.task_id == task_id)
+            .order_by(A2AScheduleExecution.started_at.desc())
+        )
+
+    assert thread is not None
+    assert thread.external_provider == "opencode"
+    assert thread.external_session_id == "ses_bind_1"
+    assert last_exec is not None
+    assert last_exec.user_message_id is not None
+    assert last_exec.agent_message_id is not None
