@@ -134,7 +134,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             # Wrapped in timeout below in issue #150 hardening.
             success = bool(result.get("success"))
             response_content = (
-                result.get("content")
+                a2a_invoke_service.extract_readable_content_from_invoke_result(result)
                 if success
                 else (result.get("error") or "A2A invocation failed")
             ) or ""

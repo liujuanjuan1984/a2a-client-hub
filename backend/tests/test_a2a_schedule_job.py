@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
+from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_job import _execute_claimed_task
 from app.services.a2a_schedule_service import (
@@ -373,3 +374,74 @@ async def test_execute_claimed_task_binds_external_session_identity_when_present
     assert last_exec is not None
     assert last_exec.user_message_id is not None
     assert last_exec.agent_message_id is not None
+
+
+async def test_execute_claimed_task_persists_readable_agent_content(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="readable-content"
+    )
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    task_id = task.id
+
+    async def _invoke(**_kwargs) -> dict:
+        return {
+            "success": True,
+            "content": '{"history":[{"role":"user","parts":[{"text":"Q"}]},'
+            '{"role":"assistant","parts":[{"text":"Readable answer"}]}]}',
+            "raw": {
+                "history": [
+                    {"role": "user", "parts": [{"kind": "text", "text": "Q"}]},
+                    {
+                        "role": "assistant",
+                        "parts": [{"kind": "text", "text": "Readable answer"}],
+                    },
+                ]
+            },
+        }
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        _mock_runtime_builder(),
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.get_a2a_service",
+        lambda: SimpleNamespace(
+            gateway=SimpleNamespace(invoke=_invoke),
+        ),
+    )
+
+    await _execute_claimed_task(claim=_build_claim(task))
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
+        )
+        assert refreshed_task is not None
+        messages = list(
+            (
+                await check_db.scalars(
+                    select(AgentMessage)
+                    .where(
+                        AgentMessage.conversation_id == refreshed_task.conversation_id
+                    )
+                    .order_by(AgentMessage.created_at.asc())
+                )
+            ).all()
+        )
+
+    assert len(messages) >= 2
+    agent_messages = [message for message in messages if message.sender == "agent"]
+    assert agent_messages
+    assert agent_messages[-1].content == "Readable answer"

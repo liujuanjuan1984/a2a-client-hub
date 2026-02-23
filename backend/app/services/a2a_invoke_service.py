@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import re
 from contextlib import suppress
 from typing import Any, AsyncIterator, Callable
@@ -411,6 +412,101 @@ class A2AInvokeService:
             if raw_usage_hints:
                 usage_hints = raw_usage_hints
         return usage_hints
+
+    @staticmethod
+    def _extract_text_from_parts(parts: Any) -> str | None:
+        if not isinstance(parts, list):
+            return None
+        collected: list[str] = []
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                collected.append(text)
+                continue
+            content = part.get("content")
+            if isinstance(content, str) and content.strip():
+                collected.append(content)
+        if collected:
+            return "".join(collected)
+        return None
+
+    @classmethod
+    def _extract_preferred_text_from_payload(cls, payload: Any) -> str | None:
+        root = as_dict(payload)
+        if not root:
+            return None
+
+        direct_text = cls._pick_non_empty_str(root, ("text", "content", "message"))
+        if direct_text:
+            return direct_text
+
+        parts_text = cls._extract_text_from_parts(root.get("parts"))
+        if parts_text:
+            return parts_text
+
+        artifact = as_dict(root.get("artifact"))
+        if artifact:
+            artifact_text = cls._extract_text_from_parts(artifact.get("parts"))
+            if artifact_text:
+                return artifact_text
+
+        artifacts = root.get("artifacts")
+        if isinstance(artifacts, list):
+            for artifact_item in reversed(artifacts):
+                artifact_text = cls._extract_preferred_text_from_payload(artifact_item)
+                if artifact_text:
+                    return artifact_text
+
+        history = root.get("history")
+        if isinstance(history, list):
+            for entry in reversed(history):
+                entry_root = as_dict(entry)
+                if not entry_root:
+                    continue
+                role = cls._pick_non_empty_str(entry_root, ("role",))
+                if role and role.lower() in {"agent", "assistant", "model"}:
+                    history_text = cls._extract_preferred_text_from_payload(entry_root)
+                    if history_text:
+                        return history_text
+            for entry in reversed(history):
+                history_text = cls._extract_preferred_text_from_payload(entry)
+                if history_text:
+                    return history_text
+
+        for key in ("status", "result", "message"):
+            nested = as_dict(root.get(key))
+            if nested:
+                nested_text = cls._extract_preferred_text_from_payload(nested)
+                if nested_text:
+                    return nested_text
+
+        return None
+
+    @classmethod
+    def extract_readable_content_from_invoke_result(
+        cls, result: dict[str, Any]
+    ) -> str | None:
+        raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
+        if raw_payload:
+            raw_text = cls._extract_preferred_text_from_payload(raw_payload)
+            if raw_text:
+                return raw_text
+
+        content = result.get("content")
+        if isinstance(content, str) and content.strip():
+            stripped = content.strip()
+            if stripped[:1] in {"{", "["}:
+                try:
+                    parsed = json.loads(stripped)
+                except Exception:
+                    return stripped
+                parsed_text = cls._extract_preferred_text_from_payload(parsed)
+                if parsed_text:
+                    return parsed_text
+            return stripped
+        return None
 
     class _StreamTextAccumulator:
         """Accumulates stream text for persistence.

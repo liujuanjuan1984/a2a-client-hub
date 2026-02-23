@@ -797,6 +797,38 @@ def test_extract_binding_hints_ignores_legacy_flat_external_session_id_aliases()
     assert "externalSessionId" not in metadata
 
 
+def test_extract_readable_content_prefers_raw_history_agent_message():
+    readable = a2a_invoke_service.extract_readable_content_from_invoke_result(
+        {
+            "success": True,
+            "content": '{"content":"opaque"}',
+            "raw": {
+                "history": [
+                    {"role": "user", "parts": [{"kind": "text", "text": "Hi"}]},
+                    {
+                        "role": "agent",
+                        "parts": [{"kind": "text", "text": "Hello from agent"}],
+                    },
+                ]
+            },
+        }
+    )
+    assert readable == "Hello from agent"
+
+
+def test_extract_readable_content_parses_json_string_content():
+    readable = a2a_invoke_service.extract_readable_content_from_invoke_result(
+        {
+            "success": True,
+            "content": (
+                '{"history":[{"role":"user","parts":[{"text":"Q"}]},'
+                '{"role":"assistant","parts":[{"text":"A"}]}]}'
+            ),
+        }
+    )
+    assert readable == "A"
+
+
 def test_extract_stream_identity_hints_from_serialized_event():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
