@@ -18,6 +18,7 @@ import {
   type ScheduleTimePoint,
   updateScheduledJob,
 } from "@/lib/api/scheduledJobs";
+import { localDateTimeInputToUtcIso } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
@@ -56,11 +57,15 @@ const normalizeTimePoint = (
   const current = (timePoint ?? {}) as ScheduleTimePoint;
   if (cycleType === "interval") {
     const minutes = (current as { minutes?: unknown })?.minutes;
+    const startAt = (current as { start_at?: unknown })?.start_at;
     return {
       minutes:
         typeof minutes === "number" && Number.isFinite(minutes)
           ? normalizeIntervalMinutes(minutes)
           : 10,
+      ...(typeof startAt === "string" && startAt.trim()
+        ? { start_at: startAt.trim() }
+        : {}),
     };
   }
   if (cycleType === "weekly") {
@@ -252,6 +257,17 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
         toast.error("Validation failed", "Interval minutes is required.");
         return false;
       }
+
+      const rawStartAt = (form.time_point as { start_at?: unknown })?.start_at;
+      if (typeof rawStartAt === "string" && rawStartAt.trim()) {
+        if (!localDateTimeInputToUtcIso(rawStartAt)) {
+          toast.error(
+            "Validation failed",
+            "Start datetime must be a valid date time.",
+          );
+          return false;
+        }
+      }
     }
     if (form.cycle_type === "monthly") {
       const day = (form.time_point as { day?: unknown })?.day;
@@ -293,9 +309,16 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
         time_point: normalizeTimePoint(form.cycle_type, form.time_point) as any,
       };
       if (normalized.cycle_type === "interval") {
-        const minutes = (normalized.time_point as any)?.minutes;
+        const rawStartAt = (form.time_point as { start_at?: unknown })
+          ?.start_at;
+        const normalizedStartAt = localDateTimeInputToUtcIso(
+          typeof rawStartAt === "string" ? rawStartAt : "",
+        );
         normalized.time_point = {
-          minutes: normalizeIntervalMinutes(Number(minutes)),
+          minutes: normalizeIntervalMinutes(
+            Number((normalized.time_point as any)?.minutes),
+          ),
+          ...(normalizedStartAt ? { start_at: normalizedStartAt } : {}),
         } as any;
       }
 

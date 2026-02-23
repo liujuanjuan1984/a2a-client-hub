@@ -80,3 +80,30 @@ export const formatLocalDateTime = (value?: string | null): string => {
 
 export const formatLocalDateTimeYmdHm = (value?: string | null): string =>
   formatLocalDateTime(value);
+
+export const formatDateTimeLocalInputValue = (
+  value?: string | null,
+): string => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+};
+
+export const localDateTimeInputToUtcIso = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const normalized = trimmed.replace(" ", "T");
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toISOString();
+};

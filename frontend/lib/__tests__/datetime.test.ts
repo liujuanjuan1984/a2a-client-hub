@@ -2,6 +2,8 @@ import {
   DEFAULT_TIME_ZONE,
   formatLocalDateTime,
   formatLocalDateTimeYmdHm,
+  formatDateTimeLocalInputValue,
+  localDateTimeInputToUtcIso,
   resolveUserTimeZone,
 } from "@/lib/datetime";
 
@@ -57,5 +59,27 @@ describe("datetime helpers", () => {
     expect(formatLocalDateTime()).toBe("-");
     expect(formatLocalDateTime(null)).toBe("-");
     expect(formatLocalDateTime("not-a-date")).toBe("not-a-date");
+  });
+
+  it("formats datetime for local datetime input controls", () => {
+    const source = "2026-02-23T09:30:15Z";
+    const date = new Date(source);
+    const pad2 = (value: number) => String(value).padStart(2, "0");
+    const expected = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
+      date.getDate(),
+    )}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+
+    expect(formatDateTimeLocalInputValue(source)).toBe(expected);
+    expect(formatDateTimeLocalInputValue("bad-date")).toBe("");
+  });
+
+  it("converts local datetime input to UTC iso format", () => {
+    expect(localDateTimeInputToUtcIso("2026-02-23T09:30")).toBe(
+      new Date("2026-02-23T09:30").toISOString(),
+    );
+    expect(localDateTimeInputToUtcIso("2026-02-23 09:30")).toBe(
+      new Date("2026-02-23T09:30").toISOString(),
+    );
+    expect(localDateTimeInputToUtcIso("bad-datetime")).toBeNull();
   });
 });

@@ -27,7 +27,7 @@ class A2AScheduleTaskBase(BaseModel):
             "daily: {time:'HH:MM'}; "
             "weekly: {time:'HH:MM', weekday:1..7 (1=Monday, 7=Sunday)}; "
             "monthly: {time:'HH:MM', day:1..31}; "
-            "interval: {minutes:int}."
+            "interval: {minutes:int, start_at?: str (ISO 8601)}."
         ),
     )
 
