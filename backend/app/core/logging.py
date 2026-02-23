@@ -159,6 +159,11 @@ def setup_logging() -> None:
     uvicorn_logger.setLevel(logging.INFO)
     uvicorn_logger.propagate = True
 
+    # Suppress verbose upstream agent-card payload logs from a2a sdk.
+    card_resolver_logger = logging.getLogger("a2a.client.card_resolver")
+    card_resolver_logger.setLevel(logging.WARNING)
+    card_resolver_logger.propagate = True
+
 
 def get_logger(name: str) -> logging.Logger:
     """
