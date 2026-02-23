@@ -160,15 +160,16 @@ async def test_allowlisted_user_can_invoke_and_headers_include_system_token(
         assert allow_resp.json()["user_id"] == str(alice.id)
 
     fake_gateway = _FakeGateway()
-    fake_gateway.invoke_response = {
-        "success": True,
-        "content": "ok",
-        "contextId": "ctx-upstream-1",
-        "metadata": {
-            "provider": "opencode",
-            "externalSessionId": "upstream-session-1",
-        },
-    }
+    fake_gateway.stream_events = [
+        {
+            "content": "ok",
+            "contextId": "ctx-upstream-1",
+            "metadata": {
+                "provider": "opencode",
+                "externalSessionId": "upstream-session-1",
+            },
+        }
+    ]
     monkeypatch.setattr(
         hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
     )
