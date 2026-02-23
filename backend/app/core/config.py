@@ -490,7 +490,7 @@ class Settings(BaseSettings):
         description="Number of in-process workers consuming claimed scheduled tasks.",
     )
     a2a_schedule_task_invoke_timeout: float = Field(
-        default=1800.0,
+        default=3600.0,
         alias="A2A_SCHEDULE_TASK_INVOKE_TIMEOUT",
         description="Maximum total timeout in seconds for a single scheduled A2A stream execution.",
     )
