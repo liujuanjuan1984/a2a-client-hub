@@ -19,12 +19,12 @@ from app.db.transaction import commit_safely, rollback_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services.a2a_runtime import a2a_runtime_builder
-from app.services.invoke_route_runner import run_background_invoke
 from app.services.a2a_schedule_service import (
     A2A_SCHEDULE_SOURCE,
     ClaimedA2AScheduleTask,
     a2a_schedule_service,
 )
+from app.services.invoke_route_runner import run_background_invoke
 from app.services.scheduler import get_scheduler
 from app.utils.timezone_util import utc_now
 
@@ -107,7 +107,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 metadata=metadata,
             )
             invoke_result = await run_background_invoke(
-                db,
+                db=db,
                 gateway=get_a2a_service().gateway,
                 runtime=runtime,
                 user_id=task.user_id,

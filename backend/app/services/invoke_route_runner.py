@@ -45,6 +45,8 @@ _SESSION_NOT_FOUND_RETRY_LIMIT = 1
 _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
 )
+
+
 @dataclass
 class _InvokeState:
     local_session: Any
@@ -55,10 +57,10 @@ class _InvokeState:
     stream_usage: dict[str, Any]
     user_message_id: str | None
     client_agent_message_id: str | None
-    message_refs: dict[str, UUID] | None
-    persisted_response_content: str | None
-    persisted_success: bool | None
-    persisted_error_code: str | None
+    message_refs: dict[str, UUID] | None = None
+    persisted_response_content: str | None = None
+    persisted_success: bool | None = None
+    persisted_error_code: str | None = None
 
 
 def _normalize_query_for_invoke_guard(query: str) -> str:
@@ -277,7 +279,10 @@ def _build_stream_callbacks(
         state.persisted_response_content = error_message
         await commit_safely(db)
         if on_error_metadata is not None:
-            payload = {"message": error_message, "error_code": None}
+            payload = {
+                "message": error_message,
+                "error_code": state.persisted_error_code,
+            }
             outcome = on_error_metadata(payload)
             if inspect.isawaitable(outcome):
                 await outcome
@@ -440,6 +445,7 @@ async def run_http_invoke(
             resume_from_sequence=payload.resume_from_sequence,
             cache_key=payload.user_message_id,
         )
+
     def _capture_error_metadata(payload_data: dict[str, Any]) -> None:
         error_code = payload_data.get("error_code")
         state.persisted_error_code = (
@@ -552,8 +558,8 @@ async def run_background_invoke(
     success = bool(stream_result.get("success"))
     response_content = state.persisted_response_content
     if response_content is None:
-        fallback_value = stream_result.get("content") if success else stream_result.get(
-            "error"
+        fallback_value = (
+            stream_result.get("content") if success else stream_result.get("error")
         )
         response_content = str(fallback_value or "")
     return {

@@ -742,7 +742,10 @@ class A2AInvokeService:
         else:
             resolved = event
 
-        payload = resolved.model_dump(exclude_none=True)
+        if isinstance(resolved, dict):
+            payload = dict(resolved)
+        else:
+            payload = resolved.model_dump(exclude_none=True)
         if settings.debug:
             payload["validation_errors"] = validate_message(payload)
         return payload
@@ -1134,6 +1137,8 @@ class A2AInvokeService:
         total_timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
         stream_text_accumulator = self._StreamTextAccumulator()
+        log_warning = getattr(logger, "warning", None)
+        log_info = getattr(logger, "info", None)
         started_at = time.monotonic()
         last_event_at = started_at
         stream_iter = gateway.stream(
@@ -1180,9 +1185,9 @@ class A2AInvokeService:
                 except StopAsyncIteration:
                     break
                 except asyncio.TimeoutError:
-                    if total_timeout is not None and (time.monotonic() - started_at) >= (
-                        total_timeout - 1e-9
-                    ):
+                    if total_timeout is not None and (
+                        time.monotonic() - started_at
+                    ) >= (total_timeout - 1e-9):
                         timeout_message = (
                             f"A2A stream total timeout after {total_timeout:.1f}s"
                         )
@@ -1210,13 +1215,20 @@ class A2AInvokeService:
                     serialized, validate_message=validate_message
                 )
                 if validation_errors:
-                    logger.warning(
-                        "Dropped invalid artifact-update event",
-                        extra={
-                            **log_extra,
-                            "validation_error_count": len(validation_errors),
-                        },
-                    )
+                    warning_payload = {
+                        **log_extra,
+                        "validation_error_count": len(validation_errors),
+                    }
+                    if callable(log_warning):
+                        log_warning(
+                            "Dropped invalid artifact-update event",
+                            extra=warning_payload,
+                        )
+                    elif callable(log_info):
+                        log_info(
+                            "Dropped invalid artifact-update event",
+                            extra=warning_payload,
+                        )
                     continue
 
                 last_event_at = time.monotonic()
@@ -1241,11 +1253,18 @@ class A2AInvokeService:
                 "idle_seconds": max(time.monotonic() - last_event_at, 0.0),
             }
         except Exception as exc:
-            logger.warning(
-                "A2A consume stream failed",
-                exc_info=True,
-                extra=log_extra,
-            )
+            if callable(log_warning):
+                log_warning(
+                    "A2A consume stream failed",
+                    exc_info=True,
+                    extra=log_extra,
+                )
+            elif callable(log_info):
+                log_info(
+                    "A2A consume stream failed",
+                    exc_info=True,
+                    extra=log_extra,
+                )
             error_code = self._extract_error_code_from_exception(exc)
             await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
             await self._call_callback(
