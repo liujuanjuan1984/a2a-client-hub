@@ -85,6 +85,7 @@ def _default_shortcuts() -> list[ShortcutResponse]:
             prompt=definition.prompt,
             is_default=True,
             order=definition.order,
+            agent_id=None,
         )
         for definition in sorted(_DEFAULT_SHORTCUTS, key=lambda item: item.order)
     ]
@@ -133,6 +134,7 @@ def _shortcut_to_payload(shortcut: ShortcutModel) -> ShortcutResponse:
         prompt=shortcut.prompt,
         is_default=bool(shortcut.is_default),
         order=int(shortcut.sort_order),
+        agent_id=shortcut.agent_id,
     )
 
 
@@ -142,23 +144,25 @@ class ShortcutService:
         *,
         db: AsyncSession,
         user_id: UUID,
+        agent_id: UUID | None = None,
         user: User | None = None,
     ) -> list[ShortcutResponse]:
         del user
-        rows = (
-            (
-                await db.execute(
-                    select(ShortcutModel)
-                    .where(ShortcutModel.user_id == user_id)
-                    .where(ShortcutModel.is_default.is_(False))
-                    .order_by(
-                        ShortcutModel.sort_order.asc(), ShortcutModel.created_at.asc()
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        query = (
+            select(ShortcutModel)
+            .where(ShortcutModel.user_id == user_id)
+            .where(ShortcutModel.is_default.is_(False))
+            .order_by(ShortcutModel.sort_order.asc(), ShortcutModel.created_at.asc())
         )
+
+        if agent_id is not None:
+            # If an agent_id is provided, fetch both general shortcuts and specific shortcuts for this agent.
+            query = query.where(
+                (ShortcutModel.agent_id == agent_id)
+                | (ShortcutModel.agent_id.is_(None))
+            )
+
+        rows = (await db.execute(query)).scalars().all()
 
         customs = [_shortcut_to_payload(row) for row in rows]
         return [*_default_shortcuts(), *customs]
@@ -171,6 +175,7 @@ class ShortcutService:
         title: str,
         prompt: str,
         order: int | None = None,
+        agent_id: UUID | None = None,
     ) -> ShortcutResponse:
         normalized_title = _normalize_title(title)
         normalized_prompt = _normalize_prompt(prompt)
@@ -198,6 +203,7 @@ class ShortcutService:
             prompt=normalized_prompt,
             is_default=False,
             sort_order=normalized_order,
+            agent_id=agent_id,
         )
         db.add(shortcut)
         await commit_safely(db)
@@ -213,6 +219,8 @@ class ShortcutService:
         title: str | None = None,
         prompt: str | None = None,
         order: int | None = None,
+        agent_id: UUID | None = None,
+        clear_agent: bool = False,
     ) -> ShortcutResponse:
         if _is_default_shortcut_id(shortcut_id):
             raise ShortcutForbiddenError("Default shortcuts cannot be modified")
@@ -238,6 +246,10 @@ class ShortcutService:
             shortcut.prompt = _normalize_prompt(prompt)
         if order is not None:
             shortcut.sort_order = _normalize_order(order, default=shortcut.sort_order)
+        if clear_agent:
+            shortcut.agent_id = None
+        elif agent_id is not None:
+            shortcut.agent_id = agent_id
 
         await commit_safely(db)
         await db.refresh(shortcut)

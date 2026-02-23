@@ -26,6 +26,9 @@ class ShortcutCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=_MAX_TITLE_LENGTH)
     prompt: str = Field(min_length=1, max_length=_MAX_PROMPT_LENGTH)
     order: int | None = Field(default=None, ge=0)
+    agent_id: UUID | None = Field(
+        default=None, description="If set, binds this shortcut to a specific agent."
+    )
 
     @model_validator(mode="after")
     def _normalize_fields(self: "ShortcutCreateRequest") -> "ShortcutCreateRequest":
@@ -46,13 +49,26 @@ class ShortcutUpdateRequest(BaseModel):
         default=None, min_length=1, max_length=_MAX_PROMPT_LENGTH
     )
     order: int | None = Field(default=None, ge=0)
+    agent_id: UUID | None = Field(
+        default=None, description="If set, binds this shortcut to a specific agent."
+    )
+    clear_agent: bool = Field(
+        default=False,
+        description="If True, removes the agent binding to make it general.",
+    )
 
     @model_validator(mode="after")
     def _normalize_fields(self: "ShortcutUpdateRequest") -> "ShortcutUpdateRequest":
         self.title = _strip_text(self.title)
         self.prompt = _strip_text(self.prompt)
 
-        if self.title is None and self.prompt is None and self.order is None:
+        if (
+            self.title is None
+            and self.prompt is None
+            and self.order is None
+            and self.agent_id is None
+            and not self.clear_agent
+        ):
             raise ValueError("at least one field must be provided")
         return self
 
@@ -63,6 +79,7 @@ class ShortcutResponse(BaseModel):
     prompt: str = Field(max_length=4000)
     is_default: bool = Field(default=False)
     order: int
+    agent_id: UUID | None = Field(default=None)
 
 
 class ShortcutListMeta(BaseModel):

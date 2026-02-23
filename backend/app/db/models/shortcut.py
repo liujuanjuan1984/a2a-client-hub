@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from sqlalchemy import Boolean, Column, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.models.base import SCHEMA_NAME, Base, TimestampMixin, UserOwnedMixin
 
@@ -16,6 +17,7 @@ class Shortcut(Base, TimestampMixin, UserOwnedMixin):
     __table_args__ = (
         Index("ix_user_shortcuts_user_id", "user_id"),
         Index("ix_user_shortcuts_user_sort_order", "user_id", "sort_order"),
+        Index("ix_user_shortcuts_agent_id", "agent_id"),
         {"schema": SCHEMA_NAME},
     )
 
@@ -47,10 +49,16 @@ class Shortcut(Base, TimestampMixin, UserOwnedMixin):
         server_default="0",
         comment="Display order within user-visible shortcut list",
     )
+    agent_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_NAME}.a2a_agents.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="If set, shortcut only applies to this specific agent",
+    )
 
     def __repr__(self) -> str:
         return (
-            f"<Shortcut(id={self.id}, user_id={self.user_id}, title={self.title}, "
+            f"<Shortcut(id={self.id}, user_id={self.user_id}, agent_id={self.agent_id}, title={self.title}, "
             f"is_default={self.is_default}, sort_order={self.sort_order})>"
         )
 

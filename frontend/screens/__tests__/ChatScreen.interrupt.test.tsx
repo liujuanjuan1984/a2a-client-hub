@@ -146,6 +146,7 @@ const mockShortcutState: {
   addShortcut: jest.Mock;
   updateShortcut: jest.Mock;
   removeShortcut: jest.Mock;
+  getShortcutsForAgent: jest.Mock;
 } = {
   shortcuts: [],
   isSyncing: false,
@@ -154,6 +155,9 @@ const mockShortcutState: {
   addShortcut: mockAddShortcut,
   updateShortcut: mockUpdateShortcut,
   removeShortcut: mockRemoveShortcut,
+  getShortcutsForAgent: jest
+    .fn()
+    .mockImplementation(() => mockShortcutState.shortcuts),
 };
 
 const mockSessionHistoryState = {
@@ -525,6 +529,7 @@ describe("ChatScreen interrupt handling", () => {
     expect(mockAddShortcut).toHaveBeenCalledWith(
       "Daily Summary",
       "Summarize today in 3 points.",
+      null,
     );
     expect(mockToastSuccess).toHaveBeenCalledWith(
       "Shortcut saved",
@@ -579,6 +584,8 @@ describe("ChatScreen interrupt handling", () => {
       "shortcut-1",
       "Updated title",
       "Updated prompt",
+      "agent-1",
+      false,
     );
     expect(mockToastSuccess).toHaveBeenCalledWith(
       "Shortcut updated",
