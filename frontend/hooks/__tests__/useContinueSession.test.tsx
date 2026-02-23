@@ -53,11 +53,6 @@ describe("useContinueSession", () => {
   const mockPush = jest.fn();
   const mockEnsureSession = jest.fn();
   const mockBindExternalSession = jest.fn();
-  const chatHref = {
-    pathname: "/(app)/chat/[agentId]/[conversationId]",
-    params: { agentId: "agent-1", conversationId: "conversation-1" },
-  };
-
   beforeEach(() => {
     jest.clearAllMocks();
     useRouter.mockReturnValue({ push: mockPush });
@@ -68,7 +63,13 @@ describe("useContinueSession", () => {
           bindExternalSession: mockBindExternalSession,
         }),
     );
-    mockedBuildChatRoute.mockReturnValue(chatHref as never);
+    mockedBuildChatRoute.mockImplementation(
+      (agentId, conversationId) =>
+        ({
+          pathname: "/(app)/chat/[agentId]/[conversationId]",
+          params: { agentId, conversationId },
+        }) as never,
+    );
   });
 
   it("returns false when conversation id is blank", async () => {
@@ -112,8 +113,8 @@ describe("useContinueSession", () => {
 
     expect(ok).toBe(true);
     expect(mockedContinueSession).toHaveBeenCalledWith("conversation-1");
-    expect(mockEnsureSession).toHaveBeenCalledWith("conversation-1", "agent-1");
-    expect(mockBindExternalSession).toHaveBeenCalledWith("conversation-1", {
+    expect(mockEnsureSession).toHaveBeenCalledWith("conv-1", "agent-1");
+    expect(mockBindExternalSession).toHaveBeenCalledWith("conv-1", {
       agentId: "agent-1",
       source: "manual",
       provider: "opencode",
@@ -121,11 +122,56 @@ describe("useContinueSession", () => {
       contextId: undefined,
     });
     expect(mockedBlurActiveElement).toHaveBeenCalledTimes(1);
+    expect(mockedBuildChatRoute).toHaveBeenCalledWith("agent-1", "conv-1");
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/(app)/chat/[agentId]/[conversationId]",
+      params: { agentId: "agent-1", conversationId: "conv-1" },
+    });
+  });
+
+  it("navigates to rebound conversation id from backend", async () => {
+    mockedContinueSession.mockResolvedValue({
+      conversationId: "rebound-conversation-id",
+      source: "manual",
+      metadata: {
+        provider: "opencode",
+        externalSessionId: "upstream-1",
+      },
+    });
+    const { result } = renderHook(() => useContinueSession());
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.continueSession({
+        agentId: "agent-1",
+        conversationId: "  conversation-1  ",
+      });
+    });
+
+    const reboundedHref = {
+      pathname: "/(app)/chat/[agentId]/[conversationId]",
+      params: { agentId: "agent-1", conversationId: "rebound-conversation-id" },
+    };
+    expect(ok).toBe(true);
+    expect(mockedContinueSession).toHaveBeenCalledWith("conversation-1");
+    expect(mockEnsureSession).toHaveBeenCalledWith(
+      "rebound-conversation-id",
+      "agent-1",
+    );
+    expect(mockBindExternalSession).toHaveBeenCalledWith(
+      "rebound-conversation-id",
+      {
+        agentId: "agent-1",
+        source: "manual",
+        provider: "opencode",
+        externalSessionId: "upstream-1",
+        contextId: undefined,
+      },
+    );
     expect(mockedBuildChatRoute).toHaveBeenCalledWith(
       "agent-1",
-      "conversation-1",
+      "rebound-conversation-id",
     );
-    expect(mockPush).toHaveBeenCalledWith(chatHref);
+    expect(mockPush).toHaveBeenCalledWith(reboundedHref);
   });
 
   it("returns false and shows toast when request fails", async () => {

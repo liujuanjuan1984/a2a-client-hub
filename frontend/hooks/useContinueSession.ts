@@ -30,13 +30,14 @@ export const useContinueSession = () => {
 
       try {
         const binding = await continueSessionBinding(normalizedConversationId);
-        ensureSession(normalizedConversationId, agentId);
+        const resolvedConversationId = binding.conversationId.trim();
+        ensureSession(resolvedConversationId, agentId);
         bindExternalSession(
-          normalizedConversationId,
+          resolvedConversationId,
           buildContinueBindingPayload(agentId, binding),
         );
         blurActiveElement();
-        router.push(buildChatRoute(agentId, normalizedConversationId));
+        router.push(buildChatRoute(agentId, resolvedConversationId));
         return true;
       } catch (error) {
         const message =
