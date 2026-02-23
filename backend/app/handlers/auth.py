@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.security import (
+    DUMMY_PASSWORD_HASH,
     get_password_hash,
     validate_password_strength,
     verify_password,
@@ -165,6 +166,8 @@ async def authenticate_user(
 
     user = await get_active_user_by_email(db, email=email)
     if not user:
+        # Perform dummy password verification to prevent timing attacks
+        verify_password(password, DUMMY_PASSWORD_HASH)
         raise UserNotFoundError("Invalid credentials")
 
     current_time = now or utc_now()

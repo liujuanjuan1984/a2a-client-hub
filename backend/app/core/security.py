@@ -17,6 +17,9 @@ from app.utils.timezone_util import utc_now
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Dummy hash for mitigating timing attacks during authentication
+DUMMY_PASSWORD_HASH = "$2b$12$KIXeW.1LzBwvS./Hk.yQ1..E3.eD/.hLwQcE/M1zQ3X.qC0TqYFOW"
+
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
 
