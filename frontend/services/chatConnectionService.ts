@@ -267,7 +267,13 @@ class ChatConnectionService {
                 finalize("resolve");
               }
             })
-            .catch(() => undefined);
+            .catch((err) => {
+              console.error("WebSocket message resolve error:", err);
+              finalize(
+                "reject",
+                err instanceof Error ? err : new Error(String(err)),
+              );
+            });
         };
 
         ws.onerror = () => {
