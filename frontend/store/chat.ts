@@ -180,6 +180,8 @@ const executeStream = async (
   >();
   let terminalHandled = false;
   let hasObservedStreamEvent = false;
+  let highestReceivedSequence =
+    get().sessions[conversationId]?.lastReceivedSequence ?? null;
 
   const patchSession = (patch: Partial<AgentSession>) => {
     set((state) => {
@@ -301,6 +303,9 @@ const executeStream = async (
   const markActiveMessage = (messageId: string) => {
     activeAgentMessageId = messageId;
     activeStreamMessageIds.add(messageId);
+    patchSession({
+      lastAgentMessageId: messageId,
+    });
   };
 
   const resolveExistingTargetMessageIds = () => {
@@ -510,6 +515,15 @@ const executeStream = async (
     if (chunk.seq === null) {
       appendStreamChunk(chunk);
       return;
+    }
+    if (
+      highestReceivedSequence === null ||
+      chunk.seq > highestReceivedSequence
+    ) {
+      highestReceivedSequence = chunk.seq;
+      patchSession({
+        lastReceivedSequence: chunk.seq,
+      });
     }
 
     const currentExpected = nextExpectedSeqByMessageId.get(chunk.messageId);
@@ -948,6 +962,9 @@ export const useChatStore = create<ChatState>()(
               lastActiveAt: new Date().toISOString(),
               streamState: "streaming",
               lastStreamError: null,
+              lastUserMessageId: userMessage.id,
+              lastAgentMessageId: agentMessage.id,
+              lastReceivedSequence: undefined,
               transport: chatConnectionService.getPreferredTransport(),
               pendingInterrupt: null,
             },

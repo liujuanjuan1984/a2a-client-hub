@@ -187,6 +187,15 @@ const normalizeSessionForPersistence = (
   metadata: session.metadata ?? {},
   externalSessionRef: session.externalSessionRef ?? null,
   lastActiveAt: getSessionLastActiveAt(session),
+  ...(typeof session.lastReceivedSequence === "number"
+    ? { lastReceivedSequence: session.lastReceivedSequence }
+    : {}),
+  ...(session.lastUserMessageId
+    ? { lastUserMessageId: session.lastUserMessageId }
+    : {}),
+  ...(session.lastAgentMessageId
+    ? { lastAgentMessageId: session.lastAgentMessageId }
+    : {}),
 });
 
 export const buildPersistedSessions = (
