@@ -65,9 +65,16 @@ async def test_shortcuts_agent_specific_features(async_db_session, async_session
         # List with agent1_id - should return 5 default + general + a1
         resp_list_a1 = await client.get(f"/me/shortcuts?agent_id={agent1_id}")
         a1_items = resp_list_a1.json()["items"]
-        assert len(a1_items) == 6
+        assert len(a1_items) == 7
         assert any(item["title"] == "A1" for item in a1_items)
         assert any(item["title"] == "General" for item in a1_items)
+
+        # List with agent2_id - should return 5 default + general (NO a1)
+        resp_list_a2_initial = await client.get(f"/me/shortcuts?agent_id={agent2_id}")
+        a2_initial_items = resp_list_a2_initial.json()["items"]
+        assert len(a2_initial_items) == 6
+        assert any(item["title"] == "General" for item in a2_initial_items)
+        assert not any(item["title"] == "A1" for item in a2_initial_items)
 
         # Update a1 shortcut to be general
         resp_update = await client.patch(
