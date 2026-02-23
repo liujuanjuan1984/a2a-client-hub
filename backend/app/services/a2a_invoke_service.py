@@ -741,18 +741,21 @@ class A2AInvokeService:
             stream_text_accumulator = self._StreamTextAccumulator()
             stream_failed = False
             heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
-            
+
             # Replay cached events if resuming
             seq_counter = 0
             if resume_from_sequence is not None and cache_key:
-                cached_events = await global_stream_cache.get_events_after(cache_key, resume_from_sequence)
+                cached_events = await global_stream_cache.get_events_after(
+                    cache_key, resume_from_sequence
+                )
                 for cached_event in cached_events:
                     seq_counter += 1
                     stream_text_accumulator.consume(cached_event)
                     yield f"data: {json_dumps(cached_event, ensure_ascii=False)}\n\n"
-                    
+
                 # Continue generating sequence from max of cached or resumed
                 seq_counter = max(seq_counter, resume_from_sequence)
+            serialized = {}
 
             try:
                 async for event in self._iter_stream_events_with_heartbeat(
@@ -783,16 +786,21 @@ class A2AInvokeService:
                             },
                         )
                         continue
-                        
+
                     seq_counter += 1
-                    
+
                     # If this event sequence was already replayed from cache, skip yielding it again
                     # This happens if upstream didn't support resume and gave us everything from start
-                    if resume_from_sequence is not None and seq_counter <= resume_from_sequence:
+                    if (
+                        resume_from_sequence is not None
+                        and seq_counter <= resume_from_sequence
+                    ):
                         continue
-                        
+
                     if cache_key:
-                        await global_stream_cache.append_event(cache_key, serialized, seq_counter)
+                        await global_stream_cache.append_event(
+                            cache_key, serialized, seq_counter
+                        )
 
                     await self._call_callback(on_event, serialized)
                     stream_text_accumulator.consume(serialized)
@@ -812,7 +820,7 @@ class A2AInvokeService:
                     f"data: {json_dumps(error_payload['data'], ensure_ascii=False)}\n\n"
                 )
             finally:
-                if cache_key and self._is_terminal_status_event(serialized if 'serialized' in locals() else {}):
+                if cache_key and self._is_terminal_status_event(serialized):
                     await global_stream_cache.mark_completed(cache_key)
                 if not stream_failed:
                     await self._call_callback(
@@ -861,19 +869,22 @@ class A2AInvokeService:
         stream_text_accumulator = self._StreamTextAccumulator()
         stream_failed = False
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
-        
+
         # Replay cached events if resuming
         seq_counter = 0
         if resume_from_sequence is not None and cache_key:
-            cached_events = await global_stream_cache.get_events_after(cache_key, resume_from_sequence)
+            cached_events = await global_stream_cache.get_events_after(
+                cache_key, resume_from_sequence
+            )
             for cached_event in cached_events:
                 seq_counter += 1
                 stream_text_accumulator.consume(cached_event)
                 await websocket.send_text(json_dumps(cached_event, ensure_ascii=False))
-                
+
             # Continue generating sequence from max of cached or resumed
             seq_counter = max(seq_counter, resume_from_sequence)
-            
+
+        serialized = {}
         try:
             async for event in self._iter_stream_events_with_heartbeat(
                 gateway.stream(
@@ -905,14 +916,19 @@ class A2AInvokeService:
                         },
                     )
                     continue
-                    
+
                 seq_counter += 1
-                if resume_from_sequence is not None and seq_counter <= resume_from_sequence:
+                if (
+                    resume_from_sequence is not None
+                    and seq_counter <= resume_from_sequence
+                ):
                     continue
-                    
+
                 if cache_key:
-                    await global_stream_cache.append_event(cache_key, serialized, seq_counter)
-                    
+                    await global_stream_cache.append_event(
+                        cache_key, serialized, seq_counter
+                    )
+
                 await self._call_callback(on_event, serialized)
                 stream_text_accumulator.consume(serialized)
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
@@ -936,7 +952,7 @@ class A2AInvokeService:
                 error_code=error_code,
             )
         finally:
-            if cache_key and self._is_terminal_status_event(serialized if 'serialized' in locals() else {}):
+            if cache_key and self._is_terminal_status_event(serialized):
                 await global_stream_cache.mark_completed(cache_key)
             if not stream_failed:
                 await self._call_callback(
