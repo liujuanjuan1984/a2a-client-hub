@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import re
 import json
+import re
 from contextlib import suppress
 from typing import Any, AsyncIterator, Callable
 

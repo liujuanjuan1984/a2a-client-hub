@@ -105,6 +105,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
         return invoke_route_runner._InvokeState(
+            conversation_id=str(uuid4()),
             local_session=object(),
             local_source="manual",
             context_id=None,
@@ -404,6 +405,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
             }
         )
         return invoke_route_runner._InvokeState(
+            conversation_id=payload.conversation_id,
             local_session=object(),
             local_source="manual",
             context_id=None,
@@ -537,6 +539,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             }
         )
         return invoke_route_runner._InvokeState(
+            conversation_id=payload.conversation_id,
             local_session=object(),
             local_source="manual",
             context_id=None,
@@ -756,7 +759,6 @@ async def test_run_http_invoke_route_returns_status_for_error_code(
     response_payload = json.loads(response.body.decode())
     assert response_payload["success"] is False
     assert response_payload["error_code"] == error_code
-            conversation_id="conversation-1",
 
 
 def test_build_upstream_tools_merges_request_and_default_tools(
