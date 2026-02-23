@@ -44,6 +44,9 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
     STATUS_SUCCESS: ClassVar[str] = "success"
     STATUS_FAILED: ClassVar[str] = "failed"
 
+    POLICY_NEW: ClassVar[str] = "new_each_run"
+    POLICY_REUSE: ClassVar[str] = "reuse_single"
+
     CYCLE_DAILY: ClassVar[str] = "daily"
     CYCLE_WEEKLY: ClassVar[str] = "weekly"
     CYCLE_MONTHLY: ClassVar[str] = "monthly"
@@ -67,6 +70,13 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         nullable=True,
         index=True,
         comment="Scheduled conversation thread used to store recurring messages",
+    )
+    conversation_policy = Column(
+        String(32),
+        nullable=False,
+        default=POLICY_NEW,
+        server_default=POLICY_NEW,
+        comment="Session policy: new_each_run / reuse_single",
     )
     prompt = Column(
         Text,
