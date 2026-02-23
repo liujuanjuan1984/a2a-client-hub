@@ -28,6 +28,7 @@ type ScheduledJobCardProps = {
   executionsHasMore?: boolean;
   executionsLoadingMore?: boolean;
   onToggleEnabled: () => void | Promise<void>;
+  onMarkFailed?: () => void | Promise<void>;
   onEdit: () => void;
   onToggleExecutions: () => void;
   onLoadMoreExecutions?: () => void;
@@ -42,6 +43,7 @@ export function ScheduledJobCard({
   executionsHasMore,
   executionsLoadingMore,
   onToggleEnabled,
+  onMarkFailed,
   onEdit,
   onToggleExecutions,
   onLoadMoreExecutions,
@@ -143,6 +145,19 @@ export function ScheduledJobCard({
             {historyLabel}
           </Text>
         </Pressable>
+
+        {job.last_run_status === "running" && onMarkFailed ? (
+          <Pressable
+            className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40 ml-auto"
+            onPress={onMarkFailed}
+            accessibilityRole="button"
+            accessibilityLabel="Mark as failed"
+            accessibilityHint="Manually mark this running job as failed"
+          >
+            <Ionicons name="close-circle-outline" size={14} color="#fca5a5" />
+            <Text className="text-xs font-medium text-red-300">Fail</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {executionsOpen ? (

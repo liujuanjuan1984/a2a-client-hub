@@ -1,7 +1,7 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { Alert, RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
@@ -20,7 +20,7 @@ import { toast } from "@/lib/toast";
 export function ScheduledJobsScreen() {
   const router = useRouter();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
-  const { toggleJobStatus } = useScheduledJobs();
+  const { toggleJobStatus, markJobFailed } = useScheduledJobs();
 
   const [expandedExecutionsTaskId, setExpandedExecutionsTaskId] = useState<
     string | null
@@ -40,6 +40,28 @@ export function ScheduledJobsScreen() {
     loadFirstPage,
     loadMore,
   } = useScheduledJobsQuery({ enabled: false });
+
+  const sortedJobs = useMemo(() => {
+    return [...jobs].sort((a, b) => {
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+
+      if (a.enabled && b.enabled) {
+        const ar = a.last_run_status === "running";
+        const br = b.last_run_status === "running";
+        if (ar !== br) return ar ? -1 : 1;
+
+        const at = a.next_run_at
+          ? new Date(a.next_run_at).getTime()
+          : Number.POSITIVE_INFINITY;
+        const bt = b.next_run_at
+          ? new Date(b.next_run_at).getTime()
+          : Number.POSITIVE_INFINITY;
+        if (at !== bt) return at - bt;
+      }
+
+      return String(a.id).localeCompare(String(b.id));
+    });
+  }, [jobs]);
 
   const executionsQuery = useScheduledJobExecutionsQuery({
     taskId: expandedExecutionsTaskId ?? undefined,
@@ -102,7 +124,7 @@ export function ScheduledJobsScreen() {
           <View className="mt-8 items-center">
             <Text className="text-sm text-muted">Loading jobs...</Text>
           </View>
-        ) : jobs.length === 0 ? (
+        ) : sortedJobs.length === 0 ? (
           <View className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
             <Text className="text-base font-semibold text-white">
               No scheduled jobs
@@ -122,7 +144,7 @@ export function ScheduledJobsScreen() {
             />
           </View>
         ) : (
-          jobs.map((job) => {
+          sortedJobs.map((job) => {
             const executionsOpen = expandedExecutionsTaskId === job.id;
             return (
               <ScheduledJobCard
@@ -158,6 +180,38 @@ export function ScheduledJobsScreen() {
                       error instanceof Error ? error.message : "Update failed.";
                     toast.error("Update failed", message);
                   }
+                }}
+                onMarkFailed={() => {
+                  Alert.alert(
+                    "Mark as failed",
+                    "Are you sure you want to mark this running job as failed? This will record it as a failure and stop waiting for completion.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Fail",
+                        style: "destructive",
+                        onPress: async () => {
+                          try {
+                            await markJobFailed(job);
+                            const succeeded = await loadFirstPage("refreshing");
+                            if (succeeded) {
+                              hasLoadedRef.current = true;
+                            }
+                            if (expandedExecutionsTaskId === job.id) {
+                              await executionsQuery.loadFirstPage("refreshing");
+                            }
+                            toast.success("Job marked as failed");
+                          } catch (error) {
+                            const message =
+                              error instanceof Error
+                                ? error.message
+                                : "Action failed.";
+                            toast.error("Failed to mark job", message);
+                          }
+                        },
+                      },
+                    ],
+                  );
                 }}
                 onEdit={() => {
                   blurActiveElement();

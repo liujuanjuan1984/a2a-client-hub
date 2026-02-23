@@ -146,3 +146,8 @@ export const listScheduledJobExecutionsPage = async (
 
   return { ...parsed, nextPage };
 };
+
+export const failScheduledJob = (jobId: string) =>
+  apiRequest<ScheduledJob>(`/me/a2a/schedules/${jobId}/fail`, {
+    method: "POST",
+  });
