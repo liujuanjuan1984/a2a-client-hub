@@ -104,7 +104,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
         return invoke_route_runner._InvokeState(
-            local_session=object(),
+            local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
             metadata={},
@@ -128,7 +128,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "record_local_invoke_messages",
+        "record_local_invoke_messages_by_local_session_id",
         fake_record_local_invoke_messages,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
@@ -406,7 +406,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
             }
         )
         return invoke_route_runner._InvokeState(
-            local_session=object(),
+            local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
             metadata={},
@@ -466,7 +466,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "record_local_invoke_messages",
+        "record_local_invoke_messages_by_local_session_id",
         lambda **kwargs: None,  # noqa: ARG005
     )
 
@@ -537,7 +537,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             }
         )
         return invoke_route_runner._InvokeState(
-            local_session=object(),
+            local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
             metadata={},
@@ -598,7 +598,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "record_local_invoke_messages",
+        "record_local_invoke_messages_by_local_session_id",
         lambda **kwargs: None,  # noqa: ARG005
     )
 
