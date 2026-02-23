@@ -16,7 +16,7 @@ from app.core.logging import get_logger
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
-from app.db.session import AsyncSessionLocal, async_engine
+from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, rollback_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
@@ -73,17 +73,6 @@ async def _ensure_task_session(*, db, task: A2AScheduleTask) -> ConversationThre
     return thread
 
 
-def _pool_checked_out() -> int:
-    pool = getattr(async_engine.sync_engine, "pool", None)
-    checked_out = getattr(pool, "checkedout", None)
-    if not callable(checked_out):
-        return 0
-    try:
-        return max(int(checked_out()), 0)
-    except Exception:
-        return 0
-
-
 async def _refresh_ops_metrics() -> None:
     running_stmt = select(func.count(A2AScheduleTask.id)).where(
         and_(
@@ -112,7 +101,6 @@ async def _refresh_ops_metrics() -> None:
         except Exception:
             # pg_stat_activity may be unavailable depending on DB permissions.
             pass
-    ops_metrics.set_db_pool_checked_out(_pool_checked_out())
 
 
 async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:

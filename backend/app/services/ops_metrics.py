@@ -31,6 +31,14 @@ class _OpsMetricsStore:
         with self._lock:
             self._db_pool_checked_out = max(int(value), 0)
 
+    def increment_db_pool_checked_out(self) -> None:
+        with self._lock:
+            self._db_pool_checked_out += 1
+
+    def decrement_db_pool_checked_out(self) -> None:
+        with self._lock:
+            self._db_pool_checked_out = max(self._db_pool_checked_out - 1, 0)
+
     def set_schedule_running_task_count(self, value: int) -> None:
         with self._lock:
             self._schedule_running_task_count = max(int(value), 0)
