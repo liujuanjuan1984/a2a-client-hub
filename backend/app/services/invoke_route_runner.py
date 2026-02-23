@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.error_codes import status_code_for_invoke_error_code
+from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.ws_ticket import WsTicketResponse
@@ -49,8 +50,8 @@ _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
 
 @dataclass
 class _InvokeState:
-    local_session: Any
-    local_source: Any
+    local_session_id: UUID | None
+    local_source: Literal["manual", "scheduled"] | None
     context_id: str | None
     metadata: dict[str, Any]
     stream_identity: dict[str, Any]
@@ -129,28 +130,34 @@ async def _release_invoke_guard(guard_key: str) -> None:
 
 async def _prepare_state(
     *,
-    db: AsyncSession,
     user_id: UUID,
     agent_id: UUID,
     agent_source: AgentSource,
     payload: A2AAgentInvokeRequest,
 ) -> _InvokeState:
-    (
-        local_session,
-        local_source,
-    ) = await session_hub_service.ensure_local_session_for_invoke(
-        db,
-        user_id=user_id,
-        agent_id=agent_id,
-        agent_source=agent_source,
-        conversation_id=payload.conversation_id,
-    )
+    local_session_id: UUID | None = None
+    local_source: Literal["manual", "scheduled"] | None = None
+    async with AsyncSessionLocal() as prepare_db:
+        (
+            local_session,
+            local_source,
+        ) = await session_hub_service.ensure_local_session_for_invoke(
+            prepare_db,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            conversation_id=payload.conversation_id,
+        )
+        if local_session is not None and isinstance(local_session.id, UUID):
+            local_session_id = local_session.id
+        await commit_safely(prepare_db)
+
     resolved_context_id, resolved_invoke_metadata = normalize_invoke_binding_state(
         context_id=payload.context_id,
         metadata=payload.metadata,
     )
     return _InvokeState(
-        local_session=local_session,
+        local_session_id=local_session_id,
         local_source=local_source,
         context_id=resolved_context_id,
         metadata=resolved_invoke_metadata,
@@ -165,15 +172,59 @@ async def _prepare_state(
     )
 
 
+async def _close_open_transaction(db: AsyncSession) -> None:
+    in_transaction = getattr(db, "in_transaction", None)
+    commit = getattr(db, "commit", None)
+    if not callable(in_transaction) or not callable(commit):
+        return
+    if not in_transaction():
+        return
+    # Never auto-commit when there are pending ORM writes in the session.
+    # Route-level closing here is only for read-only transactions.
+    for attribute_name in ("new", "dirty", "deleted"):
+        collection = getattr(db, attribute_name, None)
+        if collection is None:
+            continue
+        try:
+            if len(collection) > 0:
+                return
+        except Exception:
+            try:
+                if bool(collection):
+                    return
+            except Exception:
+                return
+    commit_outcome = commit()
+    if inspect.isawaitable(commit_outcome):
+        await commit_outcome
+
+
+async def _continue_session_with_short_transaction(
+    *,
+    user_id: UUID,
+    conversation_id: str,
+) -> dict[str, Any]:
+    async with AsyncSessionLocal() as short_db:
+        continue_binding, db_mutated = await session_hub_service.continue_session(
+            short_db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+        if db_mutated:
+            await commit_safely(short_db)
+        else:
+            await _close_open_transaction(short_db)
+        return continue_binding
+
+
 def _build_stream_callbacks(
     *,
-    db: AsyncSession,
     state: _InvokeState,
     user_id: UUID,
     agent_id: UUID,
     agent_source: AgentSource,
     query: str,
-    transport: Literal["http_sse", "ws"],
+    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool = True,
     on_error_metadata: Callable[[dict[str, Any]], Any] | None = None,
 ) -> tuple[
@@ -211,35 +262,36 @@ def _build_stream_callbacks(
             state.stream_usage = usage_hints
 
     async def on_complete(stream_text: str) -> None:
-        if state.local_session is None or state.local_source is None:
+        if state.local_session_id is None or state.local_source is None:
             return
         final_response_metadata = dict(stream_response_metadata)
         if state.stream_identity:
             final_response_metadata.update(state.stream_identity)
         if state.stream_usage:
             final_response_metadata["usage"] = dict(state.stream_usage)
-        message_refs = await session_hub_service.record_local_invoke_messages(
-            db,
-            session=state.local_session,
-            source=state.local_source,
-            user_id=user_id,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            query=query,
-            response_content=stream_text or "",
-            success=True,
-            context_id=state.context_id,
-            user_message_id=state.user_message_id,
-            client_agent_message_id=state.client_agent_message_id,
-            invoke_metadata=state.metadata,
-            extra_metadata={"transport": transport, "stream": stream_enabled},
-            response_metadata=final_response_metadata,
-        )
+        async with AsyncSessionLocal() as persist_db:
+            message_refs = await session_hub_service.record_local_invoke_messages_by_local_session_id(
+                persist_db,
+                local_session_id=state.local_session_id,
+                source=state.local_source,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                query=query,
+                response_content=stream_text or "",
+                success=True,
+                context_id=state.context_id,
+                user_message_id=state.user_message_id,
+                client_agent_message_id=state.client_agent_message_id,
+                invoke_metadata=state.metadata,
+                extra_metadata={"transport": transport, "stream": stream_enabled},
+                response_metadata=final_response_metadata,
+            )
+            await commit_safely(persist_db)
         state.message_refs = message_refs
         state.persisted_success = True
         state.persisted_response_content = stream_text or ""
         state.persisted_error_code = None
-        await commit_safely(db)
 
     async def on_complete_metadata(payload: dict[str, Any]) -> None:
         nonlocal stream_response_metadata
@@ -248,7 +300,7 @@ def _build_stream_callbacks(
         stream_response_metadata = dict(payload)
 
     async def on_error(error_message: str) -> None:
-        if state.local_session is None or state.local_source is None:
+        if state.local_session_id is None or state.local_source is None:
             return
         error_response_metadata = (
             dict(state.stream_identity) if state.stream_identity else None
@@ -257,27 +309,28 @@ def _build_stream_callbacks(
             if error_response_metadata is None:
                 error_response_metadata = {}
             error_response_metadata["usage"] = dict(state.stream_usage)
-        message_refs = await session_hub_service.record_local_invoke_messages(
-            db,
-            session=state.local_session,
-            source=state.local_source,
-            user_id=user_id,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            query=query,
-            response_content=error_message,
-            success=False,
-            context_id=state.context_id,
-            user_message_id=state.user_message_id,
-            client_agent_message_id=state.client_agent_message_id,
-            invoke_metadata=state.metadata,
-            extra_metadata={"transport": transport, "stream": stream_enabled},
-            response_metadata=error_response_metadata,
-        )
+        async with AsyncSessionLocal() as persist_db:
+            message_refs = await session_hub_service.record_local_invoke_messages_by_local_session_id(
+                persist_db,
+                local_session_id=state.local_session_id,
+                source=state.local_source,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                query=query,
+                response_content=error_message,
+                success=False,
+                context_id=state.context_id,
+                user_message_id=state.user_message_id,
+                client_agent_message_id=state.client_agent_message_id,
+                invoke_metadata=state.metadata,
+                extra_metadata={"transport": transport, "stream": stream_enabled},
+                response_metadata=error_response_metadata,
+            )
+            await commit_safely(persist_db)
         state.message_refs = message_refs
         state.persisted_success = False
         state.persisted_response_content = error_message
-        await commit_safely(db)
         if on_error_metadata is not None:
             payload = {
                 "message": error_message,
@@ -382,15 +435,12 @@ async def run_http_invoke_with_session_recovery(
 
         remaining_retries -= 1
         try:
-            continue_binding, db_mutated = await session_hub_service.continue_session(
-                db,
+            continue_binding = await _continue_session_with_short_transaction(
                 user_id=user_id,
                 conversation_id=current_payload.conversation_id,
             )
         except ValueError:
             return response
-        if db_mutated:
-            await commit_safely(db)
         current_payload = _build_rebound_invoke_payload(
             payload=current_payload,
             continue_payload=continue_binding,
@@ -412,7 +462,6 @@ async def run_http_invoke(
     log_extra: dict[str, Any],
 ) -> A2AAgentInvokeResponse | StreamingResponse:
     state = await _prepare_state(
-        db=db,
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -421,7 +470,6 @@ async def run_http_invoke(
 
     if stream:
         on_event, on_complete, on_error, on_complete_metadata = _build_stream_callbacks(
-            db=db,
             state=state,
             user_id=user_id,
             agent_id=agent_id,
@@ -453,7 +501,6 @@ async def run_http_invoke(
         )
 
     on_event, on_complete, on_error, on_complete_metadata = _build_stream_callbacks(
-        db=db,
         state=state,
         user_id=user_id,
         agent_id=agent_id,
@@ -514,7 +561,6 @@ async def run_background_invoke(
     idle_timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     state = await _prepare_state(
-        db=db,
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
@@ -528,7 +574,6 @@ async def run_background_invoke(
         )
 
     on_event, on_complete, on_error, on_complete_metadata = _build_stream_callbacks(
-        db=db,
         state=state,
         user_id=user_id,
         agent_id=agent_id,
@@ -592,14 +637,12 @@ async def run_ws_invoke(
     send_stream_end: bool = True,
 ) -> None:
     state = await _prepare_state(
-        db=db,
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
         payload=payload,
     )
     on_event, on_complete, on_error, on_complete_metadata = _build_stream_callbacks(
-        db=db,
         state=state,
         user_id=user_id,
         agent_id=agent_id,
@@ -700,16 +743,13 @@ async def run_ws_invoke_with_session_recovery(
 
         remaining_retries -= 1
         try:
-            continue_binding, db_mutated = await session_hub_service.continue_session(
-                db,
+            continue_binding = await _continue_session_with_short_transaction(
                 user_id=user_id,
                 conversation_id=current_payload.conversation_id,
             )
         except ValueError:
             await a2a_invoke_service.send_ws_stream_end(websocket)
             return
-        if db_mutated:
-            await commit_safely(db)
         current_payload = _build_rebound_invoke_payload(
             payload=current_payload,
             continue_payload=continue_binding,
@@ -783,6 +823,7 @@ async def run_ws_invoke_route(
             )
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
             return
+        await _close_open_transaction(db)
 
         logger.info(
             invoke_log_message,
@@ -876,6 +917,7 @@ async def run_http_invoke_route(
             status_code=runtime_validation_status_code,
             detail=str(exc),
         ) from exc
+    await _close_open_transaction(db)
 
     logger.info(
         invoke_log_message,

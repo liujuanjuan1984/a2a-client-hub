@@ -28,6 +28,51 @@ class _NoopWebSocket:
 
 
 @pytest.mark.asyncio
+async def test_close_open_transaction_commits_read_only_session() -> None:
+    class _ReadOnlySession:
+        def __init__(self) -> None:
+            self.committed = 0
+            self.rolled_back = 0
+            self.new = set()
+            self.dirty = set()
+            self.deleted = set()
+
+        def in_transaction(self) -> bool:
+            return True
+
+        async def commit(self) -> None:
+            self.committed += 1
+
+        async def rollback(self) -> None:
+            self.rolled_back += 1
+
+    session = _ReadOnlySession()
+    await invoke_route_runner._close_open_transaction(session)  # noqa: SLF001
+    assert session.committed == 1
+    assert session.rolled_back == 0
+
+
+@pytest.mark.asyncio
+async def test_close_open_transaction_does_not_commit_when_session_has_pending_writes() -> None:
+    class _DirtySession:
+        def __init__(self) -> None:
+            self.committed = 0
+            self.new = {object()}
+            self.dirty = set()
+            self.deleted = set()
+
+        def in_transaction(self) -> bool:
+            return True
+
+        async def commit(self) -> None:
+            self.committed += 1
+
+    session = _DirtySession()
+    await invoke_route_runner._close_open_transaction(session)  # noqa: SLF001
+    assert session.committed == 0
+
+
+@pytest.mark.asyncio
 async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -104,7 +149,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
         return invoke_route_runner._InvokeState(
-            local_session=object(),
+            local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
             metadata={},
@@ -128,7 +173,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "record_local_invoke_messages",
+        "record_local_invoke_messages_by_local_session_id",
         fake_record_local_invoke_messages,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
@@ -406,7 +451,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
             }
         )
         return invoke_route_runner._InvokeState(
-            local_session=object(),
+            local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
             metadata={},
@@ -466,7 +511,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "record_local_invoke_messages",
+        "record_local_invoke_messages_by_local_session_id",
         lambda **kwargs: None,  # noqa: ARG005
     )
 
@@ -537,7 +582,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             }
         )
         return invoke_route_runner._InvokeState(
-            local_session=object(),
+            local_session_id=uuid4(),
             local_source="manual",
             context_id=None,
             metadata={},
@@ -598,7 +643,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "record_local_invoke_messages",
+        "record_local_invoke_messages_by_local_session_id",
         lambda **kwargs: None,  # noqa: ARG005
     )
 

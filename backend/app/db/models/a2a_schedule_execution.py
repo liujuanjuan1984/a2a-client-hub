@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.models.base import SCHEMA_NAME, Base, TimestampMixin, UserOwnedMixin
@@ -20,6 +28,11 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
             "task_id",
             "created_at",
         ),
+        UniqueConstraint(
+            "task_id",
+            "run_id",
+            name="uq_a2a_schedule_executions_task_run",
+        ),
         {"schema": SCHEMA_NAME},
     )
 
@@ -33,6 +46,12 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
         nullable=False,
         index=True,
         comment="Owning schedule task identifier",
+    )
+    run_id = Column(
+        UUID(as_uuid=True),
+        nullable=False,
+        index=True,
+        comment="Unique identifier for one execution run lifecycle",
     )
     scheduled_for = Column(
         DateTime(timezone=True),

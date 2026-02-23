@@ -515,6 +515,51 @@ class SessionHubService:
             "agent_message_id": agent_message.id,
         }
 
+    async def record_local_invoke_messages_by_local_session_id(
+        self,
+        db: AsyncSession,
+        *,
+        local_session_id: UUID,
+        source: SessionSource,
+        user_id: UUID,
+        agent_id: UUID,
+        agent_source: Literal["personal", "shared"],
+        query: str,
+        response_content: str,
+        success: bool,
+        context_id: Optional[str],
+        user_message_id: Optional[str] = None,
+        client_agent_message_id: Optional[str] = None,
+        invoke_metadata: Optional[Dict[str, Any]] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+        response_metadata: Optional[Dict[str, Any]] = None,
+    ) -> dict[str, UUID]:
+        session = await self._get_local_session_by_id(
+            db,
+            user_id=user_id,
+            local_session_id=local_session_id,
+        )
+        if session is None:
+            return {}
+
+        return await self.record_local_invoke_messages(
+            db,
+            session=session,
+            source=source,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            response_content=response_content,
+            success=success,
+            context_id=context_id,
+            user_message_id=user_message_id,
+            client_agent_message_id=client_agent_message_id,
+            invoke_metadata=invoke_metadata,
+            extra_metadata=extra_metadata,
+            response_metadata=response_metadata,
+        )
+
     async def _get_local_session_by_id(
         self,
         db: AsyncSession,
