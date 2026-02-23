@@ -87,6 +87,16 @@ def _build_claim(task: A2AScheduleTask):
     )
 
 
+def _mock_gateway_stream(*, events, first_event_delay: float = 0.0):
+    async def _stream(**_kwargs):
+        for index, event in enumerate(events):
+            if index == 0 and first_event_delay > 0:
+                await asyncio.sleep(first_event_delay)
+            yield event
+
+    return SimpleNamespace(stream=_stream)
+
+
 async def test_claim_next_due_task_obeys_agent_concurrency_limit(
     async_db_session,
     monkeypatch,
@@ -155,12 +165,6 @@ async def test_execute_claimed_task_resets_consecutive_failures_on_success(
     task.consecutive_failures = 3
     await async_db_session.commit()
 
-    async def _invoke(**_kwargs) -> dict:
-        return {
-            "success": True,
-            "content": "all good",
-        }
-
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.a2a_runtime_builder",
         _mock_runtime_builder(),
@@ -168,7 +172,12 @@ async def test_execute_claimed_task_resets_consecutive_failures_on_success(
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(
-            gateway=SimpleNamespace(invoke=_invoke),
+            gateway=_mock_gateway_stream(
+                events=[
+                    {"content": "all good"},
+                    {"kind": "status-update", "final": True},
+                ]
+            ),
         ),
     )
 
@@ -214,10 +223,6 @@ async def test_execute_claimed_task_timeout_trips_failure_threshold(
     )
     task_id = task.id
 
-    async def _invoke(**_kwargs) -> dict:
-        await asyncio.sleep(0.05)
-        return {"success": True, "content": "should not reach"}
-
     monkeypatch.setattr(
         settings,
         "a2a_schedule_task_invoke_timeout",
@@ -231,13 +236,25 @@ async def test_execute_claimed_task_timeout_trips_failure_threshold(
         raising=False,
     )
     monkeypatch.setattr(
+        settings,
+        "a2a_schedule_task_stream_idle_timeout",
+        5.0,
+        raising=False,
+    )
+    monkeypatch.setattr(
         "app.services.a2a_schedule_job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(
-            gateway=SimpleNamespace(invoke=_invoke),
+            gateway=_mock_gateway_stream(
+                events=[
+                    {"content": "should not reach"},
+                    {"kind": "status-update", "final": True},
+                ],
+                first_event_delay=0.05,
+            ),
         ),
     )
 
@@ -264,7 +281,7 @@ async def test_execute_claimed_task_timeout_trips_failure_threshold(
     assert last_exec.conversation_id is not None
 
 
-async def test_execute_claimed_task_runtime_failure_still_persists_conversation_id(
+async def test_execute_claimed_task_runtime_failure_does_not_create_conversation(
     async_db_session,
     async_session_maker,
     monkeypatch,
@@ -304,10 +321,10 @@ async def test_execute_claimed_task_runtime_failure_still_persists_conversation_
         )
 
     assert refreshed_task is not None
-    assert refreshed_task.conversation_id is not None
+    assert refreshed_task.conversation_id is None
     assert last_exec is not None
     assert last_exec.status == A2AScheduleExecution.STATUS_FAILED
-    assert last_exec.conversation_id == refreshed_task.conversation_id
+    assert last_exec.conversation_id is None
 
 
 async def test_execute_claimed_task_binds_external_session_identity_when_present(
@@ -326,16 +343,6 @@ async def test_execute_claimed_task_binds_external_session_identity_when_present
     )
     task_id = task.id
 
-    async def _invoke(**_kwargs) -> dict:
-        return {
-            "success": True,
-            "content": "bound",
-            "metadata": {
-                "provider": "opencode",
-                "externalSessionId": "ses_bind_1",
-            },
-        }
-
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.a2a_runtime_builder",
         _mock_runtime_builder(),
@@ -343,7 +350,18 @@ async def test_execute_claimed_task_binds_external_session_identity_when_present
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(
-            gateway=SimpleNamespace(invoke=_invoke),
+            gateway=_mock_gateway_stream(
+                events=[
+                    {
+                        "content": "bound",
+                        "metadata": {
+                            "provider": "opencode",
+                            "externalSessionId": "ses_bind_1",
+                        },
+                    },
+                    {"kind": "status-update", "final": True},
+                ]
+            ),
         ),
     )
 
@@ -394,22 +412,6 @@ async def test_execute_claimed_task_persists_readable_agent_content(
     )
     task_id = task.id
 
-    async def _invoke(**_kwargs) -> dict:
-        return {
-            "success": True,
-            "content": '{"history":[{"role":"user","parts":[{"text":"Q"}]},'
-            '{"role":"assistant","parts":[{"text":"Readable answer"}]}]}',
-            "raw": {
-                "history": [
-                    {"role": "user", "parts": [{"kind": "text", "text": "Q"}]},
-                    {
-                        "role": "assistant",
-                        "parts": [{"kind": "text", "text": "Readable answer"}],
-                    },
-                ]
-            },
-        }
-
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.a2a_runtime_builder",
         _mock_runtime_builder(),
@@ -417,7 +419,18 @@ async def test_execute_claimed_task_persists_readable_agent_content(
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(
-            gateway=SimpleNamespace(invoke=_invoke),
+            gateway=_mock_gateway_stream(
+                events=[
+                    {
+                        "kind": "artifact-update",
+                        "artifact": {
+                            "parts": [{"kind": "text", "text": "Readable answer"}],
+                            "metadata": {"opencode": {"block_type": "text"}},
+                        },
+                    },
+                    {"kind": "status-update", "final": True},
+                ]
+            ),
         ),
     )
 
@@ -463,12 +476,6 @@ async def test_execute_claimed_task_creates_new_conversation_each_run(
     )
     task_id = task.id
 
-    async def _invoke(**_kwargs) -> dict:
-        return {
-            "success": True,
-            "content": "ok",
-        }
-
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.a2a_runtime_builder",
         _mock_runtime_builder(),
@@ -476,7 +483,12 @@ async def test_execute_claimed_task_creates_new_conversation_each_run(
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(
-            gateway=SimpleNamespace(invoke=_invoke),
+            gateway=_mock_gateway_stream(
+                events=[
+                    {"content": "ok"},
+                    {"kind": "status-update", "final": True},
+                ]
+            ),
         ),
     )
 

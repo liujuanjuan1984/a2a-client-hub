@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import timedelta
 from uuid import uuid4
 
@@ -18,15 +17,15 @@ from app.db.models.conversation_thread import ConversationThread
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, rollback_safely
 from app.integrations.a2a_client import get_a2a_service
-from app.services.a2a_invoke_service import a2a_invoke_service
+from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services.a2a_runtime import a2a_runtime_builder
+from app.services.invoke_route_runner import run_background_invoke
 from app.services.a2a_schedule_service import (
     A2A_SCHEDULE_SOURCE,
     ClaimedA2AScheduleTask,
     a2a_schedule_service,
 )
 from app.services.scheduler import get_scheduler
-from app.services.session_hub import session_hub_service
 from app.utils.timezone_util import utc_now
 
 logger = get_logger(__name__)
@@ -86,12 +85,6 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             started_at=started_at,
             status=A2AScheduleExecution.STATUS_RUNNING,
         )
-        thread = await _ensure_task_session(
-            db=db,
-            task=task,
-        )
-        execution.conversation_id = thread.id
-
         try:
             db.add(execution)
             await db.flush()
@@ -103,59 +96,45 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
             if not bool(getattr(runtime.agent, "enabled", True)):
                 raise RuntimeError("Target A2A agent is disabled")
-
-            result = await asyncio.wait_for(
-                get_a2a_service().gateway.invoke(
-                    resolved=runtime.resolved,
-                    query=task.prompt,
-                    metadata=metadata,
-                ),
-                timeout=settings.a2a_schedule_task_invoke_timeout,
+            thread = await _ensure_task_session(
+                db=db,
+                task=task,
             )
-            # Wrapped in timeout below in issue #150 hardening.
-            success = bool(result.get("success"))
-            response_content = (
-                a2a_invoke_service.extract_readable_content_from_invoke_result(result)
-                if success
-                else (result.get("error") or "A2A invocation failed")
-            ) or ""
-
-            (
-                result_context_id,
-                invoke_metadata,
-            ) = a2a_invoke_service.extract_binding_hints_from_invoke_result(result)
-            response_metadata = (
-                a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
-                    result
-                )
+            execution.conversation_id = thread.id
+            invoke_payload = A2AAgentInvokeRequest(
+                query=task.prompt,
+                conversationId=str(thread.id),
+                metadata=metadata,
             )
-            usage_hints = a2a_invoke_service.extract_usage_hints_from_invoke_result(
-                result
-            )
-            if usage_hints:
-                response_metadata = dict(response_metadata)
-                response_metadata["usage"] = usage_hints
-            message_refs = await session_hub_service.record_local_invoke_messages(
+            invoke_result = await run_background_invoke(
                 db,
+                gateway=get_a2a_service().gateway,
+                runtime=runtime,
                 user_id=task.user_id,
-                session=thread,
-                source="scheduled",
                 agent_id=task.agent_id,
                 agent_source="personal",
-                query=task.prompt,
-                response_content=response_content,
-                success=success,
-                context_id=result_context_id,
-                invoke_metadata=invoke_metadata,
-                extra_metadata={
-                    **metadata,
-                    "error_code": result.get("error_code"),
+                payload=invoke_payload,
+                validate_message=lambda _payload: [],
+                logger=logger,
+                log_extra={
+                    "schedule_task_id": str(task.id),
+                    "schedule_execution_id": str(execution.id),
+                    "agent_id": str(task.agent_id),
+                    "user_id": str(task.user_id),
                 },
-                response_metadata=response_metadata,
+                total_timeout_seconds=settings.a2a_schedule_task_invoke_timeout,
+                idle_timeout_seconds=settings.a2a_schedule_task_stream_idle_timeout,
             )
-            execution.conversation_id = message_refs["conversation_id"]
-            execution.user_message_id = message_refs["user_message_id"]
-            execution.agent_message_id = message_refs["agent_message_id"]
+            success = bool(invoke_result.get("success"))
+            response_content = str(invoke_result.get("response_content") or "")
+            message_refs = invoke_result.get("message_refs") or {}
+            execution.conversation_id = (
+                message_refs.get("conversation_id")
+                or invoke_result.get("conversation_id")
+                or thread.id
+            )
+            execution.user_message_id = message_refs.get("user_message_id")
+            execution.agent_message_id = message_refs.get("agent_message_id")
             execution.response_content = response_content
             execution.finished_at = utc_now()
             execution.status = (
@@ -164,7 +143,13 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 else A2AScheduleExecution.STATUS_FAILED
             )
             execution.error_message = (
-                None if success else (response_content[:2000] or None)
+                None
+                if success
+                else (
+                    response_content[:2000]
+                    or str(invoke_result.get("error") or "")[:2000]
+                    or None
+                )
             )
 
             task.last_run_at = execution.finished_at
@@ -184,38 +169,6 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     task.enabled = False
 
             await commit_safely(db)
-
-        except asyncio.TimeoutError:
-            task.last_run_at = utc_now()
-            task.last_run_status = A2AScheduleTask.STATUS_FAILED
-            task.consecutive_failures = (task.consecutive_failures or 0) + 1
-            if (
-                task.consecutive_failures
-                >= settings.a2a_schedule_task_failure_threshold
-            ):
-                task.enabled = False
-            execution.status = A2AScheduleExecution.STATUS_FAILED
-            execution.finished_at = task.last_run_at
-            execution.error_message = (
-                f"A2A invoke timeout after {settings.a2a_schedule_task_invoke_timeout}s"
-            )
-            if not execution.response_content:
-                execution.response_content = execution.error_message
-            try:
-                await commit_safely(db)
-            except Exception as commit_error:  # pragma: no cover - defensive
-                await rollback_safely(db)
-                logger.error(
-                    "Failed to persist schedule execution timeout task=%s err=%s",
-                    task.id,
-                    commit_error,
-                    exc_info=commit_error,
-                )
-            logger.error(
-                "Scheduled A2A execution timeout task=%s execution=%s",
-                task.id,
-                execution.id,
-            )
 
         except Exception as exc:  # pragma: no cover - defensive path
             task.last_run_at = utc_now()
