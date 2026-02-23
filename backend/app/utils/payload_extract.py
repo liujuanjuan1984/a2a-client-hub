@@ -23,17 +23,11 @@ def pick_first_non_empty_str(
     return None
 
 
-_PROVIDER_KEYS = ("provider", "session_provider", "external_provider")
-_EXTERNAL_KEYS = (
-    "externalSessionId",
-    "external_session_id",
-    "upstream_session_id",
-)
+_PROVIDER_KEYS = ("provider",)
+_EXTERNAL_KEYS = ("externalSessionId",)
 _OPENCODE_SESSION_KEYS = (
     "session_id",
     "sessionId",
-    "external_session_id",
-    "externalSessionId",
 )
 _CONTEXT_KEYS = ("contextId", "context_id")
 

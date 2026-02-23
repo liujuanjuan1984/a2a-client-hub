@@ -284,15 +284,6 @@ def _extract_rebound_continue_binding_fields(
     )
     context_id = extract_context_id(continue_metadata)
 
-    if external_session_id is None:
-        opencode_session_id = normalize_non_empty_text(
-            continue_metadata.get("opencode_session_id")
-        )
-        if opencode_session_id is not None:
-            external_session_id = opencode_session_id
-            if provider is None:
-                provider = _OPENCODE_PROVIDER
-
     return provider, external_session_id, context_id
 
 

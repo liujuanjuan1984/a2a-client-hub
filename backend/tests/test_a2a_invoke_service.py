@@ -781,6 +781,22 @@ def test_extract_binding_hints_ignores_legacy_flat_opencode_session_id():
     assert "externalSessionId" not in metadata
 
 
+def test_extract_binding_hints_ignores_legacy_flat_external_session_id_aliases():
+    context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
+        {
+            "success": True,
+            "content": "ok",
+            "metadata": {
+                "external_session_id": "legacy-flat-session-id",
+                "upstream_session_id": "legacy-upstream-session-id",
+            },
+        }
+    )
+    assert context_id is None
+    assert "provider" not in metadata
+    assert "externalSessionId" not in metadata
+
+
 def test_extract_stream_identity_hints_from_serialized_event():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {

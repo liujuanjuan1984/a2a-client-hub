@@ -74,11 +74,8 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
         : null;
   const metadata = asRecord(data.metadata);
   const externalSessionId =
-    pickString(data, ["externalSessionId"]) ??
-    pickString(metadata, ["externalSessionId"]) ??
-    undefined;
-  const rawProvider =
-    pickString(data, ["provider"]) ?? pickString(metadata, ["provider"]);
+    pickString(metadata, ["externalSessionId"]) ?? undefined;
+  const rawProvider = pickString(metadata, ["provider"]);
   const normalizedProvider = rawProvider?.trim().toLowerCase();
   const provider =
     normalizedProvider === undefined

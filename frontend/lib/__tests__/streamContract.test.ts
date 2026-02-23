@@ -380,4 +380,19 @@ describe("block-based stream parser and reducer", () => {
     expect(meta.provider).toBe("opencode");
     expect(meta.externalSessionId).toBe("ses_upstream_1");
   });
+
+  it("extracts session metadata only from payload metadata block", () => {
+    const meta = extractSessionMeta({
+      kind: "status-update",
+      final: true,
+      provider: "legacy",
+      externalSessionId: "legacy-root-value",
+      metadata: {
+        provider: "opencode",
+        externalSessionId: "ses_upstream_1",
+      },
+    });
+    expect(meta.provider).toBe("opencode");
+    expect(meta.externalSessionId).toBe("ses_upstream_1");
+  });
 });
