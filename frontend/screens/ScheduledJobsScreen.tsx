@@ -41,6 +41,28 @@ export function ScheduledJobsScreen() {
     loadMore,
   } = useScheduledJobsQuery({ enabled: false });
 
+  const sortedJobs = useMemo(() => {
+    return [...jobs].sort((a, b) => {
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+
+      if (a.enabled && b.enabled) {
+        const ar = a.last_run_status === "running";
+        const br = b.last_run_status === "running";
+        if (ar !== br) return ar ? -1 : 1;
+
+        const at = a.next_run_at
+          ? new Date(a.next_run_at).getTime()
+          : Number.POSITIVE_INFINITY;
+        const bt = b.next_run_at
+          ? new Date(b.next_run_at).getTime()
+          : Number.POSITIVE_INFINITY;
+        if (at !== bt) return at - bt;
+      }
+
+      return String(a.id).localeCompare(String(b.id));
+    });
+  }, [jobs]);
+
   const executionsQuery = useScheduledJobExecutionsQuery({
     taskId: expandedExecutionsTaskId ?? undefined,
     enabled: Boolean(expandedExecutionsTaskId),
@@ -102,7 +124,7 @@ export function ScheduledJobsScreen() {
           <View className="mt-8 items-center">
             <Text className="text-sm text-muted">Loading jobs...</Text>
           </View>
-        ) : jobs.length === 0 ? (
+        ) : sortedJobs.length === 0 ? (
           <View className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
             <Text className="text-base font-semibold text-white">
               No scheduled jobs
@@ -122,7 +144,7 @@ export function ScheduledJobsScreen() {
             />
           </View>
         ) : (
-          jobs.map((job) => {
+          sortedJobs.map((job) => {
             const executionsOpen = expandedExecutionsTaskId === job.id;
             return (
               <ScheduledJobCard
