@@ -75,3 +75,38 @@ def test_extract_text_from_payload_can_handle_history_message() -> None:
     text = A2AClient._extract_text_from_payload(agent_payload)
 
     assert text == "Previous prompt"
+
+
+def test_extract_text_from_payload_can_handle_dict_shape_payload() -> None:
+    payload = {
+        "status": {
+            "message": {
+                "parts": [
+                    {"text": "Mapping based response"},
+                ]
+            }
+        }
+    }
+
+    text = A2AClient._extract_text_from_payload(payload)
+
+    assert text == "Mapping based response"
+
+
+@pytest.mark.asyncio
+async def test_call_agent_falls_back_to_plain_string_without_json_wrapping() -> None:
+    class LegacyResponse:
+        def __str__(self) -> str:
+            return "Task(artifacts=[...])"
+
+    class FakeClient:
+        async def send_message(self, *_args, **_kwargs):
+            yield LegacyResponse()
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_client = AsyncMock(return_value=FakeClient())
+
+    result = await a2a_client.call_agent("hello")
+
+    assert result["success"] is True
+    assert result["content"] == "Task(artifacts=[...])"

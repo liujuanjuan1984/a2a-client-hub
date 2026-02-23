@@ -227,6 +227,7 @@ export function ChatScreen({
   useEffect(() => {
     if (!conversationId || !activeAgentId) return;
     const boundAgentId = activeAgentId;
+    const normalizedConversationId = conversationId;
     const hasHistory =
       messages.length > 0 || sessionHistoryQuery.messages.length > 0;
     if (sessionSource === "manual" && !hasHistory) {
@@ -237,6 +238,11 @@ export function ChatScreen({
     continueSession(conversationId)
       .then((binding) => {
         if (cancelled) return;
+        const resolvedConversationId = binding.conversationId.trim();
+        if (resolvedConversationId !== normalizedConversationId) {
+          router.replace(buildChatRoute(boundAgentId, resolvedConversationId));
+          return;
+        }
         const current = useChatStore.getState().sessions[conversationId];
         const hasLocalBinding =
           (typeof current?.contextId === "string" &&
@@ -244,7 +250,14 @@ export function ChatScreen({
           (typeof current?.externalSessionRef?.externalSessionId === "string" &&
             current.externalSessionRef.externalSessionId.trim()) ||
           Object.keys(current?.metadata ?? {}).length > 0;
-        if (hasLocalBinding && !binding.metadata?.contextId) {
+        const hasBindingMetadata =
+          (typeof binding.metadata?.contextId === "string" &&
+            binding.metadata.contextId.trim()) ||
+          (typeof binding.metadata?.externalSessionId === "string" &&
+            binding.metadata.externalSessionId.trim()) ||
+          (typeof binding.metadata?.provider === "string" &&
+            binding.metadata.provider.trim());
+        if (hasLocalBinding && !hasBindingMetadata) {
           return;
         }
         ensureSession(conversationId, boundAgentId);

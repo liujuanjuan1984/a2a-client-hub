@@ -9,8 +9,10 @@ import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useContinueSession } from "@/hooks/useContinueSession";
 import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
 import { type SessionListItem } from "@/lib/api/sessions";
-import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
-import { resolveSessionAgentPresentation } from "@/lib/sessionDirectoryPresentation";
+import {
+  getSessionTimelineText,
+  resolveSessionAgentPresentation,
+} from "@/lib/sessionDirectoryPresentation";
 
 export function SessionsScreen() {
   const { continueSession } = useContinueSession();
@@ -43,6 +45,8 @@ export function SessionsScreen() {
     await continueSession({
       agentId: item.agent_id,
       conversationId: item.conversationId,
+      createdAt: item.created_at ?? null,
+      lastActiveAt: item.last_active_at ?? item.created_at ?? null,
     });
   };
 
@@ -75,8 +79,8 @@ export function SessionsScreen() {
           <>
             {sortedItems.map((item) => {
               const title = item.title;
-              const ts = item.last_active_at ?? null;
               const agent = resolveSessionAgentPresentation(item, agentLookup);
+              const timeline = getSessionTimelineText(item);
               const agentBadgeClass =
                 agent.tone === "shared"
                   ? "bg-sky-500/20"
@@ -120,10 +124,10 @@ export function SessionsScreen() {
                     </Text>
                   </View>
 
-                  <View className="flex-row items-center justify-between gap-3 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
+                  <View className="flex-row items-start justify-between gap-3 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
                     <View className="flex-1">
-                      <Text className="text-xs text-slate-200">
-                        {formatLocalDateTimeYmdHm(ts)}
+                      <Text className="text-[11px] text-slate-500">
+                        {timeline.timelineRangeText}
                       </Text>
                     </View>
                     <Button

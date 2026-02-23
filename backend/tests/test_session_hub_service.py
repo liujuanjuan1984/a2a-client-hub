@@ -3,7 +3,9 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
+from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.services.conversation_identity import conversation_identity_service
 from app.services.session_hub import session_hub_service
@@ -113,3 +115,46 @@ async def test_bind_external_session_with_state_updates_title_from_invoke_hints(
     assert bind_result.conversation_id == existing.id
     assert bind_result.mutated is True
     assert existing.title == "Upstream Bound Session"
+
+
+async def test_record_local_invoke_messages_writes_canonical_external_session_id_metadata(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="ok",
+        success=True,
+        context_id="ctx-1",
+        invoke_metadata={
+            "provider": "opencode",
+            "externalSessionId": "ses-upstream-1",
+        },
+    )
+    await async_db_session.flush()
+
+    result = await async_db_session.execute(
+        select(AgentMessage).where(AgentMessage.conversation_id == thread.id)
+    )
+    messages = list(result.scalars().all())
+    assert len(messages) == 2
+    for msg in messages:
+        metadata = msg.message_metadata or {}
+        assert metadata.get("externalSessionId") == "ses-upstream-1"
+        assert "external_session_id" not in metadata

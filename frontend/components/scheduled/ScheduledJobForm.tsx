@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
@@ -6,7 +7,10 @@ import {
   type ScheduledJobPayload,
   type ScheduleTimePoint,
 } from "@/lib/api/scheduledJobs";
-import { formatDateTimeLocalInputValue } from "@/lib/datetime";
+import {
+  formatDateTimeLocalInputValue,
+  getNextTopOfHourLocalInputValue,
+} from "@/lib/datetime";
 
 type AgentOption = {
   id: string;
@@ -36,6 +40,32 @@ export function ScheduledJobForm({
   showTitle = true,
   timeZone,
 }: ScheduledJobFormProps) {
+  const intervalStartAt = (() => {
+    const startAt = (form.time_point as { start_at?: unknown })?.start_at;
+    return typeof startAt === "string" ? startAt : "";
+  })();
+  const [startAtInputValue, setStartAtInputValue] = useState(() =>
+    formatDateTimeLocalInputValue(intervalStartAt, timeZone),
+  );
+  const isEditingStartAtRef = useRef(false);
+
+  useEffect(() => {
+    if (form.cycle_type !== "interval") {
+      isEditingStartAtRef.current = false;
+    }
+  }, [form.cycle_type]);
+
+  useEffect(() => {
+    if (isEditingStartAtRef.current) {
+      return;
+    }
+    setStartAtInputValue(
+      intervalStartAt
+        ? formatDateTimeLocalInputValue(intervalStartAt, timeZone)
+        : "",
+    );
+  }, [intervalStartAt, timeZone, form.cycle_type]);
+
   const cycleOptions: { value: ScheduleCycleType; label: string }[] = [
     { value: "daily", label: "Daily" },
     { value: "weekly", label: "Weekly" },
@@ -69,11 +99,13 @@ export function ScheduledJobForm({
     if (nextCycle === "interval") {
       const minutes = (current as { minutes?: unknown })?.minutes;
       const startAt = (current as { start_at?: unknown })?.start_at;
+      const resolvedStartAt =
+        typeof startAt === "string" && startAt.trim()
+          ? startAt.trim()
+          : getNextTopOfHourLocalInputValue(timeZone);
       return {
         minutes: typeof minutes === "number" ? minutes : 10,
-        ...(typeof startAt === "string" && startAt.trim()
-          ? { start_at: startAt }
-          : {}),
+        start_at: resolvedStartAt,
       };
     }
     const time = (current as { time?: unknown })?.time;
@@ -252,15 +284,10 @@ export function ScheduledJobForm({
           </Text>
           <TextInput
             className="mt-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
-            value={formatDateTimeLocalInputValue(
-              (() => {
-                const startAt = (form.time_point as { start_at?: unknown })
-                  ?.start_at;
-                return typeof startAt === "string" ? startAt : undefined;
-              })(),
-              timeZone,
-            )}
+            value={startAtInputValue}
             onChangeText={(value) => {
+              isEditingStartAtRef.current = true;
+              setStartAtInputValue(value);
               const next = {
                 ...(form.time_point as any),
               };
@@ -272,6 +299,9 @@ export function ScheduledJobForm({
               onChange({
                 time_point: next,
               });
+            }}
+            onBlur={() => {
+              isEditingStartAtRef.current = false;
             }}
             placeholder="2026-02-23T14:30"
             placeholderTextColor="#64748b"

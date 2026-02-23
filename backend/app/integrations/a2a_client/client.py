@@ -166,13 +166,19 @@ class A2AClient:
 
             content = self._extract_text_from_payload(final_payload)
             if content is None:
-                content = json.dumps(
-                    _as_plain_serializable(final_payload),
-                    ensure_ascii=False,
-                    indent=2,
-                    default=_json_fallback,
-                )
-                content = content.strip() if content else str(final_payload)
+                fallback_payload = _as_plain_serializable(final_payload)
+                if isinstance(fallback_payload, str):
+                    content = fallback_payload.strip()
+                else:
+                    content = json.dumps(
+                        fallback_payload,
+                        ensure_ascii=False,
+                        indent=2,
+                        default=_json_fallback,
+                    )
+                    content = content.strip()
+                if not content:
+                    content = str(final_payload).strip()
 
             logger.info(
                 "A2A agent call succeeded (chars=%s)",
@@ -528,10 +534,64 @@ class A2AClient:
                     root = getattr(part, "root", None)
                     if isinstance(root, TextPart):
                         text_part = root
+                    elif isinstance(part, Mapping):
+                        text_value = part.get("text")
+                        if isinstance(text_value, str) and text_value.strip():
+                            collected.append(text_value)
+                            continue
+                        mapped_root = part.get("root")
+                        if isinstance(mapped_root, TextPart):
+                            text_part = mapped_root
+                        elif isinstance(part.get("role"), str):
+                            nested = A2AClient._extract_text_from_payload(part)
+                            if nested:
+                                collected.append(nested)
+                                continue
                 if text_part and getattr(text_part, "text", None):
                     collected.append(text_part.text)
             if collected:
                 return "\n".join(collected)
+            return None
+
+        def extract_from_mapping(payload_map: Mapping) -> Optional[str]:
+            for key in (
+                "content",
+                "message",
+                "messages",
+                "result",
+                "status",
+                "text",
+                "parts",
+                "artifacts",
+                "history",
+                "events",
+                "root",
+            ):
+                if key not in payload_map:
+                    continue
+                value = payload_map[key]
+                if value in (None, ""):
+                    continue
+                if key == "text" and isinstance(value, (str, int, float, bool)):
+                    text = str(value).strip()
+                    if text:
+                        return text
+                if key in ("parts",):
+                    text = extract_from_parts(value)
+                    if text:
+                        return text
+                if isinstance(value, (list, tuple)) and key in (
+                    "messages",
+                    "artifacts",
+                    "history",
+                    "events",
+                ):
+                    text = extract_from_iterable(value)
+                    if text:
+                        return text
+                text = A2AClient._extract_text_from_payload(value)
+                if text:
+                    return text
             return None
 
         if isinstance(payload, Message):
@@ -584,16 +644,35 @@ class A2AClient:
             return event_text
 
         if isinstance(payload, Mapping):
-            for key in ("content", "message", "messages", "result", "status", "text"):
-                value = payload.get(key)
-                if value in (None, ""):
-                    continue
-                text = A2AClient._extract_text_from_payload(value)
-                if text:
-                    return text
-                if isinstance(value, (str, int, float, bool)):
-                    return str(value)
+            mapped_text = extract_from_mapping(payload)
+            if mapped_text:
+                return mapped_text
 
+        mapping_payload = None
+        if hasattr(payload, "dict") and callable(getattr(payload, "dict")):
+            payload_dict = payload.dict()
+            if isinstance(payload_dict, Mapping):
+                mapping_payload = payload_dict
+        elif hasattr(payload, "model_dump") and callable(
+            getattr(payload, "model_dump")
+        ):
+            payload_dict = payload.model_dump()
+            if isinstance(payload_dict, Mapping):
+                mapping_payload = payload_dict
+        elif isinstance(getattr(payload, "__dict__", None), Mapping):
+            mapping_payload = dict(payload.__dict__)
+
+        if mapping_payload is not None:
+            mapped_text = extract_from_mapping(mapping_payload)
+            if mapped_text:
+                return mapped_text
+            # For plain dict-like objects, we can also inspect event lists generically.
+            event_text = extract_from_iterable(mapping_payload.get("events"))
+            if event_text:
+                return event_text
+            content_text = extract_from_iterable(mapping_payload.get("parts"))
+            if content_text:
+                return content_text
         return None
 
 

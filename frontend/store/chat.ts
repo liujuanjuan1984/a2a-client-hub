@@ -40,7 +40,14 @@ import { useMessageStore } from "@/store/messages";
 
 type ChatState = {
   sessions: Record<string, AgentSession>;
-  ensureSession: (conversationId: string, agentId: string) => void;
+  ensureSession: (
+    conversationId: string,
+    agentId: string,
+    options?: {
+      createdAt?: string | null;
+      lastActiveAt?: string | null;
+    },
+  ) => void;
   sendMessage: (
     conversationId: string,
     agentId: string,
@@ -783,23 +790,47 @@ export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
       sessions: {},
-      ensureSession: (conversationId, agentId) => {
+      ensureSession: (conversationId, agentId, options) => {
+        const resolvedCreatedAt =
+          typeof options?.createdAt === "string" && options.createdAt.trim()
+            ? options.createdAt.trim()
+            : null;
+        const resolvedLastActiveAt =
+          typeof options?.lastActiveAt === "string" &&
+          options.lastActiveAt.trim()
+            ? options.lastActiveAt.trim()
+            : null;
+        const now = new Date().toISOString();
         set((state) => {
           if (state.sessions[conversationId]) {
+            const current = state.sessions[conversationId];
             return {
               sessions: {
                 ...state.sessions,
                 [conversationId]: {
-                  ...state.sessions[conversationId],
-                  lastActiveAt: new Date().toISOString(),
+                  ...current,
+                  createdAt:
+                    resolvedCreatedAt ??
+                    current.createdAt ??
+                    current.lastActiveAt ??
+                    now,
+                  lastActiveAt: resolvedLastActiveAt ?? now,
                 },
               },
             };
           }
+          const nextSession = createAgentSession(agentId);
           return {
             sessions: {
               ...state.sessions,
-              [conversationId]: createAgentSession(agentId),
+              [conversationId]: {
+                ...nextSession,
+                createdAt:
+                  resolvedCreatedAt ??
+                  nextSession.createdAt ??
+                  nextSession.lastActiveAt,
+                lastActiveAt: resolvedLastActiveAt ?? nextSession.lastActiveAt,
+              },
             },
           };
         });

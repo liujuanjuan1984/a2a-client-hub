@@ -143,6 +143,53 @@ export const formatDateTimeLocalInputValue = (
   return display;
 };
 
+const YYYY_MM_DD_HH_MM_PATTERN = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/;
+
+export const getNextTopOfHourLocalInputValue = (
+  timeZone?: string,
+  now: Date = new Date(),
+): string => {
+  const resolved = normalizeTimeZone(timeZone) ?? resolveUserTimeZone();
+  const localNow = toYmdHm(now, resolved);
+  const match = localNow.match(YYYY_MM_DD_HH_MM_PATTERN);
+  if (!match) {
+    const fallback = new Date(now.getTime());
+    fallback.setMinutes(0, 0, 0);
+    fallback.setHours(fallback.getHours() + 1);
+    return fallback.toISOString().slice(0, 16);
+  }
+
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const day = Number.parseInt(match[3], 10);
+  const hour = Number.parseInt(match[4], 10);
+  const minute = Number.parseInt(match[5], 10);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    const fallback = new Date(now.getTime());
+    fallback.setMinutes(0, 0, 0);
+    fallback.setHours(fallback.getHours() + 1);
+    return fallback.toISOString().slice(0, 16);
+  }
+
+  const baseUtc = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
+  baseUtc.setUTCMinutes(0, 0, 0);
+  baseUtc.setUTCHours(baseUtc.getUTCHours() + 1);
+
+  const nextYear = baseUtc.getUTCFullYear();
+  const nextMonth = String(baseUtc.getUTCMonth() + 1).padStart(2, "0");
+  const nextDay = String(baseUtc.getUTCDate()).padStart(2, "0");
+  const nextHour = String(baseUtc.getUTCHours()).padStart(2, "0");
+
+  return `${nextYear}-${nextMonth}-${nextDay}T${nextHour}:00`;
+};
+
 export const localDateTimeInputToUtcIso = (value: string): string | null => {
   const trimmed = value.trim();
   if (!trimmed) return null;

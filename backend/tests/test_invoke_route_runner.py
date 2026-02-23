@@ -134,21 +134,25 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
     class _Gateway:
-        async def invoke(self, **kwargs):  # noqa: ARG002
-            return {
-                "success": True,
-                "content": "ok",
-                "metadata": {
-                    "opencode": {
-                        "usage": {
-                            "input_tokens": 100,
-                            "output_tokens": 20,
-                            "total_tokens": 120,
-                            "cost": 0.01,
+        async def stream(self, **kwargs):  # noqa: ARG002
+            yield {
+                "kind": "artifact-update",
+                "artifact": {
+                    "parts": [{"kind": "text", "text": "ok"}],
+                    "metadata": {
+                        "opencode": {
+                            "block_type": "text",
+                            "usage": {
+                                "input_tokens": 100,
+                                "output_tokens": 20,
+                                "total_tokens": 120,
+                                "cost": 0.01,
+                            },
                         }
-                    }
+                    },
                 },
             }
+            yield {"kind": "status-update", "final": True}
 
     payload = A2AAgentInvokeRequest.model_validate(
         {
@@ -290,7 +294,6 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     assert attempts[1]["conversationId"] == rebound_conversation_id
     assert attempts[1]["metadata"].get("provider") == "opencode"
     assert attempts[1]["metadata"].get("externalSessionId") == "upstream-sid-2"
-    assert attempts[1]["metadata"].get("opencode_session_id") == "upstream-sid-2"
 
 
 @pytest.mark.asyncio
@@ -504,8 +507,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
             "metadata": {
                 "provider": "opencode",
                 "externalSessionId": "upstream-sid-2",
-                "external_session_id": "upstream-sid-2",
-                "opencode_session_id": "upstream-sid-2",
             },
         },
     ]
@@ -640,8 +641,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             "metadata": {
                 "provider": "opencode",
                 "externalSessionId": "upstream-sid-2",
-                "external_session_id": "upstream-sid-2",
-                "opencode_session_id": "upstream-sid-2",
             },
         },
     ]
@@ -657,8 +656,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             "metadata": {
                 "provider": "opencode",
                 "externalSessionId": "upstream-sid-2",
-                "external_session_id": "upstream-sid-2",
-                "opencode_session_id": "upstream-sid-2",
             },
         },
     ]

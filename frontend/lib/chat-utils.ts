@@ -61,6 +61,7 @@ export type ExternalSessionRef = {
 
 export type AgentSession = {
   agentId: string;
+  createdAt?: string;
   source?: "manual" | "scheduled" | null;
   contextId: string | null;
   runtimeStatus?: string | null;
@@ -85,6 +86,7 @@ export const CHAT_SESSION_MAX_PERSISTED = 80;
 
 export const createAgentSession = (agentId: string): AgentSession => ({
   agentId,
+  createdAt: new Date().toISOString(),
   source: null,
   contextId: null,
   runtimeStatus: null,
@@ -143,14 +145,24 @@ export const buildInvokePayload = (
   const providerForSessionBinding = (
     externalProvider ?? metadataProvider
   ).toLowerCase();
+  const hasOpencodeProvider = providerForSessionBinding === "opencode";
   if (externalProvider) {
     metadata.provider = externalProvider;
   }
   if (externalSessionId) {
-    metadata.externalSessionId = externalSessionId;
-    metadata.external_session_id = externalSessionId;
-    if (providerForSessionBinding === "opencode") {
-      metadata.opencode_session_id = externalSessionId;
+    if (hasOpencodeProvider) {
+      const existingMetadata =
+        typeof metadata.opencode === "object" &&
+        metadata.opencode !== null &&
+        !Array.isArray(metadata.opencode)
+          ? { ...(metadata.opencode as Record<string, unknown>) }
+          : {};
+      metadata.opencode = {
+        ...existingMetadata,
+        session_id: externalSessionId,
+      };
+    } else {
+      metadata.externalSessionId = externalSessionId;
     }
   }
   if (Object.keys(metadata).length > 0) {
@@ -164,6 +176,11 @@ const getSessionLastActiveAt = (session: AgentSession) =>
     ? session.lastActiveAt
     : FALLBACK_LAST_ACTIVE_AT;
 
+const getSessionCreatedAt = (session: AgentSession) =>
+  typeof session.createdAt === "string"
+    ? session.createdAt
+    : getSessionLastActiveAt(session);
+
 export const sortSessionsByLastActive = (
   sessions: [string, AgentSession][],
 ): [string, AgentSession][] =>
@@ -175,6 +192,7 @@ const normalizeSessionForPersistence = (
   session: AgentSession,
 ): AgentSession => ({
   agentId: session.agentId,
+  createdAt: getSessionCreatedAt(session),
   source: session.source ?? null,
   contextId: session.contextId ?? null,
   runtimeStatus: null,
