@@ -504,6 +504,11 @@ class Settings(BaseSettings):
         alias="A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS",
         description="Timeout in seconds before a running scheduled task is considered stale by recovery.",
     )
+    a2a_schedule_run_lease_seconds: int = Field(
+        default=2400,
+        alias="A2A_SCHEDULE_RUN_LEASE_SECONDS",
+        description="Lease timeout in seconds for one scheduled run before recovery finalization.",
+    )
     a2a_schedule_task_failure_threshold: int = Field(
         default=3,
         alias="A2A_SCHEDULE_TASK_FAILURE_THRESHOLD",
@@ -656,14 +661,16 @@ class Settings(BaseSettings):
             raise ValueError("Scheduled A2A timeout values must not exceed 86400")
         return value
 
-    @field_validator("a2a_schedule_recovery_timeout_seconds")
+    @field_validator(
+        "a2a_schedule_recovery_timeout_seconds", "a2a_schedule_run_lease_seconds"
+    )
     @classmethod
     def validate_a2a_schedule_recovery_timeout_seconds(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS must be positive")
+            raise ValueError("A2A schedule recovery timeout values must be positive")
         if value > 604_800:
             raise ValueError(
-                "A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS must not exceed 604800"
+                "A2A schedule recovery timeout values must not exceed 604800"
             )
         return value
 

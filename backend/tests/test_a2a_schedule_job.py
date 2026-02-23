@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
@@ -73,7 +74,17 @@ def _mock_runtime_builder():
     return SimpleNamespace(build=_build)
 
 
-def _build_claim(task: A2AScheduleTask):
+async def _mark_task_claimed(session, *, task: A2AScheduleTask):
+    run_id = uuid4()
+    task.current_run_id = run_id
+    task.running_started_at = utc_now()
+    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+    await session.commit()
+    await session.refresh(task)
+    return run_id
+
+
+def _build_claim(task: A2AScheduleTask, *, run_id):
     return ClaimedA2AScheduleTask(
         task_id=task.id,
         user_id=task.user_id,
@@ -84,6 +95,7 @@ def _build_claim(task: A2AScheduleTask):
         cycle_type=task.cycle_type,
         time_point=task.time_point,
         scheduled_for=task.next_run_at,
+        run_id=run_id,
     )
 
 
@@ -122,6 +134,7 @@ async def test_claim_next_due_task_obeys_agent_concurrency_limit(
         A2AScheduleExecution(
             user_id=user.id,
             task_id=task_a1.id,
+            run_id=uuid4(),
             scheduled_for=now - timedelta(minutes=1),
             started_at=now - timedelta(minutes=1),
             status=A2AScheduleExecution.STATUS_RUNNING,
@@ -181,7 +194,8 @@ async def test_execute_claimed_task_resets_consecutive_failures_on_success(
         ),
     )
 
-    await _execute_claimed_task(claim=_build_claim(task))
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
     await async_db_session.rollback()
 
     async with async_session_maker() as check_db:
@@ -258,7 +272,8 @@ async def test_execute_claimed_task_timeout_trips_failure_threshold(
         ),
     )
 
-    await _execute_claimed_task(claim=_build_claim(task))
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
     await async_db_session.rollback()
 
     async with async_session_maker() as check_db:
@@ -307,7 +322,8 @@ async def test_execute_claimed_task_runtime_failure_does_not_create_conversation
         SimpleNamespace(build=_build),
     )
 
-    await _execute_claimed_task(claim=_build_claim(task))
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
     await async_db_session.rollback()
 
     async with async_session_maker() as check_db:
@@ -365,7 +381,8 @@ async def test_execute_claimed_task_binds_external_session_identity_when_present
         ),
     )
 
-    await _execute_claimed_task(claim=_build_claim(task))
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
     await async_db_session.rollback()
 
     async with async_session_maker() as check_db:
@@ -434,7 +451,8 @@ async def test_execute_claimed_task_persists_readable_agent_content(
         ),
     )
 
-    await _execute_claimed_task(claim=_build_claim(task))
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
     await async_db_session.rollback()
 
     async with async_session_maker() as check_db:
@@ -492,8 +510,10 @@ async def test_execute_claimed_task_creates_new_conversation_each_run(
         ),
     )
 
-    await _execute_claimed_task(claim=_build_claim(task))
-    await _execute_claimed_task(claim=_build_claim(task))
+    first_run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=first_run_id))
+    second_run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=second_run_id))
     await async_db_session.rollback()
 
     async with async_session_maker() as check_db:
@@ -519,3 +539,152 @@ async def test_execute_claimed_task_creates_new_conversation_each_run(
     assert latest_conversation_id != previous_conversation_id
     assert refreshed_task is not None
     assert refreshed_task.conversation_id == latest_conversation_id
+
+
+async def test_execute_claimed_task_skips_stale_run_id(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="stale-claim")
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+    task.current_run_id = uuid4()
+    task.running_started_at = now
+    await async_db_session.commit()
+
+    stale_claim = _build_claim(task, run_id=uuid4())
+    await _execute_claimed_task(claim=stale_claim)
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+        )
+        executions = list(
+            (
+                await check_db.scalars(
+                    select(A2AScheduleExecution).where(
+                        A2AScheduleExecution.task_id == task.id
+                    )
+                )
+            ).all()
+        )
+
+    assert refreshed_task is not None
+    assert refreshed_task.current_run_id is not None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_RUNNING
+    assert executions == []
+
+
+async def test_recover_stale_running_task_finalizes_matching_run(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="recover-run")
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    run_id = uuid4()
+    stale_started_at = now - timedelta(minutes=30)
+    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+    task.current_run_id = run_id
+    task.running_started_at = stale_started_at
+    execution = A2AScheduleExecution(
+        user_id=user.id,
+        task_id=task.id,
+        run_id=run_id,
+        scheduled_for=stale_started_at,
+        started_at=stale_started_at,
+        status=A2AScheduleExecution.STATUS_RUNNING,
+    )
+    async_db_session.add(execution)
+    await async_db_session.commit()
+
+    recovered = await a2a_schedule_service.recover_stale_running_tasks(
+        async_db_session,
+        now=now,
+        timeout_seconds=60,
+    )
+    assert recovered == 1
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+        )
+        refreshed_execution = await check_db.scalar(
+            select(A2AScheduleExecution).where(A2AScheduleExecution.id == execution.id)
+        )
+
+    assert refreshed_task is not None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
+    assert refreshed_task.current_run_id is None
+    assert refreshed_task.running_started_at is None
+    assert refreshed_execution is not None
+    assert refreshed_execution.status == A2AScheduleExecution.STATUS_FAILED
+    assert refreshed_execution.finished_at is not None
+
+
+async def test_recover_stale_running_task_backfills_missing_execution(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="recover-missing-exec"
+    )
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    run_id = uuid4()
+    stale_started_at = now - timedelta(minutes=30)
+    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+    task.current_run_id = run_id
+    task.running_started_at = stale_started_at
+    await async_db_session.commit()
+
+    recovered = await a2a_schedule_service.recover_stale_running_tasks(
+        async_db_session,
+        now=now,
+        timeout_seconds=60,
+    )
+    assert recovered == 1
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+        )
+        executions = list(
+            (
+                await check_db.scalars(
+                    select(A2AScheduleExecution).where(
+                        A2AScheduleExecution.task_id == task.id,
+                        A2AScheduleExecution.run_id == run_id,
+                    )
+                )
+            ).all()
+        )
+
+    assert refreshed_task is not None
+    assert refreshed_task.current_run_id is None
+    assert refreshed_task.running_started_at is None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
+    assert len(executions) == 1
+    assert executions[0].status == A2AScheduleExecution.STATUS_FAILED

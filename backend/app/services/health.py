@@ -14,6 +14,7 @@ from app.db.session import AsyncSessionLocal
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.metrics import a2a_metrics
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
+from app.services.ops_metrics import ops_metrics
 from app.utils.timezone_util import utc_now_iso
 
 HealthStatus = Literal["healthy", "degraded", "unhealthy"]
@@ -119,4 +120,5 @@ def _check_a2a() -> Dict[str, Any]:
     )
     result["metrics"] = a2a_metrics.snapshot()
     result["extension_metrics"] = a2a_extension_metrics.snapshot()
+    result["ops_metrics"] = ops_metrics.snapshot()
     return result

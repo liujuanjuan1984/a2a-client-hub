@@ -6,7 +6,7 @@ import calendar
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Dict, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,6 +49,7 @@ class ClaimedA2AScheduleTask:
     cycle_type: str
     time_point: Dict[str, Any]
     scheduled_for: datetime
+    run_id: UUID
 
 
 class A2AScheduleService:
@@ -440,11 +441,11 @@ class A2AScheduleService:
             is_superuser=is_superuser,
         )
 
+        run_id = uuid4()
         selected_task.next_run_at = next_run_at
         selected_task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-        # Record the claim timestamp so we can recover stale runs if the worker crashes
-        # before creating an execution row.
-        selected_task.last_run_at = now_utc
+        selected_task.current_run_id = run_id
+        selected_task.running_started_at = now_utc
         await commit_safely(db)
 
         return ClaimedA2AScheduleTask(
@@ -457,6 +458,7 @@ class A2AScheduleService:
             cycle_type=selected_task.cycle_type,
             time_point=dict(selected_task.time_point or {}),
             scheduled_for=scheduled_for,
+            run_id=run_id,
         )
 
     async def recover_stale_running_tasks(
@@ -466,15 +468,12 @@ class A2AScheduleService:
         now: Optional[datetime] = None,
         timeout_seconds: int = 600,
     ) -> int:
-        """Mark stale `running` tasks as failed and persist failure executions.
-
-        This recovers the scenario where a task is claimed (status=running) but the
-        worker crashes before the execution row is created or finalized.
-        """
+        """Recover stale running tasks by run_id and close them deterministically."""
 
         now_utc = ensure_utc(now or utc_now())
         timeout_seconds = max(int(timeout_seconds or 0), 1)
         cutoff = now_utc - timedelta(seconds=timeout_seconds)
+        failure_threshold = max(int(settings.a2a_schedule_task_failure_threshold), 1)
 
         stmt = (
             select(A2AScheduleTask)
@@ -482,11 +481,15 @@ class A2AScheduleService:
                 and_(
                     A2AScheduleTask.deleted_at.is_(None),
                     A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
-                    A2AScheduleTask.last_run_at.is_not(None),
-                    A2AScheduleTask.last_run_at <= cutoff,
+                    A2AScheduleTask.current_run_id.is_not(None),
+                    A2AScheduleTask.running_started_at.is_not(None),
+                    A2AScheduleTask.running_started_at <= cutoff,
                 )
             )
-            .order_by(A2AScheduleTask.last_run_at.asc(), A2AScheduleTask.id.asc())
+            .order_by(
+                A2AScheduleTask.running_started_at.asc(),
+                A2AScheduleTask.id.asc(),
+            )
             .with_for_update(skip_locked=True)
         )
         rows = await db.execute(stmt)
@@ -496,22 +499,23 @@ class A2AScheduleService:
 
         error_message = "Execution marked as failed by recovery: stale running task exceeded timeout"
 
+        recovered_count = 0
         for task in tasks:
-            # Try to locate the most recent execution; if it's still running, finalize it.
+            if task.current_run_id is None:
+                continue
+            run_id = task.current_run_id
             exec_stmt = (
                 select(A2AScheduleExecution)
                 .where(
                     A2AScheduleExecution.task_id == task.id,
                     A2AScheduleExecution.user_id == task.user_id,
-                )
-                .order_by(
-                    A2AScheduleExecution.started_at.desc(),
-                    A2AScheduleExecution.id.desc(),
+                    A2AScheduleExecution.run_id == run_id,
                 )
                 .limit(1)
                 .with_for_update(skip_locked=True)
             )
             execution = await db.scalar(exec_stmt)
+            final_task_status = A2AScheduleTask.STATUS_FAILED
 
             if (
                 execution is not None
@@ -523,12 +527,13 @@ class A2AScheduleService:
                 execution.error_message = error_message
                 if execution.conversation_id is None:
                     execution.conversation_id = task.conversation_id
-            else:
+            elif execution is None:
                 # No running execution row exists (e.g., crash before execution creation).
-                started_at = ensure_utc(task.last_run_at or now_utc)
+                started_at = ensure_utc(task.running_started_at or now_utc)
                 recovered = A2AScheduleExecution(
                     user_id=task.user_id,
                     task_id=task.id,
+                    run_id=run_id,
                     scheduled_for=started_at,
                     started_at=started_at,
                     finished_at=now_utc,
@@ -537,12 +542,77 @@ class A2AScheduleService:
                     conversation_id=task.conversation_id,
                 )
                 db.add(recovered)
+            elif execution.status == A2AScheduleExecution.STATUS_SUCCESS:
+                final_task_status = A2AScheduleTask.STATUS_SUCCESS
+            elif execution.status == A2AScheduleExecution.STATUS_FAILED:
+                final_task_status = A2AScheduleTask.STATUS_FAILED
 
-            task.last_run_status = A2AScheduleTask.STATUS_FAILED
+            task.last_run_status = final_task_status
             task.last_run_at = now_utc
+            task.current_run_id = None
+            task.running_started_at = None
+            if final_task_status == A2AScheduleTask.STATUS_SUCCESS:
+                task.consecutive_failures = 0
+            else:
+                task.consecutive_failures = (task.consecutive_failures or 0) + 1
+                if task.consecutive_failures >= failure_threshold:
+                    task.enabled = False
+            recovered_count += 1
 
         await commit_safely(db)
-        return len(tasks)
+        return recovered_count
+
+    async def finalize_task_run(
+        self,
+        db: AsyncSession,
+        *,
+        task_id: UUID,
+        user_id: UUID,
+        run_id: UUID,
+        final_status: str,
+        finished_at: datetime,
+        conversation_id: UUID | None = None,
+    ) -> bool:
+        """Finalize one claimed run only if current_run_id still matches run_id."""
+
+        stmt = (
+            select(A2AScheduleTask)
+            .where(
+                and_(
+                    A2AScheduleTask.id == task_id,
+                    A2AScheduleTask.user_id == user_id,
+                    A2AScheduleTask.deleted_at.is_(None),
+                    A2AScheduleTask.current_run_id == run_id,
+                )
+            )
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        task = await db.scalar(stmt)
+        if task is None:
+            return False
+
+        threshold = max(int(settings.a2a_schedule_task_failure_threshold), 1)
+        task.last_run_status = final_status
+        task.last_run_at = ensure_utc(finished_at)
+        task.current_run_id = None
+        task.running_started_at = None
+        if conversation_id is not None:
+            task.conversation_id = conversation_id
+
+        if final_status == A2AScheduleTask.STATUS_SUCCESS:
+            task.consecutive_failures = 0
+        elif final_status == A2AScheduleTask.STATUS_FAILED:
+            task.consecutive_failures = (task.consecutive_failures or 0) + 1
+            if task.consecutive_failures >= threshold:
+                task.enabled = False
+        elif final_status == A2AScheduleTask.STATUS_IDLE:
+            # Disabled tasks can be reset to idle without affecting failure counters.
+            pass
+        else:
+            raise A2AScheduleValidationError("Unsupported final status for task run")
+
+        return True
 
     async def _get_task(
         self,

@@ -9,14 +9,14 @@ from uuid import uuid4
 
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select, text
 
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, async_engine
 from app.db.transaction import commit_safely, rollback_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
@@ -27,6 +27,7 @@ from app.services.a2a_schedule_service import (
     a2a_schedule_service,
 )
 from app.services.invoke_route_runner import run_background_invoke
+from app.services.ops_metrics import ops_metrics
 from app.services.scheduler import get_scheduler
 from app.utils.timezone_util import utc_now
 
@@ -40,11 +41,16 @@ _dispatch_queue: asyncio.Queue[ClaimedA2AScheduleTask] = asyncio.Queue()
 _dispatch_worker_tasks: set[asyncio.Task[None]] = set()
 
 
-def _execution_metadata(task: A2AScheduleTask, execution_id: str) -> dict[str, object]:
+def _execution_metadata(
+    task: A2AScheduleTask,
+    execution_id: str,
+    run_id: str,
+) -> dict[str, object]:
     return {
         "source": A2A_SCHEDULE_SOURCE,
         "schedule_task_id": str(task.id),
         "schedule_execution_id": execution_id,
+        "run_id": run_id,
         "agent_id": str(task.agent_id),
     }
 
@@ -67,8 +73,60 @@ async def _ensure_task_session(*, db, task: A2AScheduleTask) -> ConversationThre
     return thread
 
 
+def _pool_checked_out() -> int:
+    pool = getattr(async_engine.sync_engine, "pool", None)
+    checked_out = getattr(pool, "checkedout", None)
+    if not callable(checked_out):
+        return 0
+    try:
+        return max(int(checked_out()), 0)
+    except Exception:
+        return 0
+
+
+async def _refresh_ops_metrics() -> None:
+    running_stmt = select(func.count(A2AScheduleTask.id)).where(
+        and_(
+            A2AScheduleTask.deleted_at.is_(None),
+            A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
+            A2AScheduleTask.current_run_id.is_not(None),
+        )
+    )
+    async with AsyncSessionLocal() as db:
+        running_count = int((await db.scalar(running_stmt)) or 0)
+        ops_metrics.set_schedule_running_task_count(running_count)
+        try:
+            idle_in_tx_count = int(
+                (
+                    await db.scalar(
+                        text(
+                            "SELECT count(*) FROM pg_stat_activity "
+                            "WHERE datname = current_database() "
+                            "AND state = 'idle in transaction'"
+                        )
+                    )
+                )
+                or 0
+            )
+            ops_metrics.set_db_idle_in_tx_count(idle_in_tx_count)
+        except Exception:
+            # pg_stat_activity may be unavailable depending on DB permissions.
+            pass
+    ops_metrics.set_db_pool_checked_out(_pool_checked_out())
+
+
 async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
     async with AsyncSessionLocal() as db:
+        logger.info(
+            "Start scheduled run claim task=%s run_id=%s",
+            claim.task_id,
+            claim.run_id,
+            extra={
+                "schedule_task_id": str(claim.task_id),
+                "run_id": str(claim.run_id),
+                "phase": "claim",
+            },
+        )
         stmt = select(A2AScheduleTask).where(
             and_(
                 A2AScheduleTask.id == claim.task_id,
@@ -78,24 +136,60 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
         task = await db.scalar(stmt)
         if task is None:
             return
+        if task.current_run_id != claim.run_id:
+            logger.info(
+                "Skip stale schedule claim task=%s run_id=%s current_run_id=%s",
+                task.id,
+                claim.run_id,
+                task.current_run_id,
+                extra={
+                    "schedule_task_id": str(task.id),
+                    "run_id": str(claim.run_id),
+                    "phase": "claim",
+                },
+            )
+            return
         if not task.enabled:
             if task.last_run_status == A2AScheduleTask.STATUS_RUNNING:
-                task.last_run_status = A2AScheduleTask.STATUS_IDLE
+                await a2a_schedule_service.finalize_task_run(
+                    db,
+                    task_id=task.id,
+                    user_id=task.user_id,
+                    run_id=claim.run_id,
+                    final_status=A2AScheduleTask.STATUS_IDLE,
+                    finished_at=utc_now(),
+                    conversation_id=task.conversation_id,
+                )
                 await commit_safely(db)
             return
 
-        started_at = utc_now()
-        execution = A2AScheduleExecution(
-            user_id=task.user_id,
-            task_id=task.id,
-            scheduled_for=claim.scheduled_for,
-            started_at=started_at,
-            status=A2AScheduleExecution.STATUS_RUNNING,
+        execution = await db.scalar(
+            select(A2AScheduleExecution)
+            .where(
+                and_(
+                    A2AScheduleExecution.task_id == task.id,
+                    A2AScheduleExecution.user_id == task.user_id,
+                    A2AScheduleExecution.run_id == claim.run_id,
+                )
+            )
+            .limit(1)
+            .with_for_update(skip_locked=True)
         )
+
         try:
-            db.add(execution)
-            await db.flush()
-            metadata = _execution_metadata(task, str(execution.id))
+            if execution is None:
+                started_at = utc_now()
+                execution = A2AScheduleExecution(
+                    user_id=task.user_id,
+                    task_id=task.id,
+                    run_id=claim.run_id,
+                    scheduled_for=claim.scheduled_for,
+                    started_at=started_at,
+                    status=A2AScheduleExecution.STATUS_RUNNING,
+                )
+                db.add(execution)
+                await db.flush()
+            metadata = _execution_metadata(task, str(execution.id), str(claim.run_id))
             runtime = await a2a_runtime_builder.build(
                 db,
                 user_id=task.user_id,
@@ -108,6 +202,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 task=task,
             )
             execution.conversation_id = thread.id
+            await commit_safely(db)
             invoke_payload = A2AAgentInvokeRequest(
                 query=task.prompt,
                 conversationId=str(thread.id),
@@ -126,6 +221,8 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 log_extra={
                     "schedule_task_id": str(task.id),
                     "schedule_execution_id": str(execution.id),
+                    "run_id": str(claim.run_id),
+                    "phase": "invoke",
                     "agent_id": str(task.agent_id),
                     "user_id": str(task.user_id),
                 },
@@ -158,39 +255,73 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     or None
                 )
             )
+            if execution.started_at and execution.finished_at:
+                latency_ms = (
+                    execution.finished_at - execution.started_at
+                ).total_seconds() * 1000
+                ops_metrics.observe_schedule_run_finalize_latency(latency_ms)
 
-            task.last_run_at = execution.finished_at
-            task.last_run_status = (
+            final_status = (
                 A2AScheduleTask.STATUS_SUCCESS
                 if success
                 else A2AScheduleTask.STATUS_FAILED
             )
-            if success:
-                task.consecutive_failures = 0
-            else:
-                task.consecutive_failures = (task.consecutive_failures or 0) + 1
-                if (
-                    task.consecutive_failures
-                    >= settings.a2a_schedule_task_failure_threshold
-                ):
-                    task.enabled = False
+            finalized = await a2a_schedule_service.finalize_task_run(
+                db,
+                task_id=task.id,
+                user_id=task.user_id,
+                run_id=claim.run_id,
+                final_status=final_status,
+                finished_at=execution.finished_at,
+                conversation_id=execution.conversation_id,
+            )
+            if not finalized:
+                logger.warning(
+                    "Schedule run finalize skipped due to run mismatch task=%s run_id=%s",
+                    task.id,
+                    claim.run_id,
+                    extra={
+                        "schedule_task_id": str(task.id),
+                        "schedule_execution_id": str(execution.id),
+                        "run_id": str(claim.run_id),
+                        "phase": "finalize",
+                    },
+                )
 
             await commit_safely(db)
 
         except Exception as exc:  # pragma: no cover - defensive path
-            task.last_run_at = utc_now()
-            task.last_run_status = A2AScheduleTask.STATUS_FAILED
-            task.consecutive_failures = (task.consecutive_failures or 0) + 1
-            if (
-                task.consecutive_failures
-                >= settings.a2a_schedule_task_failure_threshold
-            ):
-                task.enabled = False
+            finished_at = utc_now()
+            if execution is None:
+                execution = A2AScheduleExecution(
+                    user_id=task.user_id,
+                    task_id=task.id,
+                    run_id=claim.run_id,
+                    scheduled_for=claim.scheduled_for,
+                    started_at=finished_at,
+                    status=A2AScheduleExecution.STATUS_RUNNING,
+                    conversation_id=task.conversation_id,
+                )
+                db.add(execution)
+                await db.flush()
+
             execution.status = A2AScheduleExecution.STATUS_FAILED
-            execution.finished_at = task.last_run_at
+            execution.finished_at = finished_at
             execution.error_message = str(exc)[:2000]
             if not execution.response_content:
                 execution.response_content = execution.error_message
+            if execution.started_at:
+                latency_ms = (finished_at - execution.started_at).total_seconds() * 1000
+                ops_metrics.observe_schedule_run_finalize_latency(latency_ms)
+            await a2a_schedule_service.finalize_task_run(
+                db,
+                task_id=task.id,
+                user_id=task.user_id,
+                run_id=claim.run_id,
+                final_status=A2AScheduleTask.STATUS_FAILED,
+                finished_at=finished_at,
+                conversation_id=execution.conversation_id or task.conversation_id,
+            )
             try:
                 await commit_safely(db)
             except Exception as commit_error:  # pragma: no cover - defensive
@@ -207,6 +338,12 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 execution.id,
                 exc,
                 exc_info=exc,
+                extra={
+                    "schedule_task_id": str(task.id),
+                    "schedule_execution_id": str(execution.id),
+                    "run_id": str(claim.run_id),
+                    "phase": "finalize",
+                },
             )
 
 
@@ -267,13 +404,14 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
     async with AsyncSessionLocal() as db:
         recovered = await a2a_schedule_service.recover_stale_running_tasks(
             db,
-            timeout_seconds=max(
-                int(settings.a2a_schedule_recovery_timeout_seconds),
-                int(settings.a2a_schedule_task_invoke_timeout) + 300,
-            ),
+            timeout_seconds=int(settings.a2a_schedule_run_lease_seconds),
         )
     if recovered:
-        logger.warning("Recovered %d stale scheduled A2A task(s).", recovered)
+        logger.warning(
+            "Recovered %d stale scheduled A2A task(s).",
+            recovered,
+            extra={"phase": "recovery"},
+        )
 
     await _ensure_schedule_workers_started()
 
@@ -294,6 +432,7 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
             enqueued,
             _dispatch_queue.qsize(),
         )
+    await _refresh_ops_metrics()
 
 
 def ensure_a2a_schedule_job() -> None:

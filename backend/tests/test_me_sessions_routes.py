@@ -69,6 +69,7 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
     execution = A2AScheduleExecution(
         user_id=user.id,
         task_id=task.id,
+        run_id=uuid4(),
         conversation_id=session.id,
         scheduled_for=now - timedelta(minutes=1),
         started_at=now - timedelta(minutes=1),

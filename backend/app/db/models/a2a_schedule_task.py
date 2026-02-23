@@ -115,6 +115,16 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         server_default=STATUS_IDLE,
         comment="Status of the most recent execution",
     )
+    current_run_id = Column(
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="Identifier of the currently running execution attempt",
+    )
+    running_started_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp when the current running execution was claimed",
+    )
 
 
 __all__ = ["A2AScheduleTask"]
