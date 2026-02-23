@@ -5,6 +5,7 @@ import json
 import logging
 
 import pytest
+from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
 from app.services.a2a_invoke_service import a2a_invoke_service
@@ -50,6 +51,16 @@ class _DummyWebSocket:
 
     async def send_text(self, payload: str) -> None:
         self.sent.append(payload)
+
+
+class _DisconnectingWebSocket:
+    async def send_text(self, payload: str) -> None:  # noqa: ARG002
+        raise WebSocketDisconnect(code=1001)
+
+
+class _ClosedWebSocket:
+    async def send_text(self, payload: str) -> None:  # noqa: ARG002
+        raise RuntimeError('Cannot call "send" once a close message has been sent.')
 
 
 class _SessionNotFoundError(RuntimeError):
@@ -688,6 +699,35 @@ async def test_ws_emits_keepalive_heartbeat_when_upstream_is_idle(monkeypatch):
     assert any(item.get("event") == "heartbeat" for item in payloads)
     assert any(item.get("content") == "late-event" for item in payloads)
     assert payloads[-1]["event"] == "stream_end"
+
+
+@pytest.mark.asyncio
+async def test_ws_stream_ignores_client_disconnect_without_sending_error() -> None:
+    websocket = _DisconnectingWebSocket()
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithDelayedEvents(
+            [{"content": "late-event"}],
+            delay_seconds=0.02,
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_ws_error_ignores_closed_socket_runtime_error() -> None:
+    websocket = _ClosedWebSocket()
+    await a2a_invoke_service.send_ws_error(
+        websocket,
+        message="Upstream streaming failed",
+        error_code="upstream_stream_error",
+    )
 
 
 @pytest.mark.asyncio

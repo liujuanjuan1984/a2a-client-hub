@@ -16,7 +16,7 @@ from typing import Any, AsyncIterator, Callable
 
 from a2a.client.client import ClientEvent
 from a2a.types import Message
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from app.utils.json_encoder import json_dumps
@@ -64,17 +64,45 @@ class A2AInvokeService:
         message: str,
         error_code: str | None = None,
     ) -> None:
-        await websocket.send_text(
-            json_dumps(
-                self.build_ws_error_event(message=message, error_code=error_code),
-                ensure_ascii=False,
+        try:
+            await websocket.send_text(
+                json_dumps(
+                    self.build_ws_error_event(message=message, error_code=error_code),
+                    ensure_ascii=False,
+                )
             )
-        )
+        except Exception as exc:
+            if self._is_client_disconnect_error(exc):
+                return
+            raise
 
     async def send_ws_stream_end(self, websocket: WebSocket) -> None:
-        await websocket.send_text(
-            json_dumps(self._WS_STREAM_END_EVENT, ensure_ascii=False)
-        )
+        try:
+            await websocket.send_text(
+                json_dumps(self._WS_STREAM_END_EVENT, ensure_ascii=False)
+            )
+        except Exception as exc:
+            if self._is_client_disconnect_error(exc):
+                return
+            raise
+
+    @staticmethod
+    def _is_client_disconnect_error(exc: Exception) -> bool:
+        if isinstance(exc, WebSocketDisconnect):
+            return True
+        class_name = exc.__class__.__name__
+        if class_name in {
+            "ClientDisconnected",
+            "ConnectionClosed",
+            "ConnectionClosedOK",
+        }:
+            return True
+        if (
+            isinstance(exc, RuntimeError)
+            and "close message has been sent" in str(exc).lower()
+        ):
+            return True
+        return False
 
     @staticmethod
     async def _call_callback(callback: Callable[[Any], Any] | None, value: Any) -> None:
@@ -1012,6 +1040,7 @@ class A2AInvokeService:
 
         stream_text_accumulator = self._StreamTextAccumulator()
         stream_failed = False
+        client_disconnected = False
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
 
         # Replay cached events if resuming
@@ -1089,6 +1118,11 @@ class A2AInvokeService:
                 if self._is_terminal_status_event(serialized):
                     break
         except Exception as exc:
+            if self._is_client_disconnect_error(exc):
+                stream_failed = True
+                client_disconnected = True
+                logger.info("A2A WS client disconnected", extra=log_extra)
+                return
             stream_failed = True
             logger.warning("A2A WS stream failed", exc_info=True, extra=log_extra)
             error_code = (
@@ -1114,7 +1148,7 @@ class A2AInvokeService:
                     stream_text_accumulator.result_metadata(),
                 )
                 await self._call_callback(on_complete, stream_text_accumulator.result())
-            if send_stream_end:
+            if send_stream_end and not client_disconnected:
                 await self.send_ws_stream_end(websocket)
 
     async def consume_stream(
