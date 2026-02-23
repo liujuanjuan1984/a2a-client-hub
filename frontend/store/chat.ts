@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import { invokeAgent } from "@/lib/api/a2aAgents";
+import { invokeAgent, type A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
 import {
   applyStreamBlockUpdate,
   type ChatMessage,
@@ -47,6 +47,7 @@ type ChatState = {
     content: string,
     agentSource: AgentSource,
   ) => Promise<void>;
+  resumeMessage: (conversationId: string) => Promise<void>;
   cancelMessage: (conversationId: string) => void;
   resetSession: (conversationId: string, agentId: string) => void;
   bindExternalSession: (
@@ -152,6 +153,632 @@ const buildApiErrorMessage = (error: unknown): string => {
     : `${error.message}${codeSuffix}`;
 };
 
+const executeStream = async (
+  conversationId: string,
+  agentId: string,
+  agentSource: AgentSource,
+  payload: A2AAgentInvokeRequest,
+  initialAgentMessageId: string,
+  get: () => ChatState,
+  set: (
+    partial:
+      | ChatState
+      | Partial<ChatState>
+      | ((state: ChatState) => ChatState | Partial<ChatState>),
+    replace?: boolean,
+  ) => void,
+) => {
+  const messageStore = useMessageStore.getState();
+  let activeAgentMessageId = initialAgentMessageId;
+  const activeStreamMessageIds = new Set<string>([initialAgentMessageId]);
+  const streamMessageIdMap = new Map<string, string>();
+  const seenEventIds = new Set<string>();
+  const nextExpectedSeqByMessageId = new Map<string, number>();
+  const pendingChunksByMessageId = new Map<
+    string,
+    Map<number, StreamBlockUpdate>
+  >();
+  let terminalHandled = false;
+  let hasObservedStreamEvent = false;
+  let highestReceivedSequence =
+    get().sessions[conversationId]?.lastReceivedSequence ?? null;
+
+  const patchSession = (patch: Partial<AgentSession>) => {
+    set((state) => {
+      const current = state.sessions[conversationId];
+      if (!current) return state;
+      const hasChanges = Object.entries(patch).some(
+        ([key, value]) => (current as Record<string, unknown>)[key] !== value,
+      );
+      if (!hasChanges) {
+        return state;
+      }
+      return {
+        sessions: {
+          ...state.sessions,
+          [conversationId]: {
+            ...current,
+            ...patch,
+          },
+        },
+      };
+    });
+  };
+
+  const markSessionIdle = () => {
+    patchSession({
+      streamState: "idle",
+      lastStreamError: null,
+      pendingInterrupt: null,
+    });
+  };
+
+  const updateSessionMeta = (meta: {
+    contextId?: string | null;
+    provider?: string | null;
+    externalSessionId?: string | null;
+    runtimeStatus?: string | null;
+    pendingInterrupt?: RuntimeInterrupt | null;
+    transport?: string;
+    inputModes?: string[];
+    outputModes?: string[];
+  }) => {
+    set((state) => {
+      const current = state.sessions[conversationId];
+      if (!current) return state;
+
+      const nextPatch: Partial<AgentSession> = {};
+      if (
+        meta.contextId !== undefined &&
+        meta.contextId !== current.contextId
+      ) {
+        nextPatch.contextId = meta.contextId;
+      }
+      if (
+        meta.runtimeStatus !== undefined &&
+        meta.runtimeStatus !== current.runtimeStatus
+      ) {
+        nextPatch.runtimeStatus = meta.runtimeStatus;
+      }
+      if (
+        meta.pendingInterrupt !== undefined &&
+        !isSamePendingInterrupt(current.pendingInterrupt, meta.pendingInterrupt)
+      ) {
+        nextPatch.pendingInterrupt = meta.pendingInterrupt;
+      }
+      if (
+        meta.transport !== undefined &&
+        meta.transport !== current.transport
+      ) {
+        nextPatch.transport = meta.transport;
+      }
+      if (
+        meta.inputModes &&
+        meta.inputModes.join("|") !== current.inputModes.join("|")
+      ) {
+        nextPatch.inputModes = meta.inputModes;
+      }
+      if (
+        meta.outputModes &&
+        meta.outputModes.join("|") !== current.outputModes.join("|")
+      ) {
+        nextPatch.outputModes = meta.outputModes;
+      }
+      if (meta.provider !== undefined || meta.externalSessionId !== undefined) {
+        const mergedExternalSessionRef = mergeExternalSessionRef(
+          current.externalSessionRef,
+          {
+            provider: meta.provider,
+            externalSessionId: meta.externalSessionId,
+          },
+        );
+        const currentProvider = current.externalSessionRef?.provider ?? null;
+        const currentExternalSessionId =
+          current.externalSessionRef?.externalSessionId ?? null;
+        if (
+          mergedExternalSessionRef.provider !== currentProvider ||
+          mergedExternalSessionRef.externalSessionId !==
+            currentExternalSessionId
+        ) {
+          nextPatch.externalSessionRef = mergedExternalSessionRef;
+        }
+      }
+
+      if (Object.keys(nextPatch).length === 0) {
+        return state;
+      }
+
+      return {
+        sessions: {
+          ...state.sessions,
+          [conversationId]: {
+            ...current,
+            ...nextPatch,
+          },
+        },
+      };
+    });
+  };
+
+  const markActiveMessage = (messageId: string) => {
+    activeAgentMessageId = messageId;
+    activeStreamMessageIds.add(messageId);
+    patchSession({
+      lastAgentMessageId: messageId,
+    });
+  };
+
+  const resolveExistingTargetMessageIds = () => {
+    const currentMessages =
+      useMessageStore.getState().messages[conversationId] ?? [];
+    const existingIds = new Set(currentMessages.map((message) => message.id));
+    const targets = Array.from(activeStreamMessageIds).filter((id) =>
+      existingIds.has(id),
+    );
+    if (targets.length === 0 && existingIds.has(activeAgentMessageId)) {
+      targets.push(activeAgentMessageId);
+    }
+    return targets;
+  };
+
+  const closeStreamingMessages = (errorText?: string) => {
+    const targetMessageIds = resolveExistingTargetMessageIds();
+    const now = new Date().toISOString();
+    targetMessageIds.forEach((messageId) => {
+      messageStore.updateMessageWithUpdater(
+        conversationId,
+        messageId,
+        (message) => {
+          const finalizedBlocks = finalizeMessageBlocks(message.blocks) ?? [];
+          if (!errorText) {
+            return {
+              blocks: finalizedBlocks,
+              status: "done",
+            };
+          }
+          return {
+            blocks: [
+              ...finalizedBlocks,
+              {
+                id: `${message.id}:error:${Date.now()}`,
+                type: "system_error",
+                content: `[Stream Error: ${errorText}]`,
+                isFinished: true,
+                createdAt: now,
+                updatedAt: now,
+              },
+            ],
+            status: "done",
+          };
+        },
+      );
+    });
+    activeStreamMessageIds.clear();
+  };
+
+  const mergeHistoryMessagesById = (incoming: ChatMessage[]) => {
+    const current = useMessageStore.getState().messages[conversationId] ?? [];
+    const merged = new Map<string, ChatMessage>();
+    current.forEach((message) => {
+      merged.set(message.id, message);
+    });
+    incoming.forEach((message) => {
+      const existing = merged.get(message.id);
+      const session = get().sessions[conversationId];
+      const isActivelyStreaming = session?.streamState === "streaming";
+      if (existing && existing.status === "streaming" && isActivelyStreaming) {
+        return;
+      }
+      merged.set(message.id, message);
+    });
+    const nextMessages = Array.from(merged.values()).sort((left, right) =>
+      left.createdAt.localeCompare(right.createdAt),
+    );
+    messageStore.setMessages(conversationId, nextMessages);
+  };
+
+  const backfillHistoryAfterSequenceGap = async () => {
+    const recovered = new Map<string, ChatMessage>();
+    const size = 100;
+    const maxPages = 20;
+
+    const collectPage = (items: SessionMessageItem[]) => {
+      const mapped = mapSessionMessagesToChatMessages(items, conversationId);
+      mapped.forEach((message) => {
+        recovered.set(message.id, message);
+      });
+    };
+
+    const firstPage = await listSessionMessagesPage(conversationId, {
+      page: 1,
+      size,
+    });
+    const pagination =
+      firstPage.pagination && typeof firstPage.pagination === "object"
+        ? (firstPage.pagination as Record<string, unknown>)
+        : null;
+    const totalPages =
+      pagination && typeof pagination.pages === "number"
+        ? pagination.pages
+        : null;
+
+    if (typeof totalPages === "number" && totalPages > 1) {
+      const tailPageWindow = 3;
+      const startPage = Math.max(1, totalPages - tailPageWindow + 1);
+      for (let page = startPage; page <= totalPages; page += 1) {
+        if (page === 1) {
+          collectPage(firstPage.items);
+          continue;
+        }
+        const response = await listSessionMessagesPage(conversationId, {
+          page,
+          size,
+        });
+        collectPage(response.items);
+      }
+    } else {
+      collectPage(firstPage.items);
+      let nextPage =
+        typeof firstPage.nextPage === "number" ? firstPage.nextPage : undefined;
+      let requestCount = 1;
+
+      while (
+        typeof nextPage === "number" &&
+        requestCount < maxPages &&
+        nextPage > 1
+      ) {
+        const response = await listSessionMessagesPage(conversationId, {
+          page: nextPage,
+          size,
+        });
+        collectPage(response.items);
+        nextPage =
+          typeof response.nextPage === "number" ? response.nextPage : undefined;
+        requestCount += 1;
+      }
+    }
+
+    if (recovered.size > 0) {
+      mergeHistoryMessagesById(Array.from(recovered.values()));
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.history.chat(conversationId),
+      });
+    }
+  };
+
+  const appendStreamChunk = (chunk: StreamBlockUpdate) => {
+    const resolveChunkMessageId = () => {
+      const mapped = streamMessageIdMap.get(chunk.messageId);
+      if (mapped) {
+        markActiveMessage(mapped);
+        return mapped;
+      }
+
+      const currentMessages =
+        useMessageStore.getState().messages[conversationId] ?? [];
+      const hasExactTarget = currentMessages.some(
+        (message) => message.id === chunk.messageId,
+      );
+      if (hasExactTarget) {
+        streamMessageIdMap.set(chunk.messageId, chunk.messageId);
+        markActiveMessage(chunk.messageId);
+        return chunk.messageId;
+      }
+
+      const placeholderId = activeAgentMessageId;
+      const hasActivePlaceholder = currentMessages.some(
+        (message) => message.id === placeholderId,
+      );
+      if (hasActivePlaceholder) {
+        messageStore.rekeyMessage(
+          conversationId,
+          placeholderId,
+          chunk.messageId,
+        );
+        activeStreamMessageIds.delete(placeholderId);
+      } else {
+        messageStore.addMessage(conversationId, {
+          id: chunk.messageId,
+          role: "agent",
+          content: "",
+          blocks: [],
+          createdAt: new Date().toISOString(),
+          status: "streaming",
+        });
+      }
+      streamMessageIdMap.set(chunk.messageId, chunk.messageId);
+      markActiveMessage(chunk.messageId);
+      return chunk.messageId;
+    };
+
+    const targetMessageId = resolveChunkMessageId();
+    messageStore.updateMessageWithUpdater(
+      conversationId,
+      targetMessageId,
+      (message) => {
+        const nextBlocks = applyStreamBlockUpdate(message.blocks, chunk);
+        return {
+          content: projectPrimaryTextContent(nextBlocks),
+          blocks: nextBlocks,
+          status: "streaming",
+        };
+      },
+    );
+  };
+
+  const queueIncomingChunk = (chunk: StreamBlockUpdate) => {
+    if (seenEventIds.has(chunk.eventId)) {
+      return;
+    }
+    seenEventIds.add(chunk.eventId);
+
+    if (chunk.seq === null) {
+      appendStreamChunk(chunk);
+      return;
+    }
+    if (
+      highestReceivedSequence === null ||
+      chunk.seq > highestReceivedSequence
+    ) {
+      highestReceivedSequence = chunk.seq;
+      patchSession({
+        lastReceivedSequence: chunk.seq,
+      });
+    }
+
+    const currentExpected = nextExpectedSeqByMessageId.get(chunk.messageId);
+    if (typeof currentExpected === "number" && chunk.seq < currentExpected) {
+      return;
+    }
+    if (currentExpected === undefined) {
+      nextExpectedSeqByMessageId.set(chunk.messageId, chunk.seq);
+    }
+
+    const pending = pendingChunksByMessageId.get(chunk.messageId) ?? new Map();
+    if (pending.has(chunk.seq)) {
+      return;
+    }
+    pending.set(chunk.seq, chunk);
+    pendingChunksByMessageId.set(chunk.messageId, pending);
+
+    let nextExpected =
+      nextExpectedSeqByMessageId.get(chunk.messageId) ?? chunk.seq;
+    while (pending.has(nextExpected)) {
+      const readyChunk = pending.get(nextExpected);
+      if (!readyChunk) break;
+      pending.delete(nextExpected);
+      appendStreamChunk(readyChunk);
+      nextExpected += 1;
+    }
+    nextExpectedSeqByMessageId.set(chunk.messageId, nextExpected);
+    if (pending.size === 0) {
+      pendingChunksByMessageId.delete(chunk.messageId);
+    }
+  };
+
+  const applyIncomingStreamData = (data: Record<string, unknown>): boolean => {
+    const chunk = extractStreamBlockUpdate(data);
+    const runtimeStatusEvent = extractRuntimeStatusEvent(data);
+    const kind = typeof data.kind === "string" ? data.kind : "";
+    const isLegacyContentEvent =
+      typeof data.content === "string" && data.content.trim().length > 0;
+    if (
+      chunk ||
+      runtimeStatusEvent ||
+      kind === "artifact-update" ||
+      kind === "status-update" ||
+      isLegacyContentEvent
+    ) {
+      hasObservedStreamEvent = true;
+    }
+    if (chunk) {
+      queueIncomingChunk(chunk);
+    }
+
+    const meta = extractSessionMeta(data);
+    const runtimeStatus = runtimeStatusEvent?.state ?? null;
+    const hasRuntimeStatusEvent = runtimeStatusEvent !== null;
+    const pendingInterrupt =
+      runtimeStatusEvent &&
+      isInputRequiredRuntimeState(runtimeStatusEvent.state)
+        ? runtimeStatusEvent.interrupt
+        : null;
+    if (
+      meta.contextId ||
+      meta.provider !== undefined ||
+      meta.externalSessionId !== undefined ||
+      meta.transport ||
+      meta.inputModes ||
+      meta.outputModes ||
+      hasRuntimeStatusEvent
+    ) {
+      updateSessionMeta({
+        ...meta,
+        ...(hasRuntimeStatusEvent ? { runtimeStatus, pendingInterrupt } : {}),
+      });
+    }
+
+    if (runtimeStatusEvent?.isFinal) {
+      completeStreamingMessage();
+      return true;
+    }
+    return false;
+  };
+
+  const appendStreamError = (errorText: string) => {
+    if (terminalHandled) {
+      return;
+    }
+    terminalHandled = true;
+    // DO NOT close streaming messages to error immediately to allow resumption
+    // But we need a visual cue. We will mark streamState as recoverable.
+    patchSession({
+      streamState: "recoverable",
+      lastStreamError: errorText,
+      pendingInterrupt: null,
+    });
+    console.warn("[Chat Stream] error (marked recoverable for resume)", {
+      conversationId,
+      source: get().sessions[conversationId]?.source ?? null,
+      message: errorText,
+      transport: get().sessions[conversationId]?.transport ?? "unknown",
+    });
+  };
+
+  const completeStreamingMessage = () => {
+    if (terminalHandled) {
+      return;
+    }
+    terminalHandled = true;
+    closeStreamingMessages();
+    markSessionIdle();
+
+    if (
+      Array.from(pendingChunksByMessageId.values()).some(
+        (pending) => pending.size > 0,
+      )
+    ) {
+      backfillHistoryAfterSequenceGap().catch((error) => {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Sequence-gap recovery failed.";
+        patchSession({
+          streamState: "recoverable",
+          lastStreamError: message,
+        });
+        console.warn("[Chat Stream] sequence-gap recovery failed", {
+          conversationId,
+          source: get().sessions[conversationId]?.source ?? null,
+          message,
+        });
+      });
+    }
+  };
+
+  const tryWebSocketTransport = async () =>
+    chatConnectionService.tryWebSocketTransport({
+      conversationId,
+      agentId,
+      source: agentSource,
+      payload,
+      callbacks: {
+        onData: (data) => {
+          if (data.event === "error") {
+            const maybePayload = data.data as
+              | {
+                  message?: unknown;
+                  error_code?: unknown;
+                }
+              | undefined;
+            const rawErrorCode = maybePayload?.error_code;
+            const normalizedErrorCode =
+              typeof rawErrorCode === "string" ? rawErrorCode.trim() : "";
+            if (normalizedErrorCode === "session_not_found") {
+              console.info("[Chat Stream] recoverable error received", {
+                conversationId,
+                errorCode: normalizedErrorCode,
+              });
+              return false;
+            }
+            const message =
+              typeof maybePayload?.message === "string"
+                ? (maybePayload as { message: string }).message
+                : "Stream error.";
+            appendStreamError(message);
+            return true;
+          }
+
+          if (data.event === "stream_end") {
+            completeStreamingMessage();
+            return true;
+          }
+
+          if (applyIncomingStreamData(data)) {
+            return true;
+          }
+          return false;
+        },
+        onDone: () => {
+          completeStreamingMessage();
+        },
+        onStreamError: appendStreamError,
+      },
+    });
+
+  const trySseTransport = async () => {
+    updateSessionMeta({ transport: "http_sse" });
+    return chatConnectionService.trySseTransport({
+      conversationId,
+      agentId,
+      source: agentSource,
+      payload,
+      callbacks: {
+        onData: (data) => {
+          return applyIncomingStreamData(data);
+        },
+        onDone: () => {
+          completeStreamingMessage();
+        },
+        onStreamError: appendStreamError,
+      },
+    });
+  };
+
+  const sendViaJsonFallback = async () => {
+    try {
+      updateSessionMeta({ transport: "http_json" });
+      const response =
+        agentSource === "shared"
+          ? await invokeHubAgent(agentId, payload)
+          : await invokeAgent(agentId, payload);
+      if (!response.success) {
+        const message =
+          response.error || response.error_code || "Request failed.";
+        messageStore.updateMessage(conversationId, activeAgentMessageId, {
+          content: message,
+          status: "done",
+        });
+        patchSession({
+          streamState: "error",
+          lastStreamError: message,
+        });
+        return;
+      }
+
+      messageStore.updateMessage(conversationId, activeAgentMessageId, {
+        content: response.content ?? "",
+        status: "done",
+      });
+      markSessionIdle();
+    } catch (error) {
+      const message = buildApiErrorMessage(error);
+      messageStore.updateMessage(conversationId, activeAgentMessageId, {
+        content: message,
+        status: "done",
+      });
+      patchSession({
+        streamState: "error",
+        lastStreamError: message,
+      });
+    }
+  };
+
+  if (await tryWebSocketTransport()) {
+    return;
+  }
+  if (await trySseTransport()) {
+    return;
+  }
+  if (hasObservedStreamEvent) {
+    appendStreamError(
+      "Streaming transport interrupted before completion; skip blocking replay.",
+    );
+    return;
+  }
+  await sendViaJsonFallback();
+};
+
 export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
@@ -232,6 +859,73 @@ export const useChatStore = create<ChatState>()(
         }));
         useMessageStore.getState().removeMessages(conversationId);
       },
+
+      resumeMessage: async (conversationId) => {
+        const state = get();
+        const session = state.sessions[conversationId];
+        if (!session || session.streamState !== "recoverable") {
+          return;
+        }
+
+        const agentId = session.agentId;
+        const agentSource = (session.source as AgentSource) ?? "shared";
+        const userMessageId = session.lastUserMessageId;
+        const agentMessageId = session.lastAgentMessageId;
+        const resumeFromSequence = session.lastReceivedSequence;
+
+        if (!userMessageId || !agentMessageId) {
+          set((s) => ({
+            sessions: {
+              ...s.sessions,
+              [conversationId]: {
+                ...s.sessions[conversationId],
+                streamState: "error",
+                lastStreamError: "Cannot resume: missing message references",
+              },
+            },
+          }));
+          return;
+        }
+
+        get().cancelMessage(conversationId);
+
+        const messageStore = useMessageStore.getState();
+        const messages = messageStore.messages[conversationId] ?? [];
+        const userMessage = messages.find((m) => m.id === userMessageId);
+        if (!userMessage) return;
+
+        set((s) => ({
+          sessions: {
+            ...s.sessions,
+            [conversationId]: {
+              ...s.sessions[conversationId],
+              streamState: "streaming",
+              lastStreamError: null,
+            },
+          },
+        }));
+
+        const payload = buildInvokePayload(
+          userMessage.content,
+          session,
+          conversationId,
+          {
+            userMessageId,
+            clientAgentMessageId: agentMessageId,
+            resumeFromSequence: resumeFromSequence ?? undefined,
+          },
+        );
+
+        await executeStream(
+          conversationId,
+          agentId,
+          agentSource,
+          payload,
+          agentMessageId,
+          get,
+          set,
+        );
+      },
       cancelMessage: (conversationId) => {
         chatConnectionService.cancelSession(conversationId);
       },
@@ -268,6 +962,9 @@ export const useChatStore = create<ChatState>()(
               lastActiveAt: new Date().toISOString(),
               streamState: "streaming",
               lastStreamError: null,
+              lastUserMessageId: userMessage.id,
+              lastAgentMessageId: agentMessage.id,
+              lastReceivedSequence: undefined,
               transport: chatConnectionService.getPreferredTransport(),
               pendingInterrupt: null,
             },
@@ -278,49 +975,6 @@ export const useChatStore = create<ChatState>()(
         messageStore.addMessage(conversationId, userMessage);
         messageStore.addMessage(conversationId, agentMessage);
 
-        let activeAgentMessageId = agentMessageId;
-        const activeStreamMessageIds = new Set<string>([agentMessageId]);
-        const streamMessageIdMap = new Map<string, string>();
-        const seenEventIds = new Set<string>();
-        const nextExpectedSeqByMessageId = new Map<string, number>();
-        const pendingChunksByMessageId = new Map<
-          string,
-          Map<number, StreamBlockUpdate>
-        >();
-        let terminalHandled = false;
-        let hasObservedStreamEvent = false;
-
-        const patchSession = (patch: Partial<AgentSession>) => {
-          set((state) => {
-            const current = state.sessions[conversationId];
-            if (!current) return state;
-            const hasChanges = Object.entries(patch).some(
-              ([key, value]) =>
-                (current as Record<string, unknown>)[key] !== value,
-            );
-            if (!hasChanges) {
-              return state;
-            }
-            return {
-              sessions: {
-                ...state.sessions,
-                [conversationId]: {
-                  ...current,
-                  ...patch,
-                },
-              },
-            };
-          });
-        };
-
-        const markSessionIdle = () => {
-          patchSession({
-            streamState: "idle",
-            lastStreamError: null,
-            pendingInterrupt: null,
-          });
-        };
-
         const session =
           get().sessions[conversationId] ?? createAgentSession(agentId);
         const payload = buildInvokePayload(trimmed, session, conversationId, {
@@ -328,589 +982,15 @@ export const useChatStore = create<ChatState>()(
           clientAgentMessageId: agentMessage.id,
         });
 
-        const updateSessionMeta = (meta: {
-          contextId?: string | null;
-          provider?: string | null;
-          externalSessionId?: string | null;
-          runtimeStatus?: string | null;
-          pendingInterrupt?: RuntimeInterrupt | null;
-          transport?: string;
-          inputModes?: string[];
-          outputModes?: string[];
-        }) => {
-          set((state) => {
-            const current = state.sessions[conversationId];
-            if (!current) return state;
-
-            const nextPatch: Partial<AgentSession> = {};
-            if (
-              meta.contextId !== undefined &&
-              meta.contextId !== current.contextId
-            ) {
-              nextPatch.contextId = meta.contextId;
-            }
-            if (
-              meta.runtimeStatus !== undefined &&
-              meta.runtimeStatus !== current.runtimeStatus
-            ) {
-              nextPatch.runtimeStatus = meta.runtimeStatus;
-            }
-            if (
-              meta.pendingInterrupt !== undefined &&
-              !isSamePendingInterrupt(
-                current.pendingInterrupt,
-                meta.pendingInterrupt,
-              )
-            ) {
-              nextPatch.pendingInterrupt = meta.pendingInterrupt;
-            }
-            if (
-              meta.transport !== undefined &&
-              meta.transport !== current.transport
-            ) {
-              nextPatch.transport = meta.transport;
-            }
-            if (
-              meta.inputModes &&
-              meta.inputModes.join("|") !== current.inputModes.join("|")
-            ) {
-              nextPatch.inputModes = meta.inputModes;
-            }
-            if (
-              meta.outputModes &&
-              meta.outputModes.join("|") !== current.outputModes.join("|")
-            ) {
-              nextPatch.outputModes = meta.outputModes;
-            }
-            if (
-              meta.provider !== undefined ||
-              meta.externalSessionId !== undefined
-            ) {
-              const mergedExternalSessionRef = mergeExternalSessionRef(
-                current.externalSessionRef,
-                {
-                  provider: meta.provider,
-                  externalSessionId: meta.externalSessionId,
-                },
-              );
-              const currentProvider =
-                current.externalSessionRef?.provider ?? null;
-              const currentExternalSessionId =
-                current.externalSessionRef?.externalSessionId ?? null;
-              if (
-                mergedExternalSessionRef.provider !== currentProvider ||
-                mergedExternalSessionRef.externalSessionId !==
-                  currentExternalSessionId
-              ) {
-                nextPatch.externalSessionRef = mergedExternalSessionRef;
-              }
-            }
-
-            if (Object.keys(nextPatch).length === 0) {
-              return state;
-            }
-
-            return {
-              sessions: {
-                ...state.sessions,
-                [conversationId]: {
-                  ...current,
-                  ...nextPatch,
-                },
-              },
-            };
-          });
-        };
-
-        const markActiveMessage = (messageId: string) => {
-          activeAgentMessageId = messageId;
-          activeStreamMessageIds.add(messageId);
-        };
-
-        const resolveExistingTargetMessageIds = () => {
-          const currentMessages =
-            useMessageStore.getState().messages[conversationId] ?? [];
-          const existingIds = new Set(
-            currentMessages.map((message) => message.id),
-          );
-          const targets = Array.from(activeStreamMessageIds).filter((id) =>
-            existingIds.has(id),
-          );
-          if (targets.length === 0 && existingIds.has(activeAgentMessageId)) {
-            targets.push(activeAgentMessageId);
-          }
-          return targets;
-        };
-
-        const closeStreamingMessages = (errorText?: string) => {
-          const targetMessageIds = resolveExistingTargetMessageIds();
-          const now = new Date().toISOString();
-          targetMessageIds.forEach((messageId) => {
-            messageStore.updateMessageWithUpdater(
-              conversationId,
-              messageId,
-              (message) => {
-                const finalizedBlocks =
-                  finalizeMessageBlocks(message.blocks) ?? [];
-                if (!errorText) {
-                  return {
-                    blocks: finalizedBlocks,
-                    status: "done",
-                  };
-                }
-                return {
-                  blocks: [
-                    ...finalizedBlocks,
-                    {
-                      id: `${message.id}:error:${Date.now()}`,
-                      type: "system_error",
-                      content: `[Stream Error: ${errorText}]`,
-                      isFinished: true,
-                      createdAt: now,
-                      updatedAt: now,
-                    },
-                  ],
-                  status: "done",
-                };
-              },
-            );
-          });
-          activeStreamMessageIds.clear();
-        };
-
-        const mergeHistoryMessagesById = (incoming: ChatMessage[]) => {
-          const current =
-            useMessageStore.getState().messages[conversationId] ?? [];
-          const merged = new Map<string, ChatMessage>();
-          current.forEach((message) => {
-            merged.set(message.id, message);
-          });
-          incoming.forEach((message) => {
-            const existing = merged.get(message.id);
-            const session = get().sessions[conversationId];
-            const isActivelyStreaming = session?.streamState === "streaming";
-            if (
-              existing &&
-              existing.status === "streaming" &&
-              isActivelyStreaming
-            ) {
-              return;
-            }
-            merged.set(message.id, message);
-          });
-          const nextMessages = Array.from(merged.values()).sort((left, right) =>
-            left.createdAt.localeCompare(right.createdAt),
-          );
-          messageStore.setMessages(conversationId, nextMessages);
-        };
-
-        const backfillHistoryAfterSequenceGap = async () => {
-          const recovered = new Map<string, ChatMessage>();
-          const size = 100;
-          const maxPages = 20;
-
-          const collectPage = (items: SessionMessageItem[]) => {
-            const mapped = mapSessionMessagesToChatMessages(
-              items,
-              conversationId,
-            );
-            mapped.forEach((message) => {
-              recovered.set(message.id, message);
-            });
-          };
-
-          const firstPage = await listSessionMessagesPage(conversationId, {
-            page: 1,
-            size,
-          });
-          const pagination =
-            firstPage.pagination && typeof firstPage.pagination === "object"
-              ? (firstPage.pagination as Record<string, unknown>)
-              : null;
-          const totalPages =
-            pagination && typeof pagination.pages === "number"
-              ? pagination.pages
-              : null;
-
-          if (typeof totalPages === "number" && totalPages > 1) {
-            const tailPageWindow = 3;
-            const startPage = Math.max(1, totalPages - tailPageWindow + 1);
-            for (let page = startPage; page <= totalPages; page += 1) {
-              if (page === 1) {
-                collectPage(firstPage.items);
-                continue;
-              }
-              const response = await listSessionMessagesPage(conversationId, {
-                page,
-                size,
-              });
-              collectPage(response.items);
-            }
-          } else {
-            collectPage(firstPage.items);
-            let nextPage =
-              typeof firstPage.nextPage === "number"
-                ? firstPage.nextPage
-                : undefined;
-            let requestCount = 1;
-
-            while (
-              typeof nextPage === "number" &&
-              requestCount < maxPages &&
-              nextPage > 1
-            ) {
-              const response = await listSessionMessagesPage(conversationId, {
-                page: nextPage,
-                size,
-              });
-              collectPage(response.items);
-              nextPage =
-                typeof response.nextPage === "number"
-                  ? response.nextPage
-                  : undefined;
-              requestCount += 1;
-            }
-          }
-
-          if (recovered.size > 0) {
-            mergeHistoryMessagesById(Array.from(recovered.values()));
-            queryClient.invalidateQueries({
-              queryKey: queryKeys.history.chat(conversationId),
-            });
-          }
-        };
-
-        const appendStreamChunk = (chunk: StreamBlockUpdate) => {
-          const resolveChunkMessageId = () => {
-            const mapped = streamMessageIdMap.get(chunk.messageId);
-            if (mapped) {
-              markActiveMessage(mapped);
-              return mapped;
-            }
-
-            const currentMessages =
-              useMessageStore.getState().messages[conversationId] ?? [];
-            const hasExactTarget = currentMessages.some(
-              (message) => message.id === chunk.messageId,
-            );
-            if (hasExactTarget) {
-              streamMessageIdMap.set(chunk.messageId, chunk.messageId);
-              markActiveMessage(chunk.messageId);
-              return chunk.messageId;
-            }
-
-            const placeholderId = activeAgentMessageId;
-            const hasActivePlaceholder = currentMessages.some(
-              (message) => message.id === placeholderId,
-            );
-            if (hasActivePlaceholder) {
-              messageStore.rekeyMessage(
-                conversationId,
-                placeholderId,
-                chunk.messageId,
-              );
-              activeStreamMessageIds.delete(placeholderId);
-            } else {
-              messageStore.addMessage(conversationId, {
-                id: chunk.messageId,
-                role: "agent",
-                content: "",
-                blocks: [],
-                createdAt: new Date().toISOString(),
-                status: "streaming",
-              });
-            }
-            streamMessageIdMap.set(chunk.messageId, chunk.messageId);
-            markActiveMessage(chunk.messageId);
-            return chunk.messageId;
-          };
-
-          const targetMessageId = resolveChunkMessageId();
-          messageStore.updateMessageWithUpdater(
-            conversationId,
-            targetMessageId,
-            (message) => {
-              const nextBlocks = applyStreamBlockUpdate(message.blocks, chunk);
-              return {
-                content: projectPrimaryTextContent(nextBlocks),
-                blocks: nextBlocks,
-                status: "streaming",
-              };
-            },
-          );
-        };
-
-        const queueIncomingChunk = (chunk: StreamBlockUpdate) => {
-          if (seenEventIds.has(chunk.eventId)) {
-            return;
-          }
-          seenEventIds.add(chunk.eventId);
-
-          if (chunk.seq === null) {
-            appendStreamChunk(chunk);
-            return;
-          }
-
-          const currentExpected = nextExpectedSeqByMessageId.get(
-            chunk.messageId,
-          );
-          if (
-            typeof currentExpected === "number" &&
-            chunk.seq < currentExpected
-          ) {
-            return;
-          }
-          if (currentExpected === undefined) {
-            nextExpectedSeqByMessageId.set(chunk.messageId, chunk.seq);
-          }
-
-          const pending =
-            pendingChunksByMessageId.get(chunk.messageId) ?? new Map();
-          if (pending.has(chunk.seq)) {
-            return;
-          }
-          pending.set(chunk.seq, chunk);
-          pendingChunksByMessageId.set(chunk.messageId, pending);
-
-          let nextExpected =
-            nextExpectedSeqByMessageId.get(chunk.messageId) ?? chunk.seq;
-          while (pending.has(nextExpected)) {
-            const readyChunk = pending.get(nextExpected);
-            if (!readyChunk) break;
-            pending.delete(nextExpected);
-            appendStreamChunk(readyChunk);
-            nextExpected += 1;
-          }
-          nextExpectedSeqByMessageId.set(chunk.messageId, nextExpected);
-          if (pending.size === 0) {
-            pendingChunksByMessageId.delete(chunk.messageId);
-          }
-        };
-
-        const applyIncomingStreamData = (
-          data: Record<string, unknown>,
-        ): boolean => {
-          const chunk = extractStreamBlockUpdate(data);
-          const runtimeStatusEvent = extractRuntimeStatusEvent(data);
-          const kind = typeof data.kind === "string" ? data.kind : "";
-          const isLegacyContentEvent =
-            typeof data.content === "string" && data.content.trim().length > 0;
-          if (
-            chunk ||
-            runtimeStatusEvent ||
-            kind === "artifact-update" ||
-            kind === "status-update" ||
-            isLegacyContentEvent
-          ) {
-            hasObservedStreamEvent = true;
-          }
-          if (chunk) {
-            queueIncomingChunk(chunk);
-          }
-
-          const meta = extractSessionMeta(data);
-          const runtimeStatus = runtimeStatusEvent?.state ?? null;
-          const hasRuntimeStatusEvent = runtimeStatusEvent !== null;
-          const pendingInterrupt =
-            runtimeStatusEvent &&
-            isInputRequiredRuntimeState(runtimeStatusEvent.state)
-              ? runtimeStatusEvent.interrupt
-              : null;
-          if (
-            meta.contextId ||
-            meta.provider !== undefined ||
-            meta.externalSessionId !== undefined ||
-            meta.transport ||
-            meta.inputModes ||
-            meta.outputModes ||
-            hasRuntimeStatusEvent
-          ) {
-            updateSessionMeta({
-              ...meta,
-              ...(hasRuntimeStatusEvent
-                ? { runtimeStatus, pendingInterrupt }
-                : {}),
-            });
-          }
-
-          if (runtimeStatusEvent?.isFinal) {
-            completeStreamingMessage();
-            return true;
-          }
-          return false;
-        };
-
-        const appendStreamError = (errorText: string) => {
-          if (terminalHandled) {
-            return;
-          }
-          terminalHandled = true;
-          closeStreamingMessages(errorText);
-          patchSession({
-            streamState: "error",
-            lastStreamError: errorText,
-            pendingInterrupt: null,
-          });
-          console.warn("[Chat Stream] error", {
-            conversationId,
-            source: get().sessions[conversationId]?.source ?? null,
-            message: errorText,
-            transport: get().sessions[conversationId]?.transport ?? "unknown",
-          });
-        };
-
-        const completeStreamingMessage = () => {
-          if (terminalHandled) {
-            return;
-          }
-          terminalHandled = true;
-          closeStreamingMessages();
-          markSessionIdle();
-
-          if (
-            Array.from(pendingChunksByMessageId.values()).some(
-              (pending) => pending.size > 0,
-            )
-          ) {
-            backfillHistoryAfterSequenceGap().catch((error) => {
-              const message =
-                error instanceof Error
-                  ? error.message
-                  : "Sequence-gap recovery failed.";
-              patchSession({
-                streamState: "recoverable",
-                lastStreamError: message,
-              });
-              console.warn("[Chat Stream] sequence-gap recovery failed", {
-                conversationId,
-                source: get().sessions[conversationId]?.source ?? null,
-                message,
-              });
-            });
-          }
-        };
-
-        const tryWebSocketTransport = async () =>
-          chatConnectionService.tryWebSocketTransport({
-            conversationId,
-            agentId,
-            source: agentSource,
-            payload,
-            callbacks: {
-              onData: (data) => {
-                if (data.event === "error") {
-                  const maybePayload = data.data as
-                    | {
-                        message?: unknown;
-                        error_code?: unknown;
-                      }
-                    | undefined;
-                  const rawErrorCode = maybePayload?.error_code;
-                  const normalizedErrorCode =
-                    typeof rawErrorCode === "string" ? rawErrorCode.trim() : "";
-                  if (normalizedErrorCode === "session_not_found") {
-                    console.info("[Chat Stream] recoverable error received", {
-                      conversationId,
-                      errorCode: normalizedErrorCode,
-                    });
-                    return false;
-                  }
-                  const message =
-                    typeof maybePayload?.message === "string"
-                      ? (maybePayload as { message: string }).message
-                      : "Stream error.";
-                  appendStreamError(message);
-                  return true;
-                }
-
-                if (data.event === "stream_end") {
-                  completeStreamingMessage();
-                  return true;
-                }
-
-                if (applyIncomingStreamData(data)) {
-                  return true;
-                }
-                return false;
-              },
-              onDone: () => {
-                completeStreamingMessage();
-              },
-              onStreamError: appendStreamError,
-            },
-          });
-
-        const trySseTransport = async () => {
-          updateSessionMeta({ transport: "http_sse" });
-          return chatConnectionService.trySseTransport({
-            conversationId,
-            agentId,
-            source: agentSource,
-            payload,
-            callbacks: {
-              onData: (data) => {
-                return applyIncomingStreamData(data);
-              },
-              onDone: () => {
-                completeStreamingMessage();
-              },
-              onStreamError: appendStreamError,
-            },
-          });
-        };
-
-        const sendViaJsonFallback = async () => {
-          try {
-            updateSessionMeta({ transport: "http_json" });
-            const response =
-              agentSource === "shared"
-                ? await invokeHubAgent(agentId, payload)
-                : await invokeAgent(agentId, payload);
-            if (!response.success) {
-              const message =
-                response.error || response.error_code || "Request failed.";
-              messageStore.updateMessage(conversationId, activeAgentMessageId, {
-                content: message,
-                status: "done",
-              });
-              patchSession({
-                streamState: "error",
-                lastStreamError: message,
-              });
-              return;
-            }
-
-            messageStore.updateMessage(conversationId, activeAgentMessageId, {
-              content: response.content ?? "",
-              status: "done",
-            });
-            markSessionIdle();
-          } catch (error) {
-            const message = buildApiErrorMessage(error);
-            messageStore.updateMessage(conversationId, activeAgentMessageId, {
-              content: message,
-              status: "done",
-            });
-            patchSession({
-              streamState: "error",
-              lastStreamError: message,
-            });
-          }
-        };
-
-        if (await tryWebSocketTransport()) {
-          return;
-        }
-        if (await trySseTransport()) {
-          return;
-        }
-        if (hasObservedStreamEvent) {
-          appendStreamError(
-            "Streaming transport interrupted before completion; skip blocking replay.",
-          );
-          return;
-        }
-        await sendViaJsonFallback();
+        await executeStream(
+          conversationId,
+          agentId,
+          agentSource,
+          payload,
+          agentMessage.id,
+          get,
+          set,
+        );
       },
       getSessionsByAgentId: (agentId) => {
         const sessions = Object.entries(get().sessions).filter(

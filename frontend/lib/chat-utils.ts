@@ -67,6 +67,9 @@ export type AgentSession = {
   pendingInterrupt?: RuntimeInterrupt | null;
   streamState?: "idle" | "streaming" | "recoverable" | "error";
   lastStreamError?: string | null;
+  lastReceivedSequence?: number;
+  lastUserMessageId?: string;
+  lastAgentMessageId?: string;
   transport: string;
   inputModes: string[];
   outputModes: string[];
@@ -115,6 +118,7 @@ export const buildInvokePayload = (
   options?: {
     userMessageId?: string;
     clientAgentMessageId?: string;
+    resumeFromSequence?: number;
   },
 ): A2AAgentInvokeRequest => {
   const payload: A2AAgentInvokeRequest = { query, conversationId };
@@ -123,6 +127,9 @@ export const buildInvokePayload = (
   }
   if (options?.clientAgentMessageId) {
     payload.clientAgentMessageId = options.clientAgentMessageId;
+  }
+  if (options?.resumeFromSequence !== undefined) {
+    payload.resumeFromSequence = options.resumeFromSequence;
   }
   if (session.contextId) {
     payload.contextId = session.contextId;
@@ -180,6 +187,15 @@ const normalizeSessionForPersistence = (
   metadata: session.metadata ?? {},
   externalSessionRef: session.externalSessionRef ?? null,
   lastActiveAt: getSessionLastActiveAt(session),
+  ...(typeof session.lastReceivedSequence === "number"
+    ? { lastReceivedSequence: session.lastReceivedSequence }
+    : {}),
+  ...(session.lastUserMessageId
+    ? { lastUserMessageId: session.lastUserMessageId }
+    : {}),
+  ...(session.lastAgentMessageId
+    ? { lastAgentMessageId: session.lastAgentMessageId }
+    : {}),
 });
 
 export const buildPersistedSessions = (

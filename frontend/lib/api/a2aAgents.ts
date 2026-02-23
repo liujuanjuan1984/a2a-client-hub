@@ -57,6 +57,7 @@ export type A2AAgentInvokeRequest = {
   contextId?: string;
   userMessageId?: string;
   clientAgentMessageId?: string;
+  resumeFromSequence?: number;
   metadata?: Record<string, unknown>;
 };
 

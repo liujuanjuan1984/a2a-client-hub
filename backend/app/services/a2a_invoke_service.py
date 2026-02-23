@@ -114,6 +114,36 @@ class A2AInvokeService:
                 return int(value.strip())
         return None
 
+    @classmethod
+    def _extract_event_sequence(cls, payload: dict[str, Any]) -> int | None:
+        direct_sequence = cls._pick_int(
+            payload, ("seq", "event_seq", "sequence", "eventSeq")
+        )
+        if direct_sequence is not None:
+            return direct_sequence
+
+        metadata = as_dict(payload.get("metadata"))
+        artifact = as_dict(payload.get("artifact"))
+
+        candidates = (
+            metadata,
+            as_dict(metadata.get("opencode")),
+            as_dict(artifact),
+            as_dict(artifact.get("metadata")),
+            as_dict(as_dict(artifact.get("metadata")).get("opencode")),
+            as_dict(metadata.get("a2a")),
+        )
+        for candidate in candidates:
+            if not candidate:
+                continue
+            candidate_sequence = cls._pick_int(
+                candidate, ("seq", "event_seq", "sequence", "eventSeq")
+            )
+            if candidate_sequence is not None:
+                return candidate_sequence
+
+        return None
+
     @staticmethod
     def _pick_number(payload: dict[str, Any], keys: tuple[str, ...]) -> float | None:
         for key in keys:
@@ -732,11 +762,37 @@ class A2AInvokeService:
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
         on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
+        resume_from_sequence: int | None = None,
+        cache_key: str | None = None,
     ) -> StreamingResponse:
+        from app.services.stream_cache.memory_cache import global_stream_cache
+
         async def event_generator() -> AsyncIterator[str]:
             stream_text_accumulator = self._StreamTextAccumulator()
             stream_failed = False
             heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+
+            # Replay cached events if resuming
+            seq_counter = 0
+            if resume_from_sequence is not None and cache_key:
+                cached_events = (
+                    await global_stream_cache.get_events_with_sequence_after(
+                        cache_key, resume_from_sequence
+                    )
+                )
+                for cached_sequence, cached_event in cached_events:
+                    parsed_sequence = self._extract_event_sequence(cached_event)
+                    if parsed_sequence is not None:
+                        seq_counter = max(seq_counter, parsed_sequence)
+                    else:
+                        seq_counter = max(seq_counter, cached_sequence)
+                    stream_text_accumulator.consume(cached_event)
+                    yield f"data: {json_dumps(cached_event, ensure_ascii=False)}\n\n"
+
+                # Continue generating sequence from max of cached or resumed
+                seq_counter = max(seq_counter, resume_from_sequence)
+            serialized = {}
+
             try:
                 async for event in self._iter_stream_events_with_heartbeat(
                     gateway.stream(
@@ -766,6 +822,30 @@ class A2AInvokeService:
                             },
                         )
                         continue
+
+                    parsed_sequence = self._extract_event_sequence(serialized)
+                    event_sequence = (
+                        parsed_sequence
+                        if parsed_sequence is not None
+                        else seq_counter + 1
+                    )
+                    if event_sequence <= seq_counter:
+                        event_sequence = seq_counter + 1
+
+                    # If this event sequence was already replayed from cache, skip yielding it again
+                    # This happens if upstream didn't support resume and gave us everything from start
+                    if (
+                        resume_from_sequence is not None
+                        and event_sequence <= resume_from_sequence
+                    ):
+                        continue
+                    seq_counter = max(seq_counter, event_sequence)
+
+                    if cache_key:
+                        await global_stream_cache.append_event(
+                            cache_key, serialized, seq_counter
+                        )
+
                     await self._call_callback(on_event, serialized)
                     stream_text_accumulator.consume(serialized)
                     yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
@@ -784,6 +864,8 @@ class A2AInvokeService:
                     f"data: {json_dumps(error_payload['data'], ensure_ascii=False)}\n\n"
                 )
             finally:
+                if cache_key and self._is_terminal_status_event(serialized):
+                    await global_stream_cache.mark_completed(cache_key)
                 if not stream_failed:
                     await self._call_callback(
                         on_complete_metadata,
@@ -823,10 +905,34 @@ class A2AInvokeService:
         on_event: StreamEventPayloadCallbackFn | None = None,
         on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
         send_stream_end: bool = True,
+        resume_from_sequence: int | None = None,
+        cache_key: str | None = None,
     ) -> None:
+        from app.services.stream_cache.memory_cache import global_stream_cache
+
         stream_text_accumulator = self._StreamTextAccumulator()
         stream_failed = False
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+
+        # Replay cached events if resuming
+        seq_counter = 0
+        if resume_from_sequence is not None and cache_key:
+            cached_events = await global_stream_cache.get_events_with_sequence_after(
+                cache_key, resume_from_sequence
+            )
+            for cached_sequence, cached_event in cached_events:
+                parsed_sequence = self._extract_event_sequence(cached_event)
+                if parsed_sequence is not None:
+                    seq_counter = max(seq_counter, parsed_sequence)
+                else:
+                    seq_counter = max(seq_counter, cached_sequence)
+                stream_text_accumulator.consume(cached_event)
+                await websocket.send_text(json_dumps(cached_event, ensure_ascii=False))
+
+            # Continue generating sequence from max of cached or resumed
+            seq_counter = max(seq_counter, resume_from_sequence)
+
+        serialized = {}
         try:
             async for event in self._iter_stream_events_with_heartbeat(
                 gateway.stream(
@@ -858,6 +964,25 @@ class A2AInvokeService:
                         },
                     )
                     continue
+
+                parsed_sequence = self._extract_event_sequence(serialized)
+                event_sequence = (
+                    parsed_sequence if parsed_sequence is not None else seq_counter + 1
+                )
+                if event_sequence <= seq_counter:
+                    event_sequence = seq_counter + 1
+                if (
+                    resume_from_sequence is not None
+                    and event_sequence <= resume_from_sequence
+                ):
+                    continue
+                seq_counter = max(seq_counter, event_sequence)
+
+                if cache_key:
+                    await global_stream_cache.append_event(
+                        cache_key, serialized, seq_counter
+                    )
+
                 await self._call_callback(on_event, serialized)
                 stream_text_accumulator.consume(serialized)
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
@@ -881,6 +1006,8 @@ class A2AInvokeService:
                 error_code=error_code,
             )
         finally:
+            if cache_key and self._is_terminal_status_event(serialized):
+                await global_stream_cache.mark_completed(cache_key)
             if not stream_failed:
                 await self._call_callback(
                     on_complete_metadata,

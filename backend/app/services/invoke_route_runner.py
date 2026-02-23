@@ -438,6 +438,8 @@ async def run_http_invoke(
             on_complete_metadata=on_complete_metadata,
             on_error=on_error,
             on_event=on_event,
+            resume_from_sequence=payload.resume_from_sequence,
+            cache_key=payload.user_message_id,
         )
 
     result = await gateway.invoke(
@@ -557,6 +559,8 @@ async def run_ws_invoke(
         on_event=on_event,
         on_error_metadata=on_error_metadata,
         send_stream_end=send_stream_end,
+        resume_from_sequence=payload.resume_from_sequence,
+        cache_key=payload.user_message_id,
     )
 
 
