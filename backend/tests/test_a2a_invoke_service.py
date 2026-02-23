@@ -690,6 +690,28 @@ async def test_ws_emits_keepalive_heartbeat_when_upstream_is_idle(monkeypatch):
     assert payloads[-1]["event"] == "stream_end"
 
 
+@pytest.mark.asyncio
+async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithDelayedEvents(
+            [{"content": "late-event"}, {"kind": "status-update", "final": True}],
+            delay_seconds=0.05,
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        idle_timeout_seconds=0.02,
+        total_timeout_seconds=0.2,
+    )
+    assert result["success"] is True
+    assert result["content"] == "late-event"
+
+
 def test_extract_binding_hints_from_serialized_event():
     (
         context_id,

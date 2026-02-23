@@ -1141,11 +1141,15 @@ class A2AInvokeService:
         log_info = getattr(logger, "info", None)
         started_at = time.monotonic()
         last_event_at = started_at
-        stream_iter = gateway.stream(
-            resolved=resolved,
-            query=query,
-            context_id=context_id,
-            metadata=metadata,
+        heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+        stream_iter = self._iter_stream_events_with_heartbeat(
+            gateway.stream(
+                resolved=resolved,
+                query=query,
+                context_id=context_id,
+                metadata=metadata,
+            ),
+            heartbeat_interval_seconds=heartbeat_interval_seconds,
         ).__aiter__()
         terminal_event_seen = False
         serialized: dict[str, Any] = {}
@@ -1207,6 +1211,12 @@ class A2AInvokeService:
                         "error": timeout_message,
                         "error_code": "timeout",
                     }
+                if event is None:
+                    # Align with realtime stream semantics:
+                    # heartbeat frames indicate the upstream connection is still alive
+                    # and should refresh the idle timer.
+                    last_event_at = time.monotonic()
+                    continue
 
                 serialized = self.serialize_stream_event(
                     event, validate_message=validate_message
