@@ -88,7 +88,7 @@ export function SessionPickerModal({
           accessibilityLabel="Close session picker"
           onPress={onClose}
         />
-        <View className="w-full max-h-[80%] min-h-[50%] rounded-t-3xl border-t border-slate-800 bg-slate-950 p-6 sm:w-[480px] sm:rounded-3xl sm:border">
+        <View className="w-full max-h-[80%] min-h-[50%] rounded-t-3xl border-t border-slate-800 bg-slate-950 p-6 sm:w-[min(94vw,760px)] lg:w-[min(90vw,960px)] sm:rounded-3xl sm:border">
           <View className="mb-6 flex-row items-center justify-between">
             <Text className="text-lg font-semibold text-white">
               Chat History
