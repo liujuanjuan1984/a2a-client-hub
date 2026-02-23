@@ -206,7 +206,8 @@ export function ScheduledJobCard({
 
         {canMarkFailed ? (
           <Button
-            label="Mark Failed"
+            className="ml-auto"
+            label="Stop Running"
             size="xs"
             variant="danger"
             loading={markingFailed}

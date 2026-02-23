@@ -99,7 +99,7 @@ describe("ScheduledJobCard visuals", () => {
     expect(containerClasses).toContain("bg-slate-900/30");
   });
 
-  it("shows Mark Failed button for running jobs", () => {
+  it("shows Stop Running button for running jobs", () => {
     const job = {
       id: "4",
       name: "Job",
@@ -112,10 +112,10 @@ describe("ScheduledJobCard visuals", () => {
       root = create(<ScheduledJobCard {...defaultProps} job={job as any} />);
     });
     const tree = root.toJSON();
-    expect(JSON.stringify(tree)).toContain("Mark Failed");
+    expect(JSON.stringify(tree)).toContain("Stop Running");
   });
 
-  it("hides Mark Failed button for non-running jobs", () => {
+  it("hides Stop Running button for non-running jobs", () => {
     const job = {
       id: "5",
       name: "Job",
@@ -128,6 +128,6 @@ describe("ScheduledJobCard visuals", () => {
       root = create(<ScheduledJobCard {...defaultProps} job={job as any} />);
     });
     const tree = root.toJSON();
-    expect(JSON.stringify(tree)).not.toContain("Mark Failed");
+    expect(JSON.stringify(tree)).not.toContain("Stop Running");
   });
 });
