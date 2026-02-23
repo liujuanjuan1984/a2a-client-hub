@@ -326,6 +326,54 @@ class A2AScheduleService:
         total = int(await db.scalar(count_stmt) or 0)
         return items, total
 
+    async def mark_task_failed(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        task_id: UUID,
+    ) -> A2AScheduleTask:
+        task = await self._get_task(db, user_id=user_id, task_id=task_id)
+        if task.last_run_status != A2AScheduleTask.STATUS_RUNNING:
+            raise A2AScheduleValidationError("Task is not currently running")
+
+        run_id = task.current_run_id
+
+        if run_id is not None:
+            stmt = (
+                select(A2AScheduleExecution)
+                .where(
+                    and_(
+                        A2AScheduleExecution.run_id == run_id,
+                        A2AScheduleExecution.task_id == task.id,
+                        A2AScheduleExecution.status
+                        == A2AScheduleExecution.STATUS_RUNNING,
+                    )
+                )
+                .with_for_update(skip_locked=True)
+                .limit(1)
+            )
+            execution = await db.scalar(stmt)
+            if execution is not None:
+                execution.status = A2AScheduleExecution.STATUS_FAILED
+                execution.error_message = "Manually marked as failed"
+                execution.finished_at = utc_now()
+                db.add(execution)
+                await db.flush()
+
+            await self.finalize_task_run(
+                db,
+                task_id=task.id,
+                user_id=user_id,
+                run_id=run_id,
+                final_status=A2AScheduleTask.STATUS_FAILED,
+                finished_at=utc_now(),
+            )
+            await commit_safely(db)
+            await db.refresh(task)
+
+        return task
+
     async def _running_execution_count_for_agent(
         self,
         db: AsyncSession,

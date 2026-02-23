@@ -211,6 +211,26 @@ async def disable_schedule_task(
     )
 
 
+@router.post("/{task_id}/fail", response_model=A2AScheduleTaskResponse)
+async def fail_schedule_task(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> A2AScheduleTaskResponse:
+    try:
+        task = await a2a_schedule_service.mark_task_failed(
+            db,
+            user_id=current_user.id,
+            task_id=task_id,
+        )
+    except A2AScheduleNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except A2AScheduleValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return A2AScheduleTaskResponse.model_validate(task)
+
+
 @router.get("/{task_id}/executions", response_model=A2AScheduleExecutionListResponse)
 async def list_schedule_executions(
     task_id: UUID,

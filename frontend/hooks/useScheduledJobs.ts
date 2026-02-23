@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 
 import {
+  failScheduledJob,
   disableScheduledJob,
   enableScheduledJob,
   type ScheduledJob,
@@ -15,7 +16,13 @@ export function useScheduledJobs() {
     await enableScheduledJob(job.id);
   }, []);
 
+  const markJobFailed = useCallback(async (job: ScheduledJob) => {
+    if (job.last_run_status !== "running") return;
+    await failScheduledJob(job.id);
+  }, []);
+
   return {
+    markJobFailed,
     toggleJobStatus,
   };
 }

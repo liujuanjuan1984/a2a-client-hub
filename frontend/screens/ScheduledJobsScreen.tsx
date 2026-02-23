@@ -1,7 +1,7 @@
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { Alert, RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
@@ -20,7 +20,7 @@ import { toast } from "@/lib/toast";
 export function ScheduledJobsScreen() {
   const router = useRouter();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
-  const { toggleJobStatus } = useScheduledJobs();
+  const { toggleJobStatus, markJobFailed } = useScheduledJobs();
 
   const [expandedExecutionsTaskId, setExpandedExecutionsTaskId] = useState<
     string | null
@@ -158,6 +158,38 @@ export function ScheduledJobsScreen() {
                       error instanceof Error ? error.message : "Update failed.";
                     toast.error("Update failed", message);
                   }
+                }}
+                onMarkFailed={() => {
+                  Alert.alert(
+                    "Mark as failed",
+                    "Are you sure you want to mark this running job as failed? This will record it as a failure and stop waiting for completion.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Fail",
+                        style: "destructive",
+                        onPress: async () => {
+                          try {
+                            await markJobFailed(job);
+                            const succeeded = await loadFirstPage("refreshing");
+                            if (succeeded) {
+                              hasLoadedRef.current = true;
+                            }
+                            if (expandedExecutionsTaskId === job.id) {
+                              await executionsQuery.loadFirstPage("refreshing");
+                            }
+                            toast.success("Job marked as failed");
+                          } catch (error) {
+                            const message =
+                              error instanceof Error
+                                ? error.message
+                                : "Action failed.";
+                            toast.error("Failed to mark job", message);
+                          }
+                        },
+                      },
+                    ],
+                  );
                 }}
                 onEdit={() => {
                   blurActiveElement();

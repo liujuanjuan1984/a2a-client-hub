@@ -356,3 +356,101 @@ async def test_schedule_interval_enforces_minimum(
         )
         assert resp.status_code == 400
         assert "cannot be less than" in resp.json()["detail"].lower()
+
+
+async def test_fail_running_schedule_task(
+    async_db_session,
+    async_session_maker,
+):
+    from uuid import uuid4
+
+    from app.db.models.a2a_schedule_execution import A2AScheduleExecution
+    from app.db.models.a2a_schedule_task import A2AScheduleTask
+    from app.utils.timezone_util import utc_now
+
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="fail_test")
+
+    # 1. Create task
+    task = A2AScheduleTask(
+        user_id=user.id,
+        agent_id=agent.id,
+        name="task to fail",
+        prompt="run me",
+        cycle_type="daily",
+        time_point={"time": "10:00"},
+        enabled=True,
+        last_run_status=A2AScheduleTask.STATUS_RUNNING,
+        current_run_id=uuid4(),
+    )
+    async_db_session.add(task)
+    await async_db_session.commit()
+    await async_db_session.refresh(task)
+
+    execution = A2AScheduleExecution(
+        user_id=user.id,
+        task_id=task.id,
+        run_id=task.current_run_id,
+        scheduled_for=utc_now(),
+        started_at=utc_now(),
+        status=A2AScheduleExecution.STATUS_RUNNING,
+    )
+    async_db_session.add(execution)
+    await async_db_session.commit()
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        # 2. Fail it manually
+        resp = await client.post(
+            f"/{task.id}/fail",
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["last_run_status"] == A2AScheduleTask.STATUS_FAILED
+
+        # Verify DB
+        await async_db_session.refresh(task)
+        assert task.last_run_status == A2AScheduleTask.STATUS_FAILED
+        assert task.current_run_id is None
+
+        await async_db_session.refresh(execution)
+        assert execution.status == A2AScheduleExecution.STATUS_FAILED
+        assert execution.error_message == "Manually marked as failed"
+
+
+async def test_fail_idle_schedule_task(
+    async_db_session,
+    async_session_maker,
+):
+    from app.db.models.a2a_schedule_task import A2AScheduleTask
+
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="fail_test2")
+
+    task = A2AScheduleTask(
+        user_id=user.id,
+        agent_id=agent.id,
+        name="task to fail",
+        prompt="run me",
+        cycle_type="daily",
+        time_point={"time": "10:00"},
+        enabled=True,
+        last_run_status=A2AScheduleTask.STATUS_IDLE,
+    )
+    async_db_session.add(task)
+    await async_db_session.commit()
+    await async_db_session.refresh(task)
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/{task.id}/fail",
+        )
+        assert resp.status_code == 400, resp.text
+        assert "Task is not currently running" in resp.json()["detail"]
