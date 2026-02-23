@@ -174,14 +174,29 @@ async def _prepare_state(
 
 async def _close_open_transaction(db: AsyncSession) -> None:
     in_transaction = getattr(db, "in_transaction", None)
-    rollback = getattr(db, "rollback", None)
-    if not callable(in_transaction) or not callable(rollback):
+    commit = getattr(db, "commit", None)
+    if not callable(in_transaction) or not callable(commit):
         return
     if not in_transaction():
         return
-    rollback_outcome = rollback()
-    if inspect.isawaitable(rollback_outcome):
-        await rollback_outcome
+    # Never auto-commit when there are pending ORM writes in the session.
+    # Route-level closing here is only for read-only transactions.
+    for attribute_name in ("new", "dirty", "deleted"):
+        collection = getattr(db, attribute_name, None)
+        if collection is None:
+            continue
+        try:
+            if len(collection) > 0:
+                return
+        except Exception:
+            try:
+                if bool(collection):
+                    return
+            except Exception:
+                return
+    commit_outcome = commit()
+    if inspect.isawaitable(commit_outcome):
+        await commit_outcome
 
 
 async def _continue_session_with_short_transaction(

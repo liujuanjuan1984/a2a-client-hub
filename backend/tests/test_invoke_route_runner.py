@@ -28,6 +28,51 @@ class _NoopWebSocket:
 
 
 @pytest.mark.asyncio
+async def test_close_open_transaction_commits_read_only_session() -> None:
+    class _ReadOnlySession:
+        def __init__(self) -> None:
+            self.committed = 0
+            self.rolled_back = 0
+            self.new = set()
+            self.dirty = set()
+            self.deleted = set()
+
+        def in_transaction(self) -> bool:
+            return True
+
+        async def commit(self) -> None:
+            self.committed += 1
+
+        async def rollback(self) -> None:
+            self.rolled_back += 1
+
+    session = _ReadOnlySession()
+    await invoke_route_runner._close_open_transaction(session)  # noqa: SLF001
+    assert session.committed == 1
+    assert session.rolled_back == 0
+
+
+@pytest.mark.asyncio
+async def test_close_open_transaction_does_not_commit_when_session_has_pending_writes() -> None:
+    class _DirtySession:
+        def __init__(self) -> None:
+            self.committed = 0
+            self.new = {object()}
+            self.dirty = set()
+            self.deleted = set()
+
+        def in_transaction(self) -> bool:
+            return True
+
+        async def commit(self) -> None:
+            self.committed += 1
+
+    session = _DirtySession()
+    await invoke_route_runner._close_open_transaction(session)  # noqa: SLF001
+    assert session.committed == 0
+
+
+@pytest.mark.asyncio
 async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
