@@ -7,7 +7,10 @@ import {
   type ScheduledJobPayload,
   type ScheduleTimePoint,
 } from "@/lib/api/scheduledJobs";
-import { formatDateTimeLocalInputValue } from "@/lib/datetime";
+import {
+  formatDateTimeLocalInputValue,
+  getNextTopOfHourLocalInputValue,
+} from "@/lib/datetime";
 
 type AgentOption = {
   id: string;
@@ -96,11 +99,13 @@ export function ScheduledJobForm({
     if (nextCycle === "interval") {
       const minutes = (current as { minutes?: unknown })?.minutes;
       const startAt = (current as { start_at?: unknown })?.start_at;
+      const resolvedStartAt =
+        typeof startAt === "string" && startAt.trim()
+          ? startAt.trim()
+          : getNextTopOfHourLocalInputValue(timeZone);
       return {
         minutes: typeof minutes === "number" ? minutes : 10,
-        ...(typeof startAt === "string" && startAt.trim()
-          ? { start_at: startAt }
-          : {}),
+        start_at: resolvedStartAt,
       };
     }
     const time = (current as { time?: unknown })?.time;

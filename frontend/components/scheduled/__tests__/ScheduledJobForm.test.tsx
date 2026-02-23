@@ -71,4 +71,34 @@ describe("ScheduledJobForm", () => {
       },
     });
   });
+
+  it("fills default start datetime when switching to interval", () => {
+    const onChange = jest.fn();
+    const form: ScheduledJobPayload = {
+      ...basePayload,
+      cycle_type: "daily",
+      time_point: { time: "07:00" },
+    };
+    const { getByText } = render(
+      <ScheduledJobForm
+        form={form}
+        saving={false}
+        editing={false}
+        agentOptions={[]}
+        onChange={onChange}
+        onSubmit={() => undefined}
+        onCancel={() => undefined}
+        timeZone="UTC"
+      />,
+    );
+
+    fireEvent.press(getByText("Interval"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]?.[0]?.cycle_type).toBe("interval");
+    expect(onChange.mock.calls[0]?.[0]?.time_point?.minutes).toBe(10);
+    expect(
+      String(onChange.mock.calls[0]?.[0]?.time_point?.start_at ?? ""),
+    ).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:00$/);
+  });
 });

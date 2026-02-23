@@ -3,6 +3,7 @@ import {
   formatLocalDateTime,
   formatLocalDateTimeYmdHm,
   formatDateTimeLocalInputValue,
+  getNextTopOfHourLocalInputValue,
   localDateTimeInputToUtcIso,
   resolveUserTimeZone,
 } from "@/lib/datetime";
@@ -91,5 +92,23 @@ describe("datetime helpers", () => {
     );
     expect(localDateTimeInputToUtcIso("bad-datetime")).toBeNull();
     expect(localDateTimeInputToUtcIso("2026-02-30T09:30")).toBeNull();
+  });
+
+  it("builds next top-of-hour local input default", () => {
+    expect(
+      getNextTopOfHourLocalInputValue("UTC", new Date("2026-02-23T09:37:12Z")),
+    ).toBe("2026-02-23T10:00");
+    expect(
+      getNextTopOfHourLocalInputValue(
+        "UTC",
+        new Date("2026-02-23T23:05:00.000Z"),
+      ),
+    ).toBe("2026-02-24T00:00");
+    expect(
+      getNextTopOfHourLocalInputValue(
+        "Asia/Shanghai",
+        new Date("2026-02-23T00:20:00.000Z"),
+      ),
+    ).toBe("2026-02-23T09:00");
   });
 });
