@@ -1,7 +1,8 @@
 import { fireEvent, render } from "@testing-library/react-native";
 
-import type { ScheduledJobPayload } from "@/lib/api/scheduledJobs";
 import { ScheduledJobForm } from "../ScheduledJobForm";
+
+import type { ScheduledJobPayload } from "@/lib/api/scheduledJobs";
 
 describe("ScheduledJobForm", () => {
   const basePayload: ScheduledJobPayload = {

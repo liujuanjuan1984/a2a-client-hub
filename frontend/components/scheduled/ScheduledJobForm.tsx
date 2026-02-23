@@ -1,5 +1,5 @@
-import { Pressable, Text, TextInput, View } from "react-native";
 import { useEffect, useRef, useState } from "react";
+import { Pressable, Text, TextInput, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import {
@@ -57,7 +57,9 @@ export function ScheduledJobForm({
       return;
     }
     setStartAtInputValue(
-      intervalStartAt ? formatDateTimeLocalInputValue(intervalStartAt, timeZone) : "",
+      intervalStartAt
+        ? formatDateTimeLocalInputValue(intervalStartAt, timeZone)
+        : "",
     );
   }, [intervalStartAt, timeZone, form.cycle_type]);
 

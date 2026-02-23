@@ -1,9 +1,9 @@
 import { type SessionListItem } from "@/lib/api/sessions";
+import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import {
   getSessionTimelineText,
   resolveSessionAgentPresentation,
 } from "@/lib/sessionDirectoryPresentation";
-import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 
 const createSession = (partial: Partial<SessionListItem>): SessionListItem =>
   ({
@@ -66,9 +66,7 @@ describe("sessionDirectoryPresentation", () => {
 
     expect(result).toEqual({
       createdAtText: formatLocalDateTimeYmdHm("2026-02-20T10:00:00.000Z"),
-      lastUpdatedAtText: formatLocalDateTimeYmdHm(
-        "2026-02-21T12:34:56.000Z",
-      ),
+      lastUpdatedAtText: formatLocalDateTimeYmdHm("2026-02-21T12:34:56.000Z"),
     });
   });
 

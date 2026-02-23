@@ -109,19 +109,17 @@ export const mapSessionMessagesToChatMessages = (
           : `${conversationId}-${item.created_at}-${index}`;
       const metadataBlocks = parseMetadataBlocks(item.metadata);
       const blocks =
-        role === "agent" &&
-        metadataBlocks.length === 0 &&
-        normalizedContent
+        role === "agent" && metadataBlocks.length === 0 && normalizedContent
           ? [
               {
                 id: `${messageId}:text`,
                 type: "text",
-              content: normalizedContent,
-              isFinished: true,
-              createdAt: item.created_at,
-              updatedAt: item.created_at,
-            },
-          ]
+                content: normalizedContent,
+                isFinished: true,
+                createdAt: item.created_at,
+                updatedAt: item.created_at,
+              },
+            ]
           : metadataBlocks;
       return {
         id: messageId,

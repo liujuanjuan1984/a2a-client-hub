@@ -86,7 +86,7 @@ describe("session history mapping", () => {
         {
           id: "msg-3",
           role: "assistant",
-          content: '\"Task(artifacts=[Artifact(artifact_id=\"id\")])\"',
+          content: '"Task(artifacts=[Artifact(artifact_id="id")])"',
           created_at: "2026-02-14T00:00:02.000Z",
           metadata: {},
         },
