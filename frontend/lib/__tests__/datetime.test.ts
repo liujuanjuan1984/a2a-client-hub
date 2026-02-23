@@ -70,16 +70,26 @@ describe("datetime helpers", () => {
     )}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 
     expect(formatDateTimeLocalInputValue(source)).toBe(expected);
+    expect(
+      formatDateTimeLocalInputValue(
+        "2026-02-23T00:15:00+00:00",
+        "Asia/Shanghai",
+      ),
+    ).toBe("2026-02-23T08:15");
     expect(formatDateTimeLocalInputValue("bad-date")).toBe("");
   });
 
-  it("converts local datetime input to UTC iso format", () => {
+  it("normalizes local datetime input for backend payload", () => {
     expect(localDateTimeInputToUtcIso("2026-02-23T09:30")).toBe(
-      new Date("2026-02-23T09:30").toISOString(),
+      "2026-02-23T09:30",
     );
     expect(localDateTimeInputToUtcIso("2026-02-23 09:30")).toBe(
-      new Date("2026-02-23T09:30").toISOString(),
+      "2026-02-23T09:30",
+    );
+    expect(localDateTimeInputToUtcIso("2026-02-23T09:30:00+08:00")).toBe(
+      "2026-02-23T09:30:00+08:00",
     );
     expect(localDateTimeInputToUtcIso("bad-datetime")).toBeNull();
+    expect(localDateTimeInputToUtcIso("2026-02-30T09:30")).toBeNull();
   });
 });

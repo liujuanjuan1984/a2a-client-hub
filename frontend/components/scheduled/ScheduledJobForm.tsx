@@ -22,6 +22,7 @@ type ScheduledJobFormProps = {
   onSubmit: () => void;
   onCancel: () => void;
   showTitle?: boolean;
+  timeZone?: string;
 };
 
 export function ScheduledJobForm({
@@ -33,6 +34,7 @@ export function ScheduledJobForm({
   onSubmit,
   onCancel,
   showTitle = true,
+  timeZone,
 }: ScheduledJobFormProps) {
   const cycleOptions: { value: ScheduleCycleType; label: string }[] = [
     { value: "daily", label: "Daily" },
@@ -256,6 +258,7 @@ export function ScheduledJobForm({
                   ?.start_at;
                 return typeof startAt === "string" ? startAt : undefined;
               })(),
+              timeZone,
             )}
             onChangeText={(value) => {
               const next = {

@@ -71,6 +71,56 @@ const toYmdHm = (date: Date, timeZone: string): string => {
   return `${year}-${month}-${day} ${hour}:${minute}`;
 };
 
+const DATE_TIME_INPUT_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?$/;
+
+const hasValidDateTimeFields = (value: string): boolean => {
+  const match = value.match(DATE_TIME_INPUT_PATTERN);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6] ?? "0");
+
+  if (
+    Number.isNaN(year) ||
+    Number.isNaN(month) ||
+    Number.isNaN(day) ||
+    Number.isNaN(hour) ||
+    Number.isNaN(minute) ||
+    Number.isNaN(second)
+  ) {
+    return false;
+  }
+
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  if (hour < 0 || hour > 23) return false;
+  if (minute < 0 || minute > 59) return false;
+  if (second < 0 || second > 59) return false;
+
+  const localCandidate = new Date(
+    year,
+    month - 1,
+    day,
+    hour,
+    minute,
+    second,
+    0,
+  );
+  return (
+    localCandidate.getFullYear() === year &&
+    localCandidate.getMonth() === month - 1 &&
+    localCandidate.getDate() === day &&
+    localCandidate.getHours() === hour &&
+    localCandidate.getMinutes() === minute &&
+    localCandidate.getSeconds() === second
+  );
+};
+
 export const formatLocalDateTime = (value?: string | null): string => {
   if (!value) return DATE_TIME_PLACEHOLDER;
   const date = new Date(value);
@@ -83,18 +133,14 @@ export const formatLocalDateTimeYmdHm = (value?: string | null): string =>
 
 export const formatDateTimeLocalInputValue = (
   value?: string | null,
+  timeZone?: string,
 ): string => {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-
-  const year = String(date.getFullYear());
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-
-  return `${year}-${month}-${day}T${hour}:${minute}`;
+  const resolved = normalizeTimeZone(timeZone) ?? resolveUserTimeZone();
+  const display = toYmdHm(date, resolved).replace(" ", "T");
+  return display;
 };
 
 export const localDateTimeInputToUtcIso = (value: string): string | null => {
@@ -102,8 +148,7 @@ export const localDateTimeInputToUtcIso = (value: string): string | null => {
   if (!trimmed) return null;
 
   const normalized = trimmed.replace(" ", "T");
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) return null;
+  if (!hasValidDateTimeFields(normalized)) return null;
 
-  return date.toISOString();
+  return normalized;
 };

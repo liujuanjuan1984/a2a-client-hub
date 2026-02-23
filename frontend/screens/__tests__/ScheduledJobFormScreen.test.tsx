@@ -1,6 +1,7 @@
 import { act, create } from "react-test-renderer";
 
 import { ScheduledJobFormScreen } from "@/screens/ScheduledJobFormScreen";
+import { useSessionStore } from "@/store/session";
 
 const mockCreateScheduledJob = jest.fn();
 const mockGetScheduledJob = jest.fn();
@@ -24,6 +25,7 @@ const mockAgents = [
 let capturedSubmit: (() => void) | null = null;
 let capturedChange: ((patch: unknown) => void) | null = null;
 let capturedAgentOptions: { id: string; name: string }[] = [];
+let capturedTimeZone: string | undefined = undefined;
 
 jest.mock("react-native/Libraries/Utilities/Dimensions", () => ({
   get: () => ({
@@ -64,12 +66,15 @@ jest.mock("@/components/scheduled/ScheduledJobForm", () => ({
     onSubmit,
     onChange,
     agentOptions,
+    timeZone,
   }: {
     agentOptions: { id: string; name: string }[];
     onSubmit: () => void;
     onChange: (patch: unknown) => void;
+    timeZone?: string;
   }) => {
     capturedAgentOptions = agentOptions;
+    capturedTimeZone = timeZone;
     capturedSubmit = onSubmit;
     capturedChange = onChange;
     return null;
@@ -144,12 +149,16 @@ describe("ScheduledJobFormScreen", () => {
     capturedSubmit = null;
     capturedChange = null;
     capturedAgentOptions = [];
+    capturedTimeZone = undefined;
     mockAgents.splice(0, mockAgents.length, {
       id: "agent-1",
       source: "personal",
       name: "Agent One",
       cardUrl: "https://example.com/card",
       status: "success",
+    });
+    act(() => {
+      useSessionStore.setState({ user: null });
     });
   });
 
@@ -197,6 +206,18 @@ describe("ScheduledJobFormScreen", () => {
   });
 
   it("normalizes interval minutes and converts start datetime on create", async () => {
+    act(() => {
+      useSessionStore.setState({
+        user: {
+          id: "user-1",
+          email: "test@example.com",
+          name: "Test User",
+          is_superuser: false,
+          timezone: "Asia/Shanghai",
+        },
+      });
+    });
+
     mockCreateScheduledJob.mockResolvedValue({
       id: "job-1",
       name: "Interval Summary",
@@ -206,7 +227,7 @@ describe("ScheduledJobFormScreen", () => {
       time_point: { minutes: 5, start_at: "2026-02-22T01:30:00.000Z" },
       enabled: true,
     });
-    const expectedStartAt = new Date("2026-02-23 09:30").toISOString();
+    const expectedStartAt = "2026-02-23T09:30";
 
     await act(async () => {
       create(<ScheduledJobFormScreen />);
@@ -247,6 +268,7 @@ describe("ScheduledJobFormScreen", () => {
       },
       enabled: true,
     });
+    expect(capturedTimeZone).toBe("Asia/Shanghai");
   });
 
   it("rejects invalid interval start datetime", async () => {

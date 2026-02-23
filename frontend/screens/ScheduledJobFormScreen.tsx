@@ -24,6 +24,7 @@ import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
 import { scheduledJobsHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
+import { useSessionStore } from "@/store/session";
 
 const initialForm: ScheduledJobPayload = {
   name: "",
@@ -111,6 +112,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   const editing = Boolean(normalizedJobId);
   const router = useRouter();
   const queryClient = useQueryClient();
+  const userTimeZone = useSessionStore((state) => state.user?.timezone);
   const goBackOrHome = useCallback(
     () => backOrHome(router, scheduledJobsHref),
     [router],
@@ -374,6 +376,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
             saving={saving}
             editing={editing}
             agentOptions={agentOptions}
+            timeZone={userTimeZone}
             onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
             onSubmit={handleSubmit}
             onCancel={handleCancel}
