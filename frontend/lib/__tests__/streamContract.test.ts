@@ -368,14 +368,13 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
-  it("extracts opencode external session from nested metadata", () => {
+  it("extracts opencode external session from standardized metadata fields", () => {
     const meta = extractSessionMeta({
       kind: "status-update",
       final: true,
       metadata: {
-        opencode: {
-          session_id: "ses_upstream_1",
-        },
+        provider: "opencode",
+        externalSessionId: "ses_upstream_1",
       },
     });
     expect(meta.provider).toBe("opencode");

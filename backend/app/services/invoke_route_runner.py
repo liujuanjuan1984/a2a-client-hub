@@ -46,7 +46,6 @@ _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
 )
 _OPENCODE_PROVIDER = "opencode"
-_OPENCODE_SESSION_ID_METADATA_KEY = "opencode_session_id"
 
 
 @dataclass
@@ -287,7 +286,7 @@ def _extract_rebound_continue_binding_fields(
 
     if external_session_id is None:
         opencode_session_id = normalize_non_empty_text(
-            continue_metadata.get(_OPENCODE_SESSION_ID_METADATA_KEY)
+            continue_metadata.get("opencode_session_id")
         )
         if opencode_session_id is not None:
             external_session_id = opencode_session_id
@@ -316,11 +315,6 @@ def _build_rebound_invoke_payload(
         next_metadata["provider"] = normalized_provider
     if normalized_external_session_id:
         next_metadata["externalSessionId"] = normalized_external_session_id
-        next_metadata["external_session_id"] = normalized_external_session_id
-        if normalized_provider == _OPENCODE_PROVIDER:
-            next_metadata[
-                _OPENCODE_SESSION_ID_METADATA_KEY
-            ] = normalized_external_session_id
     next_context_id = normalize_non_empty_text(context_id) or payload.context_id
     next_conversation_id = (
         normalize_non_empty_text(conversation_id) or payload.conversation_id

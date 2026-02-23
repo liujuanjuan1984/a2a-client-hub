@@ -290,7 +290,6 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     assert attempts[1]["conversationId"] == rebound_conversation_id
     assert attempts[1]["metadata"].get("provider") == "opencode"
     assert attempts[1]["metadata"].get("externalSessionId") == "upstream-sid-2"
-    assert attempts[1]["metadata"].get("opencode_session_id") == "upstream-sid-2"
 
 
 @pytest.mark.asyncio
@@ -504,8 +503,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
             "metadata": {
                 "provider": "opencode",
                 "externalSessionId": "upstream-sid-2",
-                "external_session_id": "upstream-sid-2",
-                "opencode_session_id": "upstream-sid-2",
             },
         },
     ]
@@ -640,8 +637,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             "metadata": {
                 "provider": "opencode",
                 "externalSessionId": "upstream-sid-2",
-                "external_session_id": "upstream-sid-2",
-                "opencode_session_id": "upstream-sid-2",
             },
         },
     ]
@@ -657,8 +652,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             "metadata": {
                 "provider": "opencode",
                 "externalSessionId": "upstream-sid-2",
-                "external_session_id": "upstream-sid-2",
-                "opencode_session_id": "upstream-sid-2",
             },
         },
     ]
