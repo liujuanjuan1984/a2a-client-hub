@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from a2a.types import Message, Role, TextPart
 
 from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
 
@@ -48,3 +49,29 @@ async def test_a2a_client_close_releases_owned_http_client_resources() -> None:
     http_client.aclose.assert_awaited_once()
     assert a2a_client._agent_card is None
     assert a2a_client._clients == {}
+
+
+def test_extract_text_from_payload_can_handle_task_like_payload() -> None:
+    fake_task_payload = SimpleNamespace(
+        artifacts=[
+            SimpleNamespace(
+                parts=[TextPart(text="Task completed")],
+            )
+        ]
+    )
+    text = A2AClient._extract_text_from_payload(fake_task_payload)
+
+    assert text == "Task completed"
+
+
+def test_extract_text_from_payload_can_handle_history_message() -> None:
+    user_message = Message(
+        message_id="m1",
+        role=Role("user"),
+        parts=[TextPart(text="Previous prompt")],
+    )
+    agent_payload = SimpleNamespace(history=[user_message])
+
+    text = A2AClient._extract_text_from_payload(agent_payload)
+
+    assert text == "Previous prompt"

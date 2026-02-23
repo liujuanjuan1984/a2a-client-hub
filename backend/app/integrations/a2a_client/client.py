@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Dict, List, Optional
 from urllib.parse import urlsplit, urlunsplit
@@ -164,7 +166,13 @@ class A2AClient:
 
             content = self._extract_text_from_payload(final_payload)
             if content is None:
-                content = str(final_payload)
+                content = json.dumps(
+                    _as_plain_serializable(final_payload),
+                    ensure_ascii=False,
+                    indent=2,
+                    default=_json_fallback,
+                )
+                content = content.strip() if content else str(final_payload)
 
             logger.info(
                 "A2A agent call succeeded (chars=%s)",
@@ -497,9 +505,22 @@ class A2AClient:
 
     @staticmethod
     def _extract_text_from_payload(payload: ClientEvent | Message) -> Optional[str]:
-        if isinstance(payload, Message):
+        """Extract readable text from A2A events or message-like payloads."""
+
+        def extract_from_iterable(items: Any) -> Optional[str]:
+            if not isinstance(items, (list, tuple)):
+                return None
+            for item in items:
+                extracted = A2AClient._extract_text_from_payload(item)
+                if extracted:
+                    return extracted
+            return None
+
+        def extract_from_parts(parts: Any) -> Optional[str]:
+            if not isinstance(parts, (list, tuple)):
+                return None
             collected: list[str] = []
-            for part in payload.parts:
+            for part in parts:
                 text_part = None
                 if isinstance(part, TextPart):
                     text_part = part
@@ -507,13 +528,112 @@ class A2AClient:
                     root = getattr(part, "root", None)
                     if isinstance(root, TextPart):
                         text_part = root
-
                 if text_part and getattr(text_part, "text", None):
                     collected.append(text_part.text)
-
             if collected:
                 return "\n".join(collected)
+            return None
+
+        if isinstance(payload, Message):
+            return extract_from_parts(payload.parts)
+
+        if isinstance(payload, str):
+            return payload.strip() or None
+
+        # Common task-like payload shapes returned by a2a-sdk events.
+        status_payload = getattr(payload, "status", None)
+        if status_payload is not None:
+            text = A2AClient._extract_text_from_payload(status_payload)
+            if text:
+                return text
+
+        message_payload = getattr(payload, "message", None)
+        if message_payload is not None:
+            text = A2AClient._extract_text_from_payload(message_payload)
+            if text:
+                return text
+
+        result_payload = getattr(payload, "result", None)
+        if result_payload is not None:
+            text = A2AClient._extract_text_from_payload(result_payload)
+            if text:
+                return text
+
+        history = getattr(payload, "history", None)
+        if isinstance(history, (list, tuple)) and history:
+            for item in reversed(history):
+                text = A2AClient._extract_text_from_payload(item)
+                if text:
+                    return text
+
+        artifacts = getattr(payload, "artifacts", None)
+        if isinstance(artifacts, (list, tuple)):
+            for artifact in artifacts:
+                artifact_parts = getattr(artifact, "parts", None)
+                if isinstance(artifact_parts, (list, tuple)):
+                    text = extract_from_parts(artifact_parts)
+                    if text:
+                        return text
+
+        text = extract_from_parts(getattr(payload, "parts", None))
+        if text:
+            return text
+
+        event_text = extract_from_iterable(getattr(payload, "events", None))
+        if event_text:
+            return event_text
+
+        if isinstance(payload, Mapping):
+            for key in ("content", "message", "messages", "result", "status", "text"):
+                value = payload.get(key)
+                if value in (None, ""):
+                    continue
+                text = A2AClient._extract_text_from_payload(value)
+                if text:
+                    return text
+                if isinstance(value, (str, int, float, bool)):
+                    return str(value)
+
         return None
+
+
+def _as_plain_serializable(payload: Any) -> Any:
+    if payload is None:
+        return None
+    if isinstance(payload, (str, int, float, bool)):
+        return payload
+    if isinstance(payload, list):
+        return [_as_plain_serializable(item) for item in payload]
+    if isinstance(payload, dict):
+        return {
+            str(key): _as_plain_serializable(value) for key, value in payload.items()
+        }
+    for candidate in ("content", "status", "artifacts", "history", "parts", "text"):
+        value = getattr(payload, candidate, None)
+        if value is not None:
+            return {
+                "_type": type(payload).__name__,
+                candidate: _as_plain_serializable(value),
+            }
+    return str(payload)
+
+
+def _json_fallback(value: Any) -> Any:
+    if isinstance(value, Message):
+        return {
+            "message_id": value.message_id,
+            "parts": _as_plain_serializable(value.parts),
+            "role": getattr(value.role, "value", None),
+            "context_id": value.context_id,
+            "metadata": value.metadata,
+        }
+    if isinstance(value, TextPart):
+        return {"text": value.text}
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    if hasattr(value, "dict"):
+        return _as_plain_serializable(value.dict())
+    return str(value)
 
 
 def _unwrap_httpx_error(exc: Exception) -> Optional[httpx.HTTPError]:
