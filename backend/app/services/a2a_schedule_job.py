@@ -44,39 +44,20 @@ def _execution_metadata(task: A2AScheduleTask, execution_id: str) -> dict[str, o
 
 
 async def _ensure_task_session(*, db, task: A2AScheduleTask) -> ConversationThread:
-    thread = None
-    if task.conversation_id is not None:
-        stmt = select(ConversationThread).where(
-            and_(
-                ConversationThread.id == task.conversation_id,
-                ConversationThread.user_id == task.user_id,
-                ConversationThread.status == ConversationThread.STATUS_ACTIVE,
-            )
-        )
-        thread = await db.scalar(stmt)
-
-    if thread is None:
-        now = utc_now()
-        thread = ConversationThread(
-            id=uuid4(),
-            user_id=task.user_id,
-            source=ConversationThread.SOURCE_SCHEDULED,
-            agent_id=task.agent_id,
-            agent_source="personal",
-            title=f"[Scheduled] {task.name}",
-            last_active_at=now,
-            status=ConversationThread.STATUS_ACTIVE,
-        )
-        db.add(thread)
-        await db.flush()
-        task.conversation_id = thread.id
-    else:
-        thread.source = ConversationThread.SOURCE_SCHEDULED
-        thread.agent_id = task.agent_id
-        thread.agent_source = "personal"
-        thread.title = f"[Scheduled] {task.name}"
-        thread.last_active_at = utc_now()
-
+    now = utc_now()
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=task.user_id,
+        source=ConversationThread.SOURCE_SCHEDULED,
+        agent_id=task.agent_id,
+        agent_source="personal",
+        title=f"[Scheduled] {task.name}",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    db.add(thread)
+    await db.flush()
+    task.conversation_id = thread.id
     return thread
 
 

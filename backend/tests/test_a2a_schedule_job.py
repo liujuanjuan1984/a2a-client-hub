@@ -445,3 +445,65 @@ async def test_execute_claimed_task_persists_readable_agent_content(
     agent_messages = [message for message in messages if message.sender == "agent"]
     assert agent_messages
     assert agent_messages[-1].content == "Readable answer"
+
+
+async def test_execute_claimed_task_creates_new_conversation_each_run(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="new-conv")
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    task_id = task.id
+
+    async def _invoke(**_kwargs) -> dict:
+        return {
+            "success": True,
+            "content": "ok",
+        }
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        _mock_runtime_builder(),
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.get_a2a_service",
+        lambda: SimpleNamespace(
+            gateway=SimpleNamespace(invoke=_invoke),
+        ),
+    )
+
+    await _execute_claimed_task(claim=_build_claim(task))
+    await _execute_claimed_task(claim=_build_claim(task))
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        executions = list(
+            (
+                await check_db.scalars(
+                    select(A2AScheduleExecution)
+                    .where(A2AScheduleExecution.task_id == task_id)
+                    .order_by(A2AScheduleExecution.started_at.desc())
+                    .limit(2)
+                )
+            ).all()
+        )
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
+        )
+
+    assert len(executions) == 2
+    latest_conversation_id = executions[0].conversation_id
+    previous_conversation_id = executions[1].conversation_id
+    assert latest_conversation_id is not None
+    assert previous_conversation_id is not None
+    assert latest_conversation_id != previous_conversation_id
+    assert refreshed_task is not None
+    assert refreshed_task.conversation_id == latest_conversation_id
