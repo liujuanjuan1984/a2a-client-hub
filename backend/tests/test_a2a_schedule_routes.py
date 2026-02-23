@@ -170,6 +170,44 @@ async def test_schedule_create_interval_normalizes_minutes(
         assert payload["time_point"] == {"minutes": 10}
 
 
+async def test_schedule_create_interval_accepts_start_at(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 1)
+
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="interval")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Backfill job",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "cycle_type": "interval",
+                "time_point": {
+                    "minutes": 30,
+                    "start_at": "2026-02-23T08:15:00+08:00",
+                },
+                "enabled": False,
+            },
+        )
+        assert resp.status_code == 201
+        payload = resp.json()
+        assert payload["cycle_type"] == "interval"
+        assert payload["time_point"]["minutes"] == 30
+        assert payload["time_point"]["start_at"] == "2026-02-23T00:15:00+00:00"
+
+
 async def test_schedule_create_weekly_uses_iso_weekday(
     async_db_session,
     async_session_maker,

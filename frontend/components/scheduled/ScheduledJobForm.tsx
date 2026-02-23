@@ -6,6 +6,7 @@ import {
   type ScheduledJobPayload,
   type ScheduleTimePoint,
 } from "@/lib/api/scheduledJobs";
+import { formatDateTimeLocalInputValue } from "@/lib/datetime";
 
 type AgentOption = {
   id: string;
@@ -21,6 +22,7 @@ type ScheduledJobFormProps = {
   onSubmit: () => void;
   onCancel: () => void;
   showTitle?: boolean;
+  timeZone?: string;
 };
 
 export function ScheduledJobForm({
@@ -32,6 +34,7 @@ export function ScheduledJobForm({
   onSubmit,
   onCancel,
   showTitle = true,
+  timeZone,
 }: ScheduledJobFormProps) {
   const cycleOptions: { value: ScheduleCycleType; label: string }[] = [
     { value: "daily", label: "Daily" },
@@ -49,11 +52,6 @@ export function ScheduledJobForm({
     { value: 7, label: "Sun" },
   ];
 
-  const normalizeIntervalMinutes = (value: number) => {
-    const clamped = Math.max(5, Math.min(1440, value));
-    return Math.ceil(clamped / 5) * 5;
-  };
-
   const ensureTimePoint = (nextCycle: ScheduleCycleType) => {
     const current = form.time_point as ScheduleTimePoint;
     if (nextCycle === "daily") {
@@ -70,9 +68,12 @@ export function ScheduledJobForm({
     }
     if (nextCycle === "interval") {
       const minutes = (current as { minutes?: unknown })?.minutes;
+      const startAt = (current as { start_at?: unknown })?.start_at;
       return {
-        minutes:
-          typeof minutes === "number" ? normalizeIntervalMinutes(minutes) : 10,
+        minutes: typeof minutes === "number" ? minutes : 10,
+        ...(typeof startAt === "string" && startAt.trim()
+          ? { start_at: startAt }
+          : {}),
       };
     }
     const time = (current as { time?: unknown })?.time;
@@ -222,7 +223,7 @@ export function ScheduledJobForm({
       {form.cycle_type === "interval" ? (
         <>
           <Text className="mt-3 text-xs text-muted">
-            Interval minutes (normalized to 5..1440, rounded up to 5-min steps)
+            Interval minutes (5..1440)
           </Text>
           <TextInput
             className="mt-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
@@ -238,13 +239,43 @@ export function ScheduledJobForm({
               onChange({
                 time_point: {
                   ...(form.time_point as any),
-                  minutes: normalizeIntervalMinutes(parsed),
+                  minutes: parsed,
                 },
               });
             }}
             placeholder="10"
             placeholderTextColor="#64748b"
             keyboardType="number-pad"
+          />
+          <Text className="mt-3 text-xs text-muted">
+            Start datetime (local) (optional)
+          </Text>
+          <TextInput
+            className="mt-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            value={formatDateTimeLocalInputValue(
+              (() => {
+                const startAt = (form.time_point as { start_at?: unknown })
+                  ?.start_at;
+                return typeof startAt === "string" ? startAt : undefined;
+              })(),
+              timeZone,
+            )}
+            onChangeText={(value) => {
+              const next = {
+                ...(form.time_point as any),
+              };
+              if (value.trim()) {
+                next.start_at = value.trim();
+              } else {
+                delete next.start_at;
+              }
+              onChange({
+                time_point: next,
+              });
+            }}
+            placeholder="2026-02-23T14:30"
+            placeholderTextColor="#64748b"
+            keyboardType="default"
           />
         </>
       ) : (

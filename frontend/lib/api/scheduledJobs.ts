@@ -9,7 +9,7 @@ export type ScheduleCycleType = "daily" | "weekly" | "monthly" | "interval";
 export type DailyTimePoint = { time: string };
 export type WeeklyTimePoint = { weekday: number; time: string };
 export type MonthlyTimePoint = { day: number; time: string };
-export type IntervalTimePoint = { minutes: number };
+export type IntervalTimePoint = { minutes: number; start_at?: string };
 export type ScheduleTimePoint =
   | DailyTimePoint
   | WeeklyTimePoint

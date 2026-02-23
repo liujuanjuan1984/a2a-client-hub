@@ -121,19 +121,20 @@ class A2AScheduleService:
         normalized_name = self._normalize_name(name)
         normalized_prompt = self._normalize_prompt(prompt)
         normalized_cycle = self._normalize_cycle_type(cycle_type)
+        timezone_value = await auth_handler.get_user_timezone(
+            db,
+            user_id=user_id,
+            default="UTC",
+        )
         normalized_point = self._normalize_time_point(
             cycle_type=normalized_cycle,
             time_point=time_point,
             is_superuser=is_superuser,
+            timezone_str=timezone_value,
         )
 
         next_run_at: Optional[datetime] = None
         if enabled:
-            timezone_value = await auth_handler.get_user_timezone(
-                db,
-                user_id=user_id,
-                default="UTC",
-            )
             next_run_at = self.compute_next_run_at(
                 cycle_type=normalized_cycle,
                 time_point=normalized_point,
@@ -200,10 +201,16 @@ class A2AScheduleService:
 
         schedule_changed = (cycle_type is not None) or (time_point is not None)
         if schedule_changed:
+            timezone_value = await auth_handler.get_user_timezone(
+                db,
+                user_id=user_id,
+                default="UTC",
+            )
             normalized_point = self._normalize_time_point(
                 cycle_type=next_cycle_type,
                 time_point=next_time_point,
                 is_superuser=is_superuser,
+                timezone_str=timezone_value,
             )
             task.cycle_type = next_cycle_type
             task.time_point = normalized_point
@@ -638,6 +645,7 @@ class A2AScheduleService:
         cycle_type: str,
         time_point: Dict[str, Any],
         is_superuser: bool = False,
+        timezone_str: str = "UTC",
     ) -> Dict[str, Any]:
         if not isinstance(time_point, dict):
             raise A2AScheduleValidationError("time_point must be an object")
@@ -647,7 +655,14 @@ class A2AScheduleService:
             minutes = self._normalize_interval_minutes(
                 minutes_raw, is_superuser=is_superuser
             )
-            return {"minutes": minutes}
+            interval_start_at = self._normalize_interval_start_at(
+                time_point.get("start_at"),
+                timezone_str=timezone_str,
+            )
+            normalized: Dict[str, Any] = {"minutes": minutes}
+            if interval_start_at is not None:
+                normalized["start_at"] = interval_start_at
+            return normalized
 
         hh, mm = self._parse_hhmm(time_point.get("time"))
         normalized: Dict[str, Any] = {"time": f"{hh:02d}:{mm:02d}"}
@@ -712,6 +727,110 @@ class A2AScheduleService:
         if normalized > 24 * 60:
             normalized = 24 * 60
         return normalized
+
+    @staticmethod
+    def _normalize_interval_start_at(
+        value: Any, timezone_str: str = "UTC"
+    ) -> Optional[str]:
+        if value is None or value == "":
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            if not trimmed:
+                return None
+            try:
+                dt = datetime.fromisoformat(trimmed)
+            except ValueError as exc:
+                # Allow "Z" suffix for UTC timestamps produced by JavaScript.
+                if trimmed.endswith("Z"):
+                    dt = datetime.fromisoformat(trimmed.replace("Z", "+00:00"))
+                else:
+                    raise A2AScheduleValidationError(
+                        "interval time_point.start_at must be a valid ISO datetime"
+                    ) from exc
+            if dt.tzinfo is None:
+                tz = resolve_timezone(timezone_str, default="UTC")
+                dt = dt.replace(tzinfo=tz)
+            return ensure_utc(dt).isoformat()
+        if isinstance(value, datetime):
+            return ensure_utc(value).isoformat()
+
+        raise A2AScheduleValidationError(
+            "interval time_point.start_at must be an ISO datetime string"
+        )
+
+    @staticmethod
+    def _resolve_interval_start_at(
+        value: Any, timezone_str: str = "UTC"
+    ) -> Optional[datetime]:
+        if value is None:
+            return None
+
+        if isinstance(value, datetime):
+            return ensure_utc(value)
+
+        if not isinstance(value, str):
+            return None
+
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+
+        try:
+            dt = datetime.fromisoformat(trimmed)
+        except ValueError as exc:
+            if trimmed.endswith("Z"):
+                dt = datetime.fromisoformat(trimmed.replace("Z", "+00:00"))
+            else:
+                raise A2AScheduleValidationError(
+                    "interval time_point.start_at is not a valid ISO datetime"
+                ) from exc
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=resolve_timezone(timezone_str, default="UTC"))
+
+        return ensure_utc(dt)
+
+    @staticmethod
+    def _next_interval_candidate(
+        after_utc: datetime,
+        interval: timedelta,
+        start_at_utc: Optional[datetime],
+        guard_utc: datetime,
+    ) -> datetime:
+        anchor = ensure_utc(start_at_utc) if start_at_utc else None
+        after = ensure_utc(after_utc)
+        if anchor is None:
+            candidate = after + interval
+            if candidate <= guard_utc:
+                interval_seconds = max(interval.total_seconds(), 1.0)
+                return candidate + timedelta(
+                    seconds=(guard_utc - candidate).total_seconds()
+                    // interval_seconds
+                    * interval_seconds
+                    + interval_seconds
+                )
+            return candidate
+        else:
+            if after < anchor:
+                candidate = anchor
+            else:
+                interval_seconds = max(interval.total_seconds(), 1.0)
+                delta_seconds = (after - anchor).total_seconds()
+                steps = int((delta_seconds + interval_seconds - 1) // interval_seconds)
+                candidate = anchor + timedelta(seconds=steps * interval_seconds)
+
+                if candidate <= guard_utc:
+                    additional_steps = (
+                        int((guard_utc - candidate).total_seconds() // interval_seconds)
+                        + 1
+                    )
+                    return candidate + timedelta(
+                        seconds=additional_steps * interval_seconds
+                    )
+            return candidate
+
+        return candidate
 
     @staticmethod
     def _coerce_int(value: Any) -> Optional[int]:
@@ -843,6 +962,7 @@ class A2AScheduleService:
             cycle_type=normalized_cycle,
             time_point=time_point,
             is_superuser=is_superuser,
+            timezone_str=timezone_str,
         )
 
         if normalized_cycle == A2AScheduleTask.CYCLE_INTERVAL:
@@ -855,15 +975,16 @@ class A2AScheduleService:
             interval = timedelta(minutes=minutes)
             after = ensure_utc(after_utc)
             guard = ensure_utc(not_before_utc or after_utc)
-
-            base_candidate = after + interval
-            if base_candidate > guard:
-                return base_candidate
-
-            delta_seconds = (guard - base_candidate).total_seconds()
-            interval_seconds = max(interval.total_seconds(), 1.0)
-            steps = int(delta_seconds // interval_seconds) + 1
-            return base_candidate + (interval * steps)
+            start_at = self._resolve_interval_start_at(
+                normalized_point.get("start_at"),
+                timezone_str=timezone_str,
+            )
+            return self._next_interval_candidate(
+                after_utc=after,
+                interval=interval,
+                start_at_utc=start_at,
+                guard_utc=guard,
+            )
 
         tz = resolve_timezone(timezone_str, default="UTC")
         after_local = ensure_utc(after_utc).astimezone(tz)
