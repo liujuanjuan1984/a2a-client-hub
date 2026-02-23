@@ -1,4 +1,5 @@
 import { type SessionListItem } from "@/lib/api/sessions";
+import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 
 export type SessionAgentLookup = {
   name: string;
@@ -29,4 +30,21 @@ export const resolveSessionAgentPresentation = (
   }
 
   return { name: agentId, tone: "unknown" };
+};
+
+export const getSessionTimelineText = (
+  item: SessionListItem,
+): {
+  createdAtText: string;
+  lastUpdatedAtText: string;
+} => {
+  const createdAtText = formatLocalDateTimeYmdHm(item.created_at);
+  const lastUpdatedAtText = formatLocalDateTimeYmdHm(
+    item.last_active_at ?? item.created_at,
+  );
+
+  return {
+    createdAtText,
+    lastUpdatedAtText,
+  };
 };
