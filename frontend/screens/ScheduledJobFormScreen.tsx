@@ -131,6 +131,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   const [saving, setSaving] = useState(false);
   const [loadingJob, setLoadingJob] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [lastRunStatus, setLastRunStatus] = useState<string | null>(null);
 
   const initialSnapshotRef = useRef<Snapshot | null>(null);
 
@@ -161,6 +162,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           enabled: found.enabled,
         };
         setForm(next);
+        setLastRunStatus(found.last_run_status ?? null);
         initialSnapshotRef.current = buildSnapshot(next);
       })
       .catch((error) => {
@@ -343,8 +345,15 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       });
       goBackOrHome();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Save failed.";
-      toast.error("Save failed", message);
+      if (error instanceof ApiRequestError && error.status === 409) {
+        toast.error(
+          "Save failed",
+          "Task is currently running and cannot be edited. Please wait.",
+        );
+      } else {
+        const message = error instanceof Error ? error.message : "Save failed.";
+        toast.error("Save failed", message);
+      }
     } finally {
       setSaving(false);
     }
@@ -377,6 +386,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
             editing={editing}
             agentOptions={agentOptions}
             timeZone={userTimeZone}
+            lastRunStatus={lastRunStatus}
             onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
             onSubmit={handleSubmit}
             onCancel={handleCancel}

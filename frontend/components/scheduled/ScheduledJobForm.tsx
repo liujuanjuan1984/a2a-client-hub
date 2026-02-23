@@ -27,6 +27,7 @@ type ScheduledJobFormProps = {
   onCancel: () => void;
   showTitle?: boolean;
   timeZone?: string;
+  lastRunStatus?: string | null;
 };
 
 export function ScheduledJobForm({
@@ -39,6 +40,7 @@ export function ScheduledJobForm({
   onCancel,
   showTitle = true,
   timeZone,
+  lastRunStatus,
 }: ScheduledJobFormProps) {
   const intervalStartAt = (() => {
     const startAt = (form.time_point as { start_at?: unknown })?.start_at;
@@ -116,8 +118,19 @@ export function ScheduledJobForm({
     };
   };
 
+  const isCurrentlyRunning = lastRunStatus === "running";
+
   return (
     <View className="mb-4 rounded-3xl border border-slate-800 bg-slate-900/40 p-4">
+      {isCurrentlyRunning && (
+        <View className="mb-4 rounded-lg bg-yellow-500/10 p-3 border border-yellow-500/20">
+          <Text className="text-sm font-medium text-yellow-500">
+            Cannot edit a job while it is currently running. Please wait for it
+            to finish or disable it first.
+          </Text>
+        </View>
+      )}
+
       {showTitle ? (
         <Text className="text-sm font-semibold text-white">
           {editing ? "Edit Job" : "Create Job"}
@@ -347,6 +360,7 @@ export function ScheduledJobForm({
           label={editing ? "Save" : "Create"}
           size="sm"
           loading={saving}
+          disabled={isCurrentlyRunning}
           onPress={onSubmit}
         />
       </View>

@@ -38,6 +38,10 @@ class A2AScheduleQuotaError(A2AScheduleError):
     """Raised when a schedule task operation exceeds user quotas."""
 
 
+class A2AScheduleConflictError(A2AScheduleError):
+    """Raised when a schedule task operation is in conflict with its current state."""
+
+
 @dataclass(frozen=True)
 class ClaimedA2AScheduleTask:
     """Snapshot describing a due task claimed by the scheduler."""
@@ -177,6 +181,11 @@ class A2AScheduleService:
         enabled: Optional[bool] = None,
     ) -> A2AScheduleTask:
         task = await self._get_task(db, user_id=user_id, task_id=task_id)
+
+        if task.last_run_status == A2AScheduleTask.STATUS_RUNNING:
+            raise A2AScheduleConflictError(
+                "Task is currently running and cannot be edited."
+            )
 
         if enabled is True and not task.enabled:
             await self._ensure_active_quota(
