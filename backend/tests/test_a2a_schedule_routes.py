@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from datetime import timedelta
+from uuid import uuid4
+
 import pytest
+from sqlalchemy import select
 
 from app.api.routers import a2a_schedules
 from app.db.models.a2a_agent import A2AAgent
+from app.db.models.a2a_schedule_execution import A2AScheduleExecution
+from app.db.models.a2a_schedule_task import A2AScheduleTask
+from app.services.a2a_schedule_service import a2a_schedule_service
+from app.utils.timezone_util import utc_now
 from tests.api_utils import create_test_client
 from tests.utils import create_user
 
@@ -134,6 +142,171 @@ async def test_schedule_create_rejects_unowned_agent(
             },
         )
         assert resp.status_code == 400
+
+
+async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="mark-failed")
+
+    task = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        name="Running task",
+        agent_id=agent.id,
+        prompt="ping",
+        cycle_type="daily",
+        time_point={"time": "09:00"},
+        enabled=False,
+    )
+    started_at = utc_now() - timedelta(minutes=3)
+    run_id = uuid4()
+    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+    task.current_run_id = run_id
+    task.running_started_at = started_at
+    async_db_session.add(
+        A2AScheduleExecution(
+            user_id=user.id,
+            task_id=task.id,
+            run_id=run_id,
+            scheduled_for=started_at,
+            started_at=started_at,
+            status=A2AScheduleExecution.STATUS_RUNNING,
+        )
+    )
+    await async_db_session.commit()
+    await async_db_session.refresh(task)
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/a2a/schedules/{task.id}/mark-failed",
+            json={"reason": "Manual stop from UI"},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["id"] == str(task.id)
+        assert payload["last_run_status"] == "failed"
+        assert payload["last_run_at"] is not None
+
+        await async_db_session.refresh(task)
+        failures_after_first_call = task.consecutive_failures
+        assert task.last_run_status == A2AScheduleTask.STATUS_FAILED
+        assert task.current_run_id is None
+        assert task.running_started_at is None
+        assert failures_after_first_call >= 1
+
+        execution = await async_db_session.scalar(
+            select(A2AScheduleExecution).where(
+                A2AScheduleExecution.task_id == task.id,
+                A2AScheduleExecution.run_id == run_id,
+            )
+        )
+        assert execution is not None
+        assert execution.status == A2AScheduleExecution.STATUS_FAILED
+        assert execution.finished_at is not None
+        assert execution.error_message is not None
+        assert "Manual stop from UI" in execution.error_message
+
+        second_resp = await client.post(
+            f"/me/a2a/schedules/{task.id}/mark-failed",
+            json={"reason": "Manual stop from UI"},
+        )
+        assert second_resp.status_code == 200
+        await async_db_session.refresh(task)
+        assert task.consecutive_failures == failures_after_first_call
+
+
+async def test_schedule_mark_failed_rejects_non_running_task(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="mark-failed-state"
+    )
+
+    task = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        name="Idle task",
+        agent_id=agent.id,
+        prompt="ping",
+        cycle_type="daily",
+        time_point={"time": "09:00"},
+        enabled=False,
+    )
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/a2a/schedules/{task.id}/mark-failed",
+            json={},
+        )
+        assert resp.status_code == 400
+        assert (
+            "Only running tasks can be manually marked as failed"
+            in resp.json()["detail"]
+        )
+
+
+async def test_schedule_mark_failed_backfills_missing_execution(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="mark-failed-backfill"
+    )
+
+    task = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        name="Running task no execution",
+        agent_id=agent.id,
+        prompt="ping",
+        cycle_type="daily",
+        time_point={"time": "09:00"},
+        enabled=False,
+    )
+    started_at = utc_now() - timedelta(minutes=2)
+    run_id = uuid4()
+    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+    task.current_run_id = run_id
+    task.running_started_at = started_at
+    await async_db_session.commit()
+    await async_db_session.refresh(task)
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/a2a/schedules/{task.id}/mark-failed",
+            json={"reason": "No execution row yet"},
+        )
+        assert resp.status_code == 200
+
+        execution = await async_db_session.scalar(
+            select(A2AScheduleExecution).where(
+                A2AScheduleExecution.task_id == task.id,
+                A2AScheduleExecution.run_id == run_id,
+            )
+        )
+        assert execution is not None
+        assert execution.status == A2AScheduleExecution.STATUS_FAILED
 
 
 async def test_schedule_create_interval_normalizes_minutes(

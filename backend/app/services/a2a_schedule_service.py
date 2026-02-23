@@ -292,6 +292,100 @@ class A2AScheduleService:
         task.next_run_at = None
         await commit_safely(db)
 
+    async def mark_task_failed_manually(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        task_id: UUID,
+        marked_by_user_id: UUID,
+        reason: Optional[str] = None,
+        marked_at: Optional[datetime] = None,
+    ) -> A2AScheduleTask:
+        now_utc = ensure_utc(marked_at or utc_now())
+        manual_error_message = self._build_manual_failure_reason(
+            reason=reason,
+            marked_by_user_id=marked_by_user_id,
+            marked_at=now_utc,
+        )
+
+        stmt = (
+            select(A2AScheduleTask)
+            .where(
+                and_(
+                    A2AScheduleTask.id == task_id,
+                    A2AScheduleTask.user_id == user_id,
+                    A2AScheduleTask.deleted_at.is_(None),
+                )
+            )
+            .with_for_update()
+            .limit(1)
+        )
+        task = await db.scalar(stmt)
+        if task is None:
+            raise A2AScheduleNotFoundError("Schedule task not found")
+
+        if (
+            task.last_run_status == A2AScheduleTask.STATUS_FAILED
+            and task.current_run_id is None
+        ):
+            return task
+
+        if task.last_run_status != A2AScheduleTask.STATUS_RUNNING:
+            raise A2AScheduleValidationError(
+                "Only running tasks can be manually marked as failed"
+            )
+
+        run_id = task.current_run_id or uuid4()
+        started_at = ensure_utc(task.running_started_at or now_utc)
+        exec_stmt = (
+            select(A2AScheduleExecution)
+            .where(
+                and_(
+                    A2AScheduleExecution.task_id == task.id,
+                    A2AScheduleExecution.user_id == task.user_id,
+                    A2AScheduleExecution.run_id == run_id,
+                )
+            )
+            .with_for_update()
+            .limit(1)
+        )
+        execution = await db.scalar(exec_stmt)
+        if execution is None:
+            execution = A2AScheduleExecution(
+                user_id=task.user_id,
+                task_id=task.id,
+                run_id=run_id,
+                scheduled_for=started_at,
+                started_at=started_at,
+                finished_at=now_utc,
+                status=A2AScheduleExecution.STATUS_FAILED,
+                error_message=manual_error_message,
+                conversation_id=task.conversation_id,
+            )
+            db.add(execution)
+        else:
+            if execution.status == A2AScheduleExecution.STATUS_RUNNING:
+                execution.status = A2AScheduleExecution.STATUS_FAILED
+            if execution.finished_at is None:
+                execution.finished_at = now_utc
+            execution.error_message = manual_error_message
+            if execution.conversation_id is None:
+                execution.conversation_id = task.conversation_id
+
+        threshold = max(int(settings.a2a_schedule_task_failure_threshold), 1)
+        task.last_run_status = A2AScheduleTask.STATUS_FAILED
+        task.last_run_at = now_utc
+        task.current_run_id = None
+        task.running_started_at = None
+        task.consecutive_failures = (task.consecutive_failures or 0) + 1
+        if task.consecutive_failures >= threshold:
+            task.enabled = False
+
+        await commit_safely(db)
+        await db.refresh(task)
+        return task
+
     async def list_executions(
         self,
         db: AsyncSession,
@@ -700,6 +794,22 @@ class A2AScheduleService:
         if len(normalized) > 128_000:
             raise A2AScheduleValidationError("Prompt exceeds max length")
         return normalized
+
+    @staticmethod
+    def _build_manual_failure_reason(
+        *,
+        reason: Optional[str],
+        marked_by_user_id: UUID,
+        marked_at: datetime,
+    ) -> str:
+        base = (
+            f"Manually marked as failed by user {marked_by_user_id} "
+            f"at {ensure_utc(marked_at).isoformat()}"
+        )
+        normalized_reason = (reason or "").strip()
+        if not normalized_reason:
+            return base
+        return f"{base}. Reason: {normalized_reason}"
 
     def _normalize_cycle_type(self, value: str) -> str:
         normalized = (value or "").strip().lower()
