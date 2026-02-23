@@ -1011,3 +1011,16 @@ def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
         "total_tokens": 77,
         "cost": 0.0077,
     }
+
+
+def test_coerce_payload_to_dict_raises_exception(caplog):
+    class MockUnserializablePayload:
+        def model_dump(self, exclude_none=True):
+            raise ValueError("Cannot serialize this mock payload")
+
+    payload = MockUnserializablePayload()
+    with pytest.raises(ValueError, match="Payload serialization failed"):
+        with caplog.at_level(logging.ERROR):
+            a2a_invoke_service._coerce_payload_to_dict(payload)
+
+    assert "Failed to dump A2A payload" in caplog.text
