@@ -35,8 +35,7 @@ export const resolveSessionAgentPresentation = (
 export const getSessionTimelineText = (
   item: SessionListItem,
 ): {
-  createdAtText: string;
-  lastUpdatedAtText: string;
+  timelineRangeText: string;
 } => {
   const createdAtText = formatLocalDateTimeYmdHm(item.created_at);
   const lastUpdatedAtText = formatLocalDateTimeYmdHm(
@@ -44,7 +43,6 @@ export const getSessionTimelineText = (
   );
 
   return {
-    createdAtText,
-    lastUpdatedAtText,
+    timelineRangeText: `${createdAtText} - ${lastUpdatedAtText}`,
   };
 };

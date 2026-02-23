@@ -4,6 +4,7 @@ import { FlatList, Modal, Pressable, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import { type AgentSession } from "@/lib/chat-utils";
+import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import { useChatStore } from "@/store/chat";
 import { useMessageStore } from "@/store/messages";
 
@@ -21,12 +22,10 @@ function SessionItem({
   const messages = useMessageStore((state) => state.messages[conversationId]);
   const firstUserMessage = messages?.find((m) => m.role === "user");
   const title = firstUserMessage?.content?.trim() || "New Session";
-  const date = new Date(session.lastActiveAt).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const createdAtText = formatLocalDateTimeYmdHm(
+    session.createdAt ?? session.lastActiveAt,
+  );
+  const lastUpdatedAtText = formatLocalDateTimeYmdHm(session.lastActiveAt);
 
   return (
     <Pressable
@@ -37,10 +36,14 @@ function SessionItem({
       }`}
       onPress={() => onSelect(conversationId)}
     >
-      <Text className="flex-1 text-sm text-slate-300" numberOfLines={2}>
-        {title}
-      </Text>
-      <Text className="ml-2 text-[10px] text-slate-400">{date}</Text>
+      <View className="flex-1">
+        <Text className="text-sm text-slate-300" numberOfLines={2}>
+          {title}
+        </Text>
+        <Text className="mt-1 text-[10px] text-slate-500" numberOfLines={1}>
+          {createdAtText} - {lastUpdatedAtText}
+        </Text>
+      </View>
     </Pressable>
   );
 }

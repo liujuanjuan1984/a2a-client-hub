@@ -56,7 +56,9 @@ describe("sessionDirectoryPresentation", () => {
     });
   });
 
-  it("formats created and last-updated timestamps independently", () => {
+  it("formats timeline as a created-to-updated range", () => {
+    const created = formatLocalDateTimeYmdHm("2026-02-20T10:00:00.000Z");
+    const updated = formatLocalDateTimeYmdHm("2026-02-21T12:34:56.000Z");
     const result = getSessionTimelineText(
       createSession({
         created_at: "2026-02-20T10:00:00.000Z",
@@ -65,12 +67,12 @@ describe("sessionDirectoryPresentation", () => {
     );
 
     expect(result).toEqual({
-      createdAtText: formatLocalDateTimeYmdHm("2026-02-20T10:00:00.000Z"),
-      lastUpdatedAtText: formatLocalDateTimeYmdHm("2026-02-21T12:34:56.000Z"),
+      timelineRangeText: `${created} - ${updated}`,
     });
   });
 
   it("falls back last updated to created time when missing", () => {
+    const created = formatLocalDateTimeYmdHm("2026-02-20T10:00:00.000Z");
     const result = getSessionTimelineText(
       createSession({
         created_at: "2026-02-20T10:00:00.000Z",
@@ -79,8 +81,7 @@ describe("sessionDirectoryPresentation", () => {
     );
 
     expect(result).toEqual({
-      createdAtText: formatLocalDateTimeYmdHm("2026-02-20T10:00:00.000Z"),
-      lastUpdatedAtText: formatLocalDateTimeYmdHm("2026-02-20T10:00:00.000Z"),
+      timelineRangeText: `${created} - ${created}`,
     });
   });
 });

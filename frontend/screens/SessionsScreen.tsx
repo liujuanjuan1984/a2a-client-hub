@@ -124,11 +124,8 @@ export function SessionsScreen() {
 
                   <View className="flex-row items-start justify-between gap-3 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
                     <View className="flex-1">
-                      <Text className="text-xs text-slate-400">
-                        Created: {timeline.createdAtText}
-                      </Text>
-                      <Text className="text-xs text-slate-300">
-                        Last updated: {timeline.lastUpdatedAtText}
+                      <Text className="text-[11px] text-slate-500">
+                        {timeline.timelineRangeText}
                       </Text>
                     </View>
                     <Button
