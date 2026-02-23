@@ -417,7 +417,7 @@ class SessionHubService:
         if provider_from_invoke:
             metadata["provider"] = provider_from_invoke
         if external_session_id:
-            metadata["external_session_id"] = external_session_id
+            metadata["externalSessionId"] = external_session_id
         if extra_metadata:
             metadata.update(extra_metadata)
         normalized_user_message_id = normalize_non_empty_text(user_message_id)

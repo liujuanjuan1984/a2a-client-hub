@@ -84,7 +84,7 @@ def _extract_session_id(task: Any) -> Optional[str]:
     opencode = _as_record((metadata or {}).get("opencode")) or {}
     return _pick_str(
         opencode,
-        ["session_id", "sessionId", "external_session_id", "externalSessionId"],
+        ["session_id", "sessionId"],
     ) or _pick_str(obj, ["id", "session_id", "sessionId"])
 
 
