@@ -11,6 +11,8 @@ import { useChatStore } from "@/store/chat";
 type ContinueSessionInput = {
   agentId: string;
   conversationId: string;
+  createdAt?: string | null;
+  lastActiveAt?: string | null;
 };
 
 export const useContinueSession = () => {
@@ -21,7 +23,12 @@ export const useContinueSession = () => {
   );
 
   const continueSession = useCallback(
-    async ({ agentId, conversationId }: ContinueSessionInput) => {
+    async ({
+      agentId,
+      conversationId,
+      createdAt,
+      lastActiveAt,
+    }: ContinueSessionInput) => {
       const normalizedConversationId = conversationId.trim();
       if (!normalizedConversationId) {
         toast.error("Continue session failed", "Missing conversation id.");
@@ -31,7 +38,10 @@ export const useContinueSession = () => {
       try {
         const binding = await continueSessionBinding(normalizedConversationId);
         const resolvedConversationId = binding.conversationId.trim();
-        ensureSession(resolvedConversationId, agentId);
+        ensureSession(resolvedConversationId, agentId, {
+          createdAt,
+          lastActiveAt,
+        });
         bindExternalSession(
           resolvedConversationId,
           buildContinueBindingPayload(agentId, binding),

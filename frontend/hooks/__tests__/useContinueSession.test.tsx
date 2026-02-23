@@ -113,7 +113,10 @@ describe("useContinueSession", () => {
 
     expect(ok).toBe(true);
     expect(mockedContinueSession).toHaveBeenCalledWith("conversation-1");
-    expect(mockEnsureSession).toHaveBeenCalledWith("conv-1", "agent-1");
+    expect(mockEnsureSession).toHaveBeenCalledWith("conv-1", "agent-1", {
+      createdAt: undefined,
+      lastActiveAt: undefined,
+    });
     expect(mockBindExternalSession).toHaveBeenCalledWith("conv-1", {
       agentId: "agent-1",
       source: "manual",
@@ -156,6 +159,10 @@ describe("useContinueSession", () => {
     expect(mockEnsureSession).toHaveBeenCalledWith(
       "rebound-conversation-id",
       "agent-1",
+      {
+        createdAt: undefined,
+        lastActiveAt: undefined,
+      },
     );
     expect(mockBindExternalSession).toHaveBeenCalledWith(
       "rebound-conversation-id",

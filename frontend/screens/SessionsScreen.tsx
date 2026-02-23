@@ -45,6 +45,8 @@ export function SessionsScreen() {
     await continueSession({
       agentId: item.agent_id,
       conversationId: item.conversationId,
+      createdAt: item.created_at ?? null,
+      lastActiveAt: item.last_active_at ?? item.created_at ?? null,
     });
   };
 
