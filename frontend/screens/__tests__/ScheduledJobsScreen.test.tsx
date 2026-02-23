@@ -3,12 +3,14 @@ import { act, create } from "react-test-renderer";
 import { ScheduledJobsScreen } from "@/screens/ScheduledJobsScreen";
 
 const mockToggleJobStatus = jest.fn();
+const mockMarkJobFailed = jest.fn();
 const mockLoadFirstPage = jest.fn();
 const mockLoadMore = jest.fn();
 let mockJobs: any[] = [];
 
 jest.mock("@/hooks/useScheduledJobs", () => ({
   useScheduledJobs: () => ({
+    markJobFailed: mockMarkJobFailed,
     toggleJobStatus: mockToggleJobStatus,
   }),
 }));
@@ -84,17 +86,48 @@ describe("ScheduledJobsScreen sorting", () => {
 
   it("sorts jobs according to priority: enabled > running > next_run_at", async () => {
     mockJobs = [
-      { id: "1", enabled: false, last_run_status: "failed", next_run_at: "2026-02-23T10:00:00Z" },
-      { id: "2", enabled: true, last_run_status: "running", next_run_at: "2026-02-23T11:00:00Z" },
-      { id: "3", enabled: true, last_run_status: "success", next_run_at: "2026-02-23T09:00:00Z" },
-      { id: "4", enabled: true, last_run_status: "success", next_run_at: "2026-02-23T12:00:00Z" },
-      { id: "5", enabled: false, last_run_status: "running", next_run_at: "2026-02-23T08:00:00Z" },
+      {
+        id: "1",
+        enabled: false,
+        last_run_status: "failed",
+        next_run_at: "2026-02-23T10:00:00Z",
+      },
+      {
+        id: "2",
+        enabled: true,
+        last_run_status: "running",
+        next_run_at: "2026-02-23T11:00:00Z",
+      },
+      {
+        id: "3",
+        enabled: true,
+        last_run_status: "success",
+        next_run_at: "2026-02-23T09:00:00Z",
+      },
+      {
+        id: "4",
+        enabled: true,
+        last_run_status: "success",
+        next_run_at: "2026-02-23T12:00:00Z",
+      },
+      {
+        id: "5",
+        enabled: false,
+        last_run_status: "running",
+        next_run_at: "2026-02-23T08:00:00Z",
+      },
     ];
 
     await act(async () => {
       create(<ScheduledJobsScreen />);
     });
 
-    expect(mockRenderedCards.map(j => j.id)).toEqual(["2", "3", "4", "1", "5"]);
+    expect(mockRenderedCards.map((j) => j.id)).toEqual([
+      "2",
+      "3",
+      "4",
+      "1",
+      "5",
+    ]);
   });
 });

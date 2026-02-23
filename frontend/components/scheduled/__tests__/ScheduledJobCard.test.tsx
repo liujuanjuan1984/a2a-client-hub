@@ -18,9 +18,16 @@ jest.mock("@/lib/toast", () => ({
   },
 }));
 
-jest.mock("@/components/ui/Button", () => ({
-  Button: () => null,
-}));
+jest.mock("@/components/ui/Button", () => {
+  const { Pressable, Text } = require("react-native");
+  return {
+    Button: ({ label, onPress }: any) => (
+      <Pressable onPress={onPress}>
+        <Text>{label}</Text>
+      </Pressable>
+    ),
+  };
+});
 
 jest.mock("@expo/vector-icons", () => ({
   Ionicons: () => null,
@@ -34,6 +41,7 @@ describe("ScheduledJobCard visuals", () => {
     executionsLoading: false,
     onToggleEnabled: jest.fn(),
     onEdit: jest.fn(),
+    onMarkFailed: jest.fn(),
     onToggleExecutions: jest.fn(),
   };
 
@@ -89,5 +97,37 @@ describe("ScheduledJobCard visuals", () => {
     const containerClasses = tree.props.className;
     expect(containerClasses).toContain("border-slate-800");
     expect(containerClasses).toContain("bg-slate-900/30");
+  });
+
+  it("shows Mark Failed button for running jobs", () => {
+    const job = {
+      id: "4",
+      name: "Job",
+      enabled: true,
+      last_run_status: "running" as const,
+      next_run_at: "2026-02-23T10:00:00Z",
+    };
+    let root: any;
+    act(() => {
+      root = create(<ScheduledJobCard {...defaultProps} job={job as any} />);
+    });
+    const tree = root.toJSON();
+    expect(JSON.stringify(tree)).toContain("Mark Failed");
+  });
+
+  it("hides Mark Failed button for non-running jobs", () => {
+    const job = {
+      id: "5",
+      name: "Job",
+      enabled: true,
+      last_run_status: "success" as const,
+      next_run_at: "2026-02-23T10:00:00Z",
+    };
+    let root: any;
+    act(() => {
+      root = create(<ScheduledJobCard {...defaultProps} job={job as any} />);
+    });
+    const tree = root.toJSON();
+    expect(JSON.stringify(tree)).not.toContain("Mark Failed");
   });
 });

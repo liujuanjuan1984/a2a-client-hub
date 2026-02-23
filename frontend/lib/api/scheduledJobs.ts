@@ -56,6 +56,10 @@ export type ScheduledJobPayload = {
   enabled: boolean;
 };
 
+export type MarkScheduledJobFailedPayload = {
+  reason?: string;
+};
+
 type ScheduledJobsListResponse =
   | ScheduledJob[]
   | { items: ScheduledJob[]; pagination?: unknown; meta?: unknown };
@@ -117,6 +121,18 @@ export const disableScheduledJob = (jobId: string) =>
   apiRequest<void>(`/me/a2a/schedules/${jobId}/disable`, {
     method: "POST",
   });
+
+export const markScheduledJobFailed = (
+  jobId: string,
+  payload: MarkScheduledJobFailedPayload = {},
+) =>
+  apiRequest<ScheduledJob, MarkScheduledJobFailedPayload>(
+    `/me/a2a/schedules/${jobId}/mark-failed`,
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
 
 export const listScheduledJobExecutionsPage = async (
   taskId: string,
