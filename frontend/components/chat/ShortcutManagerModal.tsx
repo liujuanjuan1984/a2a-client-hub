@@ -137,7 +137,7 @@ export function ShortcutManagerModal({
       animationType="fade"
       onRequestClose={closeShortcutManager}
     >
-      <View className="flex-1 items-center justify-center bg-black/60 px-6">
+      <View className="flex-1 justify-end bg-black/60 sm:items-center sm:justify-center">
         <Pressable
           className="absolute inset-0"
           accessibilityRole="button"
@@ -145,7 +145,7 @@ export function ShortcutManagerModal({
           onPress={closeShortcutManager}
         />
 
-        <View className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-950 p-4">
+        <View className="w-full max-h-[80%] min-h-[45%] rounded-t-3xl border-t border-slate-800 bg-slate-950 p-4 sm:w-[780px] sm:max-w-[95vw] sm:rounded-3xl sm:border sm:px-6 sm:py-5">
           <View className="mb-4 flex-row items-center justify-between">
             <Text className="text-base font-semibold text-white">
               Shortcut Manager
@@ -166,7 +166,7 @@ export function ShortcutManagerModal({
                 <Text className="text-sm text-muted">No shortcuts yet.</Text>
               ) : (
                 <ScrollView
-                  className="max-h-80"
+                  className="max-h-[34vh] sm:max-h-[52vh]"
                   keyboardShouldPersistTaps="handled"
                 >
                   {shortcuts.map((cmd) => (

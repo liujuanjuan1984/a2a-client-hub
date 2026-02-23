@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import timedelta
 from uuid import uuid4
 
@@ -17,21 +18,26 @@ from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely, rollback_safely
-from app.handlers import agent_message as agent_message_handler
 from app.integrations.a2a_client import get_a2a_service
-from app.services.a2a_invoke_service import a2a_invoke_service
+from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services.a2a_runtime import a2a_runtime_builder
 from app.services.a2a_schedule_service import (
     A2A_SCHEDULE_SOURCE,
     ClaimedA2AScheduleTask,
     a2a_schedule_service,
 )
+from app.services.invoke_route_runner import run_background_invoke
 from app.services.scheduler import get_scheduler
 from app.utils.timezone_util import utc_now
 
 logger = get_logger(__name__)
 
 _A2A_SCHEDULE_JOB_ID = "a2a-schedule-dispatch-minute"
+_A2A_SCHEDULE_WORKER_PREFIX = "a2a-schedule-worker"
+_dispatch_workers_started = False
+_dispatch_workers_lock = asyncio.Lock()
+_dispatch_queue: asyncio.Queue[ClaimedA2AScheduleTask] = asyncio.Queue()
+_dispatch_worker_tasks: set[asyncio.Task[None]] = set()
 
 
 def _execution_metadata(task: A2AScheduleTask, execution_id: str) -> dict[str, object]:
@@ -43,43 +49,21 @@ def _execution_metadata(task: A2AScheduleTask, execution_id: str) -> dict[str, o
     }
 
 
-async def _ensure_task_session(
-    *, db, task: A2AScheduleTask, agent_name: str
-) -> ConversationThread:
-    thread = None
-    if task.conversation_id is not None:
-        stmt = select(ConversationThread).where(
-            and_(
-                ConversationThread.id == task.conversation_id,
-                ConversationThread.user_id == task.user_id,
-                ConversationThread.status == ConversationThread.STATUS_ACTIVE,
-            )
-        )
-        thread = await db.scalar(stmt)
-
-    if thread is None:
-        now = utc_now()
-        thread = ConversationThread(
-            id=uuid4(),
-            user_id=task.user_id,
-            source=ConversationThread.SOURCE_SCHEDULED,
-            agent_id=task.agent_id,
-            agent_source="personal",
-            title=f"[Scheduled] {task.name}",
-            last_active_at=now,
-            status=ConversationThread.STATUS_ACTIVE,
-        )
-        db.add(thread)
-        await db.flush()
-        task.conversation_id = thread.id
-    else:
-        thread.source = ConversationThread.SOURCE_SCHEDULED
-        thread.agent_id = task.agent_id
-        thread.agent_source = "personal"
-        if agent_name:
-            thread.title = f"[Scheduled] {task.name}"
-        thread.last_active_at = utc_now()
-
+async def _ensure_task_session(*, db, task: A2AScheduleTask) -> ConversationThread:
+    now = utc_now()
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=task.user_id,
+        source=ConversationThread.SOURCE_SCHEDULED,
+        agent_id=task.agent_id,
+        agent_source="personal",
+        title=f"[Scheduled] {task.name}",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    db.add(thread)
+    await db.flush()
+    task.conversation_id = thread.id
     return thread
 
 
@@ -108,12 +92,10 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             started_at=started_at,
             status=A2AScheduleExecution.STATUS_RUNNING,
         )
-        db.add(execution)
-        await db.flush()
-
-        metadata = _execution_metadata(task, str(execution.id))
-
         try:
+            db.add(execution)
+            await db.flush()
+            metadata = _execution_metadata(task, str(execution.id))
             runtime = await a2a_runtime_builder.build(
                 db,
                 user_id=task.user_id,
@@ -124,55 +106,42 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             thread = await _ensure_task_session(
                 db=db,
                 task=task,
-                agent_name=runtime.resolved.name,
             )
             execution.conversation_id = thread.id
-
-            user_message = await agent_message_handler.create_agent_message(
-                db,
-                user_id=task.user_id,
-                content=task.prompt,
-                sender="automation",
-                conversation_id=thread.id,
+            invoke_payload = A2AAgentInvokeRequest(
+                query=task.prompt,
+                conversationId=str(thread.id),
                 metadata=metadata,
             )
-            execution.user_message_id = user_message.id
-
-            result = await asyncio.wait_for(
-                get_a2a_service().gateway.invoke(
-                    resolved=runtime.resolved,
-                    query=task.prompt,
-                    metadata=metadata,
-                ),
-                timeout=settings.a2a_schedule_task_invoke_timeout,
-            )
-            # Wrapped in timeout below in issue #150 hardening.
-            success = bool(result.get("success"))
-            response_content = (
-                result.get("content")
-                if success
-                else (result.get("error") or "A2A invocation failed")
-            ) or ""
-
-            agent_metadata = {
-                **metadata,
-                "success": success,
-                "error_code": result.get("error_code"),
-            }
-            usage_hints = a2a_invoke_service.extract_usage_hints_from_invoke_result(
-                result
-            )
-            if usage_hints:
-                agent_metadata["usage"] = usage_hints
-            agent_message = await agent_message_handler.create_agent_message(
-                db,
+            invoke_result = await run_background_invoke(
+                db=db,
+                gateway=get_a2a_service().gateway,
+                runtime=runtime,
                 user_id=task.user_id,
-                content=response_content,
-                sender="agent",
-                conversation_id=thread.id,
-                metadata=agent_metadata,
+                agent_id=task.agent_id,
+                agent_source="personal",
+                payload=invoke_payload,
+                validate_message=lambda _payload: [],
+                logger=logger,
+                log_extra={
+                    "schedule_task_id": str(task.id),
+                    "schedule_execution_id": str(execution.id),
+                    "agent_id": str(task.agent_id),
+                    "user_id": str(task.user_id),
+                },
+                total_timeout_seconds=settings.a2a_schedule_task_invoke_timeout,
+                idle_timeout_seconds=settings.a2a_schedule_task_stream_idle_timeout,
             )
-            execution.agent_message_id = agent_message.id
+            success = bool(invoke_result.get("success"))
+            response_content = str(invoke_result.get("response_content") or "")
+            message_refs = invoke_result.get("message_refs") or {}
+            execution.conversation_id = (
+                message_refs.get("conversation_id")
+                or invoke_result.get("conversation_id")
+                or thread.id
+            )
+            execution.user_message_id = message_refs.get("user_message_id")
+            execution.agent_message_id = message_refs.get("agent_message_id")
             execution.response_content = response_content
             execution.finished_at = utc_now()
             execution.status = (
@@ -181,7 +150,13 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 else A2AScheduleExecution.STATUS_FAILED
             )
             execution.error_message = (
-                None if success else (response_content[:2000] or None)
+                None
+                if success
+                else (
+                    response_content[:2000]
+                    or str(invoke_result.get("error") or "")[:2000]
+                    or None
+                )
             )
 
             task.last_run_at = execution.finished_at
@@ -199,41 +174,8 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     >= settings.a2a_schedule_task_failure_threshold
                 ):
                     task.enabled = False
-            thread.last_active_at = utc_now()
 
             await commit_safely(db)
-
-        except asyncio.TimeoutError:
-            task.last_run_at = utc_now()
-            task.last_run_status = A2AScheduleTask.STATUS_FAILED
-            task.consecutive_failures = (task.consecutive_failures or 0) + 1
-            if (
-                task.consecutive_failures
-                >= settings.a2a_schedule_task_failure_threshold
-            ):
-                task.enabled = False
-            execution.status = A2AScheduleExecution.STATUS_FAILED
-            execution.finished_at = task.last_run_at
-            execution.error_message = (
-                f"A2A invoke timeout after {settings.a2a_schedule_task_invoke_timeout}s"
-            )
-            if not execution.response_content:
-                execution.response_content = execution.error_message
-            try:
-                await commit_safely(db)
-            except Exception as commit_error:  # pragma: no cover - defensive
-                await rollback_safely(db)
-                logger.error(
-                    "Failed to persist schedule execution timeout task=%s err=%s",
-                    task.id,
-                    commit_error,
-                    exc_info=commit_error,
-                )
-            logger.error(
-                "Scheduled A2A execution timeout task=%s execution=%s",
-                task.id,
-                execution.id,
-            )
 
         except Exception as exc:  # pragma: no cover - defensive path
             task.last_run_at = utc_now()
@@ -268,27 +210,90 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
 
 
+async def _schedule_worker_loop(worker_index: int) -> None:
+    worker_name = f"{_A2A_SCHEDULE_WORKER_PREFIX}-{worker_index}"
+    logger.info("Started scheduled task worker %s", worker_name)
+    while True:
+        claim = await _dispatch_queue.get()
+        try:
+            await _execute_claimed_task(claim=claim)
+        except Exception as exc:  # pragma: no cover - defensive safety
+            logger.error(
+                "Unhandled exception in scheduled worker %s task=%s err=%s",
+                worker_name,
+                claim.task_id,
+                exc,
+                exc_info=exc,
+            )
+        finally:
+            _dispatch_queue.task_done()
+
+
+def _prune_finished_worker_tasks() -> None:
+    finished = {task for task in _dispatch_worker_tasks if task.done()}
+    for task in finished:
+        _dispatch_worker_tasks.discard(task)
+        with contextlib.suppress(Exception):
+            _ = task.result()
+
+
+async def _ensure_schedule_workers_started() -> None:
+    global _dispatch_workers_started
+
+    if _dispatch_workers_started:
+        _prune_finished_worker_tasks()
+        if _dispatch_worker_tasks:
+            return
+        _dispatch_workers_started = False
+
+    async with _dispatch_workers_lock:
+        if _dispatch_workers_started:
+            _prune_finished_worker_tasks()
+            if _dispatch_worker_tasks:
+                return
+            _dispatch_workers_started = False
+
+        worker_count = max(int(settings.a2a_schedule_worker_concurrency), 1)
+        for index in range(worker_count):
+            worker_task = asyncio.create_task(_schedule_worker_loop(index + 1))
+            _dispatch_worker_tasks.add(worker_task)
+        _dispatch_workers_started = True
+        logger.info("Started %d scheduled task worker(s)", worker_count)
+
+
 async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
     # Recover stale "running" tasks first so the UI doesn't get stuck forever if a
     # worker crashes after claiming a task but before persisting the execution.
     async with AsyncSessionLocal() as db:
-        recovered = await a2a_schedule_service.recover_stale_running_tasks(db)
+        recovered = await a2a_schedule_service.recover_stale_running_tasks(
+            db,
+            timeout_seconds=max(
+                int(settings.a2a_schedule_recovery_timeout_seconds),
+                int(settings.a2a_schedule_task_invoke_timeout) + 300,
+            ),
+        )
     if recovered:
         logger.warning("Recovered %d stale scheduled A2A task(s).", recovered)
 
-    processed = 0
-    while processed < max(batch_size, 1):
+    await _ensure_schedule_workers_started()
+
+    enqueued = 0
+    while enqueued < max(batch_size, 1):
         async with AsyncSessionLocal() as db:
             claim = await a2a_schedule_service.claim_next_due_task(db)
 
         if claim is None:
             break
 
-        await _execute_claimed_task(claim=claim)
-        processed += 1
+        _dispatch_queue.put_nowait(claim)
+        enqueued += 1
 
-    if processed:
-        logger.info("Processed %d scheduled A2A task(s).", processed)
+    if enqueued:
+        logger.info(
+            "Enqueued %d scheduled A2A task(s). queue_size=%d",
+            enqueued,
+            _dispatch_queue.qsize(),
+        )
 
 
 def ensure_a2a_schedule_job() -> None:

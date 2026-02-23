@@ -401,7 +401,7 @@ class SessionHubService:
         invoke_metadata: Optional[Dict[str, Any]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
         response_metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
+    ) -> dict[str, UUID]:
         metadata: Dict[str, Any] = {
             "source": source,
             "agent_id": str(agent_id),
@@ -417,7 +417,7 @@ class SessionHubService:
         if provider_from_invoke:
             metadata["provider"] = provider_from_invoke
         if external_session_id:
-            metadata["external_session_id"] = external_session_id
+            metadata["externalSessionId"] = external_session_id
         if extra_metadata:
             metadata.update(extra_metadata)
         normalized_user_message_id = normalize_non_empty_text(user_message_id)
@@ -467,7 +467,8 @@ class SessionHubService:
             if normalized_context_id and session.context_id != normalized_context_id:
                 session.context_id = normalized_context_id
 
-        await agent_message_handler.create_agent_message(
+        metadata["conversation_id"] = str(conversation_id)
+        user_message = await agent_message_handler.create_agent_message(
             db,
             user_id=user_id,
             content=query,
@@ -490,7 +491,7 @@ class SessionHubService:
                     agent_metadata[key] = merged_nested
                     continue
                 agent_metadata[key] = value
-        await agent_message_handler.create_agent_message(
+        agent_message = await agent_message_handler.create_agent_message(
             db,
             user_id=user_id,
             content=response_content,
@@ -508,6 +509,11 @@ class SessionHubService:
             if rebound_session is not None:
                 target_session = rebound_session
         target_session.last_active_at = utc_now()
+        return {
+            "conversation_id": conversation_id,
+            "user_message_id": user_message.id,
+            "agent_message_id": agent_message.id,
+        }
 
     async def _get_local_session_by_id(
         self,

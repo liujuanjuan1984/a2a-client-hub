@@ -1,5 +1,9 @@
 import { type SessionListItem } from "@/lib/api/sessions";
-import { resolveSessionAgentPresentation } from "@/lib/sessionDirectoryPresentation";
+import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
+import {
+  getSessionTimelineText,
+  resolveSessionAgentPresentation,
+} from "@/lib/sessionDirectoryPresentation";
 
 const createSession = (partial: Partial<SessionListItem>): SessionListItem =>
   ({
@@ -49,6 +53,35 @@ describe("sessionDirectoryPresentation", () => {
     expect(result).toEqual({
       name: "Unknown Agent",
       tone: "unknown",
+    });
+  });
+
+  it("formats timeline as a created-to-updated range", () => {
+    const created = formatLocalDateTimeYmdHm("2026-02-20T10:00:00.000Z");
+    const updated = formatLocalDateTimeYmdHm("2026-02-21T12:34:56.000Z");
+    const result = getSessionTimelineText(
+      createSession({
+        created_at: "2026-02-20T10:00:00.000Z",
+        last_active_at: "2026-02-21T12:34:56.000Z",
+      }),
+    );
+
+    expect(result).toEqual({
+      timelineRangeText: `${created} - ${updated}`,
+    });
+  });
+
+  it("falls back last updated to created time when missing", () => {
+    const created = formatLocalDateTimeYmdHm("2026-02-20T10:00:00.000Z");
+    const result = getSessionTimelineText(
+      createSession({
+        created_at: "2026-02-20T10:00:00.000Z",
+        last_active_at: null,
+      }),
+    );
+
+    expect(result).toEqual({
+      timelineRangeText: `${created} - ${created}`,
     });
   });
 });

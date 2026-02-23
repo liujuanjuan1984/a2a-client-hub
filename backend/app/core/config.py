@@ -494,10 +494,25 @@ class Settings(BaseSettings):
         alias="A2A_SCHEDULE_GLOBAL_CONCURRENCY_LIMIT",
         description="Maximum concurrent running scheduled executions globally.",
     )
+    a2a_schedule_worker_concurrency: int = Field(
+        default=3,
+        alias="A2A_SCHEDULE_WORKER_CONCURRENCY",
+        description="Number of in-process workers consuming claimed scheduled tasks.",
+    )
     a2a_schedule_task_invoke_timeout: float = Field(
-        default=300.0,
+        default=3600.0,
         alias="A2A_SCHEDULE_TASK_INVOKE_TIMEOUT",
-        description="Hard timeout in seconds for a single scheduled A2A invoke call.",
+        description="Maximum total timeout in seconds for a single scheduled A2A stream execution.",
+    )
+    a2a_schedule_task_stream_idle_timeout: float = Field(
+        default=60.0,
+        alias="A2A_SCHEDULE_TASK_STREAM_IDLE_TIMEOUT",
+        description="Idle timeout in seconds for scheduled A2A stream execution (no upstream chunk received).",
+    )
+    a2a_schedule_recovery_timeout_seconds: int = Field(
+        default=2400,
+        alias="A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS",
+        description="Timeout in seconds before a running scheduled task is considered stale by recovery.",
     )
     a2a_schedule_task_failure_threshold: int = Field(
         default=3,
@@ -625,6 +640,41 @@ class Settings(BaseSettings):
             raise ValueError("A2A_STREAM_HEARTBEAT_INTERVAL must be non-negative")
         if value > 300:
             raise ValueError("A2A_STREAM_HEARTBEAT_INTERVAL must not exceed 300")
+        return value
+
+    @field_validator(
+        "a2a_schedule_agent_concurrency_limit",
+        "a2a_schedule_global_concurrency_limit",
+        "a2a_schedule_worker_concurrency",
+    )
+    @classmethod
+    def validate_a2a_schedule_concurrency_limits(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("A2A schedule concurrency values must be positive")
+        if value > 1000:
+            raise ValueError("A2A schedule concurrency values must not exceed 1000")
+        return value
+
+    @field_validator(
+        "a2a_schedule_task_invoke_timeout", "a2a_schedule_task_stream_idle_timeout"
+    )
+    @classmethod
+    def validate_a2a_schedule_timeouts(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("Scheduled A2A timeout values must be positive")
+        if value > 86_400:
+            raise ValueError("Scheduled A2A timeout values must not exceed 86400")
+        return value
+
+    @field_validator("a2a_schedule_recovery_timeout_seconds")
+    @classmethod
+    def validate_a2a_schedule_recovery_timeout_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS must be positive")
+        if value > 604_800:
+            raise ValueError(
+                "A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS must not exceed 604800"
+            )
         return value
 
 

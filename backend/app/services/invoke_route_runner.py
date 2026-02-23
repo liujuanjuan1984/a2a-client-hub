@@ -53,8 +53,6 @@ _SESSION_NOT_FOUND_RETRY_LIMIT = 1
 _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
 )
-_OPENCODE_PROVIDER = "opencode"
-_OPENCODE_SESSION_ID_METADATA_KEY = "opencode_session_id"
 
 
 def _coerce_tool_chain(raw_chain: object) -> tuple[str, ...]:
@@ -109,6 +107,23 @@ def _strip_tool_invocation_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     return cleaned
 
 
+def _supports_call_keyword(func: Any, keyword: str) -> bool:
+    try:
+        parameters = inspect.signature(func).parameters.values()
+    except (TypeError, ValueError):
+        return True
+    for parameter in parameters:
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+    return keyword in inspect.signature(func).parameters
+
+
+def _optional_call_kwargs(func: Any, **kwargs: Any) -> dict[str, Any]:
+    return {
+        key: value for key, value in kwargs.items() if _supports_call_keyword(func, key)
+    }
+
+
 @dataclass
 class _InvokeState:
     local_session: Any
@@ -123,6 +138,10 @@ class _InvokeState:
     tool_invocation_chain: tuple[str, ...] = ()
     tool_invocation_depth: int = 0
     tool_max_invocation_depth: int = 0
+    message_refs: dict[str, UUID] | None = None
+    persisted_response_content: str | None = None
+    persisted_success: bool | None = None
+    persisted_error_code: str | None = None
 
 
 def _normalize_query_for_invoke_guard(query: str) -> str:
@@ -282,6 +301,10 @@ async def _prepare_state(
         tool_invocation_chain=tool_invocation_chain,
         tool_invocation_depth=tool_invocation_depth,
         tool_max_invocation_depth=tool_max_invocation_depth,
+        message_refs=None,
+        persisted_response_content=None,
+        persisted_success=None,
+        persisted_error_code=None,
     )
 
 
@@ -403,8 +426,9 @@ def _build_stream_callbacks(
     agent_id: UUID,
     agent_source: AgentSource,
     query: str,
-    transport: Literal["http_sse", "ws"],
+    transport: Literal["http_sse", "http_json", "ws", "scheduled"],
     logger: Any,
+    stream_enabled: bool = True,
     on_error_metadata: Callable[[dict[str, Any]], Any] | None = None,
 ) -> tuple[
     Callable[[dict[str, Any]], Any],
@@ -471,7 +495,7 @@ def _build_stream_callbacks(
             final_response_metadata["usage"] = dict(state.stream_usage)
         if stream_tool_calls:
             final_response_metadata["tool_calls"] = list(stream_tool_calls)
-        await session_hub_service.record_local_invoke_messages(
+        message_refs = await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
             source=state.local_source,
@@ -485,9 +509,13 @@ def _build_stream_callbacks(
             user_message_id=state.user_message_id,
             client_agent_message_id=state.client_agent_message_id,
             invoke_metadata=state.metadata,
-            extra_metadata={"transport": transport, "stream": True},
+            extra_metadata={"transport": transport, "stream": stream_enabled},
             response_metadata=final_response_metadata,
         )
+        state.message_refs = message_refs
+        state.persisted_success = True
+        state.persisted_response_content = stream_text or ""
+        state.persisted_error_code = None
         await commit_safely(db)
 
     async def on_complete_metadata(payload: dict[str, Any]) -> None:
@@ -508,7 +536,7 @@ def _build_stream_callbacks(
             error_response_metadata["usage"] = dict(state.stream_usage)
         if stream_tool_calls:
             error_response_metadata["tool_calls"] = list(stream_tool_calls)
-        await session_hub_service.record_local_invoke_messages(
+        message_refs = await session_hub_service.record_local_invoke_messages(
             db,
             session=state.local_session,
             source=state.local_source,
@@ -522,12 +550,19 @@ def _build_stream_callbacks(
             user_message_id=state.user_message_id,
             client_agent_message_id=state.client_agent_message_id,
             invoke_metadata=state.metadata,
-            extra_metadata={"transport": transport, "stream": True},
+            extra_metadata={"transport": transport, "stream": stream_enabled},
             response_metadata=error_response_metadata,
         )
+        state.message_refs = message_refs
+        state.persisted_success = False
+        state.persisted_response_content = error_message
         await commit_safely(db)
         if on_error_metadata is not None:
-            outcome = on_error_metadata({"message": error_message, "error_code": None})
+            payload = {
+                "message": error_message,
+                "error_code": state.persisted_error_code,
+            }
+            outcome = on_error_metadata(payload)
             if inspect.isawaitable(outcome):
                 await outcome
 
@@ -553,15 +588,6 @@ def _extract_rebound_continue_binding_fields(
     )
     context_id = extract_context_id(continue_metadata)
 
-    if external_session_id is None:
-        opencode_session_id = normalize_non_empty_text(
-            continue_metadata.get(_OPENCODE_SESSION_ID_METADATA_KEY)
-        )
-        if opencode_session_id is not None:
-            external_session_id = opencode_session_id
-            if provider is None:
-                provider = _OPENCODE_PROVIDER
-
     return provider, external_session_id, context_id
 
 
@@ -584,11 +610,6 @@ def _build_rebound_invoke_payload(
         next_metadata["provider"] = normalized_provider
     if normalized_external_session_id:
         next_metadata["externalSessionId"] = normalized_external_session_id
-        next_metadata["external_session_id"] = normalized_external_session_id
-        if normalized_provider == _OPENCODE_PROVIDER:
-            next_metadata[
-                _OPENCODE_SESSION_ID_METADATA_KEY
-            ] = normalized_external_session_id
     next_context_id = normalize_non_empty_text(context_id) or payload.context_id
     next_conversation_id = (
         normalize_non_empty_text(conversation_id) or payload.conversation_id
@@ -700,14 +721,165 @@ async def run_http_invoke(
             transport="http_sse",
             logger=logger,
         )
-        return a2a_invoke_service.stream_sse(
+        upstream_tools = _build_upstream_tools(payload.tools)
+        stream_sse_kwargs = {
+            "gateway": gateway,
+            "resolved": runtime.resolved,
+            "query": payload.query,
+            "context_id": payload.context_id,
+            "metadata": payload.metadata,
+            "validate_message": validate_message,
+            "logger": logger,
+            "log_extra": log_extra,
+            "on_complete": on_complete,
+            "on_complete_metadata": on_complete_metadata,
+            "on_error": on_error,
+            "on_event": on_event,
+            "on_tool_call": on_tool_call,
+            "resume_from_sequence": payload.resume_from_sequence,
+            "cache_key": payload.user_message_id,
+        }
+        stream_sse_kwargs.update(
+            _optional_call_kwargs(
+                a2a_invoke_service.stream_sse,
+                tools=upstream_tools,
+                tool_choice=payload.tool_choice,
+            )
+        )
+        return a2a_invoke_service.stream_sse(**stream_sse_kwargs)
+
+    def _capture_error_metadata(payload_data: dict[str, Any]) -> None:
+        error_code = payload_data.get("error_code")
+        state.persisted_error_code = (
+            str(error_code) if isinstance(error_code, str) and error_code else None
+        )
+
+    upstream_tools = _build_upstream_tools(payload.tools)
+    request_has_tools = bool(payload.tools)
+    prefer_invoke_path = hasattr(gateway, "invoke") and (
+        request_has_tools
+        or payload.tool_choice is not None
+        or not hasattr(gateway, "stream")
+    )
+    if prefer_invoke_path:
+        invoke_kwargs = {
+            "resolved": runtime.resolved,
+            "query": payload.query,
+            "context_id": payload.context_id,
+            "metadata": payload.metadata,
+        }
+        invoke_kwargs.update(
+            _optional_call_kwargs(
+                gateway.invoke,
+                tools=upstream_tools,
+                tool_choice=payload.tool_choice,
+            )
+        )
+        result = await gateway.invoke(**invoke_kwargs)
+
+        tool_results: list[dict[str, Any]] = []
+        if result.get("success"):
+            for tool_call in a2a_invoke_service.extract_tool_calls_from_payload(result):
+                await _execute_tool_call(
+                    tool_call=tool_call,
+                    tool_context=_build_tool_context(
+                        db=db,
+                        state=state,
+                        user_id=user_id,
+                        agent_id=agent_id,
+                        agent_source=agent_source,
+                        query=payload.query,
+                        logger=logger,
+                    ),
+                    tool_results=tool_results,
+                )
+
+        success = bool(result.get("success"))
+        content = result.get("content")
+        error = result.get("error")
+        error_code = result.get("error_code")
+        if state.local_session is not None and state.local_source is not None:
+            (
+                result_context_id,
+                result_metadata,
+            ) = a2a_invoke_service.extract_binding_hints_from_invoke_result(result)
+            state.context_id, state.metadata = merge_invoke_binding_state(
+                current_context_id=state.context_id,
+                current_metadata=state.metadata,
+                next_context_id=result_context_id,
+                next_metadata=result_metadata,
+            )
+            state.stream_identity.update(
+                a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
+                    result
+                )
+            )
+            response_content = (
+                result.get("content")
+                if success
+                else (result.get("error") or "A2A invocation failed")
+            ) or ""
+            response_metadata = (
+                dict(state.stream_identity) if state.stream_identity else None
+            )
+            usage_hints = a2a_invoke_service.extract_usage_hints_from_invoke_result(
+                result
+            )
+            if usage_hints:
+                if response_metadata is None:
+                    response_metadata = {}
+                response_metadata["usage"] = usage_hints
+            if tool_results:
+                if response_metadata is None:
+                    response_metadata = {}
+                response_metadata["tool_calls"] = list(tool_results)
+            await session_hub_service.record_local_invoke_messages(
+                db,
+                session=state.local_session,
+                source=state.local_source,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                query=payload.query,
+                response_content=response_content,
+                success=success,
+                context_id=state.context_id,
+                user_message_id=state.user_message_id,
+                client_agent_message_id=state.client_agent_message_id,
+                invoke_metadata=state.metadata,
+                extra_metadata={
+                    "transport": "http_json",
+                    "stream": False,
+                    "error_code": result.get("error_code"),
+                },
+                response_metadata=response_metadata,
+            )
+            await commit_safely(db)
+    else:
+        (
+            on_event,
+            on_complete,
+            on_error,
+            on_complete_metadata,
+            _on_tool_call,
+        ) = _build_stream_callbacks(
+            db=db,
+            state=state,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=payload.query,
+            transport="http_json",
+            logger=logger,
+            stream_enabled=False,
+            on_error_metadata=_capture_error_metadata,
+        )
+        result = await a2a_invoke_service.consume_stream(
             gateway=gateway,
             resolved=runtime.resolved,
             query=payload.query,
             context_id=payload.context_id,
             metadata=payload.metadata,
-            tools=_build_upstream_tools(payload.tools),
-            tool_choice=payload.tool_choice,
             validate_message=validate_message,
             logger=logger,
             log_extra=log_extra,
@@ -715,100 +887,110 @@ async def run_http_invoke(
             on_complete_metadata=on_complete_metadata,
             on_error=on_error,
             on_event=on_event,
-            on_tool_call=on_tool_call,
-            resume_from_sequence=payload.resume_from_sequence,
-            cache_key=payload.user_message_id,
+            on_error_metadata=_capture_error_metadata,
+        )
+        success = bool(result.get("success"))
+        content = state.persisted_response_content
+        if content is None:
+            content = result.get("content")
+        error = None if success else (result.get("error") or content)
+        error_code = (
+            state.persisted_error_code
+            if not success and state.persisted_error_code
+            else result.get("error_code")
+        )
+    return A2AAgentInvokeResponse(
+        success=success,
+        content=content,
+        error=error,
+        error_code=error_code,
+        agent_name=runtime.resolved.name,
+        agent_url=runtime.resolved.url,
+    )
+
+
+async def run_background_invoke(
+    *,
+    db: AsyncSession,
+    gateway: Any,
+    runtime: Any,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    payload: A2AAgentInvokeRequest,
+    validate_message: Callable[[dict[str, Any]], list[Any]],
+    logger: Any,
+    log_extra: dict[str, Any],
+    total_timeout_seconds: float | None = None,
+    idle_timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    state = await _prepare_state(
+        db=db,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        payload=payload,
+    )
+
+    def _capture_error_metadata(payload_data: dict[str, Any]) -> None:
+        error_code = payload_data.get("error_code")
+        state.persisted_error_code = (
+            str(error_code) if isinstance(error_code, str) and error_code else None
         )
 
-    result = await gateway.invoke(
+    (
+        on_event,
+        on_complete,
+        on_error,
+        on_complete_metadata,
+        _on_tool_call,
+    ) = _build_stream_callbacks(
+        db=db,
+        state=state,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        query=payload.query,
+        transport="scheduled",
+        logger=logger,
+        stream_enabled=True,
+        on_error_metadata=_capture_error_metadata,
+    )
+    stream_result = await a2a_invoke_service.consume_stream(
+        gateway=gateway,
         resolved=runtime.resolved,
         query=payload.query,
         context_id=payload.context_id,
         metadata=payload.metadata,
-        tools=_build_upstream_tools(payload.tools),
-        tool_choice=payload.tool_choice,
+        validate_message=validate_message,
+        logger=logger,
+        log_extra=log_extra,
+        on_complete=on_complete,
+        on_complete_metadata=on_complete_metadata,
+        on_error=on_error,
+        on_event=on_event,
+        on_error_metadata=_capture_error_metadata,
+        total_timeout_seconds=total_timeout_seconds,
+        idle_timeout_seconds=idle_timeout_seconds,
     )
-
-    tool_results: list[dict[str, Any]] = []
-    if result.get("success"):
-        for tool_call in a2a_invoke_service.extract_tool_calls_from_payload(result):
-            await _execute_tool_call(
-                tool_call=tool_call,
-                tool_context=_build_tool_context(
-                    db=db,
-                    state=state,
-                    user_id=user_id,
-                    agent_id=agent_id,
-                    agent_source=agent_source,
-                    query=payload.query,
-                    logger=logger,
-                ),
-                tool_results=tool_results,
-            )
-
-    success = bool(result.get("success"))
-    if state.local_session is not None and state.local_source is not None:
-        (
-            result_context_id,
-            result_metadata,
-        ) = a2a_invoke_service.extract_binding_hints_from_invoke_result(result)
-        state.context_id, state.metadata = merge_invoke_binding_state(
-            current_context_id=state.context_id,
-            current_metadata=state.metadata,
-            next_context_id=result_context_id,
-            next_metadata=result_metadata,
+    success = bool(stream_result.get("success"))
+    response_content = state.persisted_response_content
+    if response_content is None:
+        fallback_value = (
+            stream_result.get("content") if success else stream_result.get("error")
         )
-        state.stream_identity.update(
-            a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(result)
-        )
-        response_content = (
-            result.get("content")
-            if success
-            else (result.get("error") or "A2A invocation failed")
-        ) or ""
-        response_metadata = (
-            dict(state.stream_identity) if state.stream_identity else None
-        )
-        usage_hints = a2a_invoke_service.extract_usage_hints_from_invoke_result(result)
-        if usage_hints:
-            if response_metadata is None:
-                response_metadata = {}
-            response_metadata["usage"] = usage_hints
-        if tool_results:
-            if response_metadata is None:
-                response_metadata = {}
-            response_metadata["tool_calls"] = list(tool_results)
-        await session_hub_service.record_local_invoke_messages(
-            db,
-            session=state.local_session,
-            source=state.local_source,
-            user_id=user_id,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            query=payload.query,
-            response_content=response_content,
-            success=success,
-            context_id=state.context_id,
-            user_message_id=state.user_message_id,
-            client_agent_message_id=state.client_agent_message_id,
-            invoke_metadata=state.metadata,
-            extra_metadata={
-                "transport": "http_json",
-                "stream": False,
-                "error_code": result.get("error_code"),
-            },
-            response_metadata=response_metadata,
-        )
-        await commit_safely(db)
-
-    return A2AAgentInvokeResponse(
-        success=success,
-        content=result.get("content"),
-        error=result.get("error"),
-        error_code=result.get("error_code"),
-        agent_name=runtime.resolved.name,
-        agent_url=runtime.resolved.url,
-    )
+        response_content = str(fallback_value or "")
+    return {
+        "success": success,
+        "response_content": response_content,
+        "error": stream_result.get("error"),
+        "error_code": state.persisted_error_code or stream_result.get("error_code"),
+        "conversation_id": (
+            state.message_refs.get("conversation_id") if state.message_refs else None
+        ),
+        "message_refs": dict(state.message_refs) if state.message_refs else {},
+        "context_id": state.context_id,
+    }
 
 
 async def run_ws_invoke(
@@ -851,28 +1033,34 @@ async def run_ws_invoke(
         logger=logger,
         on_error_metadata=on_error_metadata,
     )
-    await a2a_invoke_service.stream_ws(
-        websocket=websocket,
-        gateway=gateway,
-        resolved=runtime.resolved,
-        query=payload.query,
-        context_id=payload.context_id,
-        metadata=payload.metadata,
-        tools=_build_upstream_tools(payload.tools),
-        tool_choice=payload.tool_choice,
-        validate_message=validate_message,
-        logger=logger,
-        log_extra=log_extra,
-        on_complete=on_complete,
-        on_complete_metadata=on_complete_metadata,
-        on_error=on_error,
-        on_event=on_event,
-        on_error_metadata=on_error_metadata,
-        on_tool_call=on_tool_call,
-        send_stream_end=send_stream_end,
-        resume_from_sequence=payload.resume_from_sequence,
-        cache_key=payload.user_message_id,
+    stream_ws_kwargs = {
+        "websocket": websocket,
+        "gateway": gateway,
+        "resolved": runtime.resolved,
+        "query": payload.query,
+        "context_id": payload.context_id,
+        "metadata": payload.metadata,
+        "validate_message": validate_message,
+        "logger": logger,
+        "log_extra": log_extra,
+        "on_complete": on_complete,
+        "on_complete_metadata": on_complete_metadata,
+        "on_error": on_error,
+        "on_event": on_event,
+        "on_error_metadata": on_error_metadata,
+        "on_tool_call": on_tool_call,
+        "send_stream_end": send_stream_end,
+        "resume_from_sequence": payload.resume_from_sequence,
+        "cache_key": payload.user_message_id,
+    }
+    stream_ws_kwargs.update(
+        _optional_call_kwargs(
+            a2a_invoke_service.stream_ws,
+            tools=_build_upstream_tools(payload.tools),
+            tool_choice=payload.tool_choice,
+        )
     )
+    await a2a_invoke_service.stream_ws(**stream_ws_kwargs)
 
 
 async def run_ws_invoke_with_session_recovery(
@@ -1250,6 +1438,7 @@ async def run_issue_ws_ticket_route(
 
 
 __all__ = [
+    "run_background_invoke",
     "run_http_invoke",
     "run_http_invoke_with_session_recovery",
     "run_http_invoke_route",

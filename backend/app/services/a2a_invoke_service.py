@@ -10,6 +10,7 @@ import asyncio
 import inspect
 import json
 import re
+import time
 from contextlib import suppress
 from typing import Any, AsyncIterator, Callable
 
@@ -653,6 +654,101 @@ class A2AInvokeService:
                 usage_hints = raw_usage_hints
         return usage_hints
 
+    @staticmethod
+    def _extract_text_from_parts(parts: Any) -> str | None:
+        if not isinstance(parts, list):
+            return None
+        collected: list[str] = []
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                collected.append(text)
+                continue
+            content = part.get("content")
+            if isinstance(content, str) and content.strip():
+                collected.append(content)
+        if collected:
+            return "".join(collected)
+        return None
+
+    @classmethod
+    def _extract_preferred_text_from_payload(cls, payload: Any) -> str | None:
+        root = as_dict(payload)
+        if not root:
+            return None
+
+        direct_text = cls._pick_non_empty_str(root, ("text", "content", "message"))
+        if direct_text:
+            return direct_text
+
+        parts_text = cls._extract_text_from_parts(root.get("parts"))
+        if parts_text:
+            return parts_text
+
+        artifact = as_dict(root.get("artifact"))
+        if artifact:
+            artifact_text = cls._extract_text_from_parts(artifact.get("parts"))
+            if artifact_text:
+                return artifact_text
+
+        artifacts = root.get("artifacts")
+        if isinstance(artifacts, list):
+            for artifact_item in reversed(artifacts):
+                artifact_text = cls._extract_preferred_text_from_payload(artifact_item)
+                if artifact_text:
+                    return artifact_text
+
+        history = root.get("history")
+        if isinstance(history, list):
+            for entry in reversed(history):
+                entry_root = as_dict(entry)
+                if not entry_root:
+                    continue
+                role = cls._pick_non_empty_str(entry_root, ("role",))
+                if role and role.lower() in {"agent", "assistant", "model"}:
+                    history_text = cls._extract_preferred_text_from_payload(entry_root)
+                    if history_text:
+                        return history_text
+            for entry in reversed(history):
+                history_text = cls._extract_preferred_text_from_payload(entry)
+                if history_text:
+                    return history_text
+
+        for key in ("status", "result", "message"):
+            nested = as_dict(root.get(key))
+            if nested:
+                nested_text = cls._extract_preferred_text_from_payload(nested)
+                if nested_text:
+                    return nested_text
+
+        return None
+
+    @classmethod
+    def extract_readable_content_from_invoke_result(
+        cls, result: dict[str, Any]
+    ) -> str | None:
+        raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
+        if raw_payload:
+            raw_text = cls._extract_preferred_text_from_payload(raw_payload)
+            if raw_text:
+                return raw_text
+
+        content = result.get("content")
+        if isinstance(content, str) and content.strip():
+            stripped = content.strip()
+            if stripped[:1] in {"{", "["}:
+                try:
+                    parsed = json.loads(stripped)
+                except Exception:
+                    return stripped
+                parsed_text = cls._extract_preferred_text_from_payload(parsed)
+                if parsed_text:
+                    return parsed_text
+            return stripped
+        return None
+
     class _StreamTextAccumulator:
         """Accumulates stream text for persistence.
 
@@ -886,7 +982,10 @@ class A2AInvokeService:
         else:
             resolved = event
 
-        payload = resolved.model_dump(exclude_none=True)
+        if isinstance(resolved, dict):
+            payload = dict(resolved)
+        else:
+            payload = resolved.model_dump(exclude_none=True)
         if settings.debug:
             payload["validation_errors"] = validate_message(payload)
         return payload
@@ -1259,6 +1358,177 @@ class A2AInvokeService:
                 await self._call_callback(on_complete, stream_text_accumulator.result())
             if send_stream_end:
                 await self.send_ws_stream_end(websocket)
+
+    async def consume_stream(
+        self,
+        *,
+        gateway: Any,
+        resolved: Any,
+        query: str,
+        context_id: str | None,
+        metadata: dict[str, Any] | None,
+        validate_message: ValidateMessageFn,
+        logger: Any,
+        log_extra: dict[str, Any],
+        on_complete: StreamTextCallbackFn | None = None,
+        on_complete_metadata: StreamMetadataCallbackFn | None = None,
+        on_error: StreamTextCallbackFn | None = None,
+        on_event: StreamEventPayloadCallbackFn | None = None,
+        on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
+        idle_timeout_seconds: float | None = None,
+        total_timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        stream_text_accumulator = self._StreamTextAccumulator()
+        log_warning = getattr(logger, "warning", None)
+        log_info = getattr(logger, "info", None)
+        started_at = time.monotonic()
+        last_event_at = started_at
+        heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+        stream_iter = self._iter_stream_events_with_heartbeat(
+            gateway.stream(
+                resolved=resolved,
+                query=query,
+                context_id=context_id,
+                metadata=metadata,
+            ),
+            heartbeat_interval_seconds=heartbeat_interval_seconds,
+        ).__aiter__()
+        terminal_event_seen = False
+        serialized: dict[str, Any] = {}
+        idle_timeout = (
+            float(idle_timeout_seconds)
+            if idle_timeout_seconds is not None and idle_timeout_seconds > 0
+            else None
+        )
+        total_timeout = (
+            float(total_timeout_seconds)
+            if total_timeout_seconds is not None and total_timeout_seconds > 0
+            else None
+        )
+
+        def _resolve_wait_timeout(now: float) -> float | None:
+            wait_timeout = idle_timeout
+            if total_timeout is not None:
+                remaining_total = total_timeout - (now - started_at)
+                if remaining_total <= 0:
+                    raise asyncio.TimeoutError("total_timeout")
+                wait_timeout = (
+                    min(wait_timeout, remaining_total)
+                    if wait_timeout is not None
+                    else remaining_total
+                )
+            return wait_timeout
+
+        try:
+            while True:
+                now = time.monotonic()
+                wait_timeout = _resolve_wait_timeout(now)
+                try:
+                    if wait_timeout is None:
+                        event = await anext(stream_iter)
+                    else:
+                        event = await asyncio.wait_for(anext(stream_iter), wait_timeout)
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    if total_timeout is not None and (
+                        time.monotonic() - started_at
+                    ) >= (total_timeout - 1e-9):
+                        timeout_message = (
+                            f"A2A stream total timeout after {total_timeout:.1f}s"
+                        )
+                    else:
+                        idle_value = idle_timeout if idle_timeout is not None else 0.0
+                        timeout_message = (
+                            f"A2A stream idle timeout after {idle_value:.1f}s"
+                        )
+                    await self._call_callback(on_error, timeout_message)
+                    await self._call_callback(
+                        on_error_metadata,
+                        {"message": timeout_message, "error_code": "timeout"},
+                    )
+                    return {
+                        "success": False,
+                        "content": None,
+                        "error": timeout_message,
+                        "error_code": "timeout",
+                    }
+                if event is None:
+                    # Align with realtime stream semantics:
+                    # heartbeat frames indicate the upstream connection is still alive
+                    # and should refresh the idle timer.
+                    last_event_at = time.monotonic()
+                    continue
+
+                serialized = self.serialize_stream_event(
+                    event, validate_message=validate_message
+                )
+                validation_errors = self._extract_artifact_validation_errors(
+                    serialized, validate_message=validate_message
+                )
+                if validation_errors:
+                    warning_payload = {
+                        **log_extra,
+                        "validation_error_count": len(validation_errors),
+                    }
+                    if callable(log_warning):
+                        log_warning(
+                            "Dropped invalid artifact-update event",
+                            extra=warning_payload,
+                        )
+                    elif callable(log_info):
+                        log_info(
+                            "Dropped invalid artifact-update event",
+                            extra=warning_payload,
+                        )
+                    continue
+
+                last_event_at = time.monotonic()
+                await self._call_callback(on_event, serialized)
+                stream_text_accumulator.consume(serialized)
+                if self._is_terminal_status_event(serialized):
+                    terminal_event_seen = True
+                    break
+
+            await self._call_callback(
+                on_complete_metadata,
+                stream_text_accumulator.result_metadata(),
+            )
+            await self._call_callback(on_complete, stream_text_accumulator.result())
+            return {
+                "success": True,
+                "content": stream_text_accumulator.result(),
+                "error": None,
+                "error_code": None,
+                "finished_with_terminal_event": terminal_event_seen,
+                "elapsed_seconds": time.monotonic() - started_at,
+                "idle_seconds": max(time.monotonic() - last_event_at, 0.0),
+            }
+        except Exception as exc:
+            if callable(log_warning):
+                log_warning(
+                    "A2A consume stream failed",
+                    exc_info=True,
+                    extra=log_extra,
+                )
+            elif callable(log_info):
+                log_info(
+                    "A2A consume stream failed",
+                    exc_info=True,
+                    extra=log_extra,
+                )
+            error_code = self._extract_error_code_from_exception(exc)
+            await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
+            await self._call_callback(
+                on_error_metadata,
+                {"message": self._STREAM_ERROR_MESSAGE, "error_code": error_code},
+            )
+            return {
+                "success": False,
+                "content": None,
+                "error": self._STREAM_ERROR_MESSAGE,
+                "error_code": error_code or self._STREAM_ERROR_CODE,
+            }
 
 
 a2a_invoke_service = A2AInvokeService()

@@ -690,6 +690,28 @@ async def test_ws_emits_keepalive_heartbeat_when_upstream_is_idle(monkeypatch):
     assert payloads[-1]["event"] == "stream_end"
 
 
+@pytest.mark.asyncio
+async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithDelayedEvents(
+            [{"content": "late-event"}, {"kind": "status-update", "final": True}],
+            delay_seconds=0.05,
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        idle_timeout_seconds=0.02,
+        total_timeout_seconds=0.2,
+    )
+    assert result["success"] is True
+    assert result["content"] == "late-event"
+
+
 def test_extract_binding_hints_from_serialized_event():
     (
         context_id,
@@ -779,6 +801,54 @@ def test_extract_binding_hints_ignores_legacy_flat_opencode_session_id():
     assert context_id is None
     assert "provider" not in metadata
     assert "externalSessionId" not in metadata
+
+
+def test_extract_binding_hints_ignores_legacy_flat_external_session_id_aliases():
+    context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
+        {
+            "success": True,
+            "content": "ok",
+            "metadata": {
+                "external_session_id": "legacy-flat-session-id",
+                "upstream_session_id": "legacy-upstream-session-id",
+            },
+        }
+    )
+    assert context_id is None
+    assert "provider" not in metadata
+    assert "externalSessionId" not in metadata
+
+
+def test_extract_readable_content_prefers_raw_history_agent_message():
+    readable = a2a_invoke_service.extract_readable_content_from_invoke_result(
+        {
+            "success": True,
+            "content": '{"content":"opaque"}',
+            "raw": {
+                "history": [
+                    {"role": "user", "parts": [{"kind": "text", "text": "Hi"}]},
+                    {
+                        "role": "agent",
+                        "parts": [{"kind": "text", "text": "Hello from agent"}],
+                    },
+                ]
+            },
+        }
+    )
+    assert readable == "Hello from agent"
+
+
+def test_extract_readable_content_parses_json_string_content():
+    readable = a2a_invoke_service.extract_readable_content_from_invoke_result(
+        {
+            "success": True,
+            "content": (
+                '{"history":[{"role":"user","parts":[{"text":"Q"}]},'
+                '{"role":"assistant","parts":[{"text":"A"}]}]}'
+            ),
+        }
+    )
+    assert readable == "A"
 
 
 def test_extract_stream_identity_hints_from_serialized_event():

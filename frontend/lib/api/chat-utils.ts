@@ -73,20 +73,9 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
         ? data.contextId
         : null;
   const metadata = asRecord(data.metadata);
-  const opencodeMetadata = asRecord(metadata?.opencode);
-  const nestedOpencodeSessionId = pickString(opencodeMetadata, [
-    "session_id",
-    "sessionId",
-  ]);
   const externalSessionId =
-    pickString(data, ["externalSessionId"]) ??
-    pickString(metadata, ["externalSessionId"]) ??
-    nestedOpencodeSessionId ??
-    undefined;
-  const rawProvider =
-    pickString(data, ["provider"]) ??
-    pickString(metadata, ["provider"]) ??
-    (nestedOpencodeSessionId ? "opencode" : undefined);
+    pickString(metadata, ["externalSessionId"]) ?? undefined;
+  const rawProvider = pickString(metadata, ["provider"]);
   const normalizedProvider = rawProvider?.trim().toLowerCase();
   const provider =
     normalizedProvider === undefined
