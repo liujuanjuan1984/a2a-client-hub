@@ -653,7 +653,9 @@ class A2AClient:
             payload_dict = payload.dict()
             if isinstance(payload_dict, Mapping):
                 mapping_payload = payload_dict
-        elif hasattr(payload, "model_dump") and callable(getattr(payload, "model_dump")):
+        elif hasattr(payload, "model_dump") and callable(
+            getattr(payload, "model_dump")
+        ):
             payload_dict = payload.model_dump()
             if isinstance(payload_dict, Mapping):
                 mapping_payload = payload_dict
