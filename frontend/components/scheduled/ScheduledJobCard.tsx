@@ -19,6 +19,40 @@ const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
   failed: "text-red-300",
 };
 
+const getCardTone = (job: ScheduledJob) => {
+  if (!job.enabled) {
+    return {
+      container: "border-slate-800 bg-slate-900/10 grayscale",
+      title: "text-slate-500",
+      text: "text-slate-500",
+      prompt: "text-slate-600",
+      statusText: "Disabled",
+      iconColor: "#64748b",
+      switchTrack: { false: "#334155", true: "#475569" },
+    };
+  }
+  if (job.last_run_status === "running") {
+    return {
+      container: "border-blue-500/50 bg-blue-900/20",
+      title: "text-blue-100",
+      text: "text-blue-200/80",
+      prompt: "text-blue-200/90",
+      statusText: "Running",
+      iconColor: "#93c5fd",
+      switchTrack: { false: "#334155", true: "#3b82f6" },
+    };
+  }
+  return {
+    container: "border-slate-800 bg-slate-900/30",
+    title: "text-white",
+    text: "text-slate-400",
+    prompt: "text-slate-300",
+    statusText: "Enabled",
+    iconColor: "#94a3b8",
+    switchTrack: { false: "#334155", true: "#5c6afb" },
+  };
+};
+
 type ScheduledJobCardProps = {
   job: ScheduledJob;
   agentName: string;
@@ -47,7 +81,7 @@ export function ScheduledJobCard({
   onLoadMoreExecutions,
 }: ScheduledJobCardProps) {
   const router = useRouter();
-  const enabledLabel = job.enabled ? "Enabled" : "Disabled";
+  const tone = getCardTone(job);
   const historyLabel = executionsOpen ? "Hide" : "History";
   const historyIcon = executionsOpen ? "time" : "time-outline";
   const [togglingEnabled, setTogglingEnabled] = useState(false);
@@ -68,35 +102,37 @@ export function ScheduledJobCard({
   };
 
   return (
-    <View className="mb-4 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30">
+    <View
+      className={`mb-4 overflow-hidden rounded-2xl border ${tone.container}`}
+    >
       <View className="p-4">
         <View className="flex-row items-start justify-between">
           <View className="flex-1 pr-3">
-            <Text className="text-base font-semibold text-white">
+            <Text className={`text-base font-semibold ${tone.title}`}>
               {job.name}
             </Text>
-            <Text className="mt-1 text-xs text-slate-400">
+            <Text className={`mt-1 text-xs ${tone.text}`}>
               Agent: {agentName}
             </Text>
-            <Text className="mt-1 text-xs text-slate-400">
+            <Text className={`mt-1 text-xs ${tone.text}`}>
               {job.cycle_type}
             </Text>
-            <Text className="mt-1 text-xs text-slate-400">
+            <Text className={`mt-1 text-xs ${tone.text}`}>
               Next: {formatLocalDateTime(job.next_run_at)}
             </Text>
-            <Text className="mt-1 text-xs text-slate-400">
+            <Text className={`mt-1 text-xs ${tone.text}`}>
               Last: {formatLocalDateTime(job.last_run_at)} (
               {job.last_run_status ?? "-"})
             </Text>
           </View>
           <View className="flex-row items-center gap-2">
-            <Text className="text-xs font-semibold text-slate-200">
-              {enabledLabel}
+            <Text className={`text-xs font-semibold ${tone.title}`}>
+              {tone.statusText}
             </Text>
             <Switch
               value={job.enabled}
               disabled={togglingEnabled}
-              trackColor={{ false: "#334155", true: "#5c6afb" }}
+              trackColor={tone.switchTrack}
               thumbColor={job.enabled ? "#ffffff" : "#e2e8f0"}
               ios_backgroundColor="#334155"
               onValueChange={async () => {
@@ -109,12 +145,12 @@ export function ScheduledJobCard({
                   setTogglingEnabled(false);
                 }
               }}
-              accessibilityLabel={`Job enabled: ${enabledLabel}`}
+              accessibilityLabel={`Job enabled: ${tone.statusText}`}
             />
           </View>
         </View>
 
-        <Text className="mt-3 text-xs text-slate-300" numberOfLines={2}>
+        <Text className={`mt-3 text-xs ${tone.prompt}`} numberOfLines={2}>
           {job.prompt}
         </Text>
       </View>
@@ -127,8 +163,8 @@ export function ScheduledJobCard({
           accessibilityLabel="Edit"
           accessibilityHint="Edit this scheduled job"
         >
-          <Ionicons name="create-outline" size={14} color="#94a3b8" />
-          <Text className="text-xs font-medium text-slate-400">Edit</Text>
+          <Ionicons name="create-outline" size={14} color={tone.iconColor} />
+          <Text className={`text-xs font-medium ${tone.text}`}>Edit</Text>
         </Pressable>
 
         <Pressable
@@ -138,8 +174,8 @@ export function ScheduledJobCard({
           accessibilityLabel={historyLabel}
           accessibilityHint={`${historyLabel} execution history`}
         >
-          <Ionicons name={historyIcon} size={14} color="#94a3b8" />
-          <Text className="text-xs font-medium text-slate-400">
+          <Ionicons name={historyIcon} size={14} color={tone.iconColor} />
+          <Text className={`text-xs font-medium ${tone.text}`}>
             {historyLabel}
           </Text>
         </Pressable>
