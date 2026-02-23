@@ -12,7 +12,9 @@ from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
 
 
 @pytest.mark.asyncio
-async def test_a2a_client_close_does_not_close_shared_transport_when_http_client_is_owned() -> None:
+async def test_a2a_client_close_does_not_close_shared_transport_when_http_client_is_owned() -> (
+    None
+):
     a2a_client = A2AClient("http://example-agent.internal:24020")
     close_mock = AsyncMock()
     a2a_client._agent_card = Mock()

@@ -655,9 +655,9 @@ class A2AInvokeService:
                 and last.get("is_finished") is False
             ):
                 current = last.get("content")
-                last[
-                    "content"
-                ] = f"{current if isinstance(current, str) else ''}{delta}"
+                last["content"] = (
+                    f"{current if isinstance(current, str) else ''}{delta}"
+                )
                 last["is_finished"] = done
                 return
 

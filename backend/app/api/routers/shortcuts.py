@@ -65,8 +65,9 @@ def _list_shortcuts_error(
 
 @router.get("", response_model=ShortcutListResponse)
 async def list_shortcuts(
-    agent_id: UUID
-    | None = Query(None, description="Optional agent ID to filter shortcuts"),
+    agent_id: UUID | None = Query(
+        None, description="Optional agent ID to filter shortcuts"
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> ShortcutListResponse:
