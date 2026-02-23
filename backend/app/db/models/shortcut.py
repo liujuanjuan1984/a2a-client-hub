@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from sqlalchemy import Boolean, Column, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.models.base import SCHEMA_NAME, Base, TimestampMixin, UserOwnedMixin
@@ -51,6 +51,7 @@ class Shortcut(Base, TimestampMixin, UserOwnedMixin):
     )
     agent_id = Column(
         UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_NAME}.a2a_agents.id", ondelete="CASCADE"),
         nullable=True,
         comment="If set, shortcut only applies to this specific agent",
     )

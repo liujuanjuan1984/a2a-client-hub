@@ -21,8 +21,10 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.add_column('user_shortcuts', sa.Column('agent_id', postgresql.UUID(as_uuid=True), nullable=True, comment='If set, shortcut only applies to this specific agent'), schema='a2a_client_hub')
     op.create_index('ix_user_shortcuts_agent_id', 'user_shortcuts', ['agent_id'], unique=False, schema='a2a_client_hub')
+    op.create_foreign_key('fk_user_shortcuts_agent_id', 'user_shortcuts', 'a2a_agents', ['agent_id'], ['id'], source_schema='a2a_client_hub', referent_schema='a2a_client_hub', ondelete='CASCADE')
 
 
 def downgrade() -> None:
+    op.drop_constraint('fk_user_shortcuts_agent_id', 'user_shortcuts', schema='a2a_client_hub', type_='foreignkey')
     op.drop_index('ix_user_shortcuts_agent_id', table_name='user_shortcuts', schema='a2a_client_hub')
     op.drop_column('user_shortcuts', 'agent_id', schema='a2a_client_hub')
