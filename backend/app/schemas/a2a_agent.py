@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from app.schemas.pagination import ListResponse, Pagination
 
@@ -15,7 +15,7 @@ A2AAuthType = Literal["none", "bearer"]
 
 class A2AAgentBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
-    card_url: str = Field(..., min_length=4, max_length=1024)
+    card_url: AnyHttpUrl = Field(..., description="Must be a valid HTTP/HTTPS URL")
     auth_type: A2AAuthType = Field(default="none")
     auth_header: Optional[str] = Field(default=None)
     auth_scheme: Optional[str] = Field(default=None)
@@ -34,7 +34,9 @@ class A2AAgentCreate(A2AAgentBase):
 
 class A2AAgentUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
-    card_url: Optional[str] = Field(default=None, min_length=4, max_length=1024)
+    card_url: Optional[AnyHttpUrl] = Field(
+        default=None, description="Must be a valid HTTP/HTTPS URL"
+    )
     auth_type: Optional[A2AAuthType] = None
     auth_header: Optional[str] = None
     auth_scheme: Optional[str] = None

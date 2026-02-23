@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, Field
 
 from app.schemas.a2a_agent import A2AAuthType
 
 
 class A2AAgentCardProxyRequest(BaseModel):
-    card_url: str = Field(..., min_length=4, max_length=1024)
+    card_url: AnyHttpUrl = Field(..., description="Must be a valid HTTP/HTTPS URL")
     auth_type: A2AAuthType = Field(default="none")
     auth_header: Optional[str] = Field(default=None)
     auth_scheme: Optional[str] = Field(default=None)
