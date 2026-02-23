@@ -114,12 +114,17 @@ class A2AScheduleToggleResponse(BaseModel):
     next_run_at: Optional[datetime] = None
 
 
+class A2AScheduleManualFailRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
 __all__ = [
     "A2AScheduleCycleType",
     "A2AScheduleExecutionListMeta",
     "A2AScheduleExecutionListResponse",
     "A2AScheduleExecutionPagination",
     "A2AScheduleExecutionResponse",
+    "A2AScheduleManualFailRequest",
     "A2AScheduleTaskCreate",
     "A2AScheduleTaskListMeta",
     "A2AScheduleTaskListResponse",

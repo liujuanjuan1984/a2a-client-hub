@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import {
   disableScheduledJob,
   enableScheduledJob,
+  markScheduledJobFailed,
   type ScheduledJob,
 } from "@/lib/api/scheduledJobs";
 
@@ -15,7 +16,15 @@ export function useScheduledJobs() {
     await enableScheduledJob(job.id);
   }, []);
 
+  const markJobFailed = useCallback(
+    async (job: ScheduledJob, reason?: string) => {
+      await markScheduledJobFailed(job.id, { reason });
+    },
+    [],
+  );
+
   return {
+    markJobFailed,
     toggleJobStatus,
   };
 }

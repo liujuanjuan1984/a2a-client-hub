@@ -8,6 +8,7 @@ import {
   type ScheduledJob,
   type ScheduledJobExecution,
 } from "@/lib/api/scheduledJobs";
+import { confirmAction } from "@/lib/confirm";
 import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
@@ -63,6 +64,7 @@ type ScheduledJobCardProps = {
   executionsLoadingMore?: boolean;
   onToggleEnabled: () => void | Promise<void>;
   onEdit: () => void;
+  onMarkFailed?: () => void | Promise<void>;
   onToggleExecutions: () => void;
   onLoadMoreExecutions?: () => void;
 };
@@ -77,6 +79,7 @@ export function ScheduledJobCard({
   executionsLoadingMore,
   onToggleEnabled,
   onEdit,
+  onMarkFailed,
   onToggleExecutions,
   onLoadMoreExecutions,
 }: ScheduledJobCardProps) {
@@ -85,6 +88,8 @@ export function ScheduledJobCard({
   const historyLabel = executionsOpen ? "Hide" : "History";
   const historyIcon = executionsOpen ? "time" : "time-outline";
   const [togglingEnabled, setTogglingEnabled] = useState(false);
+  const [markingFailed, setMarkingFailed] = useState(false);
+  const canMarkFailed = job.last_run_status === "running";
 
   const openExecutionSession = (execution: ScheduledJobExecution) => {
     if (!execution.conversation_id) return;
@@ -99,6 +104,25 @@ export function ScheduledJobCard({
 
     blurActiveElement();
     router.push(buildChatRoute(agentId, execution.conversation_id));
+  };
+
+  const handleMarkFailed = async () => {
+    if (!onMarkFailed || markingFailed || !canMarkFailed) return;
+    const confirmed = await confirmAction({
+      title: "Stop running job?",
+      message:
+        "This will mark the running job as failed to release resources or recover from abnormal states.",
+      confirmLabel: "Stop Running",
+      cancelLabel: "Cancel",
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+    setMarkingFailed(true);
+    try {
+      await onMarkFailed();
+    } finally {
+      setMarkingFailed(false);
+    }
   };
 
   return (
@@ -179,6 +203,18 @@ export function ScheduledJobCard({
             {historyLabel}
           </Text>
         </Pressable>
+
+        {canMarkFailed ? (
+          <Button
+            className="ml-auto"
+            label="Stop Running"
+            size="xs"
+            variant="danger"
+            loading={markingFailed}
+            disabled={!onMarkFailed}
+            onPress={handleMarkFailed}
+          />
+        ) : null}
       </View>
 
       {executionsOpen ? (

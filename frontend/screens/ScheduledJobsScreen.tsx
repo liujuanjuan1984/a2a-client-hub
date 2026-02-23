@@ -20,7 +20,7 @@ import { toast } from "@/lib/toast";
 export function ScheduledJobsScreen() {
   const router = useRouter();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
-  const { toggleJobStatus } = useScheduledJobs();
+  const { markJobFailed, toggleJobStatus } = useScheduledJobs();
 
   const [expandedExecutionsTaskId, setExpandedExecutionsTaskId] = useState<
     string | null
@@ -184,6 +184,26 @@ export function ScheduledJobsScreen() {
                 onEdit={() => {
                   blurActiveElement();
                   router.push(buildScheduledJobEditHref(job.id));
+                }}
+                onMarkFailed={async () => {
+                  try {
+                    await markJobFailed(job);
+                    const succeeded = await loadFirstPage("refreshing");
+                    if (succeeded) {
+                      hasLoadedRef.current = true;
+                    }
+                    if (expandedExecutionsTaskId === job.id) {
+                      await executionsQuery.loadFirstPage("refreshing");
+                    }
+                    toast.success(
+                      "Job updated",
+                      "Marked running task as failed.",
+                    );
+                  } catch (error) {
+                    const message =
+                      error instanceof Error ? error.message : "Update failed.";
+                    toast.error("Update failed", message);
+                  }
                 }}
                 onToggleExecutions={() => toggleExecutionsPanel(job.id)}
                 onLoadMoreExecutions={

@@ -13,6 +13,7 @@ from app.db.models.user import User
 from app.schemas.a2a_schedule import (
     A2AScheduleExecutionListResponse,
     A2AScheduleExecutionResponse,
+    A2AScheduleManualFailRequest,
     A2AScheduleTaskCreate,
     A2AScheduleTaskListResponse,
     A2AScheduleTaskResponse,
@@ -209,6 +210,29 @@ async def disable_schedule_task(
         enabled=bool(task.enabled),
         next_run_at=task.next_run_at,
     )
+
+
+@router.post("/{task_id}/mark-failed", response_model=A2AScheduleTaskResponse)
+async def mark_schedule_task_failed(
+    task_id: UUID,
+    payload: A2AScheduleManualFailRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> A2AScheduleTaskResponse:
+    try:
+        task = await a2a_schedule_service.mark_task_failed_manually(
+            db,
+            user_id=current_user.id,
+            task_id=task_id,
+            marked_by_user_id=current_user.id,
+            reason=payload.reason,
+        )
+    except A2AScheduleNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except A2AScheduleValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return A2AScheduleTaskResponse.model_validate(task)
 
 
 @router.get("/{task_id}/executions", response_model=A2AScheduleExecutionListResponse)
