@@ -109,10 +109,10 @@ export function ScheduledJobCard({
   const handleMarkFailed = async () => {
     if (!onMarkFailed || markingFailed || !canMarkFailed) return;
     const confirmed = await confirmAction({
-      title: "Mark job as failed?",
+      title: "Stop running job?",
       message:
-        "This will terminate the current running state and record a manual failure.",
-      confirmLabel: "Mark Failed",
+        "This will mark the running job as failed to release resources or recover from abnormal states.",
+      confirmLabel: "Stop Running",
       cancelLabel: "Cancel",
       isDestructive: true,
     });

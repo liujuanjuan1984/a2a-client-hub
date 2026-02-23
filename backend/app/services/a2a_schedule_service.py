@@ -19,6 +19,8 @@ from app.db.transaction import commit_safely
 from app.handlers import auth as auth_handler
 from app.utils.timezone_util import ensure_utc, resolve_timezone, utc_now
 
+_MANUAL_FAILURE_MESSAGE = "Stopped by user as failed"
+
 
 class A2AScheduleError(RuntimeError):
     """Base error for A2A schedule operations."""
@@ -305,8 +307,6 @@ class A2AScheduleService:
         now_utc = ensure_utc(marked_at or utc_now())
         manual_error_message = self._build_manual_failure_reason(
             reason=reason,
-            marked_by_user_id=marked_by_user_id,
-            marked_at=now_utc,
         )
 
         stmt = (
@@ -799,17 +799,9 @@ class A2AScheduleService:
     def _build_manual_failure_reason(
         *,
         reason: Optional[str],
-        marked_by_user_id: UUID,
-        marked_at: datetime,
     ) -> str:
-        base = (
-            f"Manually marked as failed by user {marked_by_user_id} "
-            f"at {ensure_utc(marked_at).isoformat()}"
-        )
         normalized_reason = (reason or "").strip()
-        if not normalized_reason:
-            return base
-        return f"{base}. Reason: {normalized_reason}"
+        return normalized_reason or _MANUAL_FAILURE_MESSAGE
 
     def _normalize_cycle_type(self, value: str) -> str:
         normalized = (value or "").strip().lower()

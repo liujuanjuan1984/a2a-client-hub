@@ -187,10 +187,7 @@ export function ScheduledJobsScreen() {
                 }}
                 onMarkFailed={async () => {
                   try {
-                    await markJobFailed(
-                      job,
-                      "Manual stop from scheduled jobs UI",
-                    );
+                    await markJobFailed(job);
                     const succeeded = await loadFirstPage("refreshing");
                     if (succeeded) {
                       hasLoadedRef.current = true;

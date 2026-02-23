@@ -187,7 +187,7 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
     ) as client:
         resp = await client.post(
             f"/me/a2a/schedules/{task.id}/mark-failed",
-            json={"reason": "Manual stop from UI"},
+            json={},
         )
         assert resp.status_code == 200
         payload = resp.json()
@@ -211,12 +211,11 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
         assert execution is not None
         assert execution.status == A2AScheduleExecution.STATUS_FAILED
         assert execution.finished_at is not None
-        assert execution.error_message is not None
-        assert "Manual stop from UI" in execution.error_message
+        assert execution.error_message == "Stopped by user as failed"
 
         second_resp = await client.post(
             f"/me/a2a/schedules/{task.id}/mark-failed",
-            json={"reason": "Manual stop from UI"},
+            json={},
         )
         assert second_resp.status_code == 200
         await async_db_session.refresh(task)
@@ -295,7 +294,7 @@ async def test_schedule_mark_failed_backfills_missing_execution(
     ) as client:
         resp = await client.post(
             f"/me/a2a/schedules/{task.id}/mark-failed",
-            json={"reason": "No execution row yet"},
+            json={},
         )
         assert resp.status_code == 200
 
@@ -307,6 +306,7 @@ async def test_schedule_mark_failed_backfills_missing_execution(
         )
         assert execution is not None
         assert execution.status == A2AScheduleExecution.STATUS_FAILED
+        assert execution.error_message == "Stopped by user as failed"
 
 
 async def test_schedule_create_interval_normalizes_minutes(
