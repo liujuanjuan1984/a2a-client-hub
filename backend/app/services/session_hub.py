@@ -467,6 +467,7 @@ class SessionHubService:
             if normalized_context_id and session.context_id != normalized_context_id:
                 session.context_id = normalized_context_id
 
+        metadata["conversation_id"] = str(conversation_id)
         user_message = await agent_message_handler.create_agent_message(
             db,
             user_id=user_id,

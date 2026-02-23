@@ -201,7 +201,6 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     >= settings.a2a_schedule_task_failure_threshold
                 ):
                     task.enabled = False
-            thread.last_active_at = utc_now()
 
             await commit_safely(db)
 
