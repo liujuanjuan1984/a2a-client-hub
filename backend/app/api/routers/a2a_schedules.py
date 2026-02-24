@@ -21,6 +21,7 @@ from app.schemas.a2a_schedule import (
     A2AScheduleToggleResponse,
 )
 from app.services.a2a_schedule_service import (
+    A2AScheduleConflictError,
     A2AScheduleNotFoundError,
     A2AScheduleQuotaError,
     A2AScheduleValidationError,
@@ -130,6 +131,10 @@ async def patch_schedule_task(
     except A2AScheduleQuotaError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
+    except A2AScheduleConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
         ) from exc
     except A2AScheduleNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
