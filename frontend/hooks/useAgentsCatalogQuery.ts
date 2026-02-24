@@ -93,12 +93,13 @@ const toUpsertPayload = (input: {
     extraHeaders: input.extraHeaders,
   });
 
-const markCatalogStale = async (
+const refreshActiveCatalogQuery = async (
   queryClient: ReturnType<typeof useQueryClient>,
 ) => {
-  await queryClient.invalidateQueries({
+  await queryClient.refetchQueries({
     queryKey: queryKeys.agents.catalog(),
-    refetchType: "none",
+    exact: true,
+    type: "active",
   });
 };
 
@@ -171,7 +172,7 @@ export function useCreateAgentMutation() {
         queryKeys.agents.catalog(),
         (catalog) => upsertAgentInCatalog(catalog, toAgentConfig(response)),
       );
-      await markCatalogStale(queryClient);
+      await refreshActiveCatalogQuery(queryClient);
     },
   });
 }
@@ -214,7 +215,7 @@ export function useUpdateAgentMutation() {
         (catalog) =>
           upsertAgentInCatalog(catalog, toAgentConfig(response), variables.id),
       );
-      await markCatalogStale(queryClient);
+      await refreshActiveCatalogQuery(queryClient);
     },
   });
 }
@@ -258,7 +259,7 @@ export function useDeleteAgentMutation() {
         useAgentStore.getState().setActiveAgent(null);
       }
 
-      await markCatalogStale(queryClient);
+      await refreshActiveCatalogQuery(queryClient);
     },
   });
 }
