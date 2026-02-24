@@ -29,13 +29,13 @@ export type ChatRuntimeState = {
   sessions: Record<string, AgentSession>;
 };
 
-export type ChatRuntimeSetState = (
+export type ChatRuntimeSetState<
+  TState extends ChatRuntimeState = ChatRuntimeState,
+> = (
   partial:
-    | ChatRuntimeState
-    | Partial<ChatRuntimeState>
-    | ((
-        state: ChatRuntimeState,
-      ) => ChatRuntimeState | Partial<ChatRuntimeState>),
+    | TState
+    | Partial<TState>
+    | ((state: TState) => TState | Partial<TState>),
   replace?: boolean,
 ) => void;
 
@@ -124,16 +124,19 @@ const buildApiErrorMessage = (error: unknown): string => {
     : `${error.message}${codeSuffix}`;
 };
 
-export const executeChatRuntime = async (
+export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   conversationId: string,
   agentId: string,
   agentSource: AgentSource,
   payload: A2AAgentInvokeRequest,
   initialAgentMessageId: string,
-  get: () => ChatRuntimeState,
-  set: ChatRuntimeSetState,
+  get: () => TState,
+  set: ChatRuntimeSetState<TState>,
 ) => {
   const messageStore = useMessageStore.getState();
+  const buildSessionsPatch = (
+    sessions: Record<string, AgentSession>,
+  ): Partial<TState> => ({ sessions }) as Partial<TState>;
   let activeAgentMessageId = initialAgentMessageId;
   const activeStreamMessageIds = new Set<string>([initialAgentMessageId]);
   const streamMessageIdMap = new Map<string, string>();
@@ -158,15 +161,13 @@ export const executeChatRuntime = async (
       if (!hasChanges) {
         return state;
       }
-      return {
-        sessions: {
-          ...state.sessions,
-          [conversationId]: {
-            ...current,
-            ...patch,
-          },
+      return buildSessionsPatch({
+        ...state.sessions,
+        [conversationId]: {
+          ...current,
+          ...patch,
         },
-      };
+      });
     });
   };
 
@@ -253,15 +254,13 @@ export const executeChatRuntime = async (
         return state;
       }
 
-      return {
-        sessions: {
-          ...state.sessions,
-          [conversationId]: {
-            ...current,
-            ...nextPatch,
-          },
+      return buildSessionsPatch({
+        ...state.sessions,
+        [conversationId]: {
+          ...current,
+          ...nextPatch,
         },
-      };
+      });
     });
   };
 

@@ -14,11 +14,7 @@ import { generateId, generateUuid } from "@/lib/id";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
-import {
-  executeChatRuntime,
-  type ChatRuntimeSetState,
-  type ChatRuntimeState,
-} from "@/store/chatRuntime";
+import { executeChatRuntime } from "@/store/chatRuntime";
 import { useMessageStore } from "@/store/messages";
 
 type ChatState = {
@@ -225,8 +221,8 @@ export const useChatStore = create<ChatState>()(
           agentSource,
           payload,
           agentMessageId,
-          get as () => ChatRuntimeState,
-          set as ChatRuntimeSetState,
+          get,
+          set,
         );
       },
       cancelMessage: (conversationId) => {
@@ -291,8 +287,8 @@ export const useChatStore = create<ChatState>()(
           agentSource,
           payload,
           agentMessage.id,
-          get as () => ChatRuntimeState,
-          set as ChatRuntimeSetState,
+          get,
+          set,
         );
       },
       getSessionsByAgentId: (agentId) => {
