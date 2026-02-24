@@ -5,6 +5,7 @@ import { Pressable, Switch, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import {
+  type IntervalTimePoint,
   type ScheduledJob,
   type ScheduledJobExecution,
 } from "@/lib/api/scheduledJobs";
@@ -87,8 +88,14 @@ export function ScheduledJobCard({
   const tone = getCardTone(job);
   const historyLabel = executionsOpen ? "Hide" : "History";
   const historyIcon = executionsOpen ? "time" : "time-outline";
+  const intervalTimePoint =
+    job.cycle_type === "interval" &&
+    typeof (job.time_point as IntervalTimePoint)?.minutes === "number"
+      ? (job.time_point as IntervalTimePoint)
+      : null;
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [markingFailed, setMarkingFailed] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const canMarkFailed = job.last_run_status === "running";
 
   const openExecutionSession = (execution: ScheduledJobExecution) => {
@@ -141,6 +148,12 @@ export function ScheduledJobCard({
             <Text className={`mt-1 text-xs ${tone.text}`}>
               {job.cycle_type}
             </Text>
+            {intervalTimePoint ? (
+              <Text className={`mt-1 text-xs ${tone.text}`}>
+                Interval: every {intervalTimePoint.minutes} min, start{" "}
+                {formatLocalDateTime(intervalTimePoint.start_at)}
+              </Text>
+            ) : null}
             <Text className={`mt-1 text-xs ${tone.text}`}>
               Next: {formatLocalDateTime(job.next_run_at)}
             </Text>
@@ -174,9 +187,24 @@ export function ScheduledJobCard({
           </View>
         </View>
 
-        <Text className={`mt-3 text-xs ${tone.prompt}`} numberOfLines={2}>
+        <Text
+          className={`mt-3 text-xs ${tone.prompt}`}
+          numberOfLines={promptExpanded ? undefined : 2}
+        >
           {job.prompt}
         </Text>
+        <View className="mt-1 items-end">
+          <Pressable
+            className="rounded px-1 py-1 active:bg-slate-800/30"
+            onPress={() => setPromptExpanded((value) => !value)}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle prompt expansion"
+          >
+            <Text className={`text-xs font-medium ${tone.text}`}>
+              {promptExpanded ? "Show less" : "Read more"}
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       <View className="flex-row items-center justify-start gap-3 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
