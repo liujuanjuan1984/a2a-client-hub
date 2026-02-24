@@ -18,7 +18,7 @@ import {
   type ScheduleTimePoint,
   updateScheduledJob,
 } from "@/lib/api/scheduledJobs";
-import { localDateTimeInputToUtcIso } from "@/lib/datetime";
+import { DEFAULT_TIME_ZONE, localDateTimeInputToUtcIso } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
@@ -116,6 +116,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const userTimeZone = useSessionStore((state) => state.user?.timezone);
+  const scheduleTimeZone = userTimeZone?.trim() || DEFAULT_TIME_ZONE;
   const goBackOrHome = useCallback(
     () => backOrHome(router, scheduledJobsHref),
     [router],
@@ -389,7 +390,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
             saving={saving}
             editing={editing}
             agentOptions={agentOptions}
-            timeZone={userTimeZone}
+            timeZone={scheduleTimeZone}
             lastRunStatus={lastRunStatus}
             onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
             onSubmit={handleSubmit}

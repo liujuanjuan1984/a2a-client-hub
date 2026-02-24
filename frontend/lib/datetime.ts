@@ -12,7 +12,13 @@ const FORMATTER_OPTIONS: Intl.DateTimeFormatOptions = {
   hourCycle: "h23",
 };
 
+const FORMATTER_WITH_SECONDS_OPTIONS: Intl.DateTimeFormatOptions = {
+  ...FORMATTER_OPTIONS,
+  second: "2-digit",
+};
+
 const formatterByTimeZone = new Map<string, Intl.DateTimeFormat>();
+const formatterWithSecondsByTimeZone = new Map<string, Intl.DateTimeFormat>();
 
 const getFormatter = (timeZone: string): Intl.DateTimeFormat => {
   const cached = formatterByTimeZone.get(timeZone);
@@ -24,6 +30,19 @@ const getFormatter = (timeZone: string): Intl.DateTimeFormat => {
     timeZone,
   });
   formatterByTimeZone.set(timeZone, formatter);
+  return formatter;
+};
+
+const getFormatterWithSeconds = (timeZone: string): Intl.DateTimeFormat => {
+  const cached = formatterWithSecondsByTimeZone.get(timeZone);
+  if (cached) {
+    return cached;
+  }
+  const formatter = new Intl.DateTimeFormat(DATE_LOCALE, {
+    ...FORMATTER_WITH_SECONDS_OPTIONS,
+    timeZone,
+  });
+  formatterWithSecondsByTimeZone.set(timeZone, formatter);
   return formatter;
 };
 
@@ -52,80 +71,135 @@ export const resolveUserTimeZone = (): string => {
   }
 };
 
-const toYmdHm = (date: Date, timeZone: string): string => {
-  const parts = getFormatter(timeZone).formatToParts(date);
+const resolveEffectiveTimeZone = (timeZone?: string): string => {
+  if (typeof timeZone === "string") {
+    return normalizeTimeZone(timeZone) ?? DEFAULT_TIME_ZONE;
+  }
+  return resolveUserTimeZone();
+};
+
+type DateTimeParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+};
+
+const parseDateTimeParts = (
+  parts: Intl.DateTimeFormatPart[],
+): DateTimeParts | null => {
   const values = Object.fromEntries(
     parts.map((part) => [part.type, part.value]),
   );
+  const year = Number.parseInt(values.year ?? "", 10);
+  const month = Number.parseInt(values.month ?? "", 10);
+  const day = Number.parseInt(values.day ?? "", 10);
+  const hour = Number.parseInt(values.hour ?? "", 10);
+  const minute = Number.parseInt(values.minute ?? "", 10);
+  const second = Number.parseInt(values.second ?? "0", 10);
 
-  const year = values.year;
-  const month = values.month;
-  const day = values.day;
-  const hour = values.hour;
-  const minute = values.minute;
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    !Number.isFinite(second)
+  ) {
+    return null;
+  }
+  return { year, month, day, hour, minute, second };
+};
 
-  if (!year || !month || !day || !hour || !minute) {
+const toDateTimeParts = (date: Date, timeZone: string): DateTimeParts | null =>
+  parseDateTimeParts(getFormatterWithSeconds(timeZone).formatToParts(date));
+
+const pad2 = (value: number): string => String(value).padStart(2, "0");
+
+const toYmdHm = (date: Date, timeZone: string): string => {
+  const values = toDateTimeParts(date, timeZone);
+  if (!values) {
     return date.toISOString().slice(0, 16).replace("T", " ");
   }
+  return `${values.year}-${pad2(values.month)}-${pad2(values.day)} ${pad2(values.hour)}:${pad2(values.minute)}`;
+};
 
-  return `${year}-${month}-${day} ${hour}:${minute}`;
+const hasValidCalendarDateTime = (parts: DateTimeParts): boolean => {
+  const candidate = new Date(
+    Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second,
+      0,
+    ),
+  );
+  return (
+    candidate.getUTCFullYear() === parts.year &&
+    candidate.getUTCMonth() === parts.month - 1 &&
+    candidate.getUTCDate() === parts.day &&
+    candidate.getUTCHours() === parts.hour &&
+    candidate.getUTCMinutes() === parts.minute &&
+    candidate.getUTCSeconds() === parts.second
+  );
 };
 
 const DATE_TIME_INPUT_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?$/;
+const DATE_TIME_OFFSET_SUFFIX_PATTERN = /(?:Z|[+-]\d{2}:\d{2})$/;
 
-const hasValidDateTimeFields = (value: string): boolean => {
+const parseDateTimeInputParts = (value: string): DateTimeParts | null => {
   const match = value.match(DATE_TIME_INPUT_PATTERN);
-  if (!match) return false;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  const second = Number(match[6] ?? "0");
-
-  if (
-    Number.isNaN(year) ||
-    Number.isNaN(month) ||
-    Number.isNaN(day) ||
-    Number.isNaN(hour) ||
-    Number.isNaN(minute) ||
-    Number.isNaN(second)
-  ) {
-    return false;
+  if (!match) {
+    return null;
   }
 
-  if (month < 1 || month > 12) return false;
-  if (day < 1 || day > 31) return false;
-  if (hour < 0 || hour > 23) return false;
-  if (minute < 0 || minute > 59) return false;
-  if (second < 0 || second > 59) return false;
+  const parts: DateTimeParts = {
+    year: Number.parseInt(match[1], 10),
+    month: Number.parseInt(match[2], 10),
+    day: Number.parseInt(match[3], 10),
+    hour: Number.parseInt(match[4], 10),
+    minute: Number.parseInt(match[5], 10),
+    second: Number.parseInt(match[6] ?? "0", 10),
+  };
 
-  const localCandidate = new Date(
-    year,
-    month - 1,
-    day,
-    hour,
-    minute,
-    second,
-    0,
-  );
-  return (
-    localCandidate.getFullYear() === year &&
-    localCandidate.getMonth() === month - 1 &&
-    localCandidate.getDate() === day &&
-    localCandidate.getHours() === hour &&
-    localCandidate.getMinutes() === minute &&
-    localCandidate.getSeconds() === second
-  );
+  if (
+    !Number.isFinite(parts.year) ||
+    !Number.isFinite(parts.month) ||
+    !Number.isFinite(parts.day) ||
+    !Number.isFinite(parts.hour) ||
+    !Number.isFinite(parts.minute) ||
+    !Number.isFinite(parts.second)
+  ) {
+    return null;
+  }
+
+  if (parts.month < 1 || parts.month > 12) return null;
+  if (parts.day < 1 || parts.day > 31) return null;
+  if (parts.hour < 0 || parts.hour > 23) return null;
+  if (parts.minute < 0 || parts.minute > 59) return null;
+  if (parts.second < 0 || parts.second > 59) return null;
+
+  if (!hasValidCalendarDateTime(parts)) {
+    return null;
+  }
+
+  return parts;
 };
 
-export const formatLocalDateTime = (value?: string | null): string => {
+export const formatLocalDateTime = (
+  value?: string | null,
+  timeZone?: string,
+): string => {
   if (!value) return DATE_TIME_PLACEHOLDER;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return toYmdHm(date, resolveUserTimeZone());
+  const resolved = resolveEffectiveTimeZone(timeZone);
+  return toYmdHm(date, resolved);
 };
 
 export const formatLocalDateTimeYmdHm = (value?: string | null): string =>
@@ -138,56 +212,33 @@ export const formatDateTimeLocalInputValue = (
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const resolved = normalizeTimeZone(timeZone) ?? resolveUserTimeZone();
+  const resolved = resolveEffectiveTimeZone(timeZone);
   const display = toYmdHm(date, resolved).replace(" ", "T");
   return display;
 };
-
-const YYYY_MM_DD_HH_MM_PATTERN = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/;
 
 export const getNextTopOfHourLocalInputValue = (
   timeZone?: string,
   now: Date = new Date(),
 ): string => {
-  const resolved = normalizeTimeZone(timeZone) ?? resolveUserTimeZone();
-  const localNow = toYmdHm(now, resolved);
-  const match = localNow.match(YYYY_MM_DD_HH_MM_PATTERN);
-  if (!match) {
-    const fallback = new Date(now.getTime());
-    fallback.setMinutes(0, 0, 0);
-    fallback.setHours(fallback.getHours() + 1);
-    return fallback.toISOString().slice(0, 16);
+  const resolved = resolveEffectiveTimeZone(timeZone);
+  let cursor = new Date(now.getTime());
+  cursor.setUTCSeconds(0, 0);
+  cursor = new Date(cursor.getTime() + 60_000);
+
+  // Scan forward at minute resolution and pick the first valid local HH:00.
+  for (let index = 0; index < 36 * 60; index += 1) {
+    const localParts = toDateTimeParts(cursor, resolved);
+    if (localParts && localParts.minute === 0) {
+      return `${localParts.year}-${pad2(localParts.month)}-${pad2(localParts.day)}T${pad2(localParts.hour)}:00`;
+    }
+    cursor = new Date(cursor.getTime() + 60_000);
   }
 
-  const year = Number.parseInt(match[1], 10);
-  const month = Number.parseInt(match[2], 10);
-  const day = Number.parseInt(match[3], 10);
-  const hour = Number.parseInt(match[4], 10);
-  const minute = Number.parseInt(match[5], 10);
-
-  if (
-    !Number.isFinite(year) ||
-    !Number.isFinite(month) ||
-    !Number.isFinite(day) ||
-    !Number.isFinite(hour) ||
-    !Number.isFinite(minute)
-  ) {
-    const fallback = new Date(now.getTime());
-    fallback.setMinutes(0, 0, 0);
-    fallback.setHours(fallback.getHours() + 1);
-    return fallback.toISOString().slice(0, 16);
-  }
-
-  const baseUtc = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
-  baseUtc.setUTCMinutes(0, 0, 0);
-  baseUtc.setUTCHours(baseUtc.getUTCHours() + 1);
-
-  const nextYear = baseUtc.getUTCFullYear();
-  const nextMonth = String(baseUtc.getUTCMonth() + 1).padStart(2, "0");
-  const nextDay = String(baseUtc.getUTCDate()).padStart(2, "0");
-  const nextHour = String(baseUtc.getUTCHours()).padStart(2, "0");
-
-  return `${nextYear}-${nextMonth}-${nextDay}T${nextHour}:00`;
+  const fallback = new Date(now.getTime());
+  fallback.setMinutes(0, 0, 0);
+  fallback.setHours(fallback.getHours() + 1);
+  return fallback.toISOString().slice(0, 16);
 };
 
 export const localDateTimeInputToUtcIso = (value: string): string | null => {
@@ -195,7 +246,16 @@ export const localDateTimeInputToUtcIso = (value: string): string | null => {
   if (!trimmed) return null;
 
   const normalized = trimmed.replace(" ", "T");
-  if (!hasValidDateTimeFields(normalized)) return null;
+  const parsedParts = parseDateTimeInputParts(normalized);
+  if (!parsedParts) {
+    return null;
+  }
 
+  if (DATE_TIME_OFFSET_SUFFIX_PATTERN.test(normalized)) {
+    return null;
+  }
+
+  // Keep local wall-clock strings timezone-naive so backend can apply
+  // user.timezone as the single source of scheduling semantics.
   return normalized;
 };

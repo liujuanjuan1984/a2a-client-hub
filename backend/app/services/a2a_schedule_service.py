@@ -922,19 +922,28 @@ class A2AScheduleService:
             try:
                 dt = datetime.fromisoformat(trimmed)
             except ValueError as exc:
-                # Allow "Z" suffix for UTC timestamps produced by JavaScript.
                 if trimmed.endswith("Z"):
                     dt = datetime.fromisoformat(trimmed.replace("Z", "+00:00"))
                 else:
                     raise A2AScheduleValidationError(
                         "interval time_point.start_at must be a valid ISO datetime"
                     ) from exc
-            if dt.tzinfo is None:
-                tz = resolve_timezone(timezone_str, default="UTC")
-                dt = dt.replace(tzinfo=tz)
+            if dt.tzinfo is not None:
+                raise A2AScheduleValidationError(
+                    "interval time_point.start_at must be timezone-naive "
+                    "(without Z or offset)"
+                )
+            tz = resolve_timezone(timezone_str, default="UTC")
+            dt = dt.replace(tzinfo=tz)
             return ensure_utc(dt).isoformat()
         if isinstance(value, datetime):
-            return ensure_utc(value).isoformat()
+            if value.tzinfo is not None:
+                raise A2AScheduleValidationError(
+                    "interval time_point.start_at must be timezone-naive "
+                    "(without Z or offset)"
+                )
+            tz = resolve_timezone(timezone_str, default="UTC")
+            return ensure_utc(value.replace(tzinfo=tz)).isoformat()
 
         raise A2AScheduleValidationError(
             "interval time_point.start_at must be an ISO datetime string"
@@ -1050,6 +1059,44 @@ class A2AScheduleService:
         resolved_day = min(day, last_day)
         return datetime(year, month, resolved_day, hour, minute, tzinfo=tz)
 
+    @staticmethod
+    def _resolve_local_wall_clock(candidate_local: datetime) -> datetime:
+        """Resolve local wall-clock ambiguity and DST gaps deterministically.
+
+        - Non-existent local times (DST spring-forward gap) are shifted forward to
+          the first valid local timestamp after round-tripping via UTC.
+        - Ambiguous local times (DST fall-back overlap) are pinned to fold=0
+          (the first occurrence).
+        """
+        if candidate_local.tzinfo is None:
+            return candidate_local
+
+        normalized = candidate_local.astimezone(timezone.utc).astimezone(
+            candidate_local.tzinfo
+        )
+        original_wall = (
+            candidate_local.year,
+            candidate_local.month,
+            candidate_local.day,
+            candidate_local.hour,
+            candidate_local.minute,
+            candidate_local.second,
+            candidate_local.microsecond,
+        )
+        normalized_wall = (
+            normalized.year,
+            normalized.month,
+            normalized.day,
+            normalized.hour,
+            normalized.minute,
+            normalized.second,
+            normalized.microsecond,
+        )
+        if normalized_wall != original_wall:
+            return normalized.replace(fold=0)
+
+        return candidate_local.replace(fold=0)
+
     def _next_occurrence_local(
         self,
         *,
@@ -1074,8 +1121,11 @@ class A2AScheduleService:
                 target_time,
                 tzinfo=after_local.tzinfo,
             )
+            candidate = self._resolve_local_wall_clock(candidate)
             if candidate <= after_local:
-                candidate += timedelta(days=1)
+                candidate = self._resolve_local_wall_clock(
+                    candidate + timedelta(days=1)
+                )
             return candidate
 
         if cycle_type == A2AScheduleTask.CYCLE_WEEKLY:
@@ -1091,8 +1141,11 @@ class A2AScheduleService:
                 target_time,
                 tzinfo=after_local.tzinfo,
             )
+            candidate = self._resolve_local_wall_clock(candidate)
             if candidate <= after_local:
-                candidate += timedelta(days=7)
+                candidate = self._resolve_local_wall_clock(
+                    candidate + timedelta(days=7)
+                )
             return candidate
 
         if cycle_type == A2AScheduleTask.CYCLE_MONTHLY:
@@ -1108,6 +1161,7 @@ class A2AScheduleService:
                 minute=mm,
                 tz=after_local.tzinfo,
             )
+            candidate = self._resolve_local_wall_clock(candidate)
             if candidate <= after_local:
                 if after_local.month == 12:
                     year = after_local.year + 1
@@ -1124,6 +1178,7 @@ class A2AScheduleService:
                     minute=mm,
                     tz=after_local.tzinfo,
                 )
+                candidate = self._resolve_local_wall_clock(candidate)
             return candidate
 
         raise A2AScheduleValidationError("Unsupported cycle_type")
@@ -1169,7 +1224,7 @@ class A2AScheduleService:
 
         tz = resolve_timezone(timezone_str, default="UTC")
         after_local = ensure_utc(after_utc).astimezone(tz)
-        guard_local = ensure_utc(not_before_utc or after_utc).astimezone(tz)
+        guard_utc = ensure_utc(not_before_utc or after_utc)
 
         candidate_local = self._next_occurrence_local(
             cycle_type=normalized_cycle,
@@ -1177,7 +1232,7 @@ class A2AScheduleService:
             after_local=after_local,
             is_superuser=is_superuser,
         )
-        while candidate_local <= guard_local:
+        while ensure_utc(candidate_local) <= guard_utc:
             candidate_local = self._next_occurrence_local(
                 cycle_type=normalized_cycle,
                 time_point=normalized_point,
