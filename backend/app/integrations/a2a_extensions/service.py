@@ -279,6 +279,34 @@ class A2AExtensionsService:
             mapped = ext.business_code_map.get(int(code.strip()))
         return mapped or "upstream_error"
 
+    @staticmethod
+    def _normalize_extension_metadata(
+        metadata: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if metadata is None:
+            return None
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata must be an object")
+
+        normalized = dict(metadata)
+        opencode_raw = normalized.get("opencode")
+        if opencode_raw is None:
+            return normalized
+        if not isinstance(opencode_raw, dict):
+            raise ValueError("metadata.opencode must be an object")
+
+        opencode = dict(opencode_raw)
+        if "directory" in opencode:
+            raw_directory = opencode.get("directory")
+            if not isinstance(raw_directory, str) or not raw_directory.strip():
+                raise ValueError(
+                    "metadata.opencode.directory must be a non-empty string"
+                )
+            opencode["directory"] = raw_directory.strip()
+
+        normalized["opencode"] = opencode
+        return normalized
+
     async def _invoke_opencode_method(
         self,
         *,
@@ -289,9 +317,19 @@ class A2AExtensionsService:
         params: Dict[str, Any],
         page: int,
         size: int,
+        normalize_envelope: bool = True,
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        method_name = ext.methods[method_key]
+        method_name = ext.methods.get(method_key)
+        if not method_name:
+            return ExtensionCallResult(
+                success=False,
+                error_code="method_not_supported",
+                upstream_error={
+                    "message": f"Method {method_key} is not supported by upstream"
+                },
+                meta={"extension_uri": ext.uri},
+            )
         metric_key = f"{ext.uri}:{method_name}"
         await self._get_http()
         assert self._jsonrpc is not None  # constructed alongside _http
@@ -333,17 +371,23 @@ class A2AExtensionsService:
         )
 
         if resp.ok:
-            normalized = self._normalize_envelope(
-                resp.result,
-                page=page,
-                size=size,
-            )
+            resolved_result: Optional[Dict[str, Any]]
+            if normalize_envelope:
+                resolved_result = self._normalize_envelope(
+                    resp.result,
+                    page=page,
+                    size=size,
+                )
+            elif isinstance(resp.result, dict):
+                resolved_result = dict(resp.result)
+            else:
+                resolved_result = {"raw": resp.result}
             a2a_extension_metrics.record_call(
                 metric_key,
                 success=True,
                 error_code=None,
             )
-            return ExtensionCallResult(success=True, result=normalized, meta=meta)
+            return ExtensionCallResult(success=True, result=resolved_result, meta=meta)
 
         error = resp.error or {}
         error_code = self._map_business_error_code(error, ext)
@@ -548,6 +592,49 @@ class A2AExtensionsService:
             meta=meta,
         )
 
+    async def opencode_prompt_async(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        request_payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        resolved_session_id = (session_id or "").strip()
+        if not resolved_session_id:
+            raise ValueError("session_id is required")
+
+        if not isinstance(request_payload, dict):
+            raise ValueError("request must be an object")
+
+        parts = request_payload.get("parts")
+        if not isinstance(parts, list) or len(parts) == 0:
+            raise ValueError("request.parts must be a non-empty array")
+
+        params: Dict[str, Any] = {
+            "session_id": resolved_session_id,
+            "request": dict(request_payload),
+        }
+        normalized_metadata = self._normalize_extension_metadata(metadata)
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
+
+        ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
+        return await self._invoke_opencode_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="prompt_async",
+            params=params,
+            page=1,
+            size=1,
+            normalize_envelope=False,
+            meta_extra={
+                "session_id": resolved_session_id,
+                "control_method": "prompt_async",
+            },
+        )
+
     async def _resolve_opencode_interrupt_extension(
         self, runtime: A2ARuntime
     ) -> tuple[ResolvedInterruptCallbackExtension, str]:
@@ -646,6 +733,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
         request_id: str,
         reply: str,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
@@ -653,17 +741,21 @@ class A2AExtensionsService:
         resolved_reply = (reply or "").strip().lower()
         if resolved_reply not in {"once", "always", "reject"}:
             raise ValueError("reply must be one of: once, always, reject")
+        normalized_metadata = self._normalize_extension_metadata(metadata)
 
         ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        params: Dict[str, Any] = {
+            "request_id": resolved_request_id,
+            "reply": resolved_reply,
+        }
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
         return await self._invoke_opencode_interrupt_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
             method_key="reply_permission",
-            params={
-                "request_id": resolved_request_id,
-                "reply": resolved_reply,
-            },
+            params=params,
             meta_extra={"request_id": resolved_request_id},
         )
 
@@ -673,21 +765,26 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
         request_id: str,
         answers: list[list[str]],
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
             raise ValueError("request_id is required")
+        normalized_metadata = self._normalize_extension_metadata(metadata)
 
         ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        params: Dict[str, Any] = {
+            "request_id": resolved_request_id,
+            "answers": answers,
+        }
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
         return await self._invoke_opencode_interrupt_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
             method_key="reply_question",
-            params={
-                "request_id": resolved_request_id,
-                "answers": answers,
-            },
+            params=params,
             meta_extra={"request_id": resolved_request_id},
         )
 
@@ -696,18 +793,23 @@ class A2AExtensionsService:
         *,
         runtime: A2ARuntime,
         request_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
             raise ValueError("request_id is required")
+        normalized_metadata = self._normalize_extension_metadata(metadata)
 
         ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        params: Dict[str, Any] = {"request_id": resolved_request_id}
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
         return await self._invoke_opencode_interrupt_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
             method_key="reject_question",
-            params={"request_id": resolved_request_id},
+            params=params,
             meta_extra={"request_id": resolved_request_id},
         )
 

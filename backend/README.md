@@ -94,6 +94,10 @@ Endpoints:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions:query`
 - Continue a session:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}:continue`
+- Trigger async prompt for an existing upstream session:
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}:prompt-async`
+    - body:
+      `{"request":{"parts":[{"type":"text","text":"Continue and summarize next steps."}],"noReply":true},"metadata":{"opencode":{"directory":"/path/inside/workspace"}}}`
 - List messages for a session:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages?page=1&size=50`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages:query`
@@ -104,6 +108,8 @@ Endpoints:
     - body: `{ "request_id": "...", "answers": [["A"], ["B"]] }`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reject`
     - body: `{ "request_id": "..." }`
+  - Optional metadata for all interrupt callbacks:
+    - `{ "metadata": { "opencode": { "directory": "/path/inside/workspace" } } }`
 
 Optional query (passthrough):
 
@@ -127,6 +133,7 @@ Unified error semantics (`error_code` -> HTTP status):
 | Scenario | error_code | HTTP Status |
 |---|---|---|
 | Session not found | `session_not_found` | 404 |
+| Session access forbidden | `session_forbidden` | 403 |
 | Outbound domain not allowed / invalid configuration | `outbound_not_allowed` | 403 |
 | Upstream unreachable | `upstream_unreachable` | 503 |
 | Upstream HTTP non-2xx | `upstream_http_error` | 502 |

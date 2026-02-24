@@ -34,6 +34,12 @@ class A2AExtensionPermissionReplyRequest(BaseModel):
         ...,
         description="Permission reply action",
     )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Optional metadata object (for example metadata.opencode.directory)"
+        ),
+    )
 
 
 class A2AExtensionQuestionReplyRequest(BaseModel):
@@ -42,13 +48,39 @@ class A2AExtensionQuestionReplyRequest(BaseModel):
         ...,
         description="Answer groups in the same order as asked questions",
     )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Optional metadata object (for example metadata.opencode.directory)"
+        ),
+    )
 
 
 class A2AExtensionQuestionRejectRequest(BaseModel):
     request_id: str = Field(..., min_length=1, description="Interrupt request id")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Optional metadata object (for example metadata.opencode.directory)"
+        ),
+    )
+
+
+class A2AExtensionPromptAsyncRequest(BaseModel):
+    request: Dict[str, Any] = Field(
+        ...,
+        description="OpenCode prompt_async payload forwarded to upstream",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Optional metadata object (for example metadata.opencode.directory)"
+        ),
+    )
 
 
 __all__ = [
+    "A2AExtensionPromptAsyncRequest",
     "A2AExtensionPermissionReplyRequest",
     "A2AExtensionQueryRequest",
     "A2AExtensionQuestionRejectRequest",

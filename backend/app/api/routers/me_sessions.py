@@ -28,11 +28,14 @@ _UPSTREAM_ERRORS = {
     "upstream_error",
     "runtime_invalid",
 }
+_FORBIDDEN_ERRORS = {"session_forbidden"}
 
 
 def _status_code_for_session_error(detail: str) -> int:
     if detail == "session_not_found":
         return 404
+    if detail in _FORBIDDEN_ERRORS:
+        return 403
     if detail in _UPSTREAM_ERRORS:
         return 502
     return 400
