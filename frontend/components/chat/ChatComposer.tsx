@@ -83,6 +83,19 @@ export function ChatComposer({
           blurOnSubmit={false}
           returnKeyType="default"
         />
+        {input.length > 0 && (
+          <Pressable
+            className="h-9 w-6 items-center justify-center"
+            onPress={() => {
+              onInputChange("");
+              inputRef.current?.focus();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Clear input"
+          >
+            <Ionicons name="close-circle" size={18} color="#94a3b8" />
+          </Pressable>
+        )}
         <Pressable
           className={`h-9 w-9 items-center justify-center rounded-xl ${
             !input.trim() || Boolean(pendingInterrupt)
