@@ -66,6 +66,7 @@ class A2AScheduleService:
         A2AScheduleTask.CYCLE_WEEKLY,
         A2AScheduleTask.CYCLE_MONTHLY,
         A2AScheduleTask.CYCLE_INTERVAL,
+        A2AScheduleTask.CYCLE_SEQUENTIAL,
     }
 
     async def list_tasks(
@@ -535,14 +536,17 @@ class A2AScheduleService:
         ) or False
 
         scheduled_for = ensure_utc(selected_task.next_run_at or now_utc)
-        next_run_at = self.compute_next_run_at(
-            cycle_type=selected_task.cycle_type,
-            time_point=dict(selected_task.time_point or {}),
-            timezone_str=timezone_value,
-            after_utc=scheduled_for,
-            not_before_utc=now_utc,
-            is_superuser=is_superuser,
-        )
+        if selected_task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            next_run_at = None
+        else:
+            next_run_at = self.compute_next_run_at(
+                cycle_type=selected_task.cycle_type,
+                time_point=dict(selected_task.time_point or {}),
+                timezone_str=timezone_value,
+                after_utc=scheduled_for,
+                not_before_utc=now_utc,
+                is_superuser=is_superuser,
+            )
 
         run_id = uuid4()
         selected_task.next_run_at = next_run_at
@@ -703,6 +707,28 @@ class A2AScheduleService:
         if conversation_id is not None:
             task.conversation_id = conversation_id
 
+        if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL and task.enabled:
+            from app.db.models.user import User
+
+            timezone_value = await auth_handler.get_user_timezone(
+                db,
+                user_id=task.user_id,
+                default="UTC",
+            )
+            is_superuser = (
+                await db.scalar(
+                    select(User.is_superuser).where(User.id == task.user_id)
+                )
+            ) or False
+
+            task.next_run_at = self.compute_next_run_at(
+                cycle_type=task.cycle_type,
+                time_point=dict(task.time_point or {}),
+                timezone_str=timezone_value,
+                after_utc=ensure_utc(finished_at),
+                is_superuser=is_superuser,
+            )
+
         if final_status == A2AScheduleTask.STATUS_SUCCESS:
             task.consecutive_failures = 0
         elif final_status == A2AScheduleTask.STATUS_FAILED:
@@ -816,7 +842,7 @@ class A2AScheduleService:
         normalized = (value or "").strip().lower()
         if normalized not in self._allowed_cycle_types:
             raise A2AScheduleValidationError(
-                "cycle_type must be one of daily, weekly, monthly, interval"
+                "cycle_type must be one of daily, weekly, monthly, interval, sequential"
             )
         return normalized
 
@@ -831,7 +857,7 @@ class A2AScheduleService:
         if not isinstance(time_point, dict):
             raise A2AScheduleValidationError("time_point must be an object")
 
-        if cycle_type == A2AScheduleTask.CYCLE_INTERVAL:
+        if cycle_type in (A2AScheduleTask.CYCLE_INTERVAL, A2AScheduleTask.CYCLE_SEQUENTIAL):
             minutes_raw = time_point.get("minutes", time_point.get("interval_minutes"))
             minutes = self._normalize_interval_minutes(
                 minutes_raw, is_superuser=is_superuser
@@ -1201,7 +1227,7 @@ class A2AScheduleService:
             timezone_str=timezone_str,
         )
 
-        if normalized_cycle == A2AScheduleTask.CYCLE_INTERVAL:
+        if normalized_cycle in (A2AScheduleTask.CYCLE_INTERVAL, A2AScheduleTask.CYCLE_SEQUENTIAL):
             minutes = self._normalize_interval_minutes(
                 normalized_point.get(
                     "minutes", normalized_point.get("interval_minutes")

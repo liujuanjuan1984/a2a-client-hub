@@ -7,17 +7,24 @@ import {
 const DEFAULT_PAGE_SIZE = 50;
 type PageOptions = { page?: number; size?: number };
 
-export type ScheduleCycleType = "daily" | "weekly" | "monthly" | "interval";
+export type ScheduleCycleType =
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "interval"
+  | "sequential";
 
 export type DailyTimePoint = { time: string };
 export type WeeklyTimePoint = { weekday: number; time: string };
 export type MonthlyTimePoint = { day: number; time: string };
 export type IntervalTimePoint = { minutes: number; start_at?: string };
+export type SequentialTimePoint = { minutes: number; start_at?: string };
 export type ScheduleTimePoint =
   | DailyTimePoint
   | WeeklyTimePoint
   | MonthlyTimePoint
-  | IntervalTimePoint;
+  | IntervalTimePoint
+  | SequentialTimePoint;
 
 export type ScheduledJob = {
   id: string;

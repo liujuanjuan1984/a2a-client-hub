@@ -56,6 +56,7 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
     CYCLE_WEEKLY: ClassVar[str] = "weekly"
     CYCLE_MONTHLY: ClassVar[str] = "monthly"
     CYCLE_INTERVAL: ClassVar[str] = "interval"
+    CYCLE_SEQUENTIAL: ClassVar[str] = "sequential"
 
     name = Column(
         String(120),

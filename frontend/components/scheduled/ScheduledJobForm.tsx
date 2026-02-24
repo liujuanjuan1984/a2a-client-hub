@@ -52,7 +52,7 @@ export function ScheduledJobForm({
   const isEditingStartAtRef = useRef(false);
 
   useEffect(() => {
-    if (form.cycle_type !== "interval") {
+    if (form.cycle_type !== "interval" && form.cycle_type !== "sequential") {
       isEditingStartAtRef.current = false;
     }
   }, [form.cycle_type]);
@@ -73,6 +73,7 @@ export function ScheduledJobForm({
     { value: "weekly", label: "Weekly" },
     { value: "monthly", label: "Monthly" },
     { value: "interval", label: "Interval" },
+    { value: "sequential", label: "Sequential" },
   ];
   const weekdayOptions: { value: number; label: string }[] = [
     { value: 1, label: "Mon" },
@@ -98,7 +99,7 @@ export function ScheduledJobForm({
         time: typeof time === "string" ? time : "07:00",
       };
     }
-    if (nextCycle === "interval") {
+    if (nextCycle === "interval" || nextCycle === "sequential") {
       const minutes = (current as { minutes?: unknown })?.minutes;
       const startAt = (current as { start_at?: unknown })?.start_at;
       const resolvedStartAt =
@@ -265,10 +266,12 @@ export function ScheduledJobForm({
         </>
       ) : null}
 
-      {form.cycle_type === "interval" ? (
+      {form.cycle_type === "interval" || form.cycle_type === "sequential" ? (
         <>
           <Text className="mt-3 text-xs text-muted">
-            Interval minutes (5..1440)
+            {form.cycle_type === "sequential"
+              ? "Wait minutes after completion (5..1440)"
+              : "Interval minutes (5..1440)"}
           </Text>
           <TextInput
             className="mt-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
