@@ -68,7 +68,7 @@ jobs:
         run: uv run bash scripts/mypy_changed.sh
 
       - name: Run backend tests
-        run: uv run pytest
+        run: uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=30
 
       - name: Run backend dependency audit
         run: uv run pip-audit
@@ -103,4 +103,4 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=1024
 
       - name: Run frontend tests
-        run: npm test -- --runInBand
+        run: npm test -- --coverage --maxWorkers=25%

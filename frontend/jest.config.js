@@ -3,6 +3,15 @@ const rnPreset = require("react-native/jest-preset");
 module.exports = {
   ...rnPreset,
   testMatch: ["**/?(*.)+(spec|test).[tj]s?(x)"],
+  collectCoverage: true,
+  coverageThreshold: {
+    global: {
+      branches: 20,
+      functions: 25,
+      lines: 30,
+      statements: 30,
+    },
+  },
   setupFiles: ["<rootDir>/jest.preload.ts"],
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   transformIgnorePatterns: [
