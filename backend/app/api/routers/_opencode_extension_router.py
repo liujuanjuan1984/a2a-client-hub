@@ -65,6 +65,12 @@ def _summarize_query_object(query: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return {"keys": keys, "size": len(query)}
 
 
+def _summarize_metadata_keys(metadata: Optional[Dict[str, Any]]) -> list[str]:
+    if not metadata:
+        return []
+    return sorted(str(k) for k in metadata.keys())[:20]
+
+
 def create_opencode_extension_router(
     *,
     prefix: str,
@@ -255,7 +261,7 @@ def create_opencode_extension_router(
 
         runtime = await _get_runtime(db, current_user, agent_id)
         request_keys = sorted(payload.request.keys())[:20]
-        metadata_keys = sorted(payload.metadata.keys())[:20] if payload.metadata else []
+        metadata_keys = _summarize_metadata_keys(payload.metadata)
         logger.info(
             _scope_message("OpenCode session prompt_async requested"),
             extra={
@@ -306,9 +312,7 @@ def create_opencode_extension_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
                 "reply": payload.reply,
-                "metadata_keys": (
-                    sorted(payload.metadata.keys())[:20] if payload.metadata else []
-                ),
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
             },
         )
         return await _run_extension_call(
@@ -344,9 +348,7 @@ def create_opencode_extension_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
                 "answers_count": len(payload.answers),
-                "metadata_keys": (
-                    sorted(payload.metadata.keys())[:20] if payload.metadata else []
-                ),
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
             },
         )
         return await _run_extension_call(
@@ -381,9 +383,7 @@ def create_opencode_extension_router(
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
-                "metadata_keys": (
-                    sorted(payload.metadata.keys())[:20] if payload.metadata else []
-                ),
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
             },
         )
         return await _run_extension_call(
