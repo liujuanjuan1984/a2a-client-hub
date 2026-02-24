@@ -57,12 +57,20 @@ def _execution_metadata(
 
 async def _ensure_task_session(*, db, task: A2AScheduleTask) -> ConversationThread:
     now = utc_now()
-    
+
     # Check conversation_policy
-    if task.conversation_policy == A2AScheduleTask.POLICY_REUSE and task.conversation_id:
-        stmt = select(ConversationThread).where(ConversationThread.id == task.conversation_id)
+    if (
+        task.conversation_policy == A2AScheduleTask.POLICY_REUSE
+        and task.conversation_id
+    ):
+        stmt = select(ConversationThread).where(
+            ConversationThread.id == task.conversation_id
+        )
         existing_thread = await db.scalar(stmt)
-        if existing_thread and existing_thread.status != ConversationThread.STATUS_ARCHIVED:
+        if (
+            existing_thread
+            and existing_thread.status != ConversationThread.STATUS_ARCHIVED
+        ):
             existing_thread.last_active_at = now
             return existing_thread
 
