@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -9,9 +10,10 @@ from sqlalchemy import select
 
 from app.api.routers import auth as auth_router
 from app.core.config import settings
-from app.core.security import create_user_token, get_password_hash
+from app.core.security import DUMMY_PASSWORD_HASH, create_user_token, get_password_hash
 from app.db.models.invitation import Invitation, InvitationStatus
 from app.db.models.user import User
+from app.handlers import auth as auth_handler
 from app.utils.timezone_util import utc_now
 from tests.api_utils import create_test_client
 
@@ -508,6 +510,22 @@ async def test_register_rejects_weak_password(client: AsyncClient) -> None:
     )
     assert response.status_code == 400
     assert "Password" in response.json()["detail"]
+
+
+async def test_authenticate_user_not_found_runs_dummy_hash_verification(
+    async_db_session,
+) -> None:
+    password = "NotUsed!1"  # pragma: allowlist secret
+
+    with patch("app.handlers.auth.verify_password", return_value=False) as verify_mock:
+        with pytest.raises(auth_handler.UserNotFoundError, match="Invalid credentials"):
+            await auth_handler.authenticate_user(
+                async_db_session,
+                email="missing@example.com",
+                password=password,
+            )
+
+    verify_mock.assert_called_once_with(password, DUMMY_PASSWORD_HASH)
 
 
 async def test_login_with_wrong_password_returns_unauthorized(
