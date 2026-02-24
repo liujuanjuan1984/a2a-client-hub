@@ -385,6 +385,53 @@ async def test_schedule_create_interval_accepts_start_at(
         assert payload["time_point"]["start_at"] == "2026-02-23T00:15:00+00:00"
 
 
+async def test_schedule_enable_interval_accepts_persisted_utc_start_at(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 1)
+
+    user = await create_user(
+        async_db_session,
+        skip_onboarding_defaults=True,
+        timezone="Asia/Shanghai",
+    )
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="enable")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        create_resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Interval enable",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "cycle_type": "interval",
+                "time_point": {
+                    "minutes": 30,
+                    "start_at": "2026-02-23T08:15",
+                },
+                "enabled": False,
+            },
+        )
+        assert create_resp.status_code == 201
+        created = create_resp.json()
+        task_id = created["id"]
+        assert created["time_point"]["start_at"] == "2026-02-23T00:15:00+00:00"
+
+        enable_resp = await client.post(f"/me/a2a/schedules/{task_id}/enable")
+        assert enable_resp.status_code == 200
+        enabled_payload = enable_resp.json()
+        assert enabled_payload["enabled"] is True
+        assert enabled_payload["next_run_at"] is not None
+
+
 async def test_schedule_create_interval_rejects_start_at_with_timezone_offset(
     async_db_session,
     async_session_maker,

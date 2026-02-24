@@ -827,6 +827,7 @@ class A2AScheduleService:
         time_point: Dict[str, Any],
         is_superuser: bool = False,
         timezone_str: str = "UTC",
+        allow_timezone_aware_interval_start_at: bool = False,
     ) -> Dict[str, Any]:
         if not isinstance(time_point, dict):
             raise A2AScheduleValidationError("time_point must be an object")
@@ -839,6 +840,7 @@ class A2AScheduleService:
             interval_start_at = self._normalize_interval_start_at(
                 time_point.get("start_at"),
                 timezone_str=timezone_str,
+                allow_timezone_aware=allow_timezone_aware_interval_start_at,
             )
             normalized: Dict[str, Any] = {"minutes": minutes}
             if interval_start_at is not None:
@@ -911,7 +913,10 @@ class A2AScheduleService:
 
     @staticmethod
     def _normalize_interval_start_at(
-        value: Any, timezone_str: str = "UTC"
+        value: Any,
+        timezone_str: str = "UTC",
+        *,
+        allow_timezone_aware: bool = False,
     ) -> Optional[str]:
         if value is None or value == "":
             return None
@@ -929,19 +934,23 @@ class A2AScheduleService:
                         "interval time_point.start_at must be a valid ISO datetime"
                     ) from exc
             if dt.tzinfo is not None:
-                raise A2AScheduleValidationError(
-                    "interval time_point.start_at must be timezone-naive "
-                    "(without Z or offset)"
-                )
+                if not allow_timezone_aware:
+                    raise A2AScheduleValidationError(
+                        "interval time_point.start_at must be timezone-naive "
+                        "(without Z or offset)"
+                    )
+                return ensure_utc(dt).isoformat()
             tz = resolve_timezone(timezone_str, default="UTC")
             dt = dt.replace(tzinfo=tz)
             return ensure_utc(dt).isoformat()
         if isinstance(value, datetime):
             if value.tzinfo is not None:
-                raise A2AScheduleValidationError(
-                    "interval time_point.start_at must be timezone-naive "
-                    "(without Z or offset)"
-                )
+                if not allow_timezone_aware:
+                    raise A2AScheduleValidationError(
+                        "interval time_point.start_at must be timezone-naive "
+                        "(without Z or offset)"
+                    )
+                return ensure_utc(value).isoformat()
             tz = resolve_timezone(timezone_str, default="UTC")
             return ensure_utc(value.replace(tzinfo=tz)).isoformat()
 
@@ -1199,6 +1208,7 @@ class A2AScheduleService:
             time_point=time_point,
             is_superuser=is_superuser,
             timezone_str=timezone_str,
+            allow_timezone_aware_interval_start_at=True,
         )
 
         if normalized_cycle == A2AScheduleTask.CYCLE_INTERVAL:
