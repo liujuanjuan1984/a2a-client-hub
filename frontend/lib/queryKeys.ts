@@ -3,6 +3,26 @@ export const queryKeys = {
   agents: {
     catalog: () => ["agents", "catalog"] as const,
   },
+  schedules: {
+    listRoot: () => ["scheduled-jobs", "list"] as const,
+    list: (filters?: Record<string, unknown>) =>
+      filters
+        ? (["scheduled-jobs", "list", filters] as const)
+        : (["scheduled-jobs", "list"] as const),
+    executionsRoot: (taskId?: string) =>
+      taskId
+        ? (["scheduled-jobs", "executions", taskId] as const)
+        : (["scheduled-jobs", "executions"] as const),
+    executions: (
+      taskId: string,
+      options?: {
+        page?: number;
+      },
+    ) =>
+      typeof options?.page === "number"
+        ? (["scheduled-jobs", "executions", taskId, options.page] as const)
+        : (["scheduled-jobs", "executions", taskId] as const),
+  },
   sessions: {
     directory: () => ["sessions", "directory"] as const,
     scheduledJobs: () => ["scheduled-jobs", "list"] as const,

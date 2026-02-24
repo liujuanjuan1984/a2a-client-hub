@@ -345,7 +345,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       );
       allowNextNavigation();
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions.scheduledJobs(),
+        queryKey: queryKeys.schedules.listRoot(),
       });
       goBackOrHome();
     } catch (error) {

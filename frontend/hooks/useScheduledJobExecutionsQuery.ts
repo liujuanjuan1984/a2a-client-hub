@@ -28,7 +28,7 @@ export function useScheduledJobExecutionsQuery(options: {
   );
 
   return usePaginatedList<ScheduledJobExecution>({
-    queryKey: queryKeys.sessions.scheduledJobExecutions(taskId ?? "missing"),
+    queryKey: queryKeys.schedules.executions(taskId ?? "missing"),
     fetchPage,
     getKey: (item) => item.id,
     errorTitle: "Load executions failed",

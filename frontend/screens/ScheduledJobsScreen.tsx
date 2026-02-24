@@ -1,6 +1,5 @@
-import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
@@ -39,7 +38,7 @@ export function ScheduledJobsScreen() {
     loadingMore,
     loadFirstPage,
     loadMore,
-  } = useScheduledJobsQuery({ enabled: false });
+  } = useScheduledJobsQuery({ enabled: true });
 
   const sortedJobs = useMemo(() => {
     return [...jobs].sort((a, b) => {
@@ -68,27 +67,8 @@ export function ScheduledJobsScreen() {
     enabled: Boolean(expandedExecutionsTaskId),
   });
 
-  const hasLoadedRef = useRef(false);
-  useFocusEffect(
-    useCallback(() => {
-      const mode = hasLoadedRef.current ? "refreshing" : "loading";
-      loadFirstPage(mode)
-        .then((succeeded) => {
-          if (succeeded) {
-            hasLoadedRef.current = true;
-          }
-        })
-        .catch((err) => {
-          console.error("Scheduled jobs load error:", err);
-        });
-    }, [loadFirstPage]),
-  );
-
   const onRefresh = async () => {
-    const succeeded = await loadFirstPage("refreshing");
-    if (succeeded) {
-      hasLoadedRef.current = true;
-    }
+    await loadFirstPage("refreshing");
   };
 
   const toggleExecutionsPanel = (taskId: string) => {
@@ -172,13 +152,6 @@ export function ScheduledJobsScreen() {
                 onToggleEnabled={async () => {
                   try {
                     await toggleJobStatus(job);
-                    const succeeded = await loadFirstPage("refreshing");
-                    if (succeeded) {
-                      hasLoadedRef.current = true;
-                    }
-                    if (expandedExecutionsTaskId === job.id) {
-                      await executionsQuery.loadFirstPage("refreshing");
-                    }
                   } catch (error) {
                     const message =
                       error instanceof Error ? error.message : "Update failed.";
@@ -192,13 +165,6 @@ export function ScheduledJobsScreen() {
                 onMarkFailed={async () => {
                   try {
                     await markJobFailed(job);
-                    const succeeded = await loadFirstPage("refreshing");
-                    if (succeeded) {
-                      hasLoadedRef.current = true;
-                    }
-                    if (expandedExecutionsTaskId === job.id) {
-                      await executionsQuery.loadFirstPage("refreshing");
-                    }
                     toast.success(
                       "Job updated",
                       "Marked running task as failed.",
