@@ -1,5 +1,8 @@
 import { apiRequest } from "@/lib/api/client";
-import { parsePaginatedListResponse } from "@/lib/api/pagination";
+import {
+  parsePaginatedListResponse,
+  resolveNextPageWithFallback,
+} from "@/lib/api/pagination";
 import { type UnifiedSessionSource } from "@/lib/sessionIds";
 
 export type SessionListItem = {
@@ -56,12 +59,7 @@ export const listSessionsPage = async (options?: {
   });
 
   const parsed = parsePaginatedListResponse(response);
-  const pagination =
-    parsed.pagination && typeof parsed.pagination === "object"
-      ? (parsed.pagination as Record<string, unknown>)
-      : {};
-  const pages = typeof pagination.pages === "number" ? pagination.pages : 0;
-  const nextPage = pages > 0 && page < pages ? page + 1 : undefined;
+  const nextPage = resolveNextPageWithFallback({ parsed, page, size });
   return { ...parsed, nextPage };
 };
 
@@ -84,12 +82,7 @@ export const listSessionMessagesPage = async (
   });
 
   const parsed = parsePaginatedListResponse(response);
-  const nextPage =
-    typeof parsed.nextPage === "number"
-      ? parsed.nextPage
-      : parsed.items.length >= size
-        ? page + 1
-        : undefined;
+  const nextPage = resolveNextPageWithFallback({ parsed, page, size });
 
   return { ...parsed, nextPage };
 };

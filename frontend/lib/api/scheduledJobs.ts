@@ -1,5 +1,8 @@
 import { apiRequest } from "@/lib/api/client";
-import { parsePaginatedListResponse } from "@/lib/api/pagination";
+import {
+  parsePaginatedListResponse,
+  resolveNextPageWithFallback,
+} from "@/lib/api/pagination";
 
 const DEFAULT_PAGE_SIZE = 50;
 type PageOptions = { page?: number; size?: number };
@@ -81,14 +84,7 @@ export const listScheduledJobsPage = async ({
     },
   );
   const parsed = parsePaginatedListResponse(response);
-
-  // Backward-compatible heuristic when the backend doesn't send pagination.
-  const nextPage =
-    typeof parsed.nextPage === "number"
-      ? parsed.nextPage
-      : parsed.items.length >= size
-        ? page + 1
-        : undefined;
+  const nextPage = resolveNextPageWithFallback({ parsed, page, size });
 
   return { ...parsed, nextPage };
 };
@@ -153,14 +149,7 @@ export const listScheduledJobExecutionsPage = async (
   );
 
   const parsed = parsePaginatedListResponse(response);
-
-  // Backward-compatible heuristic when the backend doesn't send pagination.
-  const nextPage =
-    typeof parsed.nextPage === "number"
-      ? parsed.nextPage
-      : parsed.items.length >= size
-        ? page + 1
-        : undefined;
+  const nextPage = resolveNextPageWithFallback({ parsed, page, size });
 
   return { ...parsed, nextPage };
 };

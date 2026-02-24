@@ -15,6 +15,12 @@ export type PaginatedResult<T> = {
   currentPage?: number;
 };
 
+type NextPageFallbackOptions<T> = {
+  parsed: PaginatedResult<T>;
+  page: number;
+  size: number;
+};
+
 export const inferNextPage = (
   pagination: unknown,
 ): { nextPage?: number; currentPage?: number } => {
@@ -70,4 +76,25 @@ export const parsePaginatedListResponse = <T>(
     nextPage,
     currentPage,
   };
+};
+
+export const resolveNextPageWithFallback = <T>({
+  parsed,
+  page,
+  size,
+}: NextPageFallbackOptions<T>): number | undefined => {
+  if (typeof parsed.nextPage === "number") {
+    return parsed.nextPage;
+  }
+
+  if (parsed.pagination && typeof parsed.pagination === "object") {
+    const typedPagination = parsed.pagination as Record<string, unknown>;
+    const pages =
+      typeof typedPagination.pages === "number" ? typedPagination.pages : null;
+    if (typeof pages === "number" && page < pages) {
+      return page + 1;
+    }
+  }
+
+  return parsed.items.length >= size ? page + 1 : undefined;
 };
