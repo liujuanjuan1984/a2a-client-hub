@@ -51,6 +51,7 @@ async def test_schedule_routes_crud_and_toggle(
                 "name": "Morning digest",
                 "agent_id": str(agent.id),
                 "prompt": "Give me daily updates",
+                "timezone": "America/New_York",
                 "cycle_type": "daily",
                 "time_point": {"time": "09:15"},
                 "enabled": True,
@@ -61,6 +62,7 @@ async def test_schedule_routes_crud_and_toggle(
         task_id = created["id"]
         assert created["name"] == "Morning digest"
         assert created["enabled"] is True
+        assert created["timezone"] == "America/New_York"
         assert created["consecutive_failures"] == 0
 
         list_resp = await client.get(
@@ -82,6 +84,7 @@ async def test_schedule_routes_crud_and_toggle(
         )
         assert update_resp.status_code == 200
         assert update_resp.json()["prompt"] == "Give me concise daily updates"
+        assert update_resp.json()["timezone"] == "America/New_York"
 
         name_resp = await client.patch(
             f"/me/a2a/schedules/{task_id}",
@@ -409,6 +412,72 @@ async def test_schedule_create_weekly_uses_iso_weekday(
         payload = resp.json()
         assert payload["cycle_type"] == "weekly"
         assert payload["time_point"] == {"weekday": 1, "time": "09:15"}
+
+
+async def test_schedule_update_timezone_changes_intent_timezone(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="timezone")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        create_resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Timezone task",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "timezone": "America/New_York",
+                "cycle_type": "daily",
+                "time_point": {"time": "08:00"},
+                "enabled": False,
+            },
+        )
+        assert create_resp.status_code == 201
+        task_id = create_resp.json()["id"]
+        assert create_resp.json()["timezone"] == "America/New_York"
+
+        patch_resp = await client.patch(
+            f"/me/a2a/schedules/{task_id}",
+            json={"timezone": "Asia/Shanghai"},
+        )
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["timezone"] == "Asia/Shanghai"
+
+
+async def test_schedule_create_rejects_invalid_timezone(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="invalid-timezone"
+    )
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Invalid timezone",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "timezone": "Mars/Olympus",
+                "cycle_type": "daily",
+                "time_point": {"time": "08:00"},
+                "enabled": False,
+            },
+        )
+        assert resp.status_code == 400
+        assert "timezone must be a valid IANA timezone" in resp.json()["detail"]
 
 
 async def test_schedule_create_rejects_over_quota(

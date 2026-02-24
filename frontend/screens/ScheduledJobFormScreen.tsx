@@ -18,7 +18,10 @@ import {
   type ScheduleTimePoint,
   updateScheduledJob,
 } from "@/lib/api/scheduledJobs";
-import { localDateTimeInputToUtcIso } from "@/lib/datetime";
+import {
+  localDateTimeInputToUtcIso,
+  resolveUserTimeZone,
+} from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
@@ -30,6 +33,7 @@ const initialForm: ScheduledJobPayload = {
   name: "",
   agent_id: "",
   prompt: "",
+  timezone: "UTC",
   cycle_type: "daily",
   time_point: { time: "07:00" },
   enabled: true,
@@ -94,6 +98,7 @@ type Snapshot = {
   name: string;
   agent_id: string;
   prompt: string;
+  timezone: string;
   cycle_type: ScheduleCycleType;
   time_point: unknown;
   enabled: boolean;
@@ -104,6 +109,7 @@ const buildSnapshot = (form: ScheduledJobPayload): Snapshot => ({
   name: form.name.trim(),
   agent_id: form.agent_id,
   prompt: form.prompt.trim(),
+  timezone: form.timezone.trim(),
   cycle_type: form.cycle_type,
   time_point: normalizeTimePoint(form.cycle_type, form.time_point),
   enabled: form.enabled,
@@ -147,6 +153,16 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   }, [editing, form.agent_id, agentOptions]);
 
   useEffect(() => {
+    if (editing) return;
+    if (!userTimeZone?.trim()) return;
+    setForm((prev) => {
+      if (prev.timezone === userTimeZone) return prev;
+      if (prev.timezone && prev.timezone !== "UTC") return prev;
+      return { ...prev, timezone: userTimeZone };
+    });
+  }, [editing, userTimeZone]);
+
+  useEffect(() => {
     if (!editing || !normalizedJobId) return;
 
     let cancelled = false;
@@ -160,6 +176,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           name: found.name,
           agent_id: found.agent_id,
           prompt: found.prompt,
+          timezone: found.timezone || userTimeZone || resolveUserTimeZone(),
           cycle_type: found.cycle_type,
           time_point: normalizeTimePoint(found.cycle_type, found.time_point),
           enabled: found.enabled,
@@ -196,7 +213,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
     return () => {
       cancelled = true;
     };
-  }, [editing, normalizedJobId]);
+  }, [editing, normalizedJobId, userTimeZone]);
 
   useEffect(() => {
     if (initialSnapshotRef.current) return;
@@ -314,6 +331,11 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
         ...form,
         name: form.name.trim(),
         prompt: form.prompt.trim(),
+        timezone: (
+          form.timezone ||
+          userTimeZone ||
+          resolveUserTimeZone()
+        ).trim(),
         time_point: normalizeTimePoint(form.cycle_type, form.time_point) as any,
       };
       if (normalized.cycle_type === "interval") {

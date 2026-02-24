@@ -93,6 +93,13 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         nullable=False,
         comment="Cycle-specific trigger point definition",
     )
+    timezone = Column(
+        String(64),
+        nullable=False,
+        default="UTC",
+        server_default="UTC",
+        comment="IANA timezone representing user scheduling intent",
+    )
     enabled = Column(
         Boolean,
         nullable=False,

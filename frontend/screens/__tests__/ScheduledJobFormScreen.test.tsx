@@ -198,6 +198,7 @@ describe("ScheduledJobFormScreen", () => {
       name: "Daily Summary",
       agent_id: "agent-1",
       prompt: "Summarize status for this week",
+      timezone: expect.any(String),
       cycle_type: "daily",
       time_point: { time: "07:00" },
       enabled: true,
@@ -262,6 +263,7 @@ describe("ScheduledJobFormScreen", () => {
       name: "Interval Summary",
       agent_id: "agent-1",
       prompt: "Summarize status for this week",
+      timezone: "Asia/Shanghai",
       cycle_type: "interval",
       time_point: {
         minutes: 5,

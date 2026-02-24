@@ -20,6 +20,12 @@ class A2AScheduleTaskBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     agent_id: UUID
     prompt: str = Field(..., min_length=1, max_length=128_000)
+    timezone: str = Field(
+        default="UTC",
+        min_length=1,
+        max_length=64,
+        description="IANA timezone representing user scheduling intent.",
+    )
     cycle_type: A2AScheduleCycleType
     time_point: Dict[str, Any] = Field(
         default_factory=dict,
@@ -42,6 +48,7 @@ class A2AScheduleTaskUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
     agent_id: Optional[UUID] = None
     prompt: Optional[str] = Field(default=None, min_length=1, max_length=128_000)
+    timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     cycle_type: Optional[A2AScheduleCycleType] = None
     time_point: Optional[Dict[str, Any]] = None
     enabled: Optional[bool] = None
