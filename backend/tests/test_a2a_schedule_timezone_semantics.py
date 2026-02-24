@@ -42,3 +42,30 @@ def test_daily_schedule_preserves_eight_am_across_dst(
 
     local = next_run_at.astimezone(ZoneInfo("America/New_York"))
     assert (local.hour, local.minute) == (8, 0)
+
+
+def test_daily_schedule_resolves_nonexistent_local_time_in_dst_gap() -> None:
+    next_run_at = a2a_schedule_service.compute_next_run_at(
+        cycle_type="daily",
+        time_point={"time": "02:30"},
+        timezone_str="America/New_York",
+        after_utc=datetime(2026, 3, 8, 5, 0, tzinfo=timezone.utc),
+    )
+
+    assert next_run_at == datetime(2026, 3, 8, 7, 30, tzinfo=timezone.utc)
+    local = next_run_at.astimezone(ZoneInfo("America/New_York"))
+    assert (local.hour, local.minute) == (3, 30)
+
+
+def test_daily_schedule_picks_first_occurrence_for_ambiguous_local_time() -> None:
+    next_run_at = a2a_schedule_service.compute_next_run_at(
+        cycle_type="daily",
+        time_point={"time": "01:30"},
+        timezone_str="America/New_York",
+        after_utc=datetime(2026, 11, 1, 4, 0, tzinfo=timezone.utc),
+    )
+
+    assert next_run_at == datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc)
+    local = next_run_at.astimezone(ZoneInfo("America/New_York"))
+    assert (local.hour, local.minute) == (1, 30)
+    assert local.fold == 0

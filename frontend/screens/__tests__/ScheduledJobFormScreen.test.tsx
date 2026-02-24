@@ -228,7 +228,7 @@ describe("ScheduledJobFormScreen", () => {
       time_point: { minutes: 5, start_at: "2026-02-22T01:30:00.000Z" },
       enabled: true,
     });
-    const expectedStartAt = "2026-02-23T09:30";
+    const expectedStartAt = "2026-02-23T01:30:00.000Z";
 
     await act(async () => {
       create(<ScheduledJobFormScreen />);

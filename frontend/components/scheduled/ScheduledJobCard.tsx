@@ -58,6 +58,7 @@ const getCardTone = (job: ScheduledJob) => {
 type ScheduledJobCardProps = {
   job: ScheduledJob;
   agentName: string;
+  timeZone?: string;
   executions: ScheduledJobExecution[];
   executionsOpen: boolean;
   executionsLoading: boolean;
@@ -73,6 +74,7 @@ type ScheduledJobCardProps = {
 export function ScheduledJobCard({
   job,
   agentName,
+  timeZone,
   executions,
   executionsOpen,
   executionsLoading,
@@ -151,14 +153,14 @@ export function ScheduledJobCard({
             {intervalTimePoint ? (
               <Text className={`mt-1 text-xs ${tone.text}`}>
                 Interval: every {intervalTimePoint.minutes} min, start{" "}
-                {formatLocalDateTime(intervalTimePoint.start_at)}
+                {formatLocalDateTime(intervalTimePoint.start_at, timeZone)}
               </Text>
             ) : null}
             <Text className={`mt-1 text-xs ${tone.text}`}>
-              Next: {formatLocalDateTime(job.next_run_at)}
+              Next: {formatLocalDateTime(job.next_run_at, timeZone)}
             </Text>
             <Text className={`mt-1 text-xs ${tone.text}`}>
-              Last: {formatLocalDateTime(job.last_run_at)} (
+              Last: {formatLocalDateTime(job.last_run_at, timeZone)} (
               {job.last_run_status ?? "-"})
             </Text>
           </View>
@@ -265,6 +267,7 @@ export function ScheduledJobCard({
                           execution.finished_at ??
                             execution.started_at ??
                             execution.scheduled_for,
+                          timeZone,
                         )}
                       </Text>
                       <Text

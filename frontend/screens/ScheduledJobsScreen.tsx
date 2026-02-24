@@ -15,11 +15,13 @@ import { useScheduledJobsQuery } from "@/hooks/useScheduledJobsQuery";
 import { blurActiveElement } from "@/lib/focus";
 import { buildScheduledJobEditHref, scheduledJobNewHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
+import { useSessionStore } from "@/store/session";
 
 export function ScheduledJobsScreen() {
   const router = useRouter();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
   const { markJobFailed, toggleJobStatus } = useScheduledJobs();
+  const userTimeZone = useSessionStore((state) => state.user?.timezone);
 
   const [expandedExecutionsTaskId, setExpandedExecutionsTaskId] = useState<
     string | null
@@ -134,6 +136,7 @@ export function ScheduledJobsScreen() {
               <ScheduledJobCard
                 key={job.id}
                 job={job}
+                timeZone={userTimeZone}
                 agentName={
                   agentOptions.find((agent) => agent.id === job.agent_id)
                     ?.name ?? job.agent_id

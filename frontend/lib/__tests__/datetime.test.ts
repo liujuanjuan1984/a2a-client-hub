@@ -81,17 +81,32 @@ describe("datetime helpers", () => {
   });
 
   it("normalizes local datetime input for backend payload", () => {
-    expect(localDateTimeInputToUtcIso("2026-02-23T09:30")).toBe(
-      "2026-02-23T09:30",
+    expect(localDateTimeInputToUtcIso("2026-02-23T09:30", "UTC")).toBe(
+      "2026-02-23T09:30:00.000Z",
     );
-    expect(localDateTimeInputToUtcIso("2026-02-23 09:30")).toBe(
-      "2026-02-23T09:30",
+    expect(localDateTimeInputToUtcIso("2026-02-23 09:30", "UTC")).toBe(
+      "2026-02-23T09:30:00.000Z",
     );
     expect(localDateTimeInputToUtcIso("2026-02-23T09:30:00+08:00")).toBe(
-      "2026-02-23T09:30:00+08:00",
+      "2026-02-23T01:30:00.000Z",
     );
     expect(localDateTimeInputToUtcIso("bad-datetime")).toBeNull();
-    expect(localDateTimeInputToUtcIso("2026-02-30T09:30")).toBeNull();
+    expect(localDateTimeInputToUtcIso("2026-02-30T09:30", "UTC")).toBeNull();
+  });
+
+  it("rejects DST-gap local datetime in timezone-aware validation", () => {
+    expect(
+      localDateTimeInputToUtcIso("2026-03-08T02:30", "America/New_York"),
+    ).toBeNull();
+    expect(
+      localDateTimeInputToUtcIso("2026-03-08T02:30", "Asia/Shanghai"),
+    ).toBe("2026-03-07T18:30:00.000Z");
+  });
+
+  it("accepts repeated local datetime during DST fall-back", () => {
+    expect(
+      localDateTimeInputToUtcIso("2026-11-01T01:30", "America/New_York"),
+    ).toBe("2026-11-01T05:30:00.000Z");
   });
 
   it("builds next top-of-hour local input default", () => {
@@ -110,5 +125,11 @@ describe("datetime helpers", () => {
         new Date("2026-02-23T00:20:00.000Z"),
       ),
     ).toBe("2026-02-23T09:00");
+    expect(
+      getNextTopOfHourLocalInputValue(
+        "America/New_York",
+        new Date("2026-03-08T06:30:00.000Z"),
+      ),
+    ).toBe("2026-03-08T03:00");
   });
 });

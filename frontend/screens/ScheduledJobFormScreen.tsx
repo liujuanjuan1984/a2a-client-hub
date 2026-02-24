@@ -268,7 +268,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
 
       const rawStartAt = (form.time_point as { start_at?: unknown })?.start_at;
       if (typeof rawStartAt === "string" && rawStartAt.trim()) {
-        if (!localDateTimeInputToUtcIso(rawStartAt)) {
+        if (!localDateTimeInputToUtcIso(rawStartAt, userTimeZone)) {
           toast.error(
             "Validation failed",
             "Start datetime must be a valid date time.",
@@ -321,6 +321,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           ?.start_at;
         const normalizedStartAt = localDateTimeInputToUtcIso(
           typeof rawStartAt === "string" ? rawStartAt : "",
+          userTimeZone,
         );
         normalized.time_point = {
           minutes: normalizeIntervalMinutes(
