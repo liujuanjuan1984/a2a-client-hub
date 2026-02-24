@@ -20,6 +20,7 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message as agent_message_handler
 from app.services.conversation_identity import conversation_identity_service
+from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import utc_now
@@ -425,7 +426,7 @@ class SessionHubService:
         normalized_client_agent_message_id = normalize_non_empty_text(
             client_agent_message_id
         )
-        normalized_idempotency_key = normalize_non_empty_text(idempotency_key)
+        normalized_idempotency_key = normalize_idempotency_key(idempotency_key)
         if normalized_user_message_id:
             metadata["client_message_id"] = normalized_user_message_id
         if normalized_idempotency_key:
@@ -645,7 +646,7 @@ class SessionHubService:
             metadata = candidate.message_metadata
             if not isinstance(metadata, dict):
                 continue
-            candidate_key = normalize_non_empty_text(
+            candidate_key = normalize_idempotency_key(
                 metadata.get("invoke_idempotency_key")
             )
             if candidate_key == idempotency_key:

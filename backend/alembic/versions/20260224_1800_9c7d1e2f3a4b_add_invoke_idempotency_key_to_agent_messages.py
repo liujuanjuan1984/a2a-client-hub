@@ -38,10 +38,17 @@ def upgrade() -> None:
         sa.text(
             f"""
             UPDATE {SCHEMA_NAME}.agent_messages
-            SET invoke_idempotency_key = NULLIF(BTRIM(metadata ->> 'invoke_idempotency_key'), '')
+            SET invoke_idempotency_key = CASE
+                WHEN LENGTH(NULLIF(BTRIM(metadata ->> 'invoke_idempotency_key'), '')) <= 160
+                    THEN NULLIF(BTRIM(metadata ->> 'invoke_idempotency_key'), '')
+                ELSE LEFT(NULLIF(BTRIM(metadata ->> 'invoke_idempotency_key'), ''), 125)
+                    || ':h:'
+                    || MD5(NULLIF(BTRIM(metadata ->> 'invoke_idempotency_key'), ''))
+            END
             WHERE invoke_idempotency_key IS NULL
               AND metadata IS NOT NULL
               AND metadata ? 'invoke_idempotency_key'
+              AND NULLIF(BTRIM(metadata ->> 'invoke_idempotency_key'), '') IS NOT NULL
             """
         )
     )

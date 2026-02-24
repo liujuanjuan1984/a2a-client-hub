@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.services import invoke_route_runner
 from app.services.a2a_invoke_service import StreamFinishReason, StreamOutcome
+from app.utils.idempotency_key import IDEMPOTENCY_KEY_MAX_LENGTH
 
 
 async def _consume_stream(response: StreamingResponse) -> None:
@@ -342,6 +343,29 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     assert state.persisted_response_content == "partial response"
     assert state.persisted_error_code == "timeout"
     assert state.persisted_finish_reason == "timeout_total"
+
+
+def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
+    long_user_message_id = "m" * 512
+    state = invoke_route_runner._InvokeState(
+        local_session_id=None,
+        local_source=None,
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        user_message_id=long_user_message_id,
+        client_agent_message_id=None,
+    )
+
+    resolved = invoke_route_runner._resolve_invoke_idempotency_key(
+        state=state,
+        transport="scheduled",
+    )
+
+    assert resolved is not None
+    assert len(resolved) == IDEMPOTENCY_KEY_MAX_LENGTH
+    assert ":h:" in resolved
 
 
 @pytest.mark.asyncio

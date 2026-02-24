@@ -30,6 +30,7 @@ from app.services.invoke_session_binding import (
 )
 from app.services.session_hub import session_hub_service
 from app.services.ws_ticket_service import ws_ticket_service
+from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import (
     as_dict,
     extract_context_id,
@@ -313,11 +314,13 @@ def _resolve_invoke_idempotency_key(
         if isinstance(raw_run_id, str):
             metadata_run_id = normalize_non_empty_text(raw_run_id)
     if metadata_run_id:
-        return f"run:{metadata_run_id}:{transport}"
+        return normalize_idempotency_key(f"run:{metadata_run_id}:{transport}")
 
     normalized_user_message_id = normalize_non_empty_text(state.user_message_id)
     if normalized_user_message_id:
-        return f"user:{normalized_user_message_id}:{transport}"
+        return normalize_idempotency_key(
+            f"user:{normalized_user_message_id}:{transport}"
+        )
     return None
 
 
