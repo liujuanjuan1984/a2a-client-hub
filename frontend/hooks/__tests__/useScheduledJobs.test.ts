@@ -7,15 +7,24 @@ import {
   markScheduledJobFailed,
 } from "@/lib/api/scheduledJobs";
 
+const mockInvalidateQueries = jest.fn();
+
 jest.mock("@/lib/api/scheduledJobs", () => ({
   disableScheduledJob: jest.fn(),
   enableScheduledJob: jest.fn(),
   markScheduledJobFailed: jest.fn(),
 }));
 
+jest.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({
+    invalidateQueries: mockInvalidateQueries,
+  }),
+}));
+
 describe("useScheduledJobs", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInvalidateQueries.mockResolvedValue(undefined);
   });
 
   it("toggles enabled job to disabled", async () => {
@@ -28,6 +37,13 @@ describe("useScheduledJobs", () => {
 
     expect(disableScheduledJob).toHaveBeenCalledWith("job-1");
     expect(enableScheduledJob).not.toHaveBeenCalled();
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
+    expect(mockInvalidateQueries).toHaveBeenNthCalledWith(1, {
+      queryKey: ["scheduled-jobs", "list"],
+    });
+    expect(mockInvalidateQueries).toHaveBeenNthCalledWith(2, {
+      queryKey: ["scheduled-jobs", "executions", "job-1"],
+    });
   });
 
   it("toggles disabled job to enabled", async () => {
@@ -40,6 +56,13 @@ describe("useScheduledJobs", () => {
 
     expect(enableScheduledJob).toHaveBeenCalledWith("job-2");
     expect(disableScheduledJob).not.toHaveBeenCalled();
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
+    expect(mockInvalidateQueries).toHaveBeenNthCalledWith(1, {
+      queryKey: ["scheduled-jobs", "list"],
+    });
+    expect(mockInvalidateQueries).toHaveBeenNthCalledWith(2, {
+      queryKey: ["scheduled-jobs", "executions", "job-2"],
+    });
   });
 
   it("marks a job as failed with reason", async () => {
@@ -54,6 +77,13 @@ describe("useScheduledJobs", () => {
 
     expect(markScheduledJobFailed).toHaveBeenCalledWith("job-3", {
       reason: "Manual stop from scheduled jobs UI",
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
+    expect(mockInvalidateQueries).toHaveBeenNthCalledWith(1, {
+      queryKey: ["scheduled-jobs", "list"],
+    });
+    expect(mockInvalidateQueries).toHaveBeenNthCalledWith(2, {
+      queryKey: ["scheduled-jobs", "executions", "job-3"],
     });
   });
 });
