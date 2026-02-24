@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 import re
 import time
 from contextlib import suppress
@@ -25,6 +26,8 @@ from app.utils.payload_extract import (
     extract_context_id,
     extract_provider_and_external_session_id,
 )
+
+logger = logging.getLogger(__name__)
 
 StreamEvent = ClientEvent | Message
 ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
@@ -398,8 +401,9 @@ class A2AInvokeService:
         if hasattr(resolved_payload, "model_dump"):
             try:
                 dumped = resolved_payload.model_dump(exclude_none=True)
-            except Exception:
-                return {}
+            except Exception as exc:
+                logger.error("Failed to dump A2A payload", exc_info=True)
+                raise ValueError("Payload serialization failed") from exc
             if isinstance(dumped, dict):
                 return dumped
         return {}
