@@ -62,7 +62,15 @@
     "typescript": "~5.9.2"
   },
   "overrides": {
-    "minimatch": "^5.1.6"
+    "@eslint/config-array": {
+      "minimatch": "^3.1.2"
+    },
+    "@eslint/eslintrc": {
+      "minimatch": "^3.1.2"
+    },
+    "test-exclude": {
+      "minimatch": "^3.0.4"
+    }
   },
   "expo": {
     "install": {
