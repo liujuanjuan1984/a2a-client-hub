@@ -4,6 +4,10 @@ import {
   getInvokeWsTicket,
   type A2AAgentInvokeRequest,
 } from "@/lib/api/a2aAgents";
+import {
+  isAuthorizationFailureError,
+  isAuthFailureError,
+} from "@/lib/api/client";
 import { getHubInvokeWsTicket } from "@/lib/api/hubA2aAgentsUser";
 import { fetchSSE } from "@/lib/api/sse";
 import { ENV } from "@/lib/config";
@@ -32,6 +36,8 @@ const supportsStreaming =
 
 const wsConnectTimeoutMs = 10_000;
 const wsIdleTimeoutMs = 45_000;
+const fallbackLogThrottleMs = 15_000;
+const fallbackLogTimestamps = new Map<string, number>();
 
 const isAbsoluteHttpUrl = (value: string) => /^https?:\/\//.test(value);
 
@@ -73,6 +79,20 @@ const buildInvokeUrl = (
 const buildInvokeWsUrl = (agentId: string, source: AgentSource) => {
   const wsBase = getAbsoluteWsBaseUrl();
   return `${wsBase}/${scopeForSource(source)}/${encodeURIComponent(agentId)}/invoke/ws`;
+};
+
+const logFallback = (channel: "WS" | "SSE", reason: string) => {
+  const key = `${channel}:${reason}`;
+  const now = Date.now();
+  const previous = fallbackLogTimestamps.get(key);
+  if (previous && now - previous < fallbackLogThrottleMs) {
+    return;
+  }
+  fallbackLogTimestamps.set(key, now);
+  console.info(`[${channel} Fallback]`, {
+    platform: Platform.OS,
+    reason,
+  });
 };
 
 type StreamCallbacks = {
@@ -315,10 +335,10 @@ class ChatConnectionService {
       });
       return true;
     } catch (error) {
-      console.warn("[WS Fallback]", {
-        platform: Platform.OS,
-        reason: error instanceof Error ? error.message : String(error),
-      });
+      if (isAuthFailureError(error) || isAuthorizationFailureError(error)) {
+        throw error;
+      }
+      logFallback("WS", error instanceof Error ? error.message : String(error));
       return false;
     }
   }
@@ -369,10 +389,13 @@ class ChatConnectionService {
       );
       return true;
     } catch (error) {
-      console.warn("[SSE Fallback]", {
-        platform: Platform.OS,
-        reason: error instanceof Error ? error.message : String(error),
-      });
+      if (isAuthFailureError(error) || isAuthorizationFailureError(error)) {
+        throw error;
+      }
+      logFallback(
+        "SSE",
+        error instanceof Error ? error.message : String(error),
+      );
       return false;
     } finally {
       this.abortControllers.delete(conversationId);

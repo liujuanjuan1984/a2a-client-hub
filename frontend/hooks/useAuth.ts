@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
-import { apiRequest, ApiRequestError } from "@/lib/api/client";
+import { apiRequest } from "@/lib/api/client";
 import {
   type AuthResponse,
   type LoginRequest,
@@ -9,7 +9,6 @@ import {
   type UserProfile,
 } from "@/lib/api/types";
 import { queryKeys } from "@/lib/queryKeys";
-import { resetClientState } from "@/lib/resetClientState";
 import { useSessionStore } from "@/store/session";
 
 export const useMe = () => {
@@ -45,16 +44,6 @@ export const useMe = () => {
     }
   }, [query.data, setUserProfile]);
 
-  useEffect(() => {
-    if (!query.isError || !token) {
-      return;
-    }
-    const error = query.error;
-    if (error instanceof ApiRequestError && error.status === 401) {
-      resetClientState();
-    }
-  }, [query.error, query.isError, token]);
-
   return query;
 };
 
@@ -67,7 +56,11 @@ export const useLogin = () => {
         body: payload,
       }),
     onSuccess: (data) => {
-      setSession({ token: data.access_token, user: data.user });
+      setSession({
+        token: data.access_token,
+        user: data.user,
+        expiresInSeconds: data.expires_in,
+      });
     },
   });
 };
@@ -86,7 +79,11 @@ export const useRegister = () => {
       });
     },
     onSuccess: (data) => {
-      setSession({ token: data.access_token, user: data.user });
+      setSession({
+        token: data.access_token,
+        user: data.user,
+        expiresInSeconds: data.expires_in,
+      });
     },
   });
 };

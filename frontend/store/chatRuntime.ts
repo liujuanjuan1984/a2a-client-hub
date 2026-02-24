@@ -11,7 +11,11 @@ import {
   extractStreamBlockUpdate,
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
-import { ApiRequestError } from "@/lib/api/client";
+import {
+  ApiRequestError,
+  isAuthorizationFailureError,
+  isAuthFailureError,
+} from "@/lib/api/client";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import {
   listSessionMessagesPage,
@@ -122,6 +126,23 @@ const buildApiErrorMessage = (error: unknown): string => {
   return upstreamMessage
     ? `${error.message}${codeSuffix}：${upstreamMessage}`
     : `${error.message}${codeSuffix}`;
+};
+
+const streamWarnThrottleMs = 15_000;
+const streamWarnTimestamps = new Map<string, number>();
+
+const warnStreamOnce = (
+  key: string,
+  message: string,
+  payload: Record<string, unknown>,
+) => {
+  const now = Date.now();
+  const previous = streamWarnTimestamps.get(key);
+  if (previous && now - previous < streamWarnThrottleMs) {
+    return;
+  }
+  streamWarnTimestamps.set(key, now);
+  console.warn(message, payload);
 };
 
 export const executeChatRuntime = async <TState extends ChatRuntimeState>(
@@ -579,12 +600,16 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       lastStreamError: errorText,
       pendingInterrupt: null,
     });
-    console.warn("[Chat Stream] error (marked recoverable for resume)", {
-      conversationId,
-      source: get().sessions[conversationId]?.source ?? null,
-      message: errorText,
-      transport: get().sessions[conversationId]?.transport ?? "unknown",
-    });
+    warnStreamOnce(
+      `recoverable:${conversationId}:${errorText}`,
+      "[Chat Stream] error (marked recoverable for resume)",
+      {
+        conversationId,
+        source: get().sessions[conversationId]?.source ?? null,
+        message: errorText,
+        transport: get().sessions[conversationId]?.transport ?? "unknown",
+      },
+    );
   };
 
   const completeStreamingMessage = () => {
@@ -609,11 +634,15 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           streamState: "recoverable",
           lastStreamError: message,
         });
-        console.warn("[Chat Stream] sequence-gap recovery failed", {
-          conversationId,
-          source: get().sessions[conversationId]?.source ?? null,
-          message,
-        });
+        warnStreamOnce(
+          `sequence-gap:${conversationId}:${message}`,
+          "[Chat Stream] sequence-gap recovery failed",
+          {
+            conversationId,
+            source: get().sessions[conversationId]?.source ?? null,
+            message,
+          },
+        );
       });
     }
   };
@@ -726,12 +755,32 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     }
   };
 
-  if (await tryWebSocketTransport()) {
+  try {
+    if (await tryWebSocketTransport()) {
+      return;
+    }
+    if (await trySseTransport()) {
+      return;
+    }
+  } catch (error) {
+    if (!isAuthFailureError(error) && !isAuthorizationFailureError(error)) {
+      throw error;
+    }
+    const message = isAuthFailureError(error)
+      ? "Authentication expired. Please sign in again."
+      : buildApiErrorMessage(error);
+    messageStore.updateMessage(conversationId, activeAgentMessageId, {
+      content: message,
+      status: "done",
+    });
+    patchSession({
+      streamState: "error",
+      lastStreamError: message,
+      pendingInterrupt: null,
+    });
     return;
   }
-  if (await trySseTransport()) {
-    return;
-  }
+
   if (hasObservedStreamEvent) {
     appendStreamError(
       "Streaming transport interrupted before completion; skip blocking replay.",

@@ -1,5 +1,10 @@
-import { refreshAccessToken } from "@/lib/api/client";
-import { resetClientState } from "@/lib/resetClientState";
+import {
+  ApiRequestError,
+  AuthExpiredError,
+  ensureFreshAccessToken,
+  handleAuthExpiredOnce,
+  refreshAccessToken,
+} from "@/lib/api/client";
 import { useSessionStore } from "@/store/session";
 
 export type SSEEvent = {
@@ -32,6 +37,7 @@ export type SSEOptions = {
 };
 
 const DEFAULT_IDLE_TIMEOUT_MS = 45_000;
+const isUnauthorizedStatusCode = (status: number) => status === 401;
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -116,7 +122,13 @@ export const fetchSSE = async (
     resetIdleTimer();
 
     try {
-      const token = useSessionStore.getState().token;
+      const requestAuthVersion = useSessionStore.getState().authVersion;
+      let token = useSessionStore.getState().token;
+      if (token) {
+        token = await ensureFreshAccessToken({
+          expectedAuthVersion: requestAuthVersion,
+        });
+      }
       const response = await fetch(url, {
         method,
         credentials: "include",
@@ -130,31 +142,45 @@ export const fetchSSE = async (
         signal: controller.signal,
       });
 
-      if (response.status === 401) {
-        const refreshedToken = await refreshAccessToken();
-        if (refreshedToken) {
-          useSessionStore.getState().setAccessToken(refreshedToken);
+      if (isUnauthorizedStatusCode(response.status)) {
+        const refreshed = await refreshAccessToken({
+          force: true,
+          expectedAuthVersion: requestAuthVersion,
+        });
+        if (refreshed) {
+          if (useSessionStore.getState().authVersion === requestAuthVersion) {
+            useSessionStore
+              .getState()
+              .setAccessToken(
+                refreshed.accessToken,
+                refreshed.expiresInSeconds,
+              );
+          }
           const retryResponse = await fetch(url, {
             method,
             credentials: "include",
             headers: {
               "Content-Type": "application/json",
               Accept: "text/event-stream",
-              Authorization: `Bearer ${refreshedToken}`,
+              Authorization: `Bearer ${refreshed.accessToken}`,
               ...headers,
             },
             body: bodyText,
             signal: controller.signal,
           });
-          if (retryResponse.status === 401) {
-            resetClientState();
+          if (isUnauthorizedStatusCode(retryResponse.status)) {
+            handleAuthExpiredOnce({
+              expectedAuthVersion: requestAuthVersion,
+            });
+            throw new AuthExpiredError();
           }
           if (!retryResponse.ok) {
             const errorText = await retryResponse
               .text()
               .catch(() => "Unknown error");
-            throw new Error(
+            throw new ApiRequestError(
               `SSE request failed (${retryResponse.status}): ${errorText}`,
+              retryResponse.status,
             );
           }
           await consumeSseStream(retryResponse, handlers, {
@@ -166,15 +192,17 @@ export const fetchSSE = async (
           return { status: "done" as const, hasReceivedData };
         }
 
-        // Keep behavior consistent with apiRequest(): if refresh fails, clear the
-        // local session so the app can transition back to login state.
-        resetClientState();
+        handleAuthExpiredOnce({
+          expectedAuthVersion: requestAuthVersion,
+        });
+        throw new AuthExpiredError();
       }
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => "Unknown error");
-        throw new Error(
+        throw new ApiRequestError(
           `SSE request failed (${response.status}): ${errorText}`,
+          response.status,
         );
       }
 
