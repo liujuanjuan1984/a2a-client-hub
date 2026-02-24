@@ -1,32 +1,32 @@
-name: 需求建议
-description: 快速提交功能需求或改进建议
+name: Feature Request
+description: Quickly submit a feature request or improvement proposal
 labels:
   - enhancement
 body:
   - type: textarea
     id: background
     attributes:
-      label: 需求背景
-      description: 当前痛点是什么？希望解决什么问题？
-      placeholder: "例如：管理员无法批量导入 Hub A2A catalog。"
+      label: Problem Background
+      description: What pain point exists and what problem should be solved?
+      placeholder: "Example: Admins cannot bulk import the Hub A2A catalog."
     validations:
       required: true
 
   - type: textarea
     id: proposal
     attributes:
-      label: 期望方案 / 验收标准
-      description: 你期望怎么做，或完成后应满足哪些可验证条件。
+      label: Proposed Solution / Acceptance Criteria
+      description: Describe the expected approach or verifiable completion criteria.
       placeholder: |
-        例如：
-        - 支持 CSV 批量导入
-        - 失败行返回行号和原因
-        - 页面提示导入结果
+        Example:
+        - Support CSV batch import
+        - Return line number and reason for failed rows
+        - Show import results in the UI
     validations:
       required: true
 
   - type: textarea
     id: extra
     attributes:
-      label: 补充信息（可选）
-      description: 可填写相关链接、原型、接口示例或约束条件。
+      label: Additional Context (Optional)
+      description: Add related links, mockups, API examples, or constraints.

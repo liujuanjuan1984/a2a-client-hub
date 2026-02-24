@@ -1,29 +1,29 @@
-name: 问题反馈
-description: 快速提交一个可复现的问题
+name: Bug Report
+description: Quickly report a reproducible problem
 labels:
   - bug
 body:
   - type: textarea
     id: summary
     attributes:
-      label: 问题描述
-      description: 用几句话说明发生了什么，以及你认为哪里不对。
-      placeholder: "例如：聊天页回到前台后，消息列表会自动跳到更早位置。"
+      label: Summary
+      description: Describe what happened and what seems incorrect.
+      placeholder: "Example: After returning to chat, the message list jumps to an earlier position."
     validations:
       required: true
 
   - type: textarea
     id: steps
     attributes:
-      label: 最小复现步骤（可选）
-      description: 按顺序给出尽量短的复现路径。
+      label: Minimal Reproduction Steps (Optional)
+      description: Provide the shortest ordered steps to reproduce.
       placeholder: |
-        1. 打开 xx 页面
-        2. 执行 xx 操作
-        3. 出现 xx 现象
+        1. Open page xx
+        2. Perform action xx
+        3. Observe behavior xx
 
   - type: textarea
     id: logs
     attributes:
-      label: 日志/截图/环境信息（可选）
-      description: 可粘贴关键日志、截图或运行环境（请先脱敏）。
+      label: Logs / Screenshots / Environment (Optional)
+      description: Paste key logs, screenshots, or environment details (please remove sensitive data).
