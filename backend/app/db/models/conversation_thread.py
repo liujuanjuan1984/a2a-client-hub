@@ -9,6 +9,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -25,6 +26,11 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
 
     __tablename__ = "conversation_threads"
     __table_args__ = (
+        Index(
+            "ix_conversation_threads_user_id_updated_at",
+            "user_id",
+            "updated_at",
+        ),
         UniqueConstraint(
             "user_id",
             "external_provider",

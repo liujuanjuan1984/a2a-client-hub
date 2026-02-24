@@ -13,6 +13,11 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
     __tablename__ = "agent_messages"
     __table_args__ = (
         Index(
+            "ix_agent_messages_conversation_id_created_at",
+            "conversation_id",
+            "created_at",
+        ),
+        Index(
             "uq_agent_messages_conversation_sender_invoke_idempotency_key",
             "conversation_id",
             "sender",
