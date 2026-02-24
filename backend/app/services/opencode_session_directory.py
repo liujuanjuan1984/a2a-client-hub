@@ -22,6 +22,7 @@ from app.core.logging import get_logger
 from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
+from app.db.transaction import commit_safely
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.service import ExtensionCallResult
@@ -305,7 +306,7 @@ class OpencodeSessionDirectoryService:
                     continue
                 refreshed_agents += 1 if ok else 0
 
-            await db.commit()
+            await commit_safely(db)
 
             # Reload cache entries after refresh attempts.
             cache_entries = await self._load_cache_entries(
