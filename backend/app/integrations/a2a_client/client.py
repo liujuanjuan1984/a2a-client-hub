@@ -28,6 +28,7 @@ from a2a.utils.constants import (
 )
 
 from app.core.config import settings
+from app.services.a2a_proxy_service import a2a_proxy_service
 from app.core.http_client import get_global_http_client
 from app.core.logging import get_logger
 from app.integrations.a2a_client.controls import summarize_query
@@ -246,7 +247,7 @@ class A2AClient:
         try:
             validate_outbound_http_url(
                 self.agent_url,
-                allowed_hosts=settings.a2a_proxy_allowed_hosts,
+                allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
                 purpose="Agent card URL",
             )
         except OutboundURLNotAllowedError as exc:
@@ -304,7 +305,7 @@ class A2AClient:
         try:
             validate_outbound_http_url(
                 getattr(card, "url", "") or "",
-                allowed_hosts=settings.a2a_proxy_allowed_hosts,
+                allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
                 purpose="Agent URL",
             )
             for iface in getattr(card, "additional_interfaces", None) or []:
@@ -313,7 +314,7 @@ class A2AClient:
                     continue
                 validate_outbound_http_url(
                     url,
-                    allowed_hosts=settings.a2a_proxy_allowed_hosts,
+                    allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
                     purpose="Agent interface URL",
                 )
         except OutboundURLNotAllowedError as exc:

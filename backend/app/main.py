@@ -98,10 +98,9 @@ def include_all_routers() -> None:
         "app.api.routers.a2a_agents",
         "app.api.routers.hub_a2a_agents",
         "app.api.routers.admin_a2a_agents",
-        "app.api.routers.a2a_extensions_opencode",
-        "app.api.routers.hub_a2a_extensions_opencode",
-        "app.api.routers.opencode_session_directory",
+        "app.api.routers.admin_proxy_allowlist",
         "app.api.routers.a2a_schedules",
+
         "app.api.routers.me_sessions",
         "app.api.routers.invitations",
         "app.api.routers.shortcuts",
