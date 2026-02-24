@@ -922,19 +922,28 @@ class A2AScheduleService:
             try:
                 dt = datetime.fromisoformat(trimmed)
             except ValueError as exc:
-                # Allow "Z" suffix for UTC timestamps produced by JavaScript.
                 if trimmed.endswith("Z"):
                     dt = datetime.fromisoformat(trimmed.replace("Z", "+00:00"))
                 else:
                     raise A2AScheduleValidationError(
                         "interval time_point.start_at must be a valid ISO datetime"
                     ) from exc
-            if dt.tzinfo is None:
-                tz = resolve_timezone(timezone_str, default="UTC")
-                dt = dt.replace(tzinfo=tz)
+            if dt.tzinfo is not None:
+                raise A2AScheduleValidationError(
+                    "interval time_point.start_at must be timezone-naive "
+                    "(without Z or offset)"
+                )
+            tz = resolve_timezone(timezone_str, default="UTC")
+            dt = dt.replace(tzinfo=tz)
             return ensure_utc(dt).isoformat()
         if isinstance(value, datetime):
-            return ensure_utc(value).isoformat()
+            if value.tzinfo is not None:
+                raise A2AScheduleValidationError(
+                    "interval time_point.start_at must be timezone-naive "
+                    "(without Z or offset)"
+                )
+            tz = resolve_timezone(timezone_str, default="UTC")
+            return ensure_utc(value.replace(tzinfo=tz)).isoformat()
 
         raise A2AScheduleValidationError(
             "interval time_point.start_at must be an ISO datetime string"

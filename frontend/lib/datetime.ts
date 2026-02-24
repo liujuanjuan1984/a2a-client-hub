@@ -252,11 +252,7 @@ export const localDateTimeInputToUtcIso = (value: string): string | null => {
   }
 
   if (DATE_TIME_OFFSET_SUFFIX_PATTERN.test(normalized)) {
-    const date = new Date(normalized);
-    if (Number.isNaN(date.getTime())) {
-      return null;
-    }
-    return date.toISOString();
+    return null;
   }
 
   // Keep local wall-clock strings timezone-naive so backend can apply

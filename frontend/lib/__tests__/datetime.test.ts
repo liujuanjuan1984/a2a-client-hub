@@ -96,9 +96,7 @@ describe("datetime helpers", () => {
     expect(localDateTimeInputToUtcIso("2026-02-23 09:30")).toBe(
       "2026-02-23T09:30",
     );
-    expect(localDateTimeInputToUtcIso("2026-02-23T09:30:00+08:00")).toBe(
-      "2026-02-23T01:30:00.000Z",
-    );
+    expect(localDateTimeInputToUtcIso("2026-02-23T09:30:00+08:00")).toBeNull();
     expect(localDateTimeInputToUtcIso("bad-datetime")).toBeNull();
     expect(localDateTimeInputToUtcIso("2026-02-30T09:30")).toBeNull();
   });
