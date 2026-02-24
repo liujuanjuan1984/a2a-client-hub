@@ -1,18 +1,13 @@
 name: Feature Request
-description: Propose a new capability or improvement
+description: Quickly submit a feature request or improvement proposal
 labels:
   - enhancement
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Thanks for the proposal. Please describe user value and clear acceptance criteria.
-
   - type: textarea
-    id: problem
+    id: background
     attributes:
-      label: Problem Statement
-      description: What pain point are you trying to solve?
+      label: Problem Background
+      description: What pain point exists and what problem should be solved?
       placeholder: "Example: Admins cannot bulk import the Hub A2A catalog."
     validations:
       required: true
@@ -20,35 +15,18 @@ body:
   - type: textarea
     id: proposal
     attributes:
-      label: Proposed Solution
-      description: How should this be improved?
-      placeholder: "Example: Add CSV import with a pre-validation endpoint."
-    validations:
-      required: true
-
-  - type: textarea
-    id: value
-    attributes:
-      label: User/Business Value
-      description: What value does this change deliver?
-      placeholder: "Example: Reduce catalog maintenance cost and manual configuration errors."
-    validations:
-      required: true
-
-  - type: textarea
-    id: acceptance
-    attributes:
-      label: Acceptance Criteria
-      description: Define verifiable completion criteria.
+      label: Proposed Solution / Acceptance Criteria
+      description: Describe the expected approach or verifiable completion criteria.
       placeholder: |
-        - Supports batch import of 100 records
-        - Failed rows return line number and reason
-        - Backend and frontend tests are included
+        Example:
+        - Support CSV batch import
+        - Return line number and reason for failed rows
+        - Show import results in the UI
     validations:
       required: true
 
   - type: textarea
     id: extra
     attributes:
-      label: Additional Context
-      description: Related links, mockups, API examples, or other context.
+      label: Additional Context (Optional)
+      description: Add related links, mockups, API examples, or constraints.
