@@ -165,6 +165,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
         )
 
         try:
+            thread = None
             if execution is None:
                 started_at = utc_now()
                 execution = A2AScheduleExecution(
@@ -220,11 +221,19 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             success = bool(invoke_result.get("success"))
             response_content = str(invoke_result.get("response_content") or "")
             message_refs = invoke_result.get("message_refs") or {}
-            execution.conversation_id = (
-                message_refs.get("conversation_id")
-                or invoke_result.get("conversation_id")
-                or thread.id
-            )
+
+            if not success and not message_refs.get("user_message_id"):
+                execution.conversation_id = None
+                await db.delete(thread)
+                if task.conversation_id == thread.id:
+                    task.conversation_id = None
+            else:
+                execution.conversation_id = (
+                    message_refs.get("conversation_id")
+                    or invoke_result.get("conversation_id")
+                    or thread.id
+                )
+
             execution.user_message_id = message_refs.get("user_message_id")
             execution.agent_message_id = message_refs.get("agent_message_id")
             execution.response_content = response_content
@@ -279,6 +288,12 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             await commit_safely(db)
 
         except Exception as exc:  # pragma: no cover - defensive path
+            if thread and execution:
+                execution.conversation_id = None
+                if task.conversation_id == thread.id:
+                    task.conversation_id = None
+                await db.delete(thread)
+
             finished_at = utc_now()
             if execution is None:
                 execution = A2AScheduleExecution(
