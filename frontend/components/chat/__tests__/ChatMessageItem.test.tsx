@@ -121,23 +121,21 @@ describe("ChatMessageItem collapsible blocks", () => {
       />,
     );
 
-    fireEvent.press(
-      screen.getByTestId("chat-message-plain-message:text-expand"),
-    );
+    fireEvent.press(screen.getByTestId("chat-message-plain-message-expand"));
     expect(
-      screen.getByTestId("chat-message-plain-message:text-expand").props
+      screen.getByTestId("chat-message-plain-message-expand").props
         .accessibilityLabel,
     ).toBe("Collapse full text");
     expect(
-      screen.getByTestId("chat-message-plain-message:text-collapse-bottom"),
+      screen.getByTestId("chat-message-plain-message-collapse-bottom"),
     ).toBeTruthy();
 
     fireEvent.press(
-      screen.getByTestId("chat-message-plain-message:text-collapse-bottom"),
+      screen.getByTestId("chat-message-plain-message-collapse-bottom"),
     );
     expect(onLayoutChangeStart).toHaveBeenCalledTimes(2);
     expect(
-      screen.getByTestId("chat-message-plain-message:text-expand"),
+      screen.getByTestId("chat-message-plain-message-expand"),
     ).toBeTruthy();
   });
 });

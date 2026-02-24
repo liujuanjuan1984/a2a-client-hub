@@ -478,7 +478,7 @@ describe("ChatScreen interrupt handling", () => {
     const expandButton = root.findAll((node) => {
       return (
         node.type === Object({}) ||
-        node.props?.testID === "chat-message-message-1:text-expand"
+        node.props?.testID === "chat-message-message-1-expand"
       );
     })[0];
 
@@ -490,12 +490,12 @@ describe("ChatScreen interrupt handling", () => {
     });
 
     const collapseButton = root.findByProps({
-      testID: "chat-message-message-1:text-expand",
+      testID: "chat-message-message-1-expand",
       accessibilityLabel: "Collapse full text",
     });
     expect(collapseButton).toBeDefined();
     const bottomCollapseButton = root.findByProps({
-      testID: "chat-message-message-1:text-collapse-bottom",
+      testID: "chat-message-message-1-collapse-bottom",
       accessibilityLabel: "Collapse full text",
     });
     expect(bottomCollapseButton).toBeDefined();
@@ -541,7 +541,7 @@ describe("ChatScreen interrupt handling", () => {
 
       act(() => {
         root
-          .findByProps({ testID: "chat-message-message-anchor:text-expand" })
+          .findByProps({ testID: "chat-message-message-anchor-expand" })
           .props.onPress();
       });
 

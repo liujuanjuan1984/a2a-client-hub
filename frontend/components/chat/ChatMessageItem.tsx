@@ -172,154 +172,149 @@ export function ChatMessageItem({
           }`}
         >
           {hasBlocks ? (
-            renderableBlocks.map((block, blockIndex) => {
-              const blockText = block.content;
-              if (blockText.length === 0) return null;
-              const blockId = block.id || `${message.id}:${blockIndex}`;
-              if (block.type === "reasoning") {
-                const expanded = expandedReasoningByBlockId[blockId];
-                return (
-                  <View
-                    key={blockId}
-                    className={`${
-                      blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                  >
-                    <Pressable
-                      onPress={() => toggleReasoning(blockId)}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        expanded
-                          ? "Hide reasoning details"
-                          : "Show reasoning details"
-                      }
-                    >
-                      <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                        {expanded ? "Hide Reasoning" : "Show Reasoning"}
-                      </Text>
-                    </Pressable>
-                    {expanded ? (
-                      <View>
-                        <Text
-                          selectable
-                          className="mt-1 break-all text-xs text-slate-300"
-                        >
-                          {blockText}
-                        </Text>
-                        {renderBottomCollapseAction(
-                          `chat-message-${blockId}-collapse-bottom`,
-                          () => toggleReasoning(blockId),
-                        )}
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              }
-              if (block.type === "tool_call") {
-                const expanded = expandedToolCallByBlockId[blockId];
-                return (
-                  <View
-                    key={blockId}
-                    className={`${
-                      blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                  >
-                    <Pressable
-                      onPress={() => toggleToolCall(blockId)}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        expanded
-                          ? "Hide tool call details"
-                          : "Show tool call details"
-                      }
-                    >
-                      <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                        {expanded ? "Hide Tool Call" : "Show Tool Call"}
-                      </Text>
-                    </Pressable>
-                    {expanded ? (
-                      <View>
-                        <Text
-                          selectable
-                          className="mt-1 break-all text-xs text-slate-300"
-                        >
-                          {blockText}
-                        </Text>
-                        {renderBottomCollapseAction(
-                          `chat-message-${blockId}-collapse-bottom`,
-                          () => toggleToolCall(blockId),
-                        )}
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              }
-              if (block.type === "text") {
-                const blockExpanded = expandedTextByBlockId[blockId] ?? false;
-                const shouldCollapse = shouldCollapseByLength(blockText);
-                const topToggleAccessibilityLabel = blockExpanded
-                  ? "Collapse full text"
-                  : "Expand full text";
-                const topToggleLabel = blockExpanded
-                  ? "Show less"
-                  : "Read more";
-
-                return (
-                  <View key={blockId} className="rounded-xl">
-                    <Text
-                      selectable
+            <>
+              {renderableBlocks.map((block, blockIndex) => {
+                const blockText = block.content;
+                if (blockText.length === 0) return null;
+                const blockId = block.id || `${message.id}:${blockIndex}`;
+                if (block.type === "reasoning") {
+                  const expanded = expandedReasoningByBlockId[blockId];
+                  return (
+                    <View
+                      key={blockId}
                       className={`${
                         blockIndex > 0 ? "mt-3" : ""
-                      } break-all text-sm text-white`}
-                      numberOfLines={
-                        shouldCollapse && !blockExpanded
-                          ? COLLAPSED_TEXT_LINES
-                          : undefined
-                      }
+                      } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                    >
+                      <Pressable
+                        onPress={() => toggleReasoning(blockId)}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          expanded
+                            ? "Hide reasoning details"
+                            : "Show reasoning details"
+                        }
+                      >
+                        <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                          {expanded ? "Hide Reasoning" : "Show Reasoning"}
+                        </Text>
+                      </Pressable>
+                      {expanded ? (
+                        <View>
+                          <Text
+                            selectable
+                            className="mt-1 break-all text-xs text-slate-300"
+                          >
+                            {blockText}
+                          </Text>
+                          {renderBottomCollapseAction(
+                            `chat-message-${blockId}-collapse-bottom`,
+                            () => toggleReasoning(blockId),
+                          )}
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                }
+                if (block.type === "tool_call") {
+                  const expanded = expandedToolCallByBlockId[blockId];
+                  return (
+                    <View
+                      key={blockId}
+                      className={`${
+                        blockIndex > 0 ? "mt-3" : ""
+                      } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                    >
+                      <Pressable
+                        onPress={() => toggleToolCall(blockId)}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          expanded
+                            ? "Hide tool call details"
+                            : "Show tool call details"
+                        }
+                      >
+                        <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                          {expanded ? "Hide Tool Call" : "Show Tool Call"}
+                        </Text>
+                      </Pressable>
+                      {expanded ? (
+                        <View>
+                          <Text
+                            selectable
+                            className="mt-1 break-all text-xs text-slate-300"
+                          >
+                            {blockText}
+                          </Text>
+                          {renderBottomCollapseAction(
+                            `chat-message-${blockId}-collapse-bottom`,
+                            () => toggleToolCall(blockId),
+                          )}
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                }
+                if (block.type === "text") {
+                  return (
+                    <View key={blockId} className="rounded-xl">
+                      <Text
+                        selectable
+                        className={`${
+                          blockIndex > 0 ? "mt-3" : ""
+                        } break-all text-sm text-white`}
+                        numberOfLines={
+                          plainShouldCollapse && !plainTextExpanded
+                            ? COLLAPSED_TEXT_LINES
+                            : undefined
+                        }
+                      >
+                        {blockText}
+                      </Text>
+                    </View>
+                  );
+                }
+                return (
+                  <View
+                    key={blockId}
+                    className={`${
+                      blockIndex > 0 ? "mt-3" : ""
+                    } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                  >
+                    <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                      {block.type}
+                    </Text>
+                    <Text
+                      selectable
+                      className="mt-1 break-all text-xs text-slate-300"
                     >
                       {blockText}
                     </Text>
-                    {shouldCollapse ? (
-                      <Pressable
-                        className="mt-2 rounded-md px-2 py-1"
-                        accessibilityRole="button"
-                        accessibilityLabel={topToggleAccessibilityLabel}
-                        testID={`chat-message-${blockId}-expand`}
-                        onPress={() => toggleTextExpansion(blockId)}
-                      >
-                        <Text className="text-xs font-semibold text-slate-300">
-                          {topToggleLabel}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                    {shouldCollapse && blockExpanded
-                      ? renderBottomCollapseAction(
-                          `chat-message-${blockId}-collapse-bottom`,
-                          () => toggleTextExpansion(blockId),
-                        )
-                      : null}
                   </View>
                 );
-              }
-              return (
-                <View
-                  key={blockId}
-                  className={`${
-                    blockIndex > 0 ? "mt-3" : ""
-                  } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                >
-                  <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                    {block.type}
-                  </Text>
-                  <Text
-                    selectable
-                    className="mt-1 break-all text-xs text-slate-300"
+              })}
+              {plainShouldCollapse ? (
+                <View className="mt-2">
+                  <Pressable
+                    className="rounded-md px-2 py-1"
+                    accessibilityRole="button"
+                    accessibilityLabel={plainTopToggleAccessibilityLabel}
+                    testID={`chat-message-${message.id}-expand`}
+                    onPress={() => toggleTextExpansion(message.id)}
                   >
-                    {blockText}
-                  </Text>
+                    <Text className="text-xs font-semibold text-slate-300">
+                      {plainTopToggleLabel}
+                    </Text>
+                  </Pressable>
+                  {plainTextExpanded
+                    ? renderBottomCollapseAction(
+                        `chat-message-${message.id}-collapse-bottom`,
+                        () => toggleTextExpansion(message.id),
+                      )
+                    : null}
                 </View>
-              );
-            })
+              ) : null}
+            </>
           ) : (
             <View className="rounded-xl">
               <Text
