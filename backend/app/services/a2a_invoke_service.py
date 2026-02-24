@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 StreamEvent = ClientEvent | Message
 ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
 StreamTextCallbackFn = Callable[[str], Any]
+StreamErrorCallbackFn = Callable[[str | dict[str, Any]], Any]
 StreamEventPayloadCallbackFn = Callable[[dict[str, Any]], Any]
 StreamMetadataCallbackFn = Callable[[dict[str, Any]], Any]
 StreamErrorMetadataCallbackFn = Callable[[dict[str, Any]], Any]
@@ -687,9 +688,9 @@ class A2AInvokeService:
                 and last.get("is_finished") is False
             ):
                 current = last.get("content")
-                last["content"] = (
-                    f"{current if isinstance(current, str) else ''}{delta}"
-                )
+                last[
+                    "content"
+                ] = f"{current if isinstance(current, str) else ''}{delta}"
                 last["is_finished"] = done
                 return
 
@@ -892,7 +893,7 @@ class A2AInvokeService:
         log_extra: dict[str, Any],
         on_complete: StreamTextCallbackFn | None = None,
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
-        on_error: StreamTextCallbackFn | None = None,
+        on_error: StreamErrorCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
         resume_from_sequence: int | None = None,
         cache_key: str | None = None,
@@ -1033,7 +1034,7 @@ class A2AInvokeService:
         log_extra: dict[str, Any],
         on_complete: StreamTextCallbackFn | None = None,
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
-        on_error: StreamTextCallbackFn | None = None,
+        on_error: StreamErrorCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
         on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
         send_stream_end: bool = True,
@@ -1168,7 +1169,7 @@ class A2AInvokeService:
         log_extra: dict[str, Any],
         on_complete: StreamTextCallbackFn | None = None,
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
-        on_error: StreamTextCallbackFn | None = None,
+        on_error: StreamErrorCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
         on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
         idle_timeout_seconds: float | None = None,
@@ -1238,7 +1239,17 @@ class A2AInvokeService:
                         timeout_message = (
                             f"A2A stream idle timeout after {idle_value:.1f}s"
                         )
-                    await self._call_callback(on_error, timeout_message)
+                    partial_content = stream_text_accumulator.result()
+                    partial_metadata = stream_text_accumulator.result_metadata()
+                    timeout_payload: dict[str, Any] = {
+                        "message": timeout_message,
+                        "error_code": "timeout",
+                    }
+                    if partial_content:
+                        timeout_payload["partial_content"] = partial_content
+                    if partial_metadata:
+                        timeout_payload["partial_metadata"] = partial_metadata
+                    await self._call_callback(on_error, timeout_payload)
                     await self._call_callback(
                         on_error_metadata,
                         {"message": timeout_message, "error_code": "timeout"},
@@ -1248,6 +1259,8 @@ class A2AInvokeService:
                         "content": None,
                         "error": timeout_message,
                         "error_code": "timeout",
+                        "partial_content": partial_content or None,
+                        "partial_metadata": partial_metadata,
                     }
                 if event is None:
                     # Align with realtime stream semantics:
@@ -1313,8 +1326,20 @@ class A2AInvokeService:
                     exc_info=True,
                     extra=log_extra,
                 )
-            error_code = self._extract_error_code_from_exception(exc)
-            await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
+            error_code = (
+                self._extract_error_code_from_exception(exc) or self._STREAM_ERROR_CODE
+            )
+            partial_content = stream_text_accumulator.result()
+            partial_metadata = stream_text_accumulator.result_metadata()
+            error_payload: dict[str, Any] = {
+                "message": self._STREAM_ERROR_MESSAGE,
+                "error_code": error_code,
+            }
+            if partial_content:
+                error_payload["partial_content"] = partial_content
+            if partial_metadata:
+                error_payload["partial_metadata"] = partial_metadata
+            await self._call_callback(on_error, error_payload)
             await self._call_callback(
                 on_error_metadata,
                 {"message": self._STREAM_ERROR_MESSAGE, "error_code": error_code},
@@ -1323,7 +1348,9 @@ class A2AInvokeService:
                 "success": False,
                 "content": None,
                 "error": self._STREAM_ERROR_MESSAGE,
-                "error_code": error_code or self._STREAM_ERROR_CODE,
+                "error_code": error_code,
+                "partial_content": partial_content or None,
+                "partial_metadata": partial_metadata,
             }
 
 

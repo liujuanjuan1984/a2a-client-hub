@@ -230,10 +230,11 @@ def _build_stream_callbacks(
 ) -> tuple[
     Callable[[dict[str, Any]], Any],
     Callable[[str], Any],
-    Callable[[str], Any],
+    Callable[[str | dict[str, Any]], Any],
     Callable[[dict[str, Any]], Any],
 ]:
     stream_response_metadata: dict[str, Any] = {}
+    stream_text_accumulator = a2a_invoke_service._StreamTextAccumulator()
 
     async def on_event(event_payload: dict[str, Any]) -> None:
         (
@@ -260,6 +261,7 @@ def _build_stream_callbacks(
         )
         if usage_hints:
             state.stream_usage = usage_hints
+        stream_text_accumulator.consume(event_payload)
 
     async def on_complete(stream_text: str) -> None:
         if state.local_session_id is None or state.local_source is None:
@@ -299,9 +301,44 @@ def _build_stream_callbacks(
             return
         stream_response_metadata = dict(payload)
 
-    async def on_error(error_message: str) -> None:
+    async def on_error(error_input: str | dict[str, Any]) -> None:
         if state.local_session_id is None or state.local_source is None:
             return
+
+        error_message = ""
+        error_code: str | None = None
+        partial_content: str | None = None
+        partial_metadata: dict[str, Any] | None = None
+        if isinstance(error_input, dict):
+            raw_message = error_input.get("message")
+            if isinstance(raw_message, str) and raw_message:
+                error_message = raw_message
+            else:
+                error_message = str(raw_message or "")
+            raw_error_code = error_input.get("error_code")
+            if isinstance(raw_error_code, str) and raw_error_code.strip():
+                error_code = raw_error_code.strip()
+            raw_partial_content = error_input.get("partial_content")
+            if isinstance(raw_partial_content, str):
+                partial_content = raw_partial_content
+            raw_partial_metadata = error_input.get("partial_metadata")
+            if isinstance(raw_partial_metadata, dict):
+                partial_metadata = dict(raw_partial_metadata)
+        else:
+            error_message = error_input
+
+        accumulated_content = stream_text_accumulator.result()
+        if partial_content is None and accumulated_content:
+            partial_content = accumulated_content
+        accumulated_metadata = stream_text_accumulator.result_metadata()
+        if partial_metadata is None and accumulated_metadata:
+            partial_metadata = dict(accumulated_metadata)
+
+        persisted_error_content = (
+            partial_content
+            if isinstance(partial_content, str) and partial_content
+            else error_message
+        )
         error_response_metadata = (
             dict(state.stream_identity) if state.stream_identity else None
         )
@@ -309,6 +346,27 @@ def _build_stream_callbacks(
             if error_response_metadata is None:
                 error_response_metadata = {}
             error_response_metadata["usage"] = dict(state.stream_usage)
+        if partial_metadata:
+            if error_response_metadata is None:
+                error_response_metadata = {}
+            for key, value in partial_metadata.items():
+                if (
+                    key in error_response_metadata
+                    and isinstance(error_response_metadata[key], dict)
+                    and isinstance(value, dict)
+                ):
+                    merged_nested = dict(error_response_metadata[key])
+                    merged_nested.update(value)
+                    error_response_metadata[key] = merged_nested
+                    continue
+                error_response_metadata[key] = value
+        if error_message:
+            if error_response_metadata is None:
+                error_response_metadata = {}
+            stream_error_payload: dict[str, Any] = {"message": error_message}
+            if error_code:
+                stream_error_payload["error_code"] = error_code
+            error_response_metadata["stream_error"] = stream_error_payload
         async with AsyncSessionLocal() as persist_db:
             message_refs = await session_hub_service.record_local_invoke_messages_by_local_session_id(
                 persist_db,
@@ -318,7 +376,7 @@ def _build_stream_callbacks(
                 agent_id=agent_id,
                 agent_source=agent_source,
                 query=query,
-                response_content=error_message,
+                response_content=persisted_error_content,
                 success=False,
                 context_id=state.context_id,
                 user_message_id=state.user_message_id,
@@ -330,7 +388,9 @@ def _build_stream_callbacks(
             await commit_safely(persist_db)
         state.message_refs = message_refs
         state.persisted_success = False
-        state.persisted_response_content = error_message
+        state.persisted_response_content = persisted_error_content
+        if error_code:
+            state.persisted_error_code = error_code
         if on_error_metadata is not None:
             payload = {
                 "message": error_message,

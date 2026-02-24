@@ -238,6 +238,88 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
+async def test_build_stream_callbacks_persists_partial_content_on_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+    async def fake_record_local_invoke_messages(
+        db,  # noqa: ARG001
+        **kwargs,
+    ) -> dict[str, object]:
+        captured.update(kwargs)
+        return {
+            "conversation_id": kwargs["local_session_id"],
+            "user_message_id": uuid4(),
+            "agent_message_id": uuid4(),
+        }
+
+    async def fake_commit_safely(db):  # noqa: ARG001
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_local_invoke_messages_by_local_session_id",
+        fake_record_local_invoke_messages,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="scheduled",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        user_message_id=None,
+        client_agent_message_id=None,
+    )
+    on_event, _, on_error, _ = invoke_route_runner._build_stream_callbacks(
+        state=state,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        transport="scheduled",
+    )
+
+    await on_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"kind": "text", "text": "partial response"}],
+                "metadata": {"opencode": {"block_type": "text"}},
+            },
+        }
+    )
+    await on_error("A2A stream total timeout after 60.0s")
+
+    assert captured["response_content"] == "partial response"
+    assert captured["success"] is False
+    response_metadata = captured["response_metadata"]
+    assert isinstance(response_metadata, dict)
+    assert response_metadata["stream_error"]["message"] == (
+        "A2A stream total timeout after 60.0s"
+    )
+    message_blocks = response_metadata["message_blocks"]
+    assert isinstance(message_blocks, list)
+    assert message_blocks[0]["content"] == "partial response"
+    assert state.persisted_response_content == "partial response"
+
+
+@pytest.mark.asyncio
 async def test_run_http_invoke_route_retries_session_not_found_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
