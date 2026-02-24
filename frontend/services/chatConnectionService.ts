@@ -33,6 +33,8 @@ const supportsStreaming =
 
 const wsConnectTimeoutMs = 10_000;
 const wsIdleTimeoutMs = 45_000;
+const fallbackLogThrottleMs = 15_000;
+const fallbackLogTimestamps = new Map<string, number>();
 
 const isAbsoluteHttpUrl = (value: string) => /^https?:\/\//.test(value);
 
@@ -74,6 +76,20 @@ const buildInvokeUrl = (
 const buildInvokeWsUrl = (agentId: string, source: AgentSource) => {
   const wsBase = getAbsoluteWsBaseUrl();
   return `${wsBase}/${scopeForSource(source)}/${encodeURIComponent(agentId)}/invoke/ws`;
+};
+
+const logFallback = (channel: "WS" | "SSE", reason: string) => {
+  const key = `${channel}:${reason}`;
+  const now = Date.now();
+  const previous = fallbackLogTimestamps.get(key);
+  if (previous && now - previous < fallbackLogThrottleMs) {
+    return;
+  }
+  fallbackLogTimestamps.set(key, now);
+  console.info(`[${channel} Fallback]`, {
+    platform: Platform.OS,
+    reason,
+  });
 };
 
 type StreamCallbacks = {
@@ -319,10 +335,7 @@ class ChatConnectionService {
       if (isAuthFailureError(error)) {
         throw error;
       }
-      console.warn("[WS Fallback]", {
-        platform: Platform.OS,
-        reason: error instanceof Error ? error.message : String(error),
-      });
+      logFallback("WS", error instanceof Error ? error.message : String(error));
       return false;
     }
   }
@@ -376,10 +389,10 @@ class ChatConnectionService {
       if (isAuthFailureError(error)) {
         throw error;
       }
-      console.warn("[SSE Fallback]", {
-        platform: Platform.OS,
-        reason: error instanceof Error ? error.message : String(error),
-      });
+      logFallback(
+        "SSE",
+        error instanceof Error ? error.message : String(error),
+      );
       return false;
     } finally {
       this.abortControllers.delete(conversationId);

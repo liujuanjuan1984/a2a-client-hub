@@ -124,6 +124,23 @@ const buildApiErrorMessage = (error: unknown): string => {
     : `${error.message}${codeSuffix}`;
 };
 
+const streamWarnThrottleMs = 15_000;
+const streamWarnTimestamps = new Map<string, number>();
+
+const warnStreamOnce = (
+  key: string,
+  message: string,
+  payload: Record<string, unknown>,
+) => {
+  const now = Date.now();
+  const previous = streamWarnTimestamps.get(key);
+  if (previous && now - previous < streamWarnThrottleMs) {
+    return;
+  }
+  streamWarnTimestamps.set(key, now);
+  console.warn(message, payload);
+};
+
 export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   conversationId: string,
   agentId: string,
@@ -579,12 +596,16 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       lastStreamError: errorText,
       pendingInterrupt: null,
     });
-    console.warn("[Chat Stream] error (marked recoverable for resume)", {
-      conversationId,
-      source: get().sessions[conversationId]?.source ?? null,
-      message: errorText,
-      transport: get().sessions[conversationId]?.transport ?? "unknown",
-    });
+    warnStreamOnce(
+      `recoverable:${conversationId}:${errorText}`,
+      "[Chat Stream] error (marked recoverable for resume)",
+      {
+        conversationId,
+        source: get().sessions[conversationId]?.source ?? null,
+        message: errorText,
+        transport: get().sessions[conversationId]?.transport ?? "unknown",
+      },
+    );
   };
 
   const completeStreamingMessage = () => {
@@ -609,11 +630,15 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           streamState: "recoverable",
           lastStreamError: message,
         });
-        console.warn("[Chat Stream] sequence-gap recovery failed", {
-          conversationId,
-          source: get().sessions[conversationId]?.source ?? null,
-          message,
-        });
+        warnStreamOnce(
+          `sequence-gap:${conversationId}:${message}`,
+          "[Chat Stream] sequence-gap recovery failed",
+          {
+            conversationId,
+            source: get().sessions[conversationId]?.source ?? null,
+            message,
+          },
+        );
       });
     }
   };
