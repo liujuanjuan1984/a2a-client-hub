@@ -108,9 +108,9 @@ def create_opencode_extension_router(
             success=False,
             result=None,
             error_code=error_code,
-            upstream_error=upstream_error
-            if upstream_error is not None
-            else {"message": message},
+            upstream_error=(
+                upstream_error if upstream_error is not None else {"message": message}
+            ),
             meta=meta or {},
         )
         status_code = status_code_for_extension_error_code(error_code)
