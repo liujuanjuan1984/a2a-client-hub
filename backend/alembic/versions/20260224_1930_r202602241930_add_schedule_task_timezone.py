@@ -1,7 +1,7 @@
 """add timezone to schedule tasks
 
 Revision ID: r202602241930
-Revises: 9c7d1e2f3a4b
+Revises: r202602241900
 Create Date: 2026-02-24 19:30:00.000000
 """
 
@@ -17,7 +17,7 @@ from app.db.models.base import SCHEMA_NAME
 
 # revision identifiers, used by Alembic.
 revision: str = "r202602241930"
-down_revision: Union[str, None] = "9c7d1e2f3a4b"
+down_revision: Union[str, None] = "r202602241900"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
