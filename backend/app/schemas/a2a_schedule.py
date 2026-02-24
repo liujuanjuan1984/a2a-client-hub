@@ -13,6 +13,7 @@ from app.schemas.pagination import ListResponse, Pagination
 A2AScheduleCycleType = Literal["daily", "weekly", "monthly", "interval"]
 A2AScheduleRunStatus = Literal["idle", "running", "success", "failed"]
 A2AScheduleExecutionStatus = Literal["running", "success", "failed"]
+A2AScheduleConversationPolicy = Literal["new_each_run", "reuse_single"]
 
 
 class A2AScheduleTaskBase(BaseModel):
@@ -34,6 +35,7 @@ class A2AScheduleTaskBase(BaseModel):
 
 class A2AScheduleTaskCreate(A2AScheduleTaskBase):
     enabled: bool = True
+    conversation_policy: A2AScheduleConversationPolicy = "new_each_run"
 
 
 class A2AScheduleTaskUpdate(BaseModel):
@@ -43,11 +45,13 @@ class A2AScheduleTaskUpdate(BaseModel):
     cycle_type: Optional[A2AScheduleCycleType] = None
     time_point: Optional[Dict[str, Any]] = None
     enabled: Optional[bool] = None
+    conversation_policy: Optional[A2AScheduleConversationPolicy] = None
 
 
 class A2AScheduleTaskResponse(A2AScheduleTaskBase):
     id: UUID
     conversation_id: Optional[UUID] = None
+    conversation_policy: A2AScheduleConversationPolicy
     enabled: bool
     next_run_at: Optional[datetime] = None
     last_run_at: Optional[datetime] = None
@@ -119,6 +123,7 @@ class A2AScheduleManualFailRequest(BaseModel):
 
 
 __all__ = [
+    "A2AScheduleConversationPolicy",
     "A2AScheduleCycleType",
     "A2AScheduleExecutionListMeta",
     "A2AScheduleExecutionListResponse",

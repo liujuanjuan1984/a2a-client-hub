@@ -24,6 +24,7 @@ export type ScheduledJob = {
   cycle_type: ScheduleCycleType;
   time_point: ScheduleTimePoint | Record<string, unknown>;
   enabled: boolean;
+  conversation_policy: "new_each_run" | "reuse_single";
   conversation_id?: string | null;
   next_run_at?: string | null;
   last_run_at?: string | null;
@@ -54,6 +55,7 @@ export type ScheduledJobPayload = {
   cycle_type: ScheduleCycleType;
   time_point: ScheduleTimePoint;
   enabled: boolean;
+  conversation_policy: "new_each_run" | "reuse_single";
 };
 
 export type MarkScheduledJobFailedPayload = {

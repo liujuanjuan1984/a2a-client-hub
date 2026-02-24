@@ -33,6 +33,7 @@ const initialForm: ScheduledJobPayload = {
   cycle_type: "daily",
   time_point: { time: "07:00" },
   enabled: true,
+  conversation_policy: "new_each_run",
 };
 
 const isValidHHMM = (value: string) => {
@@ -96,6 +97,7 @@ type Snapshot = {
   cycle_type: ScheduleCycleType;
   time_point: unknown;
   enabled: boolean;
+  conversation_policy: "new_each_run" | "reuse_single";
 };
 
 const buildSnapshot = (form: ScheduledJobPayload): Snapshot => ({
@@ -105,6 +107,7 @@ const buildSnapshot = (form: ScheduledJobPayload): Snapshot => ({
   cycle_type: form.cycle_type,
   time_point: normalizeTimePoint(form.cycle_type, form.time_point),
   enabled: form.enabled,
+  conversation_policy: form.conversation_policy,
 });
 
 export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
@@ -160,6 +163,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           cycle_type: found.cycle_type,
           time_point: normalizeTimePoint(found.cycle_type, found.time_point),
           enabled: found.enabled,
+          conversation_policy: found.conversation_policy || "new_each_run",
         };
         setForm(next);
         setLastRunStatus(found.last_run_status ?? null);

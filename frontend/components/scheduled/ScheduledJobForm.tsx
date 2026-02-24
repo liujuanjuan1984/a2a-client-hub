@@ -338,6 +338,35 @@ export function ScheduledJobForm({
         </>
       )}
 
+      <Text className="mt-3 text-xs text-muted">Session Policy</Text>
+      <View className="mt-1 flex-row flex-wrap gap-2">
+        {(
+          [
+            { value: "new_each_run", label: "New Each Run" },
+            { value: "reuse_single", label: "Reuse Single Session" },
+          ] as const
+        ).map((option) => {
+          const selected = form.conversation_policy === option.value;
+          return (
+            <Pressable
+              key={option.value}
+              className={`rounded-lg border px-2 py-1 ${
+                selected
+                  ? "border-primary bg-primary/20"
+                  : "border-slate-700 bg-slate-900"
+              }`}
+              onPress={() => onChange({ conversation_policy: option.value })}
+            >
+              <Text
+                className={`text-xs ${selected ? "text-primary" : "text-slate-300"}`}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       <Text className="mt-3 text-xs text-muted">Prompt</Text>
       <TextInput
         className="mt-1 min-h-[100px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"

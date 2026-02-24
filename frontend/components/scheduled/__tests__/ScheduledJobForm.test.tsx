@@ -14,6 +14,7 @@ describe("ScheduledJobForm", () => {
       minutes: 10,
     },
     enabled: true,
+    conversation_policy: "new_each_run",
   };
 
   it("preserves typed characters while editing start datetime input", () => {

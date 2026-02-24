@@ -201,6 +201,7 @@ describe("ScheduledJobFormScreen", () => {
       cycle_type: "daily",
       time_point: { time: "07:00" },
       enabled: true,
+      conversation_policy: "new_each_run",
     });
     expect(mockAllowNextNavigation).toHaveBeenCalledTimes(1);
   });
@@ -267,6 +268,7 @@ describe("ScheduledJobFormScreen", () => {
         start_at: expectedStartAt,
       },
       enabled: true,
+      conversation_policy: "new_each_run",
     });
     expect(capturedTimeZone).toBe("Asia/Shanghai");
   });
