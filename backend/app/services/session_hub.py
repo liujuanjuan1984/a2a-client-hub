@@ -401,6 +401,7 @@ class SessionHubService:
         invoke_metadata: Optional[Dict[str, Any]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
         response_metadata: Optional[Dict[str, Any]] = None,
+        idempotency_key: Optional[str] = None,
     ) -> dict[str, UUID]:
         metadata: Dict[str, Any] = {
             "source": source,
@@ -424,8 +425,11 @@ class SessionHubService:
         normalized_client_agent_message_id = normalize_non_empty_text(
             client_agent_message_id
         )
+        normalized_idempotency_key = normalize_non_empty_text(idempotency_key)
         if normalized_user_message_id:
             metadata["client_message_id"] = normalized_user_message_id
+        if normalized_idempotency_key:
+            metadata["invoke_idempotency_key"] = normalized_idempotency_key
         if (
             source == "manual"
             and (session_title := _derive_session_title_from_query(query))
@@ -468,14 +472,6 @@ class SessionHubService:
                 session.context_id = normalized_context_id
 
         metadata["conversation_id"] = str(conversation_id)
-        user_message = await agent_message_handler.create_agent_message(
-            db,
-            user_id=user_id,
-            content=query,
-            sender="user",
-            conversation_id=conversation_id,
-            metadata=metadata,
-        )
         agent_metadata = dict(metadata)
         if normalized_client_agent_message_id:
             agent_metadata["client_message_id"] = normalized_client_agent_message_id
@@ -491,14 +487,52 @@ class SessionHubService:
                     agent_metadata[key] = merged_nested
                     continue
                 agent_metadata[key] = value
-        agent_message = await agent_message_handler.create_agent_message(
-            db,
-            user_id=user_id,
-            content=response_content,
-            sender="agent",
-            conversation_id=conversation_id,
-            metadata=agent_metadata,
-        )
+        existing_user_message: AgentMessage | None = None
+        existing_agent_message: AgentMessage | None = None
+        if normalized_idempotency_key:
+            existing_user_message = await self._find_message_by_idempotency_key(
+                db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                sender="user",
+                idempotency_key=normalized_idempotency_key,
+            )
+            existing_agent_message = await self._find_message_by_idempotency_key(
+                db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                sender="agent",
+                idempotency_key=normalized_idempotency_key,
+            )
+
+        if existing_user_message is None:
+            user_message = await agent_message_handler.create_agent_message(
+                db,
+                user_id=user_id,
+                content=query,
+                sender="user",
+                conversation_id=conversation_id,
+                metadata=metadata,
+            )
+        else:
+            user_message = existing_user_message
+
+        if existing_agent_message is None:
+            agent_message = await agent_message_handler.create_agent_message(
+                db,
+                user_id=user_id,
+                content=response_content,
+                sender="agent",
+                conversation_id=conversation_id,
+                metadata=agent_metadata,
+            )
+        else:
+            agent_message = await agent_message_handler.update_agent_message(
+                db,
+                message=existing_agent_message,
+                content=response_content,
+                message_metadata=agent_metadata,
+            )
         target_session = session
         if conversation_id != session.id:
             rebound_session = await self._get_local_session_by_id(
@@ -514,6 +548,39 @@ class SessionHubService:
             "user_message_id": user_message.id,
             "agent_message_id": agent_message.id,
         }
+
+    async def _find_message_by_idempotency_key(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        sender: str,
+        idempotency_key: str,
+    ) -> AgentMessage | None:
+        stmt = (
+            select(AgentMessage)
+            .where(
+                and_(
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.conversation_id == conversation_id,
+                    AgentMessage.sender == sender,
+                )
+            )
+            .order_by(AgentMessage.created_at.desc())
+            .limit(50)
+        )
+        candidates = list((await db.scalars(stmt)).all())
+        for candidate in candidates:
+            metadata = candidate.message_metadata
+            if not isinstance(metadata, dict):
+                continue
+            candidate_key = normalize_non_empty_text(
+                metadata.get("invoke_idempotency_key")
+            )
+            if candidate_key == idempotency_key:
+                return candidate
+        return None
 
     async def record_local_invoke_messages_by_local_session_id(
         self,
@@ -533,6 +600,7 @@ class SessionHubService:
         invoke_metadata: Optional[Dict[str, Any]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
         response_metadata: Optional[Dict[str, Any]] = None,
+        idempotency_key: Optional[str] = None,
     ) -> dict[str, UUID]:
         session = await self._get_local_session_by_id(
             db,
@@ -558,6 +626,7 @@ class SessionHubService:
             invoke_metadata=invoke_metadata,
             extra_metadata=extra_metadata,
             response_metadata=response_metadata,
+            idempotency_key=idempotency_key,
         )
 
     async def _get_local_session_by_id(

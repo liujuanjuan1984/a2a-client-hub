@@ -332,6 +332,7 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     response_metadata = captured["response_metadata"]
     assert isinstance(response_metadata, dict)
     stream_metadata = response_metadata["stream"]
+    assert stream_metadata["schema_version"] == 1
     assert stream_metadata["finish_reason"] == "timeout_total"
     assert stream_metadata["error"]["message"] == "A2A stream total timeout after 60.0s"
     assert stream_metadata["error"]["error_code"] == "timeout"
@@ -341,6 +342,191 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     assert state.persisted_response_content == "partial response"
     assert state.persisted_error_code == "timeout"
     assert state.persisted_finish_reason == "timeout_total"
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+        return invoke_route_runner._InvokeState(
+            local_session_id=uuid4(),
+            local_source="manual",
+            context_id=None,
+            metadata={"run_id": "run-1"},
+            stream_identity={},
+            stream_usage={},
+            user_message_id=None,
+            client_agent_message_id=None,
+        )
+
+    async def fake_record_local_invoke_messages(
+        db,  # noqa: ARG001
+        **kwargs,
+    ) -> dict[str, object]:
+        captured.update(kwargs)
+        return {
+            "conversation_id": kwargs["local_session_id"],
+            "user_message_id": uuid4(),
+            "agent_message_id": uuid4(),
+        }
+
+    async def fake_commit_safely(db):  # noqa: ARG001
+        return None
+
+    def fake_stream_sse(**kwargs):
+        finalized = kwargs.get("on_finalized")
+        assert callable(finalized)
+
+        async def _iterator():
+            await finalized(
+                StreamOutcome(
+                    success=False,
+                    finish_reason=StreamFinishReason.TIMEOUT_TOTAL,
+                    final_text="partial sse",
+                    error_message="timeout",
+                    error_code="timeout",
+                    message_blocks=[
+                        {
+                            "id": "block-1",
+                            "type": "text",
+                            "content": "partial sse",
+                            "is_finished": False,
+                        }
+                    ],
+                    elapsed_seconds=60.0,
+                    idle_seconds=1.0,
+                    terminal_event_seen=False,
+                )
+            )
+            yield "event: stream_end\ndata: {}\n\n"
+
+        return StreamingResponse(_iterator(), media_type="text/event-stream")
+
+    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_local_invoke_messages_by_local_session_id",
+        fake_record_local_invoke_messages,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service, "stream_sse", fake_stream_sse
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {"query": "hello", "conversationId": str(uuid4()), "metadata": {}}
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+
+    response = await invoke_route_runner.run_http_invoke(
+        db=object(),
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=True,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert isinstance(response, StreamingResponse)
+    await _consume_stream(response)
+    assert captured["response_content"] == "partial sse"
+    stream_metadata = captured["response_metadata"]["stream"]
+    assert stream_metadata["finish_reason"] == "timeout_total"
+
+
+@pytest.mark.asyncio
+async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+        return invoke_route_runner._InvokeState(
+            local_session_id=uuid4(),
+            local_source="manual",
+            context_id=None,
+            metadata={"run_id": "run-2"},
+            stream_identity={},
+            stream_usage={},
+            user_message_id=None,
+            client_agent_message_id=None,
+        )
+
+    async def fake_record_local_invoke_messages(
+        db,  # noqa: ARG001
+        **kwargs,
+    ) -> dict[str, object]:
+        captured.update(kwargs)
+        return {
+            "conversation_id": kwargs["local_session_id"],
+            "user_message_id": uuid4(),
+            "agent_message_id": uuid4(),
+        }
+
+    async def fake_commit_safely(db):  # noqa: ARG001
+        return None
+
+    async def fake_stream_ws(**kwargs):
+        finalized = kwargs.get("on_finalized")
+        assert callable(finalized)
+        await finalized(
+            StreamOutcome(
+                success=True,
+                finish_reason=StreamFinishReason.SUCCESS,
+                final_text="ws final",
+                error_message=None,
+                error_code=None,
+                message_blocks=[],
+                elapsed_seconds=1.0,
+                idle_seconds=0.1,
+                terminal_event_seen=True,
+            )
+        )
+
+    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_local_invoke_messages_by_local_session_id",
+        fake_record_local_invoke_messages,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service, "stream_ws", fake_stream_ws
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {"query": "hello", "conversationId": str(uuid4()), "metadata": {}}
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+
+    await invoke_route_runner.run_ws_invoke(
+        websocket=_NoopWebSocket(),
+        db=object(),
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert captured["response_content"] == "ws final"
+    assert captured["response_metadata"]["stream"]["finish_reason"] == "success"
 
 
 @pytest.mark.asyncio

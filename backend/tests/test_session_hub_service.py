@@ -158,3 +158,72 @@ async def test_record_local_invoke_messages_writes_canonical_external_session_id
         metadata = msg.message_metadata or {}
         assert metadata.get("externalSessionId") == "ses-upstream-1"
         assert "external_session_id" not in metadata
+
+
+async def test_record_local_invoke_messages_is_idempotent_with_key(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_SCHEDULED,
+        title="Scheduled Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    first_refs = await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="scheduled",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="partial",
+        success=False,
+        context_id="ctx-1",
+        idempotency_key="run:abc:scheduled",
+        response_metadata={
+            "stream": {
+                "schema_version": 1,
+                "finish_reason": "timeout_total",
+                "error": {"message": "timeout", "error_code": "timeout"},
+            }
+        },
+    )
+    second_refs = await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="scheduled",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="partial-updated",
+        success=False,
+        context_id="ctx-1",
+        idempotency_key="run:abc:scheduled",
+        response_metadata={
+            "stream": {
+                "schema_version": 1,
+                "finish_reason": "timeout_total",
+                "error": {"message": "timeout", "error_code": "timeout"},
+            }
+        },
+    )
+    await async_db_session.flush()
+
+    result = await async_db_session.execute(
+        select(AgentMessage)
+        .where(AgentMessage.conversation_id == thread.id)
+        .order_by(AgentMessage.created_at.asc())
+    )
+    messages = list(result.scalars().all())
+    assert len(messages) == 2
+    assert first_refs["user_message_id"] == second_refs["user_message_id"]
+    assert first_refs["agent_message_id"] == second_refs["agent_message_id"]
+    assert messages[-1].sender == "agent"
+    assert messages[-1].content == "partial-updated"

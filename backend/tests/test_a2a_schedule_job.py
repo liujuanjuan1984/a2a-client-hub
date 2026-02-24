@@ -376,6 +376,7 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
     metadata = agent_message.message_metadata
     assert isinstance(metadata, dict)
     assert metadata["success"] is False
+    assert metadata["stream"]["schema_version"] == 1
     assert metadata["stream"]["finish_reason"] == "timeout_total"
     assert metadata["stream"]["error"]["error_code"] == "timeout"
     message_blocks = metadata["message_blocks"]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import suppress
 
 import pytest
 from fastapi import WebSocketDisconnect
@@ -45,15 +46,13 @@ class _GatewayWithDelayedEvents:
             yield _DumpableEvent(event)
 
 
-class _GatewayWithInitialEventThenStall:
-    def __init__(self, first_event: dict, stall_seconds: float):
+class _GatewayWithSingleEventThenPending:
+    def __init__(self, first_event: dict):
         self._first_event = first_event
-        self._stall_seconds = stall_seconds
 
     async def stream(self, **kwargs):  # noqa: ARG002
         yield _DumpableEvent(self._first_event)
-        await asyncio.sleep(self._stall_seconds)
-        yield _DumpableEvent({"kind": "status-update", "final": True})
+        await asyncio.Future()
 
 
 class _DummyWebSocket:
@@ -767,8 +766,34 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
 @pytest.mark.asyncio
 async def test_consume_stream_reports_total_timeout_with_partial_content(monkeypatch):
     monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    monotonic_values = [0.0, 0.0, 0.01, 0.06, 0.06, 0.06, 0.06, 0.06]
+    monotonic_index = {"value": 0}
+
+    def _fake_monotonic() -> float:
+        index = monotonic_index["value"]
+        monotonic_index["value"] = min(index + 1, len(monotonic_values) - 1)
+        return monotonic_values[index]
+
+    wait_for_calls = {"value": 0}
+
+    async def _fake_wait_for(awaitable, timeout):  # noqa: ARG001
+        wait_for_calls["value"] += 1
+        if wait_for_calls["value"] == 1:
+            return await awaitable
+        timeout_task = asyncio.create_task(awaitable)
+        timeout_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await timeout_task
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.time.monotonic", _fake_monotonic
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.asyncio.wait_for", _fake_wait_for
+    )
     result = await a2a_invoke_service.consume_stream(
-        gateway=_GatewayWithInitialEventThenStall(
+        gateway=_GatewayWithSingleEventThenPending(
             first_event={
                 "kind": "artifact-update",
                 "artifact": {
@@ -776,7 +801,6 @@ async def test_consume_stream_reports_total_timeout_with_partial_content(monkeyp
                     "metadata": {"opencode": {"block_type": "text"}},
                 },
             },
-            stall_seconds=0.2,
         ),
         resolved=object(),
         query="hello",
@@ -799,10 +823,35 @@ async def test_consume_stream_reports_total_timeout_with_partial_content(monkeyp
 @pytest.mark.asyncio
 async def test_consume_stream_reports_idle_timeout_with_partial_content(monkeypatch):
     monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.0)
+    monotonic_values = [0.0, 0.0, 0.01, 0.03, 0.04, 0.05, 0.06, 0.06, 0.06]
+    monotonic_index = {"value": 0}
+
+    def _fake_monotonic() -> float:
+        index = monotonic_index["value"]
+        monotonic_index["value"] = min(index + 1, len(monotonic_values) - 1)
+        return monotonic_values[index]
+
+    wait_for_calls = {"value": 0}
+
+    async def _fake_wait_for(awaitable, timeout):  # noqa: ARG001
+        wait_for_calls["value"] += 1
+        if wait_for_calls["value"] == 1:
+            return await awaitable
+        timeout_task = asyncio.create_task(awaitable)
+        timeout_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await timeout_task
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.time.monotonic", _fake_monotonic
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.asyncio.wait_for", _fake_wait_for
+    )
     result = await a2a_invoke_service.consume_stream(
-        gateway=_GatewayWithInitialEventThenStall(
-            first_event={"content": "partial text"},
-            stall_seconds=0.2,
+        gateway=_GatewayWithSingleEventThenPending(
+            first_event={"content": "partial text"}
         ),
         resolved=object(),
         query="hello",
