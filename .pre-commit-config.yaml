@@ -61,9 +61,38 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
 
-  # Frontend checks (run only when frontend/ files are changed)
+  # Secret scanning
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: ^(frontend/package-lock\.json|backend/uv\.lock)$
+
+  # Shell script static checks
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=error]
+        files: ^(backend/scripts|frontend/scripts|scripts)/.*\.sh$
+
+  # Local checks
   - repo: local
     hooks:
+      - id: backend-mypy-changed
+        name: backend mypy (changed files only)
+        entry: bash backend/scripts/mypy_changed.sh
+        language: system
+        files: ^backend/.*\.py$
+
+      - id: bash-syntax-check
+        name: bash -n syntax check
+        entry: bash -n
+        language: system
+        files: ^(backend/scripts|frontend/scripts|scripts)/.*\.sh$
+
+      # Frontend checks (run only when frontend/ files are changed)
       - id: frontend-eslint
         name: frontend eslint
         entry: bash -lc 'cd frontend && npm run lint'

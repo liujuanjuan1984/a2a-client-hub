@@ -62,6 +62,7 @@ dev = [
     "black>=24.0.0",
     "isort==5.13.2",
     "mypy>=1.10.0",
+    "pip-audit>=2.9.0",
     "pre-commit>=3.0.0",
     "pytest>=8.3.0",
     "pytest-asyncio>=1.2.0",
