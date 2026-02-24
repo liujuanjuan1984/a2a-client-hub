@@ -2,6 +2,7 @@ const rnPreset = require("react-native/jest-preset");
 
 module.exports = {
   ...rnPreset,
+  coverageProvider: "v8",
   testMatch: ["**/?(*.)+(spec|test).[tj]s?(x)"],
   collectCoverage: true,
   coverageThreshold: {
