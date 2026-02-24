@@ -492,7 +492,7 @@ class Settings(BaseSettings):
     a2a_schedule_task_invoke_timeout: float = Field(
         default=3600.0,
         alias="A2A_SCHEDULE_TASK_INVOKE_TIMEOUT",
-        description="Maximum total timeout in seconds for a single scheduled A2A stream execution.",
+        description="Maximum total timeout in seconds for a single scheduled A2A stream execution. Consider reducing this to actual max execution time (e.g. 600.0) for better recovery.",
     )
     a2a_schedule_task_stream_idle_timeout: float = Field(
         default=60.0,
