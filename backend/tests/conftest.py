@@ -69,6 +69,8 @@ if "JWT_PRIVATE_KEY_PEM" not in os.environ or "JWT_PUBLIC_KEY_PEM" not in os.env
     os.environ.setdefault("JWT_ACCESS_TOKEN_TTL_SECONDS", "1800")
     os.environ.setdefault("JWT_REFRESH_TOKEN_TTL_SECONDS", "1209600")
     os.environ.setdefault("AUTH_REFRESH_COOKIE_SECURE", "false")
+    os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-that-is-long-enough-for-tests")
+    os.environ.setdefault("WS_TICKET_SECRET_KEY", "test-ws-ticket-secret-key-that-is-long-enough-for-tests")
 
 
 def pytest_configure(config: pytest.Config) -> None:
