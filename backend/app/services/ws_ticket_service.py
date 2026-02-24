@@ -49,7 +49,7 @@ class WsTicketService:
     """Issue and consume short-lived, one-time WS tickets."""
 
     def __init__(self) -> None:
-        self._secret_key = settings.ws_ticket_secret_key or settings.jwt_secret_key
+        self._secret_key = settings.ws_ticket_secret_key
 
     def _hash_token(self, token: str) -> str:
         if not self._secret_key:

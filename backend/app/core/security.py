@@ -23,20 +23,20 @@ REFRESH_TOKEN_TYPE = "refresh"
 
 def _jwt_signing_key() -> str:
     algorithm = (settings.jwt_algorithm or "").upper()
-    if algorithm.startswith(("RS", "ES")):
-        if not settings.jwt_private_key_pem:
-            raise RuntimeError("JWT private key is not configured")
-        return settings.jwt_private_key_pem
-    return settings.jwt_secret_key
+    if not algorithm.startswith(("RS", "ES")):
+        raise RuntimeError(f"Unsupported JWT algorithm for signing: {algorithm}")
+    if not settings.jwt_private_key_pem:
+        raise RuntimeError("JWT private key is not configured")
+    return settings.jwt_private_key_pem
 
 
 def _jwt_verification_key() -> str:
     algorithm = (settings.jwt_algorithm or "").upper()
-    if algorithm.startswith(("RS", "ES")):
-        if not settings.jwt_public_key_pem:
-            raise RuntimeError("JWT public key is not configured")
-        return settings.jwt_public_key_pem
-    return settings.jwt_secret_key
+    if not algorithm.startswith(("RS", "ES")):
+        raise RuntimeError(f"Unsupported JWT algorithm for verification: {algorithm}")
+    if not settings.jwt_public_key_pem:
+        raise RuntimeError("JWT public key is not configured")
+    return settings.jwt_public_key_pem
 
 
 def create_jwt_token(
