@@ -277,6 +277,23 @@ async def test_prompt_async_requires_non_empty_parts() -> None:
 
 
 @pytest.mark.asyncio
+async def test_prompt_async_rejects_invalid_directory_type() -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    with pytest.raises(
+        ValueError, match="metadata.opencode.directory must be a non-empty string"
+    ):
+        await service.opencode_prompt_async(
+            runtime=runtime,
+            session_id="ses_123",
+            request_payload={"parts": [{"type": "text", "text": "continue"}]},
+            metadata={"opencode": {"directory": 123}},
+        )
+
+
+@pytest.mark.asyncio
 async def test_reply_permission_uses_request_id_and_reply_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -326,6 +343,66 @@ async def test_reply_permission_rejects_invalid_reply_value() -> None:
             runtime=runtime,
             request_id="perm-1",
             reply="allow",
+        )
+
+
+@pytest.mark.asyncio
+async def test_reply_permission_forwards_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = SimpleNamespace(
+        uri="urn:opencode-a2a:opencode-interrupt-callback/v1",
+        jsonrpc=SimpleNamespace(url="https://example.com/jsonrpc", fallback_used=False),
+        methods={"reply_permission": "opencode.permission.reply"},
+        business_code_map={-32004: "interrupt_request_not_found"},
+    )
+
+    async def _fake_resolve(_runtime):
+        return ext, "https://example.com/jsonrpc"
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "reply_permission"
+        assert kwargs["params"] == {
+            "request_id": "perm-1",
+            "reply": "once",
+            "metadata": {"opencode": {"directory": "/workspace/project"}},
+        }
+        return ExtensionCallResult(
+            success=True,
+            result={"ok": True, "request_id": "perm-1"},
+            meta={"request_id": "perm-1"},
+        )
+
+    monkeypatch.setattr(service, "_resolve_opencode_interrupt_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_invoke_opencode_interrupt_method", _fake_invoke)
+
+    result = await service.opencode_reply_permission(
+        runtime=runtime,
+        request_id="perm-1",
+        reply="once",
+        metadata={"opencode": {"directory": "/workspace/project"}},
+    )
+    assert result.success is True
+
+
+@pytest.mark.asyncio
+async def test_reply_permission_rejects_invalid_directory_type() -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    with pytest.raises(
+        ValueError, match="metadata.opencode.directory must be a non-empty string"
+    ):
+        await service.opencode_reply_permission(
+            runtime=runtime,
+            request_id="perm-1",
+            reply="once",
+            metadata={"opencode": {"directory": 123}},
         )
 
 

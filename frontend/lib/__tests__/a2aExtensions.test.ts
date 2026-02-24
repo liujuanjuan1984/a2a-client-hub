@@ -2,6 +2,7 @@ import {
   A2AExtensionCallError,
   assertExtensionSuccess,
   promptOpencodeSessionAsync,
+  replyOpencodePermissionInterrupt,
 } from "@/lib/api/a2aExtensions";
 import { apiRequest } from "@/lib/api/client";
 
@@ -98,5 +99,33 @@ describe("assertExtensionSuccess", () => {
         },
       }),
     ).rejects.toThrow("prompt_async acknowledged without ok=true");
+  });
+
+  it("forwards interrupt metadata when provided", async () => {
+    mockedApiRequest.mockResolvedValue({
+      success: true,
+      result: { ok: true, request_id: "perm-1" },
+    });
+
+    const result = await replyOpencodePermissionInterrupt({
+      source: "shared",
+      agentId: "agent-1",
+      requestId: "perm-1",
+      reply: "once",
+      metadata: { opencode: { directory: "/workspace/project" } },
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/a2a/agents/agent-1/extensions/opencode/interrupts/permission:reply",
+      {
+        method: "POST",
+        body: {
+          request_id: "perm-1",
+          reply: "once",
+          metadata: { opencode: { directory: "/workspace/project" } },
+        },
+      },
+    );
+    expect(result).toEqual({ ok: true, requestId: "perm-1" });
   });
 });

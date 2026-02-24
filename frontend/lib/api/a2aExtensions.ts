@@ -98,10 +98,15 @@ export const replyOpencodePermissionInterrupt = async (input: {
   agentId: string;
   requestId: string;
   reply: "once" | "always" | "reject";
+  metadata?: Record<string, unknown>;
 }): Promise<InterruptAckResult> => {
   const response = await apiRequest<
     A2AExtensionResponse,
-    { request_id: string; reply: "once" | "always" | "reject" }
+    {
+      request_id: string;
+      reply: "once" | "always" | "reject";
+      metadata?: Record<string, unknown>;
+    }
   >(
     buildOpencodeInterruptPath(input.source, input.agentId, "permission:reply"),
     {
@@ -109,6 +114,7 @@ export const replyOpencodePermissionInterrupt = async (input: {
       body: {
         request_id: input.requestId,
         reply: input.reply,
+        ...(input.metadata ? { metadata: input.metadata } : {}),
       },
     },
   );
@@ -120,15 +126,21 @@ export const replyOpencodeQuestionInterrupt = async (input: {
   agentId: string;
   requestId: string;
   answers: string[][];
+  metadata?: Record<string, unknown>;
 }): Promise<InterruptAckResult> => {
   const response = await apiRequest<
     A2AExtensionResponse,
-    { request_id: string; answers: string[][] }
+    {
+      request_id: string;
+      answers: string[][];
+      metadata?: Record<string, unknown>;
+    }
   >(buildOpencodeInterruptPath(input.source, input.agentId, "question:reply"), {
     method: "POST",
     body: {
       request_id: input.requestId,
       answers: input.answers,
+      ...(input.metadata ? { metadata: input.metadata } : {}),
     },
   });
   return assertInterruptAckResult(response, input.requestId);
@@ -138,16 +150,18 @@ export const rejectOpencodeQuestionInterrupt = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
   requestId: string;
+  metadata?: Record<string, unknown>;
 }): Promise<InterruptAckResult> => {
   const response = await apiRequest<
     A2AExtensionResponse,
-    { request_id: string }
+    { request_id: string; metadata?: Record<string, unknown> }
   >(
     buildOpencodeInterruptPath(input.source, input.agentId, "question:reject"),
     {
       method: "POST",
       body: {
         request_id: input.requestId,
+        ...(input.metadata ? { metadata: input.metadata } : {}),
       },
     },
   );

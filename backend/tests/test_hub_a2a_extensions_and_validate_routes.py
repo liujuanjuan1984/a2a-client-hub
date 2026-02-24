@@ -150,13 +150,21 @@ class _FakeExtensionsService:
             meta={},
         )
 
-    async def opencode_reply_permission(self, *, runtime, request_id: str, reply: str):
+    async def opencode_reply_permission(
+        self,
+        *,
+        runtime,
+        request_id: str,
+        reply: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
         self.calls.append(
             {
                 "fn": "opencode_reply_permission",
                 "runtime": runtime,
                 "request_id": request_id,
                 "reply": reply,
+                "metadata": metadata,
             }
         )
         return _FakeExtensionResult(
@@ -188,13 +196,21 @@ class _FakeExtensionsService:
             meta={},
         )
 
-    async def opencode_reply_question(self, *, runtime, request_id: str, answers):
+    async def opencode_reply_question(
+        self,
+        *,
+        runtime,
+        request_id: str,
+        answers,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
         self.calls.append(
             {
                 "fn": "opencode_reply_question",
                 "runtime": runtime,
                 "request_id": request_id,
                 "answers": answers,
+                "metadata": metadata,
             }
         )
         return _FakeExtensionResult(
@@ -203,12 +219,19 @@ class _FakeExtensionsService:
             meta={},
         )
 
-    async def opencode_reject_question(self, *, runtime, request_id: str):
+    async def opencode_reject_question(
+        self,
+        *,
+        runtime,
+        request_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
         self.calls.append(
             {
                 "fn": "opencode_reject_question",
                 "runtime": runtime,
                 "request_id": request_id,
+                "metadata": metadata,
             }
         )
         return _FakeExtensionResult(
@@ -255,13 +278,16 @@ class _FakeExtensionsExceptionService:
         )
         raise self.error
 
-    async def opencode_reply_question(self, *, runtime, request_id: str, answers):
+    async def opencode_reply_question(
+        self, *, runtime, request_id: str, answers, metadata=None
+    ):
         self.calls.append(
             {
                 "fn": "opencode_reply_question",
                 "runtime": runtime,
                 "request_id": request_id,
                 "answers": answers,
+                "metadata": metadata,
             }
         )
         return _FakeExtensionResult(
@@ -270,17 +296,38 @@ class _FakeExtensionsExceptionService:
             meta={},
         )
 
-    async def opencode_reject_question(self, *, runtime, request_id: str):
+    async def opencode_reject_question(
+        self, *, runtime, request_id: str, metadata=None
+    ):
         self.calls.append(
             {
                 "fn": "opencode_reject_question",
                 "runtime": runtime,
                 "request_id": request_id,
+                "metadata": metadata,
             }
         )
         return _FakeExtensionResult(
             success=True,
             result={"ok": True, "request_id": request_id},
+            meta={},
+        )
+
+
+class _FakePromptAsyncValidationService:
+    async def opencode_prompt_async(
+        self, *, runtime, session_id: str, request_payload, metadata
+    ):
+        directory = (
+            metadata.get("opencode", {}).get("directory")
+            if isinstance(metadata, dict)
+            else None
+        )
+        if directory is not None and not isinstance(directory, str):
+            raise ValueError("metadata.opencode.directory must be a non-empty string")
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "session_id": session_id},
             meta={},
         )
 
@@ -464,7 +511,11 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
 
         permission_reply_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply",
-            json={"request_id": "perm-1", "reply": "once"},
+            json={
+                "request_id": "perm-1",
+                "reply": "once",
+                "metadata": {"opencode": {"directory": "/workspace/project"}},
+            },
         )
         assert permission_reply_resp.status_code == 200
         assert permission_reply_resp.json()["result"] == {
@@ -474,7 +525,11 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
 
         question_reply_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reply",
-            json={"request_id": "q-1", "answers": [["A"], ["B"]]},
+            json={
+                "request_id": "q-1",
+                "answers": [["A"], ["B"]],
+                "metadata": {"opencode": {"directory": "/workspace/project"}},
+            },
         )
         assert question_reply_resp.status_code == 200
         assert question_reply_resp.json()["result"] == {
@@ -484,7 +539,10 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
 
         question_reject_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reject",
-            json={"request_id": "q-2"},
+            json={
+                "request_id": "q-2",
+                "metadata": {"opencode": {"directory": "/workspace/project"}},
+            },
         )
         assert question_reject_resp.status_code == 200
         assert question_reject_resp.json()["result"] == {
@@ -515,6 +573,24 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
     assert len(prompt_calls) == 1
     assert prompt_calls[0]["request_payload"]["parts"][0]["text"].startswith("Continue")
     assert prompt_calls[0]["metadata"] == {
+        "opencode": {"directory": "/workspace/project"}
+    }
+    permission_calls = [
+        c for c in fake_extensions.calls if c["fn"] == "opencode_reply_permission"
+    ]
+    assert permission_calls[0]["metadata"] == {
+        "opencode": {"directory": "/workspace/project"}
+    }
+    question_reply_calls = [
+        c for c in fake_extensions.calls if c["fn"] == "opencode_reply_question"
+    ]
+    assert question_reply_calls[0]["metadata"] == {
+        "opencode": {"directory": "/workspace/project"}
+    }
+    question_reject_calls = [
+        c for c in fake_extensions.calls if c["fn"] == "opencode_reject_question"
+    ]
+    assert question_reject_calls[0]["metadata"] == {
         "opencode": {"directory": "/workspace/project"}
     }
     for call in fake_extensions.calls:
@@ -556,6 +632,46 @@ async def test_hub_interrupt_reply_rejects_legacy_payload_fields(
         assert resp.status_code == 422
 
     assert fake_extensions.calls == []
+
+
+@pytest.mark.asyncio
+async def test_hub_prompt_async_rejects_invalid_directory_type_with_400(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_prompt_async_validation@example.com",
+        user_email="alice_prompt_async_validation@example.com",
+        token="secret-token-opencode",
+    )
+
+    monkeypatch.setattr(
+        opencode_router_common,
+        "get_a2a_extensions_service",
+        lambda: _FakePromptAsyncValidationService(),
+    )
+
+    async with create_test_client(
+        hub_opencode_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-1:prompt-async",
+            json={
+                "request": {"parts": [{"type": "text", "text": "Continue"}]},
+                "metadata": {"opencode": {"directory": 123}},
+            },
+        )
+        assert resp.status_code == 400
+        assert (
+            resp.json()["detail"]
+            == "metadata.opencode.directory must be a non-empty string"
+        )
 
 
 @pytest.mark.parametrize(

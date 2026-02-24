@@ -306,6 +306,9 @@ def create_opencode_extension_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
                 "reply": payload.reply,
+                "metadata_keys": (
+                    sorted(payload.metadata.keys())[:20] if payload.metadata else []
+                ),
             },
         )
         return await _run_extension_call(
@@ -313,6 +316,7 @@ def create_opencode_extension_router(
                 runtime=runtime,
                 request_id=payload.request_id,
                 reply=payload.reply,
+                metadata=payload.metadata,
             )
         )
 
@@ -340,6 +344,9 @@ def create_opencode_extension_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
                 "answers_count": len(payload.answers),
+                "metadata_keys": (
+                    sorted(payload.metadata.keys())[:20] if payload.metadata else []
+                ),
             },
         )
         return await _run_extension_call(
@@ -347,6 +354,7 @@ def create_opencode_extension_router(
                 runtime=runtime,
                 request_id=payload.request_id,
                 answers=payload.answers,
+                metadata=payload.metadata,
             )
         )
 
@@ -373,12 +381,16 @@ def create_opencode_extension_router(
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
+                "metadata_keys": (
+                    sorted(payload.metadata.keys())[:20] if payload.metadata else []
+                ),
             },
         )
         return await _run_extension_call(
             get_a2a_extensions_service().opencode_reject_question(
                 runtime=runtime,
                 request_id=payload.request_id,
+                metadata=payload.metadata,
             )
         )
 

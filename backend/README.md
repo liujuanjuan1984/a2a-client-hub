@@ -108,6 +108,8 @@ Endpoints:
     - body: `{ "request_id": "...", "answers": [["A"], ["B"]] }`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reject`
     - body: `{ "request_id": "..." }`
+  - Optional metadata for all interrupt callbacks:
+    - `{ "metadata": { "opencode": { "directory": "/path/inside/workspace" } } }`
 
 Optional query (passthrough):
 

@@ -279,6 +279,34 @@ class A2AExtensionsService:
             mapped = ext.business_code_map.get(int(code.strip()))
         return mapped or "upstream_error"
 
+    @staticmethod
+    def _normalize_extension_metadata(
+        metadata: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if metadata is None:
+            return None
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata must be an object")
+
+        normalized = dict(metadata)
+        opencode_raw = normalized.get("opencode")
+        if opencode_raw is None:
+            return normalized
+        if not isinstance(opencode_raw, dict):
+            raise ValueError("metadata.opencode must be an object")
+
+        opencode = dict(opencode_raw)
+        if "directory" in opencode:
+            raw_directory = opencode.get("directory")
+            if not isinstance(raw_directory, str) or not raw_directory.strip():
+                raise ValueError(
+                    "metadata.opencode.directory must be a non-empty string"
+                )
+            opencode["directory"] = raw_directory.strip()
+
+        normalized["opencode"] = opencode
+        return normalized
+
     async def _invoke_opencode_method(
         self,
         *,
@@ -587,10 +615,9 @@ class A2AExtensionsService:
             "session_id": resolved_session_id,
             "request": dict(request_payload),
         }
-        if metadata is not None:
-            if not isinstance(metadata, dict):
-                raise ValueError("metadata must be an object")
-            params["metadata"] = dict(metadata)
+        normalized_metadata = self._normalize_extension_metadata(metadata)
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
 
         ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
         return await self._invoke_opencode_method(
@@ -706,6 +733,7 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
         request_id: str,
         reply: str,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
@@ -713,17 +741,21 @@ class A2AExtensionsService:
         resolved_reply = (reply or "").strip().lower()
         if resolved_reply not in {"once", "always", "reject"}:
             raise ValueError("reply must be one of: once, always, reject")
+        normalized_metadata = self._normalize_extension_metadata(metadata)
 
         ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        params: Dict[str, Any] = {
+            "request_id": resolved_request_id,
+            "reply": resolved_reply,
+        }
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
         return await self._invoke_opencode_interrupt_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
             method_key="reply_permission",
-            params={
-                "request_id": resolved_request_id,
-                "reply": resolved_reply,
-            },
+            params=params,
             meta_extra={"request_id": resolved_request_id},
         )
 
@@ -733,21 +765,26 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
         request_id: str,
         answers: list[list[str]],
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
             raise ValueError("request_id is required")
+        normalized_metadata = self._normalize_extension_metadata(metadata)
 
         ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        params: Dict[str, Any] = {
+            "request_id": resolved_request_id,
+            "answers": answers,
+        }
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
         return await self._invoke_opencode_interrupt_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
             method_key="reply_question",
-            params={
-                "request_id": resolved_request_id,
-                "answers": answers,
-            },
+            params=params,
             meta_extra={"request_id": resolved_request_id},
         )
 
@@ -756,18 +793,23 @@ class A2AExtensionsService:
         *,
         runtime: A2ARuntime,
         request_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
         resolved_request_id = (request_id or "").strip()
         if not resolved_request_id:
             raise ValueError("request_id is required")
+        normalized_metadata = self._normalize_extension_metadata(metadata)
 
         ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        params: Dict[str, Any] = {"request_id": resolved_request_id}
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
         return await self._invoke_opencode_interrupt_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
             method_key="reject_question",
-            params={"request_id": resolved_request_id},
+            params=params,
             meta_extra={"request_id": resolved_request_id},
         )
 
