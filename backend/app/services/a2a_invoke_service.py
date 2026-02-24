@@ -13,6 +13,8 @@ import logging
 import re
 import time
 from contextlib import suppress
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any, AsyncIterator, Callable
 
 from a2a.client.client import ClientEvent
@@ -32,10 +34,32 @@ logger = logging.getLogger(__name__)
 StreamEvent = ClientEvent | Message
 ValidateMessageFn = Callable[[dict[str, Any]], list[Any]]
 StreamTextCallbackFn = Callable[[str], Any]
-StreamErrorCallbackFn = Callable[[str | dict[str, Any]], Any]
 StreamEventPayloadCallbackFn = Callable[[dict[str, Any]], Any]
 StreamMetadataCallbackFn = Callable[[dict[str, Any]], Any]
 StreamErrorMetadataCallbackFn = Callable[[dict[str, Any]], Any]
+
+
+class StreamFinishReason(str, Enum):
+    SUCCESS = "success"
+    TIMEOUT_TOTAL = "timeout_total"
+    TIMEOUT_IDLE = "timeout_idle"
+    UPSTREAM_ERROR = "upstream_error"
+
+
+@dataclass(frozen=True)
+class StreamOutcome:
+    success: bool
+    finish_reason: StreamFinishReason
+    final_text: str
+    error_message: str | None
+    error_code: str | None
+    message_blocks: list[dict[str, Any]]
+    elapsed_seconds: float
+    idle_seconds: float
+    terminal_event_seen: bool
+
+
+StreamFinalizedCallbackFn = Callable[[StreamOutcome], Any]
 
 
 class A2AInvokeService:
@@ -893,7 +917,7 @@ class A2AInvokeService:
         log_extra: dict[str, Any],
         on_complete: StreamTextCallbackFn | None = None,
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
-        on_error: StreamErrorCallbackFn | None = None,
+        on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
         resume_from_sequence: int | None = None,
         cache_key: str | None = None,
@@ -1034,7 +1058,7 @@ class A2AInvokeService:
         log_extra: dict[str, Any],
         on_complete: StreamTextCallbackFn | None = None,
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
-        on_error: StreamErrorCallbackFn | None = None,
+        on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
         on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
         send_stream_end: bool = True,
@@ -1169,12 +1193,13 @@ class A2AInvokeService:
         log_extra: dict[str, Any],
         on_complete: StreamTextCallbackFn | None = None,
         on_complete_metadata: StreamMetadataCallbackFn | None = None,
-        on_error: StreamErrorCallbackFn | None = None,
+        on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
         on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
+        on_finalized: StreamFinalizedCallbackFn | None = None,
         idle_timeout_seconds: float | None = None,
         total_timeout_seconds: float | None = None,
-    ) -> dict[str, Any]:
+    ) -> StreamOutcome:
         stream_text_accumulator = self._StreamTextAccumulator()
         log_warning = getattr(logger, "warning", None)
         log_info = getattr(logger, "info", None)
@@ -1208,7 +1233,7 @@ class A2AInvokeService:
             if total_timeout is not None:
                 remaining_total = total_timeout - (now - started_at)
                 if remaining_total <= 0:
-                    raise asyncio.TimeoutError("total_timeout")
+                    return 0.0
                 wait_timeout = (
                     min(wait_timeout, remaining_total)
                     if wait_timeout is not None
@@ -1219,6 +1244,35 @@ class A2AInvokeService:
         try:
             while True:
                 now = time.monotonic()
+                if total_timeout is not None and (now - started_at) >= (
+                    total_timeout - 1e-9
+                ):
+                    timeout_message = (
+                        f"A2A stream total timeout after {total_timeout:.1f}s"
+                    )
+                    partial_metadata = stream_text_accumulator.result_metadata()
+                    blocks_payload = partial_metadata.get("message_blocks")
+                    message_blocks = (
+                        list(blocks_payload) if isinstance(blocks_payload, list) else []
+                    )
+                    outcome = StreamOutcome(
+                        success=False,
+                        finish_reason=StreamFinishReason.TIMEOUT_TOTAL,
+                        final_text=stream_text_accumulator.result() or "",
+                        error_message=timeout_message,
+                        error_code="timeout",
+                        message_blocks=message_blocks,
+                        elapsed_seconds=time.monotonic() - started_at,
+                        idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                        terminal_event_seen=False,
+                    )
+                    await self._call_callback(on_error, timeout_message)
+                    await self._call_callback(
+                        on_error_metadata,
+                        {"message": timeout_message, "error_code": "timeout"},
+                    )
+                    await self._call_callback(on_finalized, outcome)
+                    return outcome
                 wait_timeout = _resolve_wait_timeout(now)
                 try:
                     if wait_timeout is None:
@@ -1228,40 +1282,44 @@ class A2AInvokeService:
                 except StopAsyncIteration:
                     break
                 except asyncio.TimeoutError:
-                    if total_timeout is not None and (
+                    is_total_timeout = total_timeout is not None and (
                         time.monotonic() - started_at
-                    ) >= (total_timeout - 1e-9):
+                    ) >= (total_timeout - 1e-9)
+                    if is_total_timeout:
                         timeout_message = (
                             f"A2A stream total timeout after {total_timeout:.1f}s"
                         )
+                        finish_reason = StreamFinishReason.TIMEOUT_TOTAL
                     else:
                         idle_value = idle_timeout if idle_timeout is not None else 0.0
                         timeout_message = (
                             f"A2A stream idle timeout after {idle_value:.1f}s"
                         )
+                        finish_reason = StreamFinishReason.TIMEOUT_IDLE
                     partial_content = stream_text_accumulator.result()
                     partial_metadata = stream_text_accumulator.result_metadata()
-                    timeout_payload: dict[str, Any] = {
-                        "message": timeout_message,
-                        "error_code": "timeout",
-                    }
-                    if partial_content:
-                        timeout_payload["partial_content"] = partial_content
-                    if partial_metadata:
-                        timeout_payload["partial_metadata"] = partial_metadata
-                    await self._call_callback(on_error, timeout_payload)
+                    blocks_payload = partial_metadata.get("message_blocks")
+                    message_blocks = (
+                        list(blocks_payload) if isinstance(blocks_payload, list) else []
+                    )
+                    outcome = StreamOutcome(
+                        success=False,
+                        finish_reason=finish_reason,
+                        final_text=partial_content or "",
+                        error_message=timeout_message,
+                        error_code="timeout",
+                        message_blocks=message_blocks,
+                        elapsed_seconds=time.monotonic() - started_at,
+                        idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                        terminal_event_seen=False,
+                    )
+                    await self._call_callback(on_error, timeout_message)
                     await self._call_callback(
                         on_error_metadata,
                         {"message": timeout_message, "error_code": "timeout"},
                     )
-                    return {
-                        "success": False,
-                        "content": None,
-                        "error": timeout_message,
-                        "error_code": "timeout",
-                        "partial_content": partial_content or None,
-                        "partial_metadata": partial_metadata,
-                    }
+                    await self._call_callback(on_finalized, outcome)
+                    return outcome
                 if event is None:
                     # Align with realtime stream semantics:
                     # heartbeat frames indicate the upstream connection is still alive
@@ -1299,20 +1357,30 @@ class A2AInvokeService:
                     terminal_event_seen = True
                     break
 
+            final_metadata = stream_text_accumulator.result_metadata()
             await self._call_callback(
                 on_complete_metadata,
-                stream_text_accumulator.result_metadata(),
+                final_metadata,
             )
-            await self._call_callback(on_complete, stream_text_accumulator.result())
-            return {
-                "success": True,
-                "content": stream_text_accumulator.result(),
-                "error": None,
-                "error_code": None,
-                "finished_with_terminal_event": terminal_event_seen,
-                "elapsed_seconds": time.monotonic() - started_at,
-                "idle_seconds": max(time.monotonic() - last_event_at, 0.0),
-            }
+            final_text = stream_text_accumulator.result()
+            await self._call_callback(on_complete, final_text)
+            blocks_payload = final_metadata.get("message_blocks")
+            message_blocks = (
+                list(blocks_payload) if isinstance(blocks_payload, list) else []
+            )
+            outcome = StreamOutcome(
+                success=True,
+                finish_reason=StreamFinishReason.SUCCESS,
+                final_text=final_text,
+                error_message=None,
+                error_code=None,
+                message_blocks=message_blocks,
+                elapsed_seconds=time.monotonic() - started_at,
+                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                terminal_event_seen=terminal_event_seen,
+            )
+            await self._call_callback(on_finalized, outcome)
+            return outcome
         except Exception as exc:
             if callable(log_warning):
                 log_warning(
@@ -1331,29 +1399,35 @@ class A2AInvokeService:
             )
             partial_content = stream_text_accumulator.result()
             partial_metadata = stream_text_accumulator.result_metadata()
-            error_payload: dict[str, Any] = {
-                "message": self._STREAM_ERROR_MESSAGE,
-                "error_code": error_code,
-            }
-            if partial_content:
-                error_payload["partial_content"] = partial_content
-            if partial_metadata:
-                error_payload["partial_metadata"] = partial_metadata
-            await self._call_callback(on_error, error_payload)
+            blocks_payload = partial_metadata.get("message_blocks")
+            message_blocks = (
+                list(blocks_payload) if isinstance(blocks_payload, list) else []
+            )
+            outcome = StreamOutcome(
+                success=False,
+                finish_reason=StreamFinishReason.UPSTREAM_ERROR,
+                final_text=partial_content or "",
+                error_message=self._STREAM_ERROR_MESSAGE,
+                error_code=error_code,
+                message_blocks=message_blocks,
+                elapsed_seconds=time.monotonic() - started_at,
+                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                terminal_event_seen=False,
+            )
+            await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
             await self._call_callback(
                 on_error_metadata,
                 {"message": self._STREAM_ERROR_MESSAGE, "error_code": error_code},
             )
-            return {
-                "success": False,
-                "content": None,
-                "error": self._STREAM_ERROR_MESSAGE,
-                "error_code": error_code,
-                "partial_content": partial_content or None,
-                "partial_metadata": partial_metadata,
-            }
+            await self._call_callback(on_finalized, outcome)
+            return outcome
 
 
 a2a_invoke_service = A2AInvokeService()
 
-__all__ = ["A2AInvokeService", "a2a_invoke_service"]
+__all__ = [
+    "A2AInvokeService",
+    "StreamFinishReason",
+    "StreamOutcome",
+    "a2a_invoke_service",
+]

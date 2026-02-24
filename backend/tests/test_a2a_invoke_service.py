@@ -8,7 +8,7 @@ import pytest
 from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
-from app.services.a2a_invoke_service import a2a_invoke_service
+from app.services.a2a_invoke_service import StreamFinishReason, a2a_invoke_service
 
 
 class _BrokenGateway:
@@ -43,6 +43,17 @@ class _GatewayWithDelayedEvents:
         for event in self._events:
             await asyncio.sleep(self._delay_seconds)
             yield _DumpableEvent(event)
+
+
+class _GatewayWithInitialEventThenStall:
+    def __init__(self, first_event: dict, stall_seconds: float):
+        self._first_event = first_event
+        self._stall_seconds = stall_seconds
+
+    async def stream(self, **kwargs):  # noqa: ARG002
+        yield _DumpableEvent(self._first_event)
+        await asyncio.sleep(self._stall_seconds)
+        yield _DumpableEvent({"kind": "status-update", "final": True})
 
 
 class _DummyWebSocket:
@@ -748,8 +759,65 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
         idle_timeout_seconds=0.02,
         total_timeout_seconds=0.2,
     )
-    assert result["success"] is True
-    assert result["content"] == "late-event"
+    assert result.success is True
+    assert result.finish_reason == StreamFinishReason.SUCCESS
+    assert result.final_text == "late-event"
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_reports_total_timeout_with_partial_content(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithInitialEventThenStall(
+            first_event={
+                "kind": "artifact-update",
+                "artifact": {
+                    "parts": [{"kind": "text", "text": "partial result"}],
+                    "metadata": {"opencode": {"block_type": "text"}},
+                },
+            },
+            stall_seconds=0.2,
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        total_timeout_seconds=0.05,
+        idle_timeout_seconds=1.0,
+    )
+    assert result.success is False
+    assert result.finish_reason == StreamFinishReason.TIMEOUT_TOTAL
+    assert result.error_code == "timeout"
+    assert result.final_text == "partial result"
+    assert result.message_blocks
+    assert result.message_blocks[0]["content"] == "partial result"
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_reports_idle_timeout_with_partial_content(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.0)
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithInitialEventThenStall(
+            first_event={"content": "partial text"},
+            stall_seconds=0.2,
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        total_timeout_seconds=1.0,
+        idle_timeout_seconds=0.05,
+    )
+    assert result.success is False
+    assert result.finish_reason == StreamFinishReason.TIMEOUT_IDLE
+    assert result.error_code == "timeout"
+    assert result.final_text == "partial text"
 
 
 def test_extract_binding_hints_from_serialized_event():

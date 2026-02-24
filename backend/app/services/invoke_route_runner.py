@@ -19,7 +19,11 @@ from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.ws_ticket import WsTicketResponse
-from app.services.a2a_invoke_service import a2a_invoke_service
+from app.services.a2a_invoke_service import (
+    StreamFinishReason,
+    StreamOutcome,
+    a2a_invoke_service,
+)
 from app.services.invoke_session_binding import (
     is_recoverable_invoke_session_error,
     merge_invoke_binding_state,
@@ -62,6 +66,7 @@ class _InvokeState:
     persisted_response_content: str | None = None
     persisted_success: bool | None = None
     persisted_error_code: str | None = None
+    persisted_finish_reason: str | None = None
 
 
 def _normalize_query_for_invoke_guard(query: str) -> str:
@@ -217,6 +222,104 @@ async def _continue_session_with_short_transaction(
         return continue_binding
 
 
+def _collect_stream_hints(
+    *, state: _InvokeState, event_payload: dict[str, Any]
+) -> None:
+    (
+        event_context_id,
+        event_metadata,
+    ) = a2a_invoke_service.extract_binding_hints_from_serialized_event(event_payload)
+    state.context_id, state.metadata = merge_invoke_binding_state(
+        current_context_id=state.context_id,
+        current_metadata=state.metadata,
+        next_context_id=event_context_id,
+        next_metadata=event_metadata,
+    )
+    identity_hints = (
+        a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+            event_payload
+        )
+    )
+    if identity_hints:
+        state.stream_identity.update(identity_hints)
+    usage_hints = a2a_invoke_service.extract_usage_hints_from_serialized_event(
+        event_payload
+    )
+    if usage_hints:
+        state.stream_usage = usage_hints
+
+
+def _build_stream_metadata_from_outcome(
+    *,
+    state: _InvokeState,
+    outcome: StreamOutcome,
+    response_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    final_metadata = dict(response_metadata or {})
+    if state.stream_identity:
+        final_metadata.update(state.stream_identity)
+    if state.stream_usage:
+        final_metadata["usage"] = dict(state.stream_usage)
+    if outcome.message_blocks:
+        final_metadata["message_blocks"] = list(outcome.message_blocks)
+    stream_payload: dict[str, Any] = {"finish_reason": outcome.finish_reason.value}
+    if not outcome.success:
+        error_payload: dict[str, Any] = {"message": str(outcome.error_message or "")}
+        if outcome.error_code:
+            error_payload["error_code"] = outcome.error_code
+        stream_payload["error"] = error_payload
+    final_metadata["stream"] = stream_payload
+    return final_metadata
+
+
+async def _persist_local_outcome(
+    *,
+    state: _InvokeState,
+    outcome: StreamOutcome,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    query: str,
+    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
+    stream_enabled: bool,
+    response_metadata: dict[str, Any] | None = None,
+) -> None:
+    if state.local_session_id is None or state.local_source is None:
+        return
+    persisted_content = outcome.final_text or str(outcome.error_message or "")
+    metadata_payload = _build_stream_metadata_from_outcome(
+        state=state,
+        outcome=outcome,
+        response_metadata=response_metadata,
+    )
+    async with AsyncSessionLocal() as persist_db:
+        message_refs = (
+            await session_hub_service.record_local_invoke_messages_by_local_session_id(
+                persist_db,
+                local_session_id=state.local_session_id,
+                source=state.local_source,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                query=query,
+                response_content=persisted_content,
+                success=outcome.success,
+                context_id=state.context_id,
+                user_message_id=state.user_message_id,
+                client_agent_message_id=state.client_agent_message_id,
+                invoke_metadata=state.metadata,
+                extra_metadata={"transport": transport, "stream": stream_enabled},
+                response_metadata=metadata_payload,
+            )
+        )
+        await commit_safely(persist_db)
+    state.message_refs = message_refs
+    state.persisted_success = outcome.success
+    state.persisted_response_content = persisted_content
+    state.persisted_error_code = outcome.error_code
+    state.persisted_finish_reason = outcome.finish_reason.value
+
+
 def _build_stream_callbacks(
     *,
     state: _InvokeState,
@@ -230,70 +333,37 @@ def _build_stream_callbacks(
 ) -> tuple[
     Callable[[dict[str, Any]], Any],
     Callable[[str], Any],
-    Callable[[str | dict[str, Any]], Any],
+    Callable[[str], Any],
     Callable[[dict[str, Any]], Any],
 ]:
     stream_response_metadata: dict[str, Any] = {}
-    stream_text_accumulator = a2a_invoke_service._StreamTextAccumulator()
 
     async def on_event(event_payload: dict[str, Any]) -> None:
-        (
-            event_context_id,
-            event_metadata,
-        ) = a2a_invoke_service.extract_binding_hints_from_serialized_event(
-            event_payload
-        )
-        state.context_id, state.metadata = merge_invoke_binding_state(
-            current_context_id=state.context_id,
-            current_metadata=state.metadata,
-            next_context_id=event_context_id,
-            next_metadata=event_metadata,
-        )
-        identity_hints = (
-            a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
-                event_payload
-            )
-        )
-        if identity_hints:
-            state.stream_identity.update(identity_hints)
-        usage_hints = a2a_invoke_service.extract_usage_hints_from_serialized_event(
-            event_payload
-        )
-        if usage_hints:
-            state.stream_usage = usage_hints
-        stream_text_accumulator.consume(event_payload)
+        _collect_stream_hints(state=state, event_payload=event_payload)
 
     async def on_complete(stream_text: str) -> None:
-        if state.local_session_id is None or state.local_source is None:
-            return
-        final_response_metadata = dict(stream_response_metadata)
-        if state.stream_identity:
-            final_response_metadata.update(state.stream_identity)
-        if state.stream_usage:
-            final_response_metadata["usage"] = dict(state.stream_usage)
-        async with AsyncSessionLocal() as persist_db:
-            message_refs = await session_hub_service.record_local_invoke_messages_by_local_session_id(
-                persist_db,
-                local_session_id=state.local_session_id,
-                source=state.local_source,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                query=query,
-                response_content=stream_text or "",
-                success=True,
-                context_id=state.context_id,
-                user_message_id=state.user_message_id,
-                client_agent_message_id=state.client_agent_message_id,
-                invoke_metadata=state.metadata,
-                extra_metadata={"transport": transport, "stream": stream_enabled},
-                response_metadata=final_response_metadata,
-            )
-            await commit_safely(persist_db)
-        state.message_refs = message_refs
-        state.persisted_success = True
-        state.persisted_response_content = stream_text or ""
-        state.persisted_error_code = None
+        outcome = StreamOutcome(
+            success=True,
+            finish_reason=StreamFinishReason.SUCCESS,
+            final_text=stream_text or "",
+            error_message=None,
+            error_code=None,
+            message_blocks=[],
+            elapsed_seconds=0.0,
+            idle_seconds=0.0,
+            terminal_event_seen=True,
+        )
+        await _persist_local_outcome(
+            state=state,
+            outcome=outcome,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            transport=transport,
+            stream_enabled=stream_enabled,
+            response_metadata=stream_response_metadata,
+        )
 
     async def on_complete_metadata(payload: dict[str, Any]) -> None:
         nonlocal stream_response_metadata
@@ -301,106 +371,67 @@ def _build_stream_callbacks(
             return
         stream_response_metadata = dict(payload)
 
-    async def on_error(error_input: str | dict[str, Any]) -> None:
-        if state.local_session_id is None or state.local_source is None:
-            return
-
-        error_message = ""
-        error_code: str | None = None
-        partial_content: str | None = None
-        partial_metadata: dict[str, Any] | None = None
-        if isinstance(error_input, dict):
-            raw_message = error_input.get("message")
-            if isinstance(raw_message, str) and raw_message:
-                error_message = raw_message
-            else:
-                error_message = str(raw_message or "")
-            raw_error_code = error_input.get("error_code")
-            if isinstance(raw_error_code, str) and raw_error_code.strip():
-                error_code = raw_error_code.strip()
-            raw_partial_content = error_input.get("partial_content")
-            if isinstance(raw_partial_content, str):
-                partial_content = raw_partial_content
-            raw_partial_metadata = error_input.get("partial_metadata")
-            if isinstance(raw_partial_metadata, dict):
-                partial_metadata = dict(raw_partial_metadata)
-        else:
-            error_message = error_input
-
-        accumulated_content = stream_text_accumulator.result()
-        if partial_content is None and accumulated_content:
-            partial_content = accumulated_content
-        accumulated_metadata = stream_text_accumulator.result_metadata()
-        if partial_metadata is None and accumulated_metadata:
-            partial_metadata = dict(accumulated_metadata)
-
-        persisted_error_content = (
-            partial_content
-            if isinstance(partial_content, str) and partial_content
-            else error_message
+    async def on_error(error_message: str) -> None:
+        outcome = StreamOutcome(
+            success=False,
+            finish_reason=StreamFinishReason.UPSTREAM_ERROR,
+            final_text="",
+            error_message=error_message,
+            error_code=state.persisted_error_code,
+            message_blocks=[],
+            elapsed_seconds=0.0,
+            idle_seconds=0.0,
+            terminal_event_seen=False,
         )
-        error_response_metadata = (
-            dict(state.stream_identity) if state.stream_identity else None
+        await _persist_local_outcome(
+            state=state,
+            outcome=outcome,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            transport=transport,
+            stream_enabled=stream_enabled,
+            response_metadata=stream_response_metadata,
         )
-        if state.stream_usage:
-            if error_response_metadata is None:
-                error_response_metadata = {}
-            error_response_metadata["usage"] = dict(state.stream_usage)
-        if partial_metadata:
-            if error_response_metadata is None:
-                error_response_metadata = {}
-            for key, value in partial_metadata.items():
-                if (
-                    key in error_response_metadata
-                    and isinstance(error_response_metadata[key], dict)
-                    and isinstance(value, dict)
-                ):
-                    merged_nested = dict(error_response_metadata[key])
-                    merged_nested.update(value)
-                    error_response_metadata[key] = merged_nested
-                    continue
-                error_response_metadata[key] = value
-        if error_message:
-            if error_response_metadata is None:
-                error_response_metadata = {}
-            stream_error_payload: dict[str, Any] = {"message": error_message}
-            if error_code:
-                stream_error_payload["error_code"] = error_code
-            error_response_metadata["stream_error"] = stream_error_payload
-        async with AsyncSessionLocal() as persist_db:
-            message_refs = await session_hub_service.record_local_invoke_messages_by_local_session_id(
-                persist_db,
-                local_session_id=state.local_session_id,
-                source=state.local_source,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                query=query,
-                response_content=persisted_error_content,
-                success=False,
-                context_id=state.context_id,
-                user_message_id=state.user_message_id,
-                client_agent_message_id=state.client_agent_message_id,
-                invoke_metadata=state.metadata,
-                extra_metadata={"transport": transport, "stream": stream_enabled},
-                response_metadata=error_response_metadata,
-            )
-            await commit_safely(persist_db)
-        state.message_refs = message_refs
-        state.persisted_success = False
-        state.persisted_response_content = persisted_error_content
-        if error_code:
-            state.persisted_error_code = error_code
         if on_error_metadata is not None:
             payload = {
                 "message": error_message,
                 "error_code": state.persisted_error_code,
             }
-            outcome = on_error_metadata(payload)
-            if inspect.isawaitable(outcome):
-                await outcome
+            callback_outcome = on_error_metadata(payload)
+            if inspect.isawaitable(callback_outcome):
+                await callback_outcome
 
     return on_event, on_complete, on_error, on_complete_metadata
+
+
+def _build_consume_stream_callbacks(
+    *,
+    state: _InvokeState,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    query: str,
+    transport: Literal["http_json", "scheduled"],
+    stream_enabled: bool,
+) -> tuple[Callable[[dict[str, Any]], Any], Callable[[StreamOutcome], Any],]:
+    async def on_event(event_payload: dict[str, Any]) -> None:
+        _collect_stream_hints(state=state, event_payload=event_payload)
+
+    async def on_finalized(outcome: StreamOutcome) -> None:
+        await _persist_local_outcome(
+            state=state,
+            outcome=outcome,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            transport=transport,
+            stream_enabled=stream_enabled,
+        )
+
+    return on_event, on_finalized
 
 
 def _extract_rebound_continue_binding_fields(
@@ -554,13 +585,7 @@ async def run_http_invoke(
             cache_key=payload.user_message_id,
         )
 
-    def _capture_error_metadata(payload_data: dict[str, Any]) -> None:
-        error_code = payload_data.get("error_code")
-        state.persisted_error_code = (
-            str(error_code) if isinstance(error_code, str) and error_code else None
-        )
-
-    on_event, on_complete, on_error, on_complete_metadata = _build_stream_callbacks(
+    on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
         user_id=user_id,
         agent_id=agent_id,
@@ -568,9 +593,8 @@ async def run_http_invoke(
         query=payload.query,
         transport="http_json",
         stream_enabled=False,
-        on_error_metadata=_capture_error_metadata,
     )
-    result = await a2a_invoke_service.consume_stream(
+    outcome = await a2a_invoke_service.consume_stream(
         gateway=gateway,
         resolved=runtime.resolved,
         query=payload.query,
@@ -579,21 +603,18 @@ async def run_http_invoke(
         validate_message=validate_message,
         logger=logger,
         log_extra=log_extra,
-        on_complete=on_complete,
-        on_complete_metadata=on_complete_metadata,
-        on_error=on_error,
         on_event=on_event,
-        on_error_metadata=_capture_error_metadata,
+        on_finalized=on_finalized,
     )
-    success = bool(result.get("success"))
+    success = bool(outcome.success)
     content = state.persisted_response_content
     if content is None:
-        content = result.get("content")
-    error = None if success else (result.get("error") or content)
+        content = outcome.final_text
+    error = None if success else (outcome.error_message or content)
     error_code = (
         state.persisted_error_code
         if not success and state.persisted_error_code
-        else result.get("error_code")
+        else outcome.error_code
     )
     return A2AAgentInvokeResponse(
         success=success,
@@ -627,13 +648,7 @@ async def run_background_invoke(
         payload=payload,
     )
 
-    def _capture_error_metadata(payload_data: dict[str, Any]) -> None:
-        error_code = payload_data.get("error_code")
-        state.persisted_error_code = (
-            str(error_code) if isinstance(error_code, str) and error_code else None
-        )
-
-    on_event, on_complete, on_error, on_complete_metadata = _build_stream_callbacks(
+    on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
         user_id=user_id,
         agent_id=agent_id,
@@ -641,9 +656,8 @@ async def run_background_invoke(
         query=payload.query,
         transport="scheduled",
         stream_enabled=True,
-        on_error_metadata=_capture_error_metadata,
     )
-    stream_result = await a2a_invoke_service.consume_stream(
+    outcome = await a2a_invoke_service.consume_stream(
         gateway=gateway,
         resolved=runtime.resolved,
         query=payload.query,
@@ -652,26 +666,21 @@ async def run_background_invoke(
         validate_message=validate_message,
         logger=logger,
         log_extra=log_extra,
-        on_complete=on_complete,
-        on_complete_metadata=on_complete_metadata,
-        on_error=on_error,
         on_event=on_event,
-        on_error_metadata=_capture_error_metadata,
+        on_finalized=on_finalized,
         total_timeout_seconds=total_timeout_seconds,
         idle_timeout_seconds=idle_timeout_seconds,
     )
-    success = bool(stream_result.get("success"))
+    success = bool(outcome.success)
     response_content = state.persisted_response_content
     if response_content is None:
-        fallback_value = (
-            stream_result.get("content") if success else stream_result.get("error")
-        )
+        fallback_value = outcome.final_text or outcome.error_message
         response_content = str(fallback_value or "")
     return {
         "success": success,
         "response_content": response_content,
-        "error": stream_result.get("error"),
-        "error_code": state.persisted_error_code or stream_result.get("error_code"),
+        "error": outcome.error_message,
+        "error_code": state.persisted_error_code or outcome.error_code,
         "conversation_id": (
             state.message_refs.get("conversation_id") if state.message_refs else None
         ),

@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.services import invoke_route_runner
+from app.services.a2a_invoke_service import StreamFinishReason, StreamOutcome
 
 
 async def _consume_stream(response: StreamingResponse) -> None:
@@ -238,7 +239,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_build_stream_callbacks_persists_partial_content_on_error(
+async def test_build_consume_stream_callbacks_persists_outcome_content_and_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -286,13 +287,14 @@ async def test_build_stream_callbacks_persists_partial_content_on_error(
         user_message_id=None,
         client_agent_message_id=None,
     )
-    on_event, _, on_error, _ = invoke_route_runner._build_stream_callbacks(
+    on_event, on_finalized = invoke_route_runner._build_consume_stream_callbacks(
         state=state,
         user_id=uuid4(),
         agent_id=uuid4(),
         agent_source="shared",
         query="hello",
         transport="scheduled",
+        stream_enabled=True,
     )
 
     await on_event(
@@ -304,19 +306,41 @@ async def test_build_stream_callbacks_persists_partial_content_on_error(
             },
         }
     )
-    await on_error("A2A stream total timeout after 60.0s")
+    await on_finalized(
+        StreamOutcome(
+            success=False,
+            finish_reason=StreamFinishReason.TIMEOUT_TOTAL,
+            final_text="partial response",
+            error_message="A2A stream total timeout after 60.0s",
+            error_code="timeout",
+            message_blocks=[
+                {
+                    "id": "block-1",
+                    "type": "text",
+                    "content": "partial response",
+                    "is_finished": False,
+                }
+            ],
+            elapsed_seconds=60.0,
+            idle_seconds=0.1,
+            terminal_event_seen=False,
+        )
+    )
 
     assert captured["response_content"] == "partial response"
     assert captured["success"] is False
     response_metadata = captured["response_metadata"]
     assert isinstance(response_metadata, dict)
-    assert response_metadata["stream_error"]["message"] == (
-        "A2A stream total timeout after 60.0s"
-    )
+    stream_metadata = response_metadata["stream"]
+    assert stream_metadata["finish_reason"] == "timeout_total"
+    assert stream_metadata["error"]["message"] == "A2A stream total timeout after 60.0s"
+    assert stream_metadata["error"]["error_code"] == "timeout"
     message_blocks = response_metadata["message_blocks"]
     assert isinstance(message_blocks, list)
     assert message_blocks[0]["content"] == "partial response"
     assert state.persisted_response_content == "partial response"
+    assert state.persisted_error_code == "timeout"
+    assert state.persisted_finish_reason == "timeout_total"
 
 
 @pytest.mark.asyncio
