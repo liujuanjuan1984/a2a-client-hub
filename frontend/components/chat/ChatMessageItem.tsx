@@ -129,6 +129,23 @@ export function ChatMessageItem({
     sessionStreamState &&
     ["error", "recoverable"].includes(sessionStreamState);
   const userCopyButtonPositionClass = "right-0";
+  const renderBottomCollapseAction = (testId: string, onPress: () => void) => {
+    return (
+      <View className="mt-2 items-end">
+        <Pressable
+          className="rounded-md px-2 py-1"
+          accessibilityRole="button"
+          accessibilityLabel="Collapse full text"
+          testID={testId}
+          onPress={onPress}
+        >
+          <Text className="text-xs font-semibold text-slate-300">
+            Show less
+          </Text>
+        </Pressable>
+      </View>
+    );
+  };
 
   return (
     <View
@@ -176,12 +193,18 @@ export function ChatMessageItem({
                       </Text>
                     </Pressable>
                     {expanded ? (
-                      <Text
-                        selectable
-                        className="mt-1 break-all text-xs text-slate-300"
-                      >
-                        {blockText}
-                      </Text>
+                      <View>
+                        <Text
+                          selectable
+                          className="mt-1 break-all text-xs text-slate-300"
+                        >
+                          {blockText}
+                        </Text>
+                        {renderBottomCollapseAction(
+                          `chat-message-${blockId}-collapse-bottom`,
+                          () => toggleReasoning(blockId),
+                        )}
+                      </View>
                     ) : null}
                   </View>
                 );
@@ -209,12 +232,18 @@ export function ChatMessageItem({
                       </Text>
                     </Pressable>
                     {expanded ? (
-                      <Text
-                        selectable
-                        className="mt-1 break-all text-xs text-slate-300"
-                      >
-                        {blockText}
-                      </Text>
+                      <View>
+                        <Text
+                          selectable
+                          className="mt-1 break-all text-xs text-slate-300"
+                        >
+                          {blockText}
+                        </Text>
+                        {renderBottomCollapseAction(
+                          `chat-message-${blockId}-collapse-bottom`,
+                          () => toggleToolCall(blockId),
+                        )}
+                      </View>
                     ) : null}
                   </View>
                 );
@@ -238,23 +267,25 @@ export function ChatMessageItem({
                     >
                       {blockText}
                     </Text>
-                    {shouldCollapse ? (
+                    {shouldCollapse && !blockExpanded ? (
                       <Pressable
                         className="mt-2 rounded-md px-2 py-1"
                         accessibilityRole="button"
-                        accessibilityLabel={
-                          blockExpanded
-                            ? "Collapse full text"
-                            : "Expand full text"
-                        }
+                        accessibilityLabel="Expand full text"
                         testID={`chat-message-${blockId}-expand`}
                         onPress={() => toggleTextExpansion(blockId)}
                       >
                         <Text className="text-xs font-semibold text-slate-300">
-                          {blockExpanded ? "Show less" : "Read more"}
+                          Read more
                         </Text>
                       </Pressable>
                     ) : null}
+                    {shouldCollapse && blockExpanded
+                      ? renderBottomCollapseAction(
+                          `chat-message-${blockId}-collapse-bottom`,
+                          () => toggleTextExpansion(blockId),
+                        )
+                      : null}
                   </View>
                 );
               }
@@ -291,25 +322,27 @@ export function ChatMessageItem({
               >
                 {message.content}
               </Text>
-              {shouldCollapseByLength(message.content) ? (
+              {shouldCollapseByLength(message.content) &&
+              !(expandedTextByBlockId[message.id] ?? false) ? (
                 <Pressable
                   className="mt-2 rounded-md px-2 py-1"
                   accessibilityRole="button"
-                  accessibilityLabel={
-                    expandedTextByBlockId[message.id]
-                      ? "Collapse full text"
-                      : "Expand full text"
-                  }
+                  accessibilityLabel="Expand full text"
                   testID={`chat-message-${message.id}-expand`}
                   onPress={() => toggleTextExpansion(message.id)}
                 >
                   <Text className="text-xs font-semibold text-slate-300">
-                    {expandedTextByBlockId[message.id]
-                      ? "Show less"
-                      : "Read more"}
+                    Read more
                   </Text>
                 </Pressable>
               ) : null}
+              {shouldCollapseByLength(message.content) &&
+              (expandedTextByBlockId[message.id] ?? false)
+                ? renderBottomCollapseAction(
+                    `chat-message-${message.id}-collapse-bottom`,
+                    () => toggleTextExpansion(message.id),
+                  )
+                : null}
             </View>
           )}
           {message.status === "streaming" ? (
