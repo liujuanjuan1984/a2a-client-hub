@@ -1,5 +1,6 @@
 import {
   CHAT_LIST_BOTTOM_STICK_THRESHOLD,
+  getAnchoredOffsetAfterContentResize,
   getDistanceToBottom,
   shouldStickToBottom,
 } from "@/lib/chatScroll";
@@ -53,5 +54,32 @@ describe("chatScroll", () => {
         CHAT_LIST_BOTTOM_STICK_THRESHOLD + 30,
       ),
     ).toBe(true);
+  });
+
+  it("computes anchored offset when content grows", () => {
+    expect(
+      getAnchoredOffsetAfterContentResize(
+        { offset: 200, contentHeight: 1000 },
+        1120,
+      ),
+    ).toBe(320);
+  });
+
+  it("computes anchored offset when content shrinks", () => {
+    expect(
+      getAnchoredOffsetAfterContentResize(
+        { offset: 200, contentHeight: 1000 },
+        920,
+      ),
+    ).toBe(120);
+  });
+
+  it("clamps anchored offset to zero when shrink exceeds offset", () => {
+    expect(
+      getAnchoredOffsetAfterContentResize(
+        { offset: 60, contentHeight: 1000 },
+        900,
+      ),
+    ).toBe(0);
   });
 });

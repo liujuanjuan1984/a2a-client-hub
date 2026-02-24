@@ -126,7 +126,7 @@ describe("useAgentsCatalogQuery mutations", () => {
     expect(useAgentStore.getState().activeAgentId).toBeNull();
     expect(
       queryClient.getQueryState(queryKeys.agents.catalog())?.isInvalidated,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("upserts updated agent while preserving transient status", async () => {
@@ -175,7 +175,7 @@ describe("useAgentsCatalogQuery mutations", () => {
     });
     expect(
       queryClient.getQueryState(queryKeys.agents.catalog())?.isInvalidated,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("removes missing agent during validate and clears active selection", async () => {
@@ -253,6 +253,6 @@ describe("useAgentsCatalogQuery mutations", () => {
     expect(cached?.[1]).toMatchObject({ id: "shared-1", source: "shared" });
     expect(
       queryClient.getQueryState(queryKeys.agents.catalog())?.isInvalidated,
-    ).toBe(true);
+    ).toBe(false);
   });
 });

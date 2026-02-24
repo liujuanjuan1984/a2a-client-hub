@@ -46,7 +46,10 @@ import { type ChatMessage } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
 import { continueSession } from "@/lib/api/sessions";
 import { isSameMessageList } from "@/lib/chat-utils";
-import { shouldStickToBottom } from "@/lib/chatScroll";
+import {
+  getAnchoredOffsetAfterContentResize,
+  shouldStickToBottom,
+} from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
@@ -421,9 +424,8 @@ export function ChatScreen({
     (_w: number, h: number) => {
       const anchor = prependAnchorRef.current ?? contentSizeAnchorRef.current;
       if (anchor) {
-        const delta = h - anchor.contentHeight;
         listRef.current?.scrollToOffset({
-          offset: Math.max(0, anchor.offset + delta),
+          offset: getAnchoredOffsetAfterContentResize(anchor, h),
           animated: false,
         });
         prependAnchorRef.current = null;
