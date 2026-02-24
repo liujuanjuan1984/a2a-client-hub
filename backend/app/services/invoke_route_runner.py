@@ -287,16 +287,16 @@ def _build_stream_metadata_from_outcome(
         final_metadata["usage"] = dict(state.stream_usage)
     if outcome.message_blocks:
         final_metadata["message_blocks"] = list(outcome.message_blocks)
+    normalized_error_message = normalize_non_empty_text(outcome.error_message)
+    stream_error = None
+    if not outcome.success and (normalized_error_message or outcome.error_code):
+        stream_error = _PersistedStreamError(
+            message=normalized_error_message or str(outcome.error_code or ""),
+            error_code=outcome.error_code,
+        )
     stream_envelope = _PersistedStreamEnvelope(
         finish_reason=outcome.finish_reason.value,
-        error=(
-            _PersistedStreamError(
-                message=str(outcome.error_message or ""),
-                error_code=outcome.error_code,
-            )
-            if not outcome.success
-            else None
-        ),
+        error=stream_error,
     )
     final_metadata["stream"] = stream_envelope.as_dict()
     return final_metadata

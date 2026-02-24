@@ -225,5 +225,7 @@ async def test_record_local_invoke_messages_is_idempotent_with_key(
     assert len(messages) == 2
     assert first_refs["user_message_id"] == second_refs["user_message_id"]
     assert first_refs["agent_message_id"] == second_refs["agent_message_id"]
+    assert messages[0].invoke_idempotency_key == "run:abc:scheduled"
     assert messages[-1].sender == "agent"
     assert messages[-1].content == "partial-updated"
+    assert messages[-1].invoke_idempotency_key == "run:abc:scheduled"

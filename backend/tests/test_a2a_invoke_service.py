@@ -731,6 +731,75 @@ async def test_ws_stream_ignores_client_disconnect_without_sending_error() -> No
 
 
 @pytest.mark.asyncio
+async def test_sse_stream_reports_client_disconnect_to_finalized_callback() -> None:
+    finalized_outcomes = []
+    first_chunk_seen = asyncio.Event()
+
+    async def _on_finalized(outcome):
+        finalized_outcomes.append(outcome)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithSingleEventThenPending(
+            first_event={"content": "partial text"}
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_finalized=_on_finalized,
+    )
+
+    async def _consume_stream() -> None:
+        async for _ in response.body_iterator:
+            first_chunk_seen.set()
+
+    consume_task = asyncio.create_task(_consume_stream())
+    await asyncio.wait_for(first_chunk_seen.wait(), timeout=1.0)
+    consume_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await consume_task
+
+    assert len(finalized_outcomes) == 1
+    finalized = finalized_outcomes[0]
+    assert finalized.success is False
+    assert finalized.finish_reason == StreamFinishReason.CLIENT_DISCONNECT
+    assert finalized.final_text == "partial text"
+    assert finalized.error_code is None
+    assert finalized.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_finalized_callback_failure_is_isolated(caplog):
+    async def _on_finalized(_outcome):
+        raise RuntimeError("persist failed")
+
+    with caplog.at_level(logging.WARNING):
+        result = await a2a_invoke_service.consume_stream(
+            gateway=_GatewayWithEvents(
+                [{"content": "ok"}, {"kind": "status-update", "final": True}]
+            ),
+            resolved=object(),
+            query="hello",
+            context_id=None,
+            metadata=None,
+            validate_message=lambda _: [],
+            logger=logging.getLogger(__name__),
+            log_extra={},
+            on_finalized=_on_finalized,
+        )
+
+    assert result.success is True
+    assert result.final_text == "ok"
+    assert any(
+        "A2A consume stream finalized callback failed" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
 async def test_send_ws_error_ignores_closed_socket_runtime_error() -> None:
     websocket = _ClosedWebSocket()
     await a2a_invoke_service.send_ws_error(

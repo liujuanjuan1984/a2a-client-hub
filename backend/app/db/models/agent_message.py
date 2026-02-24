@@ -1,6 +1,6 @@
 """Agent-related database models."""
 
-from sqlalchemy import Column, ForeignKey, String, Text
+from sqlalchemy import Column, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -11,7 +11,19 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
     """Agent chat and notification message model."""
 
     __tablename__ = "agent_messages"
-    __table_args__ = {"schema": SCHEMA_NAME}
+    __table_args__ = (
+        Index(
+            "uq_agent_messages_conversation_sender_invoke_idempotency_key",
+            "conversation_id",
+            "sender",
+            "invoke_idempotency_key",
+            unique=True,
+            postgresql_where=text(
+                "invoke_idempotency_key IS NOT NULL AND sender IN ('user', 'agent')"
+            ),
+        ),
+        {"schema": SCHEMA_NAME},
+    )
 
     # id comes from TimestampMixin as UUID v4
     conversation_id = Column(
@@ -32,6 +44,11 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
         JSONB,
         nullable=True,
         comment="Structured metadata for the message (tool info, etc.)",
+    )
+    invoke_idempotency_key = Column(
+        String(160),
+        nullable=True,
+        comment="Idempotency key for invoke-generated user/agent message pair.",
     )
 
     conversation = relationship(
