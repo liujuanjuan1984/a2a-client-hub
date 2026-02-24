@@ -421,7 +421,7 @@ class Settings(BaseSettings):
             if baseline_errors:
                 joined_errors = "; ".join(baseline_errors)
                 raise ValueError(
-                    "Production security baseline checks failed: " f"{joined_errors}"
+                    f"Production security baseline checks failed: {joined_errors}"
                 )
         return self
 

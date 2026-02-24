@@ -53,7 +53,9 @@ async def test_close_open_transaction_commits_read_only_session() -> None:
 
 
 @pytest.mark.asyncio
-async def test_close_open_transaction_does_not_commit_when_session_has_pending_writes() -> None:
+async def test_close_open_transaction_does_not_commit_when_session_has_pending_writes() -> (
+    None
+):
     class _DirtySession:
         def __init__(self) -> None:
             self.committed = 0

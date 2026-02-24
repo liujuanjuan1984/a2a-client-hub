@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Any, Optional, Type
+from urllib.parse import urlparse
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
 from app.utils.auth_headers import resolve_stored_auth_fields
@@ -93,11 +95,37 @@ class AgentValidationMixin:
         )
 
     def _normalize_card_url(self, value: str) -> str:
-        return normalize_required_text(
+        trimmed = normalize_required_text(
             value=value,
             field_label="Card URL",
             validation_error_cls=self._validation_error_cls,
         )
+        parsed = urlparse(trimmed)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise self._validation_error_cls("Card URL must be a valid http(s) address")
+
+        host = parsed.hostname or ""
+        if host == "localhost" or host.endswith(".localhost"):
+            raise self._validation_error_cls("Card URL host is not allowed")
+
+        try:
+            ip_value = ipaddress.ip_address(host)
+        except ValueError:
+            ip_value = None
+
+        if ip_value and (
+            ip_value.is_private
+            or ip_value.is_loopback
+            or ip_value.is_link_local
+            or ip_value.is_multicast
+            or ip_value.is_reserved
+            or ip_value.is_unspecified
+        ):
+            raise self._validation_error_cls(
+                "Card URL points to a private or reserved IP address"
+            )
+
+        return trimmed
 
     def _normalize_auth_type(self, value: str) -> str:
         return normalize_auth_type(

@@ -79,9 +79,9 @@ def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
     return A2AAgentResponse.model_validate(payload)
 
 
-def _normalize_card_url(value: str) -> str:
+def _normalize_card_url(value: Any) -> str:
     return normalize_card_url(
-        value,
+        str(value),
         allowed_hosts=settings.a2a_proxy_allowed_hosts,
     )
 
