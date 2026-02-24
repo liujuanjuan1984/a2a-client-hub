@@ -11,7 +11,11 @@ import {
   extractStreamBlockUpdate,
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
-import { ApiRequestError, isAuthFailureError } from "@/lib/api/client";
+import {
+  ApiRequestError,
+  isAuthorizationFailureError,
+  isAuthFailureError,
+} from "@/lib/api/client";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import {
   listSessionMessagesPage,
@@ -759,10 +763,12 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       return;
     }
   } catch (error) {
-    if (!isAuthFailureError(error)) {
+    if (!isAuthFailureError(error) && !isAuthorizationFailureError(error)) {
       throw error;
     }
-    const message = "Authentication expired. Please sign in again.";
+    const message = isAuthFailureError(error)
+      ? "Authentication expired. Please sign in again."
+      : buildApiErrorMessage(error);
     messageStore.updateMessage(conversationId, activeAgentMessageId, {
       content: message,
       status: "done",

@@ -51,6 +51,9 @@ export const isAuthFailureError = (error: unknown): boolean => {
   return error instanceof ApiRequestError && error.status === 401;
 };
 
+export const isAuthorizationFailureError = (error: unknown): boolean =>
+  error instanceof ApiRequestError && error.status === 403;
+
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 type ApiRequestOptions<Body> = {

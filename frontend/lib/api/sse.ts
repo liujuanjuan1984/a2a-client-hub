@@ -1,4 +1,5 @@
 import {
+  ApiRequestError,
   AuthExpiredError,
   ensureFreshAccessToken,
   handleAuthExpiredOnce,
@@ -177,8 +178,9 @@ export const fetchSSE = async (
             const errorText = await retryResponse
               .text()
               .catch(() => "Unknown error");
-            throw new Error(
+            throw new ApiRequestError(
               `SSE request failed (${retryResponse.status}): ${errorText}`,
+              retryResponse.status,
             );
           }
           await consumeSseStream(retryResponse, handlers, {
@@ -198,8 +200,9 @@ export const fetchSSE = async (
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => "Unknown error");
-        throw new Error(
+        throw new ApiRequestError(
           `SSE request failed (${response.status}): ${errorText}`,
+          response.status,
         );
       }
 

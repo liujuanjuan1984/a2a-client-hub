@@ -23,6 +23,7 @@ The frontend follows a hybrid strategy:
 - **Reactive refresh (fallback path)**
   - Protected requests retry once after `401` by forcing a refresh.
   - If retry still fails, the client transitions to an expired-auth state.
+  - `403` is treated as an authorization denial and does not trigger refresh.
 
 ## Failure Handling
 
