@@ -386,7 +386,10 @@ def _build_consume_stream_callbacks(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
-) -> tuple[Callable[[dict[str, Any]], Any], Callable[[StreamOutcome], Any],]:
+) -> tuple[
+    Callable[[dict[str, Any]], Any],
+    Callable[[StreamOutcome], Any],
+]:
     async def on_event(event_payload: dict[str, Any]) -> None:
         _collect_stream_hints(state=state, event_payload=event_payload)
 

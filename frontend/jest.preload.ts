@@ -26,14 +26,55 @@
 const NativeModules = require("react-native/Libraries/BatchedBridge/NativeModules");
 const originalTurboModuleProxy = (globalThis as any).__turboModuleProxy;
 
+const ensureEmitterModule = (
+  moduleName: string,
+  moduleDefaults: Record<string, unknown> = {},
+) => {
+  const nativeModule = (NativeModules[moduleName] ?? {}) as Record<
+    string,
+    unknown
+  >;
+
+  if (typeof nativeModule.addListener !== "function") {
+    nativeModule.addListener = jest.fn();
+  }
+  if (typeof nativeModule.removeListeners !== "function") {
+    nativeModule.removeListeners = jest.fn();
+  }
+
+  for (const [key, value] of Object.entries(moduleDefaults)) {
+    if (typeof nativeModule[key] === "undefined") {
+      nativeModule[key] = value;
+    }
+  }
+
+  NativeModules[moduleName] = nativeModule;
+  return nativeModule;
+};
+
 NativeModules.KeyboardObserver = NativeModules.KeyboardObserver ?? {
   addListener: jest.fn(),
   removeListeners: jest.fn(),
 };
 
+const linkingManagerModule = ensureEmitterModule("LinkingManager", {
+  getInitialURL: jest.fn(async () => null),
+  canOpenURL: jest.fn(async () => false),
+  openURL: jest.fn(async () => undefined),
+  openSettings: jest.fn(async () => undefined),
+});
+
+const modalManagerModule = ensureEmitterModule("ModalManager");
+
 (globalThis as any).__turboModuleProxy = (name: string) => {
   if (name === "KeyboardObserver") {
     return NativeModules.KeyboardObserver;
+  }
+  if (name === "LinkingManager") {
+    return linkingManagerModule;
+  }
+  if (name === "ModalManager") {
+    return modalManagerModule;
   }
   return originalTurboModuleProxy(name);
 };

@@ -265,9 +265,11 @@ class SessionHubService:
                     agent_id=(
                         target.thread.agent_id
                         if isinstance(target.thread.agent_id, UUID)
-                        else session.agent_id
-                        if session and isinstance(session.agent_id, UUID)
-                        else None
+                        else (
+                            session.agent_id
+                            if session and isinstance(session.agent_id, UUID)
+                            else None
+                        )
                     ),
                     agent_source=resolved_agent_source,
                     context_id=context_id,
