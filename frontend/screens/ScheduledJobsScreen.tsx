@@ -72,11 +72,15 @@ export function ScheduledJobsScreen() {
   useFocusEffect(
     useCallback(() => {
       const mode = hasLoadedRef.current ? "refreshing" : "loading";
-      loadFirstPage(mode).then((succeeded) => {
-        if (succeeded) {
-          hasLoadedRef.current = true;
-        }
-      });
+      loadFirstPage(mode)
+        .then((succeeded) => {
+          if (succeeded) {
+            hasLoadedRef.current = true;
+          }
+        })
+        .catch((err) => {
+          console.error("Scheduled jobs load error:", err);
+        });
     }, [loadFirstPage]),
   );
 

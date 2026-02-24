@@ -65,11 +65,15 @@ export function usePreventRemoveWhenDirty({
       confirmLabel,
       cancelLabel,
       isDestructive: true,
-    }).then((shouldDiscard) => {
-      if (!shouldDiscard) return;
-      // Allow the next navigation action to proceed without looping the guard.
-      setPendingAction(data.action);
-    });
+    })
+      .then((shouldDiscard) => {
+        if (!shouldDiscard) return;
+        // Allow the next navigation action to proceed without looping the guard.
+        setPendingAction(data.action);
+      })
+      .catch((err) => {
+        console.error("Confirm dialog aborted or failed:", err);
+      });
   });
 
   useEffect(() => {
