@@ -21,7 +21,7 @@ The frontend follows a hybrid strategy:
   - Additional refresh checks run when the app returns to foreground, when the page becomes visible, and when network connectivity is restored.
 
 - **Reactive refresh (fallback path)**
-  - Protected requests retry once after `401` or `403` by forcing a refresh.
+  - Protected requests retry once after `401` by forcing a refresh.
   - If retry still fails, the client transitions to an expired-auth state.
 
 ## Failure Handling

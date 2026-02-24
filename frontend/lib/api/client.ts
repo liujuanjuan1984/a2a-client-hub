@@ -48,10 +48,7 @@ export const isAuthFailureError = (error: unknown): boolean => {
   if (error instanceof AuthExpiredError) {
     return true;
   }
-  return (
-    error instanceof ApiRequestError &&
-    (error.status === 401 || error.status === 403)
-  );
+  return error instanceof ApiRequestError && error.status === 401;
 };
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -128,8 +125,7 @@ const isAuthPath = (path: string) => {
   );
 };
 
-const isAuthStatusCode = (status: number): boolean =>
-  status === 401 || status === 403;
+const isUnauthorizedStatusCode = (status: number): boolean => status === 401;
 
 const hasExpectedAuthVersion = (expectedAuthVersion?: number): boolean => {
   if (expectedAuthVersion === undefined) {
@@ -403,7 +399,7 @@ export async function apiRequest<Response, Body = unknown>(
 
   let response = await execute(token);
 
-  if (isAuthStatusCode(response.status) && shouldAttemptRefresh) {
+  if (isUnauthorizedStatusCode(response.status) && shouldAttemptRefresh) {
     const refreshed = await refreshAccessToken({
       force: true,
       expectedAuthVersion: requestAuthVersion,
@@ -414,7 +410,7 @@ export async function apiRequest<Response, Body = unknown>(
       });
       response = await execute(refreshed.accessToken);
 
-      if (isAuthStatusCode(response.status)) {
+      if (isUnauthorizedStatusCode(response.status)) {
         handleAuthExpiredOnce({
           expectedAuthVersion: requestAuthVersion,
         });

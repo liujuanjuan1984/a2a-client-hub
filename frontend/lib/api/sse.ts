@@ -36,7 +36,7 @@ export type SSEOptions = {
 };
 
 const DEFAULT_IDLE_TIMEOUT_MS = 45_000;
-const isAuthStatusCode = (status: number) => status === 401 || status === 403;
+const isUnauthorizedStatusCode = (status: number) => status === 401;
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -141,7 +141,7 @@ export const fetchSSE = async (
         signal: controller.signal,
       });
 
-      if (isAuthStatusCode(response.status)) {
+      if (isUnauthorizedStatusCode(response.status)) {
         const refreshed = await refreshAccessToken({
           force: true,
           expectedAuthVersion: requestAuthVersion,
@@ -167,7 +167,7 @@ export const fetchSSE = async (
             body: bodyText,
             signal: controller.signal,
           });
-          if (isAuthStatusCode(retryResponse.status)) {
+          if (isUnauthorizedStatusCode(retryResponse.status)) {
             handleAuthExpiredOnce({
               expectedAuthVersion: requestAuthVersion,
             });

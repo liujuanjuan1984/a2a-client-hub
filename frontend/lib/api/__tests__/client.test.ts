@@ -129,18 +129,12 @@ describe("api client auth refresh flow", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("retries after 403 with a forced refresh and succeeds", async () => {
-    const { client, useSessionStore } = loadModules();
+  it("does not refresh on 403 and keeps current auth session", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
     const fetchMock = global.fetch as jest.Mock;
-    fetchMock
-      .mockResolvedValueOnce(createJsonResponse(403, { detail: "forbidden" }))
-      .mockResolvedValueOnce(
-        createJsonResponse(200, {
-          access_token: "token-from-refresh",
-          expires_in: 240,
-        }),
-      )
-      .mockResolvedValueOnce(createJsonResponse(200, { ok: true }));
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(403, { detail: "forbidden" }),
+    );
 
     useSessionStore.setState({
       token: "old-token",
@@ -148,18 +142,16 @@ describe("api client auth refresh flow", () => {
       accessTokenExpiresAtMs: null,
       accessTokenTtlSeconds: null,
     });
-    const initialVersion = useSessionStore.getState().authVersion;
 
-    const response = await client.apiRequest<{ ok: boolean }>("/me/echo");
+    await expect(
+      client.apiRequest<{ ok: boolean }>("/me/echo"),
+    ).rejects.toMatchObject({
+      status: 403,
+    });
 
-    expect(response).toEqual({ ok: true });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    const retriedHeaders = fetchMock.mock.calls[2]?.[1]?.headers as Record<
-      string,
-      string
-    >;
-    expect(retriedHeaders.Authorization).toBe("Bearer token-from-refresh");
-    expect(useSessionStore.getState().authVersion).toBe(initialVersion + 1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(resetAuthBoundState).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().token).toBe("old-token");
   });
 
   it("shares one refresh request across 20 concurrent callers", async () => {
