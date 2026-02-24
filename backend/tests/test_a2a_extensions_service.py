@@ -31,6 +31,7 @@ def _resolved_extension(
         methods={
             "list_sessions": "opencode.sessions.list",
             "get_session_messages": "opencode.sessions.messages.list",
+            "prompt_async": "opencode.sessions.prompt_async",
         },
         pagination=PageSizePagination(
             mode="limit",
@@ -167,6 +168,112 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
     }
     assert result.meta["session_id"] == "ses_123"
     assert result.meta["short_circuit_reason"] == "limit_without_offset"
+
+
+@pytest.mark.asyncio
+async def test_prompt_async_forwards_request_and_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(metadata_key="external_session_key", supports_offset=True)
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_resolve(_runtime):
+        return ext, "https://example.com/jsonrpc"
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "prompt_async"
+        assert kwargs["params"]["session_id"] == "ses_123"
+        assert kwargs["params"]["request"] == {
+            "parts": [{"type": "text", "text": "continue"}],
+            "noReply": True,
+        }
+        assert kwargs["params"]["metadata"] == {
+            "opencode": {"directory": "/workspace/project"}
+        }
+        assert kwargs["normalize_envelope"] is False
+        return ExtensionCallResult(
+            success=True,
+            result={"ok": True, "session_id": "ses_123"},
+            meta={"session_id": "ses_123"},
+        )
+
+    monkeypatch.setattr(service, "_resolve_opencode_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_invoke_opencode_method", _fake_invoke)
+
+    result = await service.opencode_prompt_async(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={
+            "parts": [{"type": "text", "text": "continue"}],
+            "noReply": True,
+        },
+        metadata={"opencode": {"directory": "/workspace/project"}},
+    )
+
+    assert result.success is True
+    assert result.result == {"ok": True, "session_id": "ses_123"}
+
+
+@pytest.mark.asyncio
+async def test_prompt_async_returns_method_not_supported_if_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = _resolved_extension(metadata_key="opencode_session_id")
+    ext = ResolvedExtension(
+        uri=ext.uri,
+        required=ext.required,
+        jsonrpc=ext.jsonrpc,
+        methods={
+            "list_sessions": ext.methods["list_sessions"],
+            "get_session_messages": ext.methods["get_session_messages"],
+            "prompt_async": None,
+        },
+        pagination=ext.pagination,
+        business_code_map=ext.business_code_map,
+        session_binding_metadata_key=ext.session_binding_metadata_key,
+        result_envelope=ext.result_envelope,
+    )
+
+    async def _fake_resolve(_runtime):
+        return ext, "https://example.com/jsonrpc"
+
+    async def _unexpected_remote_call(**_kwargs):
+        raise AssertionError("method should be short-circuited as unsupported")
+
+    monkeypatch.setattr(service, "_resolve_opencode_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
+
+    result = await service.opencode_prompt_async(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={"parts": [{"type": "text", "text": "continue"}]},
+    )
+    assert result.success is False
+    assert result.error_code == "method_not_supported"
+    assert result.meta == {
+        "extension_uri": "urn:opencode-a2a:opencode-session-query/v1"
+    }
+
+
+@pytest.mark.asyncio
+async def test_prompt_async_requires_non_empty_parts() -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    with pytest.raises(ValueError):
+        await service.opencode_prompt_async(
+            runtime=runtime,
+            session_id="ses_123",
+            request_payload={"parts": []},
+        )
 
 
 @pytest.mark.asyncio

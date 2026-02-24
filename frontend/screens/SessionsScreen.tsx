@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
@@ -8,15 +8,23 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useContinueSession } from "@/hooks/useContinueSession";
 import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
+import {
+  A2AExtensionCallError,
+  promptOpencodeSessionAsync,
+} from "@/lib/api/a2aExtensions";
 import { type SessionListItem } from "@/lib/api/sessions";
 import {
   getSessionTimelineText,
   resolveSessionAgentPresentation,
 } from "@/lib/sessionDirectoryPresentation";
+import { toast } from "@/lib/toast";
 
 export function SessionsScreen() {
   const { continueSession } = useContinueSession();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
+  const [promptingConversationId, setPromptingConversationId] = useState<
+    string | null
+  >(null);
 
   const {
     items,
@@ -48,6 +56,56 @@ export function SessionsScreen() {
       createdAt: item.created_at ?? null,
       lastActiveAt: item.last_active_at ?? item.created_at ?? null,
     });
+  };
+
+  const canPromptAsync = (item: SessionListItem) =>
+    item.external_provider === "opencode" &&
+    typeof item.external_session_id === "string" &&
+    item.external_session_id.trim().length > 0 &&
+    typeof item.agent_id === "string" &&
+    item.agent_id.trim().length > 0;
+
+  const handlePromptAsync = async (item: SessionListItem) => {
+    if (!canPromptAsync(item)) {
+      return;
+    }
+    const sessionId = item.external_session_id!.trim();
+    const agentId = item.agent_id!.trim();
+    const source = item.agent_source === "shared" ? "shared" : "personal";
+    setPromptingConversationId(item.conversationId);
+    try {
+      await promptOpencodeSessionAsync({
+        source,
+        agentId,
+        sessionId,
+        request: {
+          parts: [
+            {
+              type: "text",
+              text: "Continue from the latest context and summarize next steps.",
+            },
+          ],
+          noReply: true,
+        },
+      });
+      toast.success(
+        "Async continue started",
+        "The upstream session accepted prompt_async.",
+      );
+      await refresh();
+    } catch (error) {
+      const message =
+        error instanceof A2AExtensionCallError
+          ? error.errorCode === "session_forbidden"
+            ? "You do not have permission to continue this external session."
+            : error.message
+          : error instanceof Error
+            ? error.message
+            : "Failed to trigger async continue.";
+      toast.error("Async continue failed", message);
+    } finally {
+      setPromptingConversationId(null);
+    }
   };
 
   return (
@@ -130,14 +188,28 @@ export function SessionsScreen() {
                         {timeline.timelineRangeText}
                       </Text>
                     </View>
-                    <Button
-                      size="xs"
-                      variant="secondary"
-                      label="Continue"
-                      iconRight="chevron-forward"
-                      disabled={!item.agent_id}
-                      onPress={() => handleContinueSession(item)}
-                    />
+                    <View className="flex-row items-center gap-2">
+                      {canPromptAsync(item) ? (
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          label="Async Continue"
+                          loading={
+                            promptingConversationId === item.conversationId
+                          }
+                          disabled={promptingConversationId !== null}
+                          onPress={() => handlePromptAsync(item)}
+                        />
+                      ) : null}
+                      <Button
+                        size="xs"
+                        variant="secondary"
+                        label="Continue"
+                        iconRight="chevron-forward"
+                        disabled={!item.agent_id}
+                        onPress={() => handleContinueSession(item)}
+                      />
+                    </View>
                   </View>
                 </View>
               );

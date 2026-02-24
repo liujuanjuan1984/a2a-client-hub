@@ -28,6 +28,7 @@ from app.integrations.a2a_extensions.errors import (
 )
 from app.schemas.a2a_extension import (
     A2AExtensionPermissionReplyRequest,
+    A2AExtensionPromptAsyncRequest,
     A2AExtensionQueryRequest,
     A2AExtensionQuestionRejectRequest,
     A2AExtensionQuestionReplyRequest,
@@ -233,6 +234,51 @@ def create_opencode_extension_router(
             get_a2a_extensions_service().opencode_continue_session(
                 runtime=runtime,
                 session_id=session_id,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/opencode/sessions/{session_id}:prompt-async",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def opencode_prompt_async(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        payload: A2AExtensionPromptAsyncRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime(db, current_user, agent_id)
+        request_keys = sorted(payload.request.keys())[:20]
+        metadata_keys = sorted(payload.metadata.keys())[:20] if payload.metadata else []
+        logger.info(
+            _scope_message("OpenCode session prompt_async requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "request_keys": request_keys,
+                "request_parts_count": (
+                    len(payload.request.get("parts", []))
+                    if isinstance(payload.request.get("parts"), list)
+                    else None
+                ),
+                "metadata_keys": metadata_keys,
+            },
+        )
+
+        return await _run_extension_call(
+            get_a2a_extensions_service().opencode_prompt_async(
+                runtime=runtime,
+                session_id=session_id,
+                request_payload=payload.request,
+                metadata=payload.metadata,
             )
         )
 

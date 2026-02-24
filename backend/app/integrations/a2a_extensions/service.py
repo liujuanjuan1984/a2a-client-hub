@@ -289,9 +289,19 @@ class A2AExtensionsService:
         params: Dict[str, Any],
         page: int,
         size: int,
+        normalize_envelope: bool = True,
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        method_name = ext.methods[method_key]
+        method_name = ext.methods.get(method_key)
+        if not method_name:
+            return ExtensionCallResult(
+                success=False,
+                error_code="method_not_supported",
+                upstream_error={
+                    "message": f"Method {method_key} is not supported by upstream"
+                },
+                meta={"extension_uri": ext.uri},
+            )
         metric_key = f"{ext.uri}:{method_name}"
         await self._get_http()
         assert self._jsonrpc is not None  # constructed alongside _http
@@ -333,17 +343,23 @@ class A2AExtensionsService:
         )
 
         if resp.ok:
-            normalized = self._normalize_envelope(
-                resp.result,
-                page=page,
-                size=size,
-            )
+            resolved_result: Optional[Dict[str, Any]]
+            if normalize_envelope:
+                resolved_result = self._normalize_envelope(
+                    resp.result,
+                    page=page,
+                    size=size,
+                )
+            elif isinstance(resp.result, dict):
+                resolved_result = dict(resp.result)
+            else:
+                resolved_result = {"raw": resp.result}
             a2a_extension_metrics.record_call(
                 metric_key,
                 success=True,
                 error_code=None,
             )
-            return ExtensionCallResult(success=True, result=normalized, meta=meta)
+            return ExtensionCallResult(success=True, result=resolved_result, meta=meta)
 
         error = resp.error or {}
         error_code = self._map_business_error_code(error, ext)
@@ -546,6 +562,50 @@ class A2AExtensionsService:
                 },
             },
             meta=meta,
+        )
+
+    async def opencode_prompt_async(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        request_payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        resolved_session_id = (session_id or "").strip()
+        if not resolved_session_id:
+            raise ValueError("session_id is required")
+
+        if not isinstance(request_payload, dict):
+            raise ValueError("request must be an object")
+
+        parts = request_payload.get("parts")
+        if not isinstance(parts, list) or len(parts) == 0:
+            raise ValueError("request.parts must be a non-empty array")
+
+        params: Dict[str, Any] = {
+            "session_id": resolved_session_id,
+            "request": dict(request_payload),
+        }
+        if metadata is not None:
+            if not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object")
+            params["metadata"] = dict(metadata)
+
+        ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
+        return await self._invoke_opencode_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="prompt_async",
+            params=params,
+            page=1,
+            size=1,
+            normalize_envelope=False,
+            meta_extra={
+                "session_id": resolved_session_id,
+                "control_method": "prompt_async",
+            },
         )
 
     async def _resolve_opencode_interrupt_extension(

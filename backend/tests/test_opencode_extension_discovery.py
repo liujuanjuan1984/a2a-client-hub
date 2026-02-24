@@ -44,6 +44,7 @@ def test_resolve_extracts_methods_pagination_and_interface() -> None:
                 "methods": {
                     "list_sessions": "opencode.sessions.list",
                     "get_session_messages": "opencode.sessions.messages.list",
+                    "prompt_async": "opencode.sessions.prompt_async",
                 },
                 "pagination": {
                     "mode": "page_size",
@@ -78,6 +79,7 @@ def test_resolve_extracts_methods_pagination_and_interface() -> None:
     assert resolved.uri == OPENCODE_SESSION_QUERY_URI
     assert resolved.methods["list_sessions"] == "opencode.sessions.list"
     assert resolved.methods["get_session_messages"] == "opencode.sessions.messages.list"
+    assert resolved.methods["prompt_async"] == "opencode.sessions.prompt_async"
     assert resolved.pagination.default_size == 20
     assert resolved.pagination.max_size == 100
     assert resolved.jsonrpc.url == "https://api.example.com/jsonrpc"
@@ -111,6 +113,7 @@ def test_resolve_falls_back_to_card_url_when_interface_missing() -> None:
     resolved = resolve_opencode_session_query(card)
     assert resolved.jsonrpc.url == "https://example.com"
     assert resolved.jsonrpc.fallback_used is True
+    assert resolved.methods["prompt_async"] is None
     assert resolved.session_binding_metadata_key is None
 
 

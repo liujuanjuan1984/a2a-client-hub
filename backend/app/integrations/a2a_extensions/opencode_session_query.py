@@ -32,6 +32,15 @@ def _require_str(value: Any, *, field: str) -> str:
     raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
 
 
+def _normalize_method_name(value: Any, *, field: str) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise A2AExtensionContractError(f"'{field}' must be a string if provided")
+    normalized = value.strip()
+    return normalized or None
+
+
 def _require_int(value: Any, *, field: str) -> int:
     if isinstance(value, bool):
         raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
@@ -154,6 +163,10 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
         methods.get("get_session_messages"),
         field="methods.get_session_messages",
     )
+    prompt_async_method = _normalize_method_name(
+        methods.get("prompt_async"),
+        field="methods.prompt_async",
+    )
 
     pagination = _as_dict(params.get("pagination"))
     mode = _require_str(pagination.get("mode"), field="pagination.mode")
@@ -232,6 +245,7 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
         methods={
             "list_sessions": list_sessions_method,
             "get_session_messages": get_messages_method,
+            "prompt_async": prompt_async_method,
         },
         pagination=PageSizePagination(
             mode=mode,

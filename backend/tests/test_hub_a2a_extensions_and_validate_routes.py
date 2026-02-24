@@ -165,6 +165,29 @@ class _FakeExtensionsService:
             meta={},
         )
 
+    async def opencode_prompt_async(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        request_payload,
+        metadata,
+    ):
+        self.calls.append(
+            {
+                "fn": "opencode_prompt_async",
+                "runtime": runtime,
+                "session_id": session_id,
+                "request_payload": request_payload,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "session_id": session_id},
+            meta={},
+        )
+
     async def opencode_reply_question(self, *, runtime, request_id: str, answers):
         self.calls.append(
             {
@@ -469,7 +492,31 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
             "request_id": "q-2",
         }
 
-    assert len(fake_extensions.calls) == 6
+        prompt_async_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-1:prompt-async",
+            json={
+                "request": {
+                    "parts": [{"type": "text", "text": "Continue and summarize"}],
+                    "noReply": True,
+                },
+                "metadata": {"opencode": {"directory": "/workspace/project"}},
+            },
+        )
+        assert prompt_async_resp.status_code == 200
+        assert prompt_async_resp.json()["result"] == {
+            "ok": True,
+            "session_id": "sess-1",
+        }
+
+    assert len(fake_extensions.calls) == 7
+    prompt_calls = [
+        c for c in fake_extensions.calls if c["fn"] == "opencode_prompt_async"
+    ]
+    assert len(prompt_calls) == 1
+    assert prompt_calls[0]["request_payload"]["parts"][0]["text"].startswith("Continue")
+    assert prompt_calls[0]["metadata"] == {
+        "opencode": {"directory": "/workspace/project"}
+    }
     for call in fake_extensions.calls:
         resolved = call["runtime"].resolved
         assert resolved.headers["Authorization"].endswith("secret-token-opencode")

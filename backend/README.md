@@ -94,6 +94,10 @@ Endpoints:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions:query`
 - Continue a session:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}:continue`
+- Trigger async prompt for an existing upstream session:
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}:prompt-async`
+    - body:
+      `{"request":{"parts":[{"type":"text","text":"Continue and summarize next steps."}],"noReply":true},"metadata":{"opencode":{"directory":"/path/inside/workspace"}}}`
 - List messages for a session:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages?page=1&size=50`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages:query`
