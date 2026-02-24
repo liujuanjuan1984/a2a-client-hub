@@ -58,12 +58,29 @@ export function SessionsScreen() {
     });
   };
 
+  const resolvePromptSource = (
+    item: SessionListItem,
+  ): "personal" | "shared" | null => {
+    if (item.agent_source === "personal" || item.agent_source === "shared") {
+      return item.agent_source;
+    }
+    if (!item.agent_id) {
+      return null;
+    }
+    const fallbackSource = agentLookup.get(item.agent_id)?.source;
+    if (fallbackSource === "personal" || fallbackSource === "shared") {
+      return fallbackSource;
+    }
+    return null;
+  };
+
   const canPromptAsync = (item: SessionListItem) =>
     item.external_provider === "opencode" &&
     typeof item.external_session_id === "string" &&
     item.external_session_id.trim().length > 0 &&
     typeof item.agent_id === "string" &&
-    item.agent_id.trim().length > 0;
+    item.agent_id.trim().length > 0 &&
+    resolvePromptSource(item) !== null;
 
   const handlePromptAsync = async (item: SessionListItem) => {
     if (!canPromptAsync(item)) {
@@ -71,7 +88,10 @@ export function SessionsScreen() {
     }
     const sessionId = item.external_session_id!.trim();
     const agentId = item.agent_id!.trim();
-    const source = item.agent_source === "shared" ? "shared" : "personal";
+    const source = resolvePromptSource(item);
+    if (!source) {
+      return;
+    }
     setPromptingConversationId(item.conversationId);
     try {
       await promptOpencodeSessionAsync({
