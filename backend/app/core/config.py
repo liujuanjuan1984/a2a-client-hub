@@ -152,11 +152,6 @@ class Settings(BaseSettings):
         alias="REQUIRE_INVITATION_FOR_REGISTRATION",
         description="Require a valid invitation code for new registrations after the first user",
     )
-    jwt_secret_key: str = Field(
-        ...,
-        alias="JWT_SECRET_KEY",
-        description="Legacy compatibility secret; JWT signing uses asymmetric PEM keys",
-    )
     jwt_algorithm: str = Field(
         default="RS256",
         alias="JWT_ALGORITHM",

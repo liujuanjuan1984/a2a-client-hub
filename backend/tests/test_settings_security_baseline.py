@@ -17,7 +17,6 @@ def _set_base_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "JWT_PUBLIC_KEY_PEM",
         "-----BEGIN PUBLIC KEY-----\nlocal-test\n-----END PUBLIC KEY-----\n",
     )
-    monkeypatch.setenv("JWT_SECRET_KEY", "this-is-a-strong-test-key-1234567890")
     monkeypatch.setenv("WS_TICKET_SECRET_KEY", "another-strong-test-key-1234567890")
     monkeypatch.setenv("AUTH_REFRESH_COOKIE_SECURE", "true")
     monkeypatch.setenv("AUTH_REFRESH_COOKIE_SAMESITE", "lax")
@@ -27,11 +26,10 @@ def _set_base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("A2A_PROXY_ALLOWED_HOSTS", '["agent.example.com"]')
 
 
-def test_production_allows_default_jwt_secret_for_asymmetric_jwt(
+def test_production_does_not_require_legacy_jwt_secret_for_asymmetric_jwt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_base_env(monkeypatch)
-    monkeypatch.setenv("JWT_SECRET_KEY", "change-me-32-chars-minimum-secret-key")
 
     settings = Settings()
 
@@ -70,7 +68,6 @@ def test_development_allows_localhost_and_dev_defaults(
 ) -> None:
     _set_base_env(monkeypatch)
     monkeypatch.setenv("APP_ENV", "development")
-    monkeypatch.setenv("JWT_SECRET_KEY", "change-me-32-chars-minimum-secret-key")
     monkeypatch.setenv("WS_TICKET_SECRET_KEY", "change-me-ws-ticket-secret")
     monkeypatch.setenv("AUTH_REFRESH_COOKIE_SECURE", "false")
     monkeypatch.setenv("BACKEND_CORS_ORIGINS", '["http://localhost:3000"]')

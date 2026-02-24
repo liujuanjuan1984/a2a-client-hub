@@ -9,6 +9,7 @@ import json
 import logging
 from datetime import date, datetime, time
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ class CompassJSONEncoder(json.JSONEncoder):
     - Decimal objects to floats
     """
 
-    def default(self, obj):
+    def default(self, obj: Any) -> Any:
         """Convert non-serializable objects to serializable ones."""
         if isinstance(obj, UUID):
             return str(obj)
@@ -49,7 +50,7 @@ class CompassJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def json_dumps(obj, **kwargs):
+def json_dumps(obj: Any, **kwargs: Any) -> str:
     """
     Convenience function for JSON serialization with custom encoder.
 
