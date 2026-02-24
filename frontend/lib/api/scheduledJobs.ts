@@ -24,7 +24,6 @@ export type ScheduledJob = {
   name: string;
   agent_id: string;
   prompt: string;
-  timezone: string;
   cycle_type: ScheduleCycleType;
   time_point: ScheduleTimePoint | Record<string, unknown>;
   enabled: boolean;
@@ -56,7 +55,6 @@ export type ScheduledJobPayload = {
   name: string;
   agent_id: string;
   prompt: string;
-  timezone: string;
   cycle_type: ScheduleCycleType;
   time_point: ScheduleTimePoint;
   enabled: boolean;

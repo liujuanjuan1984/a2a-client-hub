@@ -171,6 +171,25 @@ scheduled, and OpenCode sessions:
 Client-generated chat sessions should use raw UUID conversation IDs, for example
 `550e8400-e29b-41d4-a716-446655440000`.
 
+## Scheduled Jobs Timezone Semantics
+
+Scheduled jobs use the existing user profile timezone as the single source of
+truth (`users.timezone`).
+
+- Schedule intent:
+  - `daily/weekly/monthly` `time_point` values are interpreted in
+    `users.timezone`.
+  - `interval.start_at` is normalized to UTC before persistence.
+- Storage and dispatch:
+  - `next_run_at` and execution timestamps are stored and compared in UTC.
+  - Scheduler dispatch remains UTC-based for deterministic ordering.
+- DST behavior:
+  - Local-wall-clock semantics are preserved across DST transitions
+    (for example, `08:00 America/New_York` stays `08:00` local before/after
+    the shift).
+- Display:
+  - Clients should render UTC timestamps in local/device timezone for UX.
+
 ## Checks (Before Pushing)
 
 ```bash

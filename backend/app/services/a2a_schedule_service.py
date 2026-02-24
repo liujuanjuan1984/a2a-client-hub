@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -116,7 +115,6 @@ class A2AScheduleService:
         name: str,
         agent_id: UUID,
         prompt: str,
-        timezone: Optional[str] = None,
         cycle_type: str,
         time_point: Dict[str, Any],
         enabled: bool,
@@ -130,21 +128,16 @@ class A2AScheduleService:
         normalized_name = self._normalize_name(name)
         normalized_prompt = self._normalize_prompt(prompt)
         normalized_cycle = self._normalize_cycle_type(cycle_type)
-        fallback_timezone = await auth_handler.get_user_timezone(
+        timezone_value = await auth_handler.get_user_timezone(
             db,
             user_id=user_id,
             default="UTC",
-        )
-        normalized_timezone = self._normalize_timezone(
-            timezone,
-            fallback=fallback_timezone,
-            reject_invalid_input=True,
         )
         normalized_point = self._normalize_time_point(
             cycle_type=normalized_cycle,
             time_point=time_point,
             is_superuser=is_superuser,
-            timezone_str=normalized_timezone,
+            timezone_str=timezone_value,
         )
 
         next_run_at: Optional[datetime] = None
@@ -152,7 +145,7 @@ class A2AScheduleService:
             next_run_at = self.compute_next_run_at(
                 cycle_type=normalized_cycle,
                 time_point=normalized_point,
-                timezone_str=normalized_timezone,
+                timezone_str=timezone_value,
                 after_utc=utc_now(),
                 is_superuser=is_superuser,
             )
@@ -162,7 +155,6 @@ class A2AScheduleService:
             name=normalized_name,
             agent_id=agent_id,
             prompt=normalized_prompt,
-            timezone=normalized_timezone,
             cycle_type=normalized_cycle,
             time_point=normalized_point,
             enabled=enabled,
@@ -184,7 +176,6 @@ class A2AScheduleService:
         name: Optional[str] = None,
         agent_id: Optional[UUID] = None,
         prompt: Optional[str] = None,
-        timezone: Optional[str] = None,
         cycle_type: Optional[str] = None,
         time_point: Optional[Dict[str, Any]] = None,
         enabled: Optional[bool] = None,
@@ -213,16 +204,6 @@ class A2AScheduleService:
 
         next_cycle_type = task.cycle_type
         next_time_point = dict(task.time_point or {})
-        fallback_timezone = await auth_handler.get_user_timezone(
-            db,
-            user_id=user_id,
-            default="UTC",
-        )
-        next_timezone = self._normalize_timezone(
-            task.timezone,
-            fallback=fallback_timezone,
-            reject_invalid_input=False,
-        )
 
         if cycle_type is not None:
             next_cycle_type = self._normalize_cycle_type(cycle_type)
@@ -230,42 +211,41 @@ class A2AScheduleService:
         if time_point is not None:
             next_time_point = dict(time_point)
 
-        if timezone is not None:
-            next_timezone = self._normalize_timezone(
-                timezone,
-                fallback=next_timezone,
-                reject_invalid_input=True,
-            )
-
         schedule_changed = (cycle_type is not None) or (time_point is not None)
         if schedule_changed:
+            timezone_value = await auth_handler.get_user_timezone(
+                db,
+                user_id=user_id,
+                default="UTC",
+            )
             normalized_point = self._normalize_time_point(
                 cycle_type=next_cycle_type,
                 time_point=next_time_point,
                 is_superuser=is_superuser,
-                timezone_str=next_timezone,
+                timezone_str=timezone_value,
             )
             task.cycle_type = next_cycle_type
             task.time_point = normalized_point
-
-        task.timezone = next_timezone
 
         if enabled is not None:
             task.enabled = enabled
 
         should_recompute = False
-        if task.enabled and (
-            schedule_changed or enabled is True or timezone is not None
-        ):
+        if task.enabled and (schedule_changed or enabled is True):
             should_recompute = True
         if not task.enabled:
             task.next_run_at = None
 
         if should_recompute:
+            timezone_value = await auth_handler.get_user_timezone(
+                db,
+                user_id=user_id,
+                default="UTC",
+            )
             task.next_run_at = self.compute_next_run_at(
                 cycle_type=task.cycle_type,
                 time_point=dict(task.time_point or {}),
-                timezone_str=task.timezone,
+                timezone_str=timezone_value,
                 after_utc=utc_now(),
                 is_superuser=is_superuser,
             )
@@ -291,14 +271,15 @@ class A2AScheduleService:
 
         task.enabled = enabled
         if enabled:
+            timezone_value = await auth_handler.get_user_timezone(
+                db,
+                user_id=user_id,
+                default="UTC",
+            )
             task.next_run_at = self.compute_next_run_at(
                 cycle_type=task.cycle_type,
                 time_point=dict(task.time_point or {}),
-                timezone_str=self._normalize_timezone(
-                    task.timezone,
-                    fallback="UTC",
-                    reject_invalid_input=False,
-                ),
+                timezone_str=timezone_value,
                 after_utc=utc_now(),
                 is_superuser=is_superuser,
             )
@@ -539,6 +520,12 @@ class A2AScheduleService:
         if selected_task is None:
             return None
 
+        timezone_value = await auth_handler.get_user_timezone(
+            db,
+            user_id=selected_task.user_id,
+            default="UTC",
+        )
+
         from app.db.models.user import User
 
         is_superuser = (
@@ -547,17 +534,11 @@ class A2AScheduleService:
             )
         ) or False
 
-        task_timezone = self._normalize_timezone(
-            selected_task.timezone,
-            fallback="UTC",
-            reject_invalid_input=False,
-        )
-
         scheduled_for = ensure_utc(selected_task.next_run_at or now_utc)
         next_run_at = self.compute_next_run_at(
             cycle_type=selected_task.cycle_type,
             time_point=dict(selected_task.time_point or {}),
-            timezone_str=task_timezone,
+            timezone_str=timezone_value,
             after_utc=scheduled_for,
             not_before_utc=now_utc,
             is_superuser=is_superuser,
@@ -838,27 +819,6 @@ class A2AScheduleService:
                 "cycle_type must be one of daily, weekly, monthly, interval"
             )
         return normalized
-
-    @staticmethod
-    def _normalize_timezone(
-        value: Any,
-        *,
-        fallback: str = "UTC",
-        reject_invalid_input: bool = False,
-    ) -> str:
-        provided_timezone = isinstance(value, str) and bool(value.strip())
-        candidate = value.strip() if provided_timezone else ""
-        if not candidate:
-            fallback_value = fallback.strip() if isinstance(fallback, str) else ""
-            candidate = fallback_value or "UTC"
-        try:
-            return ZoneInfo(candidate).key
-        except ZoneInfoNotFoundError as exc:
-            if provided_timezone and reject_invalid_input:
-                raise A2AScheduleValidationError(
-                    "timezone must be a valid IANA timezone"
-                ) from exc
-            return "UTC"
 
     def _normalize_time_point(
         self,

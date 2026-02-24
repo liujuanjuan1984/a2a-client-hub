@@ -9,7 +9,6 @@ describe("ScheduledJobForm", () => {
     name: "",
     agent_id: "",
     prompt: "",
-    timezone: "UTC",
     cycle_type: "interval",
     time_point: {
       minutes: 10,

@@ -36,6 +36,11 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
             "enabled",
             "next_run_at",
         ),
+        Index(
+            "ix_a2a_schedule_tasks_user_id_created_at",
+            "user_id",
+            "created_at",
+        ),
         {"schema": SCHEMA_NAME},
     )
 
@@ -92,13 +97,6 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         JSONB,
         nullable=False,
         comment="Cycle-specific trigger point definition",
-    )
-    timezone = Column(
-        String(64),
-        nullable=False,
-        default="UTC",
-        server_default="UTC",
-        comment="IANA timezone representing user scheduling intent",
     )
     enabled = Column(
         Boolean,
