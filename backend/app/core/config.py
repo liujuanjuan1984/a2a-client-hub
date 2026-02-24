@@ -153,7 +153,7 @@ class Settings(BaseSettings):
         description="Require a valid invitation code for new registrations after the first user",
     )
     jwt_secret_key: str = Field(
-        default="change-me-32-chars-minimum-secret-key",
+        ...,
         alias="JWT_SECRET_KEY",
         description="Legacy compatibility secret; JWT signing uses asymmetric PEM keys",
     )
@@ -208,7 +208,7 @@ class Settings(BaseSettings):
         description="Path scope for refresh cookie",
     )
     ws_ticket_secret_key: str = Field(
-        default="change-me-32-chars-minimum-ws-ticket-secret",
+        ...,
         alias="WS_TICKET_SECRET_KEY",
         description="Secret key for WS ticket HMAC hashing",
     )
