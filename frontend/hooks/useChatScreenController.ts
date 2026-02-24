@@ -469,35 +469,41 @@ export function useChatScreenController({
     }
   }, [activeAgentId, agent, validateAgentMutation]);
 
-  const handleSend = useCallback(() => {
-    if (!activeAgentId || !conversationId || !agent) {
-      return;
-    }
-    if (pendingInterrupt) {
-      toast.info(
-        "Action required",
-        "Please resolve the interactive action card before sending a new message.",
-      );
-      return;
-    }
-    if (!input.trim()) {
-      return;
-    }
-    forceScrollToBottomRef.current = true;
-    shouldStickToBottomRef.current = true;
-    sendMessage(conversationId, activeAgentId, input, agent.source);
-    setInput("");
-    setInputHeight(minInputHeight);
-    scheduleStickToBottom(true);
-  }, [
-    activeAgentId,
-    agent,
-    conversationId,
-    input,
-    pendingInterrupt,
-    scheduleStickToBottom,
-    sendMessage,
-  ]);
+  const handleSend = useCallback(
+    (overrideValue?: string) => {
+      const finalInput =
+        typeof overrideValue === "string" ? overrideValue : input;
+      if (!activeAgentId || !conversationId || !agent) {
+        return;
+      }
+      if (pendingInterrupt) {
+        toast.info(
+          "Action required",
+          "Please resolve the interactive action card before sending a new message.",
+        );
+        return;
+      }
+      if (!finalInput.trim()) {
+        return;
+      }
+      forceScrollToBottomRef.current = true;
+      shouldStickToBottomRef.current = true;
+      sendMessage(conversationId, activeAgentId, finalInput, agent.source);
+      setInput("");
+      setInputHeight(minInputHeight);
+      scheduleStickToBottom(true);
+    },
+    [
+      activeAgentId,
+      agent,
+      conversationId,
+      input,
+      pendingInterrupt,
+      scheduleStickToBottom,
+      sendMessage,
+      minInputHeight,
+    ],
+  );
 
   const runInterruptAction = useCallback(
     async (
@@ -694,7 +700,10 @@ export function useChatScreenController({
   );
 
   const handleKeyPress = useCallback(
-    (e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
+    (
+      e: NativeSyntheticEvent<TextInputKeyPressEventData>,
+      currentValue?: string,
+    ) => {
       const webEvent = e as WebTextInputKeyPressEvent;
       if (
         Platform.OS === "web" &&
@@ -703,7 +712,7 @@ export function useChatScreenController({
         !webEvent.nativeEvent.isComposing
       ) {
         webEvent.preventDefault?.();
-        handleSend();
+        handleSend(currentValue);
       }
     },
     [handleSend],
