@@ -128,4 +128,85 @@ describe("api client auth refresh flow", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("retries after 403 with a forced refresh and succeeds", async () => {
+    const { client, useSessionStore } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock
+      .mockResolvedValueOnce(createJsonResponse(403, { detail: "forbidden" }))
+      .mockResolvedValueOnce(
+        createJsonResponse(200, {
+          access_token: "token-from-refresh",
+          expires_in: 240,
+        }),
+      )
+      .mockResolvedValueOnce(createJsonResponse(200, { ok: true }));
+
+    useSessionStore.setState({
+      token: "old-token",
+      authStatus: "authenticated",
+      accessTokenExpiresAtMs: null,
+      accessTokenTtlSeconds: null,
+    });
+    const initialVersion = useSessionStore.getState().authVersion;
+
+    const response = await client.apiRequest<{ ok: boolean }>("/me/echo");
+
+    expect(response).toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const retriedHeaders = fetchMock.mock.calls[2]?.[1]?.headers as Record<
+      string,
+      string
+    >;
+    expect(retriedHeaders.Authorization).toBe("Bearer token-from-refresh");
+    expect(useSessionStore.getState().authVersion).toBe(initialVersion + 1);
+  });
+
+  it("shares one refresh request across 20 concurrent callers", async () => {
+    const { client, useSessionStore } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockResolvedValue(
+      createJsonResponse(200, {
+        access_token: "single-flight-token",
+        expires_in: 600,
+      }),
+    );
+
+    useSessionStore.setState({
+      token: "old-token",
+      authStatus: "authenticated",
+      accessTokenExpiresAtMs: Date.now() - 1,
+      accessTokenTtlSeconds: 30,
+    });
+    const expectedAuthVersion = useSessionStore.getState().authVersion;
+
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        client.refreshAccessToken({ expectedAuthVersion }),
+      ),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    results.forEach((item) => {
+      expect(item?.accessToken).toBe("single-flight-token");
+      expect(item?.expiresInSeconds).toBe(600);
+    });
+  });
+
+  it("ignores stale auth-expired handling when authVersion has changed", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
+    useSessionStore.setState({
+      token: "v1-token",
+      authStatus: "authenticated",
+      authVersion: 1,
+    });
+
+    useSessionStore.getState().setAccessToken("v2-token", 120);
+    expect(useSessionStore.getState().authVersion).toBe(2);
+
+    client.handleAuthExpiredOnce({ expectedAuthVersion: 1 });
+
+    expect(resetAuthBoundState).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().token).toBe("v2-token");
+  });
 });

@@ -36,6 +36,7 @@ export type SSEOptions = {
 };
 
 const DEFAULT_IDLE_TIMEOUT_MS = 45_000;
+const isAuthStatusCode = (status: number) => status === 401 || status === 403;
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -120,9 +121,12 @@ export const fetchSSE = async (
     resetIdleTimer();
 
     try {
+      const requestAuthVersion = useSessionStore.getState().authVersion;
       let token = useSessionStore.getState().token;
       if (token) {
-        token = await ensureFreshAccessToken();
+        token = await ensureFreshAccessToken({
+          expectedAuthVersion: requestAuthVersion,
+        });
       }
       const response = await fetch(url, {
         method,
@@ -137,12 +141,20 @@ export const fetchSSE = async (
         signal: controller.signal,
       });
 
-      if (response.status === 401) {
-        const refreshed = await refreshAccessToken({ force: true });
+      if (isAuthStatusCode(response.status)) {
+        const refreshed = await refreshAccessToken({
+          force: true,
+          expectedAuthVersion: requestAuthVersion,
+        });
         if (refreshed) {
-          useSessionStore
-            .getState()
-            .setAccessToken(refreshed.accessToken, refreshed.expiresInSeconds);
+          if (useSessionStore.getState().authVersion === requestAuthVersion) {
+            useSessionStore
+              .getState()
+              .setAccessToken(
+                refreshed.accessToken,
+                refreshed.expiresInSeconds,
+              );
+          }
           const retryResponse = await fetch(url, {
             method,
             credentials: "include",
@@ -155,8 +167,10 @@ export const fetchSSE = async (
             body: bodyText,
             signal: controller.signal,
           });
-          if (retryResponse.status === 401) {
-            handleAuthExpiredOnce();
+          if (isAuthStatusCode(retryResponse.status)) {
+            handleAuthExpiredOnce({
+              expectedAuthVersion: requestAuthVersion,
+            });
             throw new AuthExpiredError();
           }
           if (!retryResponse.ok) {
@@ -176,7 +190,9 @@ export const fetchSSE = async (
           return { status: "done" as const, hasReceivedData };
         }
 
-        handleAuthExpiredOnce();
+        handleAuthExpiredOnce({
+          expectedAuthVersion: requestAuthVersion,
+        });
         throw new AuthExpiredError();
       }
 

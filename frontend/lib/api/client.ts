@@ -108,9 +108,11 @@ type RefreshAccessTokenResult = {
 
 type RefreshAccessTokenOptions = {
   force?: boolean;
+  expectedAuthVersion?: number;
 };
 
 let refreshPromise: Promise<RefreshAccessTokenResult | null> | null = null;
+let refreshPromiseForAuthVersion: number | null = null;
 let refreshCooldownUntilMs = 0;
 let authResetting = false;
 
@@ -124,6 +126,16 @@ const isAuthPath = (path: string) => {
   return authPaths.some(
     (authPath) => path === authPath || path.endsWith(authPath),
   );
+};
+
+const isAuthStatusCode = (status: number): boolean =>
+  status === 401 || status === 403;
+
+const hasExpectedAuthVersion = (expectedAuthVersion?: number): boolean => {
+  if (expectedAuthVersion === undefined) {
+    return true;
+  }
+  return useSessionStore.getState().authVersion === expectedAuthVersion;
 };
 
 const parseExpiresInSeconds = (value: unknown): number | null => {
@@ -189,22 +201,53 @@ const computeProactiveRefreshLeadMs = (ttlSeconds: number | null): number => {
   );
 };
 
-const applyRefreshedToken = (result: RefreshAccessTokenResult) => {
+const applyRefreshedToken = (
+  result: RefreshAccessTokenResult,
+  options?: {
+    expectedAuthVersion?: number;
+  },
+): boolean => {
+  if (!hasExpectedAuthVersion(options?.expectedAuthVersion)) {
+    return false;
+  }
   useSessionStore
     .getState()
     .setAccessToken(result.accessToken, result.expiresInSeconds);
+  return true;
 };
 
 export async function refreshAccessToken(
   options: RefreshAccessTokenOptions = {},
 ): Promise<RefreshAccessTokenResult | null> {
   const force = Boolean(options.force);
+  const expectedAuthVersion = options.expectedAuthVersion;
+
+  if (!hasExpectedAuthVersion(expectedAuthVersion)) {
+    return null;
+  }
+
+  if (
+    refreshPromise &&
+    expectedAuthVersion !== undefined &&
+    refreshPromiseForAuthVersion !== null &&
+    refreshPromiseForAuthVersion !== expectedAuthVersion
+  ) {
+    return null;
+  }
+
   if (!force && Date.now() < refreshCooldownUntilMs) {
     return null;
   }
 
   if (!refreshPromise) {
     const session = useSessionStore.getState();
+    if (
+      expectedAuthVersion !== undefined &&
+      session.authVersion !== expectedAuthVersion
+    ) {
+      return null;
+    }
+    refreshPromiseForAuthVersion = session.authVersion;
     if (session.token) {
       session.setAuthStatus("refreshing");
     }
@@ -239,6 +282,7 @@ export async function refreshAccessToken(
       })
       .finally(() => {
         refreshPromise = null;
+        refreshPromiseForAuthVersion = null;
       });
   }
   let result: RefreshAccessTokenResult | null;
@@ -254,19 +298,28 @@ export async function refreshAccessToken(
   if (!result) {
     // Avoid repeated refresh storms when the cookie is missing/expired.
     refreshCooldownUntilMs = Date.now() + REFRESH_COOLDOWN_MS;
-    const { token, setAuthStatus } = useSessionStore.getState();
-    setAuthStatus(token ? "authenticated" : "expired");
+    if (hasExpectedAuthVersion(expectedAuthVersion)) {
+      const { token, setAuthStatus } = useSessionStore.getState();
+      setAuthStatus(token ? "authenticated" : "expired");
+    }
     return null;
   }
-  useSessionStore.getState().setAuthStatus("authenticated");
+  if (hasExpectedAuthVersion(expectedAuthVersion)) {
+    useSessionStore.getState().setAuthStatus("authenticated");
+  }
   return result;
 }
 
-export async function ensureFreshAccessToken(): Promise<string | null> {
+export async function ensureFreshAccessToken(options?: {
+  expectedAuthVersion?: number;
+}): Promise<string | null> {
   const session = useSessionStore.getState();
   const token = session.token;
   if (!token) {
     return null;
+  }
+  if (!hasExpectedAuthVersion(options?.expectedAuthVersion)) {
+    return token;
   }
   const expiresAt = session.accessTokenExpiresAtMs;
   if (!expiresAt) {
@@ -282,19 +335,30 @@ export async function ensureFreshAccessToken(): Promise<string | null> {
     return token;
   }
 
-  const refreshed = await refreshAccessToken();
+  const refreshed = await refreshAccessToken({
+    expectedAuthVersion: options?.expectedAuthVersion,
+  });
   if (refreshed) {
-    applyRefreshedToken(refreshed);
+    applyRefreshedToken(refreshed, {
+      expectedAuthVersion: options?.expectedAuthVersion,
+    });
     return refreshed.accessToken;
   }
   if (Date.now() < expiresAt) {
     return token;
   }
-  handleAuthExpiredOnce();
+  handleAuthExpiredOnce({
+    expectedAuthVersion: options?.expectedAuthVersion,
+  });
   throw new AuthExpiredError();
 }
 
-export const handleAuthExpiredOnce = () => {
+export const handleAuthExpiredOnce = (options?: {
+  expectedAuthVersion?: number;
+}) => {
+  if (!hasExpectedAuthVersion(options?.expectedAuthVersion)) {
+    return;
+  }
   if (authResetting) {
     return;
   }
@@ -311,7 +375,9 @@ export async function apiRequest<Response, Body = unknown>(
   options: ApiRequestOptions<Body> = {},
 ): Promise<Response> {
   const { method = "GET", body, headers = {}, tokenOverride, query } = options;
-  let token = tokenOverride ?? useSessionStore.getState().token;
+  const sessionSnapshot = useSessionStore.getState();
+  let token = tokenOverride ?? sessionSnapshot.token;
+  const requestAuthVersion = sessionSnapshot.authVersion;
   const url = buildUrl(path, query);
   const shouldAttemptRefresh =
     !tokenOverride && !("Authorization" in headers) && !isAuthPath(path);
@@ -330,23 +396,34 @@ export async function apiRequest<Response, Body = unknown>(
   };
 
   if (shouldAttemptRefresh) {
-    token = await ensureFreshAccessToken();
+    token = await ensureFreshAccessToken({
+      expectedAuthVersion: requestAuthVersion,
+    });
   }
 
   let response = await execute(token);
 
-  if (response.status === 401 && shouldAttemptRefresh) {
-    const refreshed = await refreshAccessToken({ force: true });
+  if (isAuthStatusCode(response.status) && shouldAttemptRefresh) {
+    const refreshed = await refreshAccessToken({
+      force: true,
+      expectedAuthVersion: requestAuthVersion,
+    });
     if (refreshed) {
-      applyRefreshedToken(refreshed);
+      applyRefreshedToken(refreshed, {
+        expectedAuthVersion: requestAuthVersion,
+      });
       response = await execute(refreshed.accessToken);
 
-      if (response.status === 401) {
-        handleAuthExpiredOnce();
+      if (isAuthStatusCode(response.status)) {
+        handleAuthExpiredOnce({
+          expectedAuthVersion: requestAuthVersion,
+        });
         throw new AuthExpiredError();
       }
     } else {
-      handleAuthExpiredOnce();
+      handleAuthExpiredOnce({
+        expectedAuthVersion: requestAuthVersion,
+      });
       throw new AuthExpiredError();
     }
   }
