@@ -12,6 +12,7 @@ import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useScheduledJobExecutionsQuery } from "@/hooks/useScheduledJobExecutionsQuery";
 import { useScheduledJobs } from "@/hooks/useScheduledJobs";
 import { useScheduledJobsQuery } from "@/hooks/useScheduledJobsQuery";
+import { DEFAULT_TIME_ZONE } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { buildScheduledJobEditHref, scheduledJobNewHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
@@ -22,6 +23,7 @@ export function ScheduledJobsScreen() {
   const { data: agents = [] } = useAgentsCatalogQuery(true);
   const { markJobFailed, toggleJobStatus } = useScheduledJobs();
   const userTimeZone = useSessionStore((state) => state.user?.timezone);
+  const scheduleTimeZone = userTimeZone?.trim() || DEFAULT_TIME_ZONE;
 
   const [expandedExecutionsTaskId, setExpandedExecutionsTaskId] = useState<
     string | null
@@ -136,7 +138,7 @@ export function ScheduledJobsScreen() {
               <ScheduledJobCard
                 key={job.id}
                 job={job}
-                timeZone={userTimeZone}
+                timeZone={scheduleTimeZone}
                 agentName={
                   agentOptions.find((agent) => agent.id === job.agent_id)
                     ?.name ?? job.agent_id

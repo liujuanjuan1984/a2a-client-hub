@@ -1215,7 +1215,7 @@ class A2AScheduleService:
 
         tz = resolve_timezone(timezone_str, default="UTC")
         after_local = ensure_utc(after_utc).astimezone(tz)
-        guard_local = ensure_utc(not_before_utc or after_utc).astimezone(tz)
+        guard_utc = ensure_utc(not_before_utc or after_utc)
 
         candidate_local = self._next_occurrence_local(
             cycle_type=normalized_cycle,
@@ -1223,7 +1223,7 @@ class A2AScheduleService:
             after_local=after_local,
             is_superuser=is_superuser,
         )
-        while candidate_local <= guard_local:
+        while ensure_utc(candidate_local) <= guard_utc:
             candidate_local = self._next_occurrence_local(
                 cycle_type=normalized_cycle,
                 time_point=normalized_point,

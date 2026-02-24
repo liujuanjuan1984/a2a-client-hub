@@ -71,6 +71,13 @@ export const resolveUserTimeZone = (): string => {
   }
 };
 
+const resolveEffectiveTimeZone = (timeZone?: string): string => {
+  if (typeof timeZone === "string") {
+    return normalizeTimeZone(timeZone) ?? DEFAULT_TIME_ZONE;
+  }
+  return resolveUserTimeZone();
+};
+
 type DateTimeParts = {
   year: number;
   month: number;
@@ -118,17 +125,6 @@ const toYmdHm = (date: Date, timeZone: string): string => {
   }
   return `${values.year}-${pad2(values.month)}-${pad2(values.day)} ${pad2(values.hour)}:${pad2(values.minute)}`;
 };
-
-const dateTimePartsToComparableMs = (parts: DateTimeParts): number =>
-  Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    parts.second,
-    0,
-  );
 
 const hasValidCalendarDateTime = (parts: DateTimeParts): boolean => {
   const candidate = new Date(
@@ -195,47 +191,6 @@ const parseDateTimeInputParts = (value: string): DateTimeParts | null => {
   return parts;
 };
 
-const isSameDateTimeParts = (
-  left: DateTimeParts,
-  right: DateTimeParts,
-): boolean =>
-  left.year === right.year &&
-  left.month === right.month &&
-  left.day === right.day &&
-  left.hour === right.hour &&
-  left.minute === right.minute &&
-  left.second === right.second;
-
-const resolveLocalDateTimeToUtcDate = (
-  parts: DateTimeParts,
-  timeZone: string,
-): Date | null => {
-  // Iteratively solve for the UTC instant that renders to the target wall-clock
-  // datetime in the requested IANA timezone.
-  let guessMs = dateTimePartsToComparableMs(parts);
-  for (let index = 0; index < 8; index += 1) {
-    const guessDate = new Date(guessMs);
-    const localParts = toDateTimeParts(guessDate, timeZone);
-    if (!localParts) {
-      return null;
-    }
-    const deltaMs =
-      dateTimePartsToComparableMs(parts) -
-      dateTimePartsToComparableMs(localParts);
-    if (deltaMs === 0) {
-      return guessDate;
-    }
-    guessMs += deltaMs;
-  }
-
-  const resolved = new Date(guessMs);
-  const resolvedLocalParts = toDateTimeParts(resolved, timeZone);
-  if (!resolvedLocalParts || !isSameDateTimeParts(parts, resolvedLocalParts)) {
-    return null;
-  }
-  return resolved;
-};
-
 export const formatLocalDateTime = (
   value?: string | null,
   timeZone?: string,
@@ -243,7 +198,7 @@ export const formatLocalDateTime = (
   if (!value) return DATE_TIME_PLACEHOLDER;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  const resolved = normalizeTimeZone(timeZone) ?? resolveUserTimeZone();
+  const resolved = resolveEffectiveTimeZone(timeZone);
   return toYmdHm(date, resolved);
 };
 
@@ -257,7 +212,7 @@ export const formatDateTimeLocalInputValue = (
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const resolved = normalizeTimeZone(timeZone) ?? resolveUserTimeZone();
+  const resolved = resolveEffectiveTimeZone(timeZone);
   const display = toYmdHm(date, resolved).replace(" ", "T");
   return display;
 };
@@ -266,7 +221,7 @@ export const getNextTopOfHourLocalInputValue = (
   timeZone?: string,
   now: Date = new Date(),
 ): string => {
-  const resolved = normalizeTimeZone(timeZone) ?? resolveUserTimeZone();
+  const resolved = resolveEffectiveTimeZone(timeZone);
   let cursor = new Date(now.getTime());
   cursor.setUTCSeconds(0, 0);
   cursor = new Date(cursor.getTime() + 60_000);
@@ -286,10 +241,7 @@ export const getNextTopOfHourLocalInputValue = (
   return fallback.toISOString().slice(0, 16);
 };
 
-export const localDateTimeInputToUtcIso = (
-  value: string,
-  timeZone?: string,
-): string | null => {
+export const localDateTimeInputToUtcIso = (value: string): string | null => {
   const trimmed = value.trim();
   if (!trimmed) return null;
 
@@ -307,10 +259,7 @@ export const localDateTimeInputToUtcIso = (
     return date.toISOString();
   }
 
-  const resolved = normalizeTimeZone(timeZone) ?? resolveUserTimeZone();
-  const utcDate = resolveLocalDateTimeToUtcDate(parsedParts, resolved);
-  if (!utcDate) {
-    return null;
-  }
-  return utcDate.toISOString();
+  // Keep local wall-clock strings timezone-naive so backend can apply
+  // user.timezone as the single source of scheduling semantics.
+  return normalized;
 };
