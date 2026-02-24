@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import suppress
 
 import pytest
 from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
-from app.services.a2a_invoke_service import a2a_invoke_service
+from app.services.a2a_invoke_service import StreamFinishReason, a2a_invoke_service
 
 
 class _BrokenGateway:
@@ -43,6 +44,15 @@ class _GatewayWithDelayedEvents:
         for event in self._events:
             await asyncio.sleep(self._delay_seconds)
             yield _DumpableEvent(event)
+
+
+class _GatewayWithSingleEventThenPending:
+    def __init__(self, first_event: dict):
+        self._first_event = first_event
+
+    async def stream(self, **kwargs):  # noqa: ARG002
+        yield _DumpableEvent(self._first_event)
+        await asyncio.Future()
 
 
 class _DummyWebSocket:
@@ -721,6 +731,75 @@ async def test_ws_stream_ignores_client_disconnect_without_sending_error() -> No
 
 
 @pytest.mark.asyncio
+async def test_sse_stream_reports_client_disconnect_to_finalized_callback() -> None:
+    finalized_outcomes = []
+    first_chunk_seen = asyncio.Event()
+
+    async def _on_finalized(outcome):
+        finalized_outcomes.append(outcome)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithSingleEventThenPending(
+            first_event={"content": "partial text"}
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_finalized=_on_finalized,
+    )
+
+    async def _consume_stream() -> None:
+        async for _ in response.body_iterator:
+            first_chunk_seen.set()
+
+    consume_task = asyncio.create_task(_consume_stream())
+    await asyncio.wait_for(first_chunk_seen.wait(), timeout=1.0)
+    consume_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await consume_task
+
+    assert len(finalized_outcomes) == 1
+    finalized = finalized_outcomes[0]
+    assert finalized.success is False
+    assert finalized.finish_reason == StreamFinishReason.CLIENT_DISCONNECT
+    assert finalized.final_text == "partial text"
+    assert finalized.error_code is None
+    assert finalized.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_finalized_callback_failure_is_isolated(caplog):
+    async def _on_finalized(_outcome):
+        raise RuntimeError("persist failed")
+
+    with caplog.at_level(logging.WARNING):
+        result = await a2a_invoke_service.consume_stream(
+            gateway=_GatewayWithEvents(
+                [{"content": "ok"}, {"kind": "status-update", "final": True}]
+            ),
+            resolved=object(),
+            query="hello",
+            context_id=None,
+            metadata=None,
+            validate_message=lambda _: [],
+            logger=logging.getLogger(__name__),
+            log_extra={},
+            on_finalized=_on_finalized,
+        )
+
+    assert result.success is True
+    assert result.final_text == "ok"
+    assert any(
+        "A2A consume stream finalized callback failed" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
 async def test_send_ws_error_ignores_closed_socket_runtime_error() -> None:
     websocket = _ClosedWebSocket()
     await a2a_invoke_service.send_ws_error(
@@ -748,8 +827,115 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
         idle_timeout_seconds=0.02,
         total_timeout_seconds=0.2,
     )
-    assert result["success"] is True
-    assert result["content"] == "late-event"
+    assert result.success is True
+    assert result.finish_reason == StreamFinishReason.SUCCESS
+    assert result.final_text == "late-event"
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_reports_total_timeout_with_partial_content(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    monotonic_values = [0.0, 0.0, 0.01, 0.06, 0.06, 0.06, 0.06, 0.06]
+    monotonic_index = {"value": 0}
+
+    def _fake_monotonic() -> float:
+        index = monotonic_index["value"]
+        monotonic_index["value"] = min(index + 1, len(monotonic_values) - 1)
+        return monotonic_values[index]
+
+    wait_for_calls = {"value": 0}
+
+    async def _fake_wait_for(awaitable, timeout):  # noqa: ARG001
+        wait_for_calls["value"] += 1
+        if wait_for_calls["value"] == 1:
+            return await awaitable
+        timeout_task = asyncio.create_task(awaitable)
+        timeout_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await timeout_task
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.time.monotonic", _fake_monotonic
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.asyncio.wait_for", _fake_wait_for
+    )
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithSingleEventThenPending(
+            first_event={
+                "kind": "artifact-update",
+                "artifact": {
+                    "parts": [{"kind": "text", "text": "partial result"}],
+                    "metadata": {"opencode": {"block_type": "text"}},
+                },
+            },
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        total_timeout_seconds=0.05,
+        idle_timeout_seconds=1.0,
+    )
+    assert result.success is False
+    assert result.finish_reason == StreamFinishReason.TIMEOUT_TOTAL
+    assert result.error_code == "timeout"
+    assert result.final_text == "partial result"
+    assert result.message_blocks
+    assert result.message_blocks[0]["content"] == "partial result"
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_reports_idle_timeout_with_partial_content(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.0)
+    monotonic_values = [0.0, 0.0, 0.01, 0.03, 0.04, 0.05, 0.06, 0.06, 0.06]
+    monotonic_index = {"value": 0}
+
+    def _fake_monotonic() -> float:
+        index = monotonic_index["value"]
+        monotonic_index["value"] = min(index + 1, len(monotonic_values) - 1)
+        return monotonic_values[index]
+
+    wait_for_calls = {"value": 0}
+
+    async def _fake_wait_for(awaitable, timeout):  # noqa: ARG001
+        wait_for_calls["value"] += 1
+        if wait_for_calls["value"] == 1:
+            return await awaitable
+        timeout_task = asyncio.create_task(awaitable)
+        timeout_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await timeout_task
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.time.monotonic", _fake_monotonic
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.asyncio.wait_for", _fake_wait_for
+    )
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithSingleEventThenPending(
+            first_event={"content": "partial text"}
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        total_timeout_seconds=1.0,
+        idle_timeout_seconds=0.05,
+    )
+    assert result.success is False
+    assert result.finish_reason == StreamFinishReason.TIMEOUT_IDLE
+    assert result.error_code == "timeout"
+    assert result.final_text == "partial text"
 
 
 def test_extract_binding_hints_from_serialized_event():

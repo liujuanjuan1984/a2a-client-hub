@@ -296,6 +296,94 @@ async def test_execute_claimed_task_timeout_trips_failure_threshold(
     assert last_exec.conversation_id is not None
 
 
+async def test_execute_claimed_task_timeout_persists_partial_stream_content(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="timeout-partial"
+    )
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    task_id = task.id
+
+    monkeypatch.setattr(
+        settings,
+        "a2a_schedule_task_invoke_timeout",
+        0.02,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        settings,
+        "a2a_schedule_task_stream_idle_timeout",
+        5.0,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        _mock_runtime_builder(),
+    )
+
+    async def _stream(**_kwargs):
+        yield {
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"kind": "text", "text": "partial response"}],
+                "metadata": {"opencode": {"block_type": "text"}},
+            },
+        }
+        await asyncio.sleep(0.05)
+        yield {"kind": "status-update", "final": True}
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.get_a2a_service",
+        lambda: SimpleNamespace(gateway=SimpleNamespace(stream=_stream)),
+    )
+
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
+        )
+        execution = await check_db.scalar(
+            select(A2AScheduleExecution)
+            .where(A2AScheduleExecution.task_id == task_id)
+            .order_by(A2AScheduleExecution.started_at.desc())
+        )
+    assert refreshed_task is not None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
+    assert execution is not None
+    assert execution.status == A2AScheduleExecution.STATUS_FAILED
+    assert execution.response_content == "partial response"
+    assert execution.agent_message_id is not None
+
+    async with async_session_maker() as check_db:
+        agent_message = await check_db.scalar(
+            select(AgentMessage).where(AgentMessage.id == execution.agent_message_id)
+        )
+    assert agent_message is not None
+    assert agent_message.content == "partial response"
+    metadata = agent_message.message_metadata
+    assert isinstance(metadata, dict)
+    assert metadata["success"] is False
+    assert metadata["stream"]["schema_version"] == 1
+    assert metadata["stream"]["finish_reason"] == "timeout_total"
+    assert metadata["stream"]["error"]["error_code"] == "timeout"
+    message_blocks = metadata["message_blocks"]
+    assert isinstance(message_blocks, list)
+    assert message_blocks[0]["content"] == "partial response"
+
+
 async def test_execute_claimed_task_runtime_failure_does_not_create_conversation(
     async_db_session,
     async_session_maker,
