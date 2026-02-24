@@ -47,7 +47,9 @@ async def create_schedule_task(
             name=payload.name,
             agent_id=payload.agent_id,
             prompt=payload.prompt,
-            timezone=payload.timezone,
+            timezone=(
+                payload.timezone if "timezone" in payload.model_fields_set else None
+            ),
             cycle_type=payload.cycle_type,
             time_point=payload.time_point,
             enabled=payload.enabled,

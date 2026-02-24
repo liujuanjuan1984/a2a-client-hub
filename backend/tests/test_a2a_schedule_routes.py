@@ -480,6 +480,39 @@ async def test_schedule_create_rejects_invalid_timezone(
         assert "timezone must be a valid IANA timezone" in resp.json()["detail"]
 
 
+async def test_schedule_create_without_timezone_uses_user_timezone(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(
+        async_db_session,
+        skip_onboarding_defaults=True,
+        timezone="Asia/Shanghai",
+    )
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="default-user-timezone"
+    )
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Fallback timezone",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "cycle_type": "daily",
+                "time_point": {"time": "08:00"},
+                "enabled": False,
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["timezone"] == "Asia/Shanghai"
+
+
 async def test_schedule_create_rejects_over_quota(
     async_db_session,
     async_session_maker,
