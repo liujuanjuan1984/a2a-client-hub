@@ -1,5 +1,8 @@
-import { refreshAccessToken } from "@/lib/api/client";
-import { resetClientState } from "@/lib/resetClientState";
+import {
+  AuthExpiredError,
+  handleAuthExpiredOnce,
+  refreshAccessToken,
+} from "@/lib/api/client";
 import { useSessionStore } from "@/store/session";
 
 export type SSEEvent = {
@@ -147,7 +150,8 @@ export const fetchSSE = async (
             signal: controller.signal,
           });
           if (retryResponse.status === 401) {
-            resetClientState();
+            handleAuthExpiredOnce();
+            throw new AuthExpiredError();
           }
           if (!retryResponse.ok) {
             const errorText = await retryResponse
@@ -166,9 +170,8 @@ export const fetchSSE = async (
           return { status: "done" as const, hasReceivedData };
         }
 
-        // Keep behavior consistent with apiRequest(): if refresh fails, clear the
-        // local session so the app can transition back to login state.
-        resetClientState();
+        handleAuthExpiredOnce();
+        throw new AuthExpiredError();
       }
 
       if (!response.ok) {

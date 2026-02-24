@@ -4,6 +4,7 @@ import {
   getInvokeWsTicket,
   type A2AAgentInvokeRequest,
 } from "@/lib/api/a2aAgents";
+import { isAuthFailureError } from "@/lib/api/client";
 import { getHubInvokeWsTicket } from "@/lib/api/hubA2aAgentsUser";
 import { fetchSSE } from "@/lib/api/sse";
 import { ENV } from "@/lib/config";
@@ -315,6 +316,9 @@ class ChatConnectionService {
       });
       return true;
     } catch (error) {
+      if (isAuthFailureError(error)) {
+        throw error;
+      }
       console.warn("[WS Fallback]", {
         platform: Platform.OS,
         reason: error instanceof Error ? error.message : String(error),
@@ -369,6 +373,9 @@ class ChatConnectionService {
       );
       return true;
     } catch (error) {
+      if (isAuthFailureError(error)) {
+        throw error;
+      }
       console.warn("[SSE Fallback]", {
         platform: Platform.OS,
         reason: error instanceof Error ? error.message : String(error),

@@ -11,7 +11,7 @@ import {
   extractStreamBlockUpdate,
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
-import { ApiRequestError } from "@/lib/api/client";
+import { ApiRequestError, isAuthFailureError } from "@/lib/api/client";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import {
   listSessionMessagesPage,
@@ -726,12 +726,30 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     }
   };
 
-  if (await tryWebSocketTransport()) {
+  try {
+    if (await tryWebSocketTransport()) {
+      return;
+    }
+    if (await trySseTransport()) {
+      return;
+    }
+  } catch (error) {
+    if (!isAuthFailureError(error)) {
+      throw error;
+    }
+    const message = "Authentication expired. Please sign in again.";
+    messageStore.updateMessage(conversationId, activeAgentMessageId, {
+      content: message,
+      status: "done",
+    });
+    patchSession({
+      streamState: "error",
+      lastStreamError: message,
+      pendingInterrupt: null,
+    });
     return;
   }
-  if (await trySseTransport()) {
-    return;
-  }
+
   if (hasObservedStreamEvent) {
     appendStreamError(
       "Streaming transport interrupted before completion; skip blocking replay.",

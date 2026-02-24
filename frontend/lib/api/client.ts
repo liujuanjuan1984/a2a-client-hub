@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import { ENV } from "../config";
 import { type ApiErrorResponse } from "./types";
 
-import { resetClientState } from "@/lib/resetClientState";
+import { resetAuthBoundState } from "@/lib/resetClientState";
 import { useSessionStore } from "@/store/session";
 
 export class ApiConfigError extends Error {
@@ -35,6 +35,24 @@ export class ApiRequestError extends Error {
     Object.setPrototypeOf(this, ApiRequestError.prototype);
   }
 }
+
+export class AuthExpiredError extends ApiRequestError {
+  constructor(message = "Authentication expired. Please sign in again.") {
+    super(message, 401, { errorCode: "auth_expired" });
+    this.name = "AuthExpiredError";
+    Object.setPrototypeOf(this, AuthExpiredError.prototype);
+  }
+}
+
+export const isAuthFailureError = (error: unknown): boolean => {
+  if (error instanceof AuthExpiredError) {
+    return true;
+  }
+  return (
+    error instanceof ApiRequestError &&
+    (error.status === 401 || error.status === 403)
+  );
+};
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -77,9 +95,11 @@ const AUTH_LOGIN_PATH = "/auth/login";
 const AUTH_REGISTER_PATH = "/auth/register";
 const AUTH_REFRESH_PATH = "/auth/refresh";
 const AUTH_LOGOUT_PATH = "/auth/logout";
+const REFRESH_REQUEST_TIMEOUT_MS = 2_000;
 
 let refreshPromise: Promise<string | null> | null = null;
 let refreshCooldownUntilMs = 0;
+let authResetting = false;
 
 const isAuthPath = (path: string) => {
   const authPaths = [
@@ -118,18 +138,30 @@ export async function refreshAccessToken(): Promise<string | null> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       const url = buildUrl(AUTH_REFRESH_PATH);
-      const response = await fetch(url, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      return await parseAccessTokenFromResponse(response);
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        controller.abort();
+      }, REFRESH_REQUEST_TIMEOUT_MS);
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          signal: controller.signal,
+        });
+        return await parseAccessTokenFromResponse(response);
+      } finally {
+        clearTimeout(timer);
+      }
     })()
       .catch((error) => {
         if (error instanceof ApiConfigError) {
           throw error;
+        }
+        if (error instanceof Error && error.name === "AbortError") {
+          return null;
         }
         return null;
       })
@@ -153,6 +185,18 @@ export async function refreshAccessToken(): Promise<string | null> {
   }
   return result;
 }
+
+export const handleAuthExpiredOnce = () => {
+  if (authResetting) {
+    return;
+  }
+  authResetting = true;
+  try {
+    resetAuthBoundState();
+  } finally {
+    authResetting = false;
+  }
+};
 
 export async function apiRequest<Response, Body = unknown>(
   path: string,
@@ -185,13 +229,13 @@ export async function apiRequest<Response, Body = unknown>(
       useSessionStore.getState().setAccessToken(refreshedToken);
       response = await execute(refreshedToken);
 
-      // If we still can't authenticate after a refresh, stop retrying and clear
-      // local state to avoid request->refresh storms.
       if (response.status === 401) {
-        resetClientState();
+        handleAuthExpiredOnce();
+        throw new AuthExpiredError();
       }
     } else {
-      resetClientState();
+      handleAuthExpiredOnce();
+      throw new AuthExpiredError();
     }
   }
 
