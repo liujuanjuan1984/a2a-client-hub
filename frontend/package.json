@@ -62,7 +62,7 @@
     "typescript": "~5.9.2"
   },
   "overrides": {
-    "minimatch": "^10.2.2"
+    "minimatch": "^5.1.6"
   },
   "expo": {
     "install": {
