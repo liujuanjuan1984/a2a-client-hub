@@ -1,5 +1,6 @@
 import {
   AuthExpiredError,
+  ensureFreshAccessToken,
   handleAuthExpiredOnce,
   refreshAccessToken,
 } from "@/lib/api/client";
@@ -119,7 +120,10 @@ export const fetchSSE = async (
     resetIdleTimer();
 
     try {
-      const token = useSessionStore.getState().token;
+      let token = useSessionStore.getState().token;
+      if (token) {
+        token = await ensureFreshAccessToken();
+      }
       const response = await fetch(url, {
         method,
         credentials: "include",
@@ -134,16 +138,18 @@ export const fetchSSE = async (
       });
 
       if (response.status === 401) {
-        const refreshedToken = await refreshAccessToken();
-        if (refreshedToken) {
-          useSessionStore.getState().setAccessToken(refreshedToken);
+        const refreshed = await refreshAccessToken({ force: true });
+        if (refreshed) {
+          useSessionStore
+            .getState()
+            .setAccessToken(refreshed.accessToken, refreshed.expiresInSeconds);
           const retryResponse = await fetch(url, {
             method,
             credentials: "include",
             headers: {
               "Content-Type": "application/json",
               Accept: "text/event-stream",
-              Authorization: `Bearer ${refreshedToken}`,
+              Authorization: `Bearer ${refreshed.accessToken}`,
               ...headers,
             },
             body: bodyText,

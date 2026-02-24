@@ -96,8 +96,21 @@ const AUTH_REGISTER_PATH = "/auth/register";
 const AUTH_REFRESH_PATH = "/auth/refresh";
 const AUTH_LOGOUT_PATH = "/auth/logout";
 const REFRESH_REQUEST_TIMEOUT_MS = 2_000;
+const REFRESH_COOLDOWN_MS = 10_000;
+const PROACTIVE_REFRESH_RATIO = 0.2;
+const PROACTIVE_REFRESH_MIN_LEAD_MS = 5_000;
+const PROACTIVE_REFRESH_MAX_LEAD_MS = 90_000;
 
-let refreshPromise: Promise<string | null> | null = null;
+type RefreshAccessTokenResult = {
+  accessToken: string;
+  expiresInSeconds: number | null;
+};
+
+type RefreshAccessTokenOptions = {
+  force?: boolean;
+};
+
+let refreshPromise: Promise<RefreshAccessTokenResult | null> | null = null;
 let refreshCooldownUntilMs = 0;
 let authResetting = false;
 
@@ -113,29 +126,88 @@ const isAuthPath = (path: string) => {
   );
 };
 
-const parseAccessTokenFromResponse = async (
+const parseExpiresInSeconds = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return null;
+};
+
+const parseRefreshPayloadFromResponse = async (
   response: Response,
-): Promise<string | null> => {
+): Promise<RefreshAccessTokenResult | null> => {
   if (!response.ok) return null;
   if (response.status === 204) return null;
   try {
     const json = (await response.json()) as unknown;
-    if (json && typeof json === "object" && "access_token" in json) {
-      const token = (json as { access_token?: unknown }).access_token;
-      return typeof token === "string" ? token : null;
+    if (!json || typeof json !== "object") return null;
+    const payload = json as Record<string, unknown>;
+    const nestedPayload =
+      payload.data && typeof payload.data === "object"
+        ? (payload.data as Record<string, unknown>)
+        : null;
+    const tokenRaw = payload.access_token ?? nestedPayload?.access_token;
+    if (typeof tokenRaw !== "string" || !tokenRaw.trim()) {
+      return null;
     }
+    const expiresInSeconds = parseExpiresInSeconds(
+      payload.expires_in ?? nestedPayload?.expires_in,
+    );
+    return {
+      accessToken: tokenRaw,
+      expiresInSeconds,
+    };
   } catch {
     // Ignore invalid JSON
   }
   return null;
 };
 
-export async function refreshAccessToken(): Promise<string | null> {
-  if (Date.now() < refreshCooldownUntilMs) {
+const computeProactiveRefreshLeadMs = (ttlSeconds: number | null): number => {
+  if (
+    typeof ttlSeconds !== "number" ||
+    !Number.isFinite(ttlSeconds) ||
+    ttlSeconds <= 0
+  ) {
+    return 30_000;
+  }
+  const ttlMs = ttlSeconds * 1000;
+  const calculated = Math.round(ttlMs * PROACTIVE_REFRESH_RATIO);
+  const cappedUpperBound = Math.max(
+    PROACTIVE_REFRESH_MIN_LEAD_MS,
+    Math.min(PROACTIVE_REFRESH_MAX_LEAD_MS, Math.floor(ttlMs * 0.5)),
+  );
+  return Math.min(
+    Math.max(calculated, PROACTIVE_REFRESH_MIN_LEAD_MS),
+    cappedUpperBound,
+  );
+};
+
+const applyRefreshedToken = (result: RefreshAccessTokenResult) => {
+  useSessionStore
+    .getState()
+    .setAccessToken(result.accessToken, result.expiresInSeconds);
+};
+
+export async function refreshAccessToken(
+  options: RefreshAccessTokenOptions = {},
+): Promise<RefreshAccessTokenResult | null> {
+  const force = Boolean(options.force);
+  if (!force && Date.now() < refreshCooldownUntilMs) {
     return null;
   }
 
   if (!refreshPromise) {
+    const session = useSessionStore.getState();
+    if (session.token) {
+      session.setAuthStatus("refreshing");
+    }
     refreshPromise = (async () => {
       const url = buildUrl(AUTH_REFRESH_PATH);
       const controller = new AbortController();
@@ -151,7 +223,7 @@ export async function refreshAccessToken(): Promise<string | null> {
           },
           signal: controller.signal,
         });
-        return await parseAccessTokenFromResponse(response);
+        return await parseRefreshPayloadFromResponse(response);
       } finally {
         clearTimeout(timer);
       }
@@ -169,7 +241,7 @@ export async function refreshAccessToken(): Promise<string | null> {
         refreshPromise = null;
       });
   }
-  let result: string | null;
+  let result: RefreshAccessTokenResult | null;
   try {
     result = await refreshPromise;
   } catch (error) {
@@ -181,9 +253,45 @@ export async function refreshAccessToken(): Promise<string | null> {
   }
   if (!result) {
     // Avoid repeated refresh storms when the cookie is missing/expired.
-    refreshCooldownUntilMs = Date.now() + 10_000;
+    refreshCooldownUntilMs = Date.now() + REFRESH_COOLDOWN_MS;
+    const { token, setAuthStatus } = useSessionStore.getState();
+    setAuthStatus(token ? "authenticated" : "expired");
+    return null;
   }
+  useSessionStore.getState().setAuthStatus("authenticated");
   return result;
+}
+
+export async function ensureFreshAccessToken(): Promise<string | null> {
+  const session = useSessionStore.getState();
+  const token = session.token;
+  if (!token) {
+    return null;
+  }
+  const expiresAt = session.accessTokenExpiresAtMs;
+  if (!expiresAt) {
+    return token;
+  }
+
+  const leadMs = computeProactiveRefreshLeadMs(session.accessTokenTtlSeconds);
+  const jitterMaxMs = Math.min(10_000, Math.floor(leadMs * 0.2));
+  const jitterMs =
+    jitterMaxMs > 0 ? Math.floor(Math.random() * jitterMaxMs) : 0;
+  const shouldRefresh = Date.now() >= expiresAt - leadMs + jitterMs;
+  if (!shouldRefresh) {
+    return token;
+  }
+
+  const refreshed = await refreshAccessToken();
+  if (refreshed) {
+    applyRefreshedToken(refreshed);
+    return refreshed.accessToken;
+  }
+  if (Date.now() < expiresAt) {
+    return token;
+  }
+  handleAuthExpiredOnce();
+  throw new AuthExpiredError();
 }
 
 export const handleAuthExpiredOnce = () => {
@@ -203,7 +311,7 @@ export async function apiRequest<Response, Body = unknown>(
   options: ApiRequestOptions<Body> = {},
 ): Promise<Response> {
   const { method = "GET", body, headers = {}, tokenOverride, query } = options;
-  const token = tokenOverride ?? useSessionStore.getState().token;
+  let token = tokenOverride ?? useSessionStore.getState().token;
   const url = buildUrl(path, query);
   const shouldAttemptRefresh =
     !tokenOverride && !("Authorization" in headers) && !isAuthPath(path);
@@ -221,13 +329,17 @@ export async function apiRequest<Response, Body = unknown>(
     });
   };
 
+  if (shouldAttemptRefresh) {
+    token = await ensureFreshAccessToken();
+  }
+
   let response = await execute(token);
 
   if (response.status === 401 && shouldAttemptRefresh) {
-    const refreshedToken = await refreshAccessToken();
-    if (refreshedToken) {
-      useSessionStore.getState().setAccessToken(refreshedToken);
-      response = await execute(refreshedToken);
+    const refreshed = await refreshAccessToken({ force: true });
+    if (refreshed) {
+      applyRefreshedToken(refreshed);
+      response = await execute(refreshed.accessToken);
 
       if (response.status === 401) {
         handleAuthExpiredOnce();

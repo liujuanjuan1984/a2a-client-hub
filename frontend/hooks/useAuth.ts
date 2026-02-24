@@ -56,7 +56,11 @@ export const useLogin = () => {
         body: payload,
       }),
     onSuccess: (data) => {
-      setSession({ token: data.access_token, user: data.user });
+      setSession({
+        token: data.access_token,
+        user: data.user,
+        expiresInSeconds: data.expires_in,
+      });
     },
   });
 };
@@ -75,7 +79,11 @@ export const useRegister = () => {
       });
     },
     onSuccess: (data) => {
-      setSession({ token: data.access_token, user: data.user });
+      setSession({
+        token: data.access_token,
+        user: data.user,
+        expiresInSeconds: data.expires_in,
+      });
     },
   });
 };
