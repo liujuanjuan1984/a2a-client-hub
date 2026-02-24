@@ -511,9 +511,21 @@ async def test_hub_interrupt_reply_rejects_legacy_payload_fields(
     assert fake_extensions.calls == []
 
 
+@pytest.mark.parametrize(
+    ("error_code", "message", "expected_status"),
+    [
+        ("session_not_found", "Session not found", 404),
+        ("session_forbidden", "Session access denied", 403),
+    ],
+)
 @pytest.mark.asyncio
 async def test_hub_opencode_session_continue_maps_extension_error_to_http_status(
-    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    error_code: str,
+    message: str,
+    expected_status: int,
 ) -> None:
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
 
@@ -526,8 +538,8 @@ async def test_hub_opencode_session_continue_maps_extension_error_to_http_status
     )
 
     fake_extensions = _FakeExtensionsErrorService(
-        error_code="session_not_found",
-        message="Session not found",
+        error_code=error_code,
+        message=message,
     )
     monkeypatch.setattr(
         opencode_router_common,
@@ -544,11 +556,11 @@ async def test_hub_opencode_session_continue_maps_extension_error_to_http_status
         resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-404:continue"
         )
-        assert resp.status_code == 404
+        assert resp.status_code == expected_status
         payload = resp.json()
         assert payload["success"] is False
-        assert payload["error_code"] == "session_not_found"
-        assert payload["upstream_error"] == {"message": "Session not found"}
+        assert payload["error_code"] == error_code
+        assert payload["upstream_error"] == {"message": message}
 
 
 @pytest.mark.parametrize(

@@ -56,6 +56,7 @@ def test_resolve_extracts_methods_pagination_and_interface() -> None:
                         "UPSTREAM_UNREACHABLE": -32002,
                         "UPSTREAM_HTTP_ERROR": -32003,
                         "UPSTREAM_PAYLOAD_ERROR": -32005,
+                        "SESSION_FORBIDDEN": -32006,
                     }
                 },
                 "result_envelope": {"raw": True, "items": True, "pagination": True},
@@ -83,6 +84,7 @@ def test_resolve_extracts_methods_pagination_and_interface() -> None:
     assert resolved.jsonrpc.fallback_used is False
     assert resolved.business_code_map[-32001] == "session_not_found"
     assert resolved.business_code_map[-32005] == "upstream_payload_error"
+    assert resolved.business_code_map[-32006] == "session_forbidden"
     assert resolved.session_binding_metadata_key == "opencode_session_id"
     assert resolved.pagination.params == ("page", "size")
     assert resolved.pagination.supports_offset is False

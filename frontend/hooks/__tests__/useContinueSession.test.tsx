@@ -201,4 +201,29 @@ describe("useContinueSession", () => {
     );
     expect(mockPush).not.toHaveBeenCalled();
   });
+
+  it("shows semantic message when continue session is forbidden", async () => {
+    const forbiddenError = new Error(
+      "Request failed (403) [session_forbidden]",
+    );
+    Object.assign(forbiddenError, { errorCode: "session_forbidden" });
+    mockedContinueSession.mockRejectedValue(forbiddenError);
+
+    const { result } = renderHook(() => useContinueSession());
+
+    let ok = true;
+    await act(async () => {
+      ok = await result.current.continueSession({
+        agentId: "agent-1",
+        conversationId: "conversation-1",
+      });
+    });
+
+    expect(ok).toBe(false);
+    expect(mockedToast.error).toHaveBeenCalledWith(
+      "Continue session failed",
+      "You do not have permission to continue this session.",
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
 });

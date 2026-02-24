@@ -32,6 +32,21 @@ async def _create_agent(async_db_session, *, user_id, suffix: str) -> A2AAgent:
     return agent
 
 
+@pytest.mark.parametrize(
+    ("detail", "expected_status"),
+    [
+        ("session_not_found", 404),
+        ("session_forbidden", 403),
+        ("upstream_http_error", 502),
+        ("invalid_conversation_id", 400),
+    ],
+)
+async def test_status_code_for_session_error(detail: str, expected_status: int) -> None:
+    assert (
+        me_sessions._status_code_for_session_error(detail) == expected_status
+    )  # noqa: SLF001
+
+
 async def test_me_sessions_scheduled_list_detail_and_messages(
     async_db_session,
     async_session_maker,

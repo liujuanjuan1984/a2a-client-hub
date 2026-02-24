@@ -127,6 +127,7 @@ Unified error semantics (`error_code` -> HTTP status):
 | Scenario | error_code | HTTP Status |
 |---|---|---|
 | Session not found | `session_not_found` | 404 |
+| Session access forbidden | `session_forbidden` | 403 |
 | Outbound domain not allowed / invalid configuration | `outbound_not_allowed` | 403 |
 | Upstream unreachable | `upstream_unreachable` | 503 |
 | Upstream HTTP non-2xx | `upstream_http_error` | 502 |

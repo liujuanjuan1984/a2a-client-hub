@@ -156,9 +156,13 @@ export function useChatScreenController({
     }
 
     if (error instanceof A2AExtensionCallError) {
-      return error.errorCode
-        ? `${error.message}: ${error.errorCode}`
-        : error.message;
+      if (error.errorCode === "session_forbidden") {
+        return error.message;
+      }
+      if (error.errorCode && !error.message.includes(error.errorCode)) {
+        return `${error.message}: ${error.errorCode}`;
+      }
+      return error.message;
     }
     return error instanceof Error
       ? error.message

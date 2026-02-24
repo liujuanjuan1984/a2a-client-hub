@@ -36,9 +36,12 @@ export const assertExtensionSuccess = (response: A2AExtensionResponse) => {
       ? (response.upstream_error as Record<string, unknown>)
       : null;
 
-  const base = errorCode
-    ? `Extension call failed (${errorCode})`
-    : "Extension call failed";
+  const base =
+    errorCode === "session_forbidden"
+      ? "Session access denied for this operation."
+      : errorCode
+        ? `Extension call failed (${errorCode})`
+        : "Extension call failed";
   throw new A2AExtensionCallError(base, { errorCode, upstreamError });
 };
 

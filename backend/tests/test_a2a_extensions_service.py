@@ -42,6 +42,7 @@ def _resolved_extension(
         business_code_map={
             -32001: "session_not_found",
             -32005: "upstream_payload_error",
+            -32006: "session_forbidden",
         },
         session_binding_metadata_key=metadata_key,
         result_envelope=None,
@@ -63,6 +64,13 @@ def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
             ext,
         )
         == "session_not_found"
+    )
+    assert (
+        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+            {"code": -32006},
+            ext,
+        )
+        == "session_forbidden"
     )
 
 

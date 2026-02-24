@@ -12,6 +12,7 @@ class _A2AErrorCodeStatus:
     # 4xx fail-fast
     _STATUS_BY_ERROR_CODE: Final[dict[str, int]] = {
         "session_not_found": 404,
+        "session_forbidden": 403,
         "outbound_not_allowed": 403,
         "not_supported": 400,
         "method_not_supported": 400,
