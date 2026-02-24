@@ -22,6 +22,7 @@ from app.core.security import (
     verify_refresh_token,
 )
 from app.db.models.user import User
+from app.db.transaction import commit_safely
 from app.handlers import auth as auth_handler
 from app.handlers import invitations as invitation_handler
 from app.schemas.auth import (
@@ -167,12 +168,12 @@ async def login_user(
             ),
         )
     except auth_handler.InvalidCredentialsError:
-        await db.commit()
+        await commit_safely(db)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
 
-    await db.commit()
+    await commit_safely(db)
 
     token = create_user_access_token(user.id)
     refresh_jwt = create_user_refresh_token(user.id)
