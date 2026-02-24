@@ -123,6 +123,12 @@ export function ChatMessageItem({
 
   const renderableBlocks = deriveRenderableBlocks(message);
   const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
+  const plainTextExpanded = expandedTextByBlockId[message.id] ?? false;
+  const plainShouldCollapse = shouldCollapseByLength(message.content);
+  const plainTopToggleAccessibilityLabel = plainTextExpanded
+    ? "Collapse full text"
+    : "Expand full text";
+  const plainTopToggleLabel = plainTextExpanded ? "Show less" : "Read more";
   const canRetry =
     isLastMessage &&
     message.role === "agent" &&
@@ -251,6 +257,12 @@ export function ChatMessageItem({
               if (block.type === "text") {
                 const blockExpanded = expandedTextByBlockId[blockId] ?? false;
                 const shouldCollapse = shouldCollapseByLength(blockText);
+                const topToggleAccessibilityLabel = blockExpanded
+                  ? "Collapse full text"
+                  : "Expand full text";
+                const topToggleLabel = blockExpanded
+                  ? "Show less"
+                  : "Read more";
 
                 return (
                   <View key={blockId} className="rounded-xl">
@@ -267,16 +279,16 @@ export function ChatMessageItem({
                     >
                       {blockText}
                     </Text>
-                    {shouldCollapse && !blockExpanded ? (
+                    {shouldCollapse ? (
                       <Pressable
                         className="mt-2 rounded-md px-2 py-1"
                         accessibilityRole="button"
-                        accessibilityLabel="Expand full text"
+                        accessibilityLabel={topToggleAccessibilityLabel}
                         testID={`chat-message-${blockId}-expand`}
                         onPress={() => toggleTextExpansion(blockId)}
                       >
                         <Text className="text-xs font-semibold text-slate-300">
-                          Read more
+                          {topToggleLabel}
                         </Text>
                       </Pressable>
                     ) : null}
@@ -314,30 +326,27 @@ export function ChatMessageItem({
                 selectable
                 className="break-all text-sm text-white"
                 numberOfLines={
-                  shouldCollapseByLength(message.content) &&
-                  !(expandedTextByBlockId[message.id] ?? false)
+                  plainShouldCollapse && !plainTextExpanded
                     ? COLLAPSED_TEXT_LINES
                     : undefined
                 }
               >
                 {message.content}
               </Text>
-              {shouldCollapseByLength(message.content) &&
-              !(expandedTextByBlockId[message.id] ?? false) ? (
+              {plainShouldCollapse ? (
                 <Pressable
                   className="mt-2 rounded-md px-2 py-1"
                   accessibilityRole="button"
-                  accessibilityLabel="Expand full text"
+                  accessibilityLabel={plainTopToggleAccessibilityLabel}
                   testID={`chat-message-${message.id}-expand`}
                   onPress={() => toggleTextExpansion(message.id)}
                 >
                   <Text className="text-xs font-semibold text-slate-300">
-                    Read more
+                    {plainTopToggleLabel}
                   </Text>
                 </Pressable>
               ) : null}
-              {shouldCollapseByLength(message.content) &&
-              (expandedTextByBlockId[message.id] ?? false)
+              {plainShouldCollapse && plainTextExpanded
                 ? renderBottomCollapseAction(
                     `chat-message-${message.id}-collapse-bottom`,
                     () => toggleTextExpansion(message.id),

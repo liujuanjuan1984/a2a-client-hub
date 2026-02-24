@@ -489,10 +489,15 @@ describe("ChatScreen interrupt handling", () => {
     });
 
     const collapseButton = root.findByProps({
-      testID: "chat-message-message-1:text-collapse-bottom",
+      testID: "chat-message-message-1:text-expand",
       accessibilityLabel: "Collapse full text",
     });
     expect(collapseButton).toBeDefined();
+    const bottomCollapseButton = root.findByProps({
+      testID: "chat-message-message-1:text-collapse-bottom",
+      accessibilityLabel: "Collapse full text",
+    });
+    expect(bottomCollapseButton).toBeDefined();
     act(() => {
       tree.unmount();
     });

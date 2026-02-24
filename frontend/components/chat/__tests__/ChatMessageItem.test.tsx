@@ -125,6 +125,10 @@ describe("ChatMessageItem collapsible blocks", () => {
       screen.getByTestId("chat-message-plain-message:text-expand"),
     );
     expect(
+      screen.getByTestId("chat-message-plain-message:text-expand").props
+        .accessibilityLabel,
+    ).toBe("Collapse full text");
+    expect(
       screen.getByTestId("chat-message-plain-message:text-collapse-bottom"),
     ).toBeTruthy();
 
