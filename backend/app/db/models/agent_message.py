@@ -83,10 +83,10 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
         back_populates="messages",
         foreign_keys=[conversation_id],
     )
-    chunks = relationship(
-        "AgentMessageChunk",
+    blocks = relationship(
+        "AgentMessageBlock",
         back_populates="message",
-        foreign_keys="AgentMessageChunk.message_id",
+        foreign_keys="AgentMessageBlock.message_id",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )

@@ -348,7 +348,6 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     assert stream_metadata["error"]["message"] == "A2A stream total timeout after 60.0s"
     assert stream_metadata["error"]["error_code"] == "timeout"
     assert "message_blocks" not in response_metadata
-    assert "chunk_count" not in response_metadata
     assert state.persisted_response_content == "partial response"
     assert state.persisted_error_code == "timeout"
     assert state.persisted_finish_reason == "timeout_total"
@@ -377,7 +376,7 @@ def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
 
 
 @pytest.mark.asyncio
-async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
+async def test_persist_stream_block_update_consumes_and_persists_optional_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -393,7 +392,7 @@ async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
         async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
             return None
 
-    async def fake_append_agent_message_chunk(_db, **kwargs):  # noqa: ANN001
+    async def fake_append_agent_message_block_update(_db, **kwargs):  # noqa: ANN001
         captured.update(kwargs)
         return object()
 
@@ -407,8 +406,8 @@ async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "append_agent_message_chunk",
-        fake_append_agent_message_chunk,
+        "append_agent_message_block_update",
+        fake_append_agent_message_block_update,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
@@ -424,8 +423,8 @@ async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
             "user_message_id": str(uuid4()),
             "agent_message_id": str(uuid4()),
         },
-        next_chunk_seq=3,
-        persisted_chunk_count=0,
+        next_event_seq=3,
+        persisted_block_count=0,
     )
 
     event_payload = {
@@ -445,7 +444,7 @@ async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
         },
     }
 
-    await invoke_route_runner._persist_stream_chunk(  # noqa: SLF001
+    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
         state=state,
         event_payload=event_payload,
         user_id=uuid4(),
@@ -459,8 +458,8 @@ async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
     assert captured["seq"] == 9
     assert captured["append"] is False
     assert captured["is_finished"] is True
-    assert state.next_chunk_seq == 10
-    assert state.persisted_chunk_count == 1
+    assert state.next_event_seq == 10
+    assert state.persisted_block_count == 1
     assert event_payload["message_id"] == str(state.message_refs["agent_message_id"])
     assert event_payload["event_id"] == "evt-opt"
     assert event_payload["seq"] == 9
@@ -493,10 +492,12 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
         async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
             return None
 
-    async def fake_has_agent_message_chunks(_db, **_kwargs) -> bool:  # noqa: ANN001
+    async def fake_has_agent_message_blocks(_db, **_kwargs) -> bool:  # noqa: ANN001
         return False
 
-    async def fake_append_agent_message_chunk(_db, **kwargs) -> object:  # noqa: ANN001
+    async def fake_append_agent_message_block_update(
+        _db, **kwargs
+    ) -> object:  # noqa: ANN001
         captured_chunk.update(kwargs)
         return object()
 
@@ -520,13 +521,13 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "has_agent_message_chunks",
-        fake_has_agent_message_chunks,
+        "has_agent_message_blocks",
+        fake_has_agent_message_blocks,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "append_agent_message_chunk",
-        fake_append_agent_message_chunk,
+        "append_agent_message_block_update",
+        fake_append_agent_message_block_update,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -548,8 +549,8 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
             "user_message_id": uuid4(),
             "agent_message_id": uuid4(),
         },
-        next_chunk_seq=1,
-        persisted_chunk_count=0,
+        next_event_seq=1,
+        persisted_block_count=0,
     )
 
     await invoke_route_runner._persist_local_outcome(  # noqa: SLF001
@@ -579,8 +580,8 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
     assert captured_chunk["is_finished"] is True
     assert captured_chunk["source"] == "finalize_snapshot"
     assert captured_outcome["response_content"] == "non-stream final"
-    assert state.persisted_chunk_count == 1
-    assert state.next_chunk_seq == 2
+    assert state.persisted_block_count == 1
+    assert state.next_event_seq == 2
 
 
 @pytest.mark.asyncio

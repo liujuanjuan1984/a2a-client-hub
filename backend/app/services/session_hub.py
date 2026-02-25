@@ -17,10 +17,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent_message import AgentMessage
-from app.db.models.agent_message_chunk import AgentMessageChunk
+from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message as agent_message_handler
-from app.handlers import agent_message_chunk as agent_message_chunk_handler
+from app.handlers import agent_message_block as agent_message_block_handler
 from app.services.conversation_identity import conversation_identity_service
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import extract_provider_and_external_session_id
@@ -29,6 +29,7 @@ from app.utils.timezone_util import utc_now
 
 SessionSource = Literal["manual", "scheduled"]
 ResolvedSource = Literal["manual", "scheduled"]
+BlocksQueryMode = Literal["full", "text_with_placeholders", "outline"]
 
 
 @dataclass(frozen=True)
@@ -163,17 +164,17 @@ class SessionHubService:
             if isinstance(message.id, UUID)
             and _sender_to_role(message.sender) == "agent"
         ]
-        chunks_by_message_id: dict[UUID, list[AgentMessageChunk]] = {}
+        blocks_by_message_id: dict[UUID, list[AgentMessageBlock]] = {}
         if agent_message_ids:
-            chunks = await agent_message_chunk_handler.list_chunks_by_message_ids(
+            blocks = await agent_message_block_handler.list_blocks_by_message_ids(
                 db,
                 user_id=user_id,
                 message_ids=agent_message_ids,
             )
-            for chunk in chunks:
-                if not isinstance(chunk.message_id, UUID):
+            for block in blocks:
+                if not isinstance(block.message_id, UUID):
                     continue
-                chunks_by_message_id.setdefault(chunk.message_id, []).append(chunk)
+                blocks_by_message_id.setdefault(block.message_id, []).append(block)
         total = await agent_message_handler.count_agent_messages(
             db,
             user_id=user_id,
@@ -182,18 +183,14 @@ class SessionHubService:
         pages = (total + size - 1) // size if size else 0
         items: list[dict[str, Any]] = []
         for message in messages:
-            message_metadata = dict(getattr(message, "message_metadata", None) or {})
-            message_metadata.pop("message_blocks", None)
+            message_metadata = _sanitize_message_metadata_for_api(
+                getattr(message, "message_metadata", None)
+            )
             role = _sender_to_role(getattr(message, "sender", ""))
-            resolved_content = message.content or ""
             if isinstance(message.id, UUID) and role == "agent":
-                resolved_content = ""
-                chunk_entries = chunks_by_message_id.get(message.id, [])
-                if chunk_entries:
-                    projected_content, _ = _project_message_from_chunks(chunk_entries)
-                    if projected_content:
-                        resolved_content = projected_content
-                    message_metadata["chunk_count"] = len(chunk_entries)
+                block_entries = blocks_by_message_id.get(message.id, [])
+                if block_entries:
+                    message_metadata["block_count"] = len(block_entries)
                 if isinstance(message.status, str) and message.status.strip():
                     message_metadata.setdefault("stream_status", message.status.strip())
                 stream_meta = message_metadata.get("stream")
@@ -213,7 +210,6 @@ class SessionHubService:
                 {
                     "id": str(message.id),
                     "role": role,
-                    "content": resolved_content,
                     "created_at": message.created_at,
                     "metadata": message_metadata,
                 }
@@ -241,16 +237,100 @@ class SessionHubService:
         }
         return items, {"pagination": pagination, "meta": meta}, False
 
-    async def list_message_blocks(
+    async def query_message_blocks(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: str,
+        message_ids: list[str],
+        mode: BlocksQueryMode,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
+        resolved_conversation_id = _parse_conversation_id(conversation_id)
+        if mode not in {"full", "text_with_placeholders", "outline"}:
+            raise ValueError("invalid_blocks_mode")
+
+        if not message_ids:
+            raise ValueError("invalid_message_id")
+
+        resolved_message_ids: list[UUID] = []
+        for message_id in message_ids:
+            resolved = _parse_message_id(message_id)
+            if resolved not in resolved_message_ids:
+                resolved_message_ids.append(resolved)
+
+        rows = list(
+            (
+                await db.scalars(
+                    select(AgentMessage).where(
+                        and_(
+                            AgentMessage.user_id == user_id,
+                            AgentMessage.conversation_id == resolved_conversation_id,
+                            AgentMessage.id.in_(resolved_message_ids),
+                        )
+                    )
+                )
+            ).all()
+        )
+        message_by_id = {row.id: row for row in rows if isinstance(row.id, UUID)}
+        if len(message_by_id) != len(resolved_message_ids):
+            raise ValueError("message_not_found")
+
+        agent_message_ids = [
+            message_id
+            for message_id in resolved_message_ids
+            if _sender_to_role(getattr(message_by_id[message_id], "sender", ""))
+            == "agent"
+        ]
+        blocks_by_message_id: dict[UUID, list[AgentMessageBlock]] = {}
+        if agent_message_ids:
+            blocks = await agent_message_block_handler.list_blocks_by_message_ids(
+                db,
+                user_id=user_id,
+                message_ids=agent_message_ids,
+            )
+            for block in blocks:
+                if not isinstance(block.message_id, UUID):
+                    continue
+                blocks_by_message_id.setdefault(block.message_id, []).append(block)
+
+        items: list[dict[str, Any]] = []
+        for message_id in resolved_message_ids:
+            message = message_by_id[message_id]
+            role = _sender_to_role(getattr(message, "sender", ""))
+            raw_blocks = (
+                blocks_by_message_id.get(message_id, []) if role == "agent" else []
+            )
+            rendered_blocks = _render_blocks_for_mode(raw_blocks, mode=mode)
+            items.append(
+                {
+                    "messageId": str(message_id),
+                    "role": role,
+                    "blockCount": len(raw_blocks),
+                    "hasBlocks": bool(raw_blocks),
+                    "blocks": rendered_blocks,
+                }
+            )
+
+        meta = {
+            "conversationId": str(resolved_conversation_id),
+            "mode": mode,
+        }
+        return items, meta, False
+
+    async def query_message_block_detail(
         self,
         db: AsyncSession,
         *,
         user_id: UUID,
         conversation_id: str,
         message_id: str,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
+        block_seq: int,
+    ) -> tuple[dict[str, Any], bool]:
         resolved_conversation_id = _parse_conversation_id(conversation_id)
         resolved_message_id = _parse_message_id(message_id)
+        if block_seq <= 0:
+            raise ValueError("invalid_block_seq")
         message = await db.scalar(
             select(AgentMessage).where(
                 and_(
@@ -262,28 +342,21 @@ class SessionHubService:
         )
         if message is None:
             raise ValueError("message_not_found")
-
-        role = _sender_to_role(getattr(message, "sender", ""))
-        chunk_count = 0
-        blocks: list[dict[str, Any]] = []
-        if role == "agent":
-            chunks = await agent_message_chunk_handler.list_chunks_by_message_ids(
-                db,
-                user_id=user_id,
-                message_ids=[resolved_message_id],
-            )
-            chunk_count = len(chunks)
-            if chunks:
-                _, blocks = _project_message_from_chunks(chunks)
-
-        meta = {
-            "conversationId": str(resolved_conversation_id),
+        if _sender_to_role(getattr(message, "sender", "")) != "agent":
+            raise ValueError("block_not_found")
+        block = await agent_message_block_handler.find_block_by_message_and_block_seq(
+            db,
+            user_id=user_id,
+            message_id=resolved_message_id,
+            block_seq=block_seq,
+        )
+        if block is None:
+            raise ValueError("block_not_found")
+        rendered = _render_block_item(block, mode="full")
+        return {
             "messageId": str(resolved_message_id),
-            "role": role,
-            "chunkCount": chunk_count,
-            "hasBlocks": bool(blocks),
-        }
-        return blocks, meta, False
+            "block": rendered,
+        }, False
 
     async def continue_session(
         self,
@@ -857,7 +930,7 @@ class SessionHubService:
             error_code=None,
         )
 
-    async def append_agent_message_chunk(
+    async def append_agent_message_block_update(
         self,
         db: AsyncSession,
         *,
@@ -870,8 +943,11 @@ class SessionHubService:
         is_finished: bool,
         event_id: str | None = None,
         source: str | None = None,
-    ) -> AgentMessageChunk | None:
+    ) -> AgentMessageBlock | None:
         if seq <= 0:
+            return None
+        normalized_content = str(content or "")
+        if not normalized_content:
             return None
         message = await db.scalar(
             select(AgentMessage).where(
@@ -884,62 +960,166 @@ class SessionHubService:
         )
         if message is None:
             return None
-        normalized_event_id = normalize_non_empty_text(event_id)
-        if normalized_event_id:
-            existing_by_event = (
-                await agent_message_chunk_handler.find_chunk_by_message_and_event_id(
-                    db,
-                    user_id=user_id,
-                    message_id=agent_message_id,
-                    event_id=normalized_event_id,
-                )
-            )
-            if existing_by_event is not None:
-                return None
-        existing_by_seq = (
-            await agent_message_chunk_handler.find_chunk_by_message_and_seq(
-                db,
-                user_id=user_id,
-                message_id=agent_message_id,
-                seq=seq,
-            )
-        )
-        if existing_by_seq is not None:
-            return None
-        try:
-            async with db.begin_nested():
-                return await agent_message_chunk_handler.create_chunk(
-                    db,
-                    user_id=user_id,
-                    message_id=agent_message_id,
-                    seq=seq,
-                    block_type=block_type,
-                    content=content,
-                    append=append,
-                    is_finished=is_finished,
-                    event_id=normalized_event_id,
-                    source=normalize_non_empty_text(source),
-                )
-        except IntegrityError as exc:
-            if not (
-                _is_idempotency_unique_violation(
-                    exc, index_name="uq_agent_message_chunks_message_id_seq"
-                )
-                or _is_idempotency_unique_violation(
-                    exc, index_name="uq_agent_message_chunks_message_id_event_id"
-                )
-            ):
-                raise
+
+        message_metadata = dict(getattr(message, "message_metadata", None) or {})
+        cursor_state = _read_block_cursor_state(message_metadata)
+        if seq <= cursor_state["last_event_seq"]:
             return None
 
-    async def has_agent_message_chunks(
+        normalized_type = _normalize_block_type(block_type)
+        normalized_source = normalize_non_empty_text(source)
+        overwrite = (not append) or normalized_source in {
+            "final_snapshot",
+            "finalize_snapshot",
+        }
+        active_block_seq = cursor_state["active_block_seq"]
+
+        active_block: AgentMessageBlock | None = None
+        if active_block_seq > 0:
+            active_block = (
+                await agent_message_block_handler.find_block_by_message_and_block_seq(
+                    db,
+                    user_id=user_id,
+                    message_id=agent_message_id,
+                    block_seq=active_block_seq,
+                )
+            )
+        if active_block is None:
+            active_block = (
+                await agent_message_block_handler.find_last_block_for_message(
+                    db,
+                    user_id=user_id,
+                    message_id=agent_message_id,
+                )
+            )
+
+        persisted_block: AgentMessageBlock | None = None
+        if overwrite:
+            if (
+                active_block is not None
+                and active_block.block_type == normalized_type
+                and not bool(active_block.is_finished)
+            ):
+                active_block.content = normalized_content
+                active_block.is_finished = bool(is_finished)
+                active_block.source = normalized_source or active_block.source
+                if active_block.start_event_seq is None:
+                    active_block.start_event_seq = seq
+                if (
+                    active_block.end_event_seq is None
+                    or seq >= active_block.end_event_seq
+                ):
+                    active_block.end_event_seq = seq
+                normalized_event_id = normalize_non_empty_text(event_id)
+                if normalized_event_id and not active_block.start_event_id:
+                    active_block.start_event_id = normalized_event_id
+                if normalized_event_id:
+                    active_block.end_event_id = normalized_event_id
+                persisted_block = active_block
+            else:
+                if active_block is not None and not bool(active_block.is_finished):
+                    active_block.is_finished = True
+                next_block_seq = (
+                    max(
+                        cursor_state["last_block_seq"],
+                        int(getattr(active_block, "block_seq", 0) or 0),
+                    )
+                    + 1
+                )
+                normalized_event_id = normalize_non_empty_text(event_id)
+                persisted_block = await _create_block_with_conflict_recovery(
+                    db,
+                    user_id=user_id,
+                    message_id=agent_message_id,
+                    block_seq=next_block_seq,
+                    block_type=normalized_type,
+                    content=normalized_content,
+                    is_finished=bool(is_finished),
+                    source=normalized_source,
+                    start_event_seq=seq,
+                    end_event_seq=seq,
+                    start_event_id=normalized_event_id,
+                    end_event_id=normalized_event_id,
+                )
+        else:
+            if (
+                active_block is not None
+                and active_block.block_type == normalized_type
+                and not bool(active_block.is_finished)
+            ):
+                current_content = (
+                    active_block.content
+                    if isinstance(active_block.content, str)
+                    else ""
+                )
+                active_block.content = f"{current_content}{normalized_content}"
+                active_block.is_finished = bool(is_finished)
+                active_block.source = normalized_source or active_block.source
+                if active_block.start_event_seq is None:
+                    active_block.start_event_seq = seq
+                if (
+                    active_block.end_event_seq is None
+                    or seq >= active_block.end_event_seq
+                ):
+                    active_block.end_event_seq = seq
+                normalized_event_id = normalize_non_empty_text(event_id)
+                if normalized_event_id and not active_block.start_event_id:
+                    active_block.start_event_id = normalized_event_id
+                if normalized_event_id:
+                    active_block.end_event_id = normalized_event_id
+                persisted_block = active_block
+            else:
+                if active_block is not None and not bool(active_block.is_finished):
+                    active_block.is_finished = True
+                next_block_seq = (
+                    max(
+                        cursor_state["last_block_seq"],
+                        int(getattr(active_block, "block_seq", 0) or 0),
+                    )
+                    + 1
+                )
+                normalized_event_id = normalize_non_empty_text(event_id)
+                persisted_block = await _create_block_with_conflict_recovery(
+                    db,
+                    user_id=user_id,
+                    message_id=agent_message_id,
+                    block_seq=next_block_seq,
+                    block_type=normalized_type,
+                    content=normalized_content,
+                    is_finished=bool(is_finished),
+                    source=normalized_source,
+                    start_event_seq=seq,
+                    end_event_seq=seq,
+                    start_event_id=normalized_event_id,
+                    end_event_id=normalized_event_id,
+                )
+
+        if persisted_block is None:
+            return None
+        cursor_state["last_event_seq"] = seq
+        cursor_state["last_block_seq"] = max(
+            cursor_state["last_block_seq"],
+            int(getattr(persisted_block, "block_seq", 0) or 0),
+        )
+        if bool(getattr(persisted_block, "is_finished", False)):
+            cursor_state["active_block_seq"] = 0
+        else:
+            cursor_state["active_block_seq"] = int(
+                getattr(persisted_block, "block_seq", 0) or 0
+            )
+        _write_block_cursor_state(message_metadata, cursor_state)
+        message.message_metadata = message_metadata
+        await db.flush()
+        return persisted_block
+
+    async def has_agent_message_blocks(
         self,
         db: AsyncSession,
         *,
         user_id: UUID,
         agent_message_id: UUID,
     ) -> bool:
-        return await agent_message_chunk_handler.has_chunks_for_message(
+        return await agent_message_block_handler.has_blocks_for_message(
             db,
             user_id=user_id,
             message_id=agent_message_id,
@@ -1128,90 +1308,77 @@ def _derive_agent_summary_text(content: str | None, *, max_chars: int = 2048) ->
     return trimmed[:max_chars]
 
 
-def _project_message_from_chunks(
-    chunks: list[AgentMessageChunk],
-) -> tuple[str, list[dict[str, Any]]]:
-    ordered = sorted(
-        chunks,
-        key=lambda item: (
-            int(item.seq) if isinstance(item.seq, int) else 0,
-            item.created_at,
-            item.id,
-        ),
-    )
-    projected_blocks: list[dict[str, Any]] = []
-    block_seq = 0
-    for chunk in ordered:
-        delta = chunk.content if isinstance(chunk.content, str) else ""
-        block_type = (
-            chunk.block_type.strip().lower()
-            if isinstance(chunk.block_type, str) and chunk.block_type.strip()
-            else "text"
-        )
-        append = bool(chunk.append)
-        is_finished = bool(chunk.is_finished)
+def _sanitize_message_metadata_for_api(metadata: Any) -> dict[str, Any]:
+    resolved = dict(metadata) if isinstance(metadata, dict) else {}
+    resolved.pop("message_blocks", None)
+    resolved.pop("_block_cursor", None)
+    for key in list(resolved.keys()):
+        if isinstance(key, str) and key.startswith("_"):
+            resolved.pop(key, None)
+    return resolved
 
-        overwrite = not append
-        last = projected_blocks[-1] if projected_blocks else None
 
-        def _mark_last_finished() -> None:
-            if isinstance(last, dict) and last.get("is_finished") is False:
-                last["is_finished"] = True
+def _normalize_block_type(raw_type: str | None) -> str:
+    normalized = (raw_type or "").strip().lower()
+    if normalized in {"text", "reasoning", "tool_call", "system_error"}:
+        return normalized
+    return "text"
 
-        if overwrite:
-            if (
-                isinstance(last, dict)
-                and last.get("type") == block_type
-                and last.get("is_finished") is False
-            ):
-                last["content"] = delta
-                last["is_finished"] = is_finished
-                continue
-            _mark_last_finished()
-            block_seq += 1
-            projected_blocks.append(
-                {
-                    "id": f"block-{block_seq}",
-                    "seq": block_seq,
-                    "type": block_type,
-                    "content": delta,
-                    "is_finished": is_finished,
-                }
-            )
-            continue
 
-        if (
-            isinstance(last, dict)
-            and last.get("type") == block_type
-            and last.get("is_finished") is False
-        ):
-            current = last.get("content")
-            last["content"] = f"{current if isinstance(current, str) else ''}{delta}"
-            last["is_finished"] = is_finished
-            continue
+def _read_block_cursor_state(metadata: dict[str, Any]) -> dict[str, int]:
+    raw_cursor = metadata.get("_block_cursor")
+    cursor = raw_cursor if isinstance(raw_cursor, dict) else {}
 
-        _mark_last_finished()
-        block_seq += 1
-        projected_blocks.append(
-            {
-                "id": f"block-{block_seq}",
-                "seq": block_seq,
-                "type": block_type,
-                "content": delta,
-                "is_finished": is_finished,
-            }
-        )
+    def _int_or_zero(value: Any) -> int:
+        if isinstance(value, int):
+            return max(value, 0)
+        if isinstance(value, str) and value.strip().isdigit():
+            return max(int(value.strip()), 0)
+        return 0
 
-    for idx, block in enumerate(projected_blocks, start=1):
-        block["id"] = f"block-{idx}"
-        block["seq"] = idx
+    return {
+        "last_event_seq": _int_or_zero(cursor.get("last_event_seq")),
+        "last_block_seq": _int_or_zero(cursor.get("last_block_seq")),
+        "active_block_seq": _int_or_zero(cursor.get("active_block_seq")),
+    }
 
-    text_content = "".join(
-        block.get("content", "")
-        for block in projected_blocks
-        if block.get("type") == "text" and isinstance(block.get("content"), str)
-    )
-    return text_content, projected_blocks
+
+def _write_block_cursor_state(metadata: dict[str, Any], cursor: dict[str, int]) -> None:
+    metadata["_block_cursor"] = {
+        "last_event_seq": int(max(cursor.get("last_event_seq", 0), 0)),
+        "last_block_seq": int(max(cursor.get("last_block_seq", 0), 0)),
+        "active_block_seq": int(max(cursor.get("active_block_seq", 0), 0)),
+    }
+
+
+def _render_block_item(
+    block: AgentMessageBlock,
+    *,
+    mode: BlocksQueryMode,
+) -> dict[str, Any]:
+    raw_content = block.content if isinstance(block.content, str) else ""
+    block_type = _normalize_block_type(block.block_type)
+    if mode == "full":
+        rendered_content = raw_content
+    elif mode == "text_with_placeholders":
+        rendered_content = raw_content if block_type == "text" else None
+    else:
+        rendered_content = None
+    return {
+        "id": str(block.id),
+        "messageId": str(block.message_id),
+        "seq": int(block.block_seq),
+        "type": block_type,
+        "content": rendered_content,
+        "contentLength": len(raw_content),
+        "isFinished": bool(block.is_finished),
+    }
+
+
+def _render_blocks_for_mode(
+    blocks: list[AgentMessageBlock], *, mode: BlocksQueryMode
+) -> list[dict[str, Any]]:
+    return [_render_block_item(block, mode=mode) for block in blocks]
 
 
 def _derive_session_title_from_invoke_metadata(
@@ -1244,6 +1411,51 @@ def _is_idempotency_unique_violation(exc: BaseException, *, index_name: str) -> 
                 return True
         current = current.__cause__ or current.__context__
     return False
+
+
+async def _create_block_with_conflict_recovery(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    message_id: UUID,
+    block_seq: int,
+    block_type: str,
+    content: str,
+    is_finished: bool,
+    source: str | None,
+    start_event_seq: int | None,
+    end_event_seq: int | None,
+    start_event_id: str | None,
+    end_event_id: str | None,
+) -> AgentMessageBlock | None:
+    """Insert one block with best-effort recovery for concurrent same-seq writes."""
+    try:
+        async with db.begin_nested():
+            return await agent_message_block_handler.create_block(
+                db,
+                user_id=user_id,
+                message_id=message_id,
+                block_seq=block_seq,
+                block_type=block_type,
+                content=content,
+                is_finished=is_finished,
+                source=source,
+                start_event_seq=start_event_seq,
+                end_event_seq=end_event_seq,
+                start_event_id=start_event_id,
+                end_event_id=end_event_id,
+            )
+    except IntegrityError as exc:
+        if not _is_idempotency_unique_violation(
+            exc, index_name="ix_agent_message_blocks_message_id_block_seq"
+        ):
+            raise
+        return await agent_message_block_handler.find_block_by_message_and_block_seq(
+            db,
+            user_id=user_id,
+            message_id=message_id,
+            block_seq=block_seq,
+        )
 
 
 __all__ = [

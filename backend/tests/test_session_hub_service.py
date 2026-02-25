@@ -297,7 +297,7 @@ async def test_record_local_invoke_messages_normalizes_overlong_idempotency_key(
     assert messages[-1].invoke_idempotency_key == expected_key
 
 
-async def test_list_messages_ignores_agent_header_content_without_chunks(
+async def test_list_messages_returns_header_only_without_content_field(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -334,10 +334,10 @@ async def test_list_messages_ignores_agent_header_content_without_chunks(
     )
     agent_items = [item for item in items if item.get("role") == "agent"]
     assert len(agent_items) == 1
-    assert agent_items[0]["content"] == ""
+    assert "content" not in agent_items[0]
 
 
-async def test_list_messages_overwrite_chunk_without_text_duplication(
+async def test_query_message_blocks_overwrite_snapshot_without_text_duplication(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -366,7 +366,7 @@ async def test_list_messages_overwrite_chunk_without_text_duplication(
     )
 
     agent_message_id = refs["agent_message_id"]
-    await session_hub_service.append_agent_message_chunk(
+    await session_hub_service.append_agent_message_block_update(
         async_db_session,
         user_id=user.id,
         agent_message_id=agent_message_id,
@@ -378,7 +378,7 @@ async def test_list_messages_overwrite_chunk_without_text_duplication(
         event_id="evt-1",
         source=None,
     )
-    await session_hub_service.append_agent_message_chunk(
+    await session_hub_service.append_agent_message_block_update(
         async_db_session,
         user_id=user.id,
         agent_message_id=agent_message_id,
@@ -403,24 +403,29 @@ async def test_list_messages_overwrite_chunk_without_text_duplication(
     assert len(agent_items) == 1
     agent_item = agent_items[0]
     assert agent_item["id"] == str(agent_message_id)
-    assert agent_item["content"] == "final content"
+    assert "content" not in agent_item
     metadata = agent_item["metadata"]
     assert isinstance(metadata, dict)
     assert "message_blocks" not in metadata
-    assert metadata.get("chunk_count") == 2
+    assert metadata.get("block_count") == 1
 
-    blocks, meta, _ = await session_hub_service.list_message_blocks(
+    block_items, meta, _ = await session_hub_service.query_message_blocks(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
-        message_id=str(agent_message_id),
+        message_ids=[str(agent_message_id)],
+        mode="full",
     )
     assert meta["conversationId"] == str(thread.id)
-    assert meta["messageId"] == str(agent_message_id)
-    assert meta["role"] == "agent"
-    assert meta["chunkCount"] == 2
-    assert meta["hasBlocks"] is True
-    text_blocks = [block for block in blocks if block.get("type") == "text"]
+    assert meta["mode"] == "full"
+    assert len(block_items) == 1
+    assert block_items[0]["messageId"] == str(agent_message_id)
+    assert block_items[0]["role"] == "agent"
+    assert block_items[0]["blockCount"] == 1
+    assert block_items[0]["hasBlocks"] is True
+    text_blocks = [
+        block for block in block_items[0]["blocks"] if block.get("type") == "text"
+    ]
     assert len(text_blocks) == 1
     assert text_blocks[0]["content"] == "final content"
 
@@ -454,7 +459,7 @@ async def test_list_messages_overwrite_preserves_block_boundaries(
     )
 
     agent_message_id = refs["agent_message_id"]
-    await session_hub_service.append_agent_message_chunk(
+    await session_hub_service.append_agent_message_block_update(
         async_db_session,
         user_id=user.id,
         agent_message_id=agent_message_id,
@@ -466,7 +471,7 @@ async def test_list_messages_overwrite_preserves_block_boundaries(
         event_id="evt-1",
         source=None,
     )
-    await session_hub_service.append_agent_message_chunk(
+    await session_hub_service.append_agent_message_block_update(
         async_db_session,
         user_id=user.id,
         agent_message_id=agent_message_id,
@@ -478,7 +483,7 @@ async def test_list_messages_overwrite_preserves_block_boundaries(
         event_id="evt-2",
         source=None,
     )
-    await session_hub_service.append_agent_message_chunk(
+    await session_hub_service.append_agent_message_block_update(
         async_db_session,
         user_id=user.id,
         agent_message_id=agent_message_id,
@@ -490,7 +495,7 @@ async def test_list_messages_overwrite_preserves_block_boundaries(
         event_id="evt-3",
         source=None,
     )
-    await session_hub_service.append_agent_message_chunk(
+    await session_hub_service.append_agent_message_block_update(
         async_db_session,
         user_id=user.id,
         agent_message_id=agent_message_id,
@@ -518,24 +523,29 @@ async def test_list_messages_overwrite_preserves_block_boundaries(
     metadata = agent_item["metadata"]
     assert isinstance(metadata, dict)
     assert "message_blocks" not in metadata
-    assert metadata.get("chunk_count") == 4
+    assert metadata.get("block_count") == 2
 
-    blocks, meta, _ = await session_hub_service.list_message_blocks(
+    block_items, meta, _ = await session_hub_service.query_message_blocks(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
-        message_id=str(agent_message_id),
+        message_ids=[str(agent_message_id)],
+        mode="full",
     )
-    assert meta["chunkCount"] == 4
-    assert meta["hasBlocks"] is True
-    text_blocks = [block for block in blocks if block.get("type") == "text"]
+    assert meta["mode"] == "full"
+    assert len(block_items) == 1
+    assert block_items[0]["blockCount"] == 2
+    assert block_items[0]["hasBlocks"] is True
+    text_blocks = [
+        block for block in block_items[0]["blocks"] if block.get("type") == "text"
+    ]
     assert len(text_blocks) == 2
     assert text_blocks[0]["content"] == "first final"
     assert text_blocks[1]["content"] == "second final"
-    assert agent_item["content"] == "first finalsecond final"
+    assert "content" not in agent_item
 
 
-async def test_append_agent_message_chunk_unique_conflict_does_not_rollback_session(
+async def test_append_agent_message_block_update_unique_conflict_does_not_rollback_session(
     monkeypatch: pytest.MonkeyPatch,
 ):
     class _Nested:
@@ -549,13 +559,17 @@ async def test_append_agent_message_chunk_unique_conflict_does_not_rollback_sess
         def __init__(self) -> None:
             self.rollback_called = False
             self.begin_nested_called = 0
+            self._message = type("Message", (), {"message_metadata": {}})()
 
         async def scalar(self, _stmt):  # noqa: ANN001
-            return object()
+            return self._message
 
         def begin_nested(self) -> _Nested:
             self.begin_nested_called += 1
             return _Nested()
+
+        async def flush(self) -> None:
+            return None
 
         async def rollback(self) -> None:
             self.rollback_called = True
@@ -563,31 +577,43 @@ async def test_append_agent_message_chunk_unique_conflict_does_not_rollback_sess
     async def _find_none(*_args, **_kwargs):  # noqa: ANN001
         return None
 
+    existing_block = type(
+        "Block",
+        (),
+        {
+            "block_seq": 1,
+            "is_finished": False,
+        },
+    )()
+
+    async def _find_existing(*_args, **_kwargs):  # noqa: ANN001
+        return existing_block
+
     async def _raise_unique_conflict(*_args, **_kwargs):  # noqa: ANN001
         raise IntegrityError(
-            "insert uq_agent_message_chunks_message_id_seq",
+            "insert ix_agent_message_blocks_message_id_block_seq",
             {},
-            Exception("uq_agent_message_chunks_message_id_seq"),
+            Exception("ix_agent_message_blocks_message_id_block_seq"),
         )
 
     monkeypatch.setattr(
-        session_hub_module.agent_message_chunk_handler,
-        "find_chunk_by_message_and_event_id",
+        session_hub_module.agent_message_block_handler,
+        "find_block_by_message_and_block_seq",
+        _find_existing,
+    )
+    monkeypatch.setattr(
+        session_hub_module.agent_message_block_handler,
+        "find_last_block_for_message",
         _find_none,
     )
     monkeypatch.setattr(
-        session_hub_module.agent_message_chunk_handler,
-        "find_chunk_by_message_and_seq",
-        _find_none,
-    )
-    monkeypatch.setattr(
-        session_hub_module.agent_message_chunk_handler,
-        "create_chunk",
+        session_hub_module.agent_message_block_handler,
+        "create_block",
         _raise_unique_conflict,
     )
 
     dummy_db = _DummyDB()
-    result = await session_hub_service.append_agent_message_chunk(
+    result = await session_hub_service.append_agent_message_block_update(
         dummy_db,  # type: ignore[arg-type]
         user_id=uuid4(),
         agent_message_id=uuid4(),
@@ -600,6 +626,6 @@ async def test_append_agent_message_chunk_unique_conflict_does_not_rollback_sess
         source=None,
     )
 
-    assert result is None
+    assert result is existing_block
     assert dummy_db.begin_nested_called == 1
     assert dummy_db.rollback_called is False

@@ -10,7 +10,7 @@ from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_message import AgentMessage
-from app.db.models.agent_message_chunk import AgentMessageChunk
+from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
@@ -26,8 +26,8 @@ __all__ = [
     "A2AAgentCredential",
     "A2AScheduleExecution",
     "A2AScheduleTask",
+    "AgentMessageBlock",
     "AgentMessage",
-    "AgentMessageChunk",
     "ConversationThread",
     "HubA2AAgentAllowlistEntry",
     "Invitation",

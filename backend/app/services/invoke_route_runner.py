@@ -65,8 +65,8 @@ class _InvokeState:
     persisted_error_code: str | None = None
     persisted_finish_reason: str | None = None
     idempotency_key: str | None = None
-    next_chunk_seq: int = 1
-    persisted_chunk_count: int = 0
+    next_event_seq: int = 1
+    persisted_block_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -287,8 +287,6 @@ def _build_stream_metadata_from_outcome(
         final_metadata.update(state.stream_identity)
     if state.stream_usage:
         final_metadata["usage"] = dict(state.stream_usage)
-    if state.persisted_chunk_count > 0:
-        final_metadata["chunk_count"] = state.persisted_chunk_count
     normalized_error_message = normalize_non_empty_text(outcome.error_message)
     stream_error = None
     if not outcome.success and (normalized_error_message or outcome.error_code):
@@ -444,7 +442,7 @@ async def _ensure_local_message_headers(
         state.message_refs = refs
 
 
-async def _persist_stream_chunk(
+async def _persist_stream_block_update(
     *,
     state: _InvokeState,
     event_payload: dict[str, Any],
@@ -455,10 +453,10 @@ async def _persist_stream_chunk(
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
 ) -> None:
-    stream_chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+    stream_block = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         event_payload
     )
-    if stream_chunk is None:
+    if stream_block is None:
         return
     await _ensure_local_message_headers(
         state=state,
@@ -476,17 +474,17 @@ async def _persist_stream_chunk(
     )
     if agent_message_id is None:
         return
-    raw_seq = stream_chunk.get("seq")
+    raw_seq = stream_block.get("seq")
     resolved_seq = raw_seq if isinstance(raw_seq, int) and raw_seq > 0 else None
     if resolved_seq is None:
-        resolved_seq = state.next_chunk_seq
-    state.next_chunk_seq = max(state.next_chunk_seq, resolved_seq + 1)
+        resolved_seq = state.next_event_seq
+    state.next_event_seq = max(state.next_event_seq, resolved_seq + 1)
     _rewrite_stream_event_contract(
         event_payload,
         local_message_id=str(agent_message_id),
         event_id=(
-            str(stream_chunk.get("event_id"))
-            if isinstance(stream_chunk.get("event_id"), str)
+            str(stream_block.get("event_id"))
+            if isinstance(stream_block.get("event_id"), str)
             else None
         ),
         seq=resolved_seq,
@@ -495,29 +493,29 @@ async def _persist_stream_chunk(
     async with AsyncSessionLocal() as persist_db:
         if not hasattr(persist_db, "scalar"):
             return
-        persisted_chunk = await session_hub_service.append_agent_message_chunk(
+        persisted_block = await session_hub_service.append_agent_message_block_update(
             persist_db,
             user_id=user_id,
             agent_message_id=agent_message_id,
             seq=resolved_seq,
-            block_type=str(stream_chunk.get("block_type") or "text"),
-            content=str(stream_chunk.get("content") or ""),
-            append=bool(stream_chunk.get("append", True)),
-            is_finished=bool(stream_chunk.get("is_finished", False)),
+            block_type=str(stream_block.get("block_type") or "text"),
+            content=str(stream_block.get("content") or ""),
+            append=bool(stream_block.get("append", True)),
+            is_finished=bool(stream_block.get("is_finished", False)),
             event_id=(
-                str(stream_chunk.get("event_id"))
-                if isinstance(stream_chunk.get("event_id"), str)
+                str(stream_block.get("event_id"))
+                if isinstance(stream_block.get("event_id"), str)
                 else None
             ),
             source=(
-                str(stream_chunk.get("source"))
-                if isinstance(stream_chunk.get("source"), str)
+                str(stream_block.get("source"))
+                if isinstance(stream_block.get("source"), str)
                 else None
             ),
         )
-        if persisted_chunk is not None:
+        if persisted_block is not None:
             await commit_safely(persist_db)
-            state.persisted_chunk_count += 1
+            state.persisted_block_count += 1
 
 
 async def _persist_local_outcome(
@@ -543,7 +541,7 @@ async def _persist_local_outcome(
         transport=transport,
         stream_enabled=stream_enabled,
     )
-    await _persist_synthetic_final_chunk_if_needed(
+    await _persist_synthetic_final_block_if_needed(
         state=state,
         outcome=outcome,
         user_id=user_id,
@@ -589,7 +587,7 @@ async def _persist_local_outcome(
     state.persisted_finish_reason = outcome.finish_reason.value
 
 
-async def _persist_synthetic_final_chunk_if_needed(
+async def _persist_synthetic_final_block_if_needed(
     *,
     state: _InvokeState,
     outcome: StreamOutcome,
@@ -609,15 +607,15 @@ async def _persist_synthetic_final_chunk_if_needed(
     async with AsyncSessionLocal() as persist_db:
         if not hasattr(persist_db, "scalar"):
             return
-        has_chunks = await session_hub_service.has_agent_message_chunks(
+        has_blocks = await session_hub_service.has_agent_message_blocks(
             persist_db,
             user_id=user_id,
             agent_message_id=agent_message_id,
         )
-        if has_chunks:
+        if has_blocks:
             return
-        resolved_seq = state.next_chunk_seq if state.next_chunk_seq > 0 else 1
-        persisted_chunk = await session_hub_service.append_agent_message_chunk(
+        resolved_seq = state.next_event_seq if state.next_event_seq > 0 else 1
+        persisted_block = await session_hub_service.append_agent_message_block_update(
             persist_db,
             user_id=user_id,
             agent_message_id=agent_message_id,
@@ -629,11 +627,11 @@ async def _persist_synthetic_final_chunk_if_needed(
             event_id=None,
             source="finalize_snapshot",
         )
-        if persisted_chunk is None:
+        if persisted_block is None:
             return
         await commit_safely(persist_db)
-        state.next_chunk_seq = max(state.next_chunk_seq, resolved_seq + 1)
-        state.persisted_chunk_count += 1
+        state.next_event_seq = max(state.next_event_seq, resolved_seq + 1)
+        state.persisted_block_count += 1
 
 
 def _build_consume_stream_callbacks(
@@ -651,7 +649,7 @@ def _build_consume_stream_callbacks(
 ]:
     async def on_event(event_payload: dict[str, Any]) -> None:
         _collect_stream_hints(state=state, event_payload=event_payload)
-        await _persist_stream_chunk(
+        await _persist_stream_block_update(
             state=state,
             event_payload=event_payload,
             user_id=user_id,

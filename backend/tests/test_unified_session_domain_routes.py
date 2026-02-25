@@ -9,7 +9,7 @@ from app.api.routers import me_sessions
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
-from app.db.models.agent_message_chunk import AgentMessageChunk
+from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
@@ -102,7 +102,7 @@ async def test_conversation_routes_use_conversation_id_only(
     agent_message = AgentMessage(
         user_id=user.id,
         sender="agent",
-        content="world",
+        content="",
         conversation_id=manual_session.id,
         message_metadata={"context_id": "ctx-manual-1"},
     )
@@ -110,27 +110,16 @@ async def test_conversation_routes_use_conversation_id_only(
     async_db_session.add(agent_message)
     await async_db_session.flush()
     async_db_session.add(
-        AgentMessageChunk(
+        AgentMessageBlock(
             user_id=user.id,
             message_id=agent_message.id,
-            seq=1,
-            event_id="evt-route-1",
-            block_type="text",
-            content="wo",
-            append=True,
-            is_finished=False,
-            source="stream",
-        )
-    )
-    async_db_session.add(
-        AgentMessageChunk(
-            user_id=user.id,
-            message_id=agent_message.id,
-            seq=2,
-            event_id="evt-route-2",
+            block_seq=1,
             block_type="text",
             content="world",
-            append=False,
+            start_event_seq=1,
+            end_event_seq=1,
+            start_event_id="evt-route-1",
+            end_event_id="evt-route-1",
             is_finished=True,
             source="stream",
         )
@@ -172,21 +161,27 @@ async def test_conversation_routes_use_conversation_id_only(
         assert user_item["id"] == str(user_message.id)
         assert agent_item["id"] == str(agent_message.id)
         assert "message_blocks" not in agent_item.get("metadata", {})
+        assert "content" not in user_item
+        assert "content" not in agent_item
+        assert agent_item.get("metadata", {}).get("block_count") == 1
 
         blocks_resp = await client.post(
-            f"/me/conversations/{manual_session.id}/messages/{agent_message.id}/blocks:query"
+            f"/me/conversations/{manual_session.id}/messages/blocks:query",
+            json={"messageIds": [str(agent_message.id)], "mode": "full"},
         )
         assert blocks_resp.status_code == 200
         blocks_payload = blocks_resp.json()
         assert blocks_payload["meta"]["conversationId"] == str(manual_session.id)
-        assert blocks_payload["meta"]["messageId"] == str(agent_message.id)
-        assert blocks_payload["meta"]["role"] == "agent"
-        assert blocks_payload["meta"]["chunkCount"] == 2
-        assert blocks_payload["meta"]["hasBlocks"] is True
+        assert blocks_payload["meta"]["mode"] == "full"
         assert len(blocks_payload["items"]) == 1
-        assert blocks_payload["items"][0]["type"] == "text"
-        assert blocks_payload["items"][0]["content"] == "world"
-        assert blocks_payload["items"][0]["isFinished"] is True
+        assert blocks_payload["items"][0]["messageId"] == str(agent_message.id)
+        assert blocks_payload["items"][0]["role"] == "agent"
+        assert blocks_payload["items"][0]["blockCount"] == 1
+        assert blocks_payload["items"][0]["hasBlocks"] is True
+        assert len(blocks_payload["items"][0]["blocks"]) == 1
+        assert blocks_payload["items"][0]["blocks"][0]["type"] == "text"
+        assert blocks_payload["items"][0]["blocks"][0]["content"] == "world"
+        assert blocks_payload["items"][0]["blocks"][0]["isFinished"] is True
 
         continue_resp = await client.post(
             f"/me/conversations/{manual_session.id}:continue"
@@ -283,7 +278,8 @@ async def test_invalid_message_id_returns_400(
         current_user=user,
     ) as client:
         resp = await client.post(
-            f"/me/conversations/{conversation_id}/messages/not-a-uuid/blocks:query"
+            f"/me/conversations/{conversation_id}/messages/blocks:query",
+            json={"messageIds": ["not-a-uuid"], "mode": "full"},
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "invalid_message_id"
@@ -397,14 +393,16 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
     async_db_session.add(agent_message)
     await async_db_session.flush()
     async_db_session.add(
-        AgentMessageChunk(
+        AgentMessageBlock(
             user_id=user.id,
             message_id=agent_message.id,
-            seq=1,
-            event_id="evt-local-hist-1",
+            block_seq=1,
+            start_event_seq=1,
+            end_event_seq=1,
+            start_event_id="evt-local-hist-1",
+            end_event_id="evt-local-hist-1",
             block_type="text",
             content="world",
-            append=False,
             is_finished=True,
             source="stream",
         )
@@ -426,8 +424,11 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
         assert payload["meta"]["source"] == "manual"
         assert payload["meta"]["upstream_session_id"] == "ses_local_hist_1"
         assert len(payload["items"]) == 2
-        assert payload["items"][0]["content"] == "hello"
-        assert payload["items"][1]["content"] == "world"
+        assert payload["items"][0]["role"] == "user"
+        assert payload["items"][1]["role"] == "agent"
+        assert "content" not in payload["items"][0]
+        assert "content" not in payload["items"][1]
+        assert payload["items"][1]["metadata"]["block_count"] == 1
 
 
 async def test_continue_keeps_external_session_id_empty_when_missing(

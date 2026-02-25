@@ -196,9 +196,7 @@ class A2AInvokeService:
 
     @classmethod
     def _extract_event_sequence(cls, payload: dict[str, Any]) -> int | None:
-        direct_sequence = cls._pick_int(
-            payload, ("seq", "event_seq", "sequence", "eventSeq")
-        )
+        direct_sequence = cls._pick_int(payload, ("seq",))
         if direct_sequence is not None:
             return direct_sequence
 
@@ -216,9 +214,7 @@ class A2AInvokeService:
         for candidate in candidates:
             if not candidate:
                 continue
-            candidate_sequence = cls._pick_int(
-                candidate, ("seq", "event_seq", "sequence", "eventSeq")
-            )
+            candidate_sequence = cls._pick_int(candidate, ("seq",))
             if candidate_sequence is not None:
                 return candidate_sequence
 

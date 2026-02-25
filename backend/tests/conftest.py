@@ -100,7 +100,7 @@ for module_path in [
     "app.db.models.a2a_schedule_task",
     "app.db.models.a2a_schedule_execution",
     "app.db.models.agent_message",
-    "app.db.models.agent_message_chunk",
+    "app.db.models.agent_message_block",
     "app.db.models.user",
     "app.db.models.invitation",
     "app.db.models.ws_ticket",

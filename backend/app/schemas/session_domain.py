@@ -53,34 +53,59 @@ class SessionMessagesQueryRequest(BaseModel):
 class SessionMessageItem(BaseModel):
     id: str
     role: Literal["user", "agent", "system"]
-    content: str
     created_at: datetime
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SessionMessageBlockItem(BaseModel):
     id: str
+    message_id: str = Field(alias="messageId")
     seq: int
     type: str
-    content: str
+    content: Optional[str] = None
+    content_length: int = Field(alias="contentLength")
     is_finished: bool = Field(alias="isFinished")
 
     model_config = {"populate_by_name": True}
 
 
-class SessionMessageBlocksMeta(BaseModel):
-    conversation_id: str = Field(alias="conversationId")
-    message_id: str = Field(alias="messageId")
-    role: Literal["user", "agent", "system"]
-    chunk_count: int = Field(alias="chunkCount")
-    has_blocks: bool = Field(alias="hasBlocks")
+SessionBlocksMode = Literal["full", "text_with_placeholders", "outline"]
+
+
+class SessionMessageBlocksQueryRequest(BaseModel):
+    message_ids: list[str] = Field(alias="messageIds", min_length=1, max_length=200)
+    mode: SessionBlocksMode = "full"
 
     model_config = {"populate_by_name": True}
 
 
-class SessionMessageBlocksResponse(BaseModel):
-    items: list[SessionMessageBlockItem]
-    meta: SessionMessageBlocksMeta
+class SessionMessageBlocksItem(BaseModel):
+    message_id: str = Field(alias="messageId")
+    role: Literal["user", "agent", "system"]
+    block_count: int = Field(alias="blockCount")
+    has_blocks: bool = Field(alias="hasBlocks")
+    blocks: list[SessionMessageBlockItem]
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessageBlocksQueryMeta(BaseModel):
+    conversation_id: str = Field(alias="conversationId")
+    mode: SessionBlocksMode
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessageBlocksQueryResponse(BaseModel):
+    items: list[SessionMessageBlocksItem]
+    meta: SessionMessageBlocksQueryMeta
+
+
+class SessionMessageBlockDetailResponse(BaseModel):
+    message_id: str = Field(alias="messageId")
+    block: SessionMessageBlockItem
+
+    model_config = {"populate_by_name": True}
 
 
 class SessionMessagesMeta(BaseModel):
@@ -109,10 +134,14 @@ class SessionContinueResponse(BaseModel):
 
 __all__ = [
     "SessionContinueResponse",
+    "SessionBlocksMode",
     "SessionListResponse",
+    "SessionMessageBlockDetailResponse",
     "SessionMessageBlockItem",
-    "SessionMessageBlocksMeta",
-    "SessionMessageBlocksResponse",
+    "SessionMessageBlocksItem",
+    "SessionMessageBlocksQueryMeta",
+    "SessionMessageBlocksQueryRequest",
+    "SessionMessageBlocksQueryResponse",
     "SessionMessageItem",
     "SessionMessagesListResponse",
     "SessionMessagesMeta",
