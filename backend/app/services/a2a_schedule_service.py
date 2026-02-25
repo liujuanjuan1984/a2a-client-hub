@@ -1040,7 +1040,10 @@ class A2AScheduleService:
         timezone_str: str,
     ) -> Dict[str, Any]:
         payload = dict(time_point or {})
-        if cycle_type != A2AScheduleTask.CYCLE_INTERVAL:
+        if cycle_type not in (
+            A2AScheduleTask.CYCLE_INTERVAL,
+            A2AScheduleTask.CYCLE_SEQUENTIAL,
+        ):
             return payload
 
         timezone_value = self._normalize_timezone_str(timezone_str)

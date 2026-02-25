@@ -40,6 +40,7 @@ _dispatch_workers_started = False
 _dispatch_workers_lock = asyncio.Lock()
 _dispatch_queue: asyncio.Queue[ClaimedA2AScheduleTask] = asyncio.Queue()
 _dispatch_worker_tasks: set[asyncio.Task[None]] = set()
+_last_clamped_lease_warning_key: tuple[int, int, int] | None = None
 
 
 def _execution_metadata(
@@ -122,26 +123,36 @@ async def _refresh_ops_metrics() -> None:
 
 
 def _effective_run_lease_seconds() -> int:
+    global _last_clamped_lease_warning_key
+
     configured_lease_seconds = max(int(settings.a2a_schedule_run_lease_seconds), 1)
     invoke_timeout_seconds = max(float(settings.a2a_schedule_task_invoke_timeout), 1.0)
     lease_grace_seconds = max(int(settings.a2a_schedule_run_lease_grace_seconds), 0)
     minimum_lease_seconds = int(math.ceil(invoke_timeout_seconds)) + lease_grace_seconds
 
     if configured_lease_seconds < minimum_lease_seconds:
-        logger.warning(
-            (
-                "Configured schedule run lease seconds is lower than "
-                "invoke timeout + grace; using clamped lease value."
-            ),
-            extra={
-                "configured_lease_seconds": configured_lease_seconds,
-                "invoke_timeout_seconds": invoke_timeout_seconds,
-                "lease_grace_seconds": lease_grace_seconds,
-                "effective_lease_seconds": minimum_lease_seconds,
-            },
+        warning_key = (
+            configured_lease_seconds,
+            minimum_lease_seconds,
+            lease_grace_seconds,
         )
+        if _last_clamped_lease_warning_key != warning_key:
+            logger.warning(
+                (
+                    "Configured schedule run lease seconds is lower than "
+                    "invoke timeout + grace; using clamped lease value."
+                ),
+                extra={
+                    "configured_lease_seconds": configured_lease_seconds,
+                    "invoke_timeout_seconds": invoke_timeout_seconds,
+                    "lease_grace_seconds": lease_grace_seconds,
+                    "effective_lease_seconds": minimum_lease_seconds,
+                },
+            )
+            _last_clamped_lease_warning_key = warning_key
         return minimum_lease_seconds
 
+    _last_clamped_lease_warning_key = None
     return configured_lease_seconds
 
 

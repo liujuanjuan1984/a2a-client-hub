@@ -552,6 +552,51 @@ async def test_schedule_create_interval_rejects_start_at_with_timezone_offset(
         )
 
 
+async def test_schedule_get_sequential_backfills_local_start_from_persisted_utc(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 1)
+
+    user = await create_user(
+        async_db_session,
+        skip_onboarding_defaults=True,
+        timezone="Asia/Shanghai",
+    )
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="sequential")
+    task = A2AScheduleTask(
+        user_id=user.id,
+        name="Sequential persisted UTC",
+        agent_id=agent.id,
+        prompt="ping",
+        cycle_type=A2AScheduleTask.CYCLE_SEQUENTIAL,
+        time_point={
+            "minutes": 30,
+            "start_at_utc": "2026-02-23T00:15:00+00:00",
+        },
+        enabled=False,
+    )
+    async_db_session.add(task)
+    await async_db_session.commit()
+    await async_db_session.refresh(task)
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(f"/me/a2a/schedules/{task.id}")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["cycle_type"] == "sequential"
+        assert payload["time_point"]["minutes"] == 30
+        assert payload["time_point"]["start_at_utc"] == "2026-02-23T00:15:00+00:00"
+        assert payload["time_point"]["start_at_local"] == "2026-02-23T08:15"
+
+
 async def test_schedule_create_weekly_uses_iso_weekday(
     async_db_session,
     async_session_maker,
