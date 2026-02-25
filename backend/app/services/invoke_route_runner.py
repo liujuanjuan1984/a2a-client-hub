@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import inspect
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -471,65 +470,6 @@ async def _persist_stream_chunk(
             state.persisted_chunk_count += 1
 
 
-async def _persist_outcome_blocks_fallback(
-    *,
-    state: _InvokeState,
-    outcome: StreamOutcome,
-    user_id: UUID,
-) -> None:
-    if state.persisted_chunk_count > 0 and outcome.success:
-        return
-    if not outcome.message_blocks:
-        return
-    agent_message_id = (
-        _coerce_uuid(state.message_refs.get("agent_message_id"))
-        if isinstance(state.message_refs, dict)
-        else None
-    )
-    if agent_message_id is None:
-        return
-    async with AsyncSessionLocal() as persist_db:
-        if not hasattr(persist_db, "scalar"):
-            return
-        wrote_any = False
-        for block_index, block in enumerate(outcome.message_blocks, start=1):
-            if not isinstance(block, dict):
-                continue
-            content = block.get("content")
-            if not isinstance(content, str):
-                continue
-            block_type = block.get("type")
-            normalized_block_type = (
-                block_type.strip().lower()
-                if isinstance(block_type, str) and block_type.strip()
-                else "text"
-            )
-            resolved_is_finished = bool(block.get("is_finished", True))
-            content_hash = hashlib.sha1(content.encode("utf-8")).hexdigest()[:12]
-            seq = state.next_chunk_seq
-            state.next_chunk_seq += 1
-            persisted = await session_hub_service.append_agent_message_chunk(
-                persist_db,
-                user_id=user_id,
-                agent_message_id=agent_message_id,
-                seq=seq,
-                block_type=normalized_block_type,
-                content=content,
-                append=False,
-                is_finished=resolved_is_finished,
-                event_id=(
-                    f"final_snapshot:{block_index}:{normalized_block_type}:"
-                    f"{1 if resolved_is_finished else 0}:{content_hash}"
-                ),
-                source="final_snapshot",
-            )
-            if persisted is not None:
-                wrote_any = True
-                state.persisted_chunk_count += 1
-        if wrote_any:
-            await commit_safely(persist_db)
-
-
 async def _persist_local_outcome(
     *,
     state: _InvokeState,
@@ -552,11 +492,6 @@ async def _persist_local_outcome(
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
-    )
-    await _persist_outcome_blocks_fallback(
-        state=state,
-        outcome=outcome,
-        user_id=user_id,
     )
     persisted_content = outcome.final_text or str(outcome.error_message or "")
     metadata_payload = _build_stream_metadata_from_outcome(

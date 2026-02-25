@@ -323,41 +323,38 @@ class A2AInvokeService:
         root = as_dict(payload)
         artifact = as_dict(root.get("artifact"))
         artifact_metadata = as_dict(artifact.get("metadata"))
-        opencode_metadata = as_dict(artifact_metadata.get("opencode"))
-        message = as_dict(root.get("message"))
+        artifact_opencode_metadata = as_dict(artifact_metadata.get("opencode"))
+        root_metadata = as_dict(root.get("metadata"))
+        root_opencode_metadata = as_dict(root_metadata.get("opencode"))
         status = as_dict(root.get("status"))
-        status_message = as_dict(status.get("message"))
+        status_metadata = as_dict(status.get("metadata"))
+        status_opencode_metadata = as_dict(status_metadata.get("opencode"))
         task = as_dict(root.get("task"))
         task_status = as_dict(task.get("status"))
-        task_status_message = as_dict(task_status.get("message"))
+        task_status_metadata = as_dict(task_status.get("metadata"))
+        task_status_opencode_metadata = as_dict(task_status_metadata.get("opencode"))
         result = as_dict(root.get("result"))
         result_status = as_dict(result.get("status"))
-        result_status_message = as_dict(result_status.get("message"))
+        result_status_metadata = as_dict(result_status.get("metadata"))
+        result_status_opencode_metadata = as_dict(
+            result_status_metadata.get("opencode")
+        )
 
         message_id = None
         event_id = None
-        event_seq = None
         for candidate in (
-            root,
-            artifact,
-            opencode_metadata,
-            message,
-            status_message,
-            task_status_message,
-            result,
-            result_status_message,
+            artifact_opencode_metadata,
+            root_opencode_metadata,
+            status_opencode_metadata,
+            task_status_opencode_metadata,
+            result_status_opencode_metadata,
         ):
             if message_id is None:
-                message_id = cls._pick_non_empty_str(
-                    candidate, ("message_id", "messageId")
-                )
+                message_id = cls._pick_non_empty_str(candidate, ("message_id",))
             if event_id is None:
-                event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
-            if event_seq is None:
-                event_seq = cls._pick_int(
-                    candidate,
-                    ("seq", "event_seq", "sequence", "eventSeq"),
-                )
+                event_id = cls._pick_non_empty_str(candidate, ("event_id",))
+
+        event_seq = cls._pick_int(root, ("seq",))
 
         hints: dict[str, Any] = {}
         if message_id:
@@ -438,76 +435,49 @@ class A2AInvokeService:
     def extract_stream_chunk_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
-        if not isinstance(payload, dict):
+        # Strict OpenCode stream contract: only typed artifact-update events with
+        # opencode metadata identity are eligible for chunk persistence.
+        if not isinstance(payload, dict) or payload.get("kind") != "artifact-update":
             return None
 
-        event_id = cls._pick_non_empty_str(payload, ("event_id", "eventId"))
-        seq = cls._extract_event_sequence(payload)
-        message_id = cls._pick_non_empty_str(payload, ("message_id", "messageId"))
+        artifact = as_dict(payload.get("artifact"))
+        if not artifact:
+            return None
+        artifact_metadata = as_dict(artifact.get("metadata"))
+        opencode_metadata = as_dict(artifact_metadata.get("opencode"))
 
-        if payload.get("kind") == "artifact-update":
-            artifact = as_dict(payload.get("artifact"))
-            artifact_metadata = as_dict(artifact.get("metadata"))
-            opencode_metadata = as_dict(artifact_metadata.get("opencode"))
-            block_type = cls._StreamTextAccumulator._extract_artifact_type(
-                payload, artifact
-            )
-            if block_type is None:
-                block_type = "text"
-            delta = cls._StreamTextAccumulator._extract_delta(payload, artifact)
-            if not isinstance(delta, str) or not delta:
-                return None
-            append = cls._StreamTextAccumulator._resolve_append(payload, artifact)
-            is_finished = cls._StreamTextAccumulator._resolve_done(payload, artifact)
-            source = cls._StreamTextAccumulator._extract_artifact_source(artifact)
-            if not event_id:
-                event_id = cls._pick_non_empty_str(
-                    opencode_metadata, ("event_id", "eventId")
-                )
-            if not message_id:
-                message_id = cls._pick_non_empty_str(
-                    opencode_metadata, ("message_id", "messageId")
-                )
-            if not message_id:
-                message_id = cls._pick_non_empty_str(
-                    artifact, ("message_id", "messageId")
-                )
-            return {
-                "event_id": event_id,
-                "seq": seq,
-                "message_id": message_id,
-                "block_type": block_type,
-                "content": delta,
-                "append": append,
-                "is_finished": is_finished,
-                "source": source,
-            }
+        block_type = cls._StreamTextAccumulator._extract_artifact_type(
+            payload, artifact
+        )
+        if block_type is None:
+            return None
 
-        content = payload.get("content")
-        if isinstance(content, str) and content:
-            return {
-                "event_id": event_id,
-                "seq": seq,
-                "message_id": message_id,
-                "block_type": "text",
-                "content": content,
-                "append": True,
-                "is_finished": False,
-                "source": None,
-            }
-        message = payload.get("message")
-        if isinstance(message, str) and message:
-            return {
-                "event_id": event_id,
-                "seq": seq,
-                "message_id": message_id,
-                "block_type": "text",
-                "content": message,
-                "append": True,
-                "is_finished": False,
-                "source": None,
-            }
-        return None
+        event_id = cls._pick_non_empty_str(opencode_metadata, ("event_id",))
+        message_id = cls._pick_non_empty_str(opencode_metadata, ("message_id",))
+        if not event_id or not message_id:
+            return None
+
+        delta = cls._StreamTextAccumulator._extract_text_from_parts(
+            artifact.get("parts")
+        )
+        if not delta:
+            return None
+
+        append = payload.get("append")
+        resolved_append = append if isinstance(append, bool) else True
+
+        seq = cls._pick_int(payload, ("seq",))
+        source = cls._StreamTextAccumulator._extract_artifact_source(artifact)
+        return {
+            "event_id": event_id,
+            "seq": seq,
+            "message_id": message_id,
+            "block_type": block_type,
+            "content": delta,
+            "append": resolved_append,
+            "is_finished": payload.get("last_chunk") is True,
+            "source": source,
+        }
 
     @classmethod
     def _coerce_payload_to_dict(cls, payload: Any) -> dict[str, Any]:

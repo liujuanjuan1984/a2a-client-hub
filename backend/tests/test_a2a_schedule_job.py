@@ -337,7 +337,13 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
             "kind": "artifact-update",
             "artifact": {
                 "parts": [{"kind": "text", "text": "partial response"}],
-                "metadata": {"opencode": {"block_type": "text"}},
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "message_id": "msg-timeout-partial",
+                        "event_id": "evt-timeout-partial-1",
+                    }
+                },
             },
         }
         await asyncio.sleep(0.05)
@@ -541,7 +547,13 @@ async def test_execute_claimed_task_persists_readable_agent_content(
                         "kind": "artifact-update",
                         "artifact": {
                             "parts": [{"kind": "text", "text": "Readable answer"}],
-                            "metadata": {"opencode": {"block_type": "text"}},
+                            "metadata": {
+                                "opencode": {
+                                    "block_type": "text",
+                                    "message_id": "msg-readable-1",
+                                    "event_id": "evt-readable-1",
+                                }
+                            },
                         },
                     },
                     {"kind": "status-update", "final": True},

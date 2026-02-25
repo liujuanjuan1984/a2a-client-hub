@@ -203,6 +203,8 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
                     "metadata": {
                         "opencode": {
                             "block_type": "text",
+                            "message_id": "msg-usage-1",
+                            "event_id": "evt-usage-1",
                             "usage": {
                                 "input_tokens": 100,
                                 "output_tokens": 20,
@@ -315,7 +317,13 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
             "kind": "artifact-update",
             "artifact": {
                 "parts": [{"kind": "text", "text": "partial response"}],
-                "metadata": {"opencode": {"block_type": "text"}},
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "message_id": "msg-partial-1",
+                        "event_id": "evt-partial-1",
+                    }
+                },
             },
         }
     )
@@ -354,175 +362,6 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     assert state.persisted_response_content == "partial response"
     assert state.persisted_error_code == "timeout"
     assert state.persisted_finish_reason == "timeout_total"
-
-
-@pytest.mark.asyncio
-async def test_persist_outcome_blocks_fallback_persists_final_snapshot_after_partial_chunks(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_calls: list[dict[str, object]] = []
-
-    class _DummySession:
-        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
-            return object()
-
-    class _DummySessionContext:
-        async def __aenter__(self) -> _DummySession:
-            return _DummySession()
-
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
-            return None
-
-    async def fake_append_agent_message_chunk(
-        _db,  # noqa: ANN001
-        **kwargs,
-    ):
-        captured_calls.append(kwargs)
-        return object()
-
-    async def fake_commit_safely(_db):  # noqa: ANN001
-        return None
-
-    monkeypatch.setattr(
-        invoke_route_runner,
-        "AsyncSessionLocal",
-        lambda: _DummySessionContext(),
-    )
-    monkeypatch.setattr(
-        invoke_route_runner.session_hub_service,
-        "append_agent_message_chunk",
-        fake_append_agent_message_chunk,
-    )
-    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
-
-    state = invoke_route_runner._InvokeState(
-        local_session_id=uuid4(),
-        local_source="scheduled",
-        context_id=None,
-        metadata={},
-        stream_identity={},
-        stream_usage={},
-        user_message_id=None,
-        client_agent_message_id=None,
-        message_refs={"agent_message_id": str(uuid4())},
-        next_chunk_seq=3,
-        persisted_chunk_count=1,
-    )
-    outcome = StreamOutcome(
-        success=False,
-        finish_reason=StreamFinishReason.TIMEOUT_TOTAL,
-        final_text="partial response",
-        error_message="timeout",
-        error_code="timeout",
-        message_blocks=[
-            {
-                "id": "block-1",
-                "type": "text",
-                "content": "partial response",
-                "is_finished": True,
-            }
-        ],
-        elapsed_seconds=60.0,
-        idle_seconds=1.0,
-        terminal_event_seen=False,
-    )
-
-    await invoke_route_runner._persist_outcome_blocks_fallback(  # noqa: SLF001
-        state=state,
-        outcome=outcome,
-        user_id=uuid4(),
-    )
-
-    assert len(captured_calls) == 1
-    assert captured_calls[0]["seq"] == 3
-    event_id = captured_calls[0]["event_id"]
-    assert isinstance(event_id, str)
-    parts = event_id.split(":")
-    assert len(parts) == 5
-    assert parts[0] == "final_snapshot"
-    assert parts[1] == "1"
-    assert parts[2] == "text"
-    assert parts[3] == "1"
-    assert parts[4]
-    assert captured_calls[0]["source"] == "final_snapshot"
-    assert state.persisted_chunk_count == 2
-
-
-@pytest.mark.asyncio
-async def test_persist_outcome_blocks_fallback_skips_success_when_chunks_already_persisted(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_calls: list[dict[str, object]] = []
-
-    class _DummySession:
-        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
-            return object()
-
-    class _DummySessionContext:
-        async def __aenter__(self) -> _DummySession:
-            return _DummySession()
-
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
-            return None
-
-    async def fake_append_agent_message_chunk(
-        _db,  # noqa: ANN001
-        **kwargs,
-    ):
-        captured_calls.append(kwargs)
-        return object()
-
-    monkeypatch.setattr(
-        invoke_route_runner,
-        "AsyncSessionLocal",
-        lambda: _DummySessionContext(),
-    )
-    monkeypatch.setattr(
-        invoke_route_runner.session_hub_service,
-        "append_agent_message_chunk",
-        fake_append_agent_message_chunk,
-    )
-
-    state = invoke_route_runner._InvokeState(
-        local_session_id=uuid4(),
-        local_source="scheduled",
-        context_id=None,
-        metadata={},
-        stream_identity={},
-        stream_usage={},
-        user_message_id=None,
-        client_agent_message_id=None,
-        message_refs={"agent_message_id": str(uuid4())},
-        next_chunk_seq=2,
-        persisted_chunk_count=1,
-    )
-    outcome = StreamOutcome(
-        success=True,
-        finish_reason=StreamFinishReason.SUCCESS,
-        final_text="ok",
-        error_message=None,
-        error_code=None,
-        message_blocks=[
-            {
-                "id": "block-1",
-                "type": "text",
-                "content": "ok",
-                "is_finished": True,
-            }
-        ],
-        elapsed_seconds=1.0,
-        idle_seconds=0.1,
-        terminal_event_seen=True,
-    )
-
-    await invoke_route_runner._persist_outcome_blocks_fallback(  # noqa: SLF001
-        state=state,
-        outcome=outcome,
-        user_id=uuid4(),
-    )
-
-    assert captured_calls == []
-    assert state.persisted_chunk_count == 1
 
 
 def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:

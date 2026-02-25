@@ -1147,8 +1147,6 @@ def _project_message_from_chunks(
         ),
     )
     projected_blocks: list[dict[str, Any]] = []
-    snapshot_blocks_by_index: dict[int, dict[str, Any]] = {}
-    snapshot_blocks_without_index: list[dict[str, Any]] = []
     block_seq = 0
     for chunk in ordered:
         delta = chunk.content if isinstance(chunk.content, str) else ""
@@ -1159,25 +1157,6 @@ def _project_message_from_chunks(
         )
         append = bool(chunk.append)
         is_finished = bool(chunk.is_finished)
-        source = (
-            chunk.source.strip().lower()
-            if isinstance(chunk.source, str) and chunk.source.strip()
-            else None
-        )
-
-        if source == "final_snapshot":
-            snapshot_payload = {
-                "type": block_type,
-                "content": delta,
-                "is_finished": is_finished,
-            }
-            snapshot_index = _extract_final_snapshot_index(chunk.event_id)
-            if snapshot_index is None:
-                snapshot_blocks_without_index.append(snapshot_payload)
-            else:
-                # Keep the latest snapshot payload for the same index.
-                snapshot_blocks_by_index[snapshot_index] = snapshot_payload
-            continue
 
         overwrite = not append
         last = projected_blocks[-1] if projected_blocks else None
@@ -1228,14 +1207,6 @@ def _project_message_from_chunks(
             }
         )
 
-    if snapshot_blocks_by_index or snapshot_blocks_without_index:
-        # A final snapshot set is authoritative for replay output.
-        projected_blocks = []
-        for snapshot_index in sorted(snapshot_blocks_by_index):
-            projected_blocks.append(dict(snapshot_blocks_by_index[snapshot_index]))
-        for payload in snapshot_blocks_without_index:
-            projected_blocks.append(dict(payload))
-
     for idx, block in enumerate(projected_blocks, start=1):
         block["id"] = f"block-{idx}"
 
@@ -1245,22 +1216,6 @@ def _project_message_from_chunks(
         if block.get("type") == "text" and isinstance(block.get("content"), str)
     )
     return text_content, projected_blocks
-
-
-def _extract_final_snapshot_index(event_id: str | None) -> int | None:
-    if not isinstance(event_id, str):
-        return None
-    trimmed = event_id.strip()
-    if not trimmed:
-        return None
-    parts = trimmed.split(":")
-    if len(parts) < 3 or parts[0] != "final_snapshot":
-        return None
-    try:
-        parsed = int(parts[1])
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
 
 
 def _derive_session_title_from_invoke_metadata(

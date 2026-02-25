@@ -1080,10 +1080,14 @@ def test_extract_readable_content_parses_json_string_content():
 def test_extract_stream_identity_hints_from_serialized_event():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
-            "event_id": "evt-1",
             "seq": 9,
             "artifact": {
-                "message_id": "msg-1",
+                "metadata": {
+                    "opencode": {
+                        "message_id": "msg-1",
+                        "event_id": "evt-1",
+                    }
+                },
             },
         }
     )
@@ -1098,16 +1102,24 @@ def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
     class _RawPayload:
         def model_dump(self, **kwargs):  # noqa: ARG002
             return {
-                "event_id": "evt-from-raw",
                 "seq": 12,
-                "message_id": "msg-from-raw",
+                "metadata": {
+                    "opencode": {
+                        "event_id": "evt-from-raw",
+                        "message_id": "msg-from-raw",
+                    }
+                },
             }
 
     hints = a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
         {
-            "event_id": "evt-from-result",
             "seq": 2,
-            "message_id": "msg-from-result",
+            "metadata": {
+                "opencode": {
+                    "event_id": "evt-from-result",
+                    "message_id": "msg-from-result",
+                }
+            },
             "raw": _RawPayload(),
         }
     )
@@ -1118,12 +1130,14 @@ def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
     }
 
 
-def test_extract_stream_identity_hints_from_status_message_message_id():
+def test_extract_stream_identity_hints_from_status_metadata_message_id():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
         {
             "status": {
-                "message": {
-                    "messageId": "msg-from-status-message",
+                "metadata": {
+                    "opencode": {
+                        "message_id": "msg-from-status-message",
+                    }
                 }
             }
         }
@@ -1159,27 +1173,30 @@ def test_extract_stream_chunk_reads_nested_opencode_event_and_message_ids():
     assert chunk["source"] == "stream"
 
 
-def test_extract_stream_chunk_prefers_top_level_event_id_when_present():
+def test_extract_stream_chunk_requires_opencode_identity_metadata():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
             "kind": "artifact-update",
-            "event_id": "evt-top",
             "artifact": {
                 "parts": [{"kind": "text", "text": "hello"}],
                 "metadata": {
                     "opencode": {
                         "block_type": "text",
                         "event_id": "evt-nested",
-                        "message_id": "msg-nested",
                     }
                 },
             },
         }
     )
 
-    assert chunk is not None
-    assert chunk["event_id"] == "evt-top"
-    assert chunk["message_id"] == "msg-nested"
+    assert chunk is None
+
+
+def test_extract_stream_chunk_ignores_non_artifact_payloads():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {"content": "legacy-content"}
+    )
+    assert chunk is None
 
 
 def test_extract_usage_hints_from_serialized_event():

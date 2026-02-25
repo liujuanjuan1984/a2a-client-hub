@@ -297,7 +297,7 @@ async def test_record_local_invoke_messages_normalizes_overlong_idempotency_key(
     assert messages[-1].invoke_idempotency_key == expected_key
 
 
-async def test_list_messages_prefers_final_snapshot_chunk_without_text_duplication(
+async def test_list_messages_overwrite_chunk_without_text_duplication(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -347,8 +347,8 @@ async def test_list_messages_prefers_final_snapshot_chunk_without_text_duplicati
         content="final content",
         append=False,
         is_finished=True,
-        event_id="final_snapshot:1:text",
-        source="final_snapshot",
+        event_id="evt-2",
+        source=None,
     )
     await async_db_session.flush()
 
@@ -372,7 +372,7 @@ async def test_list_messages_prefers_final_snapshot_chunk_without_text_duplicati
     assert text_blocks[0]["content"] == "final content"
 
 
-async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
+async def test_list_messages_overwrite_preserves_block_boundaries(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -408,8 +408,8 @@ async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
         seq=1,
         block_type="text",
         content="first partial",
-        append=False,
-        is_finished=True,
+        append=True,
+        is_finished=False,
         event_id="evt-1",
         source=None,
     )
@@ -419,7 +419,7 @@ async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
         agent_message_id=agent_message_id,
         seq=2,
         block_type="text",
-        content="second partial",
+        content="first final",
         append=False,
         is_finished=True,
         event_id="evt-2",
@@ -431,9 +431,9 @@ async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
         agent_message_id=agent_message_id,
         seq=3,
         block_type="text",
-        content="third partial should be dropped",
-        append=False,
-        is_finished=True,
+        content="second partial",
+        append=True,
+        is_finished=False,
         event_id="evt-3",
         source=None,
     )
@@ -443,35 +443,11 @@ async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
         agent_message_id=agent_message_id,
         seq=4,
         block_type="text",
-        content="first final",
-        append=False,
-        is_finished=True,
-        event_id="final_snapshot:1:text:aaaa",
-        source="final_snapshot",
-    )
-    await session_hub_service.append_agent_message_chunk(
-        async_db_session,
-        user_id=user.id,
-        agent_message_id=agent_message_id,
-        seq=5,
-        block_type="text",
         content="second final",
         append=False,
         is_finished=True,
-        event_id="final_snapshot:2:text:bbbb",
-        source="final_snapshot",
-    )
-    await session_hub_service.append_agent_message_chunk(
-        async_db_session,
-        user_id=user.id,
-        agent_message_id=agent_message_id,
-        seq=6,
-        block_type="text",
-        content="second newest",
-        append=False,
-        is_finished=True,
-        event_id="final_snapshot:2:text:cccc",
-        source="final_snapshot",
+        event_id="evt-4",
+        source=None,
     )
     await async_db_session.flush()
 
@@ -492,8 +468,8 @@ async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
     text_blocks = [block for block in blocks if block.get("type") == "text"]
     assert len(text_blocks) == 2
     assert text_blocks[0]["content"] == "first final"
-    assert text_blocks[1]["content"] == "second newest"
-    assert agent_item["content"] == "first finalsecond newest"
+    assert text_blocks[1]["content"] == "second final"
+    assert agent_item["content"] == "first finalsecond final"
 
 
 async def test_append_agent_message_chunk_unique_conflict_does_not_rollback_session(
