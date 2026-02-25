@@ -184,11 +184,10 @@ class SessionHubService:
         for message in messages:
             message_metadata = dict(getattr(message, "message_metadata", None) or {})
             message_metadata.pop("message_blocks", None)
+            role = _sender_to_role(getattr(message, "sender", ""))
             resolved_content = message.content or ""
-            if (
-                isinstance(message.id, UUID)
-                and _sender_to_role(getattr(message, "sender", "")) == "agent"
-            ):
+            if isinstance(message.id, UUID) and role == "agent":
+                resolved_content = ""
                 chunk_entries = chunks_by_message_id.get(message.id, [])
                 if chunk_entries:
                     projected_content, _ = _project_message_from_chunks(chunk_entries)
@@ -213,7 +212,7 @@ class SessionHubService:
             items.append(
                 {
                     "id": str(message.id),
-                    "role": _sender_to_role(getattr(message, "sender", "")),
+                    "role": role,
                     "content": resolved_content,
                     "created_at": message.created_at,
                     "metadata": message_metadata,
@@ -643,7 +642,7 @@ class SessionHubService:
                 agent_message = await agent_message_handler.create_agent_message(
                     db,
                     user_id=user_id,
-                    content=response_content,
+                    content="",
                     sender="agent",
                     conversation_id=conversation_id,
                     status=resolved_agent_status,
@@ -674,7 +673,7 @@ class SessionHubService:
                 agent_message = await agent_message_handler.update_agent_message(
                     db,
                     message=recovered_agent_message,
-                    content=response_content,
+                    content="",
                     status=resolved_agent_status,
                     finish_reason=resolved_finish_reason,
                     error_code=resolved_error_code,
@@ -686,7 +685,7 @@ class SessionHubService:
             agent_message = await agent_message_handler.update_agent_message(
                 db,
                 message=existing_agent_message,
-                content=response_content,
+                content="",
                 status=resolved_agent_status,
                 finish_reason=resolved_finish_reason,
                 error_code=resolved_error_code,
@@ -932,6 +931,19 @@ class SessionHubService:
             ):
                 raise
             return None
+
+    async def has_agent_message_chunks(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent_message_id: UUID,
+    ) -> bool:
+        return await agent_message_chunk_handler.has_chunks_for_message(
+            db,
+            user_id=user_id,
+            message_id=agent_message_id,
+        )
 
     async def _get_local_session_by_id(
         self,

@@ -387,13 +387,26 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
             message_metadata=metadata,
         )
     )
+    agent_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        content="",
+        conversation_id=session.id,
+        message_metadata=metadata,
+    )
+    async_db_session.add(agent_message)
+    await async_db_session.flush()
     async_db_session.add(
-        AgentMessage(
+        AgentMessageChunk(
             user_id=user.id,
-            sender="agent",
+            message_id=agent_message.id,
+            seq=1,
+            event_id="evt-local-hist-1",
+            block_type="text",
             content="world",
-            conversation_id=session.id,
-            message_metadata=metadata,
+            append=False,
+            is_finished=True,
+            source="stream",
         )
     )
     await async_db_session.commit()

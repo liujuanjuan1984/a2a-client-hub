@@ -188,7 +188,19 @@ async def test_execute_claimed_task_resets_consecutive_failures_on_success(
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
-                    {"content": "all good"},
+                    {
+                        "kind": "artifact-update",
+                        "artifact": {
+                            "parts": [{"kind": "text", "text": "all good"}],
+                            "metadata": {
+                                "opencode": {
+                                    "block_type": "text",
+                                    "message_id": "msg-success-1",
+                                    "event_id": "evt-success-1",
+                                }
+                            },
+                        },
+                    },
                     {"kind": "status-update", "final": True},
                 ]
             ),
@@ -379,7 +391,7 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
             select(AgentMessage).where(AgentMessage.id == execution.agent_message_id)
         )
     assert agent_message is not None
-    assert agent_message.content == "partial response"
+    assert agent_message.content == ""
     metadata = agent_message.message_metadata
     assert isinstance(metadata, dict)
     assert metadata["success"] is False
@@ -586,7 +598,7 @@ async def test_execute_claimed_task_persists_readable_agent_content(
     assert len(messages) >= 2
     agent_messages = [message for message in messages if message.sender == "agent"]
     assert agent_messages
-    assert agent_messages[-1].content == "Readable answer"
+    assert agent_messages[-1].content == ""
 
 
 async def test_execute_claimed_task_creates_new_conversation_each_run(
@@ -614,7 +626,19 @@ async def test_execute_claimed_task_creates_new_conversation_each_run(
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
-                    {"content": "ok"},
+                    {
+                        "kind": "artifact-update",
+                        "artifact": {
+                            "parts": [{"kind": "text", "text": "ok"}],
+                            "metadata": {
+                                "opencode": {
+                                    "block_type": "text",
+                                    "message_id": "msg-new-conv-1",
+                                    "event_id": "evt-new-conv-1",
+                                }
+                            },
+                        },
+                    },
                     {"kind": "status-update", "final": True},
                 ]
             ),

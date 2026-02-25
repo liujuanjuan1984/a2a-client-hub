@@ -233,7 +233,7 @@ async def test_record_local_invoke_messages_is_idempotent_with_key(
     assert first_refs["agent_message_id"] == second_refs["agent_message_id"]
     assert messages[0].invoke_idempotency_key == "run:abc:scheduled"
     assert messages[-1].sender == "agent"
-    assert messages[-1].content == "partial-updated"
+    assert messages[-1].content == ""
     assert messages[-1].invoke_idempotency_key == "run:abc:scheduled"
 
 
@@ -295,6 +295,46 @@ async def test_record_local_invoke_messages_normalizes_overlong_idempotency_key(
     assert first_refs["agent_message_id"] == second_refs["agent_message_id"]
     assert messages[0].invoke_idempotency_key == expected_key
     assert messages[-1].invoke_idempotency_key == expected_key
+
+
+async def test_list_messages_ignores_agent_header_content_without_chunks(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="should-not-be-read-from-header",
+        success=True,
+        context_id="ctx-1",
+    )
+    await async_db_session.flush()
+
+    items, _, _ = await session_hub_service.list_messages(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        page=1,
+        size=20,
+    )
+    agent_items = [item for item in items if item.get("role") == "agent"]
+    assert len(agent_items) == 1
+    assert agent_items[0]["content"] == ""
 
 
 async def test_list_messages_overwrite_chunk_without_text_duplication(

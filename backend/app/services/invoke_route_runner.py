@@ -543,6 +543,11 @@ async def _persist_local_outcome(
         transport=transport,
         stream_enabled=stream_enabled,
     )
+    await _persist_synthetic_final_chunk_if_needed(
+        state=state,
+        outcome=outcome,
+        user_id=user_id,
+    )
     persisted_content = outcome.final_text or str(outcome.error_message or "")
     metadata_payload = _build_stream_metadata_from_outcome(
         state=state,
@@ -582,6 +587,53 @@ async def _persist_local_outcome(
     state.persisted_response_content = persisted_content
     state.persisted_error_code = outcome.error_code
     state.persisted_finish_reason = outcome.finish_reason.value
+
+
+async def _persist_synthetic_final_chunk_if_needed(
+    *,
+    state: _InvokeState,
+    outcome: StreamOutcome,
+    user_id: UUID,
+) -> None:
+    if not isinstance(outcome.final_text, str) or not outcome.final_text:
+        return
+    if state.local_session_id is None or state.local_source is None:
+        return
+    agent_message_id = (
+        _coerce_uuid(state.message_refs.get("agent_message_id"))
+        if isinstance(state.message_refs, dict)
+        else None
+    )
+    if agent_message_id is None:
+        return
+    async with AsyncSessionLocal() as persist_db:
+        if not hasattr(persist_db, "scalar"):
+            return
+        has_chunks = await session_hub_service.has_agent_message_chunks(
+            persist_db,
+            user_id=user_id,
+            agent_message_id=agent_message_id,
+        )
+        if has_chunks:
+            return
+        resolved_seq = state.next_chunk_seq if state.next_chunk_seq > 0 else 1
+        persisted_chunk = await session_hub_service.append_agent_message_chunk(
+            persist_db,
+            user_id=user_id,
+            agent_message_id=agent_message_id,
+            seq=resolved_seq,
+            block_type="text",
+            content=outcome.final_text,
+            append=False,
+            is_finished=True,
+            event_id=None,
+            source="finalize_snapshot",
+        )
+        if persisted_chunk is None:
+            return
+        await commit_safely(persist_db)
+        state.next_chunk_seq = max(state.next_chunk_seq, resolved_seq + 1)
+        state.persisted_chunk_count += 1
 
 
 def _build_consume_stream_callbacks(

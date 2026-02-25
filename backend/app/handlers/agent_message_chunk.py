@@ -81,6 +81,25 @@ async def find_chunk_by_message_and_event_id(
     return await db.scalar(stmt)
 
 
+async def has_chunks_for_message(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    message_id: UUID,
+) -> bool:
+    stmt = (
+        select(AgentMessageChunk.id)
+        .where(
+            and_(
+                AgentMessageChunk.user_id == user_id,
+                AgentMessageChunk.message_id == message_id,
+            )
+        )
+        .limit(1)
+    )
+    return (await db.scalar(stmt)) is not None
+
+
 async def create_chunk(
     db: AsyncSession,
     *,
@@ -114,5 +133,6 @@ __all__ = [
     "create_chunk",
     "find_chunk_by_message_and_event_id",
     "find_chunk_by_message_and_seq",
+    "has_chunks_for_message",
     "list_chunks_by_message_ids",
 ]
