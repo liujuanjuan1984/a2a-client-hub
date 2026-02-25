@@ -78,7 +78,7 @@ describe("ScheduledJobCard visuals", () => {
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
     expect(containerClasses).toContain("bg-surface");
-    expect(containerClasses).toContain("opacity-60");
+    expect(containerClasses).toContain("opacity-80");
   });
 
   it("applies default styling when job is enabled but not running", () => {
@@ -130,29 +130,46 @@ describe("ScheduledJobCard visuals", () => {
     expect(JSON.stringify(tree)).not.toContain("Stop");
   });
 
-  it("toggles prompt expansion with Read more and Show less", () => {
+  it("toggles prompt expansion with Info and Less", () => {
     const job = {
       id: "6",
       name: "Job",
       enabled: true,
-      prompt:
-        "This is a long scheduled prompt text used to verify expand and collapse behavior in card UI.",
+      prompt: "Scheduled prompt text",
       cycle_type: "daily" as const,
       time_point: { time: "09:00" },
       last_run_status: "success" as const,
       next_run_at: "2026-02-23T10:00:00Z",
     };
-    const { getByLabelText, getByText } = render(
-      <ScheduledJobCard {...defaultProps} job={job as any} />,
+    const onToggleExecutions = jest.fn();
+    const { getByText, queryByText, rerender } = render(
+      <ScheduledJobCard
+        {...defaultProps}
+        job={job as any}
+        executionsOpen={false}
+        onToggleExecutions={onToggleExecutions}
+      />,
     );
 
-    expect(getByText("Read more")).toBeTruthy();
-    expect(getByText(job.prompt).props.numberOfLines).toBe(2);
+    // Prompt should be hidden by default
+    expect(queryByText(job.prompt)).toBeNull();
+    expect(getByText("Info")).toBeTruthy();
 
-    fireEvent.press(getByLabelText("Toggle prompt expansion"));
+    fireEvent.press(getByText("Info"));
+    expect(onToggleExecutions).toHaveBeenCalled();
 
-    expect(getByText("Show less")).toBeTruthy();
-    expect(getByText(job.prompt).props.numberOfLines).toBeUndefined();
+    // After toggle, re-render with executionsOpen=true
+    rerender(
+      <ScheduledJobCard
+        {...defaultProps}
+        job={job as any}
+        executionsOpen
+        onToggleExecutions={onToggleExecutions}
+      />,
+    );
+
+    expect(getByText(job.prompt)).toBeTruthy();
+    expect(getByText("Less")).toBeTruthy();
   });
 
   it("shows interval details including minutes and start time", () => {

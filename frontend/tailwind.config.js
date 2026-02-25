@@ -15,10 +15,10 @@ module.exports = {
       colors: {
         background: "#0B0E14",
         surface: "#171B24",
-        primary: "#FFDE03",
+        primary: "#FACC15",
         accent: "#FFFFFF",
-        muted: "#70778B",
-        "neo-yellow": "#FFDE03",
+        muted: "#64748B",
+        "neo-yellow": "#FACC15",
         "neo-green": "#34D399",
         "neo-bg": "#0B0E14",
         "neo-text": "#FFFFFF",

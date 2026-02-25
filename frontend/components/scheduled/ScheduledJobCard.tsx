@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, Switch, Text, View } from "react-native";
+import { Switch, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import {
@@ -23,10 +23,10 @@ const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
 const getCardTone = (job: ScheduledJob) => {
   if (!job.enabled) {
     return {
-      container: "opacity-60",
-      title: "text-slate-500",
-      text: "text-slate-600",
-      prompt: "text-slate-600",
+      container: "opacity-80",
+      title: "text-slate-400",
+      text: "text-slate-500",
+      prompt: "text-slate-500",
       statusText: "DISABLED",
       iconColor: "#475569",
       switchTrack: { false: "#1E293B", true: "#334155" },
@@ -34,23 +34,23 @@ const getCardTone = (job: ScheduledJob) => {
   }
   if (job.last_run_status === "running") {
     return {
-      container: "border-2 border-primary",
+      container: "border-2 border-primary/40",
       title: "text-primary",
-      text: "text-slate-300",
+      text: "text-slate-400",
       prompt: "text-white",
       statusText: "RUNNING",
-      iconColor: "#FFDE03",
-      switchTrack: { false: "#000000", true: "#FFDE03" },
+      iconColor: "#FACC15",
+      switchTrack: { false: "#000000", true: "#FACC15" },
     };
   }
   return {
     container: "border border-white/5",
     title: "text-white",
-    text: "text-slate-400",
-    prompt: "text-slate-200",
+    text: "text-slate-500",
+    prompt: "text-slate-300",
     statusText: "ENABLED",
     iconColor: "#FFFFFF",
-    switchTrack: { false: "#0F172A", true: "#FFDE03" },
+    switchTrack: { false: "#0F172A", true: "#FACC15" },
   };
 };
 
@@ -87,8 +87,6 @@ export function ScheduledJobCard({
 }: ScheduledJobCardProps) {
   const router = useRouter();
   const tone = getCardTone(job);
-  const historyLabel = executionsOpen ? "Hide" : "History";
-  const historyIcon = executionsOpen ? "time" : "time-outline";
   const intervalTimePoint =
     job.cycle_type === "interval" &&
     typeof (job.time_point as IntervalTimePoint)?.minutes === "number"
@@ -96,7 +94,6 @@ export function ScheduledJobCard({
       : null;
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [markingFailed, setMarkingFailed] = useState(false);
-  const [promptExpanded, setPromptExpanded] = useState(false);
   const canMarkFailed = job.last_run_status === "running";
 
   const openExecutionSession = (execution: ScheduledJobExecution) => {
@@ -139,12 +136,9 @@ export function ScheduledJobCard({
     >
       <View className="p-5">
         <View className="flex-row items-center justify-between mb-2">
-          <View className="flex-row items-center gap-1.5">
-            <View className="h-1.5 w-1.5 rounded-full bg-neo-green" />
-            <Text className="text-[10px] font-bold uppercase tracking-widest text-neo-green">
-              {agentName}
-            </Text>
-          </View>
+          <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            {agentName}
+          </Text>
           <View className="bg-black/20 rounded px-1.5 py-0.5">
             <Text className={`text-[9px] font-bold ${tone.text}`}>
               {tone.statusText}
@@ -184,24 +178,13 @@ export function ScheduledJobCard({
           />
         </View>
 
-        <Text
-          className={`mt-4 text-xs leading-5 ${tone.prompt}`}
-          numberOfLines={promptExpanded ? undefined : 2}
-        >
-          {job.prompt}
-        </Text>
-        <View className="mt-1 items-end">
-          <Pressable
-            className="rounded-lg bg-black/10 px-2.5 py-1 active:bg-black/20"
-            onPress={() => setPromptExpanded((value) => !value)}
-            accessibilityRole="button"
-            accessibilityLabel="Toggle prompt expansion"
-          >
-            <Text className={`text-[10px] font-bold ${tone.text}`}>
-              {promptExpanded ? "Show less" : "Read more"}
+        {executionsOpen && (
+          <View className="mt-4 pt-4 border-t border-white/5">
+            <Text className={`text-xs leading-5 ${tone.prompt}`}>
+              {job.prompt}
             </Text>
-          </Pressable>
-        </View>
+          </View>
+        )}
       </View>
 
       <View className="flex-row items-center justify-between gap-3 bg-black/30 px-5 py-3">
@@ -214,10 +197,12 @@ export function ScheduledJobCard({
             onPress={onEdit}
           />
           <Button
-            label={historyLabel}
+            label={executionsOpen ? "Less" : "Info"}
             size="sm"
             variant="secondary"
-            iconLeft={historyIcon}
+            iconLeft={
+              executionsOpen ? "chevron-up" : "information-circle-outline"
+            }
             onPress={onToggleExecutions}
           />
         </View>
