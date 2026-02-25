@@ -475,7 +475,7 @@ class A2AInvokeService:
             "block_type": block_type,
             "content": delta,
             "append": resolved_append,
-            "is_finished": payload.get("last_chunk") is True,
+            "is_finished": payload.get("lastChunk") is True,
             "source": source,
         }
 

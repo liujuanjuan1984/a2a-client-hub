@@ -388,6 +388,92 @@ def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
 
 
 @pytest.mark.asyncio
+async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _DummySession:
+        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+            return object()
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> _DummySession:
+            return _DummySession()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+    async def fake_append_agent_message_chunk(_db, **kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return object()
+
+    async def fake_commit_safely(_db):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "append_agent_message_chunk",
+        fake_append_agent_message_chunk,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        user_message_id=None,
+        client_agent_message_id=None,
+        message_refs={
+            "user_message_id": str(uuid4()),
+            "agent_message_id": str(uuid4()),
+        },
+        next_chunk_seq=3,
+        persisted_chunk_count=0,
+    )
+
+    await invoke_route_runner._persist_stream_chunk(  # noqa: SLF001
+        state=state,
+        event_payload={
+            "kind": "artifact-update",
+            "seq": 9,
+            "append": False,
+            "lastChunk": True,
+            "artifact": {
+                "parts": [{"kind": "text", "text": "chunk-body"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "message_id": "msg-opt",
+                        "event_id": "evt-opt",
+                    }
+                },
+            },
+        },
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        transport="http_json",
+        stream_enabled=True,
+    )
+
+    assert captured["seq"] == 9
+    assert captured["append"] is False
+    assert captured["is_finished"] is True
+    assert state.next_chunk_seq == 10
+    assert state.persisted_chunk_count == 1
+
+
+@pytest.mark.asyncio
 async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

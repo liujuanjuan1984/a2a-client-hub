@@ -1173,6 +1173,32 @@ def test_extract_stream_chunk_reads_nested_opencode_event_and_message_ids():
     assert chunk["source"] == "stream"
 
 
+def test_extract_stream_chunk_consumes_optional_seq_append_and_last_chunk():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "seq": 8,
+            "append": False,
+            "lastChunk": True,
+            "artifact": {
+                "parts": [{"kind": "text", "text": "done"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "event_id": "evt-opt",
+                        "message_id": "msg-opt",
+                    }
+                },
+            },
+        }
+    )
+
+    assert chunk is not None
+    assert chunk["seq"] == 8
+    assert chunk["append"] is False
+    assert chunk["is_finished"] is True
+
+
 def test_extract_stream_chunk_requires_opencode_identity_metadata():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
