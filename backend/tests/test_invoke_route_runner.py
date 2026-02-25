@@ -470,9 +470,17 @@ async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
     assert state.next_chunk_seq == 10
     assert state.persisted_chunk_count == 1
     assert event_payload["message_id"] == str(state.message_refs["agent_message_id"])
+    assert event_payload["event_id"] == "evt-opt"
+    assert event_payload["seq"] == 9
+    assert "messageId" not in event_payload
+    assert "eventId" not in event_payload
+    assert "eventSeq" not in event_payload
+    assert "sequence" not in event_payload
     assert event_payload["artifact"]["metadata"]["opencode"]["message_id"] == str(
         state.message_refs["agent_message_id"]
     )
+    assert event_payload["artifact"]["metadata"]["opencode"]["event_id"] == "evt-opt"
+    assert event_payload["artifact"]["metadata"]["opencode"]["seq"] == 9
 
 
 @pytest.mark.asyncio

@@ -348,21 +348,49 @@ def _resolve_agent_status_from_outcome(outcome: StreamOutcome) -> str:
     return "error"
 
 
-def _rewrite_stream_event_message_id(
-    event_payload: dict[str, Any], *, local_message_id: str
+def _rewrite_stream_event_contract(
+    event_payload: dict[str, Any],
+    *,
+    local_message_id: str,
+    event_id: str | None = None,
+    seq: int | None = None,
 ) -> None:
     if event_payload.get("kind") != "artifact-update":
         return
+    event_payload.pop("messageId", None)
+    event_payload.pop("eventId", None)
+    event_payload.pop("eventSeq", None)
+    event_payload.pop("sequence", None)
     event_payload["message_id"] = local_message_id
+    if event_id:
+        event_payload["event_id"] = event_id
+    if isinstance(seq, int) and seq > 0:
+        event_payload["seq"] = seq
 
     artifact = event_payload.get("artifact")
     if isinstance(artifact, dict):
+        artifact.pop("messageId", None)
+        artifact.pop("eventId", None)
+        artifact.pop("eventSeq", None)
+        artifact.pop("sequence", None)
         artifact["message_id"] = local_message_id
+        if event_id:
+            artifact["event_id"] = event_id
+        if isinstance(seq, int) and seq > 0:
+            artifact["seq"] = seq
         metadata = artifact.get("metadata")
         if isinstance(metadata, dict):
             opencode = metadata.get("opencode")
             if isinstance(opencode, dict):
+                opencode.pop("messageId", None)
+                opencode.pop("eventId", None)
+                opencode.pop("eventSeq", None)
+                opencode.pop("sequence", None)
                 opencode["message_id"] = local_message_id
+                if event_id:
+                    opencode["event_id"] = event_id
+                if isinstance(seq, int) and seq > 0:
+                    opencode["seq"] = seq
 
 
 async def _ensure_local_message_headers(
@@ -448,16 +476,21 @@ async def _persist_stream_chunk(
     )
     if agent_message_id is None:
         return
-    _rewrite_stream_event_message_id(
-        event_payload,
-        local_message_id=str(agent_message_id),
-    )
-
     raw_seq = stream_chunk.get("seq")
     resolved_seq = raw_seq if isinstance(raw_seq, int) and raw_seq > 0 else None
     if resolved_seq is None:
         resolved_seq = state.next_chunk_seq
     state.next_chunk_seq = max(state.next_chunk_seq, resolved_seq + 1)
+    _rewrite_stream_event_contract(
+        event_payload,
+        local_message_id=str(agent_message_id),
+        event_id=(
+            str(stream_chunk.get("event_id"))
+            if isinstance(stream_chunk.get("event_id"), str)
+            else None
+        ),
+        seq=resolved_seq,
+    )
 
     async with AsyncSessionLocal() as persist_db:
         if not hasattr(persist_db, "scalar"):

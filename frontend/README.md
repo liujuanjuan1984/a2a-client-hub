@@ -105,6 +105,7 @@ Message id contract:
 - `messages:query` returns canonical local UUIDs in `item.id`.
 - Frontend store/cache keys must use `item.id` only.
 - Do not rely on alias ids from metadata.
+- Stream events must use snake_case contract fields: `message_id`, `event_id`, `seq`.
 
 ## Block-based Streaming
 
