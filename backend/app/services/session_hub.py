@@ -920,13 +920,14 @@ class SessionHubService:
     ) -> AgentMessage | None:
         message = await db.scalar(
             select(AgentMessage).where(
-                AgentMessage.id == message_id,
+                and_(
+                    AgentMessage.id == message_id,
+                    AgentMessage.user_id == user_id,
+                )
             )
         )
         if message is None:
             return None
-        if message.user_id != user_id:
-            raise ValueError("message_id_conflict")
         normalized_sender = (sender or "").strip().lower()
         message_sender = (message.sender or "").strip().lower()
         if normalized_sender == "user":
