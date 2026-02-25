@@ -33,6 +33,9 @@ export const queryKeys = {
     chat: (conversationId: string) =>
       ["history", "chat", conversationId] as const,
   },
+  shortcuts: {
+    list: () => ["shortcuts", "list"] as const,
+  },
   admin: {
     hubAgents: () => ["admin", "hub-agents"] as const,
     hubAgent: (id: string) => ["admin", "hub-agents", id] as const,

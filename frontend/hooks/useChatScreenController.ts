@@ -26,21 +26,17 @@ import {
 import { type ChatMessage } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
 import { continueSession } from "@/lib/api/sessions";
-import { isSameMessageList } from "@/lib/chat-utils";
 import {
   getAnchoredOffsetAfterContentResize,
   shouldShowScrollToBottom,
   shouldStickToBottom,
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
-import { mergeChatMessagesByCanonicalId } from "@/lib/messageMerge";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
-import { useMessageStore } from "@/store/messages";
-import { useShortcutStore } from "@/store/shortcuts";
 
 type WebTextInputKeyPressEvent =
   NativeSyntheticEvent<TextInputKeyPressEventData> & {
@@ -84,11 +80,6 @@ export function useChatScreenController({
   const session = useChatStore((state) =>
     conversationId ? state.sessions[conversationId] : undefined,
   );
-  const setMessages = useMessageStore((state) => state.setMessages);
-  const messages = useMessageStore((state) =>
-    conversationId ? (state.messages[conversationId] ?? []) : [],
-  );
-  const { syncShortcuts } = useShortcutStore();
 
   const [input, setInput] = useState("");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -128,6 +119,7 @@ export function useChatScreenController({
     enabled: Boolean(conversationId),
     paused: historyPaused,
   });
+  const messages = sessionHistoryQuery.messages;
 
   useRefreshOnFocus(sessionHistoryQuery.loadFirstPage);
 
@@ -220,17 +212,10 @@ export function useChatScreenController({
   }, [activeAgentId, conversationId, ensureSession]);
 
   useEffect(() => {
-    syncShortcuts().catch(() => {
-      // Keep shortcut sync failure non-blocking for UX.
-    });
-  }, [syncShortcuts]);
-
-  useEffect(() => {
     if (!conversationId || !activeAgentId) return;
     const boundAgentId = activeAgentId;
     const normalizedConversationId = conversationId;
-    const hasHistory =
-      messages.length > 0 || sessionHistoryQuery.messages.length > 0;
+    const hasHistory = messages.length > 0;
     if (sessionSource === "manual" && !hasHistory) {
       return;
     }
@@ -289,34 +274,10 @@ export function useChatScreenController({
     activeAgentId,
     ensureSession,
     messages.length,
-    sessionHistoryQuery.messages.length,
     conversationId,
     router,
     sessionSource,
   ]);
-
-  const mergeHistoryMessages = useCallback(
-    (incoming: ChatMessage[]) => {
-      if (!conversationId) return;
-      const current = useMessageStore.getState().messages[conversationId] ?? [];
-      const nextMessages = mergeChatMessagesByCanonicalId({
-        current,
-        incoming,
-        isActivelyStreaming: session?.streamState === "streaming",
-      });
-      if (isSameMessageList(current, nextMessages)) {
-        return;
-      }
-      setMessages(conversationId, nextMessages);
-    },
-    [conversationId, setMessages, session?.streamState],
-  );
-
-  useEffect(() => {
-    if (!conversationId) return;
-    if (sessionHistoryQuery.messages.length === 0) return;
-    mergeHistoryMessages(sessionHistoryQuery.messages);
-  }, [mergeHistoryMessages, conversationId, sessionHistoryQuery.messages]);
 
   useEffect(() => {
     if (!pendingInterrupt || pendingInterrupt.type !== "question") {

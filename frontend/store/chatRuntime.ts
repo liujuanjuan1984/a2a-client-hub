@@ -22,13 +22,20 @@ import {
   type SessionMessageItem,
 } from "@/lib/api/sessions";
 import { mergeExternalSessionRef, type AgentSession } from "@/lib/chat-utils";
+import {
+  addConversationMessage,
+  getConversationMessages,
+  rekeyConversationMessage,
+  setConversationMessages,
+  updateConversationMessage,
+  updateConversationMessageWithUpdater,
+} from "@/lib/chatHistoryCache";
 import { mergeChatMessagesByCanonicalId } from "@/lib/messageMerge";
 import { queryKeys } from "@/lib/queryKeys";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { queryClient } from "@/services/queryClient";
 import { type AgentSource } from "@/store/agents";
-import { useMessageStore } from "@/store/messages";
 
 export type ChatRuntimeState = {
   sessions: Record<string, AgentSession>;
@@ -155,7 +162,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   get: () => TState,
   set: ChatRuntimeSetState<TState>,
 ) => {
-  const messageStore = useMessageStore.getState();
   const buildSessionsPatch = (
     sessions: Record<string, AgentSession>,
   ): Partial<TState> => ({ sessions }) as Partial<TState>;
@@ -295,8 +301,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   };
 
   const resolveExistingTargetMessageIds = () => {
-    const currentMessages =
-      useMessageStore.getState().messages[conversationId] ?? [];
+    const currentMessages = getConversationMessages(conversationId);
     const existingIds = new Set(currentMessages.map((message) => message.id));
     const targets = Array.from(activeStreamMessageIds).filter((id) =>
       existingIds.has(id),
@@ -311,7 +316,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const targetMessageIds = resolveExistingTargetMessageIds();
     const now = new Date().toISOString();
     targetMessageIds.forEach((messageId) => {
-      messageStore.updateMessageWithUpdater(
+      updateConversationMessageWithUpdater(
         conversationId,
         messageId,
         (message) => {
@@ -343,7 +348,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   };
 
   const mergeHistoryMessagesById = (incoming: ChatMessage[]) => {
-    const current = useMessageStore.getState().messages[conversationId] ?? [];
+    const current = getConversationMessages(conversationId);
     const session = get().sessions[conversationId];
     const isActivelyStreaming = session?.streamState === "streaming";
     const nextMessages = mergeChatMessagesByCanonicalId({
@@ -351,7 +356,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       incoming,
       isActivelyStreaming,
     });
-    messageStore.setMessages(conversationId, nextMessages);
+    setConversationMessages(conversationId, nextMessages);
   };
 
   const backfillHistoryAfterSequenceGap = async () => {
@@ -431,8 +436,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         return mapped;
       }
 
-      const currentMessages =
-        useMessageStore.getState().messages[conversationId] ?? [];
+      const currentMessages = getConversationMessages(conversationId);
       const hasExactTarget = currentMessages.some(
         (message) => message.id === chunk.messageId,
       );
@@ -447,14 +451,14 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         (message) => message.id === placeholderId,
       );
       if (hasActivePlaceholder) {
-        messageStore.rekeyMessage(
+        rekeyConversationMessage(
           conversationId,
           placeholderId,
           chunk.messageId,
         );
         activeStreamMessageIds.delete(placeholderId);
       } else {
-        messageStore.addMessage(conversationId, {
+        addConversationMessage(conversationId, {
           id: chunk.messageId,
           role: "agent",
           content: "",
@@ -469,7 +473,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     };
 
     const targetMessageId = resolveChunkMessageId();
-    messageStore.updateMessageWithUpdater(
+    updateConversationMessageWithUpdater(
       conversationId,
       targetMessageId,
       (message) => {
@@ -718,7 +722,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       if (!response.success) {
         const message =
           response.error || response.error_code || "Request failed.";
-        messageStore.updateMessage(conversationId, activeAgentMessageId, {
+        updateConversationMessage(conversationId, activeAgentMessageId, {
           content: message,
           status: "done",
         });
@@ -729,14 +733,14 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         return;
       }
 
-      messageStore.updateMessage(conversationId, activeAgentMessageId, {
+      updateConversationMessage(conversationId, activeAgentMessageId, {
         content: response.content ?? "",
         status: "done",
       });
       markSessionIdle();
     } catch (error) {
       const message = buildApiErrorMessage(error);
-      messageStore.updateMessage(conversationId, activeAgentMessageId, {
+      updateConversationMessage(conversationId, activeAgentMessageId, {
         content: message,
         status: "done",
       });
@@ -761,7 +765,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const message = isAuthFailureError(error)
       ? "Authentication expired. Please sign in again."
       : buildApiErrorMessage(error);
-    messageStore.updateMessage(conversationId, activeAgentMessageId, {
+    updateConversationMessage(conversationId, activeAgentMessageId, {
       content: message,
       status: "done",
     });

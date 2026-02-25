@@ -1,12 +1,10 @@
 import { useCallback, useMemo } from "react";
 
 import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { type ChatMessage } from "@/lib/api/chat-utils";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
 import { queryKeys } from "@/lib/queryKeys";
-import {
-  mapSessionMessagesToChatMessages,
-  type SessionMessageItem,
-} from "@/lib/sessionHistory";
+import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 
 export function useSessionHistoryQuery(options: {
   conversationId?: string;
@@ -20,15 +18,22 @@ export function useSessionHistoryQuery(options: {
       if (!conversationId) {
         throw new Error("Conversation id is required.");
       }
-      return await listSessionMessagesPage(conversationId, { page, size: 100 });
+      const response = await listSessionMessagesPage(conversationId, {
+        page,
+        size: 100,
+      });
+      return {
+        items: mapSessionMessagesToChatMessages(response.items),
+        nextPage: response.nextPage,
+      };
     },
     [conversationId],
   );
 
-  const query = usePaginatedList<SessionMessageItem>({
+  const query = usePaginatedList<ChatMessage>({
     queryKey: queryKeys.history.chat(conversationId ?? "missing"),
     fetchPage,
-    getKey: (item) => item.id,
+    getKey: (item) => item.id.trim(),
     errorTitle: "Load history failed",
     fallbackMessage: "Load failed.",
     enabled: enabled && Boolean(conversationId) && !paused,
@@ -42,7 +47,9 @@ export function useSessionHistoryQuery(options: {
     if (!conversationId) {
       return [];
     }
-    return mapSessionMessagesToChatMessages(query.items);
+    return [...query.items].sort((left, right) =>
+      left.createdAt.localeCompare(right.createdAt),
+    );
   }, [query.items, conversationId]);
 
   return {
