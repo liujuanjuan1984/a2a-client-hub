@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Pressable, Switch, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
+import { CopyButton } from "@/components/ui/CopyButton";
 import {
   type IntervalTimePoint,
   type ScheduledJob,
@@ -195,7 +196,14 @@ export function ScheduledJobCard({
         >
           {job.prompt}
         </Text>
-        <View className="mt-1 items-end">
+        <View className="mt-1 flex-row items-center justify-end gap-1">
+          <CopyButton
+            value={job.prompt}
+            variant="ghost"
+            size="xs"
+            accessibilityLabel="Copy prompt"
+            iconColor={tone.iconColor}
+          />
           <Pressable
             className="rounded px-1 py-1 active:bg-slate-800/30"
             onPress={() => setPromptExpanded((value) => !value)}

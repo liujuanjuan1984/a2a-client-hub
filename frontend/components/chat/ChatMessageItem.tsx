@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 
-import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
+import { CopyButton } from "../ui/CopyButton";
+
+import { ChatMessage, MessageBlock } from "@/lib/api/chat-utils";
 import { COLLAPSED_TEXT_LINES, shouldCollapseByLength } from "@/lib/chat-utils";
 import { toast } from "@/lib/toast";
 
@@ -89,6 +91,19 @@ export function ChatMessageItem({
     [],
   );
 
+  const textToCopy = useMemo(() => {
+    let text = message.content;
+    if (message.role === "agent" && message.blocks?.length) {
+      const blockContent = message.blocks
+        .map((b) => `[${b.type}]\n${b.content}`)
+        .join("\n\n");
+      if (blockContent) {
+        text = `${blockContent}\n\n${text}`;
+      }
+    }
+    return text.trim();
+  }, [message]);
+
   const handleCopyPayload = useCallback(async (text: string) => {
     if (Platform.OS === "web" && typeof navigator !== "undefined") {
       if (navigator.clipboard?.writeText) {
@@ -105,21 +120,12 @@ export function ChatMessageItem({
 
   const handleCopyMessage = useCallback(async () => {
     try {
-      let textToCopy = message.content;
-      if (message.role === "agent" && message.blocks?.length) {
-        const blockContent = message.blocks
-          .map((b) => `[${b.type}]\n${b.content}`)
-          .join("\n\n");
-        if (blockContent) {
-          textToCopy = `${blockContent}\n\n${textToCopy}`;
-        }
-      }
-      await handleCopyPayload(textToCopy.trim());
+      await handleCopyPayload(textToCopy);
       toast.success("Copied", "Message copied to clipboard.");
     } catch {
       toast.error("Copy failed", "Could not copy message.");
     }
-  }, [handleCopyPayload, message]);
+  }, [handleCopyPayload, textToCopy]);
 
   const renderableBlocks = deriveRenderableBlocks(message);
   const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
@@ -358,18 +364,17 @@ export function ChatMessageItem({
             <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
           ) : null}
         </Pressable>
-        <Pressable
-          className={`absolute bottom-2 ${userCopyButtonPositionClass} rounded-lg px-2 py-2 opacity-45`}
-          onPress={handleCopyMessage}
-          accessibilityRole="button"
+        <CopyButton
+          value={textToCopy}
+          variant="ghost"
+          size="xs"
+          className={`absolute bottom-2 ${userCopyButtonPositionClass} opacity-45`}
           accessibilityLabel="Copy message"
-        >
-          <Ionicons
-            name="copy-outline"
-            size={16}
-            color={message.role === "user" ? "#ffffff" : "#cbd5e1"}
-          />
-        </Pressable>
+          successMessage="Message copied to clipboard."
+          idleIcon="copy-outline"
+          copiedIcon="checkmark"
+          iconColor={message.role === "user" ? "#ffffff" : "#cbd5e1"}
+        />
       </View>
       {canRetry && (
         <Pressable
