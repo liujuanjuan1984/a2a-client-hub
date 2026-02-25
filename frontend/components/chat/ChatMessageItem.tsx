@@ -247,9 +247,9 @@ export function ChatMessageItem({
                           <Ionicons
                             name="construct"
                             size={10}
-                            color="#34D399"
+                            color="#64748B"
                           />
-                          <Text className="text-[11px] font-bold uppercase tracking-wide text-neo-green">
+                          <Text className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
                             {expanded ? "Hide Tool Call" : "Show Tool Call"}
                           </Text>
                         </View>
