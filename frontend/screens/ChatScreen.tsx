@@ -45,10 +45,10 @@ export function ChatScreen({
     }
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
-        <Text className="text-xl font-semibold text-white">
+        <Text className="text-xl font-bold text-black">
           Select an agent first
         </Text>
-        <Text className="mt-2 text-center text-sm text-muted">
+        <Text className="mt-2 text-center text-sm text-black">
           Choose an agent from the list to start chatting.
         </Text>
       </View>
@@ -104,11 +104,10 @@ export function ChatScreen({
       >
         <IconButton
           icon="chevron-down"
-          variant="secondary"
+          variant="neo"
           size="sm"
           onPress={() => controller.scrollToBottom(true)}
           accessibilityLabel="Scroll to bottom"
-          className="bg-slate-800/40 border border-white/10 backdrop-blur-md"
         />
       </Animated.View>
 

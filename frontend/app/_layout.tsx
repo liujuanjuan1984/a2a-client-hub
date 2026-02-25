@@ -49,12 +49,12 @@ export default function RootLayout() {
   return (
     <AppProviders>
       {webHead}
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: "#05070a" },
-          headerTintColor: "#fff",
-          headerTitleStyle: { color: "#fff" },
+          headerStyle: { backgroundColor: "#F5F5F5" },
+          headerTintColor: "#000000",
+          headerTitleStyle: { color: "#000000", fontWeight: "bold" },
           headerShadowVisible: false,
           headerBackButtonDisplayMode: "minimal",
           animation: "fade",

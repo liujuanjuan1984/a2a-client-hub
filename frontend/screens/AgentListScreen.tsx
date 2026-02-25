@@ -93,20 +93,18 @@ export function AgentListScreen() {
           <RefreshControl
             refreshing={isFetching}
             onRefresh={onRefresh}
-            tintColor="#5c6afb"
-            colors={["#5c6afb"]}
+            tintColor="#000000"
+            colors={["#000000"]}
           />
         }
       >
         {agents.length === 0 ? (
-          <View className="rounded-3xl border border-slate-800 bg-slate-900/50 p-8 items-center">
-            <View className="h-16 w-16 items-center justify-center rounded-full bg-slate-800 mb-4">
-              <Text className="text-xs font-bold text-slate-500">A2A</Text>
+          <View className="border-neo border-black bg-white p-8 items-center shadow-neo">
+            <View className="h-16 w-16 items-center justify-center border-2 border-black bg-neo-yellow mb-4">
+              <Text className="text-xs font-bold text-black">A2A</Text>
             </View>
-            <Text className="text-lg font-semibold text-white">
-              No agents yet
-            </Text>
-            <Text className="mt-2 text-center text-sm text-muted">
+            <Text className="text-lg font-bold text-black">No agents yet</Text>
+            <Text className="mt-2 text-center text-sm text-black">
               Add your first agent to start chatting with A2A services.
             </Text>
             <Button
@@ -122,20 +120,20 @@ export function AgentListScreen() {
           agents.map((agent) => (
             <View
               key={agent.id}
-              className="mb-4 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/30"
+              className="mb-6 border-neo border-black bg-white shadow-neo"
             >
               <View className="p-5">
                 <View className="flex-row items-start justify-between">
                   <View className="flex-1 pr-4">
                     <Text
-                      className="text-xl font-bold text-white"
+                      className="text-xl font-bold text-black"
                       numberOfLines={1}
                     >
                       {agent.name}
                     </Text>
                     {agent.source === "shared" ? (
-                      <View className="mt-2 self-start rounded-full bg-slate-800/60 px-2.5 py-1">
-                        <Text className="text-[11px] font-semibold text-slate-200">
+                      <View className="mt-2 self-start border border-black bg-neo-yellow px-2.5 py-1">
+                        <Text className="text-[11px] font-bold text-black">
                           Shared
                         </Text>
                       </View>
@@ -144,10 +142,10 @@ export function AgentListScreen() {
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-between gap-3 border-t border-slate-800/50 bg-slate-900/50 px-5 py-3">
+              <View className="flex-row items-center justify-between gap-3 border-t-2 border-black bg-gray-50 px-5 py-3">
                 <View className="flex-row items-center gap-2">
                   <Pressable
-                    className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
+                    className="flex-row items-center gap-1 border border-black bg-white px-3 py-2 active:bg-neo-yellow"
                     onPress={() => {
                       blurActiveElement();
                       router.push(`/agents/${agent.id}`);
@@ -169,9 +167,9 @@ export function AgentListScreen() {
                           : "information-outline"
                       }
                       size={14}
-                      color="#94a3b8"
+                      color="#000000"
                     />
-                    <Text className="text-xs font-medium text-slate-400">
+                    <Text className="text-xs font-bold text-black">
                       {agent.source === "personal" ? "Edit" : "Details"}
                     </Text>
                   </Pressable>
@@ -180,6 +178,7 @@ export function AgentListScreen() {
                 <Button
                   label="Open Chat"
                   size="sm"
+                  variant="neo"
                   iconRight="chevron-forward"
                   onPress={() => handleChat(agent.id)}
                   accessibilityRole="button"

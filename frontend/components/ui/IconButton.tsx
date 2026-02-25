@@ -10,7 +10,8 @@ type IconButtonVariant =
   | "outline"
   | "ghost"
   | "danger"
-  | "secondary";
+  | "secondary"
+  | "neo";
 type IconButtonSize = "xs" | "sm" | "md" | "lg";
 
 type IconButtonProps = Omit<PressableProps, "accessibilityLabel"> & {
@@ -23,7 +24,7 @@ type IconButtonProps = Omit<PressableProps, "accessibilityLabel"> & {
 
 export function IconButton({
   icon,
-  variant = "primary",
+  variant = "neo",
   size = "md",
   loading,
   disabled,
@@ -32,11 +33,16 @@ export function IconButton({
   ...props
 }: IconButtonProps) {
   const variants: Record<IconButtonVariant, string> = {
-    primary: "bg-primary",
-    secondary: "bg-slate-800",
-    outline: "border border-slate-700",
+    neo: "border-2 border-black bg-neo-yellow shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
+    primary:
+      "border-2 border-black bg-neo-yellow shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
+    secondary:
+      "border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
+    outline:
+      "border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
     ghost: "",
-    danger: "border border-red-500/20 bg-red-500/10",
+    danger:
+      "border-2 border-black bg-red-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
   };
 
   const sizes: Record<IconButtonSize, string> = {
@@ -54,11 +60,12 @@ export function IconButton({
   };
 
   const iconColors: Record<IconButtonVariant, string> = {
-    primary: "#ffffff",
-    secondary: "#ffffff",
-    outline: "#ffffff",
-    ghost: "#ffffff",
-    danger: "#f87171",
+    neo: "#000000",
+    primary: "#000000",
+    secondary: "#000000",
+    outline: "#000000",
+    ghost: "#000000",
+    danger: "#ffffff",
   };
 
   const isDisabled = disabled || loading;
@@ -67,7 +74,7 @@ export function IconButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      className={`items-center justify-center rounded-full ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-50" : ""} ${className || ""}`}
+      className={`items-center justify-center ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-50" : ""} ${className || ""}`}
       disabled={isDisabled}
       {...props}
     >

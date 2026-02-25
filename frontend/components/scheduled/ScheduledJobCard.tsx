@@ -16,42 +16,42 @@ import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 
 const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
-  running: "text-blue-300",
-  success: "text-emerald-300",
-  failed: "text-red-300",
+  running: "text-blue-600",
+  success: "text-emerald-600",
+  failed: "text-red-600",
 };
 
 const getCardTone = (job: ScheduledJob) => {
   if (!job.enabled) {
     return {
-      container: "border-slate-800 bg-slate-900/10 grayscale",
-      title: "text-slate-500",
-      text: "text-slate-500",
-      prompt: "text-slate-600",
+      container: "border-neo border-gray-400 bg-gray-100",
+      title: "text-gray-500",
+      text: "text-gray-500",
+      prompt: "text-gray-600",
       statusText: "Disabled",
-      iconColor: "#64748b",
-      switchTrack: { false: "#334155", true: "#475569" },
+      iconColor: "#9ca3af",
+      switchTrack: { false: "#d1d5db", true: "#9ca3af" },
     };
   }
   if (job.last_run_status === "running") {
     return {
-      container: "border-blue-500/50 bg-blue-900/20",
-      title: "text-blue-100",
-      text: "text-blue-200/80",
-      prompt: "text-blue-200/90",
+      container: "border-neo border-black bg-neo-yellow shadow-neo",
+      title: "text-black",
+      text: "text-black",
+      prompt: "text-black",
       statusText: "Running",
-      iconColor: "#93c5fd",
-      switchTrack: { false: "#334155", true: "#3b82f6" },
+      iconColor: "#000000",
+      switchTrack: { false: "#000000", true: "#000000" },
     };
   }
   return {
-    container: "border-slate-800 bg-slate-900/30",
-    title: "text-white",
-    text: "text-slate-400",
-    prompt: "text-slate-300",
+    container: "border-neo border-black bg-white shadow-neo",
+    title: "text-black",
+    text: "text-black",
+    prompt: "text-black font-bold",
     statusText: "Enabled",
-    iconColor: "#94a3b8",
-    switchTrack: { false: "#334155", true: "#5c6afb" },
+    iconColor: "#000000",
+    switchTrack: { false: "#d1d5db", true: "#000000" },
   };
 };
 
@@ -135,45 +135,42 @@ export function ScheduledJobCard({
   };
 
   return (
-    <View
-      className={`mb-4 overflow-hidden rounded-2xl border ${tone.container}`}
-    >
+    <View className={`mb-6 border ${tone.container}`}>
       <View className="p-4">
         <View className="flex-row items-start justify-between">
           <View className="flex-1 pr-3">
-            <Text className={`text-base font-semibold ${tone.title}`}>
+            <Text className={`text-base font-bold ${tone.title}`}>
               {job.name}
             </Text>
-            <Text className={`mt-1 text-xs ${tone.text}`}>
+            <Text className={`mt-1 text-xs font-bold ${tone.text}`}>
               Agent: {agentName}
             </Text>
-            <Text className={`mt-1 text-xs ${tone.text}`}>
-              {job.cycle_type}
+            <Text className={`mt-1 text-xs font-bold ${tone.text}`}>
+              Type: {job.cycle_type}
             </Text>
             {intervalTimePoint ? (
-              <Text className={`mt-1 text-xs ${tone.text}`}>
-                Interval: every {intervalTimePoint.minutes} min, start{" "}
-                {formatLocalDateTime(intervalTimePoint.start_at, timeZone)}
+              <Text className={`mt-1 text-xs font-bold ${tone.text}`}>
+                Interval: every {intervalTimePoint.minutes} min
               </Text>
             ) : null}
-            <Text className={`mt-1 text-xs ${tone.text}`}>
+            <Text className={`mt-1 text-xs font-bold ${tone.text}`}>
               Next: {formatLocalDateTime(job.next_run_at, timeZone)}
             </Text>
-            <Text className={`mt-1 text-xs ${tone.text}`}>
+            <Text className={`mt-1 text-xs font-bold ${tone.text}`}>
               Last: {formatLocalDateTime(job.last_run_at, timeZone)} (
               {job.last_run_status ?? "-"})
             </Text>
           </View>
           <View className="flex-row items-center gap-2">
-            <Text className={`text-xs font-semibold ${tone.title}`}>
+            <Text className={`text-xs font-bold ${tone.title}`}>
               {tone.statusText}
             </Text>
             <Switch
               value={job.enabled}
               disabled={togglingEnabled}
               trackColor={tone.switchTrack}
-              thumbColor={job.enabled ? "#ffffff" : "#e2e8f0"}
-              ios_backgroundColor="#334155"
+              thumbColor={job.enabled ? "#FFFFFF" : "#FFFFFF"}
+              ios_backgroundColor="#d1d5db"
               onValueChange={async () => {
                 if (togglingEnabled) return;
                 setTogglingEnabled(true);
@@ -197,41 +194,39 @@ export function ScheduledJobCard({
         </Text>
         <View className="mt-1 items-end">
           <Pressable
-            className="rounded px-1 py-1 active:bg-slate-800/30"
+            className="border border-black bg-white px-2 py-0.5 active:bg-neo-yellow"
             onPress={() => setPromptExpanded((value) => !value)}
             accessibilityRole="button"
             accessibilityLabel="Toggle prompt expansion"
           >
-            <Text className={`text-xs font-medium ${tone.text}`}>
+            <Text className={`text-[10px] font-bold ${tone.text}`}>
               {promptExpanded ? "Show less" : "Read more"}
             </Text>
           </Pressable>
         </View>
       </View>
 
-      <View className="flex-row items-center justify-start gap-3 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
+      <View className="flex-row items-center justify-start gap-3 border-t-2 border-black bg-gray-50 px-4 py-3">
         <Pressable
-          className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
+          className="flex-row items-center gap-1 border border-black bg-white px-3 py-2 active:bg-neo-yellow"
           onPress={onEdit}
           accessibilityRole="button"
           accessibilityLabel="Edit"
           accessibilityHint="Edit this scheduled job"
         >
-          <Ionicons name="create-outline" size={14} color={tone.iconColor} />
-          <Text className={`text-xs font-medium ${tone.text}`}>Edit</Text>
+          <Ionicons name="create-outline" size={14} color="#000000" />
+          <Text className="text-xs font-bold text-black">Edit</Text>
         </Pressable>
 
         <Pressable
-          className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
+          className="flex-row items-center gap-1 border border-black bg-white px-3 py-2 active:bg-neo-yellow"
           onPress={onToggleExecutions}
           accessibilityRole="button"
           accessibilityLabel={historyLabel}
           accessibilityHint={`${historyLabel} execution history`}
         >
-          <Ionicons name={historyIcon} size={14} color={tone.iconColor} />
-          <Text className={`text-xs font-medium ${tone.text}`}>
-            {historyLabel}
-          </Text>
+          <Ionicons name={historyIcon} size={14} color="#000000" />
+          <Text className="text-xs font-bold text-black">{historyLabel}</Text>
         </Pressable>
 
         {canMarkFailed ? (
@@ -249,20 +244,24 @@ export function ScheduledJobCard({
 
       {executionsOpen ? (
         <View className="px-4 pb-4 pt-3">
-          <View className="rounded-xl border border-slate-700 bg-slate-900/80 p-3">
+          <View className="border-2 border-black bg-white p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
             {executionsLoading ? (
-              <Text className="text-xs text-muted">Loading history...</Text>
+              <Text className="text-xs font-bold text-black">
+                Loading history...
+              </Text>
             ) : executions.length === 0 ? (
-              <Text className="text-xs text-muted">No executions yet.</Text>
+              <Text className="text-xs font-bold text-black">
+                No executions yet.
+              </Text>
             ) : (
               <>
                 {executions.map((execution) => (
                   <View
                     key={execution.id}
-                    className="mb-2 rounded-lg border border-slate-700 p-2"
+                    className="mb-2 border border-black bg-gray-50 p-2"
                   >
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-xs text-slate-300">
+                      <Text className="text-[10px] font-bold text-black">
                         {formatLocalDateTime(
                           execution.finished_at ??
                             execution.started_at ??
@@ -271,13 +270,13 @@ export function ScheduledJobCard({
                         )}
                       </Text>
                       <Text
-                        className={`text-xs font-semibold ${executionStatusColor[execution.status]}`}
+                        className={`text-[10px] font-bold ${executionStatusColor[execution.status]}`}
                       >
-                        {execution.status}
+                        {execution.status.toUpperCase()}
                       </Text>
                     </View>
                     {execution.error_message ? (
-                      <Text className="mt-1 text-xs text-red-300">
+                      <Text className="mt-1 text-[10px] font-bold text-red-600">
                         {execution.error_message}
                       </Text>
                     ) : null}
@@ -286,7 +285,7 @@ export function ScheduledJobCard({
                         className="mt-2 self-start"
                         label="Open Session"
                         size="xs"
-                        variant="outline"
+                        variant="neo"
                         onPress={() => openExecutionSession(execution)}
                       />
                     ) : null}
@@ -300,7 +299,7 @@ export function ScheduledJobCard({
                       executionsLoadingMore ? "Loading..." : "Load more history"
                     }
                     size="xs"
-                    variant="secondary"
+                    variant="neo"
                     loading={executionsLoadingMore}
                     onPress={onLoadMoreExecutions}
                   />

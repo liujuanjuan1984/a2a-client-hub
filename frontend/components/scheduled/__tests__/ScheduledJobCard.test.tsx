@@ -60,8 +60,8 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("border-blue-500/50");
-    expect(containerClasses).toContain("bg-blue-900/20");
+    expect(containerClasses).toContain("border-neo");
+    expect(containerClasses).toContain("bg-neo-yellow");
   });
 
   it("applies grayscale styling when job is disabled", () => {
@@ -78,8 +78,8 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("grayscale");
-    expect(containerClasses).toContain("bg-slate-900/10");
+    expect(containerClasses).toContain("border-gray-400");
+    expect(containerClasses).toContain("bg-gray-100");
   });
 
   it("applies default styling when job is enabled but not running", () => {
@@ -96,8 +96,8 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("border-slate-800");
-    expect(containerClasses).toContain("bg-slate-900/30");
+    expect(containerClasses).toContain("border-black");
+    expect(containerClasses).toContain("bg-white");
   });
 
   it("shows Stop Running button for running jobs", () => {
@@ -175,6 +175,6 @@ describe("ScheduledJobCard visuals", () => {
       <ScheduledJobCard {...defaultProps} job={job as any} />,
     );
 
-    expect(getByText(/Interval: every 15 min, start/)).toBeTruthy();
+    expect(getByText(/Interval: every 15 min/)).toBeTruthy();
   });
 });
