@@ -374,14 +374,16 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
 
       {loadingJob ? (
         <View className="mt-8 items-center">
-          <Text className="text-sm text-muted">Loading job...</Text>
+          <Text className="text-sm text-gray-400">Loading job...</Text>
         </View>
       ) : loadError ? (
-        <View className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
-          <Text className="text-base font-semibold text-white">
+        <View className="mt-8 rounded-2xl bg-surface p-6 shadow-sm">
+          <Text className="text-base font-bold text-white">
             Unable to load job
           </Text>
-          <Text className="mt-2 text-sm text-muted">{loadError}</Text>
+          <Text className="mt-2 text-[11px] font-medium text-slate-400">
+            {loadError}
+          </Text>
         </View>
       ) : (
         <View className="mt-3">

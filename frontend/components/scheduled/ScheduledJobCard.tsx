@@ -24,9 +24,9 @@ const getCardTone = (job: ScheduledJob) => {
   if (!job.enabled) {
     return {
       container: "opacity-80",
-      title: "text-slate-400",
-      text: "text-slate-500",
-      prompt: "text-slate-500",
+      title: "text-slate-500",
+      text: "text-slate-600",
+      prompt: "text-slate-600",
       statusText: "DISABLED",
       iconColor: "#475569",
       switchTrack: { false: "#1E293B", true: "#334155" },
@@ -36,7 +36,7 @@ const getCardTone = (job: ScheduledJob) => {
     return {
       container: "border-2 border-primary/40",
       title: "text-primary",
-      text: "text-slate-400",
+      text: "text-slate-300",
       prompt: "text-white",
       statusText: "RUNNING",
       iconColor: "#FACC15",
@@ -137,12 +137,9 @@ export function ScheduledJobCard({
     >
       <View className="p-5">
         <View className="flex-row items-center justify-between mb-2">
-          <View className="flex-row items-center gap-1.5">
-            <View className="h-1.5 w-1.5 rounded-full bg-neo-green" />
-            <Text className="text-[11px] font-bold uppercase tracking-widest text-neo-green">
-              {agentName}
-            </Text>
-          </View>
+          <Text className="text-[11px] font-semibold uppercase tracking-widest text-neo-green">
+            {agentName}
+          </Text>
           <View className="bg-black/20 rounded px-1.5 py-0.5">
             <Text className={`text-[9px] font-bold ${tone.text}`}>
               {tone.statusText}
@@ -152,13 +149,13 @@ export function ScheduledJobCard({
 
         <View className="flex-row items-start justify-between">
           <View className="flex-1 pr-3">
-            <Text className={`text-lg font-bold ${tone.title}`}>
+            <Text className={`text-sm font-bold ${tone.title}`}>
               {job.name}
             </Text>
-            <Text className={`mt-1.5 text-xs font-medium ${tone.text}`}>
+            <Text className={`mt-1.5 text-[11px] font-medium ${tone.text}`}>
               {job.cycle_type} • Every {intervalTimePoint?.minutes ?? "-"} min
             </Text>
-            <Text className={`mt-0.5 text-xs font-medium ${tone.text}`}>
+            <Text className={`mt-0.5 text-[11px] font-medium ${tone.text}`}>
               Next: {formatLocalDateTime(job.next_run_at, timeZone)}
             </Text>
           </View>
@@ -184,7 +181,7 @@ export function ScheduledJobCard({
 
         {promptExpanded && (
           <View className="mt-4 pt-4 border-t border-white/5">
-            <Text className={`text-xs leading-5 ${tone.prompt}`}>
+            <Text className={`text-sm leading-6 ${tone.prompt}`}>
               {job.prompt}
             </Text>
           </View>
@@ -195,14 +192,14 @@ export function ScheduledJobCard({
         <View className="flex-row items-center gap-2">
           <Button
             label="Edit"
-            size="sm"
+            size="xs"
             variant="secondary"
             iconLeft="create-outline"
             onPress={onEdit}
           />
           <Button
             label={promptExpanded ? "Less" : "Info"}
-            size="sm"
+            size="xs"
             variant="secondary"
             iconLeft={
               promptExpanded ? "chevron-up" : "information-circle-outline"
@@ -211,7 +208,7 @@ export function ScheduledJobCard({
           />
           <Button
             label={executionsOpen ? "Hide" : "History"}
-            size="sm"
+            size="xs"
             variant="secondary"
             iconLeft={executionsOpen ? "time" : "time-outline"}
             onPress={onToggleExecutions}
@@ -221,7 +218,7 @@ export function ScheduledJobCard({
         {canMarkFailed ? (
           <Button
             label="Stop"
-            size="sm"
+            size="xs"
             variant="danger"
             loading={markingFailed}
             disabled={!onMarkFailed}
@@ -234,11 +231,11 @@ export function ScheduledJobCard({
         <View className="bg-black/10 px-5 pb-5 pt-1">
           <View className="rounded-xl bg-black/20 p-4">
             {executionsLoading ? (
-              <Text className="text-xs font-medium text-slate-500">
+              <Text className="text-[11px] font-medium text-slate-500">
                 Loading history...
               </Text>
             ) : executions.length === 0 ? (
-              <Text className="text-xs font-medium text-slate-500">
+              <Text className="text-[11px] font-medium text-slate-500">
                 No executions yet.
               </Text>
             ) : (
