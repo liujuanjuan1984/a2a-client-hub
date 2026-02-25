@@ -177,12 +177,15 @@ export function SessionsScreen() {
                 >
                   <View className="p-5 pb-4">
                     <View className="flex-row items-center justify-between mb-1.5">
-                      <Text
-                        className="text-[10px] font-bold uppercase tracking-widest text-slate-500"
-                        numberOfLines={1}
-                      >
-                        {agent.name}
-                      </Text>
+                      <View className="flex-row items-center gap-1.5">
+                        <View className="h-1.5 w-1.5 rounded-full bg-neo-green" />
+                        <Text
+                          className="text-[11px] font-bold uppercase tracking-widest text-neo-green"
+                          numberOfLines={1}
+                        >
+                          {agent.name}
+                        </Text>
+                      </View>
                       <Text className="text-[9px] font-bold text-slate-700 uppercase">
                         {item.source}
                       </Text>

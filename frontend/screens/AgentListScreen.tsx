@@ -118,13 +118,13 @@ export function AgentListScreen() {
               <View className="p-5">
                 <View className="flex-row items-center justify-between">
                   <Text
-                    className="text-lg font-bold text-white flex-1 pr-4"
+                    className="text-base font-bold text-white flex-1 pr-4"
                     numberOfLines={1}
                   >
                     {agent.name}
                   </Text>
                   <Text
-                    className={`text-[10px] font-bold uppercase tracking-widest ${
+                    className={`text-[9px] font-bold uppercase tracking-widest ${
                       agent.source === "shared"
                         ? "text-neo-green"
                         : "text-slate-500"

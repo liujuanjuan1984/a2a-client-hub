@@ -151,7 +151,7 @@ export function ChatMessageItem({
           testID={testId}
           onPress={onPress}
         >
-          <Text className="text-[10px] font-bold text-slate-500">
+          <Text className="text-[11px] font-bold text-slate-500">
             Show less
           </Text>
         </Pressable>
@@ -202,7 +202,7 @@ export function ChatMessageItem({
                     >
                       <View className="flex-row items-center gap-1.5">
                         <View className="h-1 w-1 rounded-full bg-slate-600" />
-                        <Text className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                        <Text className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
                           {expanded ? "Hide Reasoning" : "Show Reasoning"}
                         </Text>
                       </View>
@@ -249,7 +249,7 @@ export function ChatMessageItem({
                             size={10}
                             color="#34D399"
                           />
-                          <Text className="text-[10px] font-bold uppercase tracking-wide text-neo-green">
+                          <Text className="text-[11px] font-bold uppercase tracking-wide text-neo-green">
                             {expanded ? "Hide Tool Call" : "Show Tool Call"}
                           </Text>
                         </View>
@@ -305,7 +305,7 @@ export function ChatMessageItem({
                         testID={`chat-message-${blockId}-expand`}
                         onPress={() => toggleTextExpansion(blockId)}
                       >
-                        <Text className="text-[10px] font-bold text-slate-500">
+                        <Text className="text-[11px] font-bold text-slate-500">
                           {topToggleLabel}
                         </Text>
                       </Pressable>
@@ -326,7 +326,7 @@ export function ChatMessageItem({
                     blockIndex > 0 ? "mt-3" : ""
                   } rounded-xl bg-black/40 p-3`}
                 >
-                  <Text className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  <Text className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
                     {block.type}
                   </Text>
                   <Text
@@ -359,7 +359,7 @@ export function ChatMessageItem({
                   testID={`chat-message-${message.id}-expand`}
                   onPress={() => toggleTextExpansion(message.id)}
                 >
-                  <Text className="text-[10px] font-bold text-slate-500">
+                  <Text className="text-[11px] font-bold text-slate-500">
                     {plainTopToggleLabel}
                   </Text>
                 </Pressable>
@@ -375,7 +375,7 @@ export function ChatMessageItem({
           {message.status === "streaming" ? (
             <View className="mt-2 flex-row items-center gap-2">
               <ActivityIndicator size="small" color="#34D399" />
-              <Text className="text-[10px] font-bold italic text-neo-green/60">
+              <Text className="text-[11px] font-bold italic text-neo-green/60">
                 Streaming...
               </Text>
             </View>

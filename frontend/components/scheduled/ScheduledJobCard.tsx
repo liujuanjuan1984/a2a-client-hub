@@ -137,9 +137,12 @@ export function ScheduledJobCard({
     >
       <View className="p-5">
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
-            {agentName}
-          </Text>
+          <View className="flex-row items-center gap-1.5">
+            <View className="h-1.5 w-1.5 rounded-full bg-neo-green" />
+            <Text className="text-[11px] font-bold uppercase tracking-widest text-neo-green">
+              {agentName}
+            </Text>
+          </View>
           <View className="bg-black/20 rounded px-1.5 py-0.5">
             <Text className={`text-[9px] font-bold ${tone.text}`}>
               {tone.statusText}
