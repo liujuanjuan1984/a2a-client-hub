@@ -1162,7 +1162,25 @@ def _project_message_from_chunks(
             if isinstance(chunk.source, str) and chunk.source.strip()
             else None
         )
-        overwrite = (not append) or source == "final_snapshot"
+
+        # A final snapshot is authoritative for this block type and should
+        # replace previously projected blocks of the same type.
+        if source == "final_snapshot":
+            projected_blocks = [
+                block for block in projected_blocks if block.get("type") != block_type
+            ]
+            block_seq += 1
+            projected_blocks.append(
+                {
+                    "id": f"block-{block_seq}",
+                    "type": block_type,
+                    "content": delta,
+                    "is_finished": is_finished,
+                }
+            )
+            continue
+
+        overwrite = not append
         last = projected_blocks[-1] if projected_blocks else None
 
         def _mark_last_finished() -> None:

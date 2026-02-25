@@ -476,7 +476,7 @@ async def _persist_outcome_blocks_fallback(
     outcome: StreamOutcome,
     user_id: UUID,
 ) -> None:
-    if state.persisted_chunk_count > 0:
+    if state.persisted_chunk_count > 0 and outcome.success:
         return
     if not outcome.message_blocks:
         return
@@ -491,7 +491,7 @@ async def _persist_outcome_blocks_fallback(
         if not hasattr(persist_db, "scalar"):
             return
         wrote_any = False
-        for block in outcome.message_blocks:
+        for block_index, block in enumerate(outcome.message_blocks, start=1):
             if not isinstance(block, dict):
                 continue
             content = block.get("content")
@@ -513,7 +513,11 @@ async def _persist_outcome_blocks_fallback(
                 content=content,
                 append=False,
                 is_finished=bool(block.get("is_finished", True)),
-                event_id=None,
+                event_id=(
+                    f"final_snapshot:{block_index}:{block_type.strip().lower()}"
+                    if isinstance(block_type, str) and block_type.strip()
+                    else f"final_snapshot:{block_index}:text"
+                ),
                 source="final_snapshot",
             )
             if persisted is not None:
