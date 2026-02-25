@@ -163,10 +163,10 @@ export function ChatMessageItem({
           delayLongPress={500}
           className={`px-4 py-3 rounded-2xl ${
             message.role === "user"
-              ? "bg-primary"
+              ? "bg-slate-800 border-r-4 border-primary"
               : message.role === "agent"
                 ? "bg-surface"
-                : "bg-gray-800"
+                : "bg-slate-900"
           }`}
         >
           {hasBlocks ? (
@@ -181,7 +181,7 @@ export function ChatMessageItem({
                     key={blockId}
                     className={`${
                       blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl bg-black/30 px-3 py-2`}
+                    } rounded-xl bg-black/40 px-3 py-2`}
                   >
                     <Pressable
                       onPress={() => toggleReasoning(blockId)}
@@ -192,7 +192,7 @@ export function ChatMessageItem({
                           : "Show reasoning details"
                       }
                     >
-                      <Text className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                      <Text className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
                         {expanded ? "Hide Reasoning" : "Show Reasoning"}
                       </Text>
                     </Pressable>
@@ -200,7 +200,7 @@ export function ChatMessageItem({
                       <View>
                         <Text
                           selectable
-                          className="mt-1 break-all text-xs text-gray-300"
+                          className="mt-1 break-all text-xs text-slate-300"
                         >
                           {blockText}
                         </Text>
@@ -220,7 +220,7 @@ export function ChatMessageItem({
                     key={blockId}
                     className={`${
                       blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl bg-black/30 px-3 py-2`}
+                    } rounded-xl bg-black/40 px-3 py-2`}
                   >
                     <Pressable
                       onPress={() => toggleToolCall(blockId)}
@@ -231,7 +231,7 @@ export function ChatMessageItem({
                           : "Show tool call details"
                       }
                     >
-                      <Text className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                      <Text className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
                         {expanded ? "Hide Tool Call" : "Show Tool Call"}
                       </Text>
                     </Pressable>
@@ -239,7 +239,7 @@ export function ChatMessageItem({
                       <View>
                         <Text
                           selectable
-                          className="mt-1 break-all text-xs text-gray-300"
+                          className="mt-1 break-all text-xs text-slate-300"
                         >
                           {blockText}
                         </Text>
@@ -268,7 +268,7 @@ export function ChatMessageItem({
                       selectable
                       className={`${
                         blockIndex > 0 ? "mt-3" : ""
-                      } break-all text-sm ${message.role === "user" ? "text-black" : "text-white"}`}
+                      } break-all text-sm text-white`}
                       numberOfLines={
                         shouldCollapse && !blockExpanded
                           ? COLLAPSED_TEXT_LINES
@@ -285,7 +285,7 @@ export function ChatMessageItem({
                         testID={`chat-message-${blockId}-expand`}
                         onPress={() => toggleTextExpansion(blockId)}
                       >
-                        <Text className="text-xs font-bold text-gray-300">
+                        <Text className="text-xs font-bold text-slate-400">
                           {topToggleLabel}
                         </Text>
                       </Pressable>
@@ -304,14 +304,14 @@ export function ChatMessageItem({
                   key={blockId}
                   className={`${
                     blockIndex > 0 ? "mt-3" : ""
-                  } rounded-xl bg-black/30 px-3 py-2`}
+                  } rounded-xl bg-black/40 px-3 py-2`}
                 >
-                  <Text className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                  <Text className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
                     {block.type}
                   </Text>
                   <Text
                     selectable
-                    className="mt-1 break-all text-xs text-white"
+                    className="mt-1 break-all text-xs text-slate-300"
                   >
                     {blockText}
                   </Text>
@@ -322,7 +322,7 @@ export function ChatMessageItem({
             <View>
               <Text
                 selectable
-                className={`break-all text-sm ${message.role === "user" ? "text-black" : "text-white"}`}
+                className="break-all text-sm text-white"
                 numberOfLines={
                   plainShouldCollapse && !plainTextExpanded
                     ? COLLAPSED_TEXT_LINES
@@ -339,7 +339,7 @@ export function ChatMessageItem({
                   testID={`chat-message-${message.id}-expand`}
                   onPress={() => toggleTextExpansion(message.id)}
                 >
-                  <Text className="text-xs font-bold text-gray-300">
+                  <Text className="text-xs font-bold text-slate-400">
                     {plainTopToggleLabel}
                   </Text>
                 </Pressable>
@@ -353,9 +353,7 @@ export function ChatMessageItem({
             </View>
           )}
           {message.status === "streaming" ? (
-            <Text
-              className={`mt-1 text-[10px] font-medium italic ${message.role === "user" ? "text-black/60" : "text-white/60"}`}
-            >
+            <Text className="mt-1 text-[10px] font-medium italic text-white/40">
               Streaming...
             </Text>
           ) : null}

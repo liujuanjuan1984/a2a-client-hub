@@ -60,7 +60,7 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("bg-primary");
+    expect(containerClasses).toContain("border-primary");
   });
 
   it("applies grayscale styling when job is disabled", () => {

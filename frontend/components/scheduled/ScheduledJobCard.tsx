@@ -34,17 +34,17 @@ const getCardTone = (job: ScheduledJob) => {
   }
   if (job.last_run_status === "running") {
     return {
-      container: "bg-primary",
-      title: "text-black",
-      text: "text-black/70",
-      prompt: "text-black",
+      container: "bg-surface border-2 border-primary",
+      title: "text-primary",
+      text: "text-slate-300",
+      prompt: "text-white",
       statusText: "RUNNING",
-      iconColor: "#000000",
-      switchTrack: { false: "#000000", true: "#000000" },
+      iconColor: "#FFDE03",
+      switchTrack: { false: "#000000", true: "#FFDE03" },
     };
   }
   return {
-    container: "bg-surface",
+    container: "bg-surface border border-white/5",
     title: "text-white",
     text: "text-slate-400",
     prompt: "text-slate-200",
