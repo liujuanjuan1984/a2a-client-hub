@@ -48,10 +48,10 @@ export function ChatComposer({
         </View>
       ) : null}
 
-      <View className="flex-row items-end gap-2 rounded-3xl border border-slate-800 bg-slate-900/50 p-2">
+      <View className="flex-row items-end gap-2 border-neo border-black bg-white p-2">
         <Pressable
-          className={`h-9 w-9 items-center justify-center rounded-xl ${
-            showShortcutManager ? "bg-primary" : "bg-slate-800"
+          className={`h-9 w-9 items-center justify-center border-2 border-black ${
+            showShortcutManager ? "bg-neo-yellow" : "bg-white"
           }`}
           onPress={onOpenShortcutManager}
           accessibilityRole="button"
@@ -60,14 +60,14 @@ export function ChatComposer({
           <Ionicons
             name={showShortcutManager ? "flash" : "flash-outline"}
             size={18}
-            color={showShortcutManager ? "#ffffff" : "#94a3b8"}
+            color="#000000"
           />
         </Pressable>
         <TextInput
           ref={inputRef}
-          className="flex-1 px-3 py-2 text-white"
+          className="flex-1 px-3 py-2 text-black"
           placeholder="Type your message"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#666666"
           multiline
           value={input}
           onChangeText={onInputChange}
@@ -93,14 +93,14 @@ export function ChatComposer({
             accessibilityRole="button"
             accessibilityLabel="Clear input"
           >
-            <Ionicons name="close-circle" size={18} color="#94a3b8" />
+            <Ionicons name="close-circle" size={18} color="#000000" />
           </Pressable>
         )}
         <Pressable
-          className={`h-9 w-9 items-center justify-center rounded-xl ${
+          className={`h-9 w-9 items-center justify-center border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none ${
             !input.trim() || Boolean(pendingInterrupt)
-              ? "bg-slate-800 opacity-50"
-              : "bg-primary"
+              ? "bg-gray-200 opacity-50"
+              : "bg-neo-yellow"
           }`}
           testID="chat-send-button"
           onPress={onSubmit}
@@ -108,7 +108,7 @@ export function ChatComposer({
           accessibilityRole="button"
           accessibilityLabel="Send message"
         >
-          <Ionicons name="send" size={16} color="#ffffff" />
+          <Ionicons name="send" size={16} color="#000000" />
         </Pressable>
       </View>
     </View>

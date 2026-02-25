@@ -139,15 +139,13 @@ export function ChatMessageItem({
     return (
       <View className="mt-2 items-end">
         <Pressable
-          className="rounded-md px-2 py-1"
+          className="border border-black bg-white px-2 py-1"
           accessibilityRole="button"
           accessibilityLabel="Collapse full text"
           testID={testId}
           onPress={onPress}
         >
-          <Text className="text-xs font-semibold text-slate-300">
-            Show less
-          </Text>
+          <Text className="text-xs font-bold text-black">Show less</Text>
         </Pressable>
       </View>
     );
@@ -163,12 +161,12 @@ export function ChatMessageItem({
         <Pressable
           onLongPress={handleCopyMessage}
           delayLongPress={500}
-          className={`px-4 py-3 ${
+          className={`px-4 py-3 border-neo border-black shadow-neo ${
             message.role === "user"
-              ? "rounded-2xl rounded-tr-sm bg-primary"
+              ? "bg-neo-yellow"
               : message.role === "agent"
-                ? "rounded-2xl rounded-tl-sm bg-slate-800"
-                : "rounded-2xl bg-slate-900"
+                ? "bg-white"
+                : "bg-gray-100"
           }`}
         >
           {hasBlocks ? (
@@ -183,7 +181,7 @@ export function ChatMessageItem({
                     key={blockId}
                     className={`${
                       blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                    } border-2 border-black bg-gray-50 px-3 py-2`}
                   >
                     <Pressable
                       onPress={() => toggleReasoning(blockId)}
@@ -194,7 +192,7 @@ export function ChatMessageItem({
                           : "Show reasoning details"
                       }
                     >
-                      <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                      <Text className="text-[10px] font-bold uppercase tracking-wide text-black">
                         {expanded ? "Hide Reasoning" : "Show Reasoning"}
                       </Text>
                     </Pressable>
@@ -202,7 +200,7 @@ export function ChatMessageItem({
                       <View>
                         <Text
                           selectable
-                          className="mt-1 break-all text-xs text-slate-300"
+                          className="mt-1 break-all text-xs text-black"
                         >
                           {blockText}
                         </Text>
@@ -222,7 +220,7 @@ export function ChatMessageItem({
                     key={blockId}
                     className={`${
                       blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                    } border-2 border-black bg-gray-50 px-3 py-2`}
                   >
                     <Pressable
                       onPress={() => toggleToolCall(blockId)}
@@ -233,7 +231,7 @@ export function ChatMessageItem({
                           : "Show tool call details"
                       }
                     >
-                      <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                      <Text className="text-[10px] font-bold uppercase tracking-wide text-black">
                         {expanded ? "Hide Tool Call" : "Show Tool Call"}
                       </Text>
                     </Pressable>
@@ -241,7 +239,7 @@ export function ChatMessageItem({
                       <View>
                         <Text
                           selectable
-                          className="mt-1 break-all text-xs text-slate-300"
+                          className="mt-1 break-all text-xs text-black"
                         >
                           {blockText}
                         </Text>
@@ -265,12 +263,12 @@ export function ChatMessageItem({
                   : "Read more";
 
                 return (
-                  <View key={blockId} className="rounded-xl">
+                  <View key={blockId}>
                     <Text
                       selectable
                       className={`${
                         blockIndex > 0 ? "mt-3" : ""
-                      } break-all text-sm text-white`}
+                      } break-all text-sm text-black`}
                       numberOfLines={
                         shouldCollapse && !blockExpanded
                           ? COLLAPSED_TEXT_LINES
@@ -281,13 +279,13 @@ export function ChatMessageItem({
                     </Text>
                     {shouldCollapse ? (
                       <Pressable
-                        className="mt-2 rounded-md px-2 py-1"
+                        className="mt-2 border border-black bg-white px-2 py-1"
                         accessibilityRole="button"
                         accessibilityLabel={topToggleAccessibilityLabel}
                         testID={`chat-message-${blockId}-expand`}
                         onPress={() => toggleTextExpansion(blockId)}
                       >
-                        <Text className="text-xs font-semibold text-slate-300">
+                        <Text className="text-xs font-bold text-black">
                           {topToggleLabel}
                         </Text>
                       </Pressable>
@@ -306,14 +304,14 @@ export function ChatMessageItem({
                   key={blockId}
                   className={`${
                     blockIndex > 0 ? "mt-3" : ""
-                  } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
+                  } border-2 border-black bg-gray-50 px-3 py-2`}
                 >
-                  <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                  <Text className="text-[10px] font-bold uppercase tracking-wide text-black">
                     {block.type}
                   </Text>
                   <Text
                     selectable
-                    className="mt-1 break-all text-xs text-slate-300"
+                    className="mt-1 break-all text-xs text-black"
                   >
                     {blockText}
                   </Text>
@@ -321,10 +319,10 @@ export function ChatMessageItem({
               );
             })
           ) : (
-            <View className="rounded-xl">
+            <View>
               <Text
                 selectable
-                className="break-all text-sm text-white"
+                className="break-all text-sm text-black"
                 numberOfLines={
                   plainShouldCollapse && !plainTextExpanded
                     ? COLLAPSED_TEXT_LINES
@@ -335,13 +333,13 @@ export function ChatMessageItem({
               </Text>
               {plainShouldCollapse ? (
                 <Pressable
-                  className="mt-2 rounded-md px-2 py-1"
+                  className="mt-2 border border-black bg-white px-2 py-1"
                   accessibilityRole="button"
                   accessibilityLabel={plainTopToggleAccessibilityLabel}
                   testID={`chat-message-${message.id}-expand`}
                   onPress={() => toggleTextExpansion(message.id)}
                 >
-                  <Text className="text-xs font-semibold text-slate-300">
+                  <Text className="text-xs font-bold text-black">
                     {plainTopToggleLabel}
                   </Text>
                 </Pressable>
@@ -355,7 +353,9 @@ export function ChatMessageItem({
             </View>
           )}
           {message.status === "streaming" ? (
-            <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
+            <Text className="mt-1 text-[10px] font-bold text-black italic">
+              Streaming...
+            </Text>
           ) : null}
         </Pressable>
         <Pressable
@@ -364,11 +364,7 @@ export function ChatMessageItem({
           accessibilityRole="button"
           accessibilityLabel="Copy message"
         >
-          <Ionicons
-            name="copy-outline"
-            size={16}
-            color={message.role === "user" ? "#ffffff" : "#cbd5e1"}
-          />
+          <Ionicons name="copy-outline" size={16} color="#000000" />
         </Pressable>
       </View>
       {canRetry && (
