@@ -344,6 +344,7 @@ export const useChatStore = create<ChatState>()(
               lastStreamError: null,
               lastUserMessageId: userMessageId,
               lastAgentMessageId: agentMessageId,
+              lastReceivedSequence: undefined,
               pendingInterrupt: null,
             },
           },

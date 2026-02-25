@@ -723,19 +723,28 @@ export function useChatScreenController({
       session?.streamState === "streaming"
     )
       return;
-    if (session?.streamState === "recoverable") {
-      if (typeof resumeMessage === "function") {
-        resumeMessage(conversationId).catch(() => undefined);
+    const runRetry = async () => {
+      try {
+        if (session?.streamState === "recoverable") {
+          if (typeof resumeMessage === "function") {
+            await resumeMessage(conversationId);
+          }
+          return;
+        }
+        if (typeof retryMessage === "function") {
+          await retryMessage(
+            conversationId,
+            activeAgentId,
+            agent?.source || "personal",
+          );
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to retry message.";
+        toast.error("Retry failed", message);
       }
-      return;
-    }
-    if (typeof retryMessage === "function") {
-      retryMessage(
-        conversationId,
-        activeAgentId,
-        agent?.source || "personal",
-      ).catch(() => undefined);
-    }
+    };
+    runRetry();
   }, [
     activeAgentId,
     agent?.source,
