@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import json
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -291,6 +291,8 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
+    client_user_message_id = str(uuid4())
+    client_agent_message_id = str(uuid4())
     state = invoke_route_runner._InvokeState(
         local_session_id=uuid4(),
         local_source="scheduled",
@@ -298,7 +300,8 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
         metadata={},
         stream_identity={},
         stream_usage={},
-        user_message_id=None,
+        user_message_id=client_user_message_id,
+        agent_message_id=client_agent_message_id,
     )
     on_event, on_finalized = invoke_route_runner._build_consume_stream_callbacks(
         state=state,
@@ -351,6 +354,8 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     assert state.persisted_response_content == "partial response"
     assert state.persisted_error_code == "timeout"
     assert state.persisted_finish_reason == "timeout_total"
+    assert captured["user_message_id"] == UUID(client_user_message_id)
+    assert captured["agent_message_id"] == UUID(client_agent_message_id)
 
 
 def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
@@ -373,6 +378,21 @@ def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
     assert resolved is not None
     assert len(resolved) == IDEMPOTENCY_KEY_MAX_LENGTH
     assert ":h:" in resolved
+
+
+def test_normalize_optional_message_id_validates_uuid_inputs() -> None:
+    normalized = invoke_route_runner._normalize_optional_message_id(  # noqa: SLF001
+        " 550e8400-e29b-41d4-a716-446655440000 "
+    )
+    assert normalized == "550e8400-e29b-41d4-a716-446655440000"
+    assert (
+        invoke_route_runner._normalize_optional_message_id(None) is None
+    )  # noqa: SLF001
+    assert (
+        invoke_route_runner._normalize_optional_message_id(" ") is None
+    )  # noqa: SLF001
+    with pytest.raises(ValueError, match="invalid_message_id"):
+        invoke_route_runner._normalize_optional_message_id("not-a-uuid")  # noqa: SLF001
 
 
 @pytest.mark.asyncio

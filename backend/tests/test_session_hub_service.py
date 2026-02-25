@@ -348,6 +348,101 @@ async def test_record_local_invoke_messages_normalizes_overlong_idempotency_key(
     assert agent_blocks["blocks"][0]["content"] == "partial-updated"
 
 
+async def test_record_local_invoke_messages_uses_requested_message_ids(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    requested_user_message_id = uuid4()
+    requested_agent_message_id = uuid4()
+    refs = await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="ok",
+        success=True,
+        context_id="ctx-1",
+        idempotency_key="user:msg-canonical:ws",
+        user_message_id=requested_user_message_id,
+        agent_message_id=requested_agent_message_id,
+    )
+    await async_db_session.flush()
+
+    assert refs["user_message_id"] == requested_user_message_id
+    assert refs["agent_message_id"] == requested_agent_message_id
+
+    user_message = await async_db_session.get(AgentMessage, requested_user_message_id)
+    agent_message = await async_db_session.get(AgentMessage, requested_agent_message_id)
+    assert user_message is not None
+    assert user_message.sender in {"user", "automation"}
+    assert user_message.conversation_id == thread.id
+    assert agent_message is not None
+    assert agent_message.sender == "agent"
+    assert agent_message.conversation_id == thread.id
+
+
+async def test_record_local_invoke_messages_rejects_requested_message_id_conflict(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="ok",
+        success=True,
+        context_id="ctx-1",
+        idempotency_key="user:msg-conflict:ws",
+        user_message_id=uuid4(),
+        agent_message_id=uuid4(),
+    )
+    await async_db_session.flush()
+
+    with pytest.raises(ValueError, match="message_id_conflict"):
+        await session_hub_service.record_local_invoke_messages(
+            async_db_session,
+            session=thread,
+            source="manual",
+            user_id=user.id,
+            agent_id=uuid4(),
+            agent_source="personal",
+            query="hello",
+            response_content="ok",
+            success=True,
+            context_id="ctx-1",
+            idempotency_key="user:msg-conflict:ws",
+            user_message_id=uuid4(),
+            agent_message_id=uuid4(),
+        )
+
+
 async def test_record_local_invoke_messages_rejects_idempotency_query_conflict(
     async_db_session,
 ):

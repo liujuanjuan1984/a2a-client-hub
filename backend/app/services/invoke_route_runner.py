@@ -58,7 +58,8 @@ class _InvokeState:
     metadata: dict[str, Any]
     stream_identity: dict[str, Any]
     stream_usage: dict[str, Any]
-    user_message_id: str | None
+    user_message_id: str | None = None
+    agent_message_id: str | None = None
     message_refs: dict[str, UUID] | None = None
     persisted_response_content: str | None = None
     persisted_success: bool | None = None
@@ -189,6 +190,10 @@ async def _prepare_state(
         context_id=payload.context_id,
         metadata=payload.metadata,
     )
+    normalized_user_message_id = _normalize_optional_message_id(payload.user_message_id)
+    normalized_agent_message_id = _normalize_optional_message_id(
+        payload.agent_message_id
+    )
     return _InvokeState(
         local_session_id=local_session_id,
         local_source=local_source,
@@ -196,7 +201,8 @@ async def _prepare_state(
         metadata=resolved_invoke_metadata,
         stream_identity={},
         stream_usage={},
-        user_message_id=payload.user_message_id,
+        user_message_id=normalized_user_message_id,
+        agent_message_id=normalized_agent_message_id,
         message_refs=None,
         persisted_response_content=None,
         persisted_success=None,
@@ -334,6 +340,18 @@ def _coerce_uuid(value: Any) -> UUID | None:
     return None
 
 
+def _normalize_optional_message_id(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    resolved = _coerce_uuid(trimmed)
+    if resolved is None:
+        raise ValueError("invalid_message_id")
+    return str(resolved)
+
+
 def _resolve_agent_status_from_outcome(outcome: StreamOutcome) -> str:
     if outcome.success:
         return "done"
@@ -436,10 +454,20 @@ async def _ensure_local_message_headers(
             invoke_metadata=state.metadata,
             extra_metadata={"transport": transport, "stream": stream_enabled},
             idempotency_key=idempotency_key,
+            user_message_id=_coerce_uuid(state.user_message_id),
+            agent_message_id=_coerce_uuid(state.agent_message_id),
         )
         await commit_safely(persist_db)
     if refs:
         state.message_refs = refs
+        if state.user_message_id is None:
+            resolved_user_message_id = _coerce_uuid(refs.get("user_message_id"))
+            if resolved_user_message_id is not None:
+                state.user_message_id = str(resolved_user_message_id)
+        if state.agent_message_id is None:
+            resolved_agent_message_id = _coerce_uuid(refs.get("agent_message_id"))
+            if resolved_agent_message_id is not None:
+                state.agent_message_id = str(resolved_agent_message_id)
 
 
 async def _persist_stream_block_update(
@@ -577,6 +605,8 @@ async def _persist_local_outcome(
                 agent_status=_resolve_agent_status_from_outcome(outcome),
                 finish_reason=outcome.finish_reason.value,
                 error_code=outcome.error_code,
+                user_message_id=_coerce_uuid(state.user_message_id),
+                agent_message_id=_coerce_uuid(state.agent_message_id),
             )
         )
         await commit_safely(persist_db)
@@ -822,7 +852,7 @@ async def run_http_invoke(
             on_event=on_event,
             on_finalized=on_finalized,
             resume_from_sequence=payload.resume_from_sequence,
-            cache_key=payload.user_message_id,
+            cache_key=state.user_message_id,
         )
 
     on_event, on_finalized = _build_consume_stream_callbacks(
@@ -975,7 +1005,7 @@ async def run_ws_invoke(
         on_finalized=on_finalized,
         send_stream_end=send_stream_end,
         resume_from_sequence=payload.resume_from_sequence,
-        cache_key=payload.user_message_id,
+        cache_key=state.user_message_id,
     )
 
 

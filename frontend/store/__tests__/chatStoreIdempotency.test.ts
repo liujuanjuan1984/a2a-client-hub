@@ -66,6 +66,7 @@ describe("chat store idempotency semantics", () => {
       query: "hello world",
       conversationId: "conv-1",
       userMessageId: userMessage?.id,
+      agentMessageId: agentMessage?.id,
     });
     expect(runtimeCall?.[4]).toBe(agentMessage?.id);
   });
@@ -120,6 +121,7 @@ describe("chat store idempotency semantics", () => {
       query: "retry target",
       conversationId: "conv-2",
       userMessageId: initialUserMessage?.id,
+      agentMessageId: initialAgentMessage?.id,
     });
     expect(runtimeCall?.[4]).toBe(initialAgentMessage?.id);
   });

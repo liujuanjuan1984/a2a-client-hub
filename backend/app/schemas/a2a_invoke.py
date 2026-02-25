@@ -24,6 +24,11 @@ class A2AAgentInvokeRequest(BaseModel):
         alias="userMessageId",
         description="Optional client-stable user message identifier",
     )
+    agent_message_id: Optional[str] = Field(
+        default=None,
+        alias="agentMessageId",
+        description="Optional client-stable agent message identifier",
+    )
     resume_from_sequence: Optional[int] = Field(
         default=None,
         alias="resumeFromSequence",
