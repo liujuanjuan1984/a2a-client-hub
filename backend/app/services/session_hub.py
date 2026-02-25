@@ -184,6 +184,7 @@ class SessionHubService:
         for message in messages:
             message_metadata = dict(getattr(message, "message_metadata", None) or {})
             message_metadata.setdefault("local_message_id", str(message.id))
+            message_metadata.pop("message_blocks", None)
             resolved_content = message.content or ""
             if (
                 isinstance(message.id, UUID)
@@ -191,13 +192,10 @@ class SessionHubService:
             ):
                 chunk_entries = chunks_by_message_id.get(message.id, [])
                 if chunk_entries:
-                    projected_content, projected_blocks = _project_message_from_chunks(
-                        chunk_entries
-                    )
+                    projected_content, _ = _project_message_from_chunks(chunk_entries)
                     if projected_content:
                         resolved_content = projected_content
-                    if projected_blocks:
-                        message_metadata["message_blocks"] = projected_blocks
+                    message_metadata["chunk_count"] = len(chunk_entries)
                 if isinstance(message.status, str) and message.status.strip():
                     message_metadata.setdefault("stream_status", message.status.strip())
                 stream_meta = message_metadata.get("stream")
@@ -244,6 +242,50 @@ class SessionHubService:
             "pages": pages,
         }
         return items, {"pagination": pagination, "meta": meta}, False
+
+    async def list_message_blocks(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: str,
+        message_id: str,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
+        resolved_conversation_id = _parse_conversation_id(conversation_id)
+        resolved_message_id = _parse_message_id(message_id)
+        message = await db.scalar(
+            select(AgentMessage).where(
+                and_(
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.conversation_id == resolved_conversation_id,
+                    AgentMessage.id == resolved_message_id,
+                )
+            )
+        )
+        if message is None:
+            raise ValueError("message_not_found")
+
+        role = _sender_to_role(getattr(message, "sender", ""))
+        chunk_count = 0
+        blocks: list[dict[str, Any]] = []
+        if role == "agent":
+            chunks = await agent_message_chunk_handler.list_chunks_by_message_ids(
+                db,
+                user_id=user_id,
+                message_ids=[resolved_message_id],
+            )
+            chunk_count = len(chunks)
+            if chunks:
+                _, blocks = _project_message_from_chunks(chunks)
+
+        meta = {
+            "conversationId": str(resolved_conversation_id),
+            "messageId": str(resolved_message_id),
+            "role": role,
+            "chunkCount": chunk_count,
+            "hasBlocks": bool(blocks),
+        }
+        return blocks, meta, False
 
     async def continue_session(
         self,
@@ -1059,6 +1101,16 @@ def _parse_conversation_id(value: str) -> UUID:
         raise ValueError("invalid_conversation_id") from exc
 
 
+def _parse_message_id(value: str) -> UUID:
+    trimmed = (value or "").strip()
+    if not trimmed:
+        raise ValueError("message_id is required")
+    try:
+        return UUID(trimmed)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("invalid_message_id") from exc
+
+
 def _build_continue_response(
     *,
     conversation_id: UUID,
@@ -1179,6 +1231,7 @@ def _project_message_from_chunks(
             projected_blocks.append(
                 {
                     "id": f"block-{block_seq}",
+                    "seq": block_seq,
                     "type": block_type,
                     "content": delta,
                     "is_finished": is_finished,
@@ -1201,6 +1254,7 @@ def _project_message_from_chunks(
         projected_blocks.append(
             {
                 "id": f"block-{block_seq}",
+                "seq": block_seq,
                 "type": block_type,
                 "content": delta,
                 "is_finished": is_finished,
@@ -1209,6 +1263,7 @@ def _project_message_from_chunks(
 
     for idx, block in enumerate(projected_blocks, start=1):
         block["id"] = f"block-{idx}"
+        block["seq"] = idx
 
     text_content = "".join(
         block.get("content", "")

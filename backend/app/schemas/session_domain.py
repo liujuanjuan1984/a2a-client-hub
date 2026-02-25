@@ -58,6 +58,31 @@ class SessionMessageItem(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class SessionMessageBlockItem(BaseModel):
+    id: str
+    seq: int
+    type: str
+    content: str
+    is_finished: bool = Field(alias="isFinished")
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessageBlocksMeta(BaseModel):
+    conversation_id: str = Field(alias="conversationId")
+    message_id: str = Field(alias="messageId")
+    role: Literal["user", "agent", "system"]
+    chunk_count: int = Field(alias="chunkCount")
+    has_blocks: bool = Field(alias="hasBlocks")
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessageBlocksResponse(BaseModel):
+    items: list[SessionMessageBlockItem]
+    meta: SessionMessageBlocksMeta
+
+
 class SessionMessagesMeta(BaseModel):
     conversation_id: str = Field(alias="conversationId")
     source: SessionSource
@@ -85,6 +110,9 @@ class SessionContinueResponse(BaseModel):
 __all__ = [
     "SessionContinueResponse",
     "SessionListResponse",
+    "SessionMessageBlockItem",
+    "SessionMessageBlocksMeta",
+    "SessionMessageBlocksResponse",
     "SessionMessageItem",
     "SessionMessagesListResponse",
     "SessionMessagesMeta",

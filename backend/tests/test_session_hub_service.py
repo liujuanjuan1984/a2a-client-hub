@@ -365,8 +365,20 @@ async def test_list_messages_overwrite_chunk_without_text_duplication(
     assert agent_item["content"] == "final content"
     metadata = agent_item["metadata"]
     assert isinstance(metadata, dict)
-    blocks = metadata.get("message_blocks")
-    assert isinstance(blocks, list)
+    assert "message_blocks" not in metadata
+    assert metadata.get("chunk_count") == 2
+
+    blocks, meta, _ = await session_hub_service.list_message_blocks(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        message_id=str(agent_message_id),
+    )
+    assert meta["conversationId"] == str(thread.id)
+    assert meta["messageId"] == str(agent_message_id)
+    assert meta["role"] == "agent"
+    assert meta["chunkCount"] == 2
+    assert meta["hasBlocks"] is True
     text_blocks = [block for block in blocks if block.get("type") == "text"]
     assert len(text_blocks) == 1
     assert text_blocks[0]["content"] == "final content"
@@ -463,8 +475,17 @@ async def test_list_messages_overwrite_preserves_block_boundaries(
     agent_item = agent_items[0]
     metadata = agent_item["metadata"]
     assert isinstance(metadata, dict)
-    blocks = metadata.get("message_blocks")
-    assert isinstance(blocks, list)
+    assert "message_blocks" not in metadata
+    assert metadata.get("chunk_count") == 4
+
+    blocks, meta, _ = await session_hub_service.list_message_blocks(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        message_id=str(agent_message_id),
+    )
+    assert meta["chunkCount"] == 4
+    assert meta["hasBlocks"] is True
     text_blocks = [block for block in blocks if block.get("type") == "text"]
     assert len(text_blocks) == 2
     assert text_blocks[0]["content"] == "first final"

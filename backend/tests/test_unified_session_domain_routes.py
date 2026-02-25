@@ -9,6 +9,7 @@ from app.api.routers import me_sessions
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
+from app.db.models.agent_message_chunk import AgentMessageChunk
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
@@ -91,22 +92,47 @@ async def test_conversation_routes_use_conversation_id_only(
     )
     async_db_session.add(execution)
 
+    user_message = AgentMessage(
+        user_id=user.id,
+        sender="user",
+        content="hello",
+        conversation_id=manual_session.id,
+        message_metadata={"context_id": "ctx-manual-1"},
+    )
+    agent_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        content="world",
+        conversation_id=manual_session.id,
+        message_metadata={"context_id": "ctx-manual-1"},
+    )
+    async_db_session.add(user_message)
+    async_db_session.add(agent_message)
+    await async_db_session.flush()
     async_db_session.add(
-        AgentMessage(
+        AgentMessageChunk(
             user_id=user.id,
-            sender="user",
-            content="hello",
-            conversation_id=manual_session.id,
-            message_metadata={"context_id": "ctx-manual-1"},
+            message_id=agent_message.id,
+            seq=1,
+            event_id="evt-route-1",
+            block_type="text",
+            content="wo",
+            append=True,
+            is_finished=False,
+            source="stream",
         )
     )
     async_db_session.add(
-        AgentMessage(
+        AgentMessageChunk(
             user_id=user.id,
-            sender="agent",
+            message_id=agent_message.id,
+            seq=2,
+            event_id="evt-route-2",
+            block_type="text",
             content="world",
-            conversation_id=manual_session.id,
-            message_metadata={"context_id": "ctx-manual-1"},
+            append=False,
+            is_finished=True,
+            source="stream",
         )
     )
     await async_db_session.commit()
@@ -137,6 +163,25 @@ async def test_conversation_routes_use_conversation_id_only(
         assert msgs_payload["meta"]["source"] == "manual"
         assert msgs_payload["meta"]["conversationId"] == str(manual_session.id)
         assert len(msgs_payload["items"]) == 2
+        agent_item = next(
+            item for item in msgs_payload["items"] if item["role"] == "agent"
+        )
+        assert "message_blocks" not in agent_item.get("metadata", {})
+
+        blocks_resp = await client.post(
+            f"/me/conversations/{manual_session.id}/messages/{agent_message.id}/blocks:query"
+        )
+        assert blocks_resp.status_code == 200
+        blocks_payload = blocks_resp.json()
+        assert blocks_payload["meta"]["conversationId"] == str(manual_session.id)
+        assert blocks_payload["meta"]["messageId"] == str(agent_message.id)
+        assert blocks_payload["meta"]["role"] == "agent"
+        assert blocks_payload["meta"]["chunkCount"] == 2
+        assert blocks_payload["meta"]["hasBlocks"] is True
+        assert len(blocks_payload["items"]) == 1
+        assert blocks_payload["items"][0]["type"] == "text"
+        assert blocks_payload["items"][0]["content"] == "world"
+        assert blocks_payload["items"][0]["isFinished"] is True
 
         continue_resp = await client.post(
             f"/me/conversations/{manual_session.id}:continue"
@@ -218,6 +263,25 @@ async def test_invalid_conversation_id_returns_400(
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "invalid_conversation_id"
+
+
+async def test_invalid_message_id_returns_400(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    conversation_id = uuid4()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/conversations/{conversation_id}/messages/not-a-uuid/blocks:query"
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "invalid_message_id"
 
 
 async def test_list_sessions_filters_use_conversation_source_only(

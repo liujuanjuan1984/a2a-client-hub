@@ -155,6 +155,7 @@ scheduled, and OpenCode sessions:
 
 - `POST /api/v1/me/conversations:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages:query`
+- `POST /api/v1/me/conversations/{conversation_id}/messages/{message_id}/blocks:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
 
 `continue` now returns the canonical fields and binding metadata:
@@ -170,6 +171,13 @@ scheduled, and OpenCode sessions:
 
 Client-generated chat sessions should use raw UUID conversation IDs, for example
 `550e8400-e29b-41d4-a716-446655440000`.
+
+Message query contract boundary:
+
+- `messages:query` is a lightweight list endpoint and does not include
+  `metadata.message_blocks`.
+- For block-level payloads (reasoning/tool/text blocks), call
+  `messages/{message_id}/blocks:query` on demand.
 
 ## Checks (Before Pushing)
 

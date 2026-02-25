@@ -12,6 +12,7 @@ from app.db.transaction import commit_safely
 from app.schemas.session_domain import (
     SessionContinueResponse,
     SessionListResponse,
+    SessionMessageBlocksResponse,
     SessionMessagesListResponse,
     SessionMessagesMeta,
     SessionMessagesQueryRequest,
@@ -33,6 +34,8 @@ _FORBIDDEN_ERRORS = {"session_forbidden"}
 
 def _status_code_for_session_error(detail: str) -> int:
     if detail == "session_not_found":
+        return 404
+    if detail == "message_not_found":
         return 404
     if detail in _FORBIDDEN_ERRORS:
         return 403
@@ -95,6 +98,35 @@ async def list_unified_session_messages(
         pagination=extra["pagination"],
         meta=SessionMessagesMeta(**extra["meta"]),
     )
+
+
+@router.post(
+    "/{conversation_id}/messages/{message_id}/blocks:query",
+    response_model=SessionMessageBlocksResponse,
+)
+async def query_unified_message_blocks(
+    *,
+    conversation_id: str,
+    message_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> SessionMessageBlocksResponse:
+    try:
+        items, meta, db_mutated = await session_hub_service.list_message_blocks(
+            db,
+            user_id=current_user.id,
+            conversation_id=conversation_id,
+            message_id=message_id,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        raise HTTPException(
+            status_code=_status_code_for_session_error(detail),
+            detail=detail,
+        ) from exc
+    if db_mutated:
+        await commit_safely(db)
+    return SessionMessageBlocksResponse.model_validate({"items": items, "meta": meta})
 
 
 @router.post("/{conversation_id}:continue", response_model=SessionContinueResponse)
