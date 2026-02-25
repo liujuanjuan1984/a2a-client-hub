@@ -1,4 +1,5 @@
 import type { A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
+import { finalizeMessageBlocks } from "@/lib/api/chat-utils";
 import type {
   ChatMessage,
   MessageBlock,
@@ -45,6 +46,37 @@ export const isSameMessageList = (
       message.status === next.status
     );
   });
+};
+
+export const buildStreamingCompletionPatch = (
+  message: Pick<ChatMessage, "id" | "blocks">,
+  options?: {
+    errorText?: string;
+    timestamp?: string;
+  },
+): Partial<ChatMessage> => {
+  const finalizedBlocks = finalizeMessageBlocks(message.blocks);
+  if (!options?.errorText) {
+    return finalizedBlocks
+      ? { blocks: finalizedBlocks, status: "done" }
+      : { status: "done" };
+  }
+
+  const now = options.timestamp ?? new Date().toISOString();
+  return {
+    blocks: [
+      ...(finalizedBlocks ?? []),
+      {
+        id: `${message.id}:error:${Date.now()}`,
+        type: "system_error",
+        content: `[Stream Error: ${options.errorText}]`,
+        isFinished: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    status: "done",
+  };
 };
 
 export const COLLAPSED_TEXT_LINES = 10;

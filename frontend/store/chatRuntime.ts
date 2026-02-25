@@ -4,7 +4,6 @@ import {
   type ChatMessage,
   extractRuntimeStatusEvent,
   extractSessionMeta,
-  finalizeMessageBlocks,
   type RuntimeInterrupt,
   type StreamBlockUpdate,
   isInputRequiredRuntimeState,
@@ -21,7 +20,11 @@ import {
   listSessionMessagesPage,
   type SessionMessageItem,
 } from "@/lib/api/sessions";
-import { mergeExternalSessionRef, type AgentSession } from "@/lib/chat-utils";
+import {
+  buildStreamingCompletionPatch,
+  mergeExternalSessionRef,
+  type AgentSession,
+} from "@/lib/chat-utils";
 import { queryKeys } from "@/lib/queryKeys";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import { chatConnectionService } from "@/services/chatConnectionService";
@@ -313,29 +316,11 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       messageStore.updateMessageWithUpdater(
         conversationId,
         messageId,
-        (message) => {
-          const finalizedBlocks = finalizeMessageBlocks(message.blocks) ?? [];
-          if (!errorText) {
-            return {
-              blocks: finalizedBlocks,
-              status: "done",
-            };
-          }
-          return {
-            blocks: [
-              ...finalizedBlocks,
-              {
-                id: `${message.id}:error:${Date.now()}`,
-                type: "system_error",
-                content: `[Stream Error: ${errorText}]`,
-                isFinished: true,
-                createdAt: now,
-                updatedAt: now,
-              },
-            ],
-            status: "done",
-          };
-        },
+        (message) =>
+          buildStreamingCompletionPatch(message, {
+            errorText,
+            timestamp: now,
+          }),
       );
     });
     activeStreamMessageIds.clear();

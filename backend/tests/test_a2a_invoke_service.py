@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from contextlib import suppress
+from typing import Any
 
 import pytest
 from fastapi import WebSocketDisconnect
@@ -13,6 +14,7 @@ from app.services.a2a_invoke_service import (
     InvokeTaskRegistry,
     StreamFinishReason,
     a2a_invoke_service,
+    invoke_task_registry,
 )
 
 
@@ -632,6 +634,70 @@ async def test_ws_breaks_stream_after_terminal_status_update():
     assert not any(
         item.get("content") == "should-not-be-forwarded" for item in payloads
     )
+
+
+@pytest.mark.asyncio
+async def test_sse_finalized_callback_runs_after_interrupt_slot_release() -> None:
+    conversation_id = "conv-sse-finalized-slot-release"
+    observed_slots: list[asyncio.Task[Any] | None] = []
+
+    async def _on_finalized(_outcome: object) -> None:
+        observed_slots.append(invoke_task_registry.get(conversation_id))
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {"content": "hello"},
+                {"kind": "status-update", "status": {"state": "done"}, "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_finalized=_on_finalized,
+        conversation_id=conversation_id,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert observed_slots == [None]
+    assert invoke_task_registry.get(conversation_id) is None
+
+
+@pytest.mark.asyncio
+async def test_ws_finalized_callback_runs_after_interrupt_slot_release() -> None:
+    conversation_id = "conv-ws-finalized-slot-release"
+    observed_slots: list[asyncio.Task[Any] | None] = []
+
+    async def _on_finalized(_outcome: object) -> None:
+        observed_slots.append(invoke_task_registry.get(conversation_id))
+
+    websocket = _DummyWebSocket()
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                {"content": "hello"},
+                {"kind": "status-update", "status": {"state": "done"}, "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_finalized=_on_finalized,
+        conversation_id=conversation_id,
+    )
+
+    assert observed_slots == [None]
+    assert invoke_task_registry.get(conversation_id) is None
 
 
 @pytest.mark.asyncio

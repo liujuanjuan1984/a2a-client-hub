@@ -117,6 +117,16 @@ describe("useChatStore.sendMessage interrupt semantics", () => {
         id: "agent-old",
         role: "agent",
         content: "old",
+        blocks: [
+          {
+            id: "agent-old:1",
+            type: "text",
+            content: "partial",
+            isFinished: false,
+            createdAt: "2026-02-25T00:00:00.000Z",
+            updatedAt: "2026-02-25T00:00:00.000Z",
+          },
+        ],
         createdAt: "2026-02-25T00:00:00.000Z",
         status: "streaming",
       },
@@ -129,8 +139,17 @@ describe("useChatStore.sendMessage interrupt semantics", () => {
     expect(messageState.updateMessage).toHaveBeenCalledWith(
       conversationId,
       "agent-old",
-      { status: "done" },
+      expect.objectContaining({ status: "done" }),
     );
+    const closePayload = messageState.updateMessage.mock.calls[0]?.[2] as {
+      blocks?: { id: string; isFinished: boolean }[];
+      status?: string;
+    };
+    expect(closePayload.status).toBe("done");
+    expect(closePayload.blocks?.[0]).toMatchObject({
+      id: "agent-old:1",
+      isFinished: true,
+    });
     expect(mockedExecuteChatRuntime).toHaveBeenCalledTimes(1);
     const payload = mockedExecuteChatRuntime.mock.calls[0]?.[3];
     expect(payload?.metadata).toMatchObject({

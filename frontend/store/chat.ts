@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import {
   buildPersistedSessions,
   buildInvokePayload,
+  buildStreamingCompletionPatch,
   buildSessionCleanupPlan,
   createAgentSession,
   mergeExternalSessionRef,
@@ -234,10 +235,10 @@ export const useChatStore = create<ChatState>()(
 
         const previousSession = get().sessions[conversationId];
         const wasStreaming = previousSession?.streamState === "streaming";
-        const previousStreamingAgentMessageId = wasStreaming
+        const previousStreamingAgentMessage = wasStreaming
           ? [...(useMessageStore.getState().messages[conversationId] ?? [])]
               .reverse()
-              .find((m) => m.role === "agent" && m.status === "streaming")?.id
+              .find((m) => m.role === "agent" && m.status === "streaming")
           : undefined;
 
         get().cancelMessage(conversationId);
@@ -282,13 +283,11 @@ export const useChatStore = create<ChatState>()(
         messageStore.addMessage(conversationId, userMessage);
         messageStore.addMessage(conversationId, agentMessage);
 
-        if (previousStreamingAgentMessageId) {
+        if (previousStreamingAgentMessage) {
           messageStore.updateMessage(
             conversationId,
-            previousStreamingAgentMessageId,
-            {
-              status: "done",
-            },
+            previousStreamingAgentMessage.id,
+            buildStreamingCompletionPatch(previousStreamingAgentMessage),
           );
         }
 

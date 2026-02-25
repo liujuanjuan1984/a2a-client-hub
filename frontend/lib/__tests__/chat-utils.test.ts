@@ -1,5 +1,6 @@
 import {
   buildPersistedSessions,
+  buildStreamingCompletionPatch,
   buildInvokePayload,
   buildSessionCleanupPlan,
   createAgentSession,
@@ -106,6 +107,54 @@ describe("chat store utils", () => {
       ["s1", s1],
     ]);
     expect(sorted.map(([id]) => id)).toEqual(["s1", "s2"]);
+  });
+
+  it("builds done patch and finalizes unfinished streaming block", () => {
+    const patch = buildStreamingCompletionPatch({
+      id: "agent-msg-1",
+      blocks: [
+        {
+          id: "agent-msg-1:1",
+          type: "text",
+          content: "partial",
+          isFinished: false,
+          createdAt: "2026-02-25T00:00:00.000Z",
+          updatedAt: "2026-02-25T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(patch.status).toBe("done");
+    expect(patch.blocks?.[0]?.isFinished).toBe(true);
+  });
+
+  it("builds done patch with stream error block", () => {
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const patch = buildStreamingCompletionPatch(
+      {
+        id: "agent-msg-2",
+        blocks: [],
+      },
+      {
+        errorText: "transport interrupted",
+        timestamp: "2026-02-25T01:00:00.000Z",
+      },
+    );
+    nowSpy.mockRestore();
+
+    expect(patch).toEqual({
+      blocks: [
+        {
+          id: "agent-msg-2:error:1700000000000",
+          type: "system_error",
+          content: "[Stream Error: transport interrupted]",
+          isFinished: true,
+          createdAt: "2026-02-25T01:00:00.000Z",
+          updatedAt: "2026-02-25T01:00:00.000Z",
+        },
+      ],
+      status: "done",
+    });
   });
 
   it("builds cleanup plan for expired and orphaned sessions", () => {

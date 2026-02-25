@@ -12,7 +12,7 @@ import json
 import logging
 import re
 import time
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, AsyncIterator, Callable
@@ -139,6 +139,34 @@ class A2AInvokeService:
                 logger.warning(
                     "Inflight invoke did not stop within interrupt timeout",
                     extra={"conversation_id": conversation_id},
+                )
+
+    @asynccontextmanager
+    async def _conversation_interrupt_slot(
+        self,
+        *,
+        conversation_id: str | None,
+        metadata: dict[str, Any] | None,
+        logger: Any,
+    ) -> AsyncIterator[None]:
+        registered_task: asyncio.Task[Any] | None = None
+        if conversation_id:
+            await self.maybe_interrupt_inflight_invoke(
+                conversation_id=conversation_id,
+                metadata=metadata,
+                logger=logger,
+            )
+            current_task = asyncio.current_task()
+            if current_task:
+                invoke_task_registry.register(conversation_id, current_task)
+                registered_task = current_task
+        try:
+            yield
+        finally:
+            if conversation_id:
+                invoke_task_registry.unregister(
+                    conversation_id,
+                    task=registered_task,
                 )
 
     @classmethod
@@ -1030,176 +1058,104 @@ class A2AInvokeService:
             terminal_event_seen = False
             final_outcome: StreamOutcome | None = None
             heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
-            registered_task: asyncio.Task[Any] | None = None
-
-            if conversation_id:
-                await self.maybe_interrupt_inflight_invoke(
-                    conversation_id=conversation_id,
-                    metadata=metadata,
-                    logger=logger,
-                )
-                current_task = asyncio.current_task()
-                if current_task:
-                    invoke_task_registry.register(conversation_id, current_task)
-                    registered_task = current_task
-
-            serialized = {}
-            try:
-                # Replay cached events if resuming
-                seq_counter = 0
-                if resume_from_sequence is not None and cache_key:
-                    cached_events = (
-                        await global_stream_cache.get_events_with_sequence_after(
-                            cache_key, resume_from_sequence
+            async with self._conversation_interrupt_slot(
+                conversation_id=conversation_id,
+                metadata=metadata,
+                logger=logger,
+            ):
+                serialized = {}
+                try:
+                    # Replay cached events if resuming
+                    seq_counter = 0
+                    if resume_from_sequence is not None and cache_key:
+                        cached_events = (
+                            await global_stream_cache.get_events_with_sequence_after(
+                                cache_key, resume_from_sequence
+                            )
                         )
-                    )
-                    for cached_sequence, cached_event in cached_events:
-                        parsed_sequence = self._extract_event_sequence(cached_event)
-                        if parsed_sequence is not None:
-                            seq_counter = max(seq_counter, parsed_sequence)
-                        else:
-                            seq_counter = max(seq_counter, cached_sequence)
-                        stream_text_accumulator.consume(cached_event)
-                        yield f"data: {json_dumps(cached_event, ensure_ascii=False)}\n\n"
+                        for cached_sequence, cached_event in cached_events:
+                            parsed_sequence = self._extract_event_sequence(cached_event)
+                            if parsed_sequence is not None:
+                                seq_counter = max(seq_counter, parsed_sequence)
+                            else:
+                                seq_counter = max(seq_counter, cached_sequence)
+                            stream_text_accumulator.consume(cached_event)
+                            yield f"data: {json_dumps(cached_event, ensure_ascii=False)}\n\n"
 
-                    # Continue generating sequence from max of cached or resumed
-                    seq_counter = max(seq_counter, resume_from_sequence)
+                        # Continue generating sequence from max of cached or resumed
+                        seq_counter = max(seq_counter, resume_from_sequence)
 
-                async for event in self._iter_stream_events_with_heartbeat(
-                    gateway.stream(
-                        resolved=resolved,
-                        query=query,
-                        context_id=context_id,
-                        metadata=metadata,
-                    ),
-                    heartbeat_interval_seconds=heartbeat_interval_seconds,
-                ):
-                    if event is None:
-                        last_event_at = time.monotonic()
-                        yield self._SSE_HEARTBEAT_FRAME
-                        continue
-                    serialized = self.serialize_stream_event(
-                        event, validate_message=validate_message
-                    )
-                    validation_errors = self._extract_artifact_validation_errors(
-                        serialized,
-                        validate_message=validate_message,
-                    )
-                    if validation_errors:
-                        logger.warning(
-                            "Dropped invalid artifact-update event",
-                            extra={
-                                **log_extra,
-                                "validation_error_count": len(validation_errors),
-                            },
-                        )
-                        continue
-
-                    parsed_sequence = self._extract_event_sequence(serialized)
-                    event_sequence = (
-                        parsed_sequence
-                        if parsed_sequence is not None
-                        else seq_counter + 1
-                    )
-                    if event_sequence <= seq_counter:
-                        event_sequence = seq_counter + 1
-
-                    # If this event sequence was already replayed from cache, skip yielding it again
-                    # This happens if upstream didn't support resume and gave us everything from start
-                    if (
-                        resume_from_sequence is not None
-                        and event_sequence <= resume_from_sequence
+                    async for event in self._iter_stream_events_with_heartbeat(
+                        gateway.stream(
+                            resolved=resolved,
+                            query=query,
+                            context_id=context_id,
+                            metadata=metadata,
+                        ),
+                        heartbeat_interval_seconds=heartbeat_interval_seconds,
                     ):
-                        continue
-                    seq_counter = max(seq_counter, event_sequence)
-
-                    if cache_key:
-                        await global_stream_cache.append_event(
-                            cache_key, serialized, seq_counter
+                        if event is None:
+                            last_event_at = time.monotonic()
+                            yield self._SSE_HEARTBEAT_FRAME
+                            continue
+                        serialized = self.serialize_stream_event(
+                            event, validate_message=validate_message
                         )
+                        validation_errors = self._extract_artifact_validation_errors(
+                            serialized,
+                            validate_message=validate_message,
+                        )
+                        if validation_errors:
+                            logger.warning(
+                                "Dropped invalid artifact-update event",
+                                extra={
+                                    **log_extra,
+                                    "validation_error_count": len(validation_errors),
+                                },
+                            )
+                            continue
 
-                    await self._call_callback(on_event, serialized)
-                    stream_text_accumulator.consume(serialized)
-                    last_event_at = time.monotonic()
-                    yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
-                    if self._is_terminal_status_event(serialized):
-                        terminal_event_seen = True
-                        break
-            except asyncio.CancelledError:
-                client_disconnected = True
-                partial_metadata = stream_text_accumulator.result_metadata()
-                blocks_payload = partial_metadata.get("message_blocks")
-                message_blocks = (
-                    list(blocks_payload) if isinstance(blocks_payload, list) else []
-                )
-                final_outcome = StreamOutcome(
-                    success=False,
-                    finish_reason=StreamFinishReason.CLIENT_DISCONNECT,
-                    final_text=stream_text_accumulator.result() or "",
-                    error_message=None,
-                    error_code=None,
-                    message_blocks=message_blocks,
-                    elapsed_seconds=time.monotonic() - started_at,
-                    idle_seconds=max(time.monotonic() - last_event_at, 0.0),
-                    terminal_event_seen=terminal_event_seen,
-                )
-                raise
-            except Exception as exc:
-                stream_failed = True
-                logger.warning("A2A SSE stream failed", exc_info=True, extra=log_extra)
-                error_code = (
-                    self._extract_error_code_from_exception(exc)
-                    or self._STREAM_ERROR_CODE
-                )
-                partial_metadata = stream_text_accumulator.result_metadata()
-                blocks_payload = partial_metadata.get("message_blocks")
-                message_blocks = (
-                    list(blocks_payload) if isinstance(blocks_payload, list) else []
-                )
-                final_outcome = StreamOutcome(
-                    success=False,
-                    finish_reason=StreamFinishReason.UPSTREAM_ERROR,
-                    final_text=stream_text_accumulator.result() or "",
-                    error_message=self._STREAM_ERROR_MESSAGE,
-                    error_code=error_code,
-                    message_blocks=message_blocks,
-                    elapsed_seconds=time.monotonic() - started_at,
-                    idle_seconds=max(time.monotonic() - last_event_at, 0.0),
-                    terminal_event_seen=False,
-                )
-                await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
-                error_payload = self.build_ws_error_event(
-                    message=self._STREAM_ERROR_MESSAGE,
-                    error_code=error_code,
-                )
-                yield (
-                    "event: error\n"
-                    f"data: {json_dumps(error_payload['data'], ensure_ascii=False)}\n\n"
-                )
-            finally:
-                if conversation_id:
-                    invoke_task_registry.unregister(
-                        conversation_id,
-                        task=registered_task,
-                    )
-                if cache_key and self._is_terminal_status_event(serialized):
-                    await global_stream_cache.mark_completed(cache_key)
-                if not stream_failed and not client_disconnected:
-                    final_metadata = stream_text_accumulator.result_metadata()
-                    final_text = stream_text_accumulator.result()
-                    await self._call_callback(
-                        on_complete_metadata,
-                        final_metadata,
-                    )
-                    await self._call_callback(on_complete, final_text)
-                    blocks_payload = final_metadata.get("message_blocks")
+                        parsed_sequence = self._extract_event_sequence(serialized)
+                        event_sequence = (
+                            parsed_sequence
+                            if parsed_sequence is not None
+                            else seq_counter + 1
+                        )
+                        if event_sequence <= seq_counter:
+                            event_sequence = seq_counter + 1
+
+                        # If this event sequence was already replayed from cache, skip yielding it again
+                        # This happens if upstream didn't support resume and gave us everything from start
+                        if (
+                            resume_from_sequence is not None
+                            and event_sequence <= resume_from_sequence
+                        ):
+                            continue
+                        seq_counter = max(seq_counter, event_sequence)
+
+                        if cache_key:
+                            await global_stream_cache.append_event(
+                                cache_key, serialized, seq_counter
+                            )
+
+                        await self._call_callback(on_event, serialized)
+                        stream_text_accumulator.consume(serialized)
+                        last_event_at = time.monotonic()
+                        yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
+                        if self._is_terminal_status_event(serialized):
+                            terminal_event_seen = True
+                            break
+                except asyncio.CancelledError:
+                    client_disconnected = True
+                    partial_metadata = stream_text_accumulator.result_metadata()
+                    blocks_payload = partial_metadata.get("message_blocks")
                     message_blocks = (
                         list(blocks_payload) if isinstance(blocks_payload, list) else []
                     )
                     final_outcome = StreamOutcome(
-                        success=True,
-                        finish_reason=StreamFinishReason.SUCCESS,
-                        final_text=final_text,
+                        success=False,
+                        finish_reason=StreamFinishReason.CLIENT_DISCONNECT,
+                        final_text=stream_text_accumulator.result() or "",
                         error_message=None,
                         error_code=None,
                         message_blocks=message_blocks,
@@ -1207,16 +1163,88 @@ class A2AInvokeService:
                         idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                         terminal_event_seen=terminal_event_seen,
                     )
-                if final_outcome is not None:
-                    await self._call_callback_safely(
-                        on_finalized,
-                        final_outcome,
-                        logger=logger,
-                        log_extra=log_extra,
-                        warning_message="A2A SSE finalized callback failed",
+                    raise
+                except Exception as exc:
+                    stream_failed = True
+                    logger.warning(
+                        "A2A SSE stream failed",
+                        exc_info=True,
+                        extra=log_extra,
                     )
-                if not client_disconnected:
-                    yield "event: stream_end\ndata: {}\n\n"
+                    error_code = (
+                        self._extract_error_code_from_exception(exc)
+                        or self._STREAM_ERROR_CODE
+                    )
+                    partial_metadata = stream_text_accumulator.result_metadata()
+                    blocks_payload = partial_metadata.get("message_blocks")
+                    message_blocks = (
+                        list(blocks_payload) if isinstance(blocks_payload, list) else []
+                    )
+                    final_outcome = StreamOutcome(
+                        success=False,
+                        finish_reason=StreamFinishReason.UPSTREAM_ERROR,
+                        final_text=stream_text_accumulator.result() or "",
+                        error_message=self._STREAM_ERROR_MESSAGE,
+                        error_code=error_code,
+                        message_blocks=message_blocks,
+                        elapsed_seconds=time.monotonic() - started_at,
+                        idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                        terminal_event_seen=False,
+                    )
+                    await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
+                    error_payload = self.build_ws_error_event(
+                        message=self._STREAM_ERROR_MESSAGE,
+                        error_code=error_code,
+                    )
+                    yield (
+                        "event: error\n"
+                        f"data: {json_dumps(error_payload['data'], ensure_ascii=False)}\n\n"
+                    )
+                finally:
+                    if conversation_id:
+                        current_task = asyncio.current_task()
+                        if current_task:
+                            invoke_task_registry.unregister(
+                                conversation_id,
+                                task=current_task,
+                            )
+                    if cache_key and self._is_terminal_status_event(serialized):
+                        await global_stream_cache.mark_completed(cache_key)
+                    if not stream_failed and not client_disconnected:
+                        final_metadata = stream_text_accumulator.result_metadata()
+                        final_text = stream_text_accumulator.result()
+                        await self._call_callback(
+                            on_complete_metadata,
+                            final_metadata,
+                        )
+                        await self._call_callback(on_complete, final_text)
+                        blocks_payload = final_metadata.get("message_blocks")
+                        message_blocks = (
+                            list(blocks_payload)
+                            if isinstance(blocks_payload, list)
+                            else []
+                        )
+                        final_outcome = StreamOutcome(
+                            success=True,
+                            finish_reason=StreamFinishReason.SUCCESS,
+                            final_text=final_text,
+                            error_message=None,
+                            error_code=None,
+                            message_blocks=message_blocks,
+                            elapsed_seconds=time.monotonic() - started_at,
+                            idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                            terminal_event_seen=terminal_event_seen,
+                        )
+                    if final_outcome is not None:
+                        await self._call_callback_safely(
+                            on_finalized,
+                            final_outcome,
+                            logger=logger,
+                            log_extra=log_extra,
+                            warning_message="A2A SSE finalized callback failed",
+                        )
+                    if not client_disconnected:
+                        yield "event: stream_end\ndata: {}\n\n"
 
         # Ensure downstreams do not persist potentially sensitive content.
         return StreamingResponse(
@@ -1261,173 +1289,172 @@ class A2AInvokeService:
         terminal_event_seen = False
         final_outcome: StreamOutcome | None = None
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
-        registered_task: asyncio.Task[Any] | None = None
-
-        if conversation_id:
-            await self.maybe_interrupt_inflight_invoke(
-                conversation_id=conversation_id,
-                metadata=metadata,
-                logger=logger,
-            )
-            current_task = asyncio.current_task()
-            if current_task:
-                invoke_task_registry.register(conversation_id, current_task)
-                registered_task = current_task
-
-        serialized = {}
-        try:
-            # Replay cached events if resuming
-            seq_counter = 0
-            if resume_from_sequence is not None and cache_key:
-                cached_events = (
-                    await global_stream_cache.get_events_with_sequence_after(
-                        cache_key, resume_from_sequence
+        async with self._conversation_interrupt_slot(
+            conversation_id=conversation_id,
+            metadata=metadata,
+            logger=logger,
+        ):
+            serialized = {}
+            try:
+                # Replay cached events if resuming
+                seq_counter = 0
+                if resume_from_sequence is not None and cache_key:
+                    cached_events = (
+                        await global_stream_cache.get_events_with_sequence_after(
+                            cache_key, resume_from_sequence
+                        )
                     )
-                )
-                for cached_sequence, cached_event in cached_events:
-                    parsed_sequence = self._extract_event_sequence(cached_event)
-                    if parsed_sequence is not None:
-                        seq_counter = max(seq_counter, parsed_sequence)
-                    else:
-                        seq_counter = max(seq_counter, cached_sequence)
-                    stream_text_accumulator.consume(cached_event)
-                    await websocket.send_text(
-                        json_dumps(cached_event, ensure_ascii=False)
+                    for cached_sequence, cached_event in cached_events:
+                        parsed_sequence = self._extract_event_sequence(cached_event)
+                        if parsed_sequence is not None:
+                            seq_counter = max(seq_counter, parsed_sequence)
+                        else:
+                            seq_counter = max(seq_counter, cached_sequence)
+                        stream_text_accumulator.consume(cached_event)
+                        await websocket.send_text(
+                            json_dumps(cached_event, ensure_ascii=False)
+                        )
+
+                    # Continue generating sequence from max of cached or resumed
+                    seq_counter = max(seq_counter, resume_from_sequence)
+
+                async for event in self._iter_stream_events_with_heartbeat(
+                    gateway.stream(
+                        resolved=resolved,
+                        query=query,
+                        context_id=context_id,
+                        metadata=metadata,
+                    ),
+                    heartbeat_interval_seconds=heartbeat_interval_seconds,
+                ):
+                    if event is None:
+                        last_event_at = time.monotonic()
+                        await websocket.send_text(
+                            json_dumps(self._WS_HEARTBEAT_EVENT, ensure_ascii=False)
+                        )
+                        continue
+                    serialized = self.serialize_stream_event(
+                        event, validate_message=validate_message
                     )
+                    validation_errors = self._extract_artifact_validation_errors(
+                        serialized,
+                        validate_message=validate_message,
+                    )
+                    if validation_errors:
+                        logger.warning(
+                            "Dropped invalid artifact-update event",
+                            extra={
+                                **log_extra,
+                                "validation_error_count": len(validation_errors),
+                            },
+                        )
+                        continue
 
-                # Continue generating sequence from max of cached or resumed
-                seq_counter = max(seq_counter, resume_from_sequence)
+                    parsed_sequence = self._extract_event_sequence(serialized)
+                    event_sequence = (
+                        parsed_sequence
+                        if parsed_sequence is not None
+                        else seq_counter + 1
+                    )
+                    if event_sequence <= seq_counter:
+                        event_sequence = seq_counter + 1
+                    if (
+                        resume_from_sequence is not None
+                        and event_sequence <= resume_from_sequence
+                    ):
+                        continue
+                    seq_counter = max(seq_counter, event_sequence)
 
-            async for event in self._iter_stream_events_with_heartbeat(
-                gateway.stream(
-                    resolved=resolved,
-                    query=query,
-                    context_id=context_id,
-                    metadata=metadata,
-                ),
-                heartbeat_interval_seconds=heartbeat_interval_seconds,
-            ):
-                if event is None:
+                    if cache_key:
+                        await global_stream_cache.append_event(
+                            cache_key, serialized, seq_counter
+                        )
+
+                    await self._call_callback(on_event, serialized)
+                    stream_text_accumulator.consume(serialized)
                     last_event_at = time.monotonic()
                     await websocket.send_text(
-                        json_dumps(self._WS_HEARTBEAT_EVENT, ensure_ascii=False)
+                        json_dumps(serialized, ensure_ascii=False)
                     )
-                    continue
-                serialized = self.serialize_stream_event(
-                    event, validate_message=validate_message
+                    if self._is_terminal_status_event(serialized):
+                        terminal_event_seen = True
+                        break
+                final_metadata = stream_text_accumulator.result_metadata()
+                final_text = stream_text_accumulator.result()
+                await self._call_callback(on_complete_metadata, final_metadata)
+                await self._call_callback(on_complete, final_text)
+                blocks_payload = final_metadata.get("message_blocks")
+                message_blocks = (
+                    list(blocks_payload) if isinstance(blocks_payload, list) else []
                 )
-                validation_errors = self._extract_artifact_validation_errors(
-                    serialized,
-                    validate_message=validate_message,
+                final_outcome = StreamOutcome(
+                    success=True,
+                    finish_reason=StreamFinishReason.SUCCESS,
+                    final_text=final_text,
+                    error_message=None,
+                    error_code=None,
+                    message_blocks=message_blocks,
+                    elapsed_seconds=time.monotonic() - started_at,
+                    idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                    terminal_event_seen=terminal_event_seen,
                 )
-                if validation_errors:
-                    logger.warning(
-                        "Dropped invalid artifact-update event",
-                        extra={
-                            **log_extra,
-                            "validation_error_count": len(validation_errors),
-                        },
+            except Exception as exc:
+                if self._is_client_disconnect_error(exc):
+                    client_disconnected = True
+                    logger.info("A2A WS client disconnected", extra=log_extra)
+                    return
+                logger.warning("A2A WS stream failed", exc_info=True, extra=log_extra)
+                error_code = (
+                    self._extract_error_code_from_exception(exc)
+                    or self._STREAM_ERROR_CODE
+                )
+                error_payload = {
+                    "message": self._STREAM_ERROR_MESSAGE,
+                    "error_code": error_code,
+                }
+                partial_metadata = stream_text_accumulator.result_metadata()
+                blocks_payload = partial_metadata.get("message_blocks")
+                message_blocks = (
+                    list(blocks_payload) if isinstance(blocks_payload, list) else []
+                )
+                final_outcome = StreamOutcome(
+                    success=False,
+                    finish_reason=StreamFinishReason.UPSTREAM_ERROR,
+                    final_text=stream_text_accumulator.result() or "",
+                    error_message=self._STREAM_ERROR_MESSAGE,
+                    error_code=error_code,
+                    message_blocks=message_blocks,
+                    elapsed_seconds=time.monotonic() - started_at,
+                    idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                    terminal_event_seen=False,
+                )
+                await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
+                await self._call_callback(on_error_metadata, error_payload)
+                await self.send_ws_error(
+                    websocket,
+                    message=self._STREAM_ERROR_MESSAGE,
+                    error_code=error_code,
+                )
+            finally:
+                if conversation_id:
+                    current_task = asyncio.current_task()
+                    if current_task:
+                        invoke_task_registry.unregister(
+                            conversation_id,
+                            task=current_task,
+                        )
+                if cache_key and self._is_terminal_status_event(serialized):
+                    await global_stream_cache.mark_completed(cache_key)
+                if not client_disconnected and final_outcome is not None:
+                    await self._call_callback_safely(
+                        on_finalized,
+                        final_outcome,
+                        logger=logger,
+                        log_extra=log_extra,
+                        warning_message="A2A WS finalized callback failed",
                     )
-                    continue
-
-                parsed_sequence = self._extract_event_sequence(serialized)
-                event_sequence = (
-                    parsed_sequence if parsed_sequence is not None else seq_counter + 1
-                )
-                if event_sequence <= seq_counter:
-                    event_sequence = seq_counter + 1
-                if (
-                    resume_from_sequence is not None
-                    and event_sequence <= resume_from_sequence
-                ):
-                    continue
-                seq_counter = max(seq_counter, event_sequence)
-
-                if cache_key:
-                    await global_stream_cache.append_event(
-                        cache_key, serialized, seq_counter
-                    )
-
-                await self._call_callback(on_event, serialized)
-                stream_text_accumulator.consume(serialized)
-                last_event_at = time.monotonic()
-                await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
-                if self._is_terminal_status_event(serialized):
-                    terminal_event_seen = True
-                    break
-            final_metadata = stream_text_accumulator.result_metadata()
-            final_text = stream_text_accumulator.result()
-            await self._call_callback(on_complete_metadata, final_metadata)
-            await self._call_callback(on_complete, final_text)
-            blocks_payload = final_metadata.get("message_blocks")
-            message_blocks = (
-                list(blocks_payload) if isinstance(blocks_payload, list) else []
-            )
-            final_outcome = StreamOutcome(
-                success=True,
-                finish_reason=StreamFinishReason.SUCCESS,
-                final_text=final_text,
-                error_message=None,
-                error_code=None,
-                message_blocks=message_blocks,
-                elapsed_seconds=time.monotonic() - started_at,
-                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
-                terminal_event_seen=terminal_event_seen,
-            )
-        except Exception as exc:
-            if self._is_client_disconnect_error(exc):
-                client_disconnected = True
-                logger.info("A2A WS client disconnected", extra=log_extra)
-                return
-            logger.warning("A2A WS stream failed", exc_info=True, extra=log_extra)
-            error_code = (
-                self._extract_error_code_from_exception(exc) or self._STREAM_ERROR_CODE
-            )
-            error_payload = {
-                "message": self._STREAM_ERROR_MESSAGE,
-                "error_code": error_code,
-            }
-            partial_metadata = stream_text_accumulator.result_metadata()
-            blocks_payload = partial_metadata.get("message_blocks")
-            message_blocks = (
-                list(blocks_payload) if isinstance(blocks_payload, list) else []
-            )
-            final_outcome = StreamOutcome(
-                success=False,
-                finish_reason=StreamFinishReason.UPSTREAM_ERROR,
-                final_text=stream_text_accumulator.result() or "",
-                error_message=self._STREAM_ERROR_MESSAGE,
-                error_code=error_code,
-                message_blocks=message_blocks,
-                elapsed_seconds=time.monotonic() - started_at,
-                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
-                terminal_event_seen=False,
-            )
-            await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
-            await self._call_callback(on_error_metadata, error_payload)
-            await self.send_ws_error(
-                websocket,
-                message=self._STREAM_ERROR_MESSAGE,
-                error_code=error_code,
-            )
-        finally:
-            if conversation_id:
-                invoke_task_registry.unregister(
-                    conversation_id,
-                    task=registered_task,
-                )
-            if cache_key and self._is_terminal_status_event(serialized):
-                await global_stream_cache.mark_completed(cache_key)
-            if not client_disconnected and final_outcome is not None:
-                await self._call_callback_safely(
-                    on_finalized,
-                    final_outcome,
-                    logger=logger,
-                    log_extra=log_extra,
-                    warning_message="A2A WS finalized callback failed",
-                )
-            if send_stream_end and not client_disconnected:
-                await self.send_ws_stream_end(websocket)
+                if send_stream_end and not client_disconnected:
+                    await self.send_ws_stream_end(websocket)
 
     async def consume_stream(
         self,
@@ -1456,264 +1483,260 @@ class A2AInvokeService:
         started_at = time.monotonic()
         last_event_at = started_at
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
-        registered_task: asyncio.Task[Any] | None = None
+        async with self._conversation_interrupt_slot(
+            conversation_id=conversation_id,
+            metadata=metadata,
+            logger=logger,
+        ):
+            try:
+                stream_iter = self._iter_stream_events_with_heartbeat(
+                    gateway.stream(
+                        resolved=resolved,
+                        query=query,
+                        context_id=context_id,
+                        metadata=metadata,
+                    ),
+                    heartbeat_interval_seconds=heartbeat_interval_seconds,
+                ).__aiter__()
+                terminal_event_seen = False
+                serialized: dict[str, Any] = {}
+                idle_timeout = (
+                    float(idle_timeout_seconds)
+                    if idle_timeout_seconds is not None and idle_timeout_seconds > 0
+                    else None
+                )
+                total_timeout = (
+                    float(total_timeout_seconds)
+                    if total_timeout_seconds is not None and total_timeout_seconds > 0
+                    else None
+                )
 
-        if conversation_id:
-            await self.maybe_interrupt_inflight_invoke(
-                conversation_id=conversation_id,
-                metadata=metadata,
-                logger=logger,
-            )
-            current_task = asyncio.current_task()
-            if current_task:
-                invoke_task_registry.register(conversation_id, current_task)
-                registered_task = current_task
+                def _resolve_wait_timeout(now: float) -> float | None:
+                    wait_timeout = idle_timeout
+                    if total_timeout is not None:
+                        remaining_total = total_timeout - (now - started_at)
+                        if remaining_total <= 0:
+                            return 0.0
+                        wait_timeout = (
+                            min(wait_timeout, remaining_total)
+                            if wait_timeout is not None
+                            else remaining_total
+                        )
+                    return wait_timeout
 
-        try:
-            stream_iter = self._iter_stream_events_with_heartbeat(
-                gateway.stream(
-                    resolved=resolved,
-                    query=query,
-                    context_id=context_id,
-                    metadata=metadata,
-                ),
-                heartbeat_interval_seconds=heartbeat_interval_seconds,
-            ).__aiter__()
-            terminal_event_seen = False
-            serialized: dict[str, Any] = {}
-            idle_timeout = (
-                float(idle_timeout_seconds)
-                if idle_timeout_seconds is not None and idle_timeout_seconds > 0
-                else None
-            )
-            total_timeout = (
-                float(total_timeout_seconds)
-                if total_timeout_seconds is not None and total_timeout_seconds > 0
-                else None
-            )
-
-            def _resolve_wait_timeout(now: float) -> float | None:
-                wait_timeout = idle_timeout
-                if total_timeout is not None:
-                    remaining_total = total_timeout - (now - started_at)
-                    if remaining_total <= 0:
-                        return 0.0
-                    wait_timeout = (
-                        min(wait_timeout, remaining_total)
-                        if wait_timeout is not None
-                        else remaining_total
-                    )
-                return wait_timeout
-
-            while True:
-                now = time.monotonic()
-                if total_timeout is not None and (now - started_at) >= (
-                    total_timeout - 1e-9
-                ):
-                    timeout_message = (
-                        f"A2A stream total timeout after {total_timeout:.1f}s"
-                    )
-                    partial_metadata = stream_text_accumulator.result_metadata()
-                    blocks_payload = partial_metadata.get("message_blocks")
-                    message_blocks = (
-                        list(blocks_payload) if isinstance(blocks_payload, list) else []
-                    )
-                    outcome = StreamOutcome(
-                        success=False,
-                        finish_reason=StreamFinishReason.TIMEOUT_TOTAL,
-                        final_text=stream_text_accumulator.result() or "",
-                        error_message=timeout_message,
-                        error_code="timeout",
-                        message_blocks=message_blocks,
-                        elapsed_seconds=time.monotonic() - started_at,
-                        idle_seconds=max(time.monotonic() - last_event_at, 0.0),
-                        terminal_event_seen=False,
-                    )
-                    await self._call_callback(on_error, timeout_message)
-                    await self._call_callback(
-                        on_error_metadata,
-                        {"message": timeout_message, "error_code": "timeout"},
-                    )
-                    await self._call_callback_safely(
-                        on_finalized,
-                        outcome,
-                        logger=logger,
-                        log_extra=log_extra,
-                        warning_message="A2A consume stream finalized callback failed",
-                    )
-                    return outcome
-                wait_timeout = _resolve_wait_timeout(now)
-                try:
-                    if wait_timeout is None:
-                        event = await anext(stream_iter)
-                    else:
-                        event = await asyncio.wait_for(anext(stream_iter), wait_timeout)
-                except StopAsyncIteration:
-                    break
-                except asyncio.TimeoutError:
-                    is_total_timeout = total_timeout is not None and (
-                        time.monotonic() - started_at
-                    ) >= (total_timeout - 1e-9)
-                    if is_total_timeout:
+                while True:
+                    now = time.monotonic()
+                    if total_timeout is not None and (now - started_at) >= (
+                        total_timeout - 1e-9
+                    ):
                         timeout_message = (
                             f"A2A stream total timeout after {total_timeout:.1f}s"
                         )
-                        finish_reason = StreamFinishReason.TIMEOUT_TOTAL
-                    else:
-                        idle_value = idle_timeout if idle_timeout is not None else 0.0
-                        timeout_message = (
-                            f"A2A stream idle timeout after {idle_value:.1f}s"
+                        partial_metadata = stream_text_accumulator.result_metadata()
+                        blocks_payload = partial_metadata.get("message_blocks")
+                        message_blocks = (
+                            list(blocks_payload)
+                            if isinstance(blocks_payload, list)
+                            else []
                         )
-                        finish_reason = StreamFinishReason.TIMEOUT_IDLE
-                    partial_content = stream_text_accumulator.result()
-                    partial_metadata = stream_text_accumulator.result_metadata()
-                    blocks_payload = partial_metadata.get("message_blocks")
-                    message_blocks = (
-                        list(blocks_payload) if isinstance(blocks_payload, list) else []
+                        outcome = StreamOutcome(
+                            success=False,
+                            finish_reason=StreamFinishReason.TIMEOUT_TOTAL,
+                            final_text=stream_text_accumulator.result() or "",
+                            error_message=timeout_message,
+                            error_code="timeout",
+                            message_blocks=message_blocks,
+                            elapsed_seconds=time.monotonic() - started_at,
+                            idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                            terminal_event_seen=False,
+                        )
+                        await self._call_callback(on_error, timeout_message)
+                        await self._call_callback(
+                            on_error_metadata,
+                            {"message": timeout_message, "error_code": "timeout"},
+                        )
+                        await self._call_callback_safely(
+                            on_finalized,
+                            outcome,
+                            logger=logger,
+                            log_extra=log_extra,
+                            warning_message="A2A consume stream finalized callback failed",
+                        )
+                        return outcome
+                    wait_timeout = _resolve_wait_timeout(now)
+                    try:
+                        if wait_timeout is None:
+                            event = await anext(stream_iter)
+                        else:
+                            event = await asyncio.wait_for(
+                                anext(stream_iter),
+                                wait_timeout,
+                            )
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError:
+                        is_total_timeout = total_timeout is not None and (
+                            time.monotonic() - started_at
+                        ) >= (total_timeout - 1e-9)
+                        if is_total_timeout:
+                            timeout_message = (
+                                f"A2A stream total timeout after {total_timeout:.1f}s"
+                            )
+                            finish_reason = StreamFinishReason.TIMEOUT_TOTAL
+                        else:
+                            idle_value = (
+                                idle_timeout if idle_timeout is not None else 0.0
+                            )
+                            timeout_message = (
+                                f"A2A stream idle timeout after {idle_value:.1f}s"
+                            )
+                            finish_reason = StreamFinishReason.TIMEOUT_IDLE
+                        partial_content = stream_text_accumulator.result()
+                        partial_metadata = stream_text_accumulator.result_metadata()
+                        blocks_payload = partial_metadata.get("message_blocks")
+                        message_blocks = (
+                            list(blocks_payload)
+                            if isinstance(blocks_payload, list)
+                            else []
+                        )
+                        outcome = StreamOutcome(
+                            success=False,
+                            finish_reason=finish_reason,
+                            final_text=partial_content or "",
+                            error_message=timeout_message,
+                            error_code="timeout",
+                            message_blocks=message_blocks,
+                            elapsed_seconds=time.monotonic() - started_at,
+                            idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                            terminal_event_seen=False,
+                        )
+                        await self._call_callback(on_error, timeout_message)
+                        await self._call_callback(
+                            on_error_metadata,
+                            {"message": timeout_message, "error_code": "timeout"},
+                        )
+                        await self._call_callback_safely(
+                            on_finalized,
+                            outcome,
+                            logger=logger,
+                            log_extra=log_extra,
+                            warning_message="A2A consume stream finalized callback failed",
+                        )
+                        return outcome
+                    if event is None:
+                        # Align with realtime stream semantics:
+                        # heartbeat frames indicate the upstream connection is still alive
+                        # and should refresh the idle timer.
+                        last_event_at = time.monotonic()
+                        continue
+
+                    serialized = self.serialize_stream_event(
+                        event, validate_message=validate_message
                     )
-                    outcome = StreamOutcome(
-                        success=False,
-                        finish_reason=finish_reason,
-                        final_text=partial_content or "",
-                        error_message=timeout_message,
-                        error_code="timeout",
-                        message_blocks=message_blocks,
-                        elapsed_seconds=time.monotonic() - started_at,
-                        idle_seconds=max(time.monotonic() - last_event_at, 0.0),
-                        terminal_event_seen=False,
+                    validation_errors = self._extract_artifact_validation_errors(
+                        serialized, validate_message=validate_message
                     )
-                    await self._call_callback(on_error, timeout_message)
-                    await self._call_callback(
-                        on_error_metadata,
-                        {"message": timeout_message, "error_code": "timeout"},
-                    )
-                    await self._call_callback_safely(
-                        on_finalized,
-                        outcome,
-                        logger=logger,
-                        log_extra=log_extra,
-                        warning_message="A2A consume stream finalized callback failed",
-                    )
-                    return outcome
-                if event is None:
-                    # Align with realtime stream semantics:
-                    # heartbeat frames indicate the upstream connection is still alive
-                    # and should refresh the idle timer.
+                    if validation_errors:
+                        warning_payload = {
+                            **log_extra,
+                            "validation_error_count": len(validation_errors),
+                        }
+                        if callable(log_warning):
+                            log_warning(
+                                "Dropped invalid artifact-update event",
+                                extra=warning_payload,
+                            )
+                        elif callable(log_info):
+                            log_info(
+                                "Dropped invalid artifact-update event",
+                                extra=warning_payload,
+                            )
+                        continue
+
                     last_event_at = time.monotonic()
-                    continue
+                    await self._call_callback(on_event, serialized)
+                    stream_text_accumulator.consume(serialized)
+                    if self._is_terminal_status_event(serialized):
+                        terminal_event_seen = True
+                        break
 
-                serialized = self.serialize_stream_event(
-                    event, validate_message=validate_message
+                final_metadata = stream_text_accumulator.result_metadata()
+                await self._call_callback(
+                    on_complete_metadata,
+                    final_metadata,
                 )
-                validation_errors = self._extract_artifact_validation_errors(
-                    serialized, validate_message=validate_message
+                final_text = stream_text_accumulator.result()
+                await self._call_callback(on_complete, final_text)
+                blocks_payload = final_metadata.get("message_blocks")
+                message_blocks = (
+                    list(blocks_payload) if isinstance(blocks_payload, list) else []
                 )
-                if validation_errors:
-                    warning_payload = {
-                        **log_extra,
-                        "validation_error_count": len(validation_errors),
-                    }
-                    if callable(log_warning):
-                        log_warning(
-                            "Dropped invalid artifact-update event",
-                            extra=warning_payload,
-                        )
-                    elif callable(log_info):
-                        log_info(
-                            "Dropped invalid artifact-update event",
-                            extra=warning_payload,
-                        )
-                    continue
-
-                last_event_at = time.monotonic()
-                await self._call_callback(on_event, serialized)
-                stream_text_accumulator.consume(serialized)
-                if self._is_terminal_status_event(serialized):
-                    terminal_event_seen = True
-                    break
-
-            final_metadata = stream_text_accumulator.result_metadata()
-            await self._call_callback(
-                on_complete_metadata,
-                final_metadata,
-            )
-            final_text = stream_text_accumulator.result()
-            await self._call_callback(on_complete, final_text)
-            blocks_payload = final_metadata.get("message_blocks")
-            message_blocks = (
-                list(blocks_payload) if isinstance(blocks_payload, list) else []
-            )
-            outcome = StreamOutcome(
-                success=True,
-                finish_reason=StreamFinishReason.SUCCESS,
-                final_text=final_text,
-                error_message=None,
-                error_code=None,
-                message_blocks=message_blocks,
-                elapsed_seconds=time.monotonic() - started_at,
-                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
-                terminal_event_seen=terminal_event_seen,
-            )
-            await self._call_callback_safely(
-                on_finalized,
-                outcome,
-                logger=logger,
-                log_extra=log_extra,
-                warning_message="A2A consume stream finalized callback failed",
-            )
-            return outcome
-        except Exception as exc:
-            if callable(log_warning):
-                log_warning(
-                    "A2A consume stream failed",
-                    exc_info=True,
-                    extra=log_extra,
+                outcome = StreamOutcome(
+                    success=True,
+                    finish_reason=StreamFinishReason.SUCCESS,
+                    final_text=final_text,
+                    error_message=None,
+                    error_code=None,
+                    message_blocks=message_blocks,
+                    elapsed_seconds=time.monotonic() - started_at,
+                    idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                    terminal_event_seen=terminal_event_seen,
                 )
-            elif callable(log_info):
-                log_info(
-                    "A2A consume stream failed",
-                    exc_info=True,
-                    extra=log_extra,
+                await self._call_callback_safely(
+                    on_finalized,
+                    outcome,
+                    logger=logger,
+                    log_extra=log_extra,
+                    warning_message="A2A consume stream finalized callback failed",
                 )
-            error_code = (
-                self._extract_error_code_from_exception(exc) or self._STREAM_ERROR_CODE
-            )
-            partial_content = stream_text_accumulator.result()
-            partial_metadata = stream_text_accumulator.result_metadata()
-            blocks_payload = partial_metadata.get("message_blocks")
-            message_blocks = (
-                list(blocks_payload) if isinstance(blocks_payload, list) else []
-            )
-            outcome = StreamOutcome(
-                success=False,
-                finish_reason=StreamFinishReason.UPSTREAM_ERROR,
-                final_text=partial_content or "",
-                error_message=self._STREAM_ERROR_MESSAGE,
-                error_code=error_code,
-                message_blocks=message_blocks,
-                elapsed_seconds=time.monotonic() - started_at,
-                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
-                terminal_event_seen=False,
-            )
-            await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
-            await self._call_callback(
-                on_error_metadata,
-                {"message": self._STREAM_ERROR_MESSAGE, "error_code": error_code},
-            )
-            await self._call_callback_safely(
-                on_finalized,
-                outcome,
-                logger=logger,
-                log_extra=log_extra,
-                warning_message="A2A consume stream finalized callback failed",
-            )
-            return outcome
-        finally:
-            if conversation_id:
-                invoke_task_registry.unregister(
-                    conversation_id,
-                    task=registered_task,
+                return outcome
+            except Exception as exc:
+                if callable(log_warning):
+                    log_warning(
+                        "A2A consume stream failed",
+                        exc_info=True,
+                        extra=log_extra,
+                    )
+                elif callable(log_info):
+                    log_info(
+                        "A2A consume stream failed",
+                        exc_info=True,
+                        extra=log_extra,
+                    )
+                error_code = (
+                    self._extract_error_code_from_exception(exc)
+                    or self._STREAM_ERROR_CODE
                 )
+                partial_content = stream_text_accumulator.result()
+                partial_metadata = stream_text_accumulator.result_metadata()
+                blocks_payload = partial_metadata.get("message_blocks")
+                message_blocks = (
+                    list(blocks_payload) if isinstance(blocks_payload, list) else []
+                )
+                outcome = StreamOutcome(
+                    success=False,
+                    finish_reason=StreamFinishReason.UPSTREAM_ERROR,
+                    final_text=partial_content or "",
+                    error_message=self._STREAM_ERROR_MESSAGE,
+                    error_code=error_code,
+                    message_blocks=message_blocks,
+                    elapsed_seconds=time.monotonic() - started_at,
+                    idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                    terminal_event_seen=False,
+                )
+                await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
+                await self._call_callback(
+                    on_error_metadata,
+                    {"message": self._STREAM_ERROR_MESSAGE, "error_code": error_code},
+                )
+                await self._call_callback_safely(
+                    on_finalized,
+                    outcome,
+                    logger=logger,
+                    log_extra=log_extra,
+                    warning_message="A2A consume stream finalized callback failed",
+                )
+                return outcome
 
 
 a2a_invoke_service = A2AInvokeService()
