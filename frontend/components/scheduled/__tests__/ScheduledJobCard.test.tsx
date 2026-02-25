@@ -52,7 +52,8 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: true,
       last_run_status: "running" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     let root: any;
     act(() => {
@@ -70,7 +71,8 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: false,
       last_run_status: "success" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     let root: any;
     act(() => {
@@ -88,7 +90,8 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: true,
       last_run_status: "success" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     let root: any;
     act(() => {
@@ -106,7 +109,8 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: true,
       last_run_status: "running" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     let root: any;
     act(() => {
@@ -122,7 +126,8 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: true,
       last_run_status: "success" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     let root: any;
     act(() => {
@@ -142,7 +147,8 @@ describe("ScheduledJobCard visuals", () => {
       cycle_type: "daily" as const,
       time_point: { time: "09:00" },
       last_run_status: "success" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     const { getByLabelText, getByText } = render(
       <ScheduledJobCard {...defaultProps} job={job as any} />,
@@ -166,10 +172,12 @@ describe("ScheduledJobCard visuals", () => {
       cycle_type: "interval" as const,
       time_point: {
         minutes: 15,
-        start_at: "2026-02-23T10:00:00Z",
+        start_at_local: "2026-02-23T18:00",
+        start_at_utc: "2026-02-23T10:00:00Z",
       },
       last_run_status: "success" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     const { getByText } = render(
       <ScheduledJobCard {...defaultProps} job={job as any} />,

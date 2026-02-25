@@ -29,6 +29,7 @@ import { continueSession } from "@/lib/api/sessions";
 import { isSameMessageList } from "@/lib/chat-utils";
 import {
   getAnchoredOffsetAfterContentResize,
+  shouldShowScrollToBottom,
   shouldStickToBottom,
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
@@ -87,6 +88,7 @@ export function useChatScreenController({
   const { syncShortcuts } = useShortcutStore();
 
   const [input, setInput] = useState("");
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const suppressAutoScrollRef = useRef(false);
   const shouldStickToBottomRef = useRef(true);
   const forceScrollToBottomRef = useRef(false);
@@ -443,6 +445,11 @@ export function useChatScreenController({
         contentHeight,
       });
       scrollOffsetRef.current = offsetY;
+
+      setShowScrollToBottom(
+        shouldShowScrollToBottom({ offsetY, viewportHeight, contentHeight }),
+      );
+
       if (
         offsetY <= HISTORY_AUTOLOAD_THRESHOLD &&
         typeof historyNextPage === "number" &&
@@ -780,6 +787,8 @@ export function useChatScreenController({
     questionAnswers,
     showDetails,
     toggleDetails,
+    showScrollToBottom,
+    scrollToBottom,
     showShortcutManager,
     showSessionPicker,
     openShortcutManager,

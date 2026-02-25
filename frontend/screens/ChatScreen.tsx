@@ -1,5 +1,9 @@
 import React from "react";
 import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
 
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatHeaderPanel } from "@/components/chat/ChatHeaderPanel";
@@ -7,6 +11,7 @@ import { ChatTimelinePanel } from "@/components/chat/ChatTimelinePanel";
 import { SessionPickerModal } from "@/components/chat/SessionPickerModal";
 import { ShortcutManagerModal } from "@/components/chat/ShortcutManagerModal";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { IconButton } from "@/components/ui/IconButton";
 import { useChatScreenController } from "@/hooks/useChatScreenController";
 
 export function ChatScreen({
@@ -20,6 +25,19 @@ export function ChatScreen({
     routeAgentId,
     conversationId,
   });
+
+  const animatedButtonStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(controller.showScrollToBottom ? 1 : 0, {
+      duration: 200,
+    }),
+    transform: [
+      {
+        scale: withTiming(controller.showScrollToBottom ? 1 : 0.8, {
+          duration: 200,
+        }),
+      },
+    ],
+  }));
 
   if (!controller.agent) {
     if (!controller.hasFetchedAgents) {
@@ -78,6 +96,21 @@ export function ChatScreen({
         onQuestionReply={controller.handleQuestionReply}
         onQuestionReject={controller.handleQuestionReject}
       />
+
+      <Animated.View
+        style={animatedButtonStyle}
+        className="absolute bottom-24 right-4 z-50"
+        pointerEvents={controller.showScrollToBottom ? "auto" : "none"}
+      >
+        <IconButton
+          icon="chevron-down"
+          variant="secondary"
+          size="sm"
+          onPress={() => controller.scrollToBottom(true)}
+          accessibilityLabel="Scroll to bottom"
+          className="bg-slate-800/40 border border-white/10 backdrop-blur-md"
+        />
+      </Animated.View>
 
       <ShortcutManagerModal
         visible={controller.showShortcutManager}
