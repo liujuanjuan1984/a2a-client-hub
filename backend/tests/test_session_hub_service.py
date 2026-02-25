@@ -443,6 +443,65 @@ async def test_record_local_invoke_messages_rejects_requested_message_id_conflic
         )
 
 
+async def test_record_local_invoke_messages_rejects_cross_user_message_id_reuse(
+    async_db_session,
+):
+    user_one = await create_user(async_db_session, skip_onboarding_defaults=True)
+    user_two = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread_one = ConversationThread(
+        user_id=user_one.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    thread_two = ConversationThread(
+        user_id=user_two.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread_one)
+    async_db_session.add(thread_two)
+    await async_db_session.flush()
+
+    shared_user_message_id = uuid4()
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread_one,
+        source="manual",
+        user_id=user_one.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="ok",
+        success=True,
+        context_id="ctx-1",
+        idempotency_key="user:cross-user:ws",
+        user_message_id=shared_user_message_id,
+        agent_message_id=uuid4(),
+    )
+    await async_db_session.flush()
+
+    with pytest.raises(ValueError, match="message_id_conflict"):
+        await session_hub_service.record_local_invoke_messages(
+            async_db_session,
+            session=thread_two,
+            source="manual",
+            user_id=user_two.id,
+            agent_id=uuid4(),
+            agent_source="personal",
+            query="hello",
+            response_content="ok",
+            success=True,
+            context_id="ctx-1",
+            idempotency_key="user:cross-user:ws",
+            user_message_id=shared_user_message_id,
+            agent_message_id=uuid4(),
+        )
+
+
 async def test_record_local_invoke_messages_rejects_idempotency_query_conflict(
     async_db_session,
 ):

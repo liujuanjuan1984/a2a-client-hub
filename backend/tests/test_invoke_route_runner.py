@@ -148,6 +148,61 @@ async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
 
 
 @pytest.mark.asyncio
+async def test_run_http_invoke_route_stream_maps_value_error_to_http_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoke_route_runner._invoke_inflight_keys.clear()
+
+    async def fake_run_http_invoke_with_session_recovery(**kwargs):  # noqa: ARG001
+        raise ValueError("message_id_conflict")
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "run_http_invoke_with_session_recovery",
+        fake_run_http_invoke_with_session_recovery,
+    )
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/a2a", name="Demo Agent")
+    )
+
+    async def runtime_builder():
+        return runtime
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "run long task",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await invoke_route_runner.run_http_invoke_route(
+            db=None,
+            user_id=uuid4(),
+            agent_id=uuid4(),
+            agent_source="shared",
+            payload=payload,
+            stream=True,
+            gateway=object(),
+            runtime_builder=runtime_builder,
+            runtime_not_found_errors=(RuntimeError,),
+            runtime_not_found_status_code=404,
+            runtime_validation_errors=(ValueError,),
+            runtime_validation_status_code=400,
+            validate_message=lambda _: [],
+            logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+            invoke_log_message="test invoke",
+            invoke_log_extra_builder=lambda request, runtime: {},  # noqa: ARG001
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "message_id_conflict"
+    assert invoke_route_runner._invoke_inflight_keys == {}
+
+
+@pytest.mark.asyncio
 async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.MonkeyPatch):
     captured: dict[str, object] = {}
 

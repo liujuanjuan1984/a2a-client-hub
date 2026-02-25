@@ -184,6 +184,12 @@ Message query contract boundary:
   `messages/blocks:query` (batch) or `messages/{message_id}/blocks/{block_seq}:query`
   (single block detail) on demand.
 
+Invoke message id contract:
+
+- Clients may provide `userMessageId` and `agentMessageId` in invoke payloads.
+- When provided, both values must be UUIDs and are treated as canonical local message ids.
+- Message id conflicts are returned as `message_id_conflict` (HTTP 409).
+
 ## Checks (Before Pushing)
 
 ```bash

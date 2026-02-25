@@ -724,6 +724,10 @@ class SessionHubService:
                     invoke_idempotency_key=normalized_idempotency_key,
                 )
             except agent_message_handler.AgentMessageCreationError as exc:
+                if isinstance(user_message_id, UUID) and _is_agent_message_pk_violation(
+                    exc
+                ):
+                    raise ValueError("message_id_conflict") from exc
                 if not (
                     normalized_idempotency_key
                     and _is_idempotency_unique_violation(
@@ -782,6 +786,10 @@ class SessionHubService:
                     invoke_idempotency_key=normalized_idempotency_key,
                 )
             except agent_message_handler.AgentMessageCreationError as exc:
+                if isinstance(
+                    agent_message_id, UUID
+                ) and _is_agent_message_pk_violation(exc):
+                    raise ValueError("message_id_conflict") from exc
                 if not (
                     normalized_idempotency_key
                     and _is_idempotency_unique_violation(
@@ -912,14 +920,13 @@ class SessionHubService:
     ) -> AgentMessage | None:
         message = await db.scalar(
             select(AgentMessage).where(
-                and_(
-                    AgentMessage.user_id == user_id,
-                    AgentMessage.id == message_id,
-                )
+                AgentMessage.id == message_id,
             )
         )
         if message is None:
             return None
+        if message.user_id != user_id:
+            raise ValueError("message_id_conflict")
         normalized_sender = (sender or "").strip().lower()
         message_sender = (message.sender or "").strip().lower()
         if normalized_sender == "user":
@@ -1639,6 +1646,10 @@ def _is_idempotency_unique_violation(exc: BaseException, *, index_name: str) -> 
                 return True
         current = current.__cause__ or current.__context__
     return False
+
+
+def _is_agent_message_pk_violation(exc: BaseException) -> bool:
+    return _is_idempotency_unique_violation(exc, index_name="agent_messages_pkey")
 
 
 async def _create_block_with_conflict_recovery(

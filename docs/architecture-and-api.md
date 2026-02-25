@@ -118,9 +118,14 @@ curl -X POST "$API_BASE_URL/me/a2a/agents/<AGENT_ID>/invoke" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
-    "query":"Summarize today'\''s key updates"
+    "query":"Summarize today'\''s key updates",
+    "userMessageId":"550e8400-e29b-41d4-a716-446655440000",
+    "agentMessageId":"550e8400-e29b-41d4-a716-446655440001"
   }'
 ```
+
+`userMessageId` and `agentMessageId` are optional but recommended for
+client/server message identity consistency. Both must be UUID strings when provided.
 
 ### Query Unified Sessions
 

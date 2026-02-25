@@ -1292,6 +1292,12 @@ async def run_http_invoke_route(
                 },
                 max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
             )
+        except ValueError as exc:
+            await _release_invoke_guard(guard_key)
+            raise HTTPException(
+                status_code=status_code_for_invoke_session_error(str(exc)),
+                detail=str(exc),
+            ) from exc
         except Exception:
             await _release_invoke_guard(guard_key)
             raise

@@ -106,6 +106,7 @@ Message id contract:
 - Frontend store/cache keys must use `item.id` only.
 - Do not rely on alias ids from metadata.
 - Stream events must use snake_case contract fields: `message_id`, `event_id`, `seq`.
+- Invoke payloads should carry both `userMessageId` and `agentMessageId` (UUID).
 
 ## Block-based Streaming
 
