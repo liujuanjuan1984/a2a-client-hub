@@ -10,7 +10,8 @@ type IconButtonVariant =
   | "outline"
   | "ghost"
   | "danger"
-  | "secondary";
+  | "secondary"
+  | "neo";
 type IconButtonSize = "xs" | "sm" | "md" | "lg";
 
 type IconButtonProps = Omit<PressableProps, "accessibilityLabel"> & {
@@ -32,11 +33,12 @@ export function IconButton({
   ...props
 }: IconButtonProps) {
   const variants: Record<IconButtonVariant, string> = {
-    primary: "bg-primary",
-    secondary: "bg-slate-800",
-    outline: "border border-slate-700",
-    ghost: "",
-    danger: "border border-red-500/20 bg-red-500/10",
+    neo: "bg-primary active:opacity-80",
+    primary: "bg-primary active:opacity-80",
+    secondary: "bg-slate-800 active:bg-slate-700",
+    outline: "border border-white/20 active:bg-white/10",
+    ghost: "active:bg-white/10",
+    danger: "bg-red-500/20 active:bg-red-500/30",
   };
 
   const sizes: Record<IconButtonSize, string> = {
@@ -47,17 +49,18 @@ export function IconButton({
   };
 
   const iconSizes: Record<IconButtonSize, number> = {
-    xs: 16,
+    xs: 14,
     sm: 18,
     md: 20,
     lg: 22,
   };
 
   const iconColors: Record<IconButtonVariant, string> = {
-    primary: "#ffffff",
-    secondary: "#ffffff",
-    outline: "#ffffff",
-    ghost: "#ffffff",
+    neo: "#000000",
+    primary: "#000000",
+    secondary: "#FFFFFF",
+    outline: "#FFFFFF",
+    ghost: "#FFFFFF",
     danger: "#f87171",
   };
 
@@ -67,7 +70,7 @@ export function IconButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      className={`items-center justify-center rounded-full ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-50" : ""} ${className || ""}`}
+      className={`items-center justify-center rounded-xl ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-40" : ""} ${className || ""}`}
       disabled={isDisabled}
       {...props}
     >

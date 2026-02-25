@@ -48,10 +48,10 @@ export function ChatComposer({
         </View>
       ) : null}
 
-      <View className="flex-row items-end gap-2 rounded-3xl border border-slate-800 bg-slate-900/50 p-2">
+      <View className="flex-row items-end gap-2 rounded-2xl bg-surface p-2">
         <Pressable
           className={`h-9 w-9 items-center justify-center rounded-xl ${
-            showShortcutManager ? "bg-primary" : "bg-slate-800"
+            showShortcutManager ? "bg-primary" : "bg-gray-800"
           }`}
           onPress={onOpenShortcutManager}
           accessibilityRole="button"
@@ -60,14 +60,14 @@ export function ChatComposer({
           <Ionicons
             name={showShortcutManager ? "flash" : "flash-outline"}
             size={18}
-            color={showShortcutManager ? "#ffffff" : "#94a3b8"}
+            color={showShortcutManager ? "#000000" : "#FFFFFF"}
           />
         </Pressable>
         <TextInput
           ref={inputRef}
           className="flex-1 px-3 py-2 text-white"
           placeholder="Type your message"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#666666"
           multiline
           value={input}
           onChangeText={onInputChange}
@@ -93,13 +93,13 @@ export function ChatComposer({
             accessibilityRole="button"
             accessibilityLabel="Clear input"
           >
-            <Ionicons name="close-circle" size={18} color="#94a3b8" />
+            <Ionicons name="close-circle" size={18} color="#999999" />
           </Pressable>
         )}
         <Pressable
           className={`h-9 w-9 items-center justify-center rounded-xl ${
             !input.trim() || Boolean(pendingInterrupt)
-              ? "bg-slate-800 opacity-50"
+              ? "bg-gray-800 opacity-40"
               : "bg-primary"
           }`}
           testID="chat-send-button"
@@ -108,7 +108,7 @@ export function ChatComposer({
           accessibilityRole="button"
           accessibilityLabel="Send message"
         >
-          <Ionicons name="send" size={16} color="#ffffff" />
+          <Ionicons name="send" size={16} color="#000000" />
         </Pressable>
       </View>
     </View>
