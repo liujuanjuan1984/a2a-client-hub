@@ -18,6 +18,15 @@ module.exports = {
         primary: "#5c6afb",
         accent: "#ffb347",
         muted: "#6b7280",
+        "neo-yellow": "#FFDE03",
+        "neo-bg": "#F5F5F5",
+        "neo-text": "#000000",
+      },
+      borderWidth: {
+        neo: "2px",
+      },
+      boxShadow: {
+        neo: "4px 4px 0px 0px rgba(0,0,0,1)",
       },
     },
   },

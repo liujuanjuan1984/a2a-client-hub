@@ -8,7 +8,7 @@ import {
 
 interface ButtonProps extends PressableProps {
   label: string;
-  variant?: "primary" | "outline" | "ghost" | "danger" | "secondary";
+  variant?: "primary" | "outline" | "ghost" | "danger" | "secondary" | "neo";
   size?: "xs" | "sm" | "md" | "lg";
   loading?: boolean;
   iconLeft?: React.ComponentProps<typeof Ionicons>["name"];
@@ -17,7 +17,7 @@ interface ButtonProps extends PressableProps {
 
 export function Button({
   label,
-  variant = "primary",
+  variant = "neo",
   size = "md",
   loading,
   iconLeft,
@@ -27,11 +27,16 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants = {
-    primary: "bg-primary",
-    secondary: "bg-slate-800",
-    outline: "border border-slate-700",
+    neo: "border-neo border-black bg-neo-yellow shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+    primary:
+      "border-neo border-black bg-neo-yellow shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+    secondary:
+      "border-neo border-black bg-white shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+    outline:
+      "border-neo border-black bg-white shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
     ghost: "",
-    danger: "border border-red-500/20 bg-red-500/10",
+    danger:
+      "border-neo border-black bg-red-500 shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
   };
 
   const sizes = {
@@ -49,19 +54,21 @@ export function Button({
   };
 
   const textColors = {
-    primary: "text-white",
-    secondary: "text-white",
-    outline: "text-white",
-    ghost: "text-white",
-    danger: "text-red-400",
+    neo: "text-neo-text",
+    primary: "text-neo-text",
+    secondary: "text-neo-text",
+    outline: "text-neo-text",
+    ghost: "text-neo-text",
+    danger: "text-white",
   };
 
   const iconColors = {
-    primary: "#ffffff",
-    secondary: "#ffffff",
-    outline: "#ffffff",
-    ghost: "#ffffff",
-    danger: "#f87171",
+    neo: "#000000",
+    primary: "#000000",
+    secondary: "#000000",
+    outline: "#000000",
+    ghost: "#000000",
+    danger: "#ffffff",
   };
 
   const iconSizes = {
@@ -75,7 +82,7 @@ export function Button({
 
   return (
     <Pressable
-      className={`rounded-2xl flex-row items-center justify-center ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-50" : ""} ${className || ""}`}
+      className={`flex-row items-center justify-center ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-50" : ""} ${className || ""}`}
       disabled={isDisabled}
       {...props}
     >
