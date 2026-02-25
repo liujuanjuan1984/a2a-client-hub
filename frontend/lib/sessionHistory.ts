@@ -73,7 +73,7 @@ export const mapSessionMessagesToChatMessages = (
       content: normalizedContent ?? "",
       createdAt: item.created_at,
       status: "done" as const,
-      blocks: role === "agent" ? blocks : [],
+      blocks,
     });
   });
   return mapped.sort((a, b) => a.createdAt.localeCompare(b.createdAt));

@@ -147,6 +147,7 @@ curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages:query" \
 ```
 
 `messages:query` returns message headers only (id/role/created_at/metadata).
+Message bodies are loaded from block endpoints for all roles.
 
 ### Query Message Blocks (Batch)
 

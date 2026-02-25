@@ -110,7 +110,7 @@ Message id contract:
 ## Block-based Streaming
 
 Chat streaming now uses a block timeline model.
-Each assistant message stores an ordered `MessageBlock[]`, where each block
+Each message stores an ordered `MessageBlock[]`, where each block
 has a `type` (`text`, `reasoning`, `tool_call`, or unknown), `content`, and
 `isFinished`.
 

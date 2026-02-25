@@ -233,8 +233,34 @@ async def test_record_local_invoke_messages_is_idempotent_with_key(
     assert first_refs["agent_message_id"] == second_refs["agent_message_id"]
     assert messages[0].invoke_idempotency_key == "run:abc:scheduled"
     assert messages[-1].sender == "agent"
-    assert messages[-1].content == ""
     assert messages[-1].invoke_idempotency_key == "run:abc:scheduled"
+    block_items, _, _ = await session_hub_service.query_message_blocks(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        message_ids=[
+            str(first_refs["user_message_id"]),
+            str(first_refs["agent_message_id"]),
+        ],
+        mode="full",
+    )
+    assert len(block_items) == 2
+    user_blocks = next(
+        item
+        for item in block_items
+        if item["messageId"] == str(first_refs["user_message_id"])
+    )
+    agent_blocks = next(
+        item
+        for item in block_items
+        if item["messageId"] == str(first_refs["agent_message_id"])
+    )
+    assert user_blocks["role"] == "user"
+    assert user_blocks["blockCount"] == 1
+    assert user_blocks["blocks"][0]["content"] == "hello"
+    assert agent_blocks["role"] == "agent"
+    assert agent_blocks["blockCount"] == 1
+    assert agent_blocks["blocks"][0]["content"] == "partial-updated"
 
 
 async def test_record_local_invoke_messages_normalizes_overlong_idempotency_key(
@@ -295,6 +321,31 @@ async def test_record_local_invoke_messages_normalizes_overlong_idempotency_key(
     assert first_refs["agent_message_id"] == second_refs["agent_message_id"]
     assert messages[0].invoke_idempotency_key == expected_key
     assert messages[-1].invoke_idempotency_key == expected_key
+    block_items, _, _ = await session_hub_service.query_message_blocks(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        message_ids=[
+            str(first_refs["user_message_id"]),
+            str(first_refs["agent_message_id"]),
+        ],
+        mode="full",
+    )
+    assert len(block_items) == 2
+    user_blocks = next(
+        item
+        for item in block_items
+        if item["messageId"] == str(first_refs["user_message_id"])
+    )
+    agent_blocks = next(
+        item
+        for item in block_items
+        if item["messageId"] == str(first_refs["agent_message_id"])
+    )
+    assert user_blocks["blockCount"] == 1
+    assert user_blocks["blocks"][0]["content"] == "hello"
+    assert agent_blocks["blockCount"] == 1
+    assert agent_blocks["blocks"][0]["content"] == "partial-updated"
 
 
 async def test_list_messages_returns_header_only_without_content_field(

@@ -158,18 +158,15 @@ class SessionHubService:
             offset=offset,
             conversation_id=resolved_conversation_id,
         )
-        agent_message_ids = [
-            message.id
-            for message in messages
-            if isinstance(message.id, UUID)
-            and _sender_to_role(message.sender) == "agent"
+        message_ids = [
+            message.id for message in messages if isinstance(message.id, UUID)
         ]
         blocks_by_message_id: dict[UUID, list[AgentMessageBlock]] = {}
-        if agent_message_ids:
+        if message_ids:
             blocks = await agent_message_block_handler.list_blocks_by_message_ids(
                 db,
                 user_id=user_id,
-                message_ids=agent_message_ids,
+                message_ids=message_ids,
             )
             for block in blocks:
                 if not isinstance(block.message_id, UUID):
@@ -187,10 +184,11 @@ class SessionHubService:
                 getattr(message, "message_metadata", None)
             )
             role = _sender_to_role(getattr(message, "sender", ""))
-            if isinstance(message.id, UUID) and role == "agent":
+            if isinstance(message.id, UUID):
                 block_entries = blocks_by_message_id.get(message.id, [])
                 if block_entries:
                     message_metadata["block_count"] = len(block_entries)
+            if isinstance(message.id, UUID) and role == "agent":
                 if isinstance(message.status, str) and message.status.strip():
                     message_metadata.setdefault("stream_status", message.status.strip())
                 stream_meta = message_metadata.get("stream")
@@ -276,18 +274,12 @@ class SessionHubService:
         if len(message_by_id) != len(resolved_message_ids):
             raise ValueError("message_not_found")
 
-        agent_message_ids = [
-            message_id
-            for message_id in resolved_message_ids
-            if _sender_to_role(getattr(message_by_id[message_id], "sender", ""))
-            == "agent"
-        ]
         blocks_by_message_id: dict[UUID, list[AgentMessageBlock]] = {}
-        if agent_message_ids:
+        if resolved_message_ids:
             blocks = await agent_message_block_handler.list_blocks_by_message_ids(
                 db,
                 user_id=user_id,
-                message_ids=agent_message_ids,
+                message_ids=resolved_message_ids,
             )
             for block in blocks:
                 if not isinstance(block.message_id, UUID):
@@ -298,15 +290,10 @@ class SessionHubService:
         for message_id in resolved_message_ids:
             message = message_by_id[message_id]
             role = _sender_to_role(getattr(message, "sender", ""))
-            if role == "agent":
-                raw_blocks = blocks_by_message_id.get(message_id, [])
-                rendered_blocks = _render_blocks_for_mode(raw_blocks, mode=mode)
-                block_count = len(raw_blocks)
-                has_blocks = bool(raw_blocks)
-            else:
-                rendered_blocks = _render_non_agent_blocks_for_mode(message, mode=mode)
-                block_count = len(rendered_blocks)
-                has_blocks = bool(rendered_blocks)
+            raw_blocks = blocks_by_message_id.get(message_id, [])
+            rendered_blocks = _render_blocks_for_mode(raw_blocks, mode=mode)
+            block_count = len(raw_blocks)
+            has_blocks = bool(raw_blocks)
             items.append(
                 {
                     "messageId": str(message_id),
@@ -347,15 +334,6 @@ class SessionHubService:
         )
         if message is None:
             raise ValueError("message_not_found")
-        role = _sender_to_role(getattr(message, "sender", ""))
-        if role != "agent":
-            non_agent_blocks = _render_non_agent_blocks_for_mode(message, mode="full")
-            if block_seq <= 0 or block_seq > len(non_agent_blocks):
-                raise ValueError("block_not_found")
-            return {
-                "messageId": str(resolved_message_id),
-                "block": non_agent_blocks[block_seq - 1],
-            }, False
         block = await agent_message_block_handler.find_block_by_message_and_block_seq(
             db,
             user_id=user_id,
@@ -691,7 +669,6 @@ class SessionHubService:
                 user_message = await agent_message_handler.create_agent_message(
                     db,
                     user_id=user_id,
-                    content=query,
                     sender="user",
                     status="done",
                     conversation_id=conversation_id,
@@ -727,7 +704,6 @@ class SessionHubService:
                 agent_message = await agent_message_handler.create_agent_message(
                     db,
                     user_id=user_id,
-                    content="",
                     sender="agent",
                     conversation_id=conversation_id,
                     status=resolved_agent_status,
@@ -758,7 +734,6 @@ class SessionHubService:
                 agent_message = await agent_message_handler.update_agent_message(
                     db,
                     message=recovered_agent_message,
-                    content="",
                     status=resolved_agent_status,
                     finish_reason=resolved_finish_reason,
                     error_code=resolved_error_code,
@@ -770,7 +745,6 @@ class SessionHubService:
             agent_message = await agent_message_handler.update_agent_message(
                 db,
                 message=existing_agent_message,
-                content="",
                 status=resolved_agent_status,
                 finish_reason=resolved_finish_reason,
                 error_code=resolved_error_code,
@@ -778,6 +752,36 @@ class SessionHubService:
                 message_metadata=agent_metadata,
                 invoke_idempotency_key=normalized_idempotency_key,
             )
+        await self._upsert_single_text_block(
+            db,
+            user_id=user_id,
+            message_id=user_message.id,
+            content=query,
+            source="user_input",
+        )
+        if isinstance(response_content, str) and response_content:
+            existing_agent_blocks = (
+                await agent_message_block_handler.list_blocks_by_message_id(
+                    db,
+                    user_id=user_id,
+                    message_id=agent_message.id,
+                )
+            )
+            can_upsert_snapshot = not existing_agent_blocks or (
+                len(existing_agent_blocks) == 1
+                and int(existing_agent_blocks[0].block_seq) == 1
+                and _normalize_block_type(existing_agent_blocks[0].block_type) == "text"
+                and normalize_non_empty_text(existing_agent_blocks[0].source)
+                in {"final_snapshot", "finalize_snapshot"}
+            )
+            if can_upsert_snapshot:
+                await self._upsert_single_text_block(
+                    db,
+                    user_id=user_id,
+                    message_id=agent_message.id,
+                    content=response_content,
+                    source="finalize_snapshot",
+                )
         target_session = session
         if conversation_id != session.id:
             rebound_session = await self._get_local_session_by_id(
@@ -1137,6 +1141,49 @@ class SessionHubService:
             message_id=agent_message_id,
         )
 
+    async def _upsert_single_text_block(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        message_id: UUID,
+        content: str,
+        source: str | None = None,
+    ) -> AgentMessageBlock | None:
+        existing = (
+            await agent_message_block_handler.find_block_by_message_and_block_seq(
+                db,
+                user_id=user_id,
+                message_id=message_id,
+                block_seq=1,
+            )
+        )
+        if existing is None:
+            existing = await _create_block_with_conflict_recovery(
+                db,
+                user_id=user_id,
+                message_id=message_id,
+                block_seq=1,
+                block_type="text",
+                content=str(content or ""),
+                is_finished=True,
+                source=normalize_non_empty_text(source),
+                start_event_seq=None,
+                end_event_seq=None,
+                start_event_id=None,
+                end_event_id=None,
+            )
+            if existing is None:
+                return None
+        existing.block_type = "text"
+        existing.content = str(content or "")
+        existing.is_finished = True
+        normalized_source = normalize_non_empty_text(source)
+        if normalized_source:
+            existing.source = normalized_source
+        await db.flush()
+        return existing
+
     async def _get_local_session_by_id(
         self,
         db: AsyncSession,
@@ -1391,31 +1438,6 @@ def _render_blocks_for_mode(
     blocks: list[AgentMessageBlock], *, mode: BlocksQueryMode
 ) -> list[dict[str, Any]]:
     return [_render_block_item(block, mode=mode) for block in blocks]
-
-
-def _render_non_agent_blocks_for_mode(
-    message: AgentMessage,
-    *,
-    mode: BlocksQueryMode,
-) -> list[dict[str, Any]]:
-    raw_content = message.content if isinstance(message.content, str) else ""
-    if not raw_content:
-        return []
-    if mode == "outline":
-        rendered_content: str | None = None
-    else:
-        rendered_content = raw_content
-    return [
-        {
-            "id": f"{message.id}:1",
-            "messageId": str(message.id),
-            "seq": 1,
-            "type": "text",
-            "content": rendered_content,
-            "contentLength": len(raw_content),
-            "isFinished": True,
-        }
-    ]
 
 
 def _derive_session_title_from_invoke_metadata(

@@ -38,7 +38,6 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
         comment="Canonical conversation identifier used for message grouping.",
         index=True,
     )
-    content = Column(Text, nullable=False)
     status = Column(
         String(24),
         nullable=False,
@@ -92,10 +91,7 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
     )
 
     def __repr__(self) -> str:
-        preview = (self.content or "")[:50]
-        return (
-            f"<AgentMessage(id={self.id}, sender={self.sender}, content={preview}...)>"
-        )
+        return f"<AgentMessage(id={self.id}, sender={self.sender})>"
 
 
 __all__ = ["AgentMessage"]

@@ -155,7 +155,8 @@ scheduled, and OpenCode sessions:
 
 - `POST /api/v1/me/conversations:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages:query`
-- `POST /api/v1/me/conversations/{conversation_id}/messages/{message_id}/blocks:query`
+- `POST /api/v1/me/conversations/{conversation_id}/messages/blocks:query`
+- `POST /api/v1/me/conversations/{conversation_id}/messages/{message_id}/blocks/{block_seq}:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
 
 `continue` now returns the canonical fields and binding metadata:
@@ -177,8 +178,11 @@ Message query contract boundary:
 - `messages:query` is a lightweight list endpoint and does not include
   `metadata.message_blocks`.
 - `SessionMessageItem.id` is the canonical local message UUID for all roles.
+- Message body is persisted and queried via ordered blocks for all roles
+  (`user`/`agent`/`system`).
 - For block-level payloads (reasoning/tool/text blocks), call
-  `messages/{message_id}/blocks:query` on demand.
+  `messages/blocks:query` (batch) or `messages/{message_id}/blocks/{block_seq}:query`
+  (single block detail) on demand.
 
 ## Checks (Before Pushing)
 

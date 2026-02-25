@@ -95,20 +95,29 @@ async def test_conversation_routes_use_conversation_id_only(
     user_message = AgentMessage(
         user_id=user.id,
         sender="user",
-        content="hello",
         conversation_id=manual_session.id,
         message_metadata={"context_id": "ctx-manual-1"},
     )
     agent_message = AgentMessage(
         user_id=user.id,
         sender="agent",
-        content="",
         conversation_id=manual_session.id,
         message_metadata={"context_id": "ctx-manual-1"},
     )
     async_db_session.add(user_message)
     async_db_session.add(agent_message)
     await async_db_session.flush()
+    async_db_session.add(
+        AgentMessageBlock(
+            user_id=user.id,
+            message_id=user_message.id,
+            block_seq=1,
+            block_type="text",
+            content="hello",
+            is_finished=True,
+            source="user_input",
+        )
+    )
     async_db_session.add(
         AgentMessageBlock(
             user_id=user.id,
@@ -216,17 +225,27 @@ async def test_continue_includes_opencode_session_metadata(
     async_db_session.add(session)
     await async_db_session.flush()
 
+    bound_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        message_metadata={
+            "provider": "opencode",
+            "external_session_id": "ses_upstream_1",
+            "context_id": "ctx-bound-1",
+        },
+    )
+    async_db_session.add(bound_message)
+    await async_db_session.flush()
     async_db_session.add(
-        AgentMessage(
+        AgentMessageBlock(
             user_id=user.id,
-            sender="agent",
+            message_id=bound_message.id,
+            block_seq=1,
+            block_type="text",
             content="bound",
-            conversation_id=session.id,
-            message_metadata={
-                "provider": "opencode",
-                "external_session_id": "ses_upstream_1",
-                "context_id": "ctx-bound-1",
-            },
+            is_finished=True,
+            source="finalize_snapshot",
         )
     )
     await async_db_session.commit()
@@ -307,17 +326,27 @@ async def test_list_sessions_filters_use_conversation_source_only(
     )
     async_db_session.add(session)
     await async_db_session.flush()
+    bound_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        message_metadata={
+            "provider": "opencode",
+            "external_session_id": "ses_filter_1",
+            "context_id": "ctx-filter-1",
+        },
+    )
+    async_db_session.add(bound_message)
+    await async_db_session.flush()
     async_db_session.add(
-        AgentMessage(
+        AgentMessageBlock(
             user_id=user.id,
-            sender="agent",
+            message_id=bound_message.id,
+            block_seq=1,
+            block_type="text",
             content="bound",
-            conversation_id=session.id,
-            message_metadata={
-                "provider": "opencode",
-                "external_session_id": "ses_filter_1",
-                "context_id": "ctx-filter-1",
-            },
+            is_finished=True,
+            source="finalize_snapshot",
         )
     )
     await async_db_session.commit()
@@ -374,24 +403,36 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
         "external_session_id": "ses_local_hist_1",
         "context_id": "ctx-local-hist-1",
     }
-    async_db_session.add(
-        AgentMessage(
-            user_id=user.id,
-            sender="user",
-            content="hello",
-            conversation_id=session.id,
-            message_metadata=metadata,
-        )
+    user_message = AgentMessage(
+        user_id=user.id,
+        sender="user",
+        conversation_id=session.id,
+        message_metadata=metadata,
     )
     agent_message = AgentMessage(
         user_id=user.id,
         sender="agent",
-        content="",
         conversation_id=session.id,
         message_metadata=metadata,
     )
+    async_db_session.add(user_message)
     async_db_session.add(agent_message)
     await async_db_session.flush()
+    async_db_session.add(
+        AgentMessageBlock(
+            user_id=user.id,
+            message_id=user_message.id,
+            block_seq=1,
+            start_event_seq=1,
+            end_event_seq=1,
+            start_event_id="evt-local-hist-user-1",
+            end_event_id="evt-local-hist-user-1",
+            block_type="text",
+            content="hello",
+            is_finished=True,
+            source="user_input",
+        )
+    )
     async_db_session.add(
         AgentMessageBlock(
             user_id=user.id,
@@ -454,16 +495,26 @@ async def test_continue_keeps_external_session_id_empty_when_missing(
     )
     async_db_session.add(session)
     await async_db_session.flush()
+    bound_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        message_metadata={
+            "provider": "opencode",
+            "context_id": "ses_context_only_1",
+        },
+    )
+    async_db_session.add(bound_message)
+    await async_db_session.flush()
     async_db_session.add(
-        AgentMessage(
+        AgentMessageBlock(
             user_id=user.id,
-            sender="agent",
+            message_id=bound_message.id,
+            block_seq=1,
+            block_type="text",
             content="bound-by-context",
-            conversation_id=session.id,
-            message_metadata={
-                "provider": "opencode",
-                "context_id": "ses_context_only_1",
-            },
+            is_finished=True,
+            source="finalize_snapshot",
         )
     )
     await async_db_session.commit()

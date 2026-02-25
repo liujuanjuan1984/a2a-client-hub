@@ -391,7 +391,6 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
             select(AgentMessage).where(AgentMessage.id == execution.agent_message_id)
         )
     assert agent_message is not None
-    assert agent_message.content == ""
     metadata = agent_message.message_metadata
     assert isinstance(metadata, dict)
     assert metadata["success"] is False
@@ -598,7 +597,15 @@ async def test_execute_claimed_task_persists_readable_agent_content(
     assert len(messages) >= 2
     agent_messages = [message for message in messages if message.sender == "agent"]
     assert agent_messages
-    assert agent_messages[-1].content == ""
+    async with async_session_maker() as check_db:
+        blocks = (
+            await check_db.scalars(
+                select(AgentMessageBlock)
+                .where(AgentMessageBlock.message_id == agent_messages[-1].id)
+                .order_by(AgentMessageBlock.block_seq.asc())
+            )
+        ).all()
+    assert blocks
 
 
 async def test_execute_claimed_task_creates_new_conversation_each_run(
