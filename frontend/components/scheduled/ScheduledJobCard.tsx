@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Switch, Text, View } from "react-native";
+import { Switch, Text, View, Pressable } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import {
@@ -13,6 +13,7 @@ import { formatLocalDateTime } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
+import { Ionicons } from "@expo/vector-icons";
 
 const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
   running: "text-blue-400",
@@ -156,7 +157,7 @@ export function ScheduledJobCard({
               {job.cycle_type} • Every {intervalTimePoint?.minutes ?? "-"} min
             </Text>
             <Text className={`mt-0.5 text-[11px] font-medium ${tone.text}`}>
-              Next: {formatLocalDateTime(job.next_run_at, timeZone)}
+              Next: {job.next_run_at_local ?? formatLocalDateTime(job.next_run_at_utc, timeZone)}
             </Text>
           </View>
           <Switch
@@ -246,7 +247,7 @@ export function ScheduledJobCard({
                     className="mb-2 rounded-xl bg-black/20 p-3"
                   >
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-[11px] font-bold text-slate-400">
+                      <Text className="text-[10px] font-bold text-slate-400">
                         {formatLocalDateTime(
                           execution.finished_at ??
                             execution.started_at ??

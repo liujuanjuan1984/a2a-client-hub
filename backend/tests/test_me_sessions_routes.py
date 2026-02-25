@@ -58,6 +58,7 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         async_db_session,
         user_id=user.id,
         is_superuser=user.is_superuser,
+        timezone_str=user.timezone or "UTC",
         name="Nightly",
         agent_id=agent.id,
         prompt="ping",
