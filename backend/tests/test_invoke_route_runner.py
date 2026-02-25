@@ -332,14 +332,6 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
             final_text="partial response",
             error_message="A2A stream total timeout after 60.0s",
             error_code="timeout",
-            message_blocks=[
-                {
-                    "id": "block-1",
-                    "type": "text",
-                    "content": "partial response",
-                    "is_finished": False,
-                }
-            ],
             elapsed_seconds=60.0,
             idle_seconds=0.1,
             terminal_event_seen=False,
@@ -533,14 +525,6 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
                     final_text="partial sse",
                     error_message="timeout",
                     error_code="timeout",
-                    message_blocks=[
-                        {
-                            "id": "block-1",
-                            "type": "text",
-                            "content": "partial sse",
-                            "is_finished": False,
-                        }
-                    ],
                     elapsed_seconds=60.0,
                     idle_seconds=1.0,
                     terminal_event_seen=False,
@@ -642,7 +626,6 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
                 final_text="ws final",
                 error_message=None,
                 error_code=None,
-                message_blocks=[],
                 elapsed_seconds=1.0,
                 idle_seconds=0.1,
                 terminal_event_seen=True,

@@ -54,7 +54,6 @@ class StreamOutcome:
     final_text: str
     error_message: str | None
     error_code: str | None
-    message_blocks: list[dict[str, Any]]
     elapsed_seconds: float
     idle_seconds: float
     terminal_event_seen: bool
@@ -643,11 +642,9 @@ class A2AInvokeService:
         - preserve append/overwrite semantics per update
         - accepted values: `text`, `reasoning`, `tool_call`
 
-        For non-typed events, keep legacy concatenation behavior.
         """
 
         def __init__(self) -> None:
-            self._legacy_chunks: list[str] = []
             self._blocks: list[dict[str, Any]] = []
             self._block_seq = 0
 
@@ -795,66 +792,29 @@ class A2AInvokeService:
                 artifact = payload.get("artifact")
                 if isinstance(artifact, dict):
                     block_type = self._extract_artifact_type(payload, artifact)
-                    if block_type:
-                        delta = self._extract_delta(payload, artifact)
-                        if not delta:
-                            return
-                        append = self._resolve_append(payload, artifact)
-                        done = self._resolve_done(payload, artifact)
-                        source = self._extract_artifact_source(artifact)
-                        self._apply_block_update(
-                            block_type=block_type,
-                            delta=delta,
-                            append=append,
-                            done=done,
-                            source=source,
-                        )
+                    if not block_type:
                         return
-                    text = self._extract_delta(payload, artifact)
-                    if text:
-                        self._legacy_chunks.append(text)
+                    delta = self._extract_delta(payload, artifact)
+                    if not delta:
+                        return
+                    append = self._resolve_append(payload, artifact)
+                    done = self._resolve_done(payload, artifact)
+                    source = self._extract_artifact_source(artifact)
+                    self._apply_block_update(
+                        block_type=block_type,
+                        delta=delta,
+                        append=append,
+                        done=done,
+                        source=source,
+                    )
                     return
 
-            content = payload.get("content")
-            if isinstance(content, str):
-                self._legacy_chunks.append(content)
-                return
-            message = payload.get("message")
-            if isinstance(message, str):
-                self._legacy_chunks.append(message)
-
         def result(self) -> str:
-            if self._blocks:
-                return "".join(
-                    block.get("content", "")
-                    for block in self._blocks
-                    if block.get("type") == "text"
-                    and isinstance(block.get("content"), str)
-                )
-            return "".join(self._legacy_chunks)
-
-        def result_metadata(self) -> dict[str, Any]:
-            from app.core.config import settings
-
-            max_chars = int(settings.opencode_stream_metadata_max_chars)
-            if not self._blocks:
-                return {}
-            blocks_payload: list[dict[str, Any]] = []
-            for block in self._blocks:
-                content = block.get("content")
-                if not isinstance(content, str) or not content:
-                    continue
-                blocks_payload.append(
-                    {
-                        "id": block.get("id"),
-                        "type": block.get("type"),
-                        "content": content[:max_chars],
-                        "is_finished": bool(block.get("is_finished")),
-                    }
-                )
-            if not blocks_payload:
-                return {}
-            return {"message_blocks": blocks_payload}
+            return "".join(
+                block.get("content", "")
+                for block in self._blocks
+                if block.get("type") == "text" and isinstance(block.get("content"), str)
+            )
 
     @staticmethod
     def serialize_stream_event(
@@ -1091,18 +1051,12 @@ class A2AInvokeService:
                         break
             except asyncio.CancelledError:
                 client_disconnected = True
-                partial_metadata = stream_text_accumulator.result_metadata()
-                blocks_payload = partial_metadata.get("message_blocks")
-                message_blocks = (
-                    list(blocks_payload) if isinstance(blocks_payload, list) else []
-                )
                 final_outcome = StreamOutcome(
                     success=False,
                     finish_reason=StreamFinishReason.CLIENT_DISCONNECT,
                     final_text=stream_text_accumulator.result() or "",
                     error_message=None,
                     error_code=None,
-                    message_blocks=message_blocks,
                     elapsed_seconds=time.monotonic() - started_at,
                     idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                     terminal_event_seen=terminal_event_seen,
@@ -1115,18 +1069,12 @@ class A2AInvokeService:
                     self._extract_error_code_from_exception(exc)
                     or self._STREAM_ERROR_CODE
                 )
-                partial_metadata = stream_text_accumulator.result_metadata()
-                blocks_payload = partial_metadata.get("message_blocks")
-                message_blocks = (
-                    list(blocks_payload) if isinstance(blocks_payload, list) else []
-                )
                 final_outcome = StreamOutcome(
                     success=False,
                     finish_reason=StreamFinishReason.UPSTREAM_ERROR,
                     final_text=stream_text_accumulator.result() or "",
                     error_message=self._STREAM_ERROR_MESSAGE,
                     error_code=error_code,
-                    message_blocks=message_blocks,
                     elapsed_seconds=time.monotonic() - started_at,
                     idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                     terminal_event_seen=False,
@@ -1144,24 +1092,18 @@ class A2AInvokeService:
                 if cache_key and self._is_terminal_status_event(serialized):
                     await global_stream_cache.mark_completed(cache_key)
                 if not stream_failed and not client_disconnected:
-                    final_metadata = stream_text_accumulator.result_metadata()
                     final_text = stream_text_accumulator.result()
                     await self._call_callback(
                         on_complete_metadata,
-                        final_metadata,
+                        {},
                     )
                     await self._call_callback(on_complete, final_text)
-                    blocks_payload = final_metadata.get("message_blocks")
-                    message_blocks = (
-                        list(blocks_payload) if isinstance(blocks_payload, list) else []
-                    )
                     final_outcome = StreamOutcome(
                         success=True,
                         finish_reason=StreamFinishReason.SUCCESS,
                         final_text=final_text,
                         error_message=None,
                         error_code=None,
-                        message_blocks=message_blocks,
                         elapsed_seconds=time.monotonic() - started_at,
                         idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                         terminal_event_seen=terminal_event_seen,
@@ -1296,39 +1238,27 @@ class A2AInvokeService:
                 if self._is_terminal_status_event(serialized):
                     terminal_event_seen = True
                     break
-            final_metadata = stream_text_accumulator.result_metadata()
             final_text = stream_text_accumulator.result()
-            await self._call_callback(on_complete_metadata, final_metadata)
+            await self._call_callback(on_complete_metadata, {})
             await self._call_callback(on_complete, final_text)
-            blocks_payload = final_metadata.get("message_blocks")
-            message_blocks = (
-                list(blocks_payload) if isinstance(blocks_payload, list) else []
-            )
             final_outcome = StreamOutcome(
                 success=True,
                 finish_reason=StreamFinishReason.SUCCESS,
                 final_text=final_text,
                 error_message=None,
                 error_code=None,
-                message_blocks=message_blocks,
                 elapsed_seconds=time.monotonic() - started_at,
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=terminal_event_seen,
             )
         except asyncio.CancelledError:
             client_disconnected = True
-            partial_metadata = stream_text_accumulator.result_metadata()
-            blocks_payload = partial_metadata.get("message_blocks")
-            message_blocks = (
-                list(blocks_payload) if isinstance(blocks_payload, list) else []
-            )
             final_outcome = StreamOutcome(
                 success=False,
                 finish_reason=StreamFinishReason.CLIENT_DISCONNECT,
                 final_text=stream_text_accumulator.result() or "",
                 error_message=None,
                 error_code=None,
-                message_blocks=message_blocks,
                 elapsed_seconds=time.monotonic() - started_at,
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=terminal_event_seen,
@@ -1338,18 +1268,12 @@ class A2AInvokeService:
             if self._is_client_disconnect_error(exc):
                 client_disconnected = True
                 logger.info("A2A WS client disconnected", extra=log_extra)
-                partial_metadata = stream_text_accumulator.result_metadata()
-                blocks_payload = partial_metadata.get("message_blocks")
-                message_blocks = (
-                    list(blocks_payload) if isinstance(blocks_payload, list) else []
-                )
                 final_outcome = StreamOutcome(
                     success=False,
                     finish_reason=StreamFinishReason.CLIENT_DISCONNECT,
                     final_text=stream_text_accumulator.result() or "",
                     error_message=None,
                     error_code=None,
-                    message_blocks=message_blocks,
                     elapsed_seconds=time.monotonic() - started_at,
                     idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                     terminal_event_seen=terminal_event_seen,
@@ -1363,18 +1287,12 @@ class A2AInvokeService:
                 "message": self._STREAM_ERROR_MESSAGE,
                 "error_code": error_code,
             }
-            partial_metadata = stream_text_accumulator.result_metadata()
-            blocks_payload = partial_metadata.get("message_blocks")
-            message_blocks = (
-                list(blocks_payload) if isinstance(blocks_payload, list) else []
-            )
             final_outcome = StreamOutcome(
                 success=False,
                 finish_reason=StreamFinishReason.UPSTREAM_ERROR,
                 final_text=stream_text_accumulator.result() or "",
                 error_message=self._STREAM_ERROR_MESSAGE,
                 error_code=error_code,
-                message_blocks=message_blocks,
                 elapsed_seconds=time.monotonic() - started_at,
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=False,
@@ -1470,18 +1388,12 @@ class A2AInvokeService:
                     timeout_message = (
                         f"A2A stream total timeout after {total_timeout:.1f}s"
                     )
-                    partial_metadata = stream_text_accumulator.result_metadata()
-                    blocks_payload = partial_metadata.get("message_blocks")
-                    message_blocks = (
-                        list(blocks_payload) if isinstance(blocks_payload, list) else []
-                    )
                     outcome = StreamOutcome(
                         success=False,
                         finish_reason=StreamFinishReason.TIMEOUT_TOTAL,
                         final_text=stream_text_accumulator.result() or "",
                         error_message=timeout_message,
                         error_code="timeout",
-                        message_blocks=message_blocks,
                         elapsed_seconds=time.monotonic() - started_at,
                         idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                         terminal_event_seen=False,
@@ -1523,18 +1435,12 @@ class A2AInvokeService:
                         )
                         finish_reason = StreamFinishReason.TIMEOUT_IDLE
                     partial_content = stream_text_accumulator.result()
-                    partial_metadata = stream_text_accumulator.result_metadata()
-                    blocks_payload = partial_metadata.get("message_blocks")
-                    message_blocks = (
-                        list(blocks_payload) if isinstance(blocks_payload, list) else []
-                    )
                     outcome = StreamOutcome(
                         success=False,
                         finish_reason=finish_reason,
                         final_text=partial_content or "",
                         error_message=timeout_message,
                         error_code="timeout",
-                        message_blocks=message_blocks,
                         elapsed_seconds=time.monotonic() - started_at,
                         idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                         terminal_event_seen=False,
@@ -1589,24 +1495,18 @@ class A2AInvokeService:
                     terminal_event_seen = True
                     break
 
-            final_metadata = stream_text_accumulator.result_metadata()
             await self._call_callback(
                 on_complete_metadata,
-                final_metadata,
+                {},
             )
             final_text = stream_text_accumulator.result()
             await self._call_callback(on_complete, final_text)
-            blocks_payload = final_metadata.get("message_blocks")
-            message_blocks = (
-                list(blocks_payload) if isinstance(blocks_payload, list) else []
-            )
             outcome = StreamOutcome(
                 success=True,
                 finish_reason=StreamFinishReason.SUCCESS,
                 final_text=final_text,
                 error_message=None,
                 error_code=None,
-                message_blocks=message_blocks,
                 elapsed_seconds=time.monotonic() - started_at,
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=terminal_event_seen,
@@ -1621,18 +1521,12 @@ class A2AInvokeService:
             return outcome
         except asyncio.CancelledError:
             partial_content = stream_text_accumulator.result()
-            partial_metadata = stream_text_accumulator.result_metadata()
-            blocks_payload = partial_metadata.get("message_blocks")
-            message_blocks = (
-                list(blocks_payload) if isinstance(blocks_payload, list) else []
-            )
             outcome = StreamOutcome(
                 success=False,
                 finish_reason=StreamFinishReason.CLIENT_DISCONNECT,
                 final_text=partial_content or "",
                 error_message=None,
                 error_code=None,
-                message_blocks=message_blocks,
                 elapsed_seconds=time.monotonic() - started_at,
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=terminal_event_seen,
@@ -1662,18 +1556,12 @@ class A2AInvokeService:
                 self._extract_error_code_from_exception(exc) or self._STREAM_ERROR_CODE
             )
             partial_content = stream_text_accumulator.result()
-            partial_metadata = stream_text_accumulator.result_metadata()
-            blocks_payload = partial_metadata.get("message_blocks")
-            message_blocks = (
-                list(blocks_payload) if isinstance(blocks_payload, list) else []
-            )
             outcome = StreamOutcome(
                 success=False,
                 finish_reason=StreamFinishReason.UPSTREAM_ERROR,
                 final_text=partial_content or "",
                 error_message=self._STREAM_ERROR_MESSAGE,
                 error_code=error_code,
-                message_blocks=message_blocks,
                 elapsed_seconds=time.monotonic() - started_at,
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=False,

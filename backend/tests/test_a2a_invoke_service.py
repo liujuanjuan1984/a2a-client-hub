@@ -206,7 +206,7 @@ async def test_sse_on_complete_uses_typed_text_blocks_for_response_content():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_metadata_includes_message_blocks():
+async def test_sse_on_complete_metadata_is_empty_dict():
     metadata_payloads: list[dict] = []
 
     async def _on_complete_metadata(payload: dict):
@@ -244,30 +244,7 @@ async def test_sse_on_complete_metadata_includes_message_blocks():
     async for _ in response.body_iterator:
         pass
 
-    assert metadata_payloads == [
-        {
-            "message_blocks": [
-                {
-                    "id": "block-1",
-                    "type": "reasoning",
-                    "content": "thinking",
-                    "is_finished": True,
-                },
-                {
-                    "id": "block-2",
-                    "type": "tool_call",
-                    "content": "run_tool()",
-                    "is_finished": True,
-                },
-                {
-                    "id": "block-3",
-                    "type": "text",
-                    "content": "done",
-                    "is_finished": False,
-                },
-            ]
-        }
-    ]
+    assert metadata_payloads == [{}]
 
 
 @pytest.mark.asyncio
@@ -312,78 +289,7 @@ async def test_sse_invokes_complete_metadata_before_complete():
 
 
 @pytest.mark.asyncio
-async def test_sse_complete_metadata_uses_configurable_max_chars(monkeypatch):
-    original = settings.opencode_stream_metadata_max_chars
-    monkeypatch.setattr(settings, "opencode_stream_metadata_max_chars", 5)
-
-    metadata_payloads: list[dict] = []
-
-    async def _on_complete_metadata(payload: dict):
-        metadata_payloads.append(payload)
-
-    response = a2a_invoke_service.stream_sse(
-        gateway=_GatewayWithEvents(
-            [
-                _artifact_event(
-                    artifact_id="task-1:stream:reasoning",
-                    text="123456789",
-                    block_type="reasoning",
-                ),
-                _artifact_event(
-                    artifact_id="task-1:stream:tool_call",
-                    text="abcdefghi",
-                    block_type="tool_call",
-                ),
-                _artifact_event(
-                    artifact_id="task-1:stream",
-                    text="done",
-                    block_type="text",
-                ),
-            ]
-        ),
-        resolved=object(),
-        query="hello",
-        context_id=None,
-        metadata=None,
-        validate_message=lambda _: [],
-        logger=logging.getLogger(__name__),
-        log_extra={},
-        on_complete_metadata=_on_complete_metadata,
-    )
-    async for _ in response.body_iterator:
-        pass
-
-    assert metadata_payloads == [
-        {
-            "message_blocks": [
-                {
-                    "id": "block-1",
-                    "type": "reasoning",
-                    "content": "12345",
-                    "is_finished": True,
-                },
-                {
-                    "id": "block-2",
-                    "type": "tool_call",
-                    "content": "abcde",
-                    "is_finished": True,
-                },
-                {
-                    "id": "block-3",
-                    "type": "text",
-                    "content": "done",
-                    "is_finished": False,
-                },
-            ]
-        }
-    ]
-    monkeypatch.setattr(
-        settings, "opencode_stream_metadata_max_chars", original
-    )  # explicit reset for safety
-
-
-@pytest.mark.asyncio
-async def test_sse_on_complete_falls_back_for_non_typed_events():
+async def test_sse_on_complete_ignores_non_typed_events():
     completed: list[str] = []
 
     async def _on_complete(text: str):
@@ -411,7 +317,7 @@ async def test_sse_on_complete_falls_back_for_non_typed_events():
     async for _ in response.body_iterator:
         pass
 
-    assert completed == ["foobar"]
+    assert completed == [""]
 
 
 @pytest.mark.asyncio
@@ -519,7 +425,11 @@ async def test_sse_drops_invalid_artifact_update_events():
                     text="dropped",
                     block_type="text",
                 ),
-                {"content": "kept"},
+                _artifact_event(
+                    artifact_id="task-valid:stream",
+                    text="kept",
+                    block_type="text",
+                ),
             ]
         ),
         resolved=object(),
@@ -529,6 +439,7 @@ async def test_sse_drops_invalid_artifact_update_events():
         validate_message=lambda payload: (
             ["invalid artifact event"]
             if payload.get("kind") == "artifact-update"
+            and payload.get("artifact", {}).get("artifact_id") == "task-invalid:stream"
             else []
         ),
         logger=logging.getLogger(__name__),
@@ -540,7 +451,16 @@ async def test_sse_drops_invalid_artifact_update_events():
         pass
 
     assert completed == ["kept"]
-    assert observed_events == [{"content": "kept"}]
+    assert observed_events == [
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "artifact_id": "task-valid:stream",
+                "parts": [{"kind": "text", "text": "kept"}],
+                "metadata": {"opencode": {"block_type": "text"}},
+            },
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -819,7 +739,11 @@ async def test_sse_stream_reports_client_disconnect_to_finalized_callback() -> N
 
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithSingleEventThenPending(
-            first_event={"content": "partial text"}
+            first_event=_artifact_event(
+                artifact_id="task-client-disconnect:stream",
+                text="partial text",
+                block_type="text",
+            )
         ),
         resolved=object(),
         query="hello",
@@ -858,7 +782,14 @@ async def test_consume_stream_finalized_callback_failure_is_isolated(caplog):
     with caplog.at_level(logging.WARNING):
         result = await a2a_invoke_service.consume_stream(
             gateway=_GatewayWithEvents(
-                [{"content": "ok"}, {"kind": "status-update", "final": True}]
+                [
+                    _artifact_event(
+                        artifact_id="task-finalized:stream",
+                        text="ok",
+                        block_type="text",
+                    ),
+                    {"kind": "status-update", "final": True},
+                ]
             ),
             resolved=object(),
             query="hello",
@@ -893,7 +824,14 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
     monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithDelayedEvents(
-            [{"content": "late-event"}, {"kind": "status-update", "final": True}],
+            [
+                _artifact_event(
+                    artifact_id="task-heartbeat:stream",
+                    text="late-event",
+                    block_type="text",
+                ),
+                {"kind": "status-update", "final": True},
+            ],
             delay_seconds=0.05,
         ),
         resolved=object(),
@@ -964,8 +902,6 @@ async def test_consume_stream_reports_total_timeout_with_partial_content(monkeyp
     assert result.finish_reason == StreamFinishReason.TIMEOUT_TOTAL
     assert result.error_code == "timeout"
     assert result.final_text == "partial result"
-    assert result.message_blocks
-    assert result.message_blocks[0]["content"] == "partial result"
 
 
 @pytest.mark.asyncio
@@ -999,7 +935,11 @@ async def test_consume_stream_reports_idle_timeout_with_partial_content(monkeypa
     )
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithSingleEventThenPending(
-            first_event={"content": "partial text"}
+            first_event=_artifact_event(
+                artifact_id="task-idle-timeout:stream",
+                text="partial text",
+                block_type="text",
+            )
         ),
         resolved=object(),
         query="hello",
