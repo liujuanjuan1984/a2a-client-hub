@@ -116,26 +116,22 @@ export function AgentListScreen() {
               className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
             >
               <View className="p-5">
-                <View className="flex-row items-start justify-between">
-                  <View className="flex-1 pr-4">
-                    <Text
-                      className="text-lg font-bold text-white"
-                      numberOfLines={1}
-                    >
-                      {agent.name}
-                    </Text>
-                    {agent.source === "shared" ? (
-                      <View className="mt-2 self-start rounded-lg bg-primary/10 border border-primary/20 px-2 py-0.5">
-                        <Text className="text-[10px] font-bold text-primary">
-                          SHARED
-                        </Text>
-                      </View>
-                    ) : (
-                      <Text className="mt-1 text-xs font-medium text-slate-400">
-                        Personal Agent
-                      </Text>
-                    )}
-                  </View>
+                <View className="flex-row items-center justify-between">
+                  <Text
+                    className="text-lg font-bold text-white flex-1 pr-4"
+                    numberOfLines={1}
+                  >
+                    {agent.name}
+                  </Text>
+                  <Text
+                    className={`text-[10px] font-bold uppercase tracking-widest ${
+                      agent.source === "shared"
+                        ? "text-neo-cyan"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {agent.source === "shared" ? "SHARED" : "PERSONAL"}
+                  </Text>
                 </View>
               </View>
 
