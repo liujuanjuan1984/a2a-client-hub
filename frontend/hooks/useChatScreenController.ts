@@ -76,6 +76,8 @@ export function useChatScreenController({
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
   const sendMessage = useChatStore((state) => state.sendMessage);
+  const retryMessage = useChatStore((state) => state.retryMessage);
+  const resumeMessage = useChatStore((state) => state.resumeMessage);
   const clearPendingInterrupt = useChatStore(
     (state) => state.clearPendingInterrupt,
   );
@@ -721,33 +723,25 @@ export function useChatScreenController({
       session?.streamState === "streaming"
     )
       return;
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.role === "user") {
-      sendMessage(
+    if (session?.streamState === "recoverable") {
+      if (typeof resumeMessage === "function") {
+        resumeMessage(conversationId).catch(() => undefined);
+      }
+      return;
+    }
+    if (typeof retryMessage === "function") {
+      retryMessage(
         conversationId,
         activeAgentId,
-        lastMessage.content,
         agent?.source || "personal",
-      );
-    } else {
-      const lastUserMessage = [...messages]
-        .reverse()
-        .find((m) => m.role === "user");
-      if (lastUserMessage) {
-        sendMessage(
-          conversationId,
-          activeAgentId,
-          lastUserMessage.content,
-          agent?.source || "personal",
-        );
-      }
+      ).catch(() => undefined);
     }
   }, [
     activeAgentId,
     agent?.source,
     conversationId,
-    messages,
-    sendMessage,
+    retryMessage,
+    resumeMessage,
     session?.streamState,
   ]);
 

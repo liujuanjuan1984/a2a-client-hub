@@ -348,6 +348,62 @@ async def test_record_local_invoke_messages_normalizes_overlong_idempotency_key(
     assert agent_blocks["blocks"][0]["content"] == "partial-updated"
 
 
+async def test_record_local_invoke_messages_rejects_idempotency_query_conflict(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    refs = await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="first-query",
+        response_content="ok",
+        success=True,
+        context_id="ctx-1",
+        idempotency_key="same-key",
+    )
+    await async_db_session.flush()
+
+    with pytest.raises(ValueError, match="idempotency_conflict"):
+        await session_hub_service.record_local_invoke_messages(
+            async_db_session,
+            session=thread,
+            source="manual",
+            user_id=user.id,
+            agent_id=uuid4(),
+            agent_source="personal",
+            query="second-query",
+            response_content="ok-2",
+            success=True,
+            context_id="ctx-1",
+            idempotency_key="same-key",
+        )
+
+    block_items, _, _ = await session_hub_service.query_message_blocks(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        message_ids=[str(refs["user_message_id"])],
+        mode="full",
+    )
+    assert len(block_items) == 1
+    assert block_items[0]["blockCount"] == 1
+    assert block_items[0]["blocks"][0]["content"] == "first-query"
+
+
 async def test_list_messages_returns_header_only_without_content_field(
     async_db_session,
 ):

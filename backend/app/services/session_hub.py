@@ -8,6 +8,7 @@ This module provides a single read model for session list/history/continue acros
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional
 from uuid import UUID
@@ -564,6 +565,8 @@ class SessionHubService:
             "conversation_id": str(session.id),
             "success": success,
         }
+        query_hash = _build_query_hash(query)
+        metadata["query_hash"] = query_hash
         (
             provider_from_invoke,
             external_session_id,
@@ -698,6 +701,14 @@ class SessionHubService:
             user_message = existing_user_message
             if normalized_idempotency_key:
                 user_message.invoke_idempotency_key = normalized_idempotency_key
+        await self._ensure_idempotent_user_query(
+            db,
+            user_id=user_id,
+            user_message=user_message,
+            query=query,
+            query_hash=query_hash,
+            idempotency_key=normalized_idempotency_key,
+        )
 
         if existing_agent_message is None:
             try:
@@ -1141,6 +1152,44 @@ class SessionHubService:
             message_id=agent_message_id,
         )
 
+    async def _ensure_idempotent_user_query(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        user_message: AgentMessage,
+        query: str,
+        query_hash: str,
+        idempotency_key: str | None,
+    ) -> None:
+        if not idempotency_key:
+            return
+        message_metadata = dict(getattr(user_message, "message_metadata", None) or {})
+        existing_query_hash = normalize_non_empty_text(
+            message_metadata.get("query_hash")
+        )
+        if existing_query_hash and existing_query_hash != query_hash:
+            raise ValueError("idempotency_conflict")
+        if not existing_query_hash:
+            first_block = (
+                await agent_message_block_handler.find_block_by_message_and_block_seq(
+                    db,
+                    user_id=user_id,
+                    message_id=user_message.id,
+                    block_seq=1,
+                )
+            )
+            if first_block is not None:
+                persisted_query = (
+                    first_block.content if isinstance(first_block.content, str) else ""
+                )
+                if persisted_query != query:
+                    raise ValueError("idempotency_conflict")
+        if message_metadata.get("query_hash") != query_hash:
+            message_metadata["query_hash"] = query_hash
+            user_message.message_metadata = message_metadata
+            await db.flush()
+
     async def _upsert_single_text_block(
         self,
         db: AsyncSession,
@@ -1454,6 +1503,10 @@ def _derive_session_title_from_invoke_metadata(
         if nested_title:
             return nested_title[: ConversationThread.TITLE_MAX_LENGTH]
     return None
+
+
+def _build_query_hash(query: str) -> str:
+    return hashlib.sha256(str(query or "").encode("utf-8")).hexdigest()
 
 
 session_hub_service = SessionHubService()

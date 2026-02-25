@@ -10,7 +10,7 @@ import {
   sortSessionsByLastActive,
   type AgentSession,
 } from "@/lib/chat-utils";
-import { generateId, generateUuid } from "@/lib/id";
+import { generateUuid } from "@/lib/id";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
@@ -31,6 +31,11 @@ type ChatState = {
     conversationId: string,
     agentId: string,
     content: string,
+    agentSource: AgentSource,
+  ) => Promise<void>;
+  retryMessage: (
+    conversationId: string,
+    agentId: string,
     agentSource: AgentSource,
   ) => Promise<void>;
   resumeMessage: (conversationId: string) => Promise<void>;
@@ -234,14 +239,14 @@ export const useChatStore = create<ChatState>()(
         get().cancelMessage(conversationId);
 
         const userMessage = {
-          id: generateId(),
+          id: generateUuid(),
           role: "user" as const,
           content: trimmed,
           createdAt: new Date().toISOString(),
           status: "done" as const,
         };
 
-        const agentMessageId = generateId();
+        const agentMessageId = generateUuid();
         const agentMessage = {
           id: agentMessageId,
           role: "agent" as const,
@@ -285,6 +290,79 @@ export const useChatStore = create<ChatState>()(
           agentSource,
           payload,
           agentMessage.id,
+          get,
+          set,
+        );
+      },
+      retryMessage: async (conversationId, agentId, agentSource) => {
+        const session = get().sessions[conversationId];
+        const userMessageId = session?.lastUserMessageId;
+        const agentMessageId = session?.lastAgentMessageId;
+        if (!userMessageId || !agentMessageId) {
+          return;
+        }
+        const messageStore = useMessageStore.getState();
+        const messages = messageStore.messages[conversationId] ?? [];
+        const userMessage = messages.find(
+          (message) => message.id === userMessageId && message.role === "user",
+        );
+        if (!userMessage) {
+          return;
+        }
+
+        get().cancelMessage(conversationId);
+
+        const existingAgentMessage = messages.find(
+          (message) =>
+            message.id === agentMessageId && message.role === "agent",
+        );
+        if (existingAgentMessage) {
+          messageStore.updateMessage(conversationId, agentMessageId, {
+            content: "",
+            blocks: [],
+            status: "streaming",
+          });
+        } else {
+          messageStore.addMessage(conversationId, {
+            id: agentMessageId,
+            role: "agent",
+            content: "",
+            blocks: [],
+            createdAt: new Date().toISOString(),
+            status: "streaming",
+          });
+        }
+
+        set((state) => ({
+          sessions: {
+            ...state.sessions,
+            [conversationId]: {
+              ...(state.sessions[conversationId] ??
+                createAgentSession(agentId)),
+              lastActiveAt: new Date().toISOString(),
+              streamState: "streaming",
+              lastStreamError: null,
+              lastUserMessageId: userMessageId,
+              lastAgentMessageId: agentMessageId,
+              pendingInterrupt: null,
+            },
+          },
+        }));
+
+        const payload = buildInvokePayload(
+          userMessage.content,
+          get().sessions[conversationId] ?? createAgentSession(agentId),
+          conversationId,
+          {
+            userMessageId,
+          },
+        );
+        await executeChatRuntime(
+          conversationId,
+          agentId,
+          agentSource,
+          payload,
+          agentMessageId,
           get,
           set,
         );
