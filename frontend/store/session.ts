@@ -1,6 +1,8 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 import { type UserProfile } from "@/lib/api/types";
+import { createPersistStorage } from "@/lib/storage/mmkv";
 
 export type AuthStatus = "authenticated" | "refreshing" | "expired";
 
@@ -43,53 +45,69 @@ type SessionState = {
   setHydrated: (value: boolean) => void;
 };
 
-export const useSessionStore = create<SessionState>()((set) => ({
-  token: null,
-  user: null,
-  accessTokenExpiresAtMs: null,
-  accessTokenTtlSeconds: null,
-  authStatus: "expired",
-  authVersion: 0,
-  hydrated: false,
-  setAccessToken: (token, expiresInSeconds) =>
-    set((state) => {
-      const normalizedTtl = normalizeExpiresInSeconds(expiresInSeconds);
-      return {
-        token,
-        accessTokenTtlSeconds:
-          normalizedTtl ?? (token ? state.accessTokenTtlSeconds : null),
-        accessTokenExpiresAtMs:
-          normalizedTtl !== null
-            ? toExpiresAtMs(normalizedTtl)
-            : token
-              ? state.accessTokenExpiresAtMs
-              : null,
-        authStatus: token ? "authenticated" : "expired",
-        authVersion: state.authVersion + 1,
-      };
-    }),
-  setSession: ({ token, user, expiresInSeconds }) =>
-    set((state) => {
-      const normalizedTtl = normalizeExpiresInSeconds(expiresInSeconds);
-      return {
-        token,
-        user,
-        accessTokenTtlSeconds: normalizedTtl,
-        accessTokenExpiresAtMs: toExpiresAtMs(normalizedTtl),
-        authStatus: "authenticated",
-        authVersion: state.authVersion + 1,
-      };
-    }),
-  clearSession: () =>
-    set((state) => ({
+export const useSessionStore = create<SessionState>()(
+  persist(
+    (set) => ({
       token: null,
       user: null,
       accessTokenExpiresAtMs: null,
       accessTokenTtlSeconds: null,
       authStatus: "expired",
-      authVersion: state.authVersion + 1,
-    })),
-  setUserProfile: (user) => set({ user }),
-  setAuthStatus: (authStatus) => set({ authStatus }),
-  setHydrated: (value) => set({ hydrated: value }),
-}));
+      authVersion: 0,
+      hydrated: false,
+      setAccessToken: (token, expiresInSeconds) =>
+        set((state) => {
+          const normalizedTtl = normalizeExpiresInSeconds(expiresInSeconds);
+          return {
+            token,
+            accessTokenTtlSeconds:
+              normalizedTtl ?? (token ? state.accessTokenTtlSeconds : null),
+            accessTokenExpiresAtMs:
+              normalizedTtl !== null
+                ? toExpiresAtMs(normalizedTtl)
+                : token
+                  ? state.accessTokenExpiresAtMs
+                  : null,
+            authStatus: token ? "authenticated" : "expired",
+            authVersion: state.authVersion + 1,
+          };
+        }),
+      setSession: ({ token, user, expiresInSeconds }) =>
+        set((state) => {
+          const normalizedTtl = normalizeExpiresInSeconds(expiresInSeconds);
+          return {
+            token,
+            user,
+            accessTokenTtlSeconds: normalizedTtl,
+            accessTokenExpiresAtMs: toExpiresAtMs(normalizedTtl),
+            authStatus: "authenticated",
+            authVersion: state.authVersion + 1,
+          };
+        }),
+      clearSession: () =>
+        set((state) => ({
+          token: null,
+          user: null,
+          accessTokenExpiresAtMs: null,
+          accessTokenTtlSeconds: null,
+          authStatus: "expired",
+          authVersion: state.authVersion + 1,
+        })),
+      setUserProfile: (user) => set({ user }),
+      setAuthStatus: (authStatus) => set({ authStatus }),
+      setHydrated: (value) => set({ hydrated: value }),
+    }),
+    {
+      name: "a2a-client-hub.session",
+      storage: createPersistStorage(),
+      partialize: (state) => ({
+        token: state.token,
+        user: state.user,
+        accessTokenExpiresAtMs: state.accessTokenExpiresAtMs,
+        accessTokenTtlSeconds: state.accessTokenTtlSeconds,
+        authStatus: state.authStatus,
+        authVersion: state.authVersion,
+      }),
+    },
+  ),
+);

@@ -71,11 +71,27 @@ jest.mock("@expo/vector-icons", () => {
   };
 });
 
+jest.mock("expo-crypto", () => ({
+  getRandomBytesAsync: jest.fn(async (size: number) => {
+    const bytes = new Uint8Array(size);
+    for (let i = 0; i < size; i++) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+    return bytes;
+  }),
+}));
+
+jest.mock("expo-secure-store", () => ({
+  getItemAsync: jest.fn(async () => "mocked-encryption-key"),
+  setItemAsync: jest.fn(async () => {}),
+  deleteItemAsync: jest.fn(async () => {}),
+}));
+
 jest.mock("react-native/Libraries/AppState/AppState", () => ({
   AppState: {
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
-    currentState: "active"
-  }
+    currentState: "active",
+  },
 }));
 
 jest.mock("react-native/Libraries/Utilities/Dimensions", () => {

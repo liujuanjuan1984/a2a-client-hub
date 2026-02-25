@@ -11,7 +11,7 @@ const isWeb = Platform.OS === "web";
 
 const MMKV_ENCRYPTION_KEY = "a2a-mmkv-encryption-key";
 
-let mmkvInstance: MMKV | null = null;
+const mmkvInstances: Record<string, MMKV> = {};
 
 const bytesToHex = (bytes: Uint8Array) =>
   Array.from(bytes)
@@ -29,9 +29,9 @@ const generateEncryptionKey = async () => {
   return bytesToHex(bytes);
 };
 
-const getMmkvInstance = async () => {
+const getMmkvInstance = async (id: string = "a2a-client-hub-storage") => {
   if (isWeb || isExpoGo) return null;
-  if (mmkvInstance) return mmkvInstance;
+  if (mmkvInstances[id]) return mmkvInstances[id];
 
   try {
     let encryptionKey = await SecureStore.getItemAsync(MMKV_ENCRYPTION_KEY);
@@ -39,15 +39,25 @@ const getMmkvInstance = async () => {
       encryptionKey = await generateEncryptionKey();
       await SecureStore.setItemAsync(MMKV_ENCRYPTION_KEY, encryptionKey);
     }
-    mmkvInstance = new MMKV({
-      id: "a2a-client-hub-storage",
+    mmkvInstances[id] = new MMKV({
+      id,
       encryptionKey,
     });
-    return mmkvInstance;
+    return mmkvInstances[id];
   } catch (error) {
-    console.error("[storage] Failed to initialize encrypted MMKV:", error);
+    console.error(
+      `[storage] Failed to initialize encrypted MMKV (${id}):`,
+      error,
+    );
     return null;
   }
+};
+
+const getInstanceId = (name: string) => {
+  if (name.includes("messages")) return "a2a-messages-storage";
+  if (name.includes("chat") || name.includes("session"))
+    return "a2a-session-storage";
+  return "a2a-client-hub-storage";
 };
 
 const asyncStorageFallback: StateStorage = {
@@ -69,9 +79,34 @@ export const mmkvStateStorage: StateStorage = {
         ? window.localStorage.getItem(name)
         : null;
     }
-    const mmkv = await getMmkvInstance();
+    const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
-      return mmkv.getString(name) ?? null;
+      try {
+        const value = mmkv.getString(name);
+        if (value) {
+          // Basic consistency check: must be valid JSON if it's not empty
+          JSON.parse(value);
+          return value;
+        }
+        return null;
+      } catch (error) {
+        console.error(`[storage] Data corruption detected for ${name}:`, error);
+        // Try recovery from backup if available
+        try {
+          const backup = mmkv.getString(`${name}.bak`);
+          if (backup) {
+            JSON.parse(backup);
+            console.info(`[storage] Recovered ${name} from backup`);
+            return backup;
+          }
+        } catch (backupError) {
+          console.error(
+            `[storage] Backup also corrupted for ${name}:`,
+            backupError,
+          );
+        }
+        return null;
+      }
     }
     return await asyncStorageFallback.getItem(name);
   },
@@ -82,9 +117,17 @@ export const mmkvStateStorage: StateStorage = {
       }
       return;
     }
-    const mmkv = await getMmkvInstance();
+    const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
-      mmkv.set(name, value);
+      try {
+        mmkv.set(name, value);
+        // Save backup for critical stores (non-messages)
+        if (!name.includes("messages")) {
+          mmkv.set(`${name}.bak`, value);
+        }
+      } catch (error) {
+        console.error(`[storage] Failed to set ${name} in MMKV:`, error);
+      }
       return;
     }
     await asyncStorageFallback.setItem(name, value);
@@ -96,9 +139,14 @@ export const mmkvStateStorage: StateStorage = {
       }
       return;
     }
-    const mmkv = await getMmkvInstance();
+    const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
-      mmkv.delete(name);
+      try {
+        mmkv.delete(name);
+        mmkv.delete(`${name}.bak`);
+      } catch (error) {
+        console.error(`[storage] Failed to delete ${name} from MMKV:`, error);
+      }
       return;
     }
     await asyncStorageFallback.removeItem(name);
