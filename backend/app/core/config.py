@@ -554,15 +554,15 @@ class Settings(BaseSettings):
         alias="A2A_SCHEDULE_TASK_STREAM_IDLE_TIMEOUT",
         description="Idle timeout in seconds for scheduled A2A stream execution (no upstream chunk received).",
     )
-    a2a_schedule_recovery_timeout_seconds: int = Field(
-        default=2400,
-        alias="A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS",
-        description="Timeout in seconds before a running scheduled task is considered stale by recovery.",
-    )
     a2a_schedule_run_lease_seconds: int = Field(
         default=2400,
         alias="A2A_SCHEDULE_RUN_LEASE_SECONDS",
-        description="Lease timeout in seconds for one scheduled run before recovery finalization.",
+        description="Configured lease timeout in seconds for one scheduled run before recovery finalization.",
+    )
+    a2a_schedule_run_lease_grace_seconds: int = Field(
+        default=120,
+        alias="A2A_SCHEDULE_RUN_LEASE_GRACE_SECONDS",
+        description="Additional grace seconds added on top of invoke timeout for recovery lease enforcement.",
     )
     a2a_schedule_task_failure_threshold: int = Field(
         default=3,
@@ -716,16 +716,25 @@ class Settings(BaseSettings):
             raise ValueError("Scheduled A2A timeout values must not exceed 86400")
         return value
 
-    @field_validator(
-        "a2a_schedule_recovery_timeout_seconds", "a2a_schedule_run_lease_seconds"
-    )
+    @field_validator("a2a_schedule_run_lease_seconds")
     @classmethod
-    def validate_a2a_schedule_recovery_timeout_seconds(cls, value: int) -> int:
+    def validate_a2a_schedule_run_lease_seconds(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("A2A schedule recovery timeout values must be positive")
+            raise ValueError("A2A schedule run lease seconds must be positive")
+        if value > 604_800:
+            raise ValueError("A2A schedule run lease seconds must not exceed 604800")
+        return value
+
+    @field_validator("a2a_schedule_run_lease_grace_seconds")
+    @classmethod
+    def validate_a2a_schedule_run_lease_grace_seconds(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError(
+                "A2A schedule run lease grace seconds must be zero or positive"
+            )
         if value > 604_800:
             raise ValueError(
-                "A2A schedule recovery timeout values must not exceed 604800"
+                "A2A schedule run lease grace seconds must not exceed 604800"
             )
         return value
 

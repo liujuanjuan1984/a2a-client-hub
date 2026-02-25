@@ -104,9 +104,11 @@ Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your backend.
 以下参数建议在生产环境显式配置，用于避免长事务与调度悬挂：
 
 - `A2A_SCHEDULE_RUN_LEASE_SECONDS`
-  - 调度运行 lease 超时（恢复扫描依据），建议 900~3600 秒。
+  - 调度运行 lease 超时（恢复扫描依据）。系统会强制使用 `max(该值, invoke_timeout + grace)`。
+- `A2A_SCHEDULE_RUN_LEASE_GRACE_SECONDS`
+  - 在 `invoke` 总超时基础上额外增加的恢复缓冲秒数，建议 120~600 秒。
 - `A2A_SCHEDULE_TASK_INVOKE_TIMEOUT`
-  - 单次调度 invoke 的总超时（与 lease 解耦），建议大于常见任务耗时上界。
+  - 单次调度 invoke 的总超时。建议按业务允许的最长单次运行时长设置。
 - `A2A_SCHEDULE_TASK_STREAM_IDLE_TIMEOUT`
   - 上游流空闲超时，建议 30~120 秒。
 - PostgreSQL `idle_in_transaction_session_timeout`

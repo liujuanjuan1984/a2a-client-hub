@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 from datetime import timedelta
 from uuid import uuid4
 
@@ -118,6 +119,30 @@ async def _refresh_ops_metrics() -> None:
         except Exception:
             # pg_stat_activity may be unavailable depending on DB permissions.
             pass
+
+
+def _effective_run_lease_seconds() -> int:
+    configured_lease_seconds = max(int(settings.a2a_schedule_run_lease_seconds), 1)
+    invoke_timeout_seconds = max(float(settings.a2a_schedule_task_invoke_timeout), 1.0)
+    lease_grace_seconds = max(int(settings.a2a_schedule_run_lease_grace_seconds), 0)
+    minimum_lease_seconds = int(math.ceil(invoke_timeout_seconds)) + lease_grace_seconds
+
+    if configured_lease_seconds < minimum_lease_seconds:
+        logger.warning(
+            (
+                "Configured schedule run lease seconds is lower than "
+                "invoke timeout + grace; using clamped lease value."
+            ),
+            extra={
+                "configured_lease_seconds": configured_lease_seconds,
+                "invoke_timeout_seconds": invoke_timeout_seconds,
+                "lease_grace_seconds": lease_grace_seconds,
+                "effective_lease_seconds": minimum_lease_seconds,
+            },
+        )
+        return minimum_lease_seconds
+
+    return configured_lease_seconds
 
 
 async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
@@ -422,9 +447,10 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
     # Recover stale "running" tasks first so the UI doesn't get stuck forever if a
     # worker crashes after claiming a task but before persisting the execution.
     async with AsyncSessionLocal() as db:
+        run_lease_timeout_seconds = _effective_run_lease_seconds()
         recovered = await a2a_schedule_service.recover_stale_running_tasks(
             db,
-            timeout_seconds=int(settings.a2a_schedule_run_lease_seconds),
+            timeout_seconds=run_lease_timeout_seconds,
         )
     if recovered:
         logger.warning(
