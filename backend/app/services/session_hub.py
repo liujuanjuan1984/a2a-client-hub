@@ -17,8 +17,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent_message import AgentMessage
+from app.db.models.agent_message_chunk import AgentMessageChunk
 from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message as agent_message_handler
+from app.handlers import agent_message_chunk as agent_message_chunk_handler
 from app.services.conversation_identity import conversation_identity_service
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import extract_provider_and_external_session_id
@@ -155,6 +157,23 @@ class SessionHubService:
             offset=offset,
             conversation_id=resolved_conversation_id,
         )
+        agent_message_ids = [
+            message.id
+            for message in messages
+            if isinstance(message.id, UUID)
+            and _sender_to_role(message.sender) == "agent"
+        ]
+        chunks_by_message_id: dict[UUID, list[AgentMessageChunk]] = {}
+        if agent_message_ids:
+            chunks = await agent_message_chunk_handler.list_chunks_by_message_ids(
+                db,
+                user_id=user_id,
+                message_ids=agent_message_ids,
+            )
+            for chunk in chunks:
+                if not isinstance(chunk.message_id, UUID):
+                    continue
+                chunks_by_message_id.setdefault(chunk.message_id, []).append(chunk)
         total = await agent_message_handler.count_agent_messages(
             db,
             user_id=user_id,
@@ -165,11 +184,40 @@ class SessionHubService:
         for message in messages:
             message_metadata = dict(getattr(message, "message_metadata", None) or {})
             message_metadata.setdefault("local_message_id", str(message.id))
+            resolved_content = message.content or ""
+            if (
+                isinstance(message.id, UUID)
+                and _sender_to_role(getattr(message, "sender", "")) == "agent"
+            ):
+                chunk_entries = chunks_by_message_id.get(message.id, [])
+                if chunk_entries:
+                    projected_content, projected_blocks = _project_message_from_chunks(
+                        chunk_entries
+                    )
+                    if projected_content:
+                        resolved_content = projected_content
+                    if projected_blocks:
+                        message_metadata["message_blocks"] = projected_blocks
+                if isinstance(message.status, str) and message.status.strip():
+                    message_metadata.setdefault("stream_status", message.status.strip())
+                stream_meta = message_metadata.get("stream")
+                if not isinstance(stream_meta, dict):
+                    stream_meta = {}
+                if message.finish_reason:
+                    stream_meta.setdefault("finish_reason", message.finish_reason)
+                if message.error_code:
+                    existing_error = stream_meta.get("error")
+                    if not isinstance(existing_error, dict):
+                        existing_error = {}
+                    existing_error.setdefault("error_code", message.error_code)
+                    stream_meta["error"] = existing_error
+                if stream_meta:
+                    message_metadata["stream"] = stream_meta
             items.append(
                 {
                     "id": _resolve_local_message_item_id(message, message_metadata),
                     "role": _sender_to_role(getattr(message, "sender", "")),
-                    "content": message.content or "",
+                    "content": resolved_content,
                     "created_at": message.created_at,
                     "metadata": message_metadata,
                 }
@@ -405,6 +453,9 @@ class SessionHubService:
         extra_metadata: Optional[Dict[str, Any]] = None,
         response_metadata: Optional[Dict[str, Any]] = None,
         idempotency_key: Optional[str] = None,
+        agent_status: str | None = None,
+        finish_reason: str | None = None,
+        error_code: str | None = None,
     ) -> dict[str, UUID]:
         metadata: Dict[str, Any] = {
             "source": source,
@@ -480,6 +531,8 @@ class SessionHubService:
             agent_metadata["client_message_id"] = normalized_client_agent_message_id
         if response_metadata:
             for key, value in response_metadata.items():
+                if key == "message_blocks":
+                    continue
                 if (
                     key in agent_metadata
                     and isinstance(agent_metadata[key], dict)
@@ -490,6 +543,16 @@ class SessionHubService:
                     agent_metadata[key] = merged_nested
                     continue
                 agent_metadata[key] = value
+        resolved_agent_status = (
+            normalize_non_empty_text(agent_status)
+            if isinstance(agent_status, str)
+            else None
+        )
+        if not resolved_agent_status:
+            resolved_agent_status = "done" if success else "error"
+        resolved_finish_reason = normalize_non_empty_text(finish_reason)
+        resolved_error_code = normalize_non_empty_text(error_code)
+        summary_text = _derive_agent_summary_text(response_content)
         existing_user_message: AgentMessage | None = None
         existing_agent_message: AgentMessage | None = None
         if normalized_idempotency_key:
@@ -515,6 +578,7 @@ class SessionHubService:
                     user_id=user_id,
                     content=query,
                     sender="user",
+                    status="done",
                     conversation_id=conversation_id,
                     metadata=metadata,
                     invoke_idempotency_key=normalized_idempotency_key,
@@ -551,6 +615,10 @@ class SessionHubService:
                     content=response_content,
                     sender="agent",
                     conversation_id=conversation_id,
+                    status=resolved_agent_status,
+                    finish_reason=resolved_finish_reason,
+                    error_code=resolved_error_code,
+                    summary_text=summary_text,
                     metadata=agent_metadata,
                     invoke_idempotency_key=normalized_idempotency_key,
                 )
@@ -576,6 +644,10 @@ class SessionHubService:
                     db,
                     message=recovered_agent_message,
                     content=response_content,
+                    status=resolved_agent_status,
+                    finish_reason=resolved_finish_reason,
+                    error_code=resolved_error_code,
+                    summary_text=summary_text,
                     message_metadata=agent_metadata,
                     invoke_idempotency_key=normalized_idempotency_key,
                 )
@@ -584,6 +656,10 @@ class SessionHubService:
                 db,
                 message=existing_agent_message,
                 content=response_content,
+                status=resolved_agent_status,
+                finish_reason=resolved_finish_reason,
+                error_code=resolved_error_code,
+                summary_text=summary_text,
                 message_metadata=agent_metadata,
                 invoke_idempotency_key=normalized_idempotency_key,
             )
@@ -675,6 +751,9 @@ class SessionHubService:
         extra_metadata: Optional[Dict[str, Any]] = None,
         response_metadata: Optional[Dict[str, Any]] = None,
         idempotency_key: Optional[str] = None,
+        agent_status: str | None = None,
+        finish_reason: str | None = None,
+        error_code: str | None = None,
     ) -> dict[str, UUID]:
         session = await self._get_local_session_by_id(
             db,
@@ -701,7 +780,163 @@ class SessionHubService:
             extra_metadata=extra_metadata,
             response_metadata=response_metadata,
             idempotency_key=idempotency_key,
+            agent_status=agent_status,
+            finish_reason=finish_reason,
+            error_code=error_code,
         )
+
+    async def ensure_local_invoke_message_headers_by_local_session_id(
+        self,
+        db: AsyncSession,
+        *,
+        local_session_id: UUID,
+        source: SessionSource,
+        user_id: UUID,
+        agent_id: UUID,
+        agent_source: Literal["personal", "shared"],
+        query: str,
+        context_id: Optional[str],
+        user_message_id: Optional[str] = None,
+        client_agent_message_id: Optional[str] = None,
+        invoke_metadata: Optional[Dict[str, Any]] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> dict[str, UUID]:
+        session = await self._get_local_session_by_id(
+            db,
+            user_id=user_id,
+            local_session_id=local_session_id,
+        )
+        if session is None:
+            return {}
+
+        normalized_idempotency_key = normalize_idempotency_key(idempotency_key)
+        if normalized_idempotency_key:
+            existing_user_message = await db.scalar(
+                select(AgentMessage).where(
+                    and_(
+                        AgentMessage.user_id == user_id,
+                        AgentMessage.conversation_id == local_session_id,
+                        AgentMessage.sender.in_(["user", "automation"]),
+                        AgentMessage.invoke_idempotency_key
+                        == normalized_idempotency_key,
+                    )
+                )
+            )
+            existing_agent_message = await db.scalar(
+                select(AgentMessage).where(
+                    and_(
+                        AgentMessage.user_id == user_id,
+                        AgentMessage.conversation_id == local_session_id,
+                        AgentMessage.sender == "agent",
+                        AgentMessage.invoke_idempotency_key
+                        == normalized_idempotency_key,
+                    )
+                )
+            )
+            if existing_user_message and existing_agent_message:
+                return {
+                    "conversation_id": local_session_id,
+                    "user_message_id": existing_user_message.id,
+                    "agent_message_id": existing_agent_message.id,
+                }
+
+        return await self.record_local_invoke_messages(
+            db,
+            session=session,
+            source=source,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            response_content="",
+            success=False,
+            context_id=context_id,
+            user_message_id=user_message_id,
+            client_agent_message_id=client_agent_message_id,
+            invoke_metadata=invoke_metadata,
+            extra_metadata=extra_metadata,
+            response_metadata=None,
+            idempotency_key=idempotency_key,
+            agent_status="streaming",
+            finish_reason=None,
+            error_code=None,
+        )
+
+    async def append_agent_message_chunk(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent_message_id: UUID,
+        seq: int,
+        block_type: str,
+        content: str,
+        append: bool,
+        is_finished: bool,
+        event_id: str | None = None,
+        source: str | None = None,
+    ) -> AgentMessageChunk | None:
+        if seq <= 0:
+            return None
+        message = await db.scalar(
+            select(AgentMessage).where(
+                and_(
+                    AgentMessage.id == agent_message_id,
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.sender == "agent",
+                )
+            )
+        )
+        if message is None:
+            return None
+        normalized_event_id = normalize_non_empty_text(event_id)
+        if normalized_event_id:
+            existing_by_event = (
+                await agent_message_chunk_handler.find_chunk_by_message_and_event_id(
+                    db,
+                    user_id=user_id,
+                    message_id=agent_message_id,
+                    event_id=normalized_event_id,
+                )
+            )
+            if existing_by_event is not None:
+                return None
+        existing_by_seq = (
+            await agent_message_chunk_handler.find_chunk_by_message_and_seq(
+                db,
+                user_id=user_id,
+                message_id=agent_message_id,
+                seq=seq,
+            )
+        )
+        if existing_by_seq is not None:
+            return None
+        try:
+            return await agent_message_chunk_handler.create_chunk(
+                db,
+                user_id=user_id,
+                message_id=agent_message_id,
+                seq=seq,
+                block_type=block_type,
+                content=content,
+                append=append,
+                is_finished=is_finished,
+                event_id=normalized_event_id,
+                source=normalize_non_empty_text(source),
+            )
+        except IntegrityError as exc:
+            if not (
+                _is_idempotency_unique_violation(
+                    exc, index_name="uq_agent_message_chunks_message_id_seq"
+                )
+                or _is_idempotency_unique_violation(
+                    exc, index_name="uq_agent_message_chunks_message_id_event_id"
+                )
+            ):
+                raise
+            await db.rollback()
+            return None
 
     async def _get_local_session_by_id(
         self,
@@ -889,6 +1124,99 @@ def _derive_session_title_from_query(query: str) -> str | None:
     if not trimmed_query:
         return None
     return trimmed_query[: ConversationThread.TITLE_MAX_LENGTH]
+
+
+def _derive_agent_summary_text(content: str | None, *, max_chars: int = 2048) -> str:
+    if not isinstance(content, str):
+        return ""
+    trimmed = content.strip()
+    if not trimmed:
+        return ""
+    return trimmed[:max_chars]
+
+
+def _project_message_from_chunks(
+    chunks: list[AgentMessageChunk],
+) -> tuple[str, list[dict[str, Any]]]:
+    ordered = sorted(
+        chunks,
+        key=lambda item: (
+            int(item.seq) if isinstance(item.seq, int) else 0,
+            item.created_at,
+            item.id,
+        ),
+    )
+    projected_blocks: list[dict[str, Any]] = []
+    block_seq = 0
+    for chunk in ordered:
+        delta = chunk.content if isinstance(chunk.content, str) else ""
+        block_type = (
+            chunk.block_type.strip().lower()
+            if isinstance(chunk.block_type, str) and chunk.block_type.strip()
+            else "text"
+        )
+        append = bool(chunk.append)
+        is_finished = bool(chunk.is_finished)
+        source = (
+            chunk.source.strip().lower()
+            if isinstance(chunk.source, str) and chunk.source.strip()
+            else None
+        )
+        overwrite = (not append) or source == "final_snapshot"
+        last = projected_blocks[-1] if projected_blocks else None
+
+        def _mark_last_finished() -> None:
+            if isinstance(last, dict) and last.get("is_finished") is False:
+                last["is_finished"] = True
+
+        if overwrite:
+            if (
+                isinstance(last, dict)
+                and last.get("type") == block_type
+                and last.get("is_finished") is False
+            ):
+                last["content"] = delta
+                last["is_finished"] = is_finished
+                continue
+            _mark_last_finished()
+            block_seq += 1
+            projected_blocks.append(
+                {
+                    "id": f"block-{block_seq}",
+                    "type": block_type,
+                    "content": delta,
+                    "is_finished": is_finished,
+                }
+            )
+            continue
+
+        if (
+            isinstance(last, dict)
+            and last.get("type") == block_type
+            and last.get("is_finished") is False
+        ):
+            current = last.get("content")
+            last["content"] = f"{current if isinstance(current, str) else ''}{delta}"
+            last["is_finished"] = is_finished
+            continue
+
+        _mark_last_finished()
+        block_seq += 1
+        projected_blocks.append(
+            {
+                "id": f"block-{block_seq}",
+                "type": block_type,
+                "content": delta,
+                "is_finished": is_finished,
+            }
+        )
+
+    text_content = "".join(
+        block.get("content", "")
+        for block in projected_blocks
+        if block.get("type") == "text" and isinstance(block.get("content"), str)
+    )
+    return text_content, projected_blocks
 
 
 def _derive_session_title_from_invoke_metadata(

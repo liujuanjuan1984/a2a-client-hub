@@ -13,6 +13,7 @@ from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_message import AgentMessage
+from app.db.models.agent_message_chunk import AgentMessageChunk
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_job import _execute_claimed_task
 from app.services.a2a_schedule_service import (
@@ -379,9 +380,19 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
     assert metadata["stream"]["schema_version"] == 1
     assert metadata["stream"]["finish_reason"] == "timeout_total"
     assert metadata["stream"]["error"]["error_code"] == "timeout"
-    message_blocks = metadata["message_blocks"]
-    assert isinstance(message_blocks, list)
-    assert message_blocks[0]["content"] == "partial response"
+    assert metadata["chunk_count"] >= 1
+    assert "message_blocks" not in metadata
+
+    async with async_session_maker() as check_db:
+        chunks = (
+            await check_db.scalars(
+                select(AgentMessageChunk)
+                .where(AgentMessageChunk.message_id == execution.agent_message_id)
+                .order_by(AgentMessageChunk.seq.asc())
+            )
+        ).all()
+    assert chunks
+    assert chunks[0].content == "partial response"
 
 
 async def test_execute_claimed_task_runtime_failure_does_not_create_conversation(

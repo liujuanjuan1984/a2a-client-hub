@@ -65,6 +65,9 @@ class _InvokeState:
     persisted_success: bool | None = None
     persisted_error_code: str | None = None
     persisted_finish_reason: str | None = None
+    idempotency_key: str | None = None
+    next_chunk_seq: int = 1
+    persisted_chunk_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -286,8 +289,8 @@ def _build_stream_metadata_from_outcome(
         final_metadata.update(state.stream_identity)
     if state.stream_usage:
         final_metadata["usage"] = dict(state.stream_usage)
-    if outcome.message_blocks:
-        final_metadata["message_blocks"] = list(outcome.message_blocks)
+    if state.persisted_chunk_count > 0:
+        final_metadata["chunk_count"] = state.persisted_chunk_count
     normalized_error_message = normalize_non_empty_text(outcome.error_message)
     stream_error = None
     if not outcome.success and (normalized_error_message or outcome.error_code):
@@ -324,6 +327,202 @@ def _resolve_invoke_idempotency_key(
     return None
 
 
+def _coerce_uuid(value: Any) -> UUID | None:
+    if isinstance(value, UUID):
+        return value
+    if isinstance(value, str):
+        try:
+            return UUID(value.strip())
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _resolve_agent_status_from_outcome(outcome: StreamOutcome) -> str:
+    if outcome.success:
+        return "done"
+    if outcome.finish_reason.value in {
+        "client_disconnect",
+        "timeout_total",
+        "timeout_idle",
+    }:
+        return "interrupted"
+    return "error"
+
+
+async def _ensure_local_message_headers(
+    *,
+    state: _InvokeState,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    query: str,
+    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
+    stream_enabled: bool,
+) -> None:
+    if state.local_session_id is None or state.local_source is None:
+        return
+    existing_agent_id = (
+        _coerce_uuid(state.message_refs.get("agent_message_id"))
+        if isinstance(state.message_refs, dict)
+        else None
+    )
+    existing_user_id = (
+        _coerce_uuid(state.message_refs.get("user_message_id"))
+        if isinstance(state.message_refs, dict)
+        else None
+    )
+    if existing_agent_id is not None and existing_user_id is not None:
+        return
+
+    idempotency_key = state.idempotency_key or _resolve_invoke_idempotency_key(
+        state=state,
+        transport=transport,
+    )
+    state.idempotency_key = idempotency_key
+    async with AsyncSessionLocal() as persist_db:
+        if not hasattr(persist_db, "scalar"):
+            return
+        refs = await session_hub_service.ensure_local_invoke_message_headers_by_local_session_id(
+            persist_db,
+            local_session_id=state.local_session_id,
+            source=state.local_source,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            context_id=state.context_id,
+            user_message_id=state.user_message_id,
+            client_agent_message_id=state.client_agent_message_id,
+            invoke_metadata=state.metadata,
+            extra_metadata={"transport": transport, "stream": stream_enabled},
+            idempotency_key=idempotency_key,
+        )
+        await commit_safely(persist_db)
+    if refs:
+        state.message_refs = refs
+
+
+async def _persist_stream_chunk(
+    *,
+    state: _InvokeState,
+    event_payload: dict[str, Any],
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    query: str,
+    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
+    stream_enabled: bool,
+) -> None:
+    stream_chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        event_payload
+    )
+    if stream_chunk is None:
+        return
+    await _ensure_local_message_headers(
+        state=state,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        query=query,
+        transport=transport,
+        stream_enabled=stream_enabled,
+    )
+    agent_message_id = (
+        _coerce_uuid(state.message_refs.get("agent_message_id"))
+        if isinstance(state.message_refs, dict)
+        else None
+    )
+    if agent_message_id is None:
+        return
+
+    raw_seq = stream_chunk.get("seq")
+    resolved_seq = raw_seq if isinstance(raw_seq, int) and raw_seq > 0 else None
+    if resolved_seq is None:
+        resolved_seq = state.next_chunk_seq
+    state.next_chunk_seq = max(state.next_chunk_seq, resolved_seq + 1)
+
+    async with AsyncSessionLocal() as persist_db:
+        if not hasattr(persist_db, "scalar"):
+            return
+        persisted_chunk = await session_hub_service.append_agent_message_chunk(
+            persist_db,
+            user_id=user_id,
+            agent_message_id=agent_message_id,
+            seq=resolved_seq,
+            block_type=str(stream_chunk.get("block_type") or "text"),
+            content=str(stream_chunk.get("content") or ""),
+            append=bool(stream_chunk.get("append", True)),
+            is_finished=bool(stream_chunk.get("is_finished", False)),
+            event_id=(
+                str(stream_chunk.get("event_id"))
+                if isinstance(stream_chunk.get("event_id"), str)
+                else None
+            ),
+            source=(
+                str(stream_chunk.get("source"))
+                if isinstance(stream_chunk.get("source"), str)
+                else None
+            ),
+        )
+        if persisted_chunk is not None:
+            await commit_safely(persist_db)
+            state.persisted_chunk_count += 1
+
+
+async def _persist_outcome_blocks_fallback(
+    *,
+    state: _InvokeState,
+    outcome: StreamOutcome,
+    user_id: UUID,
+) -> None:
+    if state.persisted_chunk_count > 0:
+        return
+    if not outcome.message_blocks:
+        return
+    agent_message_id = (
+        _coerce_uuid(state.message_refs.get("agent_message_id"))
+        if isinstance(state.message_refs, dict)
+        else None
+    )
+    if agent_message_id is None:
+        return
+    async with AsyncSessionLocal() as persist_db:
+        if not hasattr(persist_db, "scalar"):
+            return
+        wrote_any = False
+        for block in outcome.message_blocks:
+            if not isinstance(block, dict):
+                continue
+            content = block.get("content")
+            if not isinstance(content, str):
+                continue
+            block_type = block.get("type")
+            seq = state.next_chunk_seq
+            state.next_chunk_seq += 1
+            persisted = await session_hub_service.append_agent_message_chunk(
+                persist_db,
+                user_id=user_id,
+                agent_message_id=agent_message_id,
+                seq=seq,
+                block_type=(
+                    block_type.strip()
+                    if isinstance(block_type, str) and block_type.strip()
+                    else "text"
+                ),
+                content=content,
+                append=False,
+                is_finished=bool(block.get("is_finished", True)),
+                event_id=None,
+                source="final_snapshot",
+            )
+            if persisted is not None:
+                wrote_any = True
+                state.persisted_chunk_count += 1
+        if wrote_any:
+            await commit_safely(persist_db)
+
+
 async def _persist_local_outcome(
     *,
     state: _InvokeState,
@@ -338,16 +537,31 @@ async def _persist_local_outcome(
 ) -> None:
     if state.local_session_id is None or state.local_source is None:
         return
+    await _ensure_local_message_headers(
+        state=state,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        query=query,
+        transport=transport,
+        stream_enabled=stream_enabled,
+    )
+    await _persist_outcome_blocks_fallback(
+        state=state,
+        outcome=outcome,
+        user_id=user_id,
+    )
     persisted_content = outcome.final_text or str(outcome.error_message or "")
     metadata_payload = _build_stream_metadata_from_outcome(
         state=state,
         outcome=outcome,
         response_metadata=response_metadata,
     )
-    idempotency_key = _resolve_invoke_idempotency_key(
+    idempotency_key = state.idempotency_key or _resolve_invoke_idempotency_key(
         state=state,
         transport=transport,
     )
+    state.idempotency_key = idempotency_key
     async with AsyncSessionLocal() as persist_db:
         message_refs = (
             await session_hub_service.record_local_invoke_messages_by_local_session_id(
@@ -367,6 +581,9 @@ async def _persist_local_outcome(
                 extra_metadata={"transport": transport, "stream": stream_enabled},
                 response_metadata=metadata_payload,
                 idempotency_key=idempotency_key,
+                agent_status=_resolve_agent_status_from_outcome(outcome),
+                finish_reason=outcome.finish_reason.value,
+                error_code=outcome.error_code,
             )
         )
         await commit_safely(persist_db)
@@ -392,6 +609,16 @@ def _build_consume_stream_callbacks(
 ]:
     async def on_event(event_payload: dict[str, Any]) -> None:
         _collect_stream_hints(state=state, event_payload=event_payload)
+        await _persist_stream_chunk(
+            state=state,
+            event_payload=event_payload,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            transport=transport,
+            stream_enabled=stream_enabled,
+        )
 
     async def on_finalized(outcome: StreamOutcome) -> None:
         await _persist_local_outcome(

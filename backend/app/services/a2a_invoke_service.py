@@ -435,6 +435,71 @@ class A2AInvokeService:
         return cls._extract_usage_hints_from_payload(payload)
 
     @classmethod
+    def extract_stream_chunk_from_serialized_event(
+        cls, payload: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+
+        event_id = cls._pick_non_empty_str(payload, ("event_id", "eventId"))
+        seq = cls._extract_event_sequence(payload)
+        message_id = cls._pick_non_empty_str(payload, ("message_id", "messageId"))
+
+        if payload.get("kind") == "artifact-update":
+            artifact = as_dict(payload.get("artifact"))
+            block_type = cls._StreamTextAccumulator._extract_artifact_type(
+                payload, artifact
+            )
+            if block_type is None:
+                block_type = "text"
+            delta = cls._StreamTextAccumulator._extract_delta(payload, artifact)
+            if not isinstance(delta, str) or not delta:
+                return None
+            append = cls._StreamTextAccumulator._resolve_append(payload, artifact)
+            is_finished = cls._StreamTextAccumulator._resolve_done(payload, artifact)
+            source = cls._StreamTextAccumulator._extract_artifact_source(artifact)
+            if not message_id:
+                message_id = cls._pick_non_empty_str(
+                    artifact, ("message_id", "messageId")
+                )
+            return {
+                "event_id": event_id,
+                "seq": seq,
+                "message_id": message_id,
+                "block_type": block_type,
+                "content": delta,
+                "append": append,
+                "is_finished": is_finished,
+                "source": source,
+            }
+
+        content = payload.get("content")
+        if isinstance(content, str) and content:
+            return {
+                "event_id": event_id,
+                "seq": seq,
+                "message_id": message_id,
+                "block_type": "text",
+                "content": content,
+                "append": True,
+                "is_finished": False,
+                "source": None,
+            }
+        message = payload.get("message")
+        if isinstance(message, str) and message:
+            return {
+                "event_id": event_id,
+                "seq": seq,
+                "message_id": message_id,
+                "block_type": "text",
+                "content": message,
+                "append": True,
+                "is_finished": False,
+                "source": None,
+            }
+        return None
+
+    @classmethod
     def _coerce_payload_to_dict(cls, payload: Any) -> dict[str, Any]:
         resolved_payload = payload
         if isinstance(resolved_payload, tuple):
@@ -1272,10 +1337,45 @@ class A2AInvokeService:
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=terminal_event_seen,
             )
+        except asyncio.CancelledError:
+            client_disconnected = True
+            partial_metadata = stream_text_accumulator.result_metadata()
+            blocks_payload = partial_metadata.get("message_blocks")
+            message_blocks = (
+                list(blocks_payload) if isinstance(blocks_payload, list) else []
+            )
+            final_outcome = StreamOutcome(
+                success=False,
+                finish_reason=StreamFinishReason.CLIENT_DISCONNECT,
+                final_text=stream_text_accumulator.result() or "",
+                error_message=None,
+                error_code=None,
+                message_blocks=message_blocks,
+                elapsed_seconds=time.monotonic() - started_at,
+                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                terminal_event_seen=terminal_event_seen,
+            )
+            raise
         except Exception as exc:
             if self._is_client_disconnect_error(exc):
                 client_disconnected = True
                 logger.info("A2A WS client disconnected", extra=log_extra)
+                partial_metadata = stream_text_accumulator.result_metadata()
+                blocks_payload = partial_metadata.get("message_blocks")
+                message_blocks = (
+                    list(blocks_payload) if isinstance(blocks_payload, list) else []
+                )
+                final_outcome = StreamOutcome(
+                    success=False,
+                    finish_reason=StreamFinishReason.CLIENT_DISCONNECT,
+                    final_text=stream_text_accumulator.result() or "",
+                    error_message=None,
+                    error_code=None,
+                    message_blocks=message_blocks,
+                    elapsed_seconds=time.monotonic() - started_at,
+                    idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                    terminal_event_seen=terminal_event_seen,
+                )
                 return
             logger.warning("A2A WS stream failed", exc_info=True, extra=log_extra)
             error_code = (
@@ -1311,7 +1411,7 @@ class A2AInvokeService:
         finally:
             if cache_key and self._is_terminal_status_event(serialized):
                 await global_stream_cache.mark_completed(cache_key)
-            if not client_disconnected and final_outcome is not None:
+            if final_outcome is not None:
                 await self._call_callback_safely(
                     on_finalized,
                     final_outcome,
@@ -1541,6 +1641,32 @@ class A2AInvokeService:
                 warning_message="A2A consume stream finalized callback failed",
             )
             return outcome
+        except asyncio.CancelledError:
+            partial_content = stream_text_accumulator.result()
+            partial_metadata = stream_text_accumulator.result_metadata()
+            blocks_payload = partial_metadata.get("message_blocks")
+            message_blocks = (
+                list(blocks_payload) if isinstance(blocks_payload, list) else []
+            )
+            outcome = StreamOutcome(
+                success=False,
+                finish_reason=StreamFinishReason.CLIENT_DISCONNECT,
+                final_text=partial_content or "",
+                error_message=None,
+                error_code=None,
+                message_blocks=message_blocks,
+                elapsed_seconds=time.monotonic() - started_at,
+                idle_seconds=max(time.monotonic() - last_event_at, 0.0),
+                terminal_event_seen=terminal_event_seen,
+            )
+            await self._call_callback_safely(
+                on_finalized,
+                outcome,
+                logger=logger,
+                log_extra=log_extra,
+                warning_message="A2A consume stream finalized callback failed",
+            )
+            raise
         except Exception as exc:
             if callable(log_warning):
                 log_warning(
