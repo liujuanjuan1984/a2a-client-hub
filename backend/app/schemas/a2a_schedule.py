@@ -28,7 +28,7 @@ class A2AScheduleTaskBase(BaseModel):
             "daily: {time:'HH:MM'}; "
             "weekly: {time:'HH:MM', weekday:1..7 (1=Monday, 7=Sunday)}; "
             "monthly: {time:'HH:MM', day:1..31}; "
-            "interval: {minutes:int, start_at?: str (ISO 8601)}."
+            "interval: {minutes:int, start_at_local?: str ('YYYY-MM-DDTHH:MM')}."
         ),
     )
 
@@ -36,6 +36,7 @@ class A2AScheduleTaskBase(BaseModel):
 class A2AScheduleTaskCreate(A2AScheduleTaskBase):
     enabled: bool = True
     conversation_policy: A2AScheduleConversationPolicy = "new_each_run"
+    schedule_timezone: str = Field(..., min_length=1, max_length=64)
 
 
 class A2AScheduleTaskUpdate(BaseModel):
@@ -46,14 +47,17 @@ class A2AScheduleTaskUpdate(BaseModel):
     time_point: Optional[Dict[str, Any]] = None
     enabled: Optional[bool] = None
     conversation_policy: Optional[A2AScheduleConversationPolicy] = None
+    schedule_timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
 
 
 class A2AScheduleTaskResponse(A2AScheduleTaskBase):
     id: UUID
+    schedule_timezone: str
     conversation_id: Optional[UUID] = None
     conversation_policy: A2AScheduleConversationPolicy
     enabled: bool
-    next_run_at: Optional[datetime] = None
+    next_run_at_utc: Optional[datetime] = None
+    next_run_at_local: Optional[str] = None
     last_run_at: Optional[datetime] = None
     last_run_status: A2AScheduleRunStatus = "idle"
     consecutive_failures: int = 0
@@ -114,8 +118,10 @@ class A2AScheduleExecutionListResponse(
 
 class A2AScheduleToggleResponse(BaseModel):
     id: UUID
+    schedule_timezone: str
     enabled: bool
-    next_run_at: Optional[datetime] = None
+    next_run_at_utc: Optional[datetime] = None
+    next_run_at_local: Optional[str] = None
 
 
 class A2AScheduleManualFailRequest(BaseModel):

@@ -123,6 +123,7 @@ describe("API modules using shared pagination fallback", () => {
           prompt: "Hello",
           cycle_type: "daily",
           time_point: { time: "07:00" },
+          schedule_timezone: "UTC",
           enabled: true,
           conversation_policy: "new_each_run",
           created_at: "2026-02-24T00:00:00.000Z",

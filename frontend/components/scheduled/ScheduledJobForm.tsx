@@ -43,7 +43,8 @@ export function ScheduledJobForm({
   lastRunStatus,
 }: ScheduledJobFormProps) {
   const intervalStartAt = (() => {
-    const startAt = (form.time_point as { start_at?: unknown })?.start_at;
+    const startAt = (form.time_point as { start_at_local?: unknown })
+      ?.start_at_local;
     return typeof startAt === "string" ? startAt : "";
   })();
   const [startAtInputValue, setStartAtInputValue] = useState(() =>
@@ -100,14 +101,14 @@ export function ScheduledJobForm({
     }
     if (nextCycle === "interval") {
       const minutes = (current as { minutes?: unknown })?.minutes;
-      const startAt = (current as { start_at?: unknown })?.start_at;
+      const startAt = (current as { start_at_local?: unknown })?.start_at_local;
       const resolvedStartAt =
         typeof startAt === "string" && startAt.trim()
           ? startAt.trim()
           : getNextTopOfHourLocalInputValue(timeZone);
       return {
         minutes: typeof minutes === "number" ? minutes : 10,
-        start_at: resolvedStartAt,
+        start_at_local: resolvedStartAt,
       };
     }
     const time = (current as { time?: unknown })?.time;
@@ -305,9 +306,9 @@ export function ScheduledJobForm({
                 ...(form.time_point as any),
               };
               if (value.trim()) {
-                next.start_at = value.trim();
+                next.start_at_local = value.trim();
               } else {
-                delete next.start_at;
+                delete next.start_at_local;
               }
               onChange({
                 time_point: next,

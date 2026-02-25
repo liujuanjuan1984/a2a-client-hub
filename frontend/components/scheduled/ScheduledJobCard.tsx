@@ -153,11 +153,14 @@ export function ScheduledJobCard({
             {intervalTimePoint ? (
               <Text className={`mt-1 text-xs ${tone.text}`}>
                 Interval: every {intervalTimePoint.minutes} min, start{" "}
-                {formatLocalDateTime(intervalTimePoint.start_at, timeZone)}
+                {intervalTimePoint.start_at_local ??
+                  formatLocalDateTime(intervalTimePoint.start_at_utc, timeZone)}
               </Text>
             ) : null}
             <Text className={`mt-1 text-xs ${tone.text}`}>
-              Next: {formatLocalDateTime(job.next_run_at, timeZone)}
+              Next:{" "}
+              {job.next_run_at_local ??
+                formatLocalDateTime(job.next_run_at_utc, timeZone)}
             </Text>
             <Text className={`mt-1 text-xs ${tone.text}`}>
               Last: {formatLocalDateTime(job.last_run_at, timeZone)} (

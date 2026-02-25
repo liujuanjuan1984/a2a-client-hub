@@ -68,6 +68,7 @@ async def test_conversation_routes_use_conversation_id_only(
         async_db_session,
         user_id=user.id,
         is_superuser=user.is_superuser,
+        timezone_str=user.timezone or "UTC",
         name="Nightly",
         agent_id=agent.id,
         prompt="ping",
