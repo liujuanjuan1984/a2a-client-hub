@@ -23,7 +23,7 @@ const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
 const getCardTone = (job: ScheduledJob) => {
   if (!job.enabled) {
     return {
-      container: "bg-slate-900/40 opacity-60",
+      container: "opacity-60",
       title: "text-slate-500",
       text: "text-slate-600",
       prompt: "text-slate-600",
@@ -34,7 +34,7 @@ const getCardTone = (job: ScheduledJob) => {
   }
   if (job.last_run_status === "running") {
     return {
-      container: "bg-surface border-2 border-primary",
+      container: "border-2 border-primary",
       title: "text-primary",
       text: "text-slate-300",
       prompt: "text-white",
@@ -44,7 +44,7 @@ const getCardTone = (job: ScheduledJob) => {
     };
   }
   return {
-    container: "bg-surface border border-white/5",
+    container: "border border-white/5",
     title: "text-white",
     text: "text-slate-400",
     prompt: "text-slate-200",
@@ -134,7 +134,9 @@ export function ScheduledJobCard({
   };
 
   return (
-    <View className={`mb-4 rounded-2xl overflow-hidden ${tone.container}`}>
+    <View
+      className={`mb-4 rounded-2xl overflow-hidden bg-surface shadow-sm ${tone.container}`}
+    >
       <View className="p-5">
         <View className="flex-row items-start justify-between">
           <View className="flex-1 pr-3">

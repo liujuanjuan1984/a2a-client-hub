@@ -173,7 +173,7 @@ export function SessionsScreen() {
               return (
                 <View
                   key={item.conversationId}
-                  className="mb-4 rounded-2xl bg-surface overflow-hidden"
+                  className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
                 >
                   <View className="p-5">
                     <View className="flex-row items-center justify-between gap-2">

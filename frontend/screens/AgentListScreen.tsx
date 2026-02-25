@@ -113,7 +113,7 @@ export function AgentListScreen() {
           agents.map((agent) => (
             <View
               key={agent.id}
-              className="mb-4 rounded-2xl bg-surface overflow-hidden"
+              className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
             >
               <View className="p-5">
                 <View className="flex-row items-start justify-between">
