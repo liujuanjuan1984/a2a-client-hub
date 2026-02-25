@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import json
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -148,8 +148,70 @@ async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
 
 
 @pytest.mark.asyncio
+async def test_run_http_invoke_route_stream_maps_value_error_to_http_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoke_route_runner._invoke_inflight_keys.clear()
+
+    async def fake_run_http_invoke_with_session_recovery(**kwargs):  # noqa: ARG001
+        raise ValueError("message_id_conflict")
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "run_http_invoke_with_session_recovery",
+        fake_run_http_invoke_with_session_recovery,
+    )
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/a2a", name="Demo Agent")
+    )
+
+    async def runtime_builder():
+        return runtime
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "run long task",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await invoke_route_runner.run_http_invoke_route(
+            db=None,
+            user_id=uuid4(),
+            agent_id=uuid4(),
+            agent_source="shared",
+            payload=payload,
+            stream=True,
+            gateway=object(),
+            runtime_builder=runtime_builder,
+            runtime_not_found_errors=(RuntimeError,),
+            runtime_not_found_status_code=404,
+            runtime_validation_errors=(ValueError,),
+            runtime_validation_status_code=400,
+            validate_message=lambda _: [],
+            logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+            invoke_log_message="test invoke",
+            invoke_log_extra_builder=lambda request, runtime: {},  # noqa: ARG001
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "message_id_conflict"
+    assert invoke_route_runner._invoke_inflight_keys == {}
+
+
+@pytest.mark.asyncio
 async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.MonkeyPatch):
     captured: dict[str, object] = {}
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
         return invoke_route_runner._InvokeState(
@@ -160,7 +222,6 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
             stream_identity={},
             stream_usage={},
             user_message_id=None,
-            client_agent_message_id=None,
         )
 
     async def fake_record_local_invoke_messages(
@@ -181,6 +242,11 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
         fake_record_local_invoke_messages,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
 
     class _Gateway:
         async def stream(self, **kwargs):  # noqa: ARG002
@@ -191,6 +257,8 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
                     "metadata": {
                         "opencode": {
                             "block_type": "text",
+                            "message_id": "msg-usage-1",
+                            "event_id": "evt-usage-1",
                             "usage": {
                                 "input_tokens": 100,
                                 "output_tokens": 20,
@@ -278,6 +346,8 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
+    client_user_message_id = str(uuid4())
+    client_agent_message_id = str(uuid4())
     state = invoke_route_runner._InvokeState(
         local_session_id=uuid4(),
         local_source="scheduled",
@@ -285,8 +355,8 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
         metadata={},
         stream_identity={},
         stream_usage={},
-        user_message_id=None,
-        client_agent_message_id=None,
+        user_message_id=client_user_message_id,
+        agent_message_id=client_agent_message_id,
     )
     on_event, on_finalized = invoke_route_runner._build_consume_stream_callbacks(
         state=state,
@@ -303,7 +373,13 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
             "kind": "artifact-update",
             "artifact": {
                 "parts": [{"kind": "text", "text": "partial response"}],
-                "metadata": {"opencode": {"block_type": "text"}},
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "message_id": "msg-partial-1",
+                        "event_id": "evt-partial-1",
+                    }
+                },
             },
         }
     )
@@ -314,14 +390,6 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
             final_text="partial response",
             error_message="A2A stream total timeout after 60.0s",
             error_code="timeout",
-            message_blocks=[
-                {
-                    "id": "block-1",
-                    "type": "text",
-                    "content": "partial response",
-                    "is_finished": False,
-                }
-            ],
             elapsed_seconds=60.0,
             idle_seconds=0.1,
             terminal_event_seen=False,
@@ -337,12 +405,12 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     assert stream_metadata["finish_reason"] == "timeout_total"
     assert stream_metadata["error"]["message"] == "A2A stream total timeout after 60.0s"
     assert stream_metadata["error"]["error_code"] == "timeout"
-    message_blocks = response_metadata["message_blocks"]
-    assert isinstance(message_blocks, list)
-    assert message_blocks[0]["content"] == "partial response"
+    assert "message_blocks" not in response_metadata
     assert state.persisted_response_content == "partial response"
     assert state.persisted_error_code == "timeout"
     assert state.persisted_finish_reason == "timeout_total"
+    assert captured["user_message_id"] == UUID(client_user_message_id)
+    assert captured["agent_message_id"] == UUID(client_agent_message_id)
 
 
 def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
@@ -355,7 +423,6 @@ def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
         stream_identity={},
         stream_usage={},
         user_message_id=long_user_message_id,
-        client_agent_message_id=None,
     )
 
     resolved = invoke_route_runner._resolve_invoke_idempotency_key(
@@ -368,11 +435,242 @@ def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
     assert ":h:" in resolved
 
 
+def test_normalize_optional_message_id_validates_uuid_inputs() -> None:
+    normalized = invoke_route_runner._normalize_optional_message_id(  # noqa: SLF001
+        " 550e8400-e29b-41d4-a716-446655440000 "
+    )
+    assert normalized == "550e8400-e29b-41d4-a716-446655440000"
+    assert (
+        invoke_route_runner._normalize_optional_message_id(None) is None
+    )  # noqa: SLF001
+    assert (
+        invoke_route_runner._normalize_optional_message_id(" ") is None
+    )  # noqa: SLF001
+    with pytest.raises(ValueError, match="invalid_message_id"):
+        invoke_route_runner._normalize_optional_message_id("not-a-uuid")  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_persist_stream_block_update_consumes_and_persists_optional_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _DummySession:
+        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+            return object()
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> _DummySession:
+            return _DummySession()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+    async def fake_append_agent_message_block_update(_db, **kwargs):  # noqa: ANN001
+        captured.update(kwargs)
+        return object()
+
+    async def fake_commit_safely(_db):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "append_agent_message_block_update",
+        fake_append_agent_message_block_update,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        user_message_id=None,
+        message_refs={
+            "user_message_id": str(uuid4()),
+            "agent_message_id": str(uuid4()),
+        },
+        next_event_seq=3,
+        persisted_block_count=0,
+    )
+
+    event_payload = {
+        "kind": "artifact-update",
+        "seq": 9,
+        "append": False,
+        "lastChunk": True,
+        "artifact": {
+            "parts": [{"kind": "text", "text": "chunk-body"}],
+            "metadata": {
+                "opencode": {
+                    "block_type": "text",
+                    "message_id": "msg-opt",
+                    "event_id": "evt-opt",
+                }
+            },
+        },
+    }
+
+    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
+        state=state,
+        event_payload=event_payload,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        transport="http_json",
+        stream_enabled=True,
+    )
+
+    assert captured["seq"] == 9
+    assert captured["append"] is False
+    assert captured["is_finished"] is True
+    assert state.next_event_seq == 10
+    assert state.persisted_block_count == 1
+    assert event_payload["message_id"] == str(state.message_refs["agent_message_id"])
+    assert event_payload["event_id"] == "evt-opt"
+    assert event_payload["seq"] == 9
+    assert "messageId" not in event_payload
+    assert "eventId" not in event_payload
+    assert "eventSeq" not in event_payload
+    assert "sequence" not in event_payload
+    assert event_payload["artifact"]["metadata"]["opencode"]["message_id"] == str(
+        state.message_refs["agent_message_id"]
+    )
+    assert event_payload["artifact"]["metadata"]["opencode"]["event_id"] == "evt-opt"
+    assert event_payload["artifact"]["metadata"]["opencode"]["seq"] == 9
+
+
+@pytest.mark.asyncio
+async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_chunk: dict[str, object] = {}
+    captured_outcome: dict[str, object] = {}
+
+    class _DummySession:
+        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+            return object()
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> _DummySession:
+            return _DummySession()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+    async def fake_has_agent_message_blocks(_db, **_kwargs) -> bool:  # noqa: ANN001
+        return False
+
+    async def fake_append_agent_message_block_update(
+        _db, **kwargs
+    ) -> object:  # noqa: ANN001
+        captured_chunk.update(kwargs)
+        return object()
+
+    async def fake_record_local_invoke_messages(
+        _db, **kwargs  # noqa: ANN001
+    ) -> dict[str, object]:
+        captured_outcome.update(kwargs)
+        return {
+            "conversation_id": kwargs["local_session_id"],
+            "user_message_id": kwargs["idempotency_key"] and uuid4(),
+            "agent_message_id": uuid4(),
+        }
+
+    async def fake_commit_safely(_db):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "has_agent_message_blocks",
+        fake_has_agent_message_blocks,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "append_agent_message_block_update",
+        fake_append_agent_message_block_update,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_local_invoke_messages_by_local_session_id",
+        fake_record_local_invoke_messages,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        user_message_id=None,
+        message_refs={
+            "conversation_id": uuid4(),
+            "user_message_id": uuid4(),
+            "agent_message_id": uuid4(),
+        },
+        next_event_seq=1,
+        persisted_block_count=0,
+    )
+
+    await invoke_route_runner._persist_local_outcome(  # noqa: SLF001
+        state=state,
+        outcome=StreamOutcome(
+            success=True,
+            finish_reason=StreamFinishReason.SUCCESS,
+            final_text="non-stream final",
+            error_message=None,
+            error_code=None,
+            elapsed_seconds=1.0,
+            idle_seconds=0.1,
+            terminal_event_seen=True,
+        ),
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        transport="http_json",
+        stream_enabled=False,
+    )
+
+    assert captured_chunk["seq"] == 1
+    assert captured_chunk["block_type"] == "text"
+    assert captured_chunk["content"] == "non-stream final"
+    assert captured_chunk["append"] is False
+    assert captured_chunk["is_finished"] is True
+    assert captured_chunk["source"] == "finalize_snapshot"
+    assert captured_outcome["response_content"] == "non-stream final"
+    assert state.persisted_block_count == 1
+    assert state.next_event_seq == 2
+
+
 @pytest.mark.asyncio
 async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
         return invoke_route_runner._InvokeState(
@@ -383,7 +681,6 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
             stream_identity={},
             stream_usage={},
             user_message_id=None,
-            client_agent_message_id=None,
         )
 
     async def fake_record_local_invoke_messages(
@@ -412,14 +709,6 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
                     final_text="partial sse",
                     error_message="timeout",
                     error_code="timeout",
-                    message_blocks=[
-                        {
-                            "id": "block-1",
-                            "type": "text",
-                            "content": "partial sse",
-                            "is_finished": False,
-                        }
-                    ],
                     elapsed_seconds=60.0,
                     idle_seconds=1.0,
                     terminal_event_seen=False,
@@ -438,6 +727,11 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_service, "stream_sse", fake_stream_sse
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
     )
 
     payload = A2AAgentInvokeRequest.model_validate(
@@ -474,6 +768,13 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
 ) -> None:
     captured: dict[str, object] = {}
 
+    class _DummySessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
         return invoke_route_runner._InvokeState(
             local_session_id=uuid4(),
@@ -483,7 +784,6 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
             stream_identity={},
             stream_usage={},
             user_message_id=None,
-            client_agent_message_id=None,
         )
 
     async def fake_record_local_invoke_messages(
@@ -510,7 +810,6 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
                 final_text="ws final",
                 error_message=None,
                 error_code=None,
-                message_blocks=[],
                 elapsed_seconds=1.0,
                 idle_seconds=0.1,
                 terminal_event_seen=True,
@@ -526,6 +825,11 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_service, "stream_ws", fake_stream_ws
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
     )
 
     payload = A2AAgentInvokeRequest.model_validate(
@@ -776,7 +1080,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
             stream_identity={},
             stream_usage={},
             user_message_id=None,
-            client_agent_message_id=None,
         )
 
     async def fake_stream_ws(*, on_error_metadata=None, **kwargs):  # noqa: ARG001
@@ -907,7 +1210,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             stream_identity={},
             stream_usage={},
             user_message_id=None,
-            client_agent_message_id=None,
         )
 
     async def fake_stream_ws(*, on_error_metadata=None, **kwargs):  # noqa: ARG001

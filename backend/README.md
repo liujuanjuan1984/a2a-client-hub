@@ -155,6 +155,8 @@ scheduled, and OpenCode sessions:
 
 - `POST /api/v1/me/conversations:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages:query`
+- `POST /api/v1/me/conversations/{conversation_id}/messages/blocks:query`
+- `POST /api/v1/me/conversations/{conversation_id}/messages/{message_id}/blocks/{block_seq}:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
 
 `continue` now returns the canonical fields and binding metadata:
@@ -170,6 +172,23 @@ scheduled, and OpenCode sessions:
 
 Client-generated chat sessions should use raw UUID conversation IDs, for example
 `550e8400-e29b-41d4-a716-446655440000`.
+
+Message query contract boundary:
+
+- `messages:query` is a lightweight list endpoint and does not include
+  `metadata.message_blocks`.
+- `SessionMessageItem.id` is the canonical local message UUID for all roles.
+- Message body is persisted and queried via ordered blocks for all roles
+  (`user`/`agent`/`system`).
+- For block-level payloads (reasoning/tool/text blocks), call
+  `messages/blocks:query` (batch) or `messages/{message_id}/blocks/{block_seq}:query`
+  (single block detail) on demand.
+
+Invoke message id contract:
+
+- Clients may provide `userMessageId` and `agentMessageId` in invoke payloads.
+- When provided, both values must be UUIDs and are treated as canonical local message ids.
+- Message id conflicts are returned as `message_id_conflict` (HTTP 409).
 
 ## Checks (Before Pushing)
 

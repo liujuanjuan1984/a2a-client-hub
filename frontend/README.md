@@ -100,10 +100,18 @@ History loading is unified via
 To avoid transport contention, chat history auto-refetch is paused while a
 message is actively streaming.
 
+Message id contract:
+
+- `messages:query` returns canonical local UUIDs in `item.id`.
+- Frontend store/cache keys must use `item.id` only.
+- Do not rely on alias ids from metadata.
+- Stream events must use snake_case contract fields: `message_id`, `event_id`, `seq`.
+- Invoke payloads should carry both `userMessageId` and `agentMessageId` (UUID).
+
 ## Block-based Streaming
 
 Chat streaming now uses a block timeline model.
-Each assistant message stores an ordered `MessageBlock[]`, where each block
+Each message stores an ordered `MessageBlock[]`, where each block
 has a `type` (`text`, `reasoning`, `tool_call`, or unknown), `content`, and
 `isFinished`.
 

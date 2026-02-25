@@ -23,7 +23,6 @@ async def create_agent_message(
     db: AsyncSession,
     *,
     user_id: UUID,
-    content: str,
     sender: str,
     conversation_id: UUID,
     sync_to_cardbox: bool = True,
@@ -35,7 +34,6 @@ async def create_agent_message(
         if "message_metadata" in kwargs and metadata is None:
             metadata = kwargs.pop("message_metadata")
         agent_message = AgentMessage(
-            content=content,
             sender=sender,
             user_id=user_id,
             conversation_id=conversation_id,

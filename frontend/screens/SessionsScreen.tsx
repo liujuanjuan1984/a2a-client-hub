@@ -170,6 +170,9 @@ export function SessionsScreen() {
               const title = item.title;
               const agent = resolveSessionAgentPresentation(item, agentLookup);
               const timeline = getSessionTimelineText(item);
+              const canAsyncPrompt = canPromptAsync(item);
+              const isPrompting =
+                promptingConversationId === item.conversationId;
               return (
                 <View
                   key={item.conversationId}
@@ -202,6 +205,17 @@ export function SessionsScreen() {
                       </Text>
                     </View>
                     <View className="flex-row items-center">
+                      {canAsyncPrompt ? (
+                        <Button
+                          label="Async Continue"
+                          size="xs"
+                          variant="secondary"
+                          loading={isPrompting}
+                          disabled={isPrompting}
+                          onPress={() => handlePromptAsync(item)}
+                          className="mr-2"
+                        />
+                      ) : null}
                       <IconButton
                         size="xs"
                         variant="primary"

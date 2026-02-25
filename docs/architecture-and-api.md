@@ -118,33 +118,59 @@ curl -X POST "$API_BASE_URL/me/a2a/agents/<AGENT_ID>/invoke" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
-    "query":"Summarize today'\''s key updates"
+    "query":"Summarize today'\''s key updates",
+    "userMessageId":"550e8400-e29b-41d4-a716-446655440000",
+    "agentMessageId":"550e8400-e29b-41d4-a716-446655440001"
   }'
 ```
+
+`userMessageId` and `agentMessageId` are optional but recommended for
+client/server message identity consistency. Both must be UUID strings when provided.
 
 ### Query Unified Sessions
 
 ```bash
-curl -X POST "$API_BASE_URL/me/sessions:query" \
+curl -X POST "$API_BASE_URL/me/conversations:query" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
     "page": 1,
-    "size": 20,
-    "refresh": false
+    "size": 20
   }'
 ```
 
 ### Query Unified Session Messages
 
 ```bash
-curl -X POST "$API_BASE_URL/me/sessions/<SESSION_ID>/messages:query" \
+curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages:query" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
     "page": 1,
     "size": 50
   }'
+```
+
+`messages:query` returns message headers only (id/role/created_at/metadata).
+Message bodies are loaded from block endpoints for all roles.
+
+### Query Message Blocks (Batch)
+
+```bash
+curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages/blocks:query" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messageIds": ["<MESSAGE_ID_1>", "<MESSAGE_ID_2>"],
+    "mode": "full"
+  }'
+```
+
+### Query Message Block Detail
+
+```bash
+curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages/<MESSAGE_ID>/blocks/<BLOCK_SEQ>:query" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
 ```
 
 ## Notes

@@ -33,6 +33,7 @@ import {
   shouldStickToBottom,
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
+import { mergeChatMessagesByCanonicalId } from "@/lib/messageMerge";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
@@ -75,6 +76,8 @@ export function useChatScreenController({
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
   const sendMessage = useChatStore((state) => state.sendMessage);
+  const retryMessage = useChatStore((state) => state.retryMessage);
+  const resumeMessage = useChatStore((state) => state.resumeMessage);
   const clearPendingInterrupt = useChatStore(
     (state) => state.clearPendingInterrupt,
   );
@@ -182,6 +185,20 @@ export function useChatScreenController({
     listRef.current?.scrollToEnd({ animated });
   }, []);
 
+  const scheduleScrollSettleTimer = useCallback(() => {
+    try {
+      scrollSettleTimerRef.current = setTimeout(() => {
+        scrollToBottom(false);
+        forceScrollToBottomRef.current = false;
+      }, SEND_SCROLL_SETTLE_MS);
+    } catch {
+      // Test runtimes may not provide NativeTiming-backed timers.
+      scrollSettleTimerRef.current = null;
+      scrollToBottom(false);
+      forceScrollToBottomRef.current = false;
+    }
+  }, [scrollToBottom]);
+
   const scheduleStickToBottom = useCallback(
     (animated: boolean) => {
       if (!shouldStickToBottomRef.current && !forceScrollToBottomRef.current) {
@@ -191,12 +208,9 @@ export function useChatScreenController({
         scrollToBottom(animated);
       });
       clearScrollSettleTimer();
-      scrollSettleTimerRef.current = setTimeout(() => {
-        scrollToBottom(false);
-        forceScrollToBottomRef.current = false;
-      }, SEND_SCROLL_SETTLE_MS);
+      scheduleScrollSettleTimer();
     },
-    [clearScrollSettleTimer, scrollToBottom],
+    [clearScrollSettleTimer, scheduleScrollSettleTimer, scrollToBottom],
   );
 
   useEffect(() => {
@@ -285,25 +299,11 @@ export function useChatScreenController({
     (incoming: ChatMessage[]) => {
       if (!conversationId) return;
       const current = useMessageStore.getState().messages[conversationId] ?? [];
-      const merged = new Map<string, ChatMessage>();
-      current.forEach((message) => {
-        merged.set(message.id, message);
+      const nextMessages = mergeChatMessagesByCanonicalId({
+        current,
+        incoming,
+        isActivelyStreaming: session?.streamState === "streaming",
       });
-      incoming.forEach((message) => {
-        const existing = merged.get(message.id);
-        const isActivelyStreaming = session?.streamState === "streaming";
-        if (
-          existing &&
-          existing.status === "streaming" &&
-          isActivelyStreaming
-        ) {
-          return;
-        }
-        merged.set(message.id, message);
-      });
-      const nextMessages = Array.from(merged.values()).sort((a, b) =>
-        a.createdAt.localeCompare(b.createdAt),
-      );
       if (isSameMessageList(current, nextMessages)) {
         return;
       }
@@ -723,33 +723,34 @@ export function useChatScreenController({
       session?.streamState === "streaming"
     )
       return;
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.role === "user") {
-      sendMessage(
-        conversationId,
-        activeAgentId,
-        lastMessage.content,
-        agent?.source || "personal",
-      );
-    } else {
-      const lastUserMessage = [...messages]
-        .reverse()
-        .find((m) => m.role === "user");
-      if (lastUserMessage) {
-        sendMessage(
-          conversationId,
-          activeAgentId,
-          lastUserMessage.content,
-          agent?.source || "personal",
-        );
+    const runRetry = async () => {
+      try {
+        if (session?.streamState === "recoverable") {
+          if (typeof resumeMessage === "function") {
+            await resumeMessage(conversationId);
+          }
+          return;
+        }
+        if (typeof retryMessage === "function") {
+          await retryMessage(
+            conversationId,
+            activeAgentId,
+            agent?.source || "personal",
+          );
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to retry message.";
+        toast.error("Retry failed", message);
       }
-    }
+    };
+    runRetry();
   }, [
     activeAgentId,
     agent?.source,
     conversationId,
-    messages,
-    sendMessage,
+    retryMessage,
+    resumeMessage,
     session?.streamState,
   ]);
 

@@ -22,6 +22,7 @@ import {
   type SessionMessageItem,
 } from "@/lib/api/sessions";
 import { mergeExternalSessionRef, type AgentSession } from "@/lib/chat-utils";
+import { mergeChatMessagesByCanonicalId } from "@/lib/messageMerge";
 import { queryKeys } from "@/lib/queryKeys";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import { chatConnectionService } from "@/services/chatConnectionService";
@@ -343,22 +344,13 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
 
   const mergeHistoryMessagesById = (incoming: ChatMessage[]) => {
     const current = useMessageStore.getState().messages[conversationId] ?? [];
-    const merged = new Map<string, ChatMessage>();
-    current.forEach((message) => {
-      merged.set(message.id, message);
+    const session = get().sessions[conversationId];
+    const isActivelyStreaming = session?.streamState === "streaming";
+    const nextMessages = mergeChatMessagesByCanonicalId({
+      current,
+      incoming,
+      isActivelyStreaming,
     });
-    incoming.forEach((message) => {
-      const existing = merged.get(message.id);
-      const session = get().sessions[conversationId];
-      const isActivelyStreaming = session?.streamState === "streaming";
-      if (existing && existing.status === "streaming" && isActivelyStreaming) {
-        return;
-      }
-      merged.set(message.id, message);
-    });
-    const nextMessages = Array.from(merged.values()).sort((left, right) =>
-      left.createdAt.localeCompare(right.createdAt),
-    );
     messageStore.setMessages(conversationId, nextMessages);
   };
 
@@ -368,7 +360,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const maxPages = 20;
 
     const collectPage = (items: SessionMessageItem[]) => {
-      const mapped = mapSessionMessagesToChatMessages(items, conversationId);
+      const mapped = mapSessionMessagesToChatMessages(items);
       mapped.forEach((message) => {
         recovered.set(message.id, message);
       });

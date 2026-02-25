@@ -28,7 +28,7 @@ export function useSessionHistoryQuery(options: {
   const query = usePaginatedList<SessionMessageItem>({
     queryKey: queryKeys.history.chat(conversationId ?? "missing"),
     fetchPage,
-    getKey: (item) => item.id ?? `${item.created_at}:${item.role}`,
+    getKey: (item) => item.id,
     errorTitle: "Load history failed",
     fallbackMessage: "Load failed.",
     enabled: enabled && Boolean(conversationId) && !paused,
@@ -42,7 +42,7 @@ export function useSessionHistoryQuery(options: {
     if (!conversationId) {
       return [];
     }
-    return mapSessionMessagesToChatMessages(query.items, conversationId);
+    return mapSessionMessagesToChatMessages(query.items);
   }, [query.items, conversationId]);
 
   return {
