@@ -83,30 +83,6 @@ async def _call_schedule(coro: Awaitable[object]):
         raise exc
 
 
-def _current_user_schedule_timezone(
-    current_user: User,
-    *,
-    requested_timezone: str | None = None,
-) -> str:
-    return _resolve_schedule_timezone(
-        user_timezone=current_user.timezone, requested_timezone=requested_timezone
-    )
-
-
-def _build_pagination(
-    *,
-    page: int,
-    size: int,
-    total: int,
-) -> dict[str, int]:
-    return {
-        "page": page,
-        "size": size,
-        "total": total,
-        "pages": (total + size - 1) // size if size else 0,
-    }
-
-
 def _build_task_response(
     task,
     *,
@@ -147,7 +123,7 @@ async def _set_schedule_task_enabled(
     db: AsyncSession,
     current_user: User,
 ) -> A2AScheduleToggleResponse:
-    schedule_timezone = _current_user_schedule_timezone(current_user)
+    schedule_timezone = _resolve_schedule_timezone(user_timezone=current_user.timezone)
     task = await _call_schedule(
         a2a_schedule_service.set_enabled(
             db,
@@ -178,8 +154,8 @@ async def create_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = _current_user_schedule_timezone(
-        current_user,
+    schedule_timezone = _resolve_schedule_timezone(
+        user_timezone=current_user.timezone,
         requested_timezone=payload.schedule_timezone,
     )
     task = await _call_schedule(
@@ -206,7 +182,7 @@ async def list_schedule_tasks(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskListResponse:
-    schedule_timezone = _current_user_schedule_timezone(current_user)
+    schedule_timezone = _resolve_schedule_timezone(user_timezone=current_user.timezone)
     items, total = await a2a_schedule_service.list_tasks(
         db,
         user_id=current_user.id,
@@ -218,7 +194,12 @@ async def list_schedule_tasks(
             _build_task_response(item, schedule_timezone=schedule_timezone)
             for item in items
         ],
-        pagination=_build_pagination(page=page, size=size, total=total),
+        pagination={
+            "page": page,
+            "size": size,
+            "total": total,
+            "pages": (total + size - 1) // size if size else 0,
+        },
         meta={},
     )
 
@@ -229,7 +210,7 @@ async def get_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = _current_user_schedule_timezone(current_user)
+    schedule_timezone = _resolve_schedule_timezone(user_timezone=current_user.timezone)
     task = await _call_schedule(
         a2a_schedule_service.get_task(
             db,
@@ -247,8 +228,8 @@ async def patch_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = _current_user_schedule_timezone(
-        current_user,
+    schedule_timezone = _resolve_schedule_timezone(
+        user_timezone=current_user.timezone,
         requested_timezone=payload.schedule_timezone,
     )
     task = await _call_schedule(
@@ -323,7 +304,7 @@ async def mark_schedule_task_failed(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = _current_user_schedule_timezone(current_user)
+    schedule_timezone = _resolve_schedule_timezone(user_timezone=current_user.timezone)
     task = await _call_schedule(
         a2a_schedule_service.mark_task_failed_manually(
             db,
@@ -355,6 +336,11 @@ async def list_schedule_executions(
     )
     return A2AScheduleExecutionListResponse(
         items=[A2AScheduleExecutionResponse.model_validate(item) for item in items],
-        pagination=_build_pagination(page=page, size=size, total=total),
+        pagination={
+            "page": page,
+            "size": size,
+            "total": total,
+            "pages": (total + size - 1) // size if size else 0,
+        },
         meta={"task_id": task_id},
     )
