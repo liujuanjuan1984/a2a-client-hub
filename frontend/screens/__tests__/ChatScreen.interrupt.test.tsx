@@ -5,6 +5,10 @@ import {
   type ReactTestInstance,
   type ReactTestRenderer,
 } from "react-test-renderer";
+import {
+  clearTimeout as nodeClearTimeout,
+  setTimeout as nodeSetTimeout,
+} from "timers";
 
 import { ChatScreen } from "@/screens/ChatScreen";
 
@@ -22,6 +26,9 @@ const mockRemoveShortcut = jest.fn();
 const mockAgentStoreState = {
   activeAgentId: "agent-1",
 };
+const originalSetTimeout = global.setTimeout;
+const originalClearTimeout = global.clearTimeout;
+const originalRequestAnimationFrame = global.requestAnimationFrame;
 
 jest.mock("react-native/Libraries/Utilities/Dimensions", () => {
   const dimensions = {
@@ -66,6 +73,12 @@ jest.mock("react-native/Libraries/Modal/Modal", () => {
 jest.mock("@expo/vector-icons", () => ({
   Ionicons: () => null,
 }));
+
+jest.mock("react-native-reanimated", () => {
+  const reanimated = require("react-native-reanimated/mock");
+  reanimated.default.call = () => undefined;
+  return reanimated;
+});
 
 type MockAgentSession = {
   agentId: string;
@@ -333,10 +346,19 @@ describe("ChatScreen interrupt handling", () => {
     mockChatState.sessions = {
       [conversationId]: baseSession(),
     };
+    global.setTimeout = nodeSetTimeout as unknown as typeof global.setTimeout;
+    global.clearTimeout =
+      nodeClearTimeout as unknown as typeof global.clearTimeout;
     global.requestAnimationFrame = ((callback: FrameRequestCallback) => {
       callback(0);
       return 0;
     }) as unknown as (callback: FrameRequestCallback) => number;
+  });
+
+  afterEach(() => {
+    global.setTimeout = originalSetTimeout;
+    global.clearTimeout = originalClearTimeout;
+    global.requestAnimationFrame = originalRequestAnimationFrame;
   });
 
   it("disables sending and shows prompt when pending permission interrupt exists", () => {
