@@ -435,7 +435,9 @@ async def test_persist_outcome_blocks_fallback_persists_final_snapshot_after_par
 
     assert len(captured_calls) == 1
     assert captured_calls[0]["seq"] == 3
-    assert captured_calls[0]["event_id"] == "final_snapshot:1:text"
+    event_id = captured_calls[0]["event_id"]
+    assert isinstance(event_id, str)
+    assert event_id.startswith("final_snapshot:1:text:")
     assert captured_calls[0]["source"] == "final_snapshot"
     assert state.persisted_chunk_count == 2
 

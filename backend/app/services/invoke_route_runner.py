@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -498,6 +499,12 @@ async def _persist_outcome_blocks_fallback(
             if not isinstance(content, str):
                 continue
             block_type = block.get("type")
+            normalized_block_type = (
+                block_type.strip().lower()
+                if isinstance(block_type, str) and block_type.strip()
+                else "text"
+            )
+            content_hash = hashlib.sha1(content.encode("utf-8")).hexdigest()[:12]
             seq = state.next_chunk_seq
             state.next_chunk_seq += 1
             persisted = await session_hub_service.append_agent_message_chunk(
@@ -505,19 +512,11 @@ async def _persist_outcome_blocks_fallback(
                 user_id=user_id,
                 agent_message_id=agent_message_id,
                 seq=seq,
-                block_type=(
-                    block_type.strip()
-                    if isinstance(block_type, str) and block_type.strip()
-                    else "text"
-                ),
+                block_type=normalized_block_type,
                 content=content,
                 append=False,
                 is_finished=bool(block.get("is_finished", True)),
-                event_id=(
-                    f"final_snapshot:{block_index}:{block_type.strip().lower()}"
-                    if isinstance(block_type, str) and block_type.strip()
-                    else f"final_snapshot:{block_index}:text"
-                ),
+                event_id=f"final_snapshot:{block_index}:{normalized_block_type}:{content_hash}",
                 source="final_snapshot",
             )
             if persisted is not None:

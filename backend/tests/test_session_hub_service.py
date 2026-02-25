@@ -368,3 +368,115 @@ async def test_list_messages_prefers_final_snapshot_chunk_without_text_duplicati
     text_blocks = [block for block in blocks if block.get("type") == "text"]
     assert len(text_blocks) == 1
     assert text_blocks[0]["content"] == "final content"
+
+
+async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_SCHEDULED,
+        title="Scheduled Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    refs = await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="scheduled",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="",
+        success=False,
+        context_id="ctx-1",
+        idempotency_key="run:snapshot-index:scheduled",
+    )
+
+    agent_message_id = refs["agent_message_id"]
+    await session_hub_service.append_agent_message_chunk(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=1,
+        block_type="text",
+        content="first partial",
+        append=False,
+        is_finished=True,
+        event_id="evt-1",
+        source=None,
+    )
+    await session_hub_service.append_agent_message_chunk(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=2,
+        block_type="text",
+        content="second partial",
+        append=False,
+        is_finished=True,
+        event_id="evt-2",
+        source=None,
+    )
+    await session_hub_service.append_agent_message_chunk(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=3,
+        block_type="text",
+        content="first final",
+        append=False,
+        is_finished=True,
+        event_id="final_snapshot:1:text:aaaa",
+        source="final_snapshot",
+    )
+    await session_hub_service.append_agent_message_chunk(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=4,
+        block_type="text",
+        content="second final",
+        append=False,
+        is_finished=True,
+        event_id="final_snapshot:2:text:bbbb",
+        source="final_snapshot",
+    )
+    await session_hub_service.append_agent_message_chunk(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=5,
+        block_type="text",
+        content="second newest",
+        append=False,
+        is_finished=True,
+        event_id="final_snapshot:2:text:cccc",
+        source="final_snapshot",
+    )
+    await async_db_session.flush()
+
+    items, _, _ = await session_hub_service.list_messages(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        page=1,
+        size=20,
+    )
+    agent_items = [item for item in items if item.get("role") == "agent"]
+    assert len(agent_items) == 1
+    agent_item = agent_items[0]
+    metadata = agent_item["metadata"]
+    assert isinstance(metadata, dict)
+    blocks = metadata.get("message_blocks")
+    assert isinstance(blocks, list)
+    text_blocks = [block for block in blocks if block.get("type") == "text"]
+    assert len(text_blocks) == 2
+    assert text_blocks[0]["content"] == "first final"
+    assert text_blocks[1]["content"] == "second newest"
+    assert agent_item["content"] == "first finalsecond newest"

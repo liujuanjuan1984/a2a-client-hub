@@ -1147,6 +1147,8 @@ def _project_message_from_chunks(
         ),
     )
     projected_blocks: list[dict[str, Any]] = []
+    snapshot_blocks_by_index: dict[int, dict[str, Any]] = {}
+    snapshot_blocks_without_index: list[dict[str, Any]] = []
     block_seq = 0
     for chunk in ordered:
         delta = chunk.content if isinstance(chunk.content, str) else ""
@@ -1163,21 +1165,18 @@ def _project_message_from_chunks(
             else None
         )
 
-        # A final snapshot is authoritative for this block type and should
-        # replace previously projected blocks of the same type.
         if source == "final_snapshot":
-            projected_blocks = [
-                block for block in projected_blocks if block.get("type") != block_type
-            ]
-            block_seq += 1
-            projected_blocks.append(
-                {
-                    "id": f"block-{block_seq}",
-                    "type": block_type,
-                    "content": delta,
-                    "is_finished": is_finished,
-                }
-            )
+            snapshot_payload = {
+                "type": block_type,
+                "content": delta,
+                "is_finished": is_finished,
+            }
+            snapshot_index = _extract_final_snapshot_index(chunk.event_id)
+            if snapshot_index is None:
+                snapshot_blocks_without_index.append(snapshot_payload)
+            else:
+                # Keep the latest snapshot payload for the same index.
+                snapshot_blocks_by_index[snapshot_index] = snapshot_payload
             continue
 
         overwrite = not append
@@ -1229,12 +1228,41 @@ def _project_message_from_chunks(
             }
         )
 
+    if snapshot_blocks_by_index or snapshot_blocks_without_index:
+        for snapshot_index in sorted(snapshot_blocks_by_index):
+            payload = snapshot_blocks_by_index[snapshot_index]
+            if snapshot_index <= len(projected_blocks):
+                projected_blocks[snapshot_index - 1].update(payload)
+            else:
+                projected_blocks.append(dict(payload))
+        for payload in snapshot_blocks_without_index:
+            projected_blocks.append(dict(payload))
+
+    for idx, block in enumerate(projected_blocks, start=1):
+        block["id"] = f"block-{idx}"
+
     text_content = "".join(
         block.get("content", "")
         for block in projected_blocks
         if block.get("type") == "text" and isinstance(block.get("content"), str)
     )
     return text_content, projected_blocks
+
+
+def _extract_final_snapshot_index(event_id: str | None) -> int | None:
+    if not isinstance(event_id, str):
+        return None
+    trimmed = event_id.strip()
+    if not trimmed:
+        return None
+    parts = trimmed.split(":")
+    if len(parts) < 3 or parts[0] != "final_snapshot":
+        return None
+    try:
+        parsed = int(parts[1])
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _derive_session_title_from_invoke_metadata(
