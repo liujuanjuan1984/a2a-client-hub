@@ -140,6 +140,18 @@ describe("ScheduledJobFormScreen", () => {
     mockCreateScheduledJob.mockReset();
     mockGetScheduledJob.mockReset();
     mockUpdateScheduledJob.mockReset();
+    mockGetScheduledJob.mockResolvedValue({
+      id: "job-default",
+      name: "Default Job",
+      agent_id: "agent-1",
+      prompt: "Default prompt",
+      cycle_type: "daily",
+      time_point: { time: "07:00" },
+      schedule_timezone: "UTC",
+      enabled: true,
+      conversation_policy: "new_each_run",
+      last_run_status: "idle",
+    });
     mockInvalidateQueries.mockReset();
     mockAllowNextNavigation.mockReset();
     mockToastSuccess.mockReset();
@@ -170,6 +182,7 @@ describe("ScheduledJobFormScreen", () => {
       prompt: "Summarize status",
       cycle_type: "daily",
       time_point: { time: "07:00" },
+      schedule_timezone: "UTC",
       enabled: true,
     });
 
@@ -194,15 +207,18 @@ describe("ScheduledJobFormScreen", () => {
     });
 
     expect(mockCreateScheduledJob).toHaveBeenCalledTimes(1);
-    expect(mockCreateScheduledJob).toHaveBeenCalledWith({
-      name: "Daily Summary",
-      agent_id: "agent-1",
-      prompt: "Summarize status for this week",
-      cycle_type: "daily",
-      time_point: { time: "07:00" },
-      enabled: true,
-      conversation_policy: "new_each_run",
-    });
+    expect(mockCreateScheduledJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Daily Summary",
+        agent_id: "agent-1",
+        prompt: "Summarize status for this week",
+        cycle_type: "daily",
+        time_point: { time: "07:00" },
+        schedule_timezone: expect.any(String),
+        enabled: true,
+        conversation_policy: "new_each_run",
+      }),
+    );
     expect(mockAllowNextNavigation).toHaveBeenCalledTimes(1);
   });
 
@@ -225,10 +241,15 @@ describe("ScheduledJobFormScreen", () => {
       agent_id: "agent-1",
       prompt: "Summarize status",
       cycle_type: "interval",
-      time_point: { minutes: 5, start_at: "2026-02-22T01:30:00.000Z" },
+      time_point: {
+        minutes: 5,
+        start_at_local: "2026-02-23T09:30",
+        start_at_utc: "2026-02-23T01:30:00.000Z",
+      },
+      schedule_timezone: "Asia/Shanghai",
       enabled: true,
     });
-    const expectedStartAt = "2026-02-23T09:30";
+    const expectedStartAtLocal = "2026-02-23T09:30";
 
     await act(async () => {
       create(<ScheduledJobFormScreen />);
@@ -240,7 +261,7 @@ describe("ScheduledJobFormScreen", () => {
     await act(async () => {
       capturedChange?.({
         cycle_type: "interval",
-        time_point: { minutes: 3, start_at: "2026-02-23 09:30" },
+        time_point: { minutes: 3, start_at_local: "2026-02-23 09:30" },
       });
     });
     await act(async () => {
@@ -265,8 +286,9 @@ describe("ScheduledJobFormScreen", () => {
       cycle_type: "interval",
       time_point: {
         minutes: 5,
-        start_at: expectedStartAt,
+        start_at_local: expectedStartAtLocal,
       },
+      schedule_timezone: "Asia/Shanghai",
       enabled: true,
       conversation_policy: "new_each_run",
     });
@@ -294,7 +316,7 @@ describe("ScheduledJobFormScreen", () => {
       capturedChange?.({
         name: "Interval Summary",
         cycle_type: "interval",
-        time_point: { minutes: 3, start_at: "bad-time" },
+        time_point: { minutes: 3, start_at_local: "bad-time" },
       });
       await Promise.resolve();
     });
@@ -309,6 +331,69 @@ describe("ScheduledJobFormScreen", () => {
       "Start datetime must be a valid date time.",
     );
     expect(mockCreateScheduledJob).not.toHaveBeenCalled();
+  });
+
+  it("accepts UTC-aware interval start datetime when editing existing job", async () => {
+    act(() => {
+      useSessionStore.setState({
+        user: {
+          id: "user-1",
+          email: "test@example.com",
+          name: "Test User",
+          is_superuser: false,
+          timezone: "Asia/Shanghai",
+        },
+      });
+    });
+
+    mockGetScheduledJob.mockResolvedValue({
+      id: "job-1",
+      name: "Interval Summary",
+      agent_id: "agent-1",
+      prompt: "Summarize status",
+      cycle_type: "interval",
+      time_point: {
+        minutes: 10,
+        start_at_local: "2026-02-23T08:15",
+        start_at_utc: "2026-02-23T00:15:00+00:00",
+      },
+      schedule_timezone: "Asia/Shanghai",
+      enabled: true,
+      conversation_policy: "new_each_run",
+      last_run_status: "idle",
+    });
+    mockUpdateScheduledJob.mockResolvedValue({
+      id: "job-1",
+    });
+
+    await act(async () => {
+      create(<ScheduledJobFormScreen jobId="job-1" />);
+      await Promise.resolve();
+    });
+
+    expect(capturedSubmit).toBeTruthy();
+
+    await act(async () => {
+      capturedSubmit?.();
+      await Promise.resolve();
+    });
+
+    expect(mockUpdateScheduledJob).toHaveBeenCalledTimes(1);
+    expect(mockUpdateScheduledJob).toHaveBeenCalledWith(
+      "job-1",
+      expect.objectContaining({
+        cycle_type: "interval",
+        time_point: expect.objectContaining({
+          minutes: 10,
+          start_at_local: "2026-02-23T08:15",
+        }),
+        schedule_timezone: "Asia/Shanghai",
+      }),
+    );
+    expect(mockToastError).not.toHaveBeenCalledWith(
+      "Validation failed",
+      "Start datetime must be a valid date time.",
+    );
   });
 
   it("filters shared agents out from the selectable list on scheduled job form", async () => {

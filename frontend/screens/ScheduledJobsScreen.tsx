@@ -12,7 +12,7 @@ import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useScheduledJobExecutionsQuery } from "@/hooks/useScheduledJobExecutionsQuery";
 import { useScheduledJobs } from "@/hooks/useScheduledJobs";
 import { useScheduledJobsQuery } from "@/hooks/useScheduledJobsQuery";
-import { DEFAULT_TIME_ZONE } from "@/lib/datetime";
+import { resolveUserTimeZone } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { buildScheduledJobEditHref, scheduledJobNewHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
@@ -23,7 +23,7 @@ export function ScheduledJobsScreen() {
   const { data: agents = [] } = useAgentsCatalogQuery(true);
   const { markJobFailed, toggleJobStatus } = useScheduledJobs();
   const userTimeZone = useSessionStore((state) => state.user?.timezone);
-  const scheduleTimeZone = userTimeZone?.trim() || DEFAULT_TIME_ZONE;
+  const scheduleTimeZone = userTimeZone?.trim() || resolveUserTimeZone();
 
   const [expandedExecutionsTaskId, setExpandedExecutionsTaskId] = useState<
     string | null
@@ -53,11 +53,11 @@ export function ScheduledJobsScreen() {
         const br = b.last_run_status === "running";
         if (ar !== br) return ar ? -1 : 1;
 
-        const at = a.next_run_at
-          ? new Date(a.next_run_at).getTime()
+        const at = a.next_run_at_utc
+          ? new Date(a.next_run_at_utc).getTime()
           : Number.POSITIVE_INFINITY;
-        const bt = b.next_run_at
-          ? new Date(b.next_run_at).getTime()
+        const bt = b.next_run_at_utc
+          ? new Date(b.next_run_at_utc).getTime()
           : Number.POSITIVE_INFINITY;
         if (at !== bt) return at - bt;
       }
@@ -138,7 +138,7 @@ export function ScheduledJobsScreen() {
               <ScheduledJobCard
                 key={job.id}
                 job={job}
-                timeZone={scheduleTimeZone}
+                timeZone={job.schedule_timezone || scheduleTimeZone}
                 agentName={
                   agentOptions.find((agent) => agent.id === job.agent_id)
                     ?.name ?? job.agent_id

@@ -151,6 +151,27 @@ const hasValidCalendarDateTime = (parts: DateTimeParts): boolean => {
 const DATE_TIME_INPUT_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?$/;
 const DATE_TIME_OFFSET_SUFFIX_PATTERN = /(?:Z|[+-]\d{2}:\d{2})$/;
+const DATE_TIME_SPACE_SEPARATOR_PATTERN = /\s+/;
+
+const normalizeDateTimeInput = (value: string): string =>
+  value.trim().replace(DATE_TIME_SPACE_SEPARATOR_PATTERN, "T");
+
+const hasDateTimeOffset = (value: string): boolean =>
+  DATE_TIME_OFFSET_SUFFIX_PATTERN.test(value);
+
+const formatPartsYmdHm = (parts: DateTimeParts): string =>
+  `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)} ${pad2(parts.hour)}:${pad2(parts.minute)}`;
+
+const formatPartsYmdHmInput = (parts: DateTimeParts): string =>
+  `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}T${pad2(parts.hour)}:${pad2(parts.minute)}`;
+
+const parseNaiveDateTimeInput = (value: string): DateTimeParts | null => {
+  const normalized = normalizeDateTimeInput(value);
+  if (!normalized || hasDateTimeOffset(normalized)) {
+    return null;
+  }
+  return parseDateTimeInputParts(normalized);
+};
 
 const parseDateTimeInputParts = (value: string): DateTimeParts | null => {
   const match = value.match(DATE_TIME_INPUT_PATTERN);
@@ -196,6 +217,11 @@ export const formatLocalDateTime = (
   timeZone?: string,
 ): string => {
   if (!value) return DATE_TIME_PLACEHOLDER;
+  const naiveParts = parseNaiveDateTimeInput(value);
+  if (naiveParts) {
+    // Treat timezone-naive values as local wall-clock strings.
+    return formatPartsYmdHm(naiveParts);
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   const resolved = resolveEffectiveTimeZone(timeZone);
@@ -210,6 +236,11 @@ export const formatDateTimeLocalInputValue = (
   timeZone?: string,
 ): string => {
   if (!value) return "";
+  const naiveParts = parseNaiveDateTimeInput(value);
+  if (naiveParts) {
+    // Keep timezone-naive values stable in local datetime inputs.
+    return formatPartsYmdHmInput(naiveParts);
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   const resolved = resolveEffectiveTimeZone(timeZone);
@@ -242,16 +273,14 @@ export const getNextTopOfHourLocalInputValue = (
 };
 
 export const localDateTimeInputToUtcIso = (value: string): string | null => {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  const normalized = trimmed.replace(" ", "T");
+  const normalized = normalizeDateTimeInput(value);
+  if (!normalized) return null;
   const parsedParts = parseDateTimeInputParts(normalized);
   if (!parsedParts) {
     return null;
   }
 
-  if (DATE_TIME_OFFSET_SUFFIX_PATTERN.test(normalized)) {
+  if (hasDateTimeOffset(normalized)) {
     return null;
   }
 
