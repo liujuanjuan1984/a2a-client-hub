@@ -1,5 +1,6 @@
 import { fireEvent, render } from "@testing-library/react-native";
 import React from "react";
+
 import { ChatComposer } from "../ChatComposer";
 
 jest.mock("@expo/vector-icons", () => ({

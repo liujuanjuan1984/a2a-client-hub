@@ -556,6 +556,7 @@ async def run_http_invoke(
             on_finalized=on_finalized,
             resume_from_sequence=payload.resume_from_sequence,
             cache_key=payload.user_message_id,
+            conversation_id=payload.conversation_id,
         )
 
     on_event, on_finalized = _build_consume_stream_callbacks(
@@ -643,6 +644,7 @@ async def run_background_invoke(
         on_finalized=on_finalized,
         total_timeout_seconds=total_timeout_seconds,
         idle_timeout_seconds=idle_timeout_seconds,
+        conversation_id=payload.conversation_id,
     )
     success = bool(outcome.success)
     response_content = state.persisted_response_content
@@ -709,6 +711,7 @@ async def run_ws_invoke(
         send_stream_end=send_stream_end,
         resume_from_sequence=payload.resume_from_sequence,
         cache_key=payload.user_message_id,
+        conversation_id=payload.conversation_id,
     )
 
 

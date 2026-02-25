@@ -60,6 +60,28 @@ class StreamOutcome:
     terminal_event_seen: bool
 
 
+class InvokeTaskRegistry:
+    """Registry for inflight A2A invoke tasks, keyed by conversation_id.
+
+    Used to implement preemptive interrupt semantics.
+    """
+
+    def __init__(self) -> None:
+        self._tasks: dict[str, asyncio.Task[Any]] = {}
+
+    def register(self, conversation_id: str, task: asyncio.Task[Any]) -> None:
+        self._tasks[conversation_id] = task
+
+    def unregister(self, conversation_id: str) -> None:
+        self._tasks.pop(conversation_id, None)
+
+    def get(self, conversation_id: str) -> asyncio.Task[Any] | None:
+        return self._tasks.get(conversation_id)
+
+
+invoke_task_registry = InvokeTaskRegistry()
+
+
 StreamFinalizedCallbackFn = Callable[[StreamOutcome], Any]
 
 
@@ -73,6 +95,35 @@ class A2AInvokeService:
     _WS_HEARTBEAT_EVENT = {"event": "heartbeat", "data": {}}
     _WS_STREAM_END_EVENT = {"event": "stream_end", "data": {}}
     _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,64}$")
+
+    async def maybe_interrupt_inflight_invoke(
+        self,
+        *,
+        conversation_id: str | None,
+        metadata: dict[str, Any] | None,
+        logger: Any,
+    ) -> None:
+        if not conversation_id:
+            return
+
+        interrupt = False
+        if isinstance(metadata, dict):
+            extensions = metadata.get("extensions")
+            if isinstance(extensions, dict):
+                interrupt = bool(extensions.get("interrupt"))
+
+        if not interrupt:
+            return
+
+        old_task = invoke_task_registry.get(conversation_id)
+        if old_task and not old_task.done():
+            logger.info(
+                "Interrupting inflight invoke",
+                extra={"conversation_id": conversation_id},
+            )
+            old_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await asyncio.wait([old_task], timeout=5)
 
     @classmethod
     def build_ws_error_event(
@@ -950,6 +1001,7 @@ class A2AInvokeService:
         on_finalized: StreamFinalizedCallbackFn | None = None,
         resume_from_sequence: int | None = None,
         cache_key: str | None = None,
+        conversation_id: str | None = None,
     ) -> StreamingResponse:
         from app.services.stream_cache.memory_cache import global_stream_cache
 
@@ -963,28 +1015,38 @@ class A2AInvokeService:
             final_outcome: StreamOutcome | None = None
             heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
 
-            # Replay cached events if resuming
-            seq_counter = 0
-            if resume_from_sequence is not None and cache_key:
-                cached_events = (
-                    await global_stream_cache.get_events_with_sequence_after(
-                        cache_key, resume_from_sequence
-                    )
+            if conversation_id:
+                await self.maybe_interrupt_inflight_invoke(
+                    conversation_id=conversation_id,
+                    metadata=metadata,
+                    logger=logger,
                 )
-                for cached_sequence, cached_event in cached_events:
-                    parsed_sequence = self._extract_event_sequence(cached_event)
-                    if parsed_sequence is not None:
-                        seq_counter = max(seq_counter, parsed_sequence)
-                    else:
-                        seq_counter = max(seq_counter, cached_sequence)
-                    stream_text_accumulator.consume(cached_event)
-                    yield f"data: {json_dumps(cached_event, ensure_ascii=False)}\n\n"
+                current_task = asyncio.current_task()
+                if current_task:
+                    invoke_task_registry.register(conversation_id, current_task)
 
-                # Continue generating sequence from max of cached or resumed
-                seq_counter = max(seq_counter, resume_from_sequence)
             serialized = {}
-
             try:
+                # Replay cached events if resuming
+                seq_counter = 0
+                if resume_from_sequence is not None and cache_key:
+                    cached_events = (
+                        await global_stream_cache.get_events_with_sequence_after(
+                            cache_key, resume_from_sequence
+                        )
+                    )
+                    for cached_sequence, cached_event in cached_events:
+                        parsed_sequence = self._extract_event_sequence(cached_event)
+                        if parsed_sequence is not None:
+                            seq_counter = max(seq_counter, parsed_sequence)
+                        else:
+                            seq_counter = max(seq_counter, cached_sequence)
+                        stream_text_accumulator.consume(cached_event)
+                        yield f"data: {json_dumps(cached_event, ensure_ascii=False)}\n\n"
+
+                    # Continue generating sequence from max of cached or resumed
+                    seq_counter = max(seq_counter, resume_from_sequence)
+
                 async for event in self._iter_stream_events_with_heartbeat(
                     gateway.stream(
                         resolved=resolved,
@@ -1097,6 +1159,8 @@ class A2AInvokeService:
                     f"data: {json_dumps(error_payload['data'], ensure_ascii=False)}\n\n"
                 )
             finally:
+                if conversation_id:
+                    invoke_task_registry.unregister(conversation_id)
                 if cache_key and self._is_terminal_status_event(serialized):
                     await global_stream_cache.mark_completed(cache_key)
                 if not stream_failed and not client_disconnected:
@@ -1133,6 +1197,7 @@ class A2AInvokeService:
                 if not client_disconnected:
                     yield "event: stream_end\ndata: {}\n\n"
 
+
         # Ensure downstreams do not persist potentially sensitive content.
         return StreamingResponse(
             event_generator(),
@@ -1165,6 +1230,7 @@ class A2AInvokeService:
         send_stream_end: bool = True,
         resume_from_sequence: int | None = None,
         cache_key: str | None = None,
+        conversation_id: str | None = None,
     ) -> None:
         from app.services.stream_cache.memory_cache import global_stream_cache
 
@@ -1176,26 +1242,36 @@ class A2AInvokeService:
         final_outcome: StreamOutcome | None = None
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
 
-        # Replay cached events if resuming
-        seq_counter = 0
-        if resume_from_sequence is not None and cache_key:
-            cached_events = await global_stream_cache.get_events_with_sequence_after(
-                cache_key, resume_from_sequence
+        if conversation_id:
+            await self.maybe_interrupt_inflight_invoke(
+                conversation_id=conversation_id,
+                metadata=metadata,
+                logger=logger,
             )
-            for cached_sequence, cached_event in cached_events:
-                parsed_sequence = self._extract_event_sequence(cached_event)
-                if parsed_sequence is not None:
-                    seq_counter = max(seq_counter, parsed_sequence)
-                else:
-                    seq_counter = max(seq_counter, cached_sequence)
-                stream_text_accumulator.consume(cached_event)
-                await websocket.send_text(json_dumps(cached_event, ensure_ascii=False))
-
-            # Continue generating sequence from max of cached or resumed
-            seq_counter = max(seq_counter, resume_from_sequence)
+            current_task = asyncio.current_task()
+            if current_task:
+                invoke_task_registry.register(conversation_id, current_task)
 
         serialized = {}
         try:
+            # Replay cached events if resuming
+            seq_counter = 0
+            if resume_from_sequence is not None and cache_key:
+                cached_events = await global_stream_cache.get_events_with_sequence_after(
+                    cache_key, resume_from_sequence
+                )
+                for cached_sequence, cached_event in cached_events:
+                    parsed_sequence = self._extract_event_sequence(cached_event)
+                    if parsed_sequence is not None:
+                        seq_counter = max(seq_counter, parsed_sequence)
+                    else:
+                        seq_counter = max(seq_counter, cached_sequence)
+                    stream_text_accumulator.consume(cached_event)
+                    await websocket.send_text(json_dumps(cached_event, ensure_ascii=False))
+
+                # Continue generating sequence from max of cached or resumed
+                seq_counter = max(seq_counter, resume_from_sequence)
+
             async for event in self._iter_stream_events_with_heartbeat(
                 gateway.stream(
                     resolved=resolved,
@@ -1309,6 +1385,8 @@ class A2AInvokeService:
                 error_code=error_code,
             )
         finally:
+            if conversation_id:
+                invoke_task_registry.unregister(conversation_id)
             if cache_key and self._is_terminal_status_event(serialized):
                 await global_stream_cache.mark_completed(cache_key)
             if not client_disconnected and final_outcome is not None:
@@ -1321,6 +1399,7 @@ class A2AInvokeService:
                 )
             if send_stream_end and not client_disconnected:
                 await self.send_ws_stream_end(websocket)
+
 
     async def consume_stream(
         self,
@@ -1341,6 +1420,7 @@ class A2AInvokeService:
         on_finalized: StreamFinalizedCallbackFn | None = None,
         idle_timeout_seconds: float | None = None,
         total_timeout_seconds: float | None = None,
+        conversation_id: str | None = None,
     ) -> StreamOutcome:
         stream_text_accumulator = self._StreamTextAccumulator()
         log_warning = getattr(logger, "warning", None)
@@ -1348,42 +1428,53 @@ class A2AInvokeService:
         started_at = time.monotonic()
         last_event_at = started_at
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
-        stream_iter = self._iter_stream_events_with_heartbeat(
-            gateway.stream(
-                resolved=resolved,
-                query=query,
-                context_id=context_id,
-                metadata=metadata,
-            ),
-            heartbeat_interval_seconds=heartbeat_interval_seconds,
-        ).__aiter__()
-        terminal_event_seen = False
-        serialized: dict[str, Any] = {}
-        idle_timeout = (
-            float(idle_timeout_seconds)
-            if idle_timeout_seconds is not None and idle_timeout_seconds > 0
-            else None
-        )
-        total_timeout = (
-            float(total_timeout_seconds)
-            if total_timeout_seconds is not None and total_timeout_seconds > 0
-            else None
-        )
 
-        def _resolve_wait_timeout(now: float) -> float | None:
-            wait_timeout = idle_timeout
-            if total_timeout is not None:
-                remaining_total = total_timeout - (now - started_at)
-                if remaining_total <= 0:
-                    return 0.0
-                wait_timeout = (
-                    min(wait_timeout, remaining_total)
-                    if wait_timeout is not None
-                    else remaining_total
-                )
-            return wait_timeout
+        if conversation_id:
+            await self.maybe_interrupt_inflight_invoke(
+                conversation_id=conversation_id,
+                metadata=metadata,
+                logger=logger,
+            )
+            current_task = asyncio.current_task()
+            if current_task:
+                invoke_task_registry.register(conversation_id, current_task)
 
         try:
+            stream_iter = self._iter_stream_events_with_heartbeat(
+                gateway.stream(
+                    resolved=resolved,
+                    query=query,
+                    context_id=context_id,
+                    metadata=metadata,
+                ),
+                heartbeat_interval_seconds=heartbeat_interval_seconds,
+            ).__aiter__()
+            terminal_event_seen = False
+            serialized: dict[str, Any] = {}
+            idle_timeout = (
+                float(idle_timeout_seconds)
+                if idle_timeout_seconds is not None and idle_timeout_seconds > 0
+                else None
+            )
+            total_timeout = (
+                float(total_timeout_seconds)
+                if total_timeout_seconds is not None and total_timeout_seconds > 0
+                else None
+            )
+
+            def _resolve_wait_timeout(now: float) -> float | None:
+                wait_timeout = idle_timeout
+                if total_timeout is not None:
+                    remaining_total = total_timeout - (now - started_at)
+                    if remaining_total <= 0:
+                        return 0.0
+                    wait_timeout = (
+                        min(wait_timeout, remaining_total)
+                        if wait_timeout is not None
+                        else remaining_total
+                    )
+                return wait_timeout
+
             while True:
                 now = time.monotonic()
                 if total_timeout is not None and (now - started_at) >= (
@@ -1587,6 +1678,9 @@ class A2AInvokeService:
                 warning_message="A2A consume stream finalized callback failed",
             )
             return outcome
+        finally:
+            if conversation_id:
+                invoke_task_registry.unregister(conversation_id)
 
 
 a2a_invoke_service = A2AInvokeService()

@@ -121,6 +121,7 @@ export const buildInvokePayload = (
     userMessageId?: string;
     clientAgentMessageId?: string;
     resumeFromSequence?: number;
+    interrupt?: boolean;
   },
 ): A2AAgentInvokeRequest => {
   const payload: A2AAgentInvokeRequest = { query, conversationId };
@@ -137,6 +138,15 @@ export const buildInvokePayload = (
     payload.contextId = session.contextId;
   }
   const metadata: Record<string, unknown> = { ...(session.metadata ?? {}) };
+
+  if (options?.interrupt) {
+    const extensions =
+      typeof metadata.extensions === "object" && metadata.extensions !== null
+        ? { ...(metadata.extensions as Record<string, unknown>) }
+        : {};
+    metadata.extensions = { ...extensions, interrupt: true };
+  }
+
   const externalProvider = session.externalSessionRef?.provider?.trim();
   const externalSessionId =
     session.externalSessionRef?.externalSessionId?.trim();

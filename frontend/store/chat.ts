@@ -276,9 +276,27 @@ export const useChatStore = create<ChatState>()(
 
         const session =
           get().sessions[conversationId] ?? createAgentSession(agentId);
+        const isStreaming = session.streamState === "streaming";
+
+        if (isStreaming) {
+          const messages =
+            useMessageStore.getState().messages[conversationId] ?? [];
+          const lastAgentMessage = [...messages]
+            .reverse()
+            .find((m) => m.role === "agent" && m.status === "streaming");
+          if (lastAgentMessage) {
+            useMessageStore
+              .getState()
+              .updateMessage(conversationId, lastAgentMessage.id, {
+                status: "done",
+              });
+          }
+        }
+
         const payload = buildInvokePayload(trimmed, session, conversationId, {
           userMessageId: userMessage.id,
           clientAgentMessageId: agentMessage.id,
+          interrupt: isStreaming,
         });
 
         await executeChatRuntime(
