@@ -27,16 +27,16 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants = {
-    neo: "border-neo border-black bg-neo-yellow shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+    neo: "border-neo border-white bg-neo-yellow shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
     primary:
-      "border-neo border-black bg-neo-yellow shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+      "border-neo border-white bg-neo-yellow shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
     secondary:
-      "border-neo border-black bg-white shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+      "border-neo border-white bg-surface shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
     outline:
-      "border-neo border-black bg-white shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+      "border-neo border-white bg-transparent shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
     ghost: "",
     danger:
-      "border-neo border-black bg-red-500 shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+      "border-neo border-white bg-red-600 shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
   };
 
   const sizes = {
@@ -54,20 +54,20 @@ export function Button({
   };
 
   const textColors = {
-    neo: "text-neo-text",
-    primary: "text-neo-text",
-    secondary: "text-neo-text",
-    outline: "text-neo-text",
-    ghost: "text-neo-text",
+    neo: "text-black",
+    primary: "text-black",
+    secondary: "text-white",
+    outline: "text-white",
+    ghost: "text-white",
     danger: "text-white",
   };
 
   const iconColors = {
     neo: "#000000",
     primary: "#000000",
-    secondary: "#000000",
-    outline: "#000000",
-    ghost: "#000000",
+    secondary: "#FFFFFF",
+    outline: "#FFFFFF",
+    ghost: "#FFFFFF",
     danger: "#ffffff",
   };
 

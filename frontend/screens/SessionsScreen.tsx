@@ -142,19 +142,19 @@ export function SessionsScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={refresh}
-            tintColor="#000000"
-            colors={["#000000"]}
+            tintColor="#FFFFFF"
+            colors={["#FFFFFF"]}
           />
         }
       >
         {loading ? (
           <View className="mt-8 items-center">
-            <Text className="text-sm text-black">Loading sessions...</Text>
+            <Text className="text-sm text-white">Loading sessions...</Text>
           </View>
         ) : sortedItems.length === 0 ? (
-          <View className="mt-8 border-neo border-black bg-white p-6 shadow-neo">
-            <Text className="text-base font-bold text-black">No sessions</Text>
-            <Text className="mt-2 text-sm text-black">No sessions found.</Text>
+          <View className="mt-8 border-neo border-white bg-surface p-6 shadow-neo">
+            <Text className="text-base font-bold text-white">No sessions</Text>
+            <Text className="mt-2 text-sm text-white">No sessions found.</Text>
           </View>
         ) : (
           <>
@@ -166,18 +166,19 @@ export function SessionsScreen() {
                 agent.tone === "shared"
                   ? "bg-neo-yellow"
                   : agent.tone === "personal"
-                    ? "bg-white border border-black"
-                    : "bg-gray-200";
-              const agentTextClass = "text-black";
+                    ? "bg-transparent border border-white"
+                    : "bg-gray-700";
+              const agentTextClass =
+                agent.tone === "shared" ? "text-black" : "text-white";
               return (
                 <View
                   key={item.conversationId}
-                  className="mb-4 border-neo border-black bg-white shadow-neo"
+                  className="mb-4 border-neo border-white bg-surface shadow-neo"
                 >
                   <View className="p-4">
                     <View className="flex-row items-center justify-between gap-2">
                       <View
-                        className={`max-w-[78%] border border-black px-3 py-1 ${agentBadgeClass}`}
+                        className={`max-w-[78%] border border-white px-3 py-1 ${agentBadgeClass}`}
                       >
                         <Text
                           className={`text-[11px] font-bold ${agentTextClass}`}
@@ -187,22 +188,22 @@ export function SessionsScreen() {
                         </Text>
                       </View>
                       <View className="px-1 py-0.5">
-                        <Text className="text-[10px] font-bold text-black">
+                        <Text className="text-[10px] font-bold text-white">
                           {item.source}
                         </Text>
                       </View>
                     </View>
                     <Text
-                      className="mt-2 text-sm font-bold text-black"
+                      className="mt-2 text-sm font-bold text-white"
                       numberOfLines={2}
                     >
                       {title}
                     </Text>
                   </View>
 
-                  <View className="flex-row items-start justify-between gap-3 border-t-2 border-black bg-gray-50 px-4 py-3">
+                  <View className="flex-row items-start justify-between gap-3 border-t-2 border-white bg-black/20 px-4 py-3">
                     <View className="flex-1">
-                      <Text className="text-[11px] font-bold text-gray-600">
+                      <Text className="text-[11px] font-bold text-gray-400">
                         {timeline.timelineRangeText}
                       </Text>
                     </View>

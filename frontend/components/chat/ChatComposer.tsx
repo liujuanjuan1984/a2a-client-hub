@@ -48,10 +48,10 @@ export function ChatComposer({
         </View>
       ) : null}
 
-      <View className="flex-row items-end gap-2 border-neo border-black bg-white p-2">
+      <View className="flex-row items-end gap-2 border-neo border-white bg-surface p-2">
         <Pressable
-          className={`h-9 w-9 items-center justify-center border-2 border-black ${
-            showShortcutManager ? "bg-neo-yellow" : "bg-white"
+          className={`h-9 w-9 items-center justify-center border-2 border-white ${
+            showShortcutManager ? "bg-neo-yellow" : "bg-surface"
           }`}
           onPress={onOpenShortcutManager}
           accessibilityRole="button"
@@ -60,14 +60,14 @@ export function ChatComposer({
           <Ionicons
             name={showShortcutManager ? "flash" : "flash-outline"}
             size={18}
-            color="#000000"
+            color={showShortcutManager ? "#000000" : "#FFFFFF"}
           />
         </Pressable>
         <TextInput
           ref={inputRef}
-          className="flex-1 px-3 py-2 text-black"
+          className="flex-1 px-3 py-2 text-white"
           placeholder="Type your message"
-          placeholderTextColor="#666666"
+          placeholderTextColor="#999999"
           multiline
           value={input}
           onChangeText={onInputChange}
@@ -93,13 +93,13 @@ export function ChatComposer({
             accessibilityRole="button"
             accessibilityLabel="Clear input"
           >
-            <Ionicons name="close-circle" size={18} color="#000000" />
+            <Ionicons name="close-circle" size={18} color="#FFFFFF" />
           </Pressable>
         )}
         <Pressable
-          className={`h-9 w-9 items-center justify-center border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none ${
+          className={`h-9 w-9 items-center justify-center border-2 border-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none ${
             !input.trim() || Boolean(pendingInterrupt)
-              ? "bg-gray-200 opacity-50"
+              ? "bg-gray-700 opacity-50"
               : "bg-neo-yellow"
           }`}
           testID="chat-send-button"

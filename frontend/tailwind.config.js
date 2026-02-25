@@ -13,14 +13,14 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: "#F5F5F5",
-        surface: "#FFFFFF",
+        background: "#121212",
+        surface: "#1E1E1E",
         primary: "#FFDE03",
-        accent: "#000000",
-        muted: "#666666",
+        accent: "#FFFFFF",
+        muted: "#999999",
         "neo-yellow": "#FFDE03",
-        "neo-bg": "#F5F5F5",
-        "neo-text": "#000000",
+        "neo-bg": "#121212",
+        "neo-text": "#FFFFFF",
       },
       borderWidth: {
         neo: "2px",

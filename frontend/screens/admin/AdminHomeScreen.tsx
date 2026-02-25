@@ -21,7 +21,7 @@ const AdminTile = ({
   onPress: () => void;
 }) => (
   <Pressable
-    className="mb-6 border-neo border-black bg-white shadow-neo"
+    className="mb-6 border-neo border-white bg-surface shadow-neo"
     onPress={onPress}
     accessibilityRole="button"
     accessibilityLabel={title}
@@ -30,12 +30,12 @@ const AdminTile = ({
     <View className="p-5">
       <View className="flex-row items-start justify-between">
         <View className="flex-1 pr-4">
-          <Text className="text-xl font-bold text-black" numberOfLines={1}>
+          <Text className="text-xl font-bold text-white" numberOfLines={1}>
             {title}
           </Text>
-          <Text className="mt-2 text-sm font-bold text-black">{subtitle}</Text>
+          <Text className="mt-2 text-sm font-bold text-white">{subtitle}</Text>
         </View>
-        <View className="h-11 w-11 items-center justify-center border-2 border-black bg-neo-yellow">
+        <View className="h-11 w-11 items-center justify-center border-2 border-white bg-neo-yellow">
           <Ionicons name={icon} size={20} color="#000000" />
         </View>
       </View>

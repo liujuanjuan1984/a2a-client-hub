@@ -93,18 +93,18 @@ export function AgentListScreen() {
           <RefreshControl
             refreshing={isFetching}
             onRefresh={onRefresh}
-            tintColor="#000000"
-            colors={["#000000"]}
+            tintColor="#FFFFFF"
+            colors={["#FFFFFF"]}
           />
         }
       >
         {agents.length === 0 ? (
-          <View className="border-neo border-black bg-white p-8 items-center shadow-neo">
-            <View className="h-16 w-16 items-center justify-center border-2 border-black bg-neo-yellow mb-4">
+          <View className="border-neo border-white bg-surface p-8 items-center shadow-neo">
+            <View className="h-16 w-16 items-center justify-center border-2 border-white bg-neo-yellow mb-4">
               <Text className="text-xs font-bold text-black">A2A</Text>
             </View>
-            <Text className="text-lg font-bold text-black">No agents yet</Text>
-            <Text className="mt-2 text-center text-sm text-black">
+            <Text className="text-lg font-bold text-white">No agents yet</Text>
+            <Text className="mt-2 text-center text-sm text-white">
               Add your first agent to start chatting with A2A services.
             </Text>
             <Button
@@ -120,19 +120,19 @@ export function AgentListScreen() {
           agents.map((agent) => (
             <View
               key={agent.id}
-              className="mb-6 border-neo border-black bg-white shadow-neo"
+              className="mb-6 border-neo border-white bg-surface shadow-neo"
             >
               <View className="p-5">
                 <View className="flex-row items-start justify-between">
                   <View className="flex-1 pr-4">
                     <Text
-                      className="text-xl font-bold text-black"
+                      className="text-xl font-bold text-white"
                       numberOfLines={1}
                     >
                       {agent.name}
                     </Text>
                     {agent.source === "shared" ? (
-                      <View className="mt-2 self-start border border-black bg-neo-yellow px-2.5 py-1">
+                      <View className="mt-2 self-start border border-white bg-neo-yellow px-2.5 py-1">
                         <Text className="text-[11px] font-bold text-black">
                           Shared
                         </Text>
@@ -142,10 +142,10 @@ export function AgentListScreen() {
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-between gap-3 border-t-2 border-black bg-gray-50 px-5 py-3">
+              <View className="flex-row items-center justify-between gap-3 border-t-2 border-white bg-black/20 px-5 py-3">
                 <View className="flex-row items-center gap-2">
                   <Pressable
-                    className="flex-row items-center gap-1 border border-black bg-white px-3 py-2 active:bg-neo-yellow"
+                    className="flex-row items-center gap-1 border border-white bg-surface px-3 py-2 active:bg-neo-yellow"
                     onPress={() => {
                       blurActiveElement();
                       router.push(`/agents/${agent.id}`);
@@ -167,9 +167,9 @@ export function AgentListScreen() {
                           : "information-outline"
                       }
                       size={14}
-                      color="#000000"
+                      color="#FFFFFF"
                     />
-                    <Text className="text-xs font-bold text-black">
+                    <Text className="text-xs font-bold text-white">
                       {agent.source === "personal" ? "Edit" : "Details"}
                     </Text>
                   </Pressable>

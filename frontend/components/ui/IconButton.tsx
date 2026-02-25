@@ -33,16 +33,16 @@ export function IconButton({
   ...props
 }: IconButtonProps) {
   const variants: Record<IconButtonVariant, string> = {
-    neo: "border-2 border-black bg-neo-yellow shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
+    neo: "border-2 border-white bg-neo-yellow shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
     primary:
-      "border-2 border-black bg-neo-yellow shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
+      "border-2 border-white bg-neo-yellow shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
     secondary:
-      "border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
+      "border-2 border-white bg-surface shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
     outline:
-      "border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
+      "border-2 border-white bg-transparent shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
     ghost: "",
     danger:
-      "border-2 border-black bg-red-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
+      "border-2 border-white bg-red-600 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
   };
 
   const sizes: Record<IconButtonSize, string> = {
@@ -62,9 +62,9 @@ export function IconButton({
   const iconColors: Record<IconButtonVariant, string> = {
     neo: "#000000",
     primary: "#000000",
-    secondary: "#000000",
-    outline: "#000000",
-    ghost: "#000000",
+    secondary: "#FFFFFF",
+    outline: "#FFFFFF",
+    ghost: "#FFFFFF",
     danger: "#ffffff",
   };
 

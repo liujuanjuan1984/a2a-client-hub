@@ -16,26 +16,26 @@ import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 
 const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
-  running: "text-blue-600",
-  success: "text-emerald-600",
-  failed: "text-red-600",
+  running: "text-blue-400",
+  success: "text-emerald-400",
+  failed: "text-red-400",
 };
 
 const getCardTone = (job: ScheduledJob) => {
   if (!job.enabled) {
     return {
-      container: "border-neo border-gray-400 bg-gray-100",
+      container: "border-neo border-gray-600 bg-gray-800/50",
       title: "text-gray-500",
       text: "text-gray-500",
       prompt: "text-gray-600",
       statusText: "Disabled",
-      iconColor: "#9ca3af",
-      switchTrack: { false: "#d1d5db", true: "#9ca3af" },
+      iconColor: "#4b5563",
+      switchTrack: { false: "#374151", true: "#4b5563" },
     };
   }
   if (job.last_run_status === "running") {
     return {
-      container: "border-neo border-black bg-neo-yellow shadow-neo",
+      container: "border-neo border-white bg-neo-yellow shadow-neo",
       title: "text-black",
       text: "text-black",
       prompt: "text-black",
@@ -45,13 +45,13 @@ const getCardTone = (job: ScheduledJob) => {
     };
   }
   return {
-    container: "border-neo border-black bg-white shadow-neo",
-    title: "text-black",
-    text: "text-black",
-    prompt: "text-black font-bold",
+    container: "border-neo border-white bg-surface shadow-neo",
+    title: "text-white",
+    text: "text-white",
+    prompt: "text-white font-bold",
     statusText: "Enabled",
-    iconColor: "#000000",
-    switchTrack: { false: "#d1d5db", true: "#000000" },
+    iconColor: "#FFFFFF",
+    switchTrack: { false: "#374151", true: "#FFDE03" },
   };
 };
 
@@ -194,7 +194,7 @@ export function ScheduledJobCard({
         </Text>
         <View className="mt-1 items-end">
           <Pressable
-            className="border border-black bg-white px-2 py-0.5 active:bg-neo-yellow"
+            className="border border-white bg-surface px-2 py-0.5 active:bg-neo-yellow"
             onPress={() => setPromptExpanded((value) => !value)}
             accessibilityRole="button"
             accessibilityLabel="Toggle prompt expansion"
@@ -206,27 +206,27 @@ export function ScheduledJobCard({
         </View>
       </View>
 
-      <View className="flex-row items-center justify-start gap-3 border-t-2 border-black bg-gray-50 px-4 py-3">
+      <View className="flex-row items-center justify-start gap-3 border-t-2 border-white bg-black/20 px-4 py-3">
         <Pressable
-          className="flex-row items-center gap-1 border border-black bg-white px-3 py-2 active:bg-neo-yellow"
+          className="flex-row items-center gap-1 border border-white bg-surface px-3 py-2 active:bg-neo-yellow"
           onPress={onEdit}
           accessibilityRole="button"
           accessibilityLabel="Edit"
           accessibilityHint="Edit this scheduled job"
         >
-          <Ionicons name="create-outline" size={14} color="#000000" />
-          <Text className="text-xs font-bold text-black">Edit</Text>
+          <Ionicons name="create-outline" size={14} color={tone.iconColor} />
+          <Text className={`text-xs font-bold ${tone.title}`}>Edit</Text>
         </Pressable>
 
         <Pressable
-          className="flex-row items-center gap-1 border border-black bg-white px-3 py-2 active:bg-neo-yellow"
+          className="flex-row items-center gap-1 border border-white bg-surface px-3 py-2 active:bg-neo-yellow"
           onPress={onToggleExecutions}
           accessibilityRole="button"
           accessibilityLabel={historyLabel}
           accessibilityHint={`${historyLabel} execution history`}
         >
-          <Ionicons name={historyIcon} size={14} color="#000000" />
-          <Text className="text-xs font-bold text-black">{historyLabel}</Text>
+          <Ionicons name={historyIcon} size={14} color={tone.iconColor} />
+          <Text className={`text-xs font-bold ${tone.title}`}>{historyLabel}</Text>
         </Pressable>
 
         {canMarkFailed ? (
@@ -244,13 +244,13 @@ export function ScheduledJobCard({
 
       {executionsOpen ? (
         <View className="px-4 pb-4 pt-3">
-          <View className="border-2 border-black bg-white p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+          <View className="border-2 border-white bg-surface p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
             {executionsLoading ? (
-              <Text className="text-xs font-bold text-black">
+              <Text className="text-xs font-bold text-white">
                 Loading history...
               </Text>
             ) : executions.length === 0 ? (
-              <Text className="text-xs font-bold text-black">
+              <Text className="text-xs font-bold text-white">
                 No executions yet.
               </Text>
             ) : (
@@ -258,10 +258,10 @@ export function ScheduledJobCard({
                 {executions.map((execution) => (
                   <View
                     key={execution.id}
-                    className="mb-2 border border-black bg-gray-50 p-2"
+                    className="mb-2 border border-white bg-black/20 p-2"
                   >
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-[10px] font-bold text-black">
+                      <Text className="text-[10px] font-bold text-white">
                         {formatLocalDateTime(
                           execution.finished_at ??
                             execution.started_at ??
@@ -276,7 +276,7 @@ export function ScheduledJobCard({
                       </Text>
                     </View>
                     {execution.error_message ? (
-                      <Text className="mt-1 text-[10px] font-bold text-red-600">
+                      <Text className="mt-1 text-[10px] font-bold text-red-400">
                         {execution.error_message}
                       </Text>
                     ) : null}
