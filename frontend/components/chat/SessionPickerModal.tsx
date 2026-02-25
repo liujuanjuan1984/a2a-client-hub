@@ -4,7 +4,7 @@ import { FlatList, Modal, Pressable, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import { type AgentSession } from "@/lib/chat-utils";
-import { getConversationMessages } from "@/lib/chatHistoryCache";
+import { useConversationMessages } from "@/lib/chatHistoryCache";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import { useChatStore } from "@/store/chat";
 
@@ -19,7 +19,7 @@ function SessionItem({
   isActive: boolean;
   onSelect: (id: string) => void;
 }) {
-  const messages = getConversationMessages(conversationId);
+  const messages = useConversationMessages(conversationId);
   const firstUserMessage = messages?.find((m) => m.role === "user");
   const title = firstUserMessage?.content?.trim() || "New Session";
   const createdAtText = formatLocalDateTimeYmdHm(

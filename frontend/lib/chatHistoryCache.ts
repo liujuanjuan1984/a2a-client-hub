@@ -1,4 +1,5 @@
 import { type InfiniteData } from "@tanstack/react-query";
+import { useSyncExternalStore } from "react";
 
 import { type ChatMessage } from "@/lib/api/chat-utils";
 import { queryKeys } from "@/lib/queryKeys";
@@ -67,6 +68,29 @@ export const getConversationMessages = (
     return [];
   }
   return flattenPages(data.pages);
+};
+
+export const useConversationMessages = (
+  conversationId: string,
+): ChatMessage[] => {
+  const subscribe = (onStoreChange: () => void) => {
+    return queryClient.getQueryCache().subscribe((event) => {
+      const key = event?.query?.queryKey;
+      if (!Array.isArray(key) || key.length < 3) {
+        return;
+      }
+      if (
+        key[0] === "history" &&
+        key[1] === "chat" &&
+        key[2] === conversationId
+      ) {
+        onStoreChange();
+      }
+    });
+  };
+
+  const getSnapshot = () => getConversationMessages(conversationId);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
 
 export const setConversationMessages = (

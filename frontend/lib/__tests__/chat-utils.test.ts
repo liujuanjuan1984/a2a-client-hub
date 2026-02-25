@@ -155,9 +155,19 @@ describe("chat store utils", () => {
   it("builds bounded persisted sessions and resets volatile fields", () => {
     const newest = createAgentSession("agent-1");
     newest.lastActiveAt = "2026-02-14T12:00:00.000Z";
+    newest.source = "manual";
+    newest.contextId = "ctx-1";
+    newest.metadata = { locale: "zh-CN" };
+    newest.externalSessionRef = {
+      provider: "opencode",
+      externalSessionId: "ses-upstream-1",
+    };
     newest.streamState = "streaming";
     newest.lastStreamError = "temporary";
     newest.runtimeStatus = "working";
+    newest.lastReceivedSequence = 42;
+    newest.lastUserMessageId = "user-1";
+    newest.lastAgentMessageId = "agent-1";
     newest.pendingInterrupt = {
       requestId: "perm-1",
       type: "permission",
@@ -175,5 +185,12 @@ describe("chat store utils", () => {
     expect(persisted.newest.runtimeStatus).toBeNull();
     expect(persisted.newest.pendingInterrupt).toBeNull();
     expect(persisted.newest.transport).toBe("http_json");
+    expect(persisted.newest.source).toBeNull();
+    expect(persisted.newest.contextId).toBeNull();
+    expect(persisted.newest.metadata).toEqual({});
+    expect(persisted.newest.externalSessionRef).toBeNull();
+    expect(persisted.newest.lastReceivedSequence).toBeUndefined();
+    expect(persisted.newest.lastUserMessageId).toBeUndefined();
+    expect(persisted.newest.lastAgentMessageId).toBeUndefined();
   });
 });
