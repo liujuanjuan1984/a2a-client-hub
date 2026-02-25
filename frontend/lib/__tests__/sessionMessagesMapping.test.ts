@@ -6,13 +6,22 @@ describe("mapSessionMessagesToChatMessages", () => {
       {
         id: "m-1",
         role: "assistant",
-        content: "A",
         created_at: "2025-01-02T00:00:00.000Z",
+        blocks: [
+          {
+            id: "m-1:b-1",
+            messageId: "m-1",
+            seq: 1,
+            type: "text",
+            content: "A",
+            isFinished: true,
+          },
+        ],
       },
       {
         id: "m-2",
         role: "user",
-        content: "U",
+        content: "U", // user content may still exist for non-unified or transitional sources
         created_at: "2025-01-01T00:00:00.000Z",
       },
       {

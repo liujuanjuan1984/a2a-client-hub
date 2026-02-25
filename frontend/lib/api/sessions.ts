@@ -5,6 +5,8 @@ import {
 } from "@/lib/api/pagination";
 import { type UnifiedSessionSource } from "@/lib/sessionIds";
 
+const BLOCKS_QUERY_BATCH_SIZE = 200;
+
 export type SessionListItem = {
   conversationId: string;
   source: UnifiedSessionSource;
@@ -17,12 +19,31 @@ export type SessionListItem = {
   created_at?: string | null;
 };
 
+export type SessionMessageBlockItem = {
+  id: string;
+  messageId: string;
+  seq: number;
+  type: string;
+  content?: string | null;
+  contentLength: number;
+  isFinished: boolean;
+};
+
+export type SessionMessageBlocksItem = {
+  messageId: string;
+  role: "user" | "agent" | "system";
+  blockCount: number;
+  hasBlocks: boolean;
+  blocks: SessionMessageBlockItem[];
+};
+
 export type SessionMessageItem = {
   id: string;
   role: "user" | "agent" | "system";
-  content: string;
   created_at: string;
   metadata?: Record<string, unknown> | null;
+  content?: string;
+  blocks?: SessionMessageBlockItem[];
 };
 
 export type SessionContinueBinding = {
@@ -84,7 +105,97 @@ export const listSessionMessagesPage = async (
   const parsed = parsePaginatedListResponse(response);
   const nextPage = resolveNextPageWithFallback({ parsed, page, size });
 
-  return { ...parsed, nextPage };
+  const agentMessageIds = Array.from(
+    new Set(
+      parsed.items
+        .filter((item) => item.role === "agent")
+        .map((item) => item.id.trim())
+        .filter((item) => item.length > 0),
+    ),
+  );
+  if (agentMessageIds.length === 0) {
+    return { ...parsed, nextPage };
+  }
+
+  const blocksByMessageId = new Map<string, SessionMessageBlockItem[]>();
+  for (
+    let start = 0;
+    start < agentMessageIds.length;
+    start += BLOCKS_QUERY_BATCH_SIZE
+  ) {
+    const messageIds = agentMessageIds.slice(
+      start,
+      start + BLOCKS_QUERY_BATCH_SIZE,
+    );
+    const blocksResponse = await querySessionMessageBlocks(conversationId, {
+      messageIds,
+      mode: "full",
+    });
+    blocksResponse.items.forEach((item) => {
+      if (item.role !== "agent") {
+        return;
+      }
+      const sortedBlocks = [...(item.blocks ?? [])].sort(
+        (lhs, rhs) => lhs.seq - rhs.seq,
+      );
+      blocksByMessageId.set(item.messageId, sortedBlocks);
+    });
+  }
+
+  const hydratedItems = parsed.items.map((item) => {
+    if (item.role !== "agent") {
+      return item;
+    }
+    return {
+      ...item,
+      blocks: blocksByMessageId.get(item.id) ?? [],
+    };
+  });
+
+  return {
+    ...parsed,
+    items: hydratedItems,
+    nextPage,
+  };
+};
+
+export const querySessionMessageBlocks = async (
+  conversationId: string,
+  payload: {
+    messageIds: string[];
+    mode?: "full" | "text_with_placeholders" | "outline";
+  },
+): Promise<{
+  items: SessionMessageBlocksItem[];
+  meta?: Record<string, unknown>;
+}> => {
+  const response = await apiRequest<
+    {
+      items: SessionMessageBlocksItem[];
+      meta?: Record<string, unknown>;
+    },
+    {
+      messageIds: string[];
+      mode: "full" | "text_with_placeholders" | "outline";
+    }
+  >(
+    `/me/conversations/${encodeURIComponent(conversationId)}/messages/blocks:query`,
+    {
+      method: "POST",
+      body: {
+        messageIds: payload.messageIds,
+        mode: payload.mode ?? "full",
+      },
+    },
+  );
+
+  return {
+    items: Array.isArray(response.items) ? response.items : [],
+    meta:
+      response.meta && typeof response.meta === "object"
+        ? response.meta
+        : undefined,
+  };
 };
 
 export const continueSession = async (
