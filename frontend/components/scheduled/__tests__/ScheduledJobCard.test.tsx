@@ -77,7 +77,7 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("bg-gray-800/40");
+    expect(containerClasses).toContain("bg-slate-900/40");
   });
 
   it("applies default styling when job is enabled but not running", () => {

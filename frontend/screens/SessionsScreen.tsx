@@ -166,12 +166,12 @@ export function SessionsScreen() {
               const timeline = getSessionTimelineText(item);
               const agentBadgeClass =
                 agent.tone === "shared"
-                  ? "bg-primary/20"
+                  ? "bg-primary/10"
                   : agent.tone === "personal"
-                    ? "bg-gray-700"
-                    : "bg-gray-800";
+                    ? "bg-slate-700/50"
+                    : "bg-slate-800/50";
               const agentTextClass =
-                agent.tone === "shared" ? "text-primary" : "text-white";
+                agent.tone === "shared" ? "text-primary" : "text-slate-300";
               return (
                 <View
                   key={item.conversationId}
@@ -190,7 +190,7 @@ export function SessionsScreen() {
                         </Text>
                       </View>
                       <View className="px-1 py-0.5">
-                        <Text className="text-[10px] font-medium text-gray-500">
+                        <Text className="text-[10px] font-medium text-slate-500">
                           {item.source}
                         </Text>
                       </View>
@@ -203,7 +203,7 @@ export function SessionsScreen() {
                     </Text>
                   </View>
 
-                  <View className="flex-row items-start justify-between gap-3 bg-black/20 px-4 py-3">
+                  <View className="flex-row items-start justify-between gap-3 bg-black/40 px-4 py-3">
                     <View className="flex-1">
                       <Text className="text-[11px] font-medium text-gray-500">
                         {timeline.timelineRangeText}

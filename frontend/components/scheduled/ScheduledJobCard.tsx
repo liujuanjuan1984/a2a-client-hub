@@ -24,20 +24,20 @@ const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
 const getCardTone = (job: ScheduledJob) => {
   if (!job.enabled) {
     return {
-      container: "bg-gray-800/40",
-      title: "text-gray-500",
-      text: "text-gray-500",
-      prompt: "text-gray-600",
+      container: "bg-slate-900/40",
+      title: "text-slate-500",
+      text: "text-slate-600",
+      prompt: "text-slate-600",
       statusText: "Disabled",
-      iconColor: "#4b5563",
-      switchTrack: { false: "#374151", true: "#4b5563" },
+      iconColor: "#475569",
+      switchTrack: { false: "#1E293B", true: "#334155" },
     };
   }
   if (job.last_run_status === "running") {
     return {
       container: "bg-primary",
       title: "text-black",
-      text: "text-black/80",
+      text: "text-black/70",
       prompt: "text-black",
       statusText: "Running",
       iconColor: "#000000",
@@ -47,11 +47,11 @@ const getCardTone = (job: ScheduledJob) => {
   return {
     container: "bg-surface",
     title: "text-white",
-    text: "text-white/60",
-    prompt: "text-white",
+    text: "text-slate-400",
+    prompt: "text-slate-200",
     statusText: "Enabled",
     iconColor: "#FFFFFF",
-    switchTrack: { false: "#374151", true: "#FFDE03" },
+    switchTrack: { false: "#0F172A", true: "#FFDE03" },
   };
 };
 
@@ -206,9 +206,9 @@ export function ScheduledJobCard({
         </View>
       </View>
 
-      <View className="flex-row items-center justify-start gap-3 bg-black/20 px-4 py-3">
+      <View className="flex-row items-center justify-start gap-3 bg-black/30 px-4 py-3">
         <Pressable
-          className="flex-row items-center gap-1 rounded-xl bg-white/10 px-3 py-2 active:bg-white/20"
+          className="flex-row items-center gap-1 rounded-xl bg-slate-800 px-3 py-2 active:bg-slate-700"
           onPress={onEdit}
           accessibilityRole="button"
           accessibilityLabel="Edit"
@@ -217,6 +217,18 @@ export function ScheduledJobCard({
           <Ionicons name="create-outline" size={14} color={tone.iconColor} />
           <Text className={`text-xs font-bold ${tone.title}`}>Edit</Text>
         </Pressable>
+
+        <Pressable
+          className="flex-row items-center gap-1 rounded-xl bg-slate-800 px-3 py-2 active:bg-slate-700"
+          onPress={onToggleExecutions}
+          accessibilityRole="button"
+          accessibilityLabel={historyLabel}
+          accessibilityHint={`${historyLabel} execution history`}
+        >
+          <Ionicons name={historyIcon} size={14} color={tone.iconColor} />
+          <Text className={`text-xs font-bold ${tone.title}`}>{historyLabel}</Text>
+        </Pressable>
+
 
         <Pressable
           className="flex-row items-center gap-1 rounded-xl bg-white/10 px-3 py-2 active:bg-white/20"

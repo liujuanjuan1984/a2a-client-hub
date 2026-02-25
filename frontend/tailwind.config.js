@@ -13,20 +13,20 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: "#121212",
-        surface: "#1E1E1E",
+        background: "#0B0E14",
+        surface: "#171B24",
         primary: "#FFDE03",
         accent: "#FFFFFF",
-        muted: "#888888",
+        muted: "#70778B",
         "neo-yellow": "#FFDE03",
-        "neo-bg": "#121212",
+        "neo-bg": "#0B0E14",
         "neo-text": "#FFFFFF",
       },
       borderWidth: {
         neo: "1px",
       },
       boxShadow: {
-        neo: "0px 2px 8px rgba(0,0,0,0.4)",
+        neo: "0px 4px 12px rgba(0,0,0,0.5)",
       },
     },
   },

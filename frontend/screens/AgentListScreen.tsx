@@ -142,10 +142,10 @@ export function AgentListScreen() {
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-between gap-3 bg-black/20 px-5 py-3">
+              <View className="flex-row items-center justify-between gap-3 bg-black/40 px-5 py-3">
                 <View className="flex-row items-center gap-2">
                   <Pressable
-                    className="flex-row items-center gap-1 rounded-xl bg-gray-800 px-3 py-2 active:bg-gray-700"
+                    className="flex-row items-center gap-1 rounded-xl bg-slate-800 px-3 py-2 active:bg-slate-700"
                     onPress={() => {
                       blurActiveElement();
                       router.push(`/agents/${agent.id}`);
