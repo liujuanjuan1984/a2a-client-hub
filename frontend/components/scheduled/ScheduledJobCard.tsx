@@ -94,6 +94,7 @@ export function ScheduledJobCard({
       : null;
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [markingFailed, setMarkingFailed] = useState(false);
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const canMarkFailed = job.last_run_status === "running";
 
   const openExecutionSession = (execution: ScheduledJobExecution) => {
@@ -178,7 +179,7 @@ export function ScheduledJobCard({
           />
         </View>
 
-        {executionsOpen && (
+        {promptExpanded && (
           <View className="mt-4 pt-4 border-t border-white/5">
             <Text className={`text-xs leading-5 ${tone.prompt}`}>
               {job.prompt}
@@ -197,12 +198,19 @@ export function ScheduledJobCard({
             onPress={onEdit}
           />
           <Button
-            label={executionsOpen ? "Less" : "Info"}
+            label={promptExpanded ? "Less" : "Info"}
             size="sm"
             variant="secondary"
             iconLeft={
-              executionsOpen ? "chevron-up" : "information-circle-outline"
+              promptExpanded ? "chevron-up" : "information-circle-outline"
             }
+            onPress={() => setPromptExpanded(!promptExpanded)}
+          />
+          <Button
+            label={executionsOpen ? "Hide" : "History"}
+            size="sm"
+            variant="secondary"
+            iconLeft={executionsOpen ? "time" : "time-outline"}
             onPress={onToggleExecutions}
           />
         </View>

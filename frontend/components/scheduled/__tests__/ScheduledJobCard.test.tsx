@@ -141,35 +141,23 @@ describe("ScheduledJobCard visuals", () => {
       last_run_status: "success" as const,
       next_run_at: "2026-02-23T10:00:00Z",
     };
-    const onToggleExecutions = jest.fn();
-    const { getByText, queryByText, rerender } = render(
-      <ScheduledJobCard
-        {...defaultProps}
-        job={job as any}
-        executionsOpen={false}
-        onToggleExecutions={onToggleExecutions}
-      />,
+    const { getByText, queryByText } = render(
+      <ScheduledJobCard {...defaultProps} job={job as any} />,
     );
 
     // Prompt should be hidden by default
     expect(queryByText(job.prompt)).toBeNull();
     expect(getByText("Info")).toBeTruthy();
 
+    // Click Info to expand
     fireEvent.press(getByText("Info"));
-    expect(onToggleExecutions).toHaveBeenCalled();
-
-    // After toggle, re-render with executionsOpen=true
-    rerender(
-      <ScheduledJobCard
-        {...defaultProps}
-        job={job as any}
-        executionsOpen
-        onToggleExecutions={onToggleExecutions}
-      />,
-    );
 
     expect(getByText(job.prompt)).toBeTruthy();
     expect(getByText("Less")).toBeTruthy();
+
+    // Click Less to collapse
+    fireEvent.press(getByText("Less"));
+    expect(queryByText(job.prompt)).toBeNull();
   });
 
   it("shows interval details including minutes and start time", () => {
