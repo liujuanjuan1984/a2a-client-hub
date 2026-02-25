@@ -50,29 +50,6 @@ describe("useChatHistoryQuery", () => {
         role: i % 2 === 0 ? "assistant" : "user",
         content: `content-${i}`,
         created_at: `2026-02-12T00:${minute}:${second}.000Z`,
-        metadata:
-          i === 0
-            ? {
-                message_blocks: [
-                  {
-                    id: "blk-r",
-                    type: "reasoning",
-                    content: "reasoning-0",
-                    is_finished: true,
-                    created_at: "2026-02-12T00:00:00.100Z",
-                    updated_at: "2026-02-12T00:00:00.200Z",
-                  },
-                  {
-                    id: "blk-t",
-                    type: "tool_call",
-                    content: "tool-0",
-                    is_finished: true,
-                    created_at: "2026-02-12T00:00:00.300Z",
-                    updated_at: "2026-02-12T00:00:00.400Z",
-                  },
-                ],
-              }
-            : undefined,
       };
     });
 
@@ -92,14 +69,9 @@ describe("useChatHistoryQuery", () => {
       content: "content-0",
       blocks: [
         expect.objectContaining({
-          id: "blk-r",
-          type: "reasoning",
-          content: "reasoning-0",
-        }),
-        expect.objectContaining({
-          id: "blk-t",
-          type: "tool_call",
-          content: "tool-0",
+          id: "msg-0:text",
+          type: "text",
+          content: "content-0",
         }),
       ],
     });

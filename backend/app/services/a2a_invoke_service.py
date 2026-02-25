@@ -1078,12 +1078,11 @@ class A2AInvokeService:
                         continue
                     seq_counter = max(seq_counter, event_sequence)
 
+                    await self._call_callback(on_event, serialized)
                     if cache_key:
                         await global_stream_cache.append_event(
                             cache_key, serialized, seq_counter
                         )
-
-                    await self._call_callback(on_event, serialized)
                     stream_text_accumulator.consume(serialized)
                     last_event_at = time.monotonic()
                     yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
@@ -1286,12 +1285,11 @@ class A2AInvokeService:
                     continue
                 seq_counter = max(seq_counter, event_sequence)
 
+                await self._call_callback(on_event, serialized)
                 if cache_key:
                     await global_stream_cache.append_event(
                         cache_key, serialized, seq_counter
                     )
-
-                await self._call_callback(on_event, serialized)
                 stream_text_accumulator.consume(serialized)
                 last_event_at = time.monotonic()
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))

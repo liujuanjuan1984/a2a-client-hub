@@ -183,7 +183,6 @@ class SessionHubService:
         items: list[dict[str, Any]] = []
         for message in messages:
             message_metadata = dict(getattr(message, "message_metadata", None) or {})
-            message_metadata.setdefault("local_message_id", str(message.id))
             message_metadata.pop("message_blocks", None)
             resolved_content = message.content or ""
             if (
@@ -213,7 +212,7 @@ class SessionHubService:
                     message_metadata["stream"] = stream_meta
             items.append(
                 {
-                    "id": _resolve_local_message_item_id(message, message_metadata),
+                    "id": str(message.id),
                     "role": _sender_to_role(getattr(message, "sender", "")),
                     "content": resolved_content,
                     "created_at": message.created_at,
@@ -1145,30 +1144,6 @@ def _sender_to_role(sender: str) -> str:
     if normalized == "agent":
         return "agent"
     return "system"
-
-
-def _resolve_local_message_item_id(
-    message: AgentMessage, metadata: dict[str, Any]
-) -> str:
-    role = _sender_to_role(getattr(message, "sender", ""))
-    if role == "agent":
-        upstream_message_id = normalize_non_empty_text(
-            metadata.get("upstream_message_id")
-            or metadata.get("message_id")
-            or metadata.get("messageId")
-        )
-        if upstream_message_id:
-            return upstream_message_id
-    if role in {"user", "agent"}:
-        client_message_id = normalize_non_empty_text(
-            metadata.get("client_message_id")
-            or metadata.get("clientMessageId")
-            or metadata.get("request_message_id")
-            or metadata.get("requestMessageId")
-        )
-        if client_message_id:
-            return client_message_id
-    return str(message.id)
 
 
 def _derive_session_title_from_query(query: str) -> str | None:

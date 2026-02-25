@@ -100,6 +100,13 @@ History loading is unified via
 To avoid transport contention, chat history auto-refetch is paused while a
 message is actively streaming.
 
+Message id contract:
+
+- `messages:query` returns canonical local UUIDs in `item.id`.
+- Frontend store/cache keys must use `item.id` only.
+- `client_message_id` / `upstream_message_id` are alias metadata and are never
+  used as primary keys.
+
 ## Block-based Streaming
 
 Chat streaming now uses a block timeline model.

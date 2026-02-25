@@ -440,24 +440,26 @@ async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
         persisted_chunk_count=0,
     )
 
-    await invoke_route_runner._persist_stream_chunk(  # noqa: SLF001
-        state=state,
-        event_payload={
-            "kind": "artifact-update",
-            "seq": 9,
-            "append": False,
-            "lastChunk": True,
-            "artifact": {
-                "parts": [{"kind": "text", "text": "chunk-body"}],
-                "metadata": {
-                    "opencode": {
-                        "block_type": "text",
-                        "message_id": "msg-opt",
-                        "event_id": "evt-opt",
-                    }
-                },
+    event_payload = {
+        "kind": "artifact-update",
+        "seq": 9,
+        "append": False,
+        "lastChunk": True,
+        "artifact": {
+            "parts": [{"kind": "text", "text": "chunk-body"}],
+            "metadata": {
+                "opencode": {
+                    "block_type": "text",
+                    "message_id": "msg-opt",
+                    "event_id": "evt-opt",
+                }
             },
         },
+    }
+
+    await invoke_route_runner._persist_stream_chunk(  # noqa: SLF001
+        state=state,
+        event_payload=event_payload,
         user_id=uuid4(),
         agent_id=uuid4(),
         agent_source="shared",
@@ -471,6 +473,11 @@ async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
     assert captured["is_finished"] is True
     assert state.next_chunk_seq == 10
     assert state.persisted_chunk_count == 1
+    assert event_payload["message_id"] == str(state.message_refs["agent_message_id"])
+    assert event_payload["messageId"] == str(state.message_refs["agent_message_id"])
+    assert event_payload["artifact"]["metadata"]["opencode"]["message_id"] == str(
+        state.message_refs["agent_message_id"]
+    )
 
 
 @pytest.mark.asyncio

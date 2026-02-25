@@ -18,7 +18,7 @@ export type SessionListItem = {
 };
 
 export type SessionMessageItem = {
-  id?: string;
+  id: string;
   role: "user" | "agent" | "system";
   content: string;
   created_at: string;

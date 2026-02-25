@@ -362,6 +362,7 @@ async def test_list_messages_overwrite_chunk_without_text_duplication(
     agent_items = [item for item in items if item.get("role") == "agent"]
     assert len(agent_items) == 1
     agent_item = agent_items[0]
+    assert agent_item["id"] == str(agent_message_id)
     assert agent_item["content"] == "final content"
     metadata = agent_item["metadata"]
     assert isinstance(metadata, dict)
@@ -473,6 +474,7 @@ async def test_list_messages_overwrite_preserves_block_boundaries(
     agent_items = [item for item in items if item.get("role") == "agent"]
     assert len(agent_items) == 1
     agent_item = agent_items[0]
+    assert agent_item["id"] == str(agent_message_id)
     metadata = agent_item["metadata"]
     assert isinstance(metadata, dict)
     assert "message_blocks" not in metadata

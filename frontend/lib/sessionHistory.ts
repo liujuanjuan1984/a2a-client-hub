@@ -1,8 +1,4 @@
-import {
-  type ChatMessage,
-  type ChatRole,
-  type MessageBlock,
-} from "@/lib/api/chat-utils";
+import { type ChatMessage, type ChatRole } from "@/lib/api/chat-utils";
 
 const normalizeAgentContent = (content: string): string => {
   const normalized = content.trim();
@@ -23,7 +19,7 @@ const normalizeAgentContent = (content: string): string => {
 };
 
 export type SessionMessageItem = {
-  id?: string;
+  id: string;
   role: string;
   content: string;
   created_at: string;
@@ -35,55 +31,41 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
     ? (value as Record<string, unknown>)
     : null;
 
-const parseMetadataBlocks = (
-  metadata: Record<string, unknown> | null | undefined,
-): MessageBlock[] => {
-  const metadataRecord = asRecord(metadata);
-  const opencodeRecord =
-    asRecord(metadataRecord?.opencode_stream) ??
-    asRecord(metadataRecord?.opencodeStream);
-  const candidates =
-    metadataRecord?.message_blocks ??
-    metadataRecord?.messageBlocks ??
-    opencodeRecord?.blocks;
-  if (!Array.isArray(candidates)) return [];
+const pickTrimmedString = (
+  source: Record<string, unknown> | null,
+  keys: string[],
+): string | null => {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+};
 
-  return candidates
-    .map((item, index) => {
-      const record = asRecord(item);
-      if (!record) return null;
-      const type = typeof record.type === "string" ? record.type.trim() : "";
-      const content = typeof record.content === "string" ? record.content : "";
-      if (!type || !content) return null;
-      const isFinished =
-        record.isFinished === true ||
-        record.is_finished === true ||
-        record.done === true;
-      const createdAt =
-        typeof record.createdAt === "string" && record.createdAt.trim()
-          ? record.createdAt
-          : typeof record.created_at === "string" && record.created_at.trim()
-            ? record.created_at
-            : new Date(0).toISOString();
-      const updatedAt =
-        typeof record.updatedAt === "string" && record.updatedAt.trim()
-          ? record.updatedAt
-          : typeof record.updated_at === "string" && record.updated_at.trim()
-            ? record.updated_at
-            : createdAt;
-      return {
-        id:
-          typeof record.id === "string" && record.id.trim()
-            ? record.id
-            : `history-block-${index}`,
-        type,
-        content,
-        isFinished,
-        createdAt,
-        updatedAt,
-      };
-    })
-    .filter((item): item is MessageBlock => Boolean(item));
+const parseClientMessageId = (
+  metadata: Record<string, unknown> | null | undefined,
+): string | null => {
+  const metadataRecord = asRecord(metadata);
+  return pickTrimmedString(metadataRecord, [
+    "client_message_id",
+    "clientMessageId",
+    "request_message_id",
+    "requestMessageId",
+  ]);
+};
+
+const parseUpstreamMessageId = (
+  metadata: Record<string, unknown> | null | undefined,
+): string | null => {
+  const metadataRecord = asRecord(metadata);
+  return pickTrimmedString(metadataRecord, [
+    "upstream_message_id",
+    "message_id",
+    "messageId",
+  ]);
 };
 
 const normalizeSessionMessageRole = (value: string): ChatRole => {
@@ -96,38 +78,39 @@ const normalizeSessionMessageRole = (value: string): ChatRole => {
 
 export const mapSessionMessagesToChatMessages = (
   items: SessionMessageItem[],
-  conversationId: string,
-): ChatMessage[] =>
-  items
-    .map((item, index) => {
-      const role = normalizeSessionMessageRole(item.role);
-      const normalizedContent =
-        role === "agent" ? normalizeAgentContent(item.content) : item.content;
-      const messageId =
-        typeof item.id === "string" && item.id
-          ? item.id
-          : `${conversationId}-${item.created_at}-${index}`;
-      const metadataBlocks = parseMetadataBlocks(item.metadata);
-      const blocks =
-        role === "agent" && metadataBlocks.length === 0 && normalizedContent
-          ? [
-              {
-                id: `${messageId}:text`,
-                type: "text",
-                content: normalizedContent,
-                isFinished: true,
-                createdAt: item.created_at,
-                updatedAt: item.created_at,
-              },
-            ]
-          : metadataBlocks;
-      return {
-        id: messageId,
-        role,
-        content: normalizedContent ?? "",
-        createdAt: item.created_at,
-        status: "done" as const,
-        blocks: role === "agent" ? blocks : [],
-      };
-    })
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+): ChatMessage[] => {
+  const mapped: ChatMessage[] = [];
+  items.forEach((item) => {
+    const role = normalizeSessionMessageRole(item.role);
+    const normalizedContent =
+      role === "agent" ? normalizeAgentContent(item.content) : item.content;
+    const messageId = typeof item.id === "string" ? item.id.trim() : "";
+    if (!messageId) {
+      return;
+    }
+    const blocks =
+      role === "agent" && normalizedContent
+        ? [
+            {
+              id: `${messageId}:text`,
+              type: "text",
+              content: normalizedContent,
+              isFinished: true,
+              createdAt: item.created_at,
+              updatedAt: item.created_at,
+            },
+          ]
+        : [];
+    mapped.push({
+      id: messageId,
+      role,
+      content: normalizedContent ?? "",
+      createdAt: item.created_at,
+      status: "done" as const,
+      blocks: role === "agent" ? blocks : [],
+      clientMessageId: parseClientMessageId(item.metadata) ?? undefined,
+      upstreamMessageId: parseUpstreamMessageId(item.metadata) ?? undefined,
+    });
+  });
+  return mapped.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+};

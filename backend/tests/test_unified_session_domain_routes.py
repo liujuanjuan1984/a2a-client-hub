@@ -163,9 +163,14 @@ async def test_conversation_routes_use_conversation_id_only(
         assert msgs_payload["meta"]["source"] == "manual"
         assert msgs_payload["meta"]["conversationId"] == str(manual_session.id)
         assert len(msgs_payload["items"]) == 2
+        user_item = next(
+            item for item in msgs_payload["items"] if item["role"] == "user"
+        )
         agent_item = next(
             item for item in msgs_payload["items"] if item["role"] == "agent"
         )
+        assert user_item["id"] == str(user_message.id)
+        assert agent_item["id"] == str(agent_message.id)
         assert "message_blocks" not in agent_item.get("metadata", {})
 
         blocks_resp = await client.post(

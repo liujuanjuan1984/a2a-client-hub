@@ -544,6 +544,85 @@ async def test_sse_drops_invalid_artifact_update_events():
 
 
 @pytest.mark.asyncio
+async def test_sse_cache_replays_mutated_event_payload_from_on_event():
+    from app.services.stream_cache.memory_cache import global_stream_cache
+
+    cache_key = "test-cache-on-event-mutation"
+    upstream_event = {
+        "kind": "artifact-update",
+        "message_id": "msg-upstream-1",
+        "artifact": {
+            "artifact_id": "task-cache:stream:text",
+            "parts": [{"kind": "text", "text": "hello"}],
+            "metadata": {
+                "opencode": {
+                    "block_type": "text",
+                    "event_id": "evt-cache-1",
+                    "message_id": "msg-upstream-1",
+                }
+            },
+        },
+    }
+
+    async def _rewrite_message_id(payload: dict) -> None:
+        payload["message_id"] = "msg-local-1"
+
+    initial = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents([upstream_event]),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_event=_rewrite_message_id,
+        cache_key=cache_key,
+    )
+    initial_frames: list[str] = []
+    async for chunk in initial.body_iterator:
+        initial_frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    artifact_lines = [
+        line
+        for line in "".join(initial_frames).splitlines()
+        if line.startswith("data: ") and '"kind": "artifact-update"' in line
+    ]
+    assert artifact_lines
+    assert json.loads(artifact_lines[0].removeprefix("data: "))["message_id"] == (
+        "msg-local-1"
+    )
+
+    replay = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents([]),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        resume_from_sequence=0,
+        cache_key=cache_key,
+    )
+    replay_frames: list[str] = []
+    async for chunk in replay.body_iterator:
+        replay_frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    replay_artifact_lines = [
+        line
+        for line in "".join(replay_frames).splitlines()
+        if line.startswith("data: ") and '"kind": "artifact-update"' in line
+    ]
+    assert replay_artifact_lines
+    assert json.loads(replay_artifact_lines[0].removeprefix("data: "))[
+        "message_id"
+    ] == ("msg-local-1")
+
+    await global_stream_cache.mark_completed(cache_key)
+
+
+@pytest.mark.asyncio
 async def test_sse_breaks_stream_after_terminal_status_update():
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents(

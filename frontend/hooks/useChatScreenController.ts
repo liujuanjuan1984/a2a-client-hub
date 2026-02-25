@@ -33,6 +33,7 @@ import {
   shouldStickToBottom,
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
+import { mergeChatMessagesByCanonicalId } from "@/lib/messageMerge";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
@@ -182,6 +183,20 @@ export function useChatScreenController({
     listRef.current?.scrollToEnd({ animated });
   }, []);
 
+  const scheduleScrollSettleTimer = useCallback(() => {
+    try {
+      scrollSettleTimerRef.current = setTimeout(() => {
+        scrollToBottom(false);
+        forceScrollToBottomRef.current = false;
+      }, SEND_SCROLL_SETTLE_MS);
+    } catch {
+      // Test runtimes may not provide NativeTiming-backed timers.
+      scrollSettleTimerRef.current = null;
+      scrollToBottom(false);
+      forceScrollToBottomRef.current = false;
+    }
+  }, [scrollToBottom]);
+
   const scheduleStickToBottom = useCallback(
     (animated: boolean) => {
       if (!shouldStickToBottomRef.current && !forceScrollToBottomRef.current) {
@@ -191,12 +206,9 @@ export function useChatScreenController({
         scrollToBottom(animated);
       });
       clearScrollSettleTimer();
-      scrollSettleTimerRef.current = setTimeout(() => {
-        scrollToBottom(false);
-        forceScrollToBottomRef.current = false;
-      }, SEND_SCROLL_SETTLE_MS);
+      scheduleScrollSettleTimer();
     },
-    [clearScrollSettleTimer, scrollToBottom],
+    [clearScrollSettleTimer, scheduleScrollSettleTimer, scrollToBottom],
   );
 
   useEffect(() => {
@@ -285,25 +297,11 @@ export function useChatScreenController({
     (incoming: ChatMessage[]) => {
       if (!conversationId) return;
       const current = useMessageStore.getState().messages[conversationId] ?? [];
-      const merged = new Map<string, ChatMessage>();
-      current.forEach((message) => {
-        merged.set(message.id, message);
+      const nextMessages = mergeChatMessagesByCanonicalId({
+        current,
+        incoming,
+        isActivelyStreaming: session?.streamState === "streaming",
       });
-      incoming.forEach((message) => {
-        const existing = merged.get(message.id);
-        const isActivelyStreaming = session?.streamState === "streaming";
-        if (
-          existing &&
-          existing.status === "streaming" &&
-          isActivelyStreaming
-        ) {
-          return;
-        }
-        merged.set(message.id, message);
-      });
-      const nextMessages = Array.from(merged.values()).sort((a, b) =>
-        a.createdAt.localeCompare(b.createdAt),
-      );
       if (isSameMessageList(current, nextMessages)) {
         return;
       }

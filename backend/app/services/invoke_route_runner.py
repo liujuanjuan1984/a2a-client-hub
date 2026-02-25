@@ -350,6 +350,25 @@ def _resolve_agent_status_from_outcome(outcome: StreamOutcome) -> str:
     return "error"
 
 
+def _rewrite_stream_event_message_id(
+    event_payload: dict[str, Any], *, local_message_id: str
+) -> None:
+    if event_payload.get("kind") != "artifact-update":
+        return
+    event_payload["message_id"] = local_message_id
+    event_payload["messageId"] = local_message_id
+
+    artifact = event_payload.get("artifact")
+    if isinstance(artifact, dict):
+        artifact["message_id"] = local_message_id
+        artifact["messageId"] = local_message_id
+        metadata = artifact.get("metadata")
+        if isinstance(metadata, dict):
+            opencode = metadata.get("opencode")
+            if isinstance(opencode, dict):
+                opencode["message_id"] = local_message_id
+
+
 async def _ensure_local_message_headers(
     *,
     state: _InvokeState,
@@ -435,6 +454,10 @@ async def _persist_stream_chunk(
     )
     if agent_message_id is None:
         return
+    _rewrite_stream_event_message_id(
+        event_payload,
+        local_message_id=str(agent_message_id),
+    )
 
     raw_seq = stream_chunk.get("seq")
     resolved_seq = raw_seq if isinstance(raw_seq, int) and raw_seq > 0 else None
