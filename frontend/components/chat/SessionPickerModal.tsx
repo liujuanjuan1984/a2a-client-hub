@@ -35,13 +35,13 @@ function SessionItem({
     >
       <View className="flex-1">
         <Text
-          className={`text-sm font-bold ${isActive ? "text-primary" : "text-white"}`}
+          className={`text-sm font-medium ${isActive ? "text-primary" : "text-white"}`}
           numberOfLines={2}
         >
           {title}
         </Text>
         <Text
-          className="mt-1 text-[10px] font-medium text-slate-500"
+          className="mt-1 text-[11px] font-medium text-slate-500"
           numberOfLines={1}
         >
           {createdAtText}

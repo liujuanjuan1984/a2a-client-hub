@@ -38,7 +38,7 @@ export function ChatHeaderPanel({
       <View className="flex-row items-center justify-between">
         <View className="flex-1 flex-row items-center gap-2">
           <View>
-            <Text className="text-lg font-bold text-white" numberOfLines={1}>
+            <Text className="text-base font-bold text-white" numberOfLines={1}>
               {agent.name}
             </Text>
           </View>
@@ -77,12 +77,12 @@ export function ChatHeaderPanel({
       </View>
 
       {showDetails ? (
-        <View className="mt-4 gap-4 overflow-hidden rounded-2xl bg-surface p-5">
+        <View className="mt-4 gap-4 overflow-hidden rounded-2xl bg-surface p-5 shadow-sm">
           <View>
-            <Text className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Agent Endpoint
             </Text>
-            <Text className="mt-1 break-all text-xs font-medium text-white">
+            <Text className="mt-1 break-all text-[11px] font-medium text-white">
               {agent.cardUrl}
             </Text>
           </View>
@@ -91,21 +91,21 @@ export function ChatHeaderPanel({
 
           <View className="flex-row flex-wrap gap-4">
             <View className="flex-1 min-w-[45%]">
-              <Text className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Conversation ID
               </Text>
               <Text
-                className="mt-1 text-xs font-medium text-white"
+                className="mt-1 text-[11px] font-medium text-white"
                 numberOfLines={1}
               >
                 {conversationId ?? "N/A"}
               </Text>
             </View>
             <View className="flex-1 min-w-[45%]">
-              <Text className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Source
               </Text>
-              <Text className="mt-1 text-xs font-medium text-white">
+              <Text className="mt-1 text-[11px] font-medium text-white">
                 {sessionSource ?? "N/A"}
               </Text>
             </View>
@@ -116,19 +116,19 @@ export function ChatHeaderPanel({
           <View className="flex-row flex-wrap gap-4">
             {session?.runtimeStatus ? (
               <View className="flex-1 min-w-[45%]">
-                <Text className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   Runtime
                 </Text>
-                <Text className="mt-1 text-xs font-medium text-white">
+                <Text className="mt-1 text-[11px] font-medium text-white">
                   {session.runtimeStatus}
                 </Text>
               </View>
             ) : null}
             <View className="flex-1 min-w-[45%]">
-              <Text className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Transport
               </Text>
-              <Text className="mt-1 text-xs font-medium text-white">
+              <Text className="mt-1 text-[11px] font-medium text-white">
                 {session?.transport ?? "N/A"}
               </Text>
             </View>
@@ -137,12 +137,12 @@ export function ChatHeaderPanel({
           <View className="h-[1px] bg-white/5" />
 
           <View className="flex-row items-center justify-between">
-            <Text className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Diagnostics
             </Text>
             <Button
               label="Test"
-              size="sm"
+              size="xs"
               variant="secondary"
               iconLeft="pulse-outline"
               loading={testingConnection}
@@ -153,7 +153,7 @@ export function ChatHeaderPanel({
           <View className="h-[1px] bg-white/5" />
 
           <View>
-            <Text className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
               Capabilities
             </Text>
             <View className="mt-2 flex-row flex-wrap gap-2">

@@ -30,10 +30,10 @@ const AdminTile = ({
     <View className="p-5">
       <View className="flex-row items-center justify-between">
         <View className="flex-1 pr-4">
-          <Text className="text-lg font-bold text-white" numberOfLines={1}>
+          <Text className="text-base font-bold text-white" numberOfLines={1}>
             {title}
           </Text>
-          <Text className="mt-1 text-xs font-medium text-slate-400">
+          <Text className="mt-1 text-[11px] font-medium text-slate-400">
             {subtitle}
           </Text>
         </View>

@@ -171,7 +171,7 @@ export function ChatMessageItem({
           delayLongPress={500}
           className={`px-4 py-3 rounded-2xl shadow-sm ${
             message.role === "user"
-              ? "bg-neo-green/15"
+              ? "bg-[#1E222D] border border-primary/40"
               : message.role === "agent"
                 ? "bg-surface"
                 : "bg-slate-900"
@@ -211,7 +211,7 @@ export function ChatMessageItem({
                       <View>
                         <Text
                           selectable
-                          className="mt-2 break-all text-xs leading-5 text-slate-400"
+                          className="mt-2 break-all text-[11px] leading-5 text-slate-400"
                         >
                           {blockText}
                         </Text>
@@ -260,7 +260,7 @@ export function ChatMessageItem({
                       <View>
                         <Text
                           selectable
-                          className="mt-2 break-all text-xs leading-5 text-slate-400"
+                          className="mt-2 break-all text-[11px] leading-5 text-slate-400"
                         >
                           {blockText}
                         </Text>
@@ -332,7 +332,7 @@ export function ChatMessageItem({
                   </Text>
                   <Text
                     selectable
-                    className="mt-2 break-all text-xs leading-5 text-slate-300"
+                    className="mt-2 break-all text-[11px] leading-5 text-slate-300"
                   >
                     {blockText}
                   </Text>
@@ -397,7 +397,7 @@ export function ChatMessageItem({
           className="mt-2 flex-row items-center gap-1.5 opacity-60"
         >
           <Ionicons name="refresh" size={12} color="#FFFFFF" />
-          <Text className="text-[10px] font-bold text-white uppercase tracking-wider">
+          <Text className="text-[11px] font-bold text-white uppercase tracking-wider">
             Retry
           </Text>
         </Pressable>

@@ -246,7 +246,7 @@ export function ScheduledJobCard({
                     className="mb-2 rounded-xl bg-black/20 p-3"
                   >
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-[10px] font-bold text-slate-400">
+                      <Text className="text-[11px] font-bold text-slate-400">
                         {formatLocalDateTime(
                           execution.finished_at ??
                             execution.started_at ??

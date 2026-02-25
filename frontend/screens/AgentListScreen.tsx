@@ -94,9 +94,11 @@ export function AgentListScreen() {
         {agents.length === 0 ? (
           <View className="rounded-2xl bg-surface p-8 items-center">
             <View className="h-16 w-16 items-center justify-center rounded-2xl bg-primary mb-4">
-              <Text className="text-xs font-bold text-black">A2A</Text>
+              <Text className="text-[11px] font-bold text-black">A2A</Text>
             </View>
-            <Text className="text-lg font-bold text-white">No agents yet</Text>
+            <Text className="text-base font-bold text-white">
+              No agents yet
+            </Text>
             <Text className="mt-2 text-center text-sm text-slate-400">
               Add your first agent to start chatting with A2A services.
             </Text>
