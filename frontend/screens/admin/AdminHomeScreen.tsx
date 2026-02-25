@@ -28,17 +28,17 @@ const AdminTile = ({
     accessibilityHint={subtitle}
   >
     <View className="p-5">
-      <View className="flex-row items-start justify-between">
+      <View className="flex-row items-center justify-between">
         <View className="flex-1 pr-4">
-          <Text className="text-xl font-bold text-white" numberOfLines={1}>
+          <Text className="text-lg font-bold text-white" numberOfLines={1}>
             {title}
           </Text>
-          <Text className="mt-2 text-sm font-medium text-gray-400">
+          <Text className="mt-1 text-xs font-medium text-slate-400">
             {subtitle}
           </Text>
         </View>
-        <View className="h-11 w-11 items-center justify-center rounded-xl bg-primary">
-          <Ionicons name={icon} size={20} color="#000000" />
+        <View className="h-10 w-10 items-center justify-center rounded-xl bg-slate-800">
+          <Ionicons name={icon} size={20} color="#FFFFFF" />
         </View>
       </View>
     </View>

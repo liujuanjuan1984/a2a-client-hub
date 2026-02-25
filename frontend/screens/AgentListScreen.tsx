@@ -1,12 +1,5 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import {
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-  Pressable,
-} from "react-native";
+import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
@@ -104,7 +97,7 @@ export function AgentListScreen() {
               <Text className="text-xs font-bold text-black">A2A</Text>
             </View>
             <Text className="text-lg font-bold text-white">No agents yet</Text>
-            <Text className="mt-2 text-center text-sm text-gray-400">
+            <Text className="mt-2 text-center text-sm text-slate-400">
               Add your first agent to start chatting with A2A services.
             </Text>
             <Button
@@ -126,53 +119,42 @@ export function AgentListScreen() {
                 <View className="flex-row items-start justify-between">
                   <View className="flex-1 pr-4">
                     <Text
-                      className="text-xl font-bold text-white"
+                      className="text-lg font-bold text-white"
                       numberOfLines={1}
                     >
                       {agent.name}
                     </Text>
                     {agent.source === "shared" ? (
-                      <View className="mt-2 self-start rounded-lg bg-primary px-2.5 py-1">
-                        <Text className="text-[11px] font-bold text-black">
-                          Shared
+                      <View className="mt-2 self-start rounded-lg bg-primary/10 border border-primary/20 px-2 py-0.5">
+                        <Text className="text-[10px] font-bold text-primary">
+                          SHARED
                         </Text>
                       </View>
-                    ) : null}
+                    ) : (
+                      <Text className="mt-1 text-xs font-medium text-slate-400">
+                        Personal Agent
+                      </Text>
+                    )}
                   </View>
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-between gap-3 bg-black/40 px-5 py-3">
+              <View className="flex-row items-center justify-between gap-3 bg-black/30 px-5 py-3">
                 <View className="flex-row items-center gap-2">
-                  <Pressable
-                    className="flex-row items-center gap-1 rounded-xl bg-slate-800 px-3 py-2 active:bg-slate-700"
+                  <Button
+                    label={agent.source === "personal" ? "Edit" : "Details"}
+                    size="sm"
+                    variant="secondary"
+                    iconLeft={
+                      agent.source === "personal"
+                        ? "create-outline"
+                        : "information-outline"
+                    }
                     onPress={() => {
                       blurActiveElement();
                       router.push(`/agents/${agent.id}`);
                     }}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      agent.source === "personal"
-                        ? "Edit agent"
-                        : "Agent details"
-                    }
-                    accessibilityHint={`${
-                      agent.source === "personal" ? "Edit" : "View"
-                    } ${agent.name}`}
-                  >
-                    <Ionicons
-                      name={
-                        agent.source === "personal"
-                          ? "create-outline"
-                          : "information-outline"
-                      }
-                      size={14}
-                      color="#FFFFFF"
-                    />
-                    <Text className="text-xs font-bold text-white">
-                      {agent.source === "personal" ? "Edit" : "Details"}
-                    </Text>
-                  </Pressable>
+                  />
                 </View>
 
                 <Button

@@ -172,6 +172,6 @@ describe("ScheduledJobCard visuals", () => {
       <ScheduledJobCard {...defaultProps} job={job as any} />,
     );
 
-    expect(getByText(/Interval: every 15 min/)).toBeTruthy();
+    expect(getByText(/Every 15 min/)).toBeTruthy();
   });
 });

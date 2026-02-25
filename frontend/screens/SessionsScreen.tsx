@@ -166,55 +166,51 @@ export function SessionsScreen() {
               const timeline = getSessionTimelineText(item);
               const agentBadgeClass =
                 agent.tone === "shared"
-                  ? "bg-primary/10"
-                  : agent.tone === "personal"
-                    ? "bg-slate-700/50"
-                    : "bg-slate-800/50";
+                  ? "bg-primary/10 border border-primary/20"
+                  : "bg-slate-800 border border-slate-700";
               const agentTextClass =
-                agent.tone === "shared" ? "text-primary" : "text-slate-300";
+                agent.tone === "shared" ? "text-primary" : "text-slate-400";
               return (
                 <View
                   key={item.conversationId}
-                  className="mb-3 rounded-2xl bg-surface overflow-hidden"
+                  className="mb-4 rounded-2xl bg-surface overflow-hidden"
                 >
-                  <View className="p-4">
+                  <View className="p-5">
                     <View className="flex-row items-center justify-between gap-2">
                       <View
-                        className={`max-w-[78%] rounded-lg px-3 py-1 ${agentBadgeClass}`}
+                        className={`rounded-lg px-2.5 py-0.5 ${agentBadgeClass}`}
                       >
                         <Text
-                          className={`text-[11px] font-bold ${agentTextClass}`}
+                          className={`text-[10px] font-bold uppercase tracking-wider ${agentTextClass}`}
                           numberOfLines={1}
                         >
                           {agent.name}
                         </Text>
                       </View>
-                      <View className="px-1 py-0.5">
-                        <Text className="text-[10px] font-medium text-slate-500">
-                          {item.source}
-                        </Text>
-                      </View>
+                      <Text className="text-[10px] font-bold text-slate-600 uppercase">
+                        {item.source}
+                      </Text>
                     </View>
                     <Text
-                      className="mt-2 text-sm font-semibold text-white"
+                      className="mt-3 text-lg font-bold text-white"
                       numberOfLines={2}
                     >
                       {title}
                     </Text>
                   </View>
 
-                  <View className="flex-row items-start justify-between gap-3 bg-black/40 px-4 py-3">
-                    <View className="flex-1">
-                      <Text className="text-[11px] font-medium text-gray-500">
+                  <View className="flex-row items-start justify-between gap-3 bg-black/30 px-5 py-3">
+                    <View className="flex-1 justify-center h-9">
+                      <Text className="text-[11px] font-medium text-slate-500">
                         {timeline.timelineRangeText}
                       </Text>
                     </View>
                     <View className="flex-row items-center gap-2">
                       {canPromptAsync(item) ? (
                         <Button
-                          size="xs"
-                          variant="outline"
-                          label="Async Continue"
+                          size="sm"
+                          variant="secondary"
+                          label="Async"
                           loading={
                             promptingConversationId === item.conversationId
                           }
@@ -223,7 +219,7 @@ export function SessionsScreen() {
                         />
                       ) : null}
                       <Button
-                        size="xs"
+                        size="sm"
                         variant="primary"
                         label="Continue"
                         iconRight="chevron-forward"
