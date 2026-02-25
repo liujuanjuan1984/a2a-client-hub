@@ -138,27 +138,29 @@ export function ScheduledJobCard({
       className={`mb-4 rounded-2xl overflow-hidden bg-surface shadow-sm ${tone.container}`}
     >
       <View className="p-5">
+        <View className="flex-row items-center justify-between mb-2">
+          <View className="flex-row items-center gap-1.5">
+            <View className="h-1.5 w-1.5 rounded-full bg-neo-cyan" />
+            <Text className="text-[10px] font-bold uppercase tracking-widest text-neo-cyan">
+              {agentName}
+            </Text>
+          </View>
+          <View className="bg-black/20 rounded px-1.5 py-0.5">
+            <Text className={`text-[9px] font-bold ${tone.text}`}>
+              {tone.statusText}
+            </Text>
+          </View>
+        </View>
+
         <View className="flex-row items-start justify-between">
           <View className="flex-1 pr-3">
-            <View className="flex-row items-center gap-2">
-              <Text className={`text-lg font-bold ${tone.title}`}>
-                {job.name}
-              </Text>
-              <View className="bg-black/20 rounded px-1.5 py-0.5">
-                <Text className={`text-[9px] font-bold ${tone.text}`}>
-                  {tone.statusText}
-                </Text>
-              </View>
-            </View>
-            <Text className={`mt-1.5 text-xs font-medium ${tone.text}`}>
-              Agent: {agentName} • {job.cycle_type}
+            <Text className={`text-lg font-bold ${tone.title}`}>
+              {job.name}
             </Text>
-            {intervalTimePoint ? (
-              <Text className={`mt-1 text-xs font-medium ${tone.text}`}>
-                Every {intervalTimePoint.minutes} min
-              </Text>
-            ) : null}
-            <Text className={`mt-1 text-xs font-medium ${tone.text}`}>
+            <Text className={`mt-1.5 text-xs font-medium ${tone.text}`}>
+              {job.cycle_type} • Every {intervalTimePoint?.minutes ?? "-"} min
+            </Text>
+            <Text className={`mt-0.5 text-xs font-medium ${tone.text}`}>
               Next: {formatLocalDateTime(job.next_run_at, timeZone)}
             </Text>
           </View>

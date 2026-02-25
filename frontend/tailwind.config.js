@@ -19,6 +19,7 @@ module.exports = {
         accent: "#FFFFFF",
         muted: "#70778B",
         "neo-yellow": "#FFDE03",
+        "neo-cyan": "#22D3EE",
         "neo-bg": "#0B0E14",
         "neo-text": "#FFFFFF",
       },

@@ -164,24 +164,17 @@ export function SessionsScreen() {
               const title = item.title;
               const agent = resolveSessionAgentPresentation(item, agentLookup);
               const timeline = getSessionTimelineText(item);
-              const agentBadgeClass =
-                agent.tone === "shared"
-                  ? "bg-primary/10 border border-primary/20"
-                  : "bg-slate-800 border border-slate-700";
-              const agentTextClass =
-                agent.tone === "shared" ? "text-primary" : "text-slate-400";
               return (
                 <View
                   key={item.conversationId}
                   className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
                 >
                   <View className="p-5">
-                    <View className="flex-row items-center justify-between gap-2">
-                      <View
-                        className={`rounded-lg px-2.5 py-0.5 ${agentBadgeClass}`}
-                      >
+                    <View className="flex-row items-center justify-between mb-2">
+                      <View className="flex-row items-center gap-1.5">
+                        <View className="h-1.5 w-1.5 rounded-full bg-neo-cyan" />
                         <Text
-                          className={`text-[10px] font-bold uppercase tracking-wider ${agentTextClass}`}
+                          className="text-[10px] font-bold uppercase tracking-widest text-neo-cyan"
                           numberOfLines={1}
                         >
                           {agent.name}
@@ -192,7 +185,7 @@ export function SessionsScreen() {
                       </Text>
                     </View>
                     <Text
-                      className="mt-3 text-lg font-bold text-white"
+                      className="text-lg font-bold text-white"
                       numberOfLines={2}
                     >
                       {title}
