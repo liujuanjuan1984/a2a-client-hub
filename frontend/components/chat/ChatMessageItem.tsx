@@ -139,13 +139,13 @@ export function ChatMessageItem({
     return (
       <View className="mt-2 items-end">
         <Pressable
-          className="border border-white bg-surface px-2 py-1"
+          className="rounded-lg bg-black/20 px-2 py-1"
           accessibilityRole="button"
           accessibilityLabel="Collapse full text"
           testID={testId}
           onPress={onPress}
         >
-          <Text className="text-xs font-bold text-white">Show less</Text>
+          <Text className="text-xs font-bold text-gray-300">Show less</Text>
         </Pressable>
       </View>
     );
@@ -161,9 +161,9 @@ export function ChatMessageItem({
         <Pressable
           onLongPress={handleCopyMessage}
           delayLongPress={500}
-          className={`px-4 py-3 border-neo border-white shadow-neo ${
+          className={`px-4 py-3 rounded-2xl ${
             message.role === "user"
-              ? "bg-neo-yellow"
+              ? "bg-primary"
               : message.role === "agent"
                 ? "bg-surface"
                 : "bg-gray-800"
@@ -181,7 +181,7 @@ export function ChatMessageItem({
                     key={blockId}
                     className={`${
                       blockIndex > 0 ? "mt-3" : ""
-                    } border-2 border-white bg-black/40 px-3 py-2`}
+                    } rounded-xl bg-black/30 px-3 py-2`}
                   >
                     <Pressable
                       onPress={() => toggleReasoning(blockId)}
@@ -192,7 +192,7 @@ export function ChatMessageItem({
                           : "Show reasoning details"
                       }
                     >
-                      <Text className="text-[10px] font-bold uppercase tracking-wide text-white">
+                      <Text className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
                         {expanded ? "Hide Reasoning" : "Show Reasoning"}
                       </Text>
                     </Pressable>
@@ -200,7 +200,7 @@ export function ChatMessageItem({
                       <View>
                         <Text
                           selectable
-                          className="mt-1 break-all text-xs text-white"
+                          className="mt-1 break-all text-xs text-gray-300"
                         >
                           {blockText}
                         </Text>
@@ -220,7 +220,7 @@ export function ChatMessageItem({
                     key={blockId}
                     className={`${
                       blockIndex > 0 ? "mt-3" : ""
-                    } border-2 border-white bg-black/40 px-3 py-2`}
+                    } rounded-xl bg-black/30 px-3 py-2`}
                   >
                     <Pressable
                       onPress={() => toggleToolCall(blockId)}
@@ -231,7 +231,7 @@ export function ChatMessageItem({
                           : "Show tool call details"
                       }
                     >
-                      <Text className="text-[10px] font-bold uppercase tracking-wide text-white">
+                      <Text className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
                         {expanded ? "Hide Tool Call" : "Show Tool Call"}
                       </Text>
                     </Pressable>
@@ -239,7 +239,7 @@ export function ChatMessageItem({
                       <View>
                         <Text
                           selectable
-                          className="mt-1 break-all text-xs text-white"
+                          className="mt-1 break-all text-xs text-gray-300"
                         >
                           {blockText}
                         </Text>
@@ -279,13 +279,13 @@ export function ChatMessageItem({
                     </Text>
                     {shouldCollapse ? (
                       <Pressable
-                        className="mt-2 border border-white bg-surface px-2 py-1"
+                        className="mt-2 rounded-lg bg-black/20 px-2 py-1"
                         accessibilityRole="button"
                         accessibilityLabel={topToggleAccessibilityLabel}
                         testID={`chat-message-${blockId}-expand`}
                         onPress={() => toggleTextExpansion(blockId)}
                       >
-                        <Text className="text-xs font-bold text-white">
+                        <Text className="text-xs font-bold text-gray-300">
                           {topToggleLabel}
                         </Text>
                       </Pressable>
@@ -304,9 +304,9 @@ export function ChatMessageItem({
                   key={blockId}
                   className={`${
                     blockIndex > 0 ? "mt-3" : ""
-                  } border-2 border-white bg-black/40 px-3 py-2`}
+                  } rounded-xl bg-black/30 px-3 py-2`}
                 >
-                  <Text className="text-[10px] font-bold uppercase tracking-wide text-white">
+                  <Text className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
                     {block.type}
                   </Text>
                   <Text
@@ -333,13 +333,13 @@ export function ChatMessageItem({
               </Text>
               {plainShouldCollapse ? (
                 <Pressable
-                  className="mt-2 border border-white bg-surface px-2 py-1"
+                  className="mt-2 rounded-lg bg-black/20 px-2 py-1"
                   accessibilityRole="button"
                   accessibilityLabel={plainTopToggleAccessibilityLabel}
                   testID={`chat-message-${message.id}-expand`}
                   onPress={() => toggleTextExpansion(message.id)}
                 >
-                  <Text className="text-xs font-bold text-white">
+                  <Text className="text-xs font-bold text-gray-300">
                     {plainTopToggleLabel}
                   </Text>
                 </Pressable>
@@ -353,29 +353,33 @@ export function ChatMessageItem({
             </View>
           )}
           {message.status === "streaming" ? (
-            <Text className={`mt-1 text-[10px] font-bold italic ${message.role === "user" ? "text-black" : "text-white"}`}>
+            <Text
+              className={`mt-1 text-[10px] font-medium italic ${message.role === "user" ? "text-black/60" : "text-white/60"}`}
+            >
               Streaming...
             </Text>
           ) : null}
         </Pressable>
         <Pressable
-          className={`absolute bottom-2 ${userCopyButtonPositionClass} rounded-lg px-2 py-2 opacity-45`}
+          className={`absolute bottom-2 ${userCopyButtonPositionClass} rounded-lg px-2 py-2 opacity-40`}
           onPress={handleCopyMessage}
           accessibilityRole="button"
           accessibilityLabel="Copy message"
         >
-          <Ionicons name="copy-outline" size={16} color={message.role === "user" ? "#000000" : "#FFFFFF"} />
+          <Ionicons
+            name="copy-outline"
+            size={16}
+            color={message.role === "user" ? "#000000" : "#FFFFFF"}
+          />
         </Pressable>
       </View>
       {canRetry && (
         <Pressable
           onPress={onRetry}
-          className="mt-1.5 flex-row items-center gap-1 opacity-70"
+          className="mt-1.5 flex-row items-center gap-1 opacity-60"
         >
           <Ionicons name="refresh" size={12} color="#FFFFFF" />
-          <Text className="text-[10px] font-bold text-white">
-            Retry
-          </Text>
+          <Text className="text-[10px] font-medium text-white">Retry</Text>
         </Pressable>
       )}
     </View>

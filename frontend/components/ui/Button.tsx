@@ -17,7 +17,7 @@ interface ButtonProps extends PressableProps {
 
 export function Button({
   label,
-  variant = "neo",
+  variant = "primary",
   size = "md",
   loading,
   iconLeft,
@@ -27,16 +27,12 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants = {
-    neo: "border-neo border-white bg-neo-yellow shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
-    primary:
-      "border-neo border-white bg-neo-yellow shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
-    secondary:
-      "border-neo border-white bg-surface shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
-    outline:
-      "border-neo border-white bg-transparent shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
-    ghost: "",
-    danger:
-      "border-neo border-white bg-red-600 shadow-neo active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
+    neo: "bg-primary active:opacity-80",
+    primary: "bg-primary active:opacity-80",
+    secondary: "bg-gray-800 active:bg-gray-700",
+    outline: "border border-white/20 active:bg-white/10",
+    ghost: "active:bg-white/10",
+    danger: "bg-red-500/20 active:bg-red-500/30",
   };
 
   const sizes = {
@@ -57,9 +53,9 @@ export function Button({
     neo: "text-black",
     primary: "text-black",
     secondary: "text-white",
-    outline: "text-white",
-    ghost: "text-white",
-    danger: "text-white",
+    outline: "text-white/80",
+    ghost: "text-white/80",
+    danger: "text-red-400",
   };
 
   const iconColors = {
@@ -68,7 +64,7 @@ export function Button({
     secondary: "#FFFFFF",
     outline: "#FFFFFF",
     ghost: "#FFFFFF",
-    danger: "#ffffff",
+    danger: "#f87171",
   };
 
   const iconSizes = {
@@ -82,7 +78,7 @@ export function Button({
 
   return (
     <Pressable
-      className={`flex-row items-center justify-center ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-50" : ""} ${className || ""}`}
+      className={`flex-row items-center justify-center rounded-xl ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-40" : ""} ${className || ""}`}
       disabled={isDisabled}
       {...props}
     >
@@ -94,9 +90,7 @@ export function Button({
           style={{ marginRight: 8 }}
         />
       ) : null}
-      <Text
-        className={`font-semibold ${textColors[variant]} ${textSizes[size]}`}
-      >
+      <Text className={`font-bold ${textColors[variant]} ${textSizes[size]}`}>
         {label}
       </Text>
       {!loading && iconRight ? (
@@ -110,7 +104,7 @@ export function Button({
       {loading && (
         <ActivityIndicator
           size="small"
-          color={variant === "danger" ? "#f87171" : "#ffffff"}
+          color={iconColors[variant]}
           style={{ marginLeft: 8 }}
         />
       )}

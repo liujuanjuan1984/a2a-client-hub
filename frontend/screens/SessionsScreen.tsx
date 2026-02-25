@@ -149,12 +149,14 @@ export function SessionsScreen() {
       >
         {loading ? (
           <View className="mt-8 items-center">
-            <Text className="text-sm text-white">Loading sessions...</Text>
+            <Text className="text-sm text-gray-400">Loading sessions...</Text>
           </View>
         ) : sortedItems.length === 0 ? (
-          <View className="mt-8 border-neo border-white bg-surface p-6 shadow-neo">
+          <View className="mt-8 rounded-2xl bg-surface p-6">
             <Text className="text-base font-bold text-white">No sessions</Text>
-            <Text className="mt-2 text-sm text-white">No sessions found.</Text>
+            <Text className="mt-2 text-sm text-gray-400">
+              No sessions found.
+            </Text>
           </View>
         ) : (
           <>
@@ -164,21 +166,21 @@ export function SessionsScreen() {
               const timeline = getSessionTimelineText(item);
               const agentBadgeClass =
                 agent.tone === "shared"
-                  ? "bg-neo-yellow"
+                  ? "bg-primary/20"
                   : agent.tone === "personal"
-                    ? "bg-transparent border border-white"
-                    : "bg-gray-700";
+                    ? "bg-gray-700"
+                    : "bg-gray-800";
               const agentTextClass =
-                agent.tone === "shared" ? "text-black" : "text-white";
+                agent.tone === "shared" ? "text-primary" : "text-white";
               return (
                 <View
                   key={item.conversationId}
-                  className="mb-4 border-neo border-white bg-surface shadow-neo"
+                  className="mb-3 rounded-2xl bg-surface overflow-hidden"
                 >
                   <View className="p-4">
                     <View className="flex-row items-center justify-between gap-2">
                       <View
-                        className={`max-w-[78%] border border-white px-3 py-1 ${agentBadgeClass}`}
+                        className={`max-w-[78%] rounded-lg px-3 py-1 ${agentBadgeClass}`}
                       >
                         <Text
                           className={`text-[11px] font-bold ${agentTextClass}`}
@@ -188,22 +190,22 @@ export function SessionsScreen() {
                         </Text>
                       </View>
                       <View className="px-1 py-0.5">
-                        <Text className="text-[10px] font-bold text-white">
+                        <Text className="text-[10px] font-medium text-gray-500">
                           {item.source}
                         </Text>
                       </View>
                     </View>
                     <Text
-                      className="mt-2 text-sm font-bold text-white"
+                      className="mt-2 text-sm font-semibold text-white"
                       numberOfLines={2}
                     >
                       {title}
                     </Text>
                   </View>
 
-                  <View className="flex-row items-start justify-between gap-3 border-t-2 border-white bg-black/20 px-4 py-3">
+                  <View className="flex-row items-start justify-between gap-3 bg-black/20 px-4 py-3">
                     <View className="flex-1">
-                      <Text className="text-[11px] font-bold text-gray-400">
+                      <Text className="text-[11px] font-medium text-gray-500">
                         {timeline.timelineRangeText}
                       </Text>
                     </View>
@@ -211,7 +213,7 @@ export function SessionsScreen() {
                       {canPromptAsync(item) ? (
                         <Button
                           size="xs"
-                          variant="neo"
+                          variant="outline"
                           label="Async Continue"
                           loading={
                             promptingConversationId === item.conversationId
@@ -222,7 +224,7 @@ export function SessionsScreen() {
                       ) : null}
                       <Button
                         size="xs"
-                        variant="neo"
+                        variant="primary"
                         label="Continue"
                         iconRight="chevron-forward"
                         disabled={!item.agent_id}

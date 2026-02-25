@@ -104,10 +104,11 @@ export function ChatScreen({
       >
         <IconButton
           icon="chevron-down"
-          variant="neo"
+          variant="primary"
           size="sm"
           onPress={() => controller.scrollToBottom(true)}
           accessibilityLabel="Scroll to bottom"
+          className="rounded-full shadow-lg"
         />
       </Animated.View>
 

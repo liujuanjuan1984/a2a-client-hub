@@ -48,10 +48,10 @@ export function ChatComposer({
         </View>
       ) : null}
 
-      <View className="flex-row items-end gap-2 border-neo border-white bg-surface p-2">
+      <View className="flex-row items-end gap-2 rounded-2xl bg-surface p-2">
         <Pressable
-          className={`h-9 w-9 items-center justify-center border-2 border-white ${
-            showShortcutManager ? "bg-neo-yellow" : "bg-surface"
+          className={`h-9 w-9 items-center justify-center rounded-xl ${
+            showShortcutManager ? "bg-primary" : "bg-gray-800"
           }`}
           onPress={onOpenShortcutManager}
           accessibilityRole="button"
@@ -67,7 +67,7 @@ export function ChatComposer({
           ref={inputRef}
           className="flex-1 px-3 py-2 text-white"
           placeholder="Type your message"
-          placeholderTextColor="#999999"
+          placeholderTextColor="#666666"
           multiline
           value={input}
           onChangeText={onInputChange}
@@ -93,14 +93,14 @@ export function ChatComposer({
             accessibilityRole="button"
             accessibilityLabel="Clear input"
           >
-            <Ionicons name="close-circle" size={18} color="#FFFFFF" />
+            <Ionicons name="close-circle" size={18} color="#999999" />
           </Pressable>
         )}
         <Pressable
-          className={`h-9 w-9 items-center justify-center border-2 border-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none ${
+          className={`h-9 w-9 items-center justify-center rounded-xl ${
             !input.trim() || Boolean(pendingInterrupt)
-              ? "bg-gray-700 opacity-50"
-              : "bg-neo-yellow"
+              ? "bg-gray-800 opacity-40"
+              : "bg-primary"
           }`}
           testID="chat-send-button"
           onPress={onSubmit}

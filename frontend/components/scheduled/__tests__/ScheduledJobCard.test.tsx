@@ -60,8 +60,7 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("border-neo");
-    expect(containerClasses).toContain("bg-neo-yellow");
+    expect(containerClasses).toContain("bg-primary");
   });
 
   it("applies grayscale styling when job is disabled", () => {
@@ -78,8 +77,7 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("border-gray-400");
-    expect(containerClasses).toContain("bg-gray-100");
+    expect(containerClasses).toContain("bg-gray-800/40");
   });
 
   it("applies default styling when job is enabled but not running", () => {
@@ -96,8 +94,7 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("border-black");
-    expect(containerClasses).toContain("bg-white");
+    expect(containerClasses).toContain("bg-surface");
   });
 
   it("shows Stop Running button for running jobs", () => {
@@ -113,7 +110,7 @@ describe("ScheduledJobCard visuals", () => {
       root = create(<ScheduledJobCard {...defaultProps} job={job as any} />);
     });
     const tree = root.toJSON();
-    expect(JSON.stringify(tree)).toContain("Stop Running");
+    expect(JSON.stringify(tree)).toContain("Stop");
   });
 
   it("hides Stop Running button for non-running jobs", () => {
@@ -129,7 +126,7 @@ describe("ScheduledJobCard visuals", () => {
       root = create(<ScheduledJobCard {...defaultProps} job={job as any} />);
     });
     const tree = root.toJSON();
-    expect(JSON.stringify(tree)).not.toContain("Stop Running");
+    expect(JSON.stringify(tree)).not.toContain("Stop");
   });
 
   it("toggles prompt expansion with Read more and Show less", () => {

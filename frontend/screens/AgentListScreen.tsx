@@ -99,12 +99,12 @@ export function AgentListScreen() {
         }
       >
         {agents.length === 0 ? (
-          <View className="border-neo border-white bg-surface p-8 items-center shadow-neo">
-            <View className="h-16 w-16 items-center justify-center border-2 border-white bg-neo-yellow mb-4">
+          <View className="rounded-2xl bg-surface p-8 items-center">
+            <View className="h-16 w-16 items-center justify-center rounded-2xl bg-primary mb-4">
               <Text className="text-xs font-bold text-black">A2A</Text>
             </View>
             <Text className="text-lg font-bold text-white">No agents yet</Text>
-            <Text className="mt-2 text-center text-sm text-white">
+            <Text className="mt-2 text-center text-sm text-gray-400">
               Add your first agent to start chatting with A2A services.
             </Text>
             <Button
@@ -120,7 +120,7 @@ export function AgentListScreen() {
           agents.map((agent) => (
             <View
               key={agent.id}
-              className="mb-6 border-neo border-white bg-surface shadow-neo"
+              className="mb-4 rounded-2xl bg-surface overflow-hidden"
             >
               <View className="p-5">
                 <View className="flex-row items-start justify-between">
@@ -132,7 +132,7 @@ export function AgentListScreen() {
                       {agent.name}
                     </Text>
                     {agent.source === "shared" ? (
-                      <View className="mt-2 self-start border border-white bg-neo-yellow px-2.5 py-1">
+                      <View className="mt-2 self-start rounded-lg bg-primary px-2.5 py-1">
                         <Text className="text-[11px] font-bold text-black">
                           Shared
                         </Text>
@@ -142,10 +142,10 @@ export function AgentListScreen() {
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-between gap-3 border-t-2 border-white bg-black/20 px-5 py-3">
+              <View className="flex-row items-center justify-between gap-3 bg-black/20 px-5 py-3">
                 <View className="flex-row items-center gap-2">
                   <Pressable
-                    className="flex-row items-center gap-1 border border-white bg-surface px-3 py-2 active:bg-neo-yellow"
+                    className="flex-row items-center gap-1 rounded-xl bg-gray-800 px-3 py-2 active:bg-gray-700"
                     onPress={() => {
                       blurActiveElement();
                       router.push(`/agents/${agent.id}`);
@@ -178,7 +178,7 @@ export function AgentListScreen() {
                 <Button
                   label="Open Chat"
                   size="sm"
-                  variant="neo"
+                  variant="primary"
                   iconRight="chevron-forward"
                   onPress={() => handleChat(agent.id)}
                   accessibilityRole="button"
