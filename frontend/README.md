@@ -104,8 +104,7 @@ Message id contract:
 
 - `messages:query` returns canonical local UUIDs in `item.id`.
 - Frontend store/cache keys must use `item.id` only.
-- `client_message_id` / `upstream_message_id` are alias metadata and are never
-  used as primary keys.
+- Do not rely on alias ids from metadata.
 
 ## Block-based Streaming
 

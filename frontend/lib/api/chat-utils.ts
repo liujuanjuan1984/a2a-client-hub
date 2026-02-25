@@ -16,8 +16,6 @@ export type ChatMessage = {
   createdAt: string;
   status?: "streaming" | "done";
   blocks?: MessageBlock[];
-  clientMessageId?: string;
-  upstreamMessageId?: string;
 };
 
 export type StreamBlockUpdate = {

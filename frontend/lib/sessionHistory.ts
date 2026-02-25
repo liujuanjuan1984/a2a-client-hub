@@ -26,48 +26,6 @@ export type SessionMessageItem = {
   metadata?: Record<string, unknown> | null;
 };
 
-const asRecord = (value: unknown): Record<string, unknown> | null =>
-  value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-
-const pickTrimmedString = (
-  source: Record<string, unknown> | null,
-  keys: string[],
-): string | null => {
-  if (!source) return null;
-  for (const key of keys) {
-    const value = source[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return null;
-};
-
-const parseClientMessageId = (
-  metadata: Record<string, unknown> | null | undefined,
-): string | null => {
-  const metadataRecord = asRecord(metadata);
-  return pickTrimmedString(metadataRecord, [
-    "client_message_id",
-    "clientMessageId",
-    "request_message_id",
-    "requestMessageId",
-  ]);
-};
-
-const parseUpstreamMessageId = (
-  metadata: Record<string, unknown> | null | undefined,
-): string | null => {
-  const metadataRecord = asRecord(metadata);
-  return pickTrimmedString(metadataRecord, [
-    "upstream_message_id",
-    "message_id",
-    "messageId",
-  ]);
-};
-
 const normalizeSessionMessageRole = (value: string): ChatRole => {
   const role = value.toLowerCase();
   if (role === "assistant") return "agent";
@@ -108,8 +66,6 @@ export const mapSessionMessagesToChatMessages = (
       createdAt: item.created_at,
       status: "done" as const,
       blocks: role === "agent" ? blocks : [],
-      clientMessageId: parseClientMessageId(item.metadata) ?? undefined,
-      upstreamMessageId: parseUpstreamMessageId(item.metadata) ?? undefined,
     });
   });
   return mapped.sort((a, b) => a.createdAt.localeCompare(b.createdAt));

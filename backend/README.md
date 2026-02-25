@@ -177,8 +177,6 @@ Message query contract boundary:
 - `messages:query` is a lightweight list endpoint and does not include
   `metadata.message_blocks`.
 - `SessionMessageItem.id` is the canonical local message UUID for all roles.
-- `upstream_message_id` / `client_message_id` are metadata fields only, not
-  primary keys.
 - For block-level payloads (reasoning/tool/text blocks), call
   `messages/{message_id}/blocks:query` on demand.
 

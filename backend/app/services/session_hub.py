@@ -488,8 +488,6 @@ class SessionHubService:
         response_content: str,
         success: bool,
         context_id: Optional[str],
-        user_message_id: Optional[str] = None,
-        client_agent_message_id: Optional[str] = None,
         invoke_metadata: Optional[Dict[str, Any]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
         response_metadata: Optional[Dict[str, Any]] = None,
@@ -516,13 +514,7 @@ class SessionHubService:
             metadata["externalSessionId"] = external_session_id
         if extra_metadata:
             metadata.update(extra_metadata)
-        normalized_user_message_id = normalize_non_empty_text(user_message_id)
-        normalized_client_agent_message_id = normalize_non_empty_text(
-            client_agent_message_id
-        )
         normalized_idempotency_key = normalize_idempotency_key(idempotency_key)
-        if normalized_user_message_id:
-            metadata["client_message_id"] = normalized_user_message_id
         if normalized_idempotency_key:
             metadata["invoke_idempotency_key"] = normalized_idempotency_key
         if (
@@ -568,8 +560,6 @@ class SessionHubService:
 
         metadata["conversation_id"] = str(conversation_id)
         agent_metadata = dict(metadata)
-        if normalized_client_agent_message_id:
-            agent_metadata["client_message_id"] = normalized_client_agent_message_id
         if response_metadata:
             for key, value in response_metadata.items():
                 if key == "message_blocks":
@@ -743,35 +733,7 @@ class SessionHubService:
             .limit(1)
         )
         existing = await db.scalar(stmt)
-        if existing is not None:
-            return existing
-
-        # Backward-compatibility fallback for rows created before dedicated column
-        # migration/backfill. Found records are upgraded in-place for future lookups.
-        legacy_stmt = (
-            select(AgentMessage)
-            .where(
-                and_(
-                    AgentMessage.user_id == user_id,
-                    AgentMessage.conversation_id == conversation_id,
-                    AgentMessage.sender == sender,
-                )
-            )
-            .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
-            .limit(50)
-        )
-        candidates = list((await db.scalars(legacy_stmt)).all())
-        for candidate in candidates:
-            metadata = candidate.message_metadata
-            if not isinstance(metadata, dict):
-                continue
-            candidate_key = normalize_idempotency_key(
-                metadata.get("invoke_idempotency_key")
-            )
-            if candidate_key == idempotency_key:
-                candidate.invoke_idempotency_key = idempotency_key
-                return candidate
-        return None
+        return existing
 
     async def record_local_invoke_messages_by_local_session_id(
         self,
@@ -786,8 +748,6 @@ class SessionHubService:
         response_content: str,
         success: bool,
         context_id: Optional[str],
-        user_message_id: Optional[str] = None,
-        client_agent_message_id: Optional[str] = None,
         invoke_metadata: Optional[Dict[str, Any]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
         response_metadata: Optional[Dict[str, Any]] = None,
@@ -815,8 +775,6 @@ class SessionHubService:
             response_content=response_content,
             success=success,
             context_id=context_id,
-            user_message_id=user_message_id,
-            client_agent_message_id=client_agent_message_id,
             invoke_metadata=invoke_metadata,
             extra_metadata=extra_metadata,
             response_metadata=response_metadata,
@@ -837,8 +795,6 @@ class SessionHubService:
         agent_source: Literal["personal", "shared"],
         query: str,
         context_id: Optional[str],
-        user_message_id: Optional[str] = None,
-        client_agent_message_id: Optional[str] = None,
         invoke_metadata: Optional[Dict[str, Any]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None,
         idempotency_key: Optional[str] = None,
@@ -893,8 +849,6 @@ class SessionHubService:
             response_content="",
             success=False,
             context_id=context_id,
-            user_message_id=user_message_id,
-            client_agent_message_id=client_agent_message_id,
             invoke_metadata=invoke_metadata,
             extra_metadata=extra_metadata,
             response_metadata=None,

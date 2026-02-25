@@ -59,7 +59,6 @@ class _InvokeState:
     stream_identity: dict[str, Any]
     stream_usage: dict[str, Any]
     user_message_id: str | None
-    client_agent_message_id: str | None
     message_refs: dict[str, UUID] | None = None
     persisted_response_content: str | None = None
     persisted_success: bool | None = None
@@ -198,7 +197,6 @@ async def _prepare_state(
         stream_identity={},
         stream_usage={},
         user_message_id=payload.user_message_id,
-        client_agent_message_id=payload.client_agent_message_id,
         message_refs=None,
         persisted_response_content=None,
         persisted_success=None,
@@ -356,12 +354,10 @@ def _rewrite_stream_event_message_id(
     if event_payload.get("kind") != "artifact-update":
         return
     event_payload["message_id"] = local_message_id
-    event_payload["messageId"] = local_message_id
 
     artifact = event_payload.get("artifact")
     if isinstance(artifact, dict):
         artifact["message_id"] = local_message_id
-        artifact["messageId"] = local_message_id
         metadata = artifact.get("metadata")
         if isinstance(metadata, dict):
             opencode = metadata.get("opencode")
@@ -411,8 +407,6 @@ async def _ensure_local_message_headers(
             agent_source=agent_source,
             query=query,
             context_id=state.context_id,
-            user_message_id=state.user_message_id,
-            client_agent_message_id=state.client_agent_message_id,
             invoke_metadata=state.metadata,
             extra_metadata={"transport": transport, "stream": stream_enabled},
             idempotency_key=idempotency_key,
@@ -540,8 +534,6 @@ async def _persist_local_outcome(
                 response_content=persisted_content,
                 success=outcome.success,
                 context_id=state.context_id,
-                user_message_id=state.user_message_id,
-                client_agent_message_id=state.client_agent_message_id,
                 invoke_metadata=state.metadata,
                 extra_metadata={"transport": transport, "stream": stream_enabled},
                 response_metadata=metadata_payload,

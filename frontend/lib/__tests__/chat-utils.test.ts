@@ -62,14 +62,12 @@ describe("chat store utils", () => {
     expect(
       buildInvokePayload("hello", session, "session-1", {
         userMessageId: "user-msg-1",
-        clientAgentMessageId: "agent-msg-1",
       }),
     ).toEqual({
       query: "hello",
       conversationId: "session-1",
       contextId: "ctx-2",
       userMessageId: "user-msg-1",
-      clientAgentMessageId: "agent-msg-1",
       metadata: { locale: "zh-CN" },
     });
   });

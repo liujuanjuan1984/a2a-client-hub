@@ -167,7 +167,6 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
             stream_identity={},
             stream_usage={},
             user_message_id=None,
-            client_agent_message_id=None,
         )
 
     async def fake_record_local_invoke_messages(
@@ -300,7 +299,6 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
         stream_identity={},
         stream_usage={},
         user_message_id=None,
-        client_agent_message_id=None,
     )
     on_event, on_finalized = invoke_route_runner._build_consume_stream_callbacks(
         state=state,
@@ -374,7 +372,6 @@ def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
         stream_identity={},
         stream_usage={},
         user_message_id=long_user_message_id,
-        client_agent_message_id=None,
     )
 
     resolved = invoke_route_runner._resolve_invoke_idempotency_key(
@@ -431,7 +428,6 @@ async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
         stream_identity={},
         stream_usage={},
         user_message_id=None,
-        client_agent_message_id=None,
         message_refs={
             "user_message_id": str(uuid4()),
             "agent_message_id": str(uuid4()),
@@ -474,7 +470,6 @@ async def test_persist_stream_chunk_consumes_and_persists_optional_fields(
     assert state.next_chunk_seq == 10
     assert state.persisted_chunk_count == 1
     assert event_payload["message_id"] == str(state.message_refs["agent_message_id"])
-    assert event_payload["messageId"] == str(state.message_refs["agent_message_id"])
     assert event_payload["artifact"]["metadata"]["opencode"]["message_id"] == str(
         state.message_refs["agent_message_id"]
     )
@@ -502,7 +497,6 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
             stream_identity={},
             stream_usage={},
             user_message_id=None,
-            client_agent_message_id=None,
         )
 
     async def fake_record_local_invoke_messages(
@@ -614,7 +608,6 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
             stream_identity={},
             stream_usage={},
             user_message_id=None,
-            client_agent_message_id=None,
         )
 
     async def fake_record_local_invoke_messages(
@@ -912,7 +905,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
             stream_identity={},
             stream_usage={},
             user_message_id=None,
-            client_agent_message_id=None,
         )
 
     async def fake_stream_ws(*, on_error_metadata=None, **kwargs):  # noqa: ARG001
@@ -1043,7 +1035,6 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             stream_identity={},
             stream_usage={},
             user_message_id=None,
-            client_agent_message_id=None,
         )
 
     async def fake_stream_ws(*, on_error_metadata=None, **kwargs):  # noqa: ARG001

@@ -22,18 +22,10 @@ export const mergeChatMessagesByCanonicalId = (options: {
   incoming.forEach((message) => {
     const canonicalId = normalizeMessageKey(message.id);
     if (!canonicalId) return;
-    const aliasId = normalizeMessageKey(message.clientMessageId);
-    const existingByCanonical = merged.get(canonicalId);
-    const existingByAlias =
-      aliasId && aliasId !== canonicalId ? merged.get(aliasId) : undefined;
-    const existing = existingByCanonical ?? existingByAlias;
+    const existing = merged.get(canonicalId);
 
     if (existing && existing.status === "streaming" && isActivelyStreaming) {
       return;
-    }
-
-    if (existingByAlias && aliasId && aliasId !== canonicalId) {
-      merged.delete(aliasId);
     }
 
     const next = existing

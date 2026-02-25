@@ -1,17 +1,13 @@
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 
 describe("session history mapping", () => {
-  it("maps canonical ids and metadata aliases", () => {
+  it("maps canonical ids", () => {
     const mapped = mapSessionMessagesToChatMessages([
       {
         id: "1c7cf18e-4936-4de0-84f5-edf2e636ed41",
         role: "assistant",
         content: "final",
         created_at: "2026-02-14T00:00:00.000Z",
-        metadata: {
-          client_message_id: "client-agent-1",
-          upstream_message_id: "upstream-agent-1",
-        },
       },
     ]);
 
@@ -19,8 +15,6 @@ describe("session history mapping", () => {
       id: "1c7cf18e-4936-4de0-84f5-edf2e636ed41",
       role: "agent",
       content: "final",
-      clientMessageId: "client-agent-1",
-      upstreamMessageId: "upstream-agent-1",
     });
   });
 

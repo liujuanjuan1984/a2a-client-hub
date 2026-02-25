@@ -1,11 +1,11 @@
 import { mergeChatMessagesByCanonicalId } from "@/lib/messageMerge";
 
 describe("mergeChatMessagesByCanonicalId", () => {
-  it("rekeys alias-id history message into canonical local id", () => {
+  it("merges incoming messages by canonical id", () => {
     const merged = mergeChatMessagesByCanonicalId({
       current: [
         {
-          id: "client-agent-1",
+          id: "4aa4d7f3-68aa-41af-a366-76d9864f3eaa",
           role: "agent",
           content: "partial",
           createdAt: "2026-02-25T10:00:00.000Z",
@@ -19,7 +19,6 @@ describe("mergeChatMessagesByCanonicalId", () => {
           content: "final",
           createdAt: "2026-02-25T10:00:00.000Z",
           status: "done",
-          clientMessageId: "client-agent-1",
         },
       ],
       isActivelyStreaming: false,
@@ -29,7 +28,6 @@ describe("mergeChatMessagesByCanonicalId", () => {
     expect(merged[0]).toMatchObject({
       id: "4aa4d7f3-68aa-41af-a366-76d9864f3eaa",
       content: "final",
-      clientMessageId: "client-agent-1",
     });
   });
 
@@ -46,12 +44,11 @@ describe("mergeChatMessagesByCanonicalId", () => {
       ],
       incoming: [
         {
-          id: "1a57d6db-cf90-4e89-a373-d89d5787af2f",
+          id: "client-agent-2",
           role: "agent",
           content: "final-from-history",
           createdAt: "2026-02-25T10:01:00.000Z",
           status: "done",
-          clientMessageId: "client-agent-2",
         },
       ],
       isActivelyStreaming: true,

@@ -119,16 +119,12 @@ export const buildInvokePayload = (
   conversationId: string,
   options?: {
     userMessageId?: string;
-    clientAgentMessageId?: string;
     resumeFromSequence?: number;
   },
 ): A2AAgentInvokeRequest => {
   const payload: A2AAgentInvokeRequest = { query, conversationId };
   if (options?.userMessageId) {
     payload.userMessageId = options.userMessageId;
-  }
-  if (options?.clientAgentMessageId) {
-    payload.clientAgentMessageId = options.clientAgentMessageId;
   }
   if (options?.resumeFromSequence !== undefined) {
     payload.resumeFromSequence = options.resumeFromSequence;

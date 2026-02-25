@@ -210,7 +210,6 @@ export const useChatStore = create<ChatState>()(
           conversationId,
           {
             userMessageId,
-            clientAgentMessageId: agentMessageId,
             resumeFromSequence: resumeFromSequence ?? undefined,
           },
         );
@@ -278,7 +277,6 @@ export const useChatStore = create<ChatState>()(
           get().sessions[conversationId] ?? createAgentSession(agentId);
         const payload = buildInvokePayload(trimmed, session, conversationId, {
           userMessageId: userMessage.id,
-          clientAgentMessageId: agentMessage.id,
         });
 
         await executeChatRuntime(
