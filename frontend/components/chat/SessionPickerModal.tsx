@@ -25,23 +25,26 @@ function SessionItem({
   const createdAtText = formatLocalDateTimeYmdHm(
     session.createdAt ?? session.lastActiveAt,
   );
-  const lastUpdatedAtText = formatLocalDateTimeYmdHm(session.lastActiveAt);
 
   return (
     <Pressable
-      className={`mb-2 flex-row items-center justify-between rounded-xl border p-3 ${
-        isActive
-          ? "border-primary bg-primary/10"
-          : "border-slate-800 bg-slate-900"
+      className={`mb-2 flex-row items-center justify-between rounded-xl p-4 ${
+        isActive ? "bg-primary/10 border border-primary/20" : "bg-black/20"
       }`}
       onPress={() => onSelect(conversationId)}
     >
       <View className="flex-1">
-        <Text className="text-sm text-slate-300" numberOfLines={2}>
+        <Text
+          className={`text-sm font-bold ${isActive ? "text-primary" : "text-white"}`}
+          numberOfLines={2}
+        >
           {title}
         </Text>
-        <Text className="mt-1 text-[10px] text-slate-500" numberOfLines={1}>
-          {createdAtText} - {lastUpdatedAtText}
+        <Text
+          className="mt-1 text-[10px] font-medium text-slate-500"
+          numberOfLines={1}
+        >
+          {createdAtText}
         </Text>
       </View>
     </Pressable>
@@ -88,18 +91,16 @@ export function SessionPickerModal({
           accessibilityLabel="Close session picker"
           onPress={onClose}
         />
-        <View className="w-full max-h-[80%] min-h-[50%] rounded-t-3xl border-t border-slate-800 bg-slate-950 p-6 sm:w-[min(94vw,760px)] lg:w-[min(90vw,960px)] sm:rounded-3xl sm:border">
+        <View className="w-full max-h-[80%] min-h-[50%] rounded-t-3xl bg-surface p-6 sm:w-[min(94vw,760px)] lg:w-[min(90vw,960px)] sm:rounded-3xl border-t border-white/5 sm:border">
           <View className="mb-6 flex-row items-center justify-between">
-            <Text className="text-lg font-semibold text-white">
-              Chat History
-            </Text>
+            <Text className="text-lg font-bold text-white">Chat History</Text>
             <Pressable
               onPress={onClose}
-              className="rounded-full bg-slate-800 p-2"
+              className="rounded-xl bg-slate-800 p-2 active:bg-slate-700"
               accessibilityRole="button"
               accessibilityLabel="Close session picker"
             >
-              <Ionicons name="close" size={20} color="#cbd5e1" />
+              <Ionicons name="close" size={20} color="#FFFFFF" />
             </Pressable>
           </View>
           <Button

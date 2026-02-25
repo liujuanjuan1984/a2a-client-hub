@@ -108,7 +108,7 @@ export function ChatScreen({
           size="sm"
           onPress={() => controller.scrollToBottom(true)}
           accessibilityLabel="Scroll to bottom"
-          className="rounded-full shadow-lg"
+          className="rounded-xl shadow-lg"
         />
       </Animated.View>
 

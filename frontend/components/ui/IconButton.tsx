@@ -24,7 +24,7 @@ type IconButtonProps = Omit<PressableProps, "accessibilityLabel"> & {
 
 export function IconButton({
   icon,
-  variant = "neo",
+  variant = "primary",
   size = "md",
   loading,
   disabled,
@@ -33,16 +33,12 @@ export function IconButton({
   ...props
 }: IconButtonProps) {
   const variants: Record<IconButtonVariant, string> = {
-    neo: "border-2 border-white bg-neo-yellow shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
-    primary:
-      "border-2 border-white bg-neo-yellow shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
-    secondary:
-      "border-2 border-white bg-surface shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
-    outline:
-      "border-2 border-white bg-transparent shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
-    ghost: "",
-    danger:
-      "border-2 border-white bg-red-600 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
+    neo: "bg-primary active:opacity-80",
+    primary: "bg-primary active:opacity-80",
+    secondary: "bg-slate-800 active:bg-slate-700",
+    outline: "border border-white/20 active:bg-white/10",
+    ghost: "active:bg-white/10",
+    danger: "bg-red-500/20 active:bg-red-500/30",
   };
 
   const sizes: Record<IconButtonSize, string> = {
@@ -53,7 +49,7 @@ export function IconButton({
   };
 
   const iconSizes: Record<IconButtonSize, number> = {
-    xs: 16,
+    xs: 14,
     sm: 18,
     md: 20,
     lg: 22,
@@ -65,7 +61,7 @@ export function IconButton({
     secondary: "#FFFFFF",
     outline: "#FFFFFF",
     ghost: "#FFFFFF",
-    danger: "#ffffff",
+    danger: "#f87171",
   };
 
   const isDisabled = disabled || loading;
@@ -74,7 +70,7 @@ export function IconButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      className={`items-center justify-center ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-50" : ""} ${className || ""}`}
+      className={`items-center justify-center rounded-xl ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-40" : ""} ${className || ""}`}
       disabled={isDisabled}
       {...props}
     >
