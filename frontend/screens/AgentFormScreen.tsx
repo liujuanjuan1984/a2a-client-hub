@@ -369,11 +369,11 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
           subtitle="This agent is provided by an admin and cannot be edited here."
           rightElement={<BackButton variant="outline" onPress={handleCancel} />}
         />
-        <View className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
-          <Text className="text-base font-semibold text-white">
+        <View className="mt-8 rounded-2xl bg-surface p-6 shadow-sm">
+          <Text className="text-base font-bold text-white">
             Read-only agent
           </Text>
-          <Text className="mt-2 text-sm text-muted">
+          <Text className="mt-2 text-[11px] font-medium text-slate-400">
             Please contact your administrator if you need changes to this agent.
           </Text>
           <View className="mt-6">
@@ -426,19 +426,29 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
         />
 
         <View className="gap-3">
-          <Text className="text-sm font-medium text-white">Auth Type</Text>
+          <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            Auth Type
+          </Text>
           <View className="flex-row flex-wrap gap-2">
             {authTypes.map((option) => (
               <Pressable
                 key={option.value}
-                className={`rounded-full border px-4 py-2 ${
+                className={`rounded-xl border px-4 py-2 ${
                   authType === option.value
-                    ? "border-primary bg-primary/20"
-                    : "border-slate-700"
+                    ? "border-primary/40 bg-primary/10"
+                    : "border-white/5 bg-black/20"
                 }`}
                 onPress={() => handleAuthTypeChange(option.value)}
               >
-                <Text className="text-xs text-white">{option.label}</Text>
+                <Text
+                  className={`text-[11px] font-bold ${
+                    authType === option.value
+                      ? "text-primary"
+                      : "text-slate-400"
+                  }`}
+                >
+                  {option.label}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -492,7 +502,9 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       </View>
 
       <View className="mt-8">
-        <Text className="text-sm font-medium text-white">Custom Headers</Text>
+        <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          Custom Headers
+        </Text>
         <View className="mt-3 gap-3">
           {extraHeaders.map((header) => (
             <KeyValueInputRow
@@ -539,11 +551,9 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       </View>
 
       {agentId && agent ? (
-        <View className="mt-10 rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
-          <Text className="text-sm font-semibold text-red-200">
-            Danger zone
-          </Text>
-          <Text className="mt-2 text-xs text-red-200/80">
+        <View className="mt-10 rounded-2xl bg-red-500/10 p-5 shadow-sm">
+          <Text className="text-sm font-bold text-red-200">Danger zone</Text>
+          <Text className="mt-1 text-[11px] font-medium text-red-200/60">
             Deleting an agent removes its local configuration. This action
             cannot be undone.
           </Text>

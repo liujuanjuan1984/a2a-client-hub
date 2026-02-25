@@ -120,11 +120,17 @@ export function ScheduledJobForm({
 
   const isCurrentlyRunning = lastRunStatus === "running";
 
+  const renderLabel = (text: string) => (
+    <Text className="mt-4 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+      {text}
+    </Text>
+  );
+
   return (
-    <View className="mb-4 rounded-3xl border border-slate-800 bg-slate-900/40 p-4">
+    <View className="mb-4 rounded-2xl bg-surface p-5 shadow-sm">
       {isCurrentlyRunning && (
-        <View className="mb-4 rounded-lg bg-yellow-500/10 p-3 border border-yellow-500/20">
-          <Text className="text-sm font-medium text-yellow-500">
+        <View className="mb-5 rounded-xl bg-primary/10 p-4 border border-primary/20">
+          <Text className="text-[11px] font-bold text-primary leading-5">
             Cannot edit a job while it is currently running. Please wait for it
             to finish or disable it first.
           </Text>
@@ -132,36 +138,36 @@ export function ScheduledJobForm({
       )}
 
       {showTitle ? (
-        <Text className="text-sm font-semibold text-white">
+        <Text className="text-base font-bold text-white mb-2">
           {editing ? "Edit Job" : "Create Job"}
         </Text>
       ) : null}
 
-      <Text className="mt-3 text-xs text-muted">Name</Text>
+      {renderLabel("Name")}
       <TextInput
-        className="mt-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+        className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
         value={form.name}
         onChangeText={(value) => onChange({ name: value })}
         placeholder="Daily summary"
-        placeholderTextColor="#64748b"
+        placeholderTextColor="#64748B"
       />
 
-      <Text className="mt-3 text-xs text-muted">Agent</Text>
-      <View className="mt-1 flex-row flex-wrap gap-2">
+      {renderLabel("Agent")}
+      <View className="mt-2 flex-row flex-wrap gap-2">
         {agentOptions.map((agent) => {
           const selected = form.agent_id === agent.id;
           return (
             <Pressable
               key={agent.id}
-              className={`rounded-lg border px-2 py-1 ${
+              className={`rounded-xl border px-3 py-2 ${
                 selected
-                  ? "border-primary bg-primary/20"
-                  : "border-slate-700 bg-slate-900"
+                  ? "border-primary/40 bg-primary/10"
+                  : "border-white/5 bg-black/20"
               }`}
               onPress={() => onChange({ agent_id: agent.id })}
             >
               <Text
-                className={`text-xs ${selected ? "text-primary" : "text-slate-300"}`}
+                className={`text-[11px] font-bold ${selected ? "text-primary" : "text-slate-400"}`}
               >
                 {agent.name}
               </Text>
@@ -170,17 +176,17 @@ export function ScheduledJobForm({
         })}
       </View>
 
-      <Text className="mt-3 text-xs text-muted">Cycle</Text>
-      <View className="mt-1 flex-row flex-wrap gap-2">
+      {renderLabel("Cycle")}
+      <View className="mt-2 flex-row flex-wrap gap-2">
         {cycleOptions.map((option) => {
           const selected = form.cycle_type === option.value;
           return (
             <Pressable
               key={option.value}
-              className={`rounded-lg border px-2 py-1 ${
+              className={`rounded-xl border px-3 py-2 ${
                 selected
-                  ? "border-primary bg-primary/20"
-                  : "border-slate-700 bg-slate-900"
+                  ? "border-primary/40 bg-primary/10"
+                  : "border-white/5 bg-black/20"
               }`}
               onPress={() =>
                 onChange({
@@ -190,7 +196,7 @@ export function ScheduledJobForm({
               }
             >
               <Text
-                className={`text-xs ${selected ? "text-primary" : "text-slate-300"}`}
+                className={`text-[11px] font-bold ${selected ? "text-primary" : "text-slate-400"}`}
               >
                 {option.label}
               </Text>
@@ -201,8 +207,8 @@ export function ScheduledJobForm({
 
       {form.cycle_type === "weekly" ? (
         <>
-          <Text className="mt-3 text-xs text-muted">Weekday</Text>
-          <View className="mt-1 flex-row flex-wrap gap-2">
+          {renderLabel("Weekday")}
+          <View className="mt-2 flex-row flex-wrap gap-2">
             {weekdayOptions.map((option) => {
               const selected =
                 (form.time_point as { weekday?: number })?.weekday ===
@@ -210,10 +216,10 @@ export function ScheduledJobForm({
               return (
                 <Pressable
                   key={option.value}
-                  className={`rounded-lg border px-2 py-1 ${
+                  className={`rounded-xl border px-3 py-2 ${
                     selected
-                      ? "border-primary bg-primary/20"
-                      : "border-slate-700 bg-slate-900"
+                      ? "border-primary/40 bg-primary/10"
+                      : "border-white/5 bg-black/20"
                   }`}
                   onPress={() =>
                     onChange({
@@ -225,7 +231,7 @@ export function ScheduledJobForm({
                   }
                 >
                   <Text
-                    className={`text-xs ${selected ? "text-primary" : "text-slate-300"}`}
+                    className={`text-[11px] font-bold ${selected ? "text-primary" : "text-slate-400"}`}
                   >
                     {option.label}
                   </Text>
@@ -238,9 +244,9 @@ export function ScheduledJobForm({
 
       {form.cycle_type === "monthly" ? (
         <>
-          <Text className="mt-3 text-xs text-muted">Day of Month</Text>
+          {renderLabel("Day of Month")}
           <TextInput
-            className="mt-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
             value={String((form.time_point as any)?.day ?? "")}
             onChangeText={(value) => {
               if (!value.trim()) {
@@ -259,7 +265,7 @@ export function ScheduledJobForm({
               });
             }}
             placeholder="1"
-            placeholderTextColor="#64748b"
+            placeholderTextColor="#64748B"
             keyboardType="number-pad"
           />
         </>
@@ -267,11 +273,9 @@ export function ScheduledJobForm({
 
       {form.cycle_type === "interval" ? (
         <>
-          <Text className="mt-3 text-xs text-muted">
-            Interval minutes (5..1440)
-          </Text>
+          {renderLabel("Interval minutes (5..1440)")}
           <TextInput
-            className="mt-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
             value={String((form.time_point as any)?.minutes ?? "")}
             onChangeText={(value) => {
               if (!value.trim()) {
@@ -289,14 +293,12 @@ export function ScheduledJobForm({
               });
             }}
             placeholder="10"
-            placeholderTextColor="#64748b"
+            placeholderTextColor="#64748B"
             keyboardType="number-pad"
           />
-          <Text className="mt-3 text-xs text-muted">
-            Start datetime (local) (optional)
-          </Text>
+          {renderLabel("Start datetime (local) (optional)")}
           <TextInput
-            className="mt-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
             value={startAtInputValue}
             onChangeText={(value) => {
               isEditingStartAtRef.current = true;
@@ -317,15 +319,15 @@ export function ScheduledJobForm({
               isEditingStartAtRef.current = false;
             }}
             placeholder="2026-02-23T14:30"
-            placeholderTextColor="#64748b"
+            placeholderTextColor="#64748B"
             keyboardType="default"
           />
         </>
       ) : (
         <>
-          <Text className="mt-3 text-xs text-muted">Time (HH:MM)</Text>
+          {renderLabel("Time (HH:MM)")}
           <TextInput
-            className="mt-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
             value={String((form.time_point as any)?.time ?? "")}
             onChangeText={(value) =>
               onChange({
@@ -333,32 +335,32 @@ export function ScheduledJobForm({
               })
             }
             placeholder="07:00"
-            placeholderTextColor="#64748b"
+            placeholderTextColor="#64748B"
           />
         </>
       )}
 
-      <Text className="mt-3 text-xs text-muted">Session Policy</Text>
-      <View className="mt-1 flex-row flex-wrap gap-2">
+      {renderLabel("Session Policy")}
+      <View className="mt-2 flex-row flex-wrap gap-2">
         {(
           [
             { value: "new_each_run", label: "New Each Run" },
-            { value: "reuse_single", label: "Reuse Single Session" },
+            { value: "reuse_single", label: "Reuse Single" },
           ] as const
         ).map((option) => {
           const selected = form.conversation_policy === option.value;
           return (
             <Pressable
               key={option.value}
-              className={`rounded-lg border px-2 py-1 ${
+              className={`rounded-xl border px-3 py-2 ${
                 selected
-                  ? "border-primary bg-primary/20"
-                  : "border-slate-700 bg-slate-900"
+                  ? "border-primary/40 bg-primary/10"
+                  : "border-white/5 bg-black/20"
               }`}
               onPress={() => onChange({ conversation_policy: option.value })}
             >
               <Text
-                className={`text-xs ${selected ? "text-primary" : "text-slate-300"}`}
+                className={`text-[11px] font-bold ${selected ? "text-primary" : "text-slate-400"}`}
               >
                 {option.label}
               </Text>
@@ -367,18 +369,18 @@ export function ScheduledJobForm({
         })}
       </View>
 
-      <Text className="mt-3 text-xs text-muted">Prompt</Text>
+      {renderLabel("Prompt")}
       <TextInput
-        className="mt-1 min-h-[100px] rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+        className="mt-2 min-h-[100px] rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
         multiline
         textAlignVertical="top"
         value={form.prompt}
         onChangeText={(value) => onChange({ prompt: value })}
-        placeholder="Summarize key updates in the last 24 hours..."
-        placeholderTextColor="#64748b"
+        placeholder="Summarize key updates..."
+        placeholderTextColor="#64748B"
       />
 
-      <View className="mt-4 flex-row items-center justify-between gap-3">
+      <View className="mt-8 flex-row items-center justify-between gap-3">
         <Button
           label="Cancel"
           size="sm"
