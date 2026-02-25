@@ -183,6 +183,7 @@ class A2AScheduleService:
         enabled: Optional[bool] = None,
     ) -> A2AScheduleTask:
         task = await self._get_task(db, user_id=user_id, task_id=task_id)
+        timezone_value = self._normalize_timezone_str(timezone_str)
 
         if task.last_run_status == A2AScheduleTask.STATUS_RUNNING:
             raise A2AScheduleConflictError(
@@ -215,7 +216,6 @@ class A2AScheduleService:
 
         schedule_changed = (cycle_type is not None) or (time_point is not None)
         if schedule_changed:
-            timezone_value = self._normalize_timezone_str(timezone_str)
             normalized_point = self._normalize_time_point(
                 cycle_type=next_cycle_type,
                 time_point=next_time_point,
@@ -235,7 +235,6 @@ class A2AScheduleService:
             task.next_run_at = None
 
         if should_recompute:
-            timezone_value = self._normalize_timezone_str(timezone_str)
             task.next_run_at = self.compute_next_run_at(
                 cycle_type=task.cycle_type,
                 time_point=dict(task.time_point or {}),
