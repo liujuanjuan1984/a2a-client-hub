@@ -126,7 +126,7 @@ export function AgentListScreen() {
                   <Text
                     className={`text-[10px] font-bold uppercase tracking-widest ${
                       agent.source === "shared"
-                        ? "text-neo-cyan"
+                        ? "text-neo-green"
                         : "text-slate-500"
                     }`}
                   >

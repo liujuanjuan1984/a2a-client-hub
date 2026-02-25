@@ -171,7 +171,7 @@ export function ChatMessageItem({
           delayLongPress={500}
           className={`px-4 py-3 rounded-2xl shadow-sm ${
             message.role === "user"
-              ? "bg-[#1E222D] border border-primary/40"
+              ? "bg-neo-green/15"
               : message.role === "agent"
                 ? "bg-surface"
                 : "bg-slate-900"
@@ -200,9 +200,12 @@ export function ChatMessageItem({
                           : "Show reasoning details"
                       }
                     >
-                      <Text className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                        {expanded ? "Hide Reasoning" : "Show Reasoning"}
-                      </Text>
+                      <View className="flex-row items-center gap-1.5">
+                        <View className="h-1 w-1 rounded-full bg-slate-600" />
+                        <Text className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                          {expanded ? "Hide Reasoning" : "Show Reasoning"}
+                        </Text>
+                      </View>
                     </Pressable>
                     {expanded ? (
                       <View>
@@ -228,7 +231,7 @@ export function ChatMessageItem({
                     key={blockId}
                     className={`${
                       blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl bg-sky-500/5 border border-white/5 p-3`}
+                    } rounded-xl bg-neo-green/5 border border-neo-green/10 p-3`}
                   >
                     <Pressable
                       onPress={() => toggleToolCall(blockId)}
@@ -240,14 +243,16 @@ export function ChatMessageItem({
                       }
                     >
                       <View className="flex-row items-center justify-between">
-                        <Text className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                          {expanded ? "Hide Tool Call" : "Show Tool Call"}
-                        </Text>
-                        <Ionicons
-                          name="construct-outline"
-                          size={12}
-                          color="#475569"
-                        />
+                        <View className="flex-row items-center gap-1.5">
+                          <Ionicons
+                            name="construct"
+                            size={10}
+                            color="#34D399"
+                          />
+                          <Text className="text-[10px] font-bold uppercase tracking-wide text-neo-green">
+                            {expanded ? "Hide Tool Call" : "Show Tool Call"}
+                          </Text>
+                        </View>
                       </View>
                     </Pressable>
                     {expanded ? (
@@ -326,7 +331,7 @@ export function ChatMessageItem({
                   </Text>
                   <Text
                     selectable
-                    className="mt-2 break-all text-xs leading-5 text-slate-400"
+                    className="mt-2 break-all text-xs leading-5 text-slate-300"
                   >
                     {blockText}
                   </Text>
@@ -369,8 +374,8 @@ export function ChatMessageItem({
           )}
           {message.status === "streaming" ? (
             <View className="mt-2 flex-row items-center gap-2">
-              <ActivityIndicator size="small" color="#FFDE03" />
-              <Text className="text-[10px] font-bold italic text-primary/60">
+              <ActivityIndicator size="small" color="#34D399" />
+              <Text className="text-[10px] font-bold italic text-neo-green/60">
                 Streaming...
               </Text>
             </View>
