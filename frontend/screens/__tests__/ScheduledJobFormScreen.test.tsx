@@ -311,6 +311,111 @@ describe("ScheduledJobFormScreen", () => {
     expect(mockCreateScheduledJob).not.toHaveBeenCalled();
   });
 
+  it("normalizes sequential minutes and converts start datetime on create", async () => {
+    act(() => {
+      useSessionStore.setState({
+        user: {
+          id: "user-1",
+          email: "test@example.com",
+          name: "Test User",
+          is_superuser: false,
+          timezone: "Asia/Shanghai",
+        },
+      });
+    });
+
+    mockCreateScheduledJob.mockResolvedValue({
+      id: "job-1",
+      name: "Sequential Summary",
+      agent_id: "agent-1",
+      prompt: "Summarize status",
+      cycle_type: "sequential",
+      time_point: { minutes: 5, start_at: "2026-02-22T01:30:00.000Z" },
+      enabled: true,
+    });
+    const expectedStartAt = "2026-02-23T09:30";
+
+    await act(async () => {
+      create(<ScheduledJobFormScreen />);
+    });
+
+    expect(capturedSubmit).toBeTruthy();
+    expect(capturedChange).toBeTruthy();
+
+    await act(async () => {
+      capturedChange?.({
+        cycle_type: "sequential",
+        time_point: { minutes: 3, start_at: "2026-02-23 09:30" },
+      });
+    });
+    await act(async () => {
+      capturedChange?.({
+        agent_id: "agent-1",
+        name: "Sequential Summary",
+        prompt: "Summarize status for this week",
+      });
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      capturedSubmit?.();
+      await Promise.resolve();
+    });
+
+    expect(mockCreateScheduledJob).toHaveBeenCalledTimes(1);
+    expect(mockCreateScheduledJob).toHaveBeenCalledWith({
+      name: "Sequential Summary",
+      agent_id: "agent-1",
+      prompt: "Summarize status for this week",
+      cycle_type: "sequential",
+      time_point: {
+        minutes: 5,
+        start_at: expectedStartAt,
+      },
+      enabled: true,
+      conversation_policy: "new_each_run",
+    });
+    expect(capturedTimeZone).toBe("Asia/Shanghai");
+  });
+
+  it("rejects invalid sequential start datetime", async () => {
+    await act(async () => {
+      create(<ScheduledJobFormScreen />);
+    });
+
+    expect(capturedSubmit).toBeTruthy();
+    expect(capturedChange).toBeTruthy();
+
+    await act(async () => {
+      capturedChange?.({
+        agent_id: "agent-1",
+        name: "Sequential Summary",
+        prompt: "Summarize status",
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      capturedChange?.({
+        name: "Sequential Summary",
+        cycle_type: "sequential",
+        time_point: { minutes: 3, start_at: "bad-time" },
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      capturedSubmit?.();
+      await Promise.resolve();
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Validation failed",
+      "Start datetime must be a valid date time.",
+    );
+    expect(mockCreateScheduledJob).not.toHaveBeenCalled();
+  });
+
   it("filters shared agents out from the selectable list on scheduled job form", async () => {
     mockAgents.splice(
       0,

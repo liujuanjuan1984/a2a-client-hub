@@ -392,6 +392,16 @@ class A2AScheduleService:
         if task.consecutive_failures >= threshold:
             task.enabled = False
 
+        if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            if task.enabled:
+                task.next_run_at = await self._compute_sequential_next_run_at(
+                    db,
+                    task=task,
+                    after_utc=now_utc,
+                )
+            else:
+                task.next_run_at = None
+
         await commit_safely(db)
         await db.refresh(task)
         return task
@@ -623,6 +633,7 @@ class A2AScheduleService:
             )
             execution = await db.scalar(exec_stmt)
             final_task_status = A2AScheduleTask.STATUS_FAILED
+            sequential_after_utc = now_utc
 
             if (
                 execution is not None
@@ -651,8 +662,12 @@ class A2AScheduleService:
                 db.add(recovered)
             elif execution.status == A2AScheduleExecution.STATUS_SUCCESS:
                 final_task_status = A2AScheduleTask.STATUS_SUCCESS
+                if execution.finished_at is not None:
+                    sequential_after_utc = ensure_utc(execution.finished_at)
             elif execution.status == A2AScheduleExecution.STATUS_FAILED:
                 final_task_status = A2AScheduleTask.STATUS_FAILED
+                if execution.finished_at is not None:
+                    sequential_after_utc = ensure_utc(execution.finished_at)
 
             task.last_run_status = final_task_status
             task.last_run_at = now_utc
@@ -664,6 +679,17 @@ class A2AScheduleService:
                 task.consecutive_failures = (task.consecutive_failures or 0) + 1
                 if task.consecutive_failures >= failure_threshold:
                     task.enabled = False
+
+            if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+                if task.enabled:
+                    task.next_run_at = await self._compute_sequential_next_run_at(
+                        db,
+                        task=task,
+                        after_utc=sequential_after_utc,
+                    )
+                else:
+                    task.next_run_at = None
+
             recovered_count += 1
 
         await commit_safely(db)
@@ -708,25 +734,10 @@ class A2AScheduleService:
             task.conversation_id = conversation_id
 
         if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL and task.enabled:
-            from app.db.models.user import User
-
-            timezone_value = await auth_handler.get_user_timezone(
+            task.next_run_at = await self._compute_sequential_next_run_at(
                 db,
-                user_id=task.user_id,
-                default="UTC",
-            )
-            is_superuser = (
-                await db.scalar(
-                    select(User.is_superuser).where(User.id == task.user_id)
-                )
-            ) or False
-
-            task.next_run_at = self.compute_next_run_at(
-                cycle_type=task.cycle_type,
-                time_point=dict(task.time_point or {}),
-                timezone_str=timezone_value,
-                after_utc=ensure_utc(finished_at),
-                is_superuser=is_superuser,
+                task=task,
+                after_utc=finished_at,
             )
 
         if final_status == A2AScheduleTask.STATUS_SUCCESS:
@@ -742,6 +753,32 @@ class A2AScheduleService:
             raise A2AScheduleValidationError("Unsupported final status for task run")
 
         return True
+
+    async def _compute_sequential_next_run_at(
+        self,
+        db: AsyncSession,
+        *,
+        task: A2AScheduleTask,
+        after_utc: datetime,
+    ) -> datetime:
+        from app.db.models.user import User
+
+        timezone_value = await auth_handler.get_user_timezone(
+            db,
+            user_id=task.user_id,
+            default="UTC",
+        )
+        is_superuser = (
+            await db.scalar(select(User.is_superuser).where(User.id == task.user_id))
+        ) or False
+
+        return self.compute_next_run_at(
+            cycle_type=task.cycle_type,
+            time_point=dict(task.time_point or {}),
+            timezone_str=timezone_value,
+            after_utc=ensure_utc(after_utc),
+            is_superuser=is_superuser,
+        )
 
     async def _get_task(
         self,
@@ -857,7 +894,10 @@ class A2AScheduleService:
         if not isinstance(time_point, dict):
             raise A2AScheduleValidationError("time_point must be an object")
 
-        if cycle_type in (A2AScheduleTask.CYCLE_INTERVAL, A2AScheduleTask.CYCLE_SEQUENTIAL):
+        if cycle_type in (
+            A2AScheduleTask.CYCLE_INTERVAL,
+            A2AScheduleTask.CYCLE_SEQUENTIAL,
+        ):
             minutes_raw = time_point.get("minutes", time_point.get("interval_minutes"))
             minutes = self._normalize_interval_minutes(
                 minutes_raw, is_superuser=is_superuser
@@ -1227,7 +1267,10 @@ class A2AScheduleService:
             timezone_str=timezone_str,
         )
 
-        if normalized_cycle in (A2AScheduleTask.CYCLE_INTERVAL, A2AScheduleTask.CYCLE_SEQUENTIAL):
+        if normalized_cycle in (
+            A2AScheduleTask.CYCLE_INTERVAL,
+            A2AScheduleTask.CYCLE_SEQUENTIAL,
+        ):
             minutes = self._normalize_interval_minutes(
                 normalized_point.get(
                     "minutes", normalized_point.get("interval_minutes")

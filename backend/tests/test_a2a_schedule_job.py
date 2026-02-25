@@ -776,3 +776,116 @@ async def test_recover_stale_running_task_backfills_missing_execution(
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
     assert len(executions) == 1
     assert executions[0].status == A2AScheduleExecution.STATUS_FAILED
+
+
+async def test_recover_stale_sequential_task_reschedules_next_run(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="recover-sequential",
+    )
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    run_id = uuid4()
+    stale_started_at = now - timedelta(minutes=30)
+    task.cycle_type = A2AScheduleTask.CYCLE_SEQUENTIAL
+    task.time_point = {"minutes": 60}
+    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+    task.current_run_id = run_id
+    task.running_started_at = stale_started_at
+    task.next_run_at = None
+    execution = A2AScheduleExecution(
+        user_id=user.id,
+        task_id=task.id,
+        run_id=run_id,
+        scheduled_for=stale_started_at,
+        started_at=stale_started_at,
+        status=A2AScheduleExecution.STATUS_RUNNING,
+    )
+    async_db_session.add(execution)
+    await async_db_session.commit()
+
+    recovered = await a2a_schedule_service.recover_stale_running_tasks(
+        async_db_session,
+        now=now,
+        timeout_seconds=60,
+    )
+    assert recovered == 1
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+        )
+
+    assert refreshed_task is not None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
+    assert refreshed_task.current_run_id is None
+    assert refreshed_task.running_started_at is None
+    assert refreshed_task.next_run_at is not None
+    assert refreshed_task.next_run_at >= now + timedelta(minutes=59)
+
+
+async def test_manual_fail_sequential_task_reschedules_next_run(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="manual-sequential",
+    )
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=utc_now(),
+    )
+    task.cycle_type = A2AScheduleTask.CYCLE_SEQUENTIAL
+    task.time_point = {"minutes": 60}
+    task.next_run_at = None
+    await async_db_session.commit()
+
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    task_id = task.id
+    marked = await a2a_schedule_service.mark_task_failed_manually(
+        async_db_session,
+        user_id=user.id,
+        task_id=task.id,
+        marked_by_user_id=user.id,
+    )
+    assert marked.id == task.id
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
+        )
+        execution = await check_db.scalar(
+            select(A2AScheduleExecution).where(
+                A2AScheduleExecution.task_id == task_id,
+                A2AScheduleExecution.run_id == run_id,
+            )
+        )
+
+    assert refreshed_task is not None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
+    assert refreshed_task.current_run_id is None
+    assert refreshed_task.running_started_at is None
+    assert refreshed_task.next_run_at is not None
+    assert refreshed_task.last_run_at is not None
+    assert refreshed_task.next_run_at >= refreshed_task.last_run_at + timedelta(
+        minutes=59
+    )
+    assert execution is not None
+    assert execution.status == A2AScheduleExecution.STATUS_FAILED

@@ -57,7 +57,7 @@ const normalizeTimePoint = (
   timePoint: unknown,
 ) => {
   const current = (timePoint ?? {}) as ScheduleTimePoint;
-  if (cycleType === "interval") {
+  if (cycleType === "interval" || cycleType === "sequential") {
     const minutes = (current as { minutes?: unknown })?.minutes;
     const startAt = (current as { start_at?: unknown })?.start_at;
     return {
@@ -260,7 +260,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
         return false;
       }
     }
-    if (form.cycle_type === "interval") {
+    if (form.cycle_type === "interval" || form.cycle_type === "sequential") {
       const minutes = (form.time_point as { minutes?: unknown })?.minutes;
       if (typeof minutes !== "number" || !Number.isFinite(minutes)) {
         toast.error("Validation failed", "Interval minutes is required.");
@@ -317,7 +317,10 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
         prompt: form.prompt.trim(),
         time_point: normalizeTimePoint(form.cycle_type, form.time_point) as any,
       };
-      if (normalized.cycle_type === "interval") {
+      if (
+        normalized.cycle_type === "interval" ||
+        normalized.cycle_type === "sequential"
+      ) {
         const rawStartAt = (form.time_point as { start_at?: unknown })
           ?.start_at;
         const normalizedStartAt = localDateTimeInputToUtcIso(
