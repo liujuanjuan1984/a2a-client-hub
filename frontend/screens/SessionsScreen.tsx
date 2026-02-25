@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
@@ -9,15 +9,23 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useContinueSession } from "@/hooks/useContinueSession";
 import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
+import {
+  A2AExtensionCallError,
+  promptOpencodeSessionAsync,
+} from "@/lib/api/a2aExtensions";
 import { type SessionListItem } from "@/lib/api/sessions";
 import {
   getSessionTimelineText,
   resolveSessionAgentPresentation,
 } from "@/lib/sessionDirectoryPresentation";
+import { toast } from "@/lib/toast";
 
 export function SessionsScreen() {
   const { continueSession } = useContinueSession();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
+  const [promptingConversationId, setPromptingConversationId] = useState<
+    string | null
+  >(null);
 
   const {
     items,
@@ -50,6 +58,81 @@ export function SessionsScreen() {
       lastActiveAt: item.last_active_at ?? item.created_at ?? null,
     });
   };
+
+  const resolvePromptSource = (
+    item: SessionListItem,
+  ): "personal" | "shared" | null => {
+    if (item.agent_source === "personal" || item.agent_source === "shared") {
+      return item.agent_source;
+    }
+    if (!item.agent_id) {
+      return null;
+    }
+    const fallbackSource = agentLookup.get(item.agent_id)?.source;
+    if (fallbackSource === "personal" || fallbackSource === "shared") {
+      return fallbackSource;
+    }
+    return null;
+  };
+
+  const canPromptAsync = (item: SessionListItem) =>
+    item.external_provider === "opencode" &&
+    typeof item.external_session_id === "string" &&
+    item.external_session_id.trim().length > 0 &&
+    typeof item.agent_id === "string" &&
+    item.agent_id.trim().length > 0 &&
+    resolvePromptSource(item) !== null;
+
+  const handlePromptAsync = async (item: SessionListItem) => {
+    if (!canPromptAsync(item)) {
+      return;
+    }
+    const sessionId = item.external_session_id!.trim();
+    const agentId = item.agent_id!.trim();
+    const source = resolvePromptSource(item);
+    if (!source) {
+      return;
+    }
+    setPromptingConversationId(item.conversationId);
+    try {
+      await promptOpencodeSessionAsync({
+        source,
+        agentId,
+        sessionId,
+        request: {
+          parts: [
+            {
+              type: "text",
+              text: "Continue from the latest context and summarize next steps.",
+            },
+          ],
+          noReply: true,
+        },
+      });
+      toast.success(
+        "Async continue started",
+        "The upstream session accepted prompt_async.",
+      );
+      await refresh();
+    } catch (error) {
+      const message =
+        error instanceof A2AExtensionCallError
+          ? error.errorCode === "session_forbidden"
+            ? "You do not have permission to continue this external session."
+            : error.message
+          : error instanceof Error
+            ? error.message
+            : "Failed to trigger async continue.";
+      toast.error("Async continue failed", message);
+    } finally {
+      setPromptingConversationId(null);
+    }
+  };
+
+  // Logic Reserve for future integration
+  if (false as boolean) {
+    console.log(handlePromptAsync, promptingConversationId);
+  }
 
   return (
     <ScreenContainer>
