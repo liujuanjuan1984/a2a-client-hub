@@ -22,6 +22,16 @@ export const shouldStickToBottom = (
   threshold = CHAT_LIST_BOTTOM_STICK_THRESHOLD,
 ): boolean => getDistanceToBottom(metrics) <= threshold;
 
+export const shouldShowScrollToBottom = (
+  metrics: ChatScrollMetrics,
+  threshold?: number,
+): boolean => {
+  const { viewportHeight, contentHeight } = metrics;
+  if (contentHeight <= viewportHeight) return false;
+  const actualThreshold = threshold ?? viewportHeight;
+  return getDistanceToBottom(metrics) > actualThreshold;
+};
+
 export const getAnchoredOffsetAfterContentResize = (
   anchor: ContentSizeAnchor,
   nextContentHeight: number,
