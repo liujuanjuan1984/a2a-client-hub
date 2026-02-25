@@ -232,6 +232,14 @@ export const useChatStore = create<ChatState>()(
         const trimmed = content.trim();
         if (!trimmed) return;
 
+        const previousSession = get().sessions[conversationId];
+        const wasStreaming = previousSession?.streamState === "streaming";
+        const previousStreamingAgentMessageId = wasStreaming
+          ? [...(useMessageStore.getState().messages[conversationId] ?? [])]
+              .reverse()
+              .find((m) => m.role === "agent" && m.status === "streaming")?.id
+          : undefined;
+
         get().cancelMessage(conversationId);
 
         const userMessage = {
@@ -274,30 +282,28 @@ export const useChatStore = create<ChatState>()(
         messageStore.addMessage(conversationId, userMessage);
         messageStore.addMessage(conversationId, agentMessage);
 
-        const session =
-          get().sessions[conversationId] ?? createAgentSession(agentId);
-        const isStreaming = session.streamState === "streaming";
-
-        if (isStreaming) {
-          const messages =
-            useMessageStore.getState().messages[conversationId] ?? [];
-          const lastAgentMessage = [...messages]
-            .reverse()
-            .find((m) => m.role === "agent" && m.status === "streaming");
-          if (lastAgentMessage) {
-            useMessageStore
-              .getState()
-              .updateMessage(conversationId, lastAgentMessage.id, {
-                status: "done",
-              });
-          }
+        if (previousStreamingAgentMessageId) {
+          messageStore.updateMessage(
+            conversationId,
+            previousStreamingAgentMessageId,
+            {
+              status: "done",
+            },
+          );
         }
 
-        const payload = buildInvokePayload(trimmed, session, conversationId, {
-          userMessageId: userMessage.id,
-          clientAgentMessageId: agentMessage.id,
-          interrupt: isStreaming,
-        });
+        const sessionForPayload =
+          previousSession ?? createAgentSession(agentId);
+        const payload = buildInvokePayload(
+          trimmed,
+          sessionForPayload,
+          conversationId,
+          {
+            userMessageId: userMessage.id,
+            clientAgentMessageId: agentMessage.id,
+            interrupt: wasStreaming,
+          },
+        );
 
         await executeChatRuntime(
           conversationId,

@@ -72,7 +72,16 @@ class InvokeTaskRegistry:
     def register(self, conversation_id: str, task: asyncio.Task[Any]) -> None:
         self._tasks[conversation_id] = task
 
-    def unregister(self, conversation_id: str) -> None:
+    def unregister(
+        self,
+        conversation_id: str,
+        task: asyncio.Task[Any] | None = None,
+    ) -> None:
+        current = self._tasks.get(conversation_id)
+        if current is None:
+            return
+        if task is not None and current is not task:
+            return
         self._tasks.pop(conversation_id, None)
 
     def get(self, conversation_id: str) -> asyncio.Task[Any] | None:
@@ -122,8 +131,15 @@ class A2AInvokeService:
                 extra={"conversation_id": conversation_id},
             )
             old_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await asyncio.wait([old_task], timeout=5)
+            try:
+                await asyncio.wait_for(old_task, timeout=5)
+            except asyncio.CancelledError:
+                pass
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Inflight invoke did not stop within interrupt timeout",
+                    extra={"conversation_id": conversation_id},
+                )
 
     @classmethod
     def build_ws_error_event(
@@ -1014,6 +1030,7 @@ class A2AInvokeService:
             terminal_event_seen = False
             final_outcome: StreamOutcome | None = None
             heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+            registered_task: asyncio.Task[Any] | None = None
 
             if conversation_id:
                 await self.maybe_interrupt_inflight_invoke(
@@ -1024,6 +1041,7 @@ class A2AInvokeService:
                 current_task = asyncio.current_task()
                 if current_task:
                     invoke_task_registry.register(conversation_id, current_task)
+                    registered_task = current_task
 
             serialized = {}
             try:
@@ -1160,7 +1178,10 @@ class A2AInvokeService:
                 )
             finally:
                 if conversation_id:
-                    invoke_task_registry.unregister(conversation_id)
+                    invoke_task_registry.unregister(
+                        conversation_id,
+                        task=registered_task,
+                    )
                 if cache_key and self._is_terminal_status_event(serialized):
                     await global_stream_cache.mark_completed(cache_key)
                 if not stream_failed and not client_disconnected:
@@ -1196,7 +1217,6 @@ class A2AInvokeService:
                     )
                 if not client_disconnected:
                     yield "event: stream_end\ndata: {}\n\n"
-
 
         # Ensure downstreams do not persist potentially sensitive content.
         return StreamingResponse(
@@ -1241,6 +1261,7 @@ class A2AInvokeService:
         terminal_event_seen = False
         final_outcome: StreamOutcome | None = None
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+        registered_task: asyncio.Task[Any] | None = None
 
         if conversation_id:
             await self.maybe_interrupt_inflight_invoke(
@@ -1251,14 +1272,17 @@ class A2AInvokeService:
             current_task = asyncio.current_task()
             if current_task:
                 invoke_task_registry.register(conversation_id, current_task)
+                registered_task = current_task
 
         serialized = {}
         try:
             # Replay cached events if resuming
             seq_counter = 0
             if resume_from_sequence is not None and cache_key:
-                cached_events = await global_stream_cache.get_events_with_sequence_after(
-                    cache_key, resume_from_sequence
+                cached_events = (
+                    await global_stream_cache.get_events_with_sequence_after(
+                        cache_key, resume_from_sequence
+                    )
                 )
                 for cached_sequence, cached_event in cached_events:
                     parsed_sequence = self._extract_event_sequence(cached_event)
@@ -1267,7 +1291,9 @@ class A2AInvokeService:
                     else:
                         seq_counter = max(seq_counter, cached_sequence)
                     stream_text_accumulator.consume(cached_event)
-                    await websocket.send_text(json_dumps(cached_event, ensure_ascii=False))
+                    await websocket.send_text(
+                        json_dumps(cached_event, ensure_ascii=False)
+                    )
 
                 # Continue generating sequence from max of cached or resumed
                 seq_counter = max(seq_counter, resume_from_sequence)
@@ -1386,7 +1412,10 @@ class A2AInvokeService:
             )
         finally:
             if conversation_id:
-                invoke_task_registry.unregister(conversation_id)
+                invoke_task_registry.unregister(
+                    conversation_id,
+                    task=registered_task,
+                )
             if cache_key and self._is_terminal_status_event(serialized):
                 await global_stream_cache.mark_completed(cache_key)
             if not client_disconnected and final_outcome is not None:
@@ -1399,7 +1428,6 @@ class A2AInvokeService:
                 )
             if send_stream_end and not client_disconnected:
                 await self.send_ws_stream_end(websocket)
-
 
     async def consume_stream(
         self,
@@ -1428,6 +1456,7 @@ class A2AInvokeService:
         started_at = time.monotonic()
         last_event_at = started_at
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+        registered_task: asyncio.Task[Any] | None = None
 
         if conversation_id:
             await self.maybe_interrupt_inflight_invoke(
@@ -1438,6 +1467,7 @@ class A2AInvokeService:
             current_task = asyncio.current_task()
             if current_task:
                 invoke_task_registry.register(conversation_id, current_task)
+                registered_task = current_task
 
         try:
             stream_iter = self._iter_stream_events_with_heartbeat(
@@ -1680,7 +1710,10 @@ class A2AInvokeService:
             return outcome
         finally:
             if conversation_id:
-                invoke_task_registry.unregister(conversation_id)
+                invoke_task_registry.unregister(
+                    conversation_id,
+                    task=registered_task,
+                )
 
 
 a2a_invoke_service = A2AInvokeService()

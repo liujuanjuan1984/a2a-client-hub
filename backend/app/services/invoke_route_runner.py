@@ -579,6 +579,7 @@ async def run_http_invoke(
         log_extra=log_extra,
         on_event=on_event,
         on_finalized=on_finalized,
+        conversation_id=payload.conversation_id,
     )
     success = bool(outcome.success)
     content = state.persisted_response_content

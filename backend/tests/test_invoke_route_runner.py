@@ -240,6 +240,73 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
+async def test_run_http_invoke_passes_conversation_id_to_consume_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+        return invoke_route_runner._InvokeState(
+            local_session_id=None,
+            local_source=None,
+            context_id=None,
+            metadata={},
+            stream_identity={},
+            stream_usage={},
+            user_message_id=None,
+            client_agent_message_id=None,
+        )
+
+    async def fake_consume_stream(**kwargs):
+        captured["conversation_id"] = kwargs.get("conversation_id")
+        return StreamOutcome(
+            success=True,
+            finish_reason=StreamFinishReason.SUCCESS,
+            final_text="ok",
+            error_message=None,
+            error_code=None,
+            message_blocks=[],
+            elapsed_seconds=0.0,
+            idle_seconds=0.0,
+            terminal_event_seen=True,
+        )
+
+    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service,
+        "consume_stream",
+        fake_consume_stream,
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+        }
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+
+    response = await invoke_route_runner.run_http_invoke(
+        db=object(),
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert response.success is True
+    assert captured["conversation_id"] == payload.conversation_id
+
+
+@pytest.mark.asyncio
 async def test_build_consume_stream_callbacks_persists_outcome_content_and_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

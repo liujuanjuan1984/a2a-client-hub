@@ -9,7 +9,11 @@ import pytest
 from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
-from app.services.a2a_invoke_service import StreamFinishReason, a2a_invoke_service
+from app.services.a2a_invoke_service import (
+    InvokeTaskRegistry,
+    StreamFinishReason,
+    a2a_invoke_service,
+)
 
 
 class _BrokenGateway:
@@ -91,6 +95,30 @@ class _GatewayWithUnstructuredError:
         if False:
             yield  # pragma: no cover
         raise RuntimeError("session missing")
+
+
+@pytest.mark.asyncio
+async def test_invoke_task_registry_unregister_ignores_non_matching_task() -> None:
+    registry = InvokeTaskRegistry()
+    old_task = asyncio.create_task(asyncio.sleep(60))
+    new_task = asyncio.create_task(asyncio.sleep(60))
+
+    try:
+        registry.register("conv-1", old_task)
+        registry.register("conv-1", new_task)
+
+        registry.unregister("conv-1", task=old_task)
+        assert registry.get("conv-1") is new_task
+
+        registry.unregister("conv-1", task=new_task)
+        assert registry.get("conv-1") is None
+    finally:
+        old_task.cancel()
+        new_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await old_task
+        with suppress(asyncio.CancelledError):
+            await new_task
 
 
 def _artifact_event(
