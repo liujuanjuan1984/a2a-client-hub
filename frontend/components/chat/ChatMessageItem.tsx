@@ -231,7 +231,7 @@ export function ChatMessageItem({
                     key={blockId}
                     className={`${
                       blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl bg-neo-green/5 border border-neo-green/10 p-3`}
+                    } rounded-xl bg-black/40 p-3`}
                   >
                     <Pressable
                       onPress={() => toggleToolCall(blockId)}
@@ -255,6 +255,7 @@ export function ChatMessageItem({
                         </View>
                       </View>
                     </Pressable>
+
                     {expanded ? (
                       <View>
                         <Text

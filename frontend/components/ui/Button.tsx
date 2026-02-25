@@ -43,8 +43,8 @@ export function Button({
   };
 
   const textSizes = {
-    xs: "text-[10px]",
-    sm: "text-xs",
+    xs: "text-[11px]",
+    sm: "text-[11px]",
     md: "text-sm",
     lg: "text-base",
   };
