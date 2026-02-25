@@ -504,6 +504,7 @@ async def _persist_outcome_blocks_fallback(
                 if isinstance(block_type, str) and block_type.strip()
                 else "text"
             )
+            resolved_is_finished = bool(block.get("is_finished", True))
             content_hash = hashlib.sha1(content.encode("utf-8")).hexdigest()[:12]
             seq = state.next_chunk_seq
             state.next_chunk_seq += 1
@@ -515,8 +516,11 @@ async def _persist_outcome_blocks_fallback(
                 block_type=normalized_block_type,
                 content=content,
                 append=False,
-                is_finished=bool(block.get("is_finished", True)),
-                event_id=f"final_snapshot:{block_index}:{normalized_block_type}:{content_hash}",
+                is_finished=resolved_is_finished,
+                event_id=(
+                    f"final_snapshot:{block_index}:{normalized_block_type}:"
+                    f"{1 if resolved_is_finished else 0}:{content_hash}"
+                ),
                 source="final_snapshot",
             )
             if persisted is not None:

@@ -913,18 +913,19 @@ class SessionHubService:
         if existing_by_seq is not None:
             return None
         try:
-            return await agent_message_chunk_handler.create_chunk(
-                db,
-                user_id=user_id,
-                message_id=agent_message_id,
-                seq=seq,
-                block_type=block_type,
-                content=content,
-                append=append,
-                is_finished=is_finished,
-                event_id=normalized_event_id,
-                source=normalize_non_empty_text(source),
-            )
+            async with db.begin_nested():
+                return await agent_message_chunk_handler.create_chunk(
+                    db,
+                    user_id=user_id,
+                    message_id=agent_message_id,
+                    seq=seq,
+                    block_type=block_type,
+                    content=content,
+                    append=append,
+                    is_finished=is_finished,
+                    event_id=normalized_event_id,
+                    source=normalize_non_empty_text(source),
+                )
         except IntegrityError as exc:
             if not (
                 _is_idempotency_unique_violation(
@@ -935,7 +936,6 @@ class SessionHubService:
                 )
             ):
                 raise
-            await db.rollback()
             return None
 
     async def _get_local_session_by_id(
@@ -1229,12 +1229,10 @@ def _project_message_from_chunks(
         )
 
     if snapshot_blocks_by_index or snapshot_blocks_without_index:
+        # A final snapshot set is authoritative for replay output.
+        projected_blocks = []
         for snapshot_index in sorted(snapshot_blocks_by_index):
-            payload = snapshot_blocks_by_index[snapshot_index]
-            if snapshot_index <= len(projected_blocks):
-                projected_blocks[snapshot_index - 1].update(payload)
-            else:
-                projected_blocks.append(dict(payload))
+            projected_blocks.append(dict(snapshot_blocks_by_index[snapshot_index]))
         for payload in snapshot_blocks_without_index:
             projected_blocks.append(dict(payload))
 

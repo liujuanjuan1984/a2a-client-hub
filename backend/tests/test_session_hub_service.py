@@ -4,9 +4,11 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
+from app.services import session_hub as session_hub_module
 from app.services.conversation_identity import conversation_identity_service
 from app.services.session_hub import session_hub_service
 from app.utils.idempotency_key import (
@@ -429,6 +431,18 @@ async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
         agent_message_id=agent_message_id,
         seq=3,
         block_type="text",
+        content="third partial should be dropped",
+        append=False,
+        is_finished=True,
+        event_id="evt-3",
+        source=None,
+    )
+    await session_hub_service.append_agent_message_chunk(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=4,
+        block_type="text",
         content="first final",
         append=False,
         is_finished=True,
@@ -439,7 +453,7 @@ async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
         async_db_session,
         user_id=user.id,
         agent_message_id=agent_message_id,
-        seq=4,
+        seq=5,
         block_type="text",
         content="second final",
         append=False,
@@ -451,7 +465,7 @@ async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
         async_db_session,
         user_id=user.id,
         agent_message_id=agent_message_id,
-        seq=5,
+        seq=6,
         block_type="text",
         content="second newest",
         append=False,
@@ -480,3 +494,73 @@ async def test_list_messages_final_snapshot_replaces_by_snapshot_index(
     assert text_blocks[0]["content"] == "first final"
     assert text_blocks[1]["content"] == "second newest"
     assert agent_item["content"] == "first finalsecond newest"
+
+
+async def test_append_agent_message_chunk_unique_conflict_does_not_rollback_session(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class _Nested:
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+            return False
+
+    class _DummyDB:
+        def __init__(self) -> None:
+            self.rollback_called = False
+            self.begin_nested_called = 0
+
+        async def scalar(self, _stmt):  # noqa: ANN001
+            return object()
+
+        def begin_nested(self) -> _Nested:
+            self.begin_nested_called += 1
+            return _Nested()
+
+        async def rollback(self) -> None:
+            self.rollback_called = True
+
+    async def _find_none(*_args, **_kwargs):  # noqa: ANN001
+        return None
+
+    async def _raise_unique_conflict(*_args, **_kwargs):  # noqa: ANN001
+        raise IntegrityError(
+            "insert uq_agent_message_chunks_message_id_seq",
+            {},
+            Exception("uq_agent_message_chunks_message_id_seq"),
+        )
+
+    monkeypatch.setattr(
+        session_hub_module.agent_message_chunk_handler,
+        "find_chunk_by_message_and_event_id",
+        _find_none,
+    )
+    monkeypatch.setattr(
+        session_hub_module.agent_message_chunk_handler,
+        "find_chunk_by_message_and_seq",
+        _find_none,
+    )
+    monkeypatch.setattr(
+        session_hub_module.agent_message_chunk_handler,
+        "create_chunk",
+        _raise_unique_conflict,
+    )
+
+    dummy_db = _DummyDB()
+    result = await session_hub_service.append_agent_message_chunk(
+        dummy_db,  # type: ignore[arg-type]
+        user_id=uuid4(),
+        agent_message_id=uuid4(),
+        seq=1,
+        block_type="text",
+        content="payload",
+        append=True,
+        is_finished=False,
+        event_id="evt-1",
+        source=None,
+    )
+
+    assert result is None
+    assert dummy_db.begin_nested_called == 1
+    assert dummy_db.rollback_called is False
