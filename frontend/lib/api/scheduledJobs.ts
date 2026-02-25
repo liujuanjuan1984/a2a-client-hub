@@ -72,6 +72,14 @@ export type MarkScheduledJobFailedPayload = {
   reason?: string;
 };
 
+export type ScheduledJobToggleResponse = {
+  id: string;
+  schedule_timezone: string;
+  enabled: boolean;
+  next_run_at_utc?: string | null;
+  next_run_at_local?: string | null;
+};
+
 type ScheduledJobsListResponse =
   | ScheduledJob[]
   | { items: ScheduledJob[]; pagination?: unknown; meta?: unknown };
@@ -118,12 +126,12 @@ export const updateScheduledJob = (
   );
 
 export const enableScheduledJob = (jobId: string) =>
-  apiRequest<void>(`/me/a2a/schedules/${jobId}/enable`, {
+  apiRequest<ScheduledJobToggleResponse>(`/me/a2a/schedules/${jobId}/enable`, {
     method: "POST",
   });
 
 export const disableScheduledJob = (jobId: string) =>
-  apiRequest<void>(`/me/a2a/schedules/${jobId}/disable`, {
+  apiRequest<ScheduledJobToggleResponse>(`/me/a2a/schedules/${jobId}/disable`, {
     method: "POST",
   });
 

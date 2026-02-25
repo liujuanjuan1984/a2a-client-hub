@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,14 +41,22 @@ def _resolve_schedule_timezone(
     requested_timezone: str | None = None,
 ) -> str:
     user_value = (user_timezone or "").strip() or "UTC"
+    user_key = resolve_timezone(user_value, default="UTC").key
     requested_value = (
         (requested_timezone or "").strip() if requested_timezone is not None else None
     )
-    if requested_value and requested_value != user_value:
-        raise A2AScheduleValidationError(
-            "schedule_timezone must match current user's timezone"
-        )
-    return resolve_timezone(user_value, default="UTC").key
+    if requested_value:
+        try:
+            requested_key = ZoneInfo(requested_value).key
+        except ZoneInfoNotFoundError as exc:
+            raise A2AScheduleValidationError(
+                "schedule_timezone must be a valid IANA timezone"
+            ) from exc
+        if requested_key != user_key:
+            raise A2AScheduleValidationError(
+                "schedule_timezone must match current user's timezone"
+            )
+    return user_key
 
 
 def _format_local_datetime(
@@ -79,10 +88,20 @@ def _serialize_time_point(
     start_at_local = payload.get("start_at_local")
     if isinstance(start_at_local, str) and start_at_local.strip():
         normalized["start_at_local"] = start_at_local.strip()
+        try:
+            local_naive = datetime.fromisoformat(normalized["start_at_local"])
+            if local_naive.tzinfo is None:
+                tz = resolve_timezone(timezone_str, default="UTC")
+                normalized["start_at_utc"] = ensure_utc(
+                    local_naive.replace(tzinfo=tz)
+                ).isoformat()
+        except ValueError:
+            pass
 
     start_at_utc = payload.get("start_at_utc")
     if isinstance(start_at_utc, str) and start_at_utc.strip():
-        normalized["start_at_utc"] = start_at_utc.strip()
+        if "start_at_utc" not in normalized:
+            normalized["start_at_utc"] = start_at_utc.strip()
         if "start_at_local" not in normalized:
             try:
                 candidate = start_at_utc.strip()

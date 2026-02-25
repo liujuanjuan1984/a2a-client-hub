@@ -181,6 +181,40 @@ async def test_schedule_create_rejects_mismatched_schedule_timezone(
         )
 
 
+async def test_schedule_create_rejects_invalid_schedule_timezone(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(
+        async_db_session,
+        skip_onboarding_defaults=True,
+        timezone="Asia/Shanghai",
+    )
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="tz-invalid")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Timezone invalid",
+                "agent_id": str(agent.id),
+                "prompt": "hello",
+                "cycle_type": "daily",
+                "time_point": {"time": "08:00"},
+                "enabled": False,
+                "schedule_timezone": "Invalid/Timezone",
+            },
+        )
+        assert resp.status_code == 400
+        assert (
+            resp.json()["detail"] == "schedule_timezone must be a valid IANA timezone"
+        )
+
+
 async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
     async_db_session,
     async_session_maker,
