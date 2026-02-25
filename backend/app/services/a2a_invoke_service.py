@@ -447,6 +447,8 @@ class A2AInvokeService:
 
         if payload.get("kind") == "artifact-update":
             artifact = as_dict(payload.get("artifact"))
+            artifact_metadata = as_dict(artifact.get("metadata"))
+            opencode_metadata = as_dict(artifact_metadata.get("opencode"))
             block_type = cls._StreamTextAccumulator._extract_artifact_type(
                 payload, artifact
             )
@@ -458,6 +460,14 @@ class A2AInvokeService:
             append = cls._StreamTextAccumulator._resolve_append(payload, artifact)
             is_finished = cls._StreamTextAccumulator._resolve_done(payload, artifact)
             source = cls._StreamTextAccumulator._extract_artifact_source(artifact)
+            if not event_id:
+                event_id = cls._pick_non_empty_str(
+                    opencode_metadata, ("event_id", "eventId")
+                )
+            if not message_id:
+                message_id = cls._pick_non_empty_str(
+                    opencode_metadata, ("message_id", "messageId")
+                )
             if not message_id:
                 message_id = cls._pick_non_empty_str(
                     artifact, ("message_id", "messageId")

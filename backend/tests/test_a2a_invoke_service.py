@@ -1131,6 +1131,57 @@ def test_extract_stream_identity_hints_from_status_message_message_id():
     assert hints["upstream_message_id"] == "msg-from-status-message"
 
 
+def test_extract_stream_chunk_reads_nested_opencode_event_and_message_ids():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"kind": "text", "text": "hello"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "event_id": "evt-nested",
+                        "message_id": "msg-nested",
+                        "source": "stream",
+                    }
+                },
+            },
+        }
+    )
+
+    assert chunk is not None
+    assert chunk["event_id"] == "evt-nested"
+    assert chunk["message_id"] == "msg-nested"
+    assert chunk["block_type"] == "text"
+    assert chunk["content"] == "hello"
+    assert chunk["append"] is True
+    assert chunk["is_finished"] is False
+    assert chunk["source"] == "stream"
+
+
+def test_extract_stream_chunk_prefers_top_level_event_id_when_present():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "event_id": "evt-top",
+            "artifact": {
+                "parts": [{"kind": "text", "text": "hello"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "event_id": "evt-nested",
+                        "message_id": "msg-nested",
+                    }
+                },
+            },
+        }
+    )
+
+    assert chunk is not None
+    assert chunk["event_id"] == "evt-top"
+    assert chunk["message_id"] == "msg-nested"
+
+
 def test_extract_usage_hints_from_serialized_event():
     usage = a2a_invoke_service.extract_usage_hints_from_serialized_event(
         {
