@@ -263,6 +263,37 @@ class _FakeExtensionsErrorService:
         )
 
 
+class _FakePermissionReplyErrorService:
+    def __init__(self, *, error_code: str, message: str) -> None:
+        self.calls: list[Dict[str, Any]] = []
+        self.error_code = error_code
+        self.message = message
+
+    async def opencode_reply_permission(
+        self,
+        *,
+        runtime,
+        request_id: str,
+        reply: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        self.calls.append(
+            {
+                "fn": "opencode_reply_permission",
+                "runtime": runtime,
+                "request_id": request_id,
+                "reply": reply,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=False,
+            error_code=self.error_code,
+            upstream_error={"message": self.message},
+            meta={},
+        )
+
+
 class _FakeExtensionsExceptionService:
     def __init__(self, error: Exception) -> None:
         self.calls: list[Dict[str, Any]] = []
@@ -679,6 +710,11 @@ async def test_hub_prompt_async_rejects_invalid_directory_type_with_400(
     [
         ("session_not_found", "Session not found", 404),
         ("session_forbidden", "Session access denied", 403),
+        ("method_disabled", "Method disabled", 403),
+        ("invalid_params", "Invalid params", 400),
+        ("interrupt_request_not_found", "Interrupt request not found", 404),
+        ("interrupt_request_expired", "Interrupt request expired", 409),
+        ("interrupt_type_mismatch", "Interrupt type mismatch", 409),
     ],
 )
 @pytest.mark.asyncio
@@ -718,6 +754,64 @@ async def test_hub_opencode_session_continue_maps_extension_error_to_http_status
     ) as user_client:
         resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-404:continue"
+        )
+        assert resp.status_code == expected_status
+        payload = resp.json()
+        assert payload["success"] is False
+        assert payload["error_code"] == error_code
+        assert payload["upstream_error"] == {"message": message}
+
+
+@pytest.mark.parametrize(
+    ("error_code", "message", "expected_status"),
+    [
+        ("interrupt_request_not_found", "Interrupt request not found", 404),
+        ("interrupt_request_expired", "Interrupt request expired", 409),
+        ("interrupt_type_mismatch", "Interrupt type mismatch", 409),
+        ("invalid_params", "Invalid params", 400),
+    ],
+)
+@pytest.mark.asyncio
+async def test_hub_opencode_permission_reply_maps_extension_error_to_http_status(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    error_code: str,
+    message: str,
+    expected_status: int,
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_permission_status_map@example.com",
+        user_email="alice_permission_status_map@example.com",
+        token="secret-token-opencode-status-permission",
+    )
+
+    fake_extensions = _FakePermissionReplyErrorService(
+        error_code=error_code,
+        message=message,
+    )
+    monkeypatch.setattr(
+        opencode_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_opencode_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply",
+            json={
+                "request_id": "perm-404",
+                "reply": "once",
+            },
         )
         assert resp.status_code == expected_status
         payload = resp.json()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 import httpx
 from a2a.types import AgentCard
@@ -40,6 +40,27 @@ from app.utils.outbound_url import (
 )
 
 logger = get_logger(__name__)
+
+_JSONRPC_STANDARD_ERROR_CODE_MAP: dict[int, str] = {
+    -32600: "invalid_request",
+    -32601: "method_not_supported",
+    -32602: "invalid_params",
+}
+
+_ERROR_DATA_TYPE_TO_ERROR_CODE: dict[str, str] = {
+    "session_not_found": "session_not_found",
+    "session_forbidden": "session_forbidden",
+    "method_disabled": "method_disabled",
+    "upstream_unreachable": "upstream_unreachable",
+    "upstream_http_error": "upstream_http_error",
+    "upstream_payload_error": "upstream_payload_error",
+    "interrupt_request_not_found": "interrupt_request_not_found",
+    "interrupt_request_expired": "interrupt_request_expired",
+    "interrupt_type_mismatch": "interrupt_type_mismatch",
+    "invalid_field": "invalid_params",
+    "missing_field": "invalid_params",
+    "invalid_pagination_mode": "invalid_params",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,26 +279,79 @@ class A2AExtensionsService:
 
     @staticmethod
     def _map_business_error_code(error: Dict[str, Any], ext: ResolvedExtension) -> str:
-        code = error.get("code")
-        mapped = None
-        if isinstance(code, int):
-            mapped = ext.business_code_map.get(code)
-        elif isinstance(code, str) and code.strip().lstrip("-").isdigit():
-            mapped = ext.business_code_map.get(int(code.strip()))
-        return mapped or "upstream_error"
+        return A2AExtensionsService._map_upstream_error_code(  # noqa: SLF001
+            error=error,
+            business_code_map=ext.business_code_map,
+        )
 
     @staticmethod
     def _map_interrupt_business_error_code(
         error: Dict[str, Any],
         ext: ResolvedInterruptCallbackExtension,
     ) -> str:
+        return A2AExtensionsService._map_upstream_error_code(  # noqa: SLF001
+            error=error,
+            business_code_map=ext.business_code_map,
+        )
+
+    @staticmethod
+    def _coerce_jsonrpc_error_code(error: Dict[str, Any]) -> Optional[int]:
         code = error.get("code")
-        mapped = None
+        if isinstance(code, bool):
+            return None
         if isinstance(code, int):
-            mapped = ext.business_code_map.get(code)
-        elif isinstance(code, str) and code.strip().lstrip("-").isdigit():
-            mapped = ext.business_code_map.get(int(code.strip()))
-        return mapped or "upstream_error"
+            return code
+        if isinstance(code, str):
+            normalized = code.strip()
+            if normalized.lstrip("-").isdigit():
+                return int(normalized)
+        return None
+
+    @staticmethod
+    def _normalize_error_data_type(error: Dict[str, Any]) -> Optional[str]:
+        data = error.get("data")
+        if not isinstance(data, dict):
+            return None
+        raw_type = data.get("type")
+        if not isinstance(raw_type, str):
+            return None
+        normalized = []
+        pending_sep = False
+        for ch in raw_type.strip().lower():
+            if ch.isalnum():
+                if pending_sep and normalized:
+                    normalized.append("_")
+                normalized.append(ch)
+                pending_sep = False
+                continue
+            pending_sep = True
+        token = "".join(normalized).strip("_")
+        return token or None
+
+    @staticmethod
+    def _map_upstream_error_code(
+        *,
+        error: Dict[str, Any],
+        business_code_map: Mapping[int, str],
+    ) -> str:
+        normalized_data_type = A2AExtensionsService._normalize_error_data_type(error)
+        if normalized_data_type:
+            mapped_by_type = _ERROR_DATA_TYPE_TO_ERROR_CODE.get(normalized_data_type)
+            if mapped_by_type:
+                return mapped_by_type
+            if normalized_data_type.startswith("invalid_"):
+                return "invalid_params"
+
+        numeric_code = A2AExtensionsService._coerce_jsonrpc_error_code(error)
+        if numeric_code is not None:
+            mapped = business_code_map.get(numeric_code)
+            if mapped:
+                return mapped
+            mapped_standard = _JSONRPC_STANDARD_ERROR_CODE_MAP.get(numeric_code)
+            if mapped_standard:
+                return mapped_standard
+
+        return "upstream_error"
 
     @staticmethod
     def _normalize_extension_metadata(
