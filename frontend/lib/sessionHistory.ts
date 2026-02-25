@@ -5,30 +5,11 @@ import {
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
 
-const normalizeAgentContent = (content: string): string => {
-  const normalized = content.trim();
-  if (
-    normalized.length < 2 ||
-    normalized[0] !== '"' ||
-    normalized.slice(-1) !== '"'
-  ) {
-    return normalized;
-  }
-
-  try {
-    const parsed = JSON.parse(normalized);
-    return typeof parsed === "string" ? parsed : normalized;
-  } catch {
-    return normalized.slice(1, -1);
-  }
-};
-
 export type SessionMessageItem = {
   id: string;
   role: string;
   created_at: string;
   metadata?: Record<string, unknown> | null;
-  content?: string;
   blocks?: {
     id: string;
     messageId: string;
@@ -80,36 +61,9 @@ export const mapSessionMessagesToChatMessages = (
     if (!messageId) {
       return;
     }
-    const mappedBlocks = role === "agent" ? mapBlocks(item) : [];
-    const fallbackContent =
-      typeof item.content === "string"
-        ? role === "agent"
-          ? normalizeAgentContent(item.content)
-          : item.content
-        : "";
-    const blocks =
-      role === "agent" && mappedBlocks.length === 0 && fallbackContent
-        ? [
-            {
-              id: `${messageId}:1`,
-              type: "text",
-              content: fallbackContent,
-              isFinished: true,
-              createdAt: item.created_at,
-              updatedAt: item.created_at,
-            },
-          ]
-        : mappedBlocks;
-    const normalizedContent =
-      role === "agent"
-        ? blocks.length > 0
-          ? projectPrimaryTextContent(blocks)
-          : fallbackContent
-        : fallbackContent;
-    const hasRenderablePayload =
-      role === "agent"
-        ? blocks.length > 0 || normalizedContent.trim().length > 0
-        : normalizedContent.trim().length > 0;
+    const blocks = mapBlocks(item);
+    const normalizedContent = projectPrimaryTextContent(blocks);
+    const hasRenderablePayload = normalizedContent.trim().length > 0;
     if (!hasRenderablePayload) {
       return;
     }

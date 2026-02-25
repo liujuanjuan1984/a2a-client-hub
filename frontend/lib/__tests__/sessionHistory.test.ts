@@ -59,30 +59,16 @@ describe("session history mapping", () => {
     ]);
   });
 
-  it("removes json-style quoting from legacy agent contents", () => {
+  it("skips entries that do not provide block payload", () => {
     const mapped = mapSessionMessagesToChatMessages([
       {
         id: "3b9bdc78-93f3-4489-82e5-6967e35ecf36",
         role: "assistant",
-        content: '"Task(artifacts=[Artifact(artifact_id="id")])"',
         created_at: "2026-02-14T00:00:02.000Z",
         metadata: {},
       },
     ]);
 
-    expect(mapped[0]).toMatchObject({
-      role: "agent",
-      content: 'Task(artifacts=[Artifact(artifact_id="id")])',
-      blocks: [
-        {
-          id: "3b9bdc78-93f3-4489-82e5-6967e35ecf36:1",
-          type: "text",
-          content: 'Task(artifacts=[Artifact(artifact_id="id")])',
-          isFinished: true,
-          createdAt: "2026-02-14T00:00:02.000Z",
-          updatedAt: "2026-02-14T00:00:02.000Z",
-        },
-      ],
-    });
+    expect(mapped).toEqual([]);
   });
 });

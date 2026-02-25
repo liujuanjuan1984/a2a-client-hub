@@ -42,7 +42,6 @@ export type SessionMessageItem = {
   role: "user" | "agent" | "system";
   created_at: string;
   metadata?: Record<string, unknown> | null;
-  content?: string;
   blocks?: SessionMessageBlockItem[];
 };
 
@@ -105,36 +104,29 @@ export const listSessionMessagesPage = async (
   const parsed = parsePaginatedListResponse(response);
   const nextPage = resolveNextPageWithFallback({ parsed, page, size });
 
-  const agentMessageIds = Array.from(
+  const messageIds = Array.from(
     new Set(
       parsed.items
-        .filter((item) => item.role === "agent")
         .map((item) => item.id.trim())
         .filter((item) => item.length > 0),
     ),
   );
-  if (agentMessageIds.length === 0) {
+  if (messageIds.length === 0) {
     return { ...parsed, nextPage };
   }
 
   const blocksByMessageId = new Map<string, SessionMessageBlockItem[]>();
   for (
     let start = 0;
-    start < agentMessageIds.length;
+    start < messageIds.length;
     start += BLOCKS_QUERY_BATCH_SIZE
   ) {
-    const messageIds = agentMessageIds.slice(
-      start,
-      start + BLOCKS_QUERY_BATCH_SIZE,
-    );
+    const batchIds = messageIds.slice(start, start + BLOCKS_QUERY_BATCH_SIZE);
     const blocksResponse = await querySessionMessageBlocks(conversationId, {
-      messageIds,
+      messageIds: batchIds,
       mode: "full",
     });
     blocksResponse.items.forEach((item) => {
-      if (item.role !== "agent") {
-        return;
-      }
       const sortedBlocks = [...(item.blocks ?? [])].sort(
         (lhs, rhs) => lhs.seq - rhs.seq,
       );
@@ -143,9 +135,6 @@ export const listSessionMessagesPage = async (
   }
 
   const hydratedItems = parsed.items.map((item) => {
-    if (item.role !== "agent") {
-      return item;
-    }
     return {
       ...item,
       blocks: blocksByMessageId.get(item.id) ?? [],

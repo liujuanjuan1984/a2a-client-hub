@@ -93,7 +93,6 @@ describe("API modules using shared pagination fallback", () => {
         {
           id: "msg-1",
           role: "user",
-          content: "hello",
           created_at: "2026-02-24T00:00:00.000Z",
         },
         {
@@ -105,6 +104,23 @@ describe("API modules using shared pagination fallback", () => {
     } as any);
     mockedApiRequest.mockResolvedValueOnce({
       items: [
+        {
+          messageId: "msg-1",
+          role: "user",
+          blockCount: 1,
+          hasBlocks: true,
+          blocks: [
+            {
+              id: "msg-1:block-1",
+              messageId: "msg-1",
+              seq: 1,
+              type: "text",
+              content: "hello",
+              contentLength: 5,
+              isFinished: true,
+            },
+          ],
+        },
         {
           messageId: "msg-2",
           role: "agent",

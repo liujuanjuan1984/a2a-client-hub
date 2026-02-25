@@ -49,20 +49,16 @@ describe("useChatHistoryQuery", () => {
       return {
         id: messageId,
         role: i % 2 === 0 ? "assistant" : "user",
-        ...(i % 2 === 0
-          ? {
-              blocks: [
-                {
-                  id: `${messageId}:block-1`,
-                  messageId,
-                  seq: 1,
-                  type: "text",
-                  content: `content-${i}`,
-                  isFinished: true,
-                },
-              ],
-            }
-          : { content: `content-${i}` }),
+        blocks: [
+          {
+            id: `${messageId}:block-1`,
+            messageId,
+            seq: 1,
+            type: "text",
+            content: `content-${i}`,
+            isFinished: true,
+          },
+        ],
         created_at: `2026-02-12T00:${minute}:${second}.000Z`,
       };
     });

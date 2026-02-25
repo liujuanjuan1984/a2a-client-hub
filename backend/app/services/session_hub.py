@@ -298,16 +298,21 @@ class SessionHubService:
         for message_id in resolved_message_ids:
             message = message_by_id[message_id]
             role = _sender_to_role(getattr(message, "sender", ""))
-            raw_blocks = (
-                blocks_by_message_id.get(message_id, []) if role == "agent" else []
-            )
-            rendered_blocks = _render_blocks_for_mode(raw_blocks, mode=mode)
+            if role == "agent":
+                raw_blocks = blocks_by_message_id.get(message_id, [])
+                rendered_blocks = _render_blocks_for_mode(raw_blocks, mode=mode)
+                block_count = len(raw_blocks)
+                has_blocks = bool(raw_blocks)
+            else:
+                rendered_blocks = _render_non_agent_blocks_for_mode(message, mode=mode)
+                block_count = len(rendered_blocks)
+                has_blocks = bool(rendered_blocks)
             items.append(
                 {
                     "messageId": str(message_id),
                     "role": role,
-                    "blockCount": len(raw_blocks),
-                    "hasBlocks": bool(raw_blocks),
+                    "blockCount": block_count,
+                    "hasBlocks": has_blocks,
                     "blocks": rendered_blocks,
                 }
             )
@@ -342,8 +347,15 @@ class SessionHubService:
         )
         if message is None:
             raise ValueError("message_not_found")
-        if _sender_to_role(getattr(message, "sender", "")) != "agent":
-            raise ValueError("block_not_found")
+        role = _sender_to_role(getattr(message, "sender", ""))
+        if role != "agent":
+            non_agent_blocks = _render_non_agent_blocks_for_mode(message, mode="full")
+            if block_seq <= 0 or block_seq > len(non_agent_blocks):
+                raise ValueError("block_not_found")
+            return {
+                "messageId": str(resolved_message_id),
+                "block": non_agent_blocks[block_seq - 1],
+            }, False
         block = await agent_message_block_handler.find_block_by_message_and_block_seq(
             db,
             user_id=user_id,
@@ -1379,6 +1391,31 @@ def _render_blocks_for_mode(
     blocks: list[AgentMessageBlock], *, mode: BlocksQueryMode
 ) -> list[dict[str, Any]]:
     return [_render_block_item(block, mode=mode) for block in blocks]
+
+
+def _render_non_agent_blocks_for_mode(
+    message: AgentMessage,
+    *,
+    mode: BlocksQueryMode,
+) -> list[dict[str, Any]]:
+    raw_content = message.content if isinstance(message.content, str) else ""
+    if not raw_content:
+        return []
+    if mode == "outline":
+        rendered_content: str | None = None
+    else:
+        rendered_content = raw_content
+    return [
+        {
+            "id": f"{message.id}:1",
+            "messageId": str(message.id),
+            "seq": 1,
+            "type": "text",
+            "content": rendered_content,
+            "contentLength": len(raw_content),
+            "isFinished": True,
+        }
+    ]
 
 
 def _derive_session_title_from_invoke_metadata(
