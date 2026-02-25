@@ -68,6 +68,10 @@ class A2AScheduleService:
         A2AScheduleTask.CYCLE_INTERVAL,
     }
 
+    @staticmethod
+    def _normalize_timezone_str(timezone_str: str | None) -> str:
+        return (timezone_str or "UTC").strip() or "UTC"
+
     async def list_tasks(
         self,
         db: AsyncSession,
@@ -129,7 +133,7 @@ class A2AScheduleService:
         normalized_name = self._normalize_name(name)
         normalized_prompt = self._normalize_prompt(prompt)
         normalized_cycle = self._normalize_cycle_type(cycle_type)
-        timezone_value = (timezone_str or "UTC").strip() or "UTC"
+        timezone_value = self._normalize_timezone_str(timezone_str)
         normalized_point = self._normalize_time_point(
             cycle_type=normalized_cycle,
             time_point=time_point,
@@ -211,7 +215,7 @@ class A2AScheduleService:
 
         schedule_changed = (cycle_type is not None) or (time_point is not None)
         if schedule_changed:
-            timezone_value = (timezone_str or "UTC").strip() or "UTC"
+            timezone_value = self._normalize_timezone_str(timezone_str)
             normalized_point = self._normalize_time_point(
                 cycle_type=next_cycle_type,
                 time_point=next_time_point,
@@ -231,7 +235,7 @@ class A2AScheduleService:
             task.next_run_at = None
 
         if should_recompute:
-            timezone_value = (timezone_str or "UTC").strip() or "UTC"
+            timezone_value = self._normalize_timezone_str(timezone_str)
             task.next_run_at = self.compute_next_run_at(
                 cycle_type=task.cycle_type,
                 time_point=dict(task.time_point or {}),
@@ -262,7 +266,7 @@ class A2AScheduleService:
 
         task.enabled = enabled
         if enabled:
-            timezone_value = (timezone_str or "UTC").strip() or "UTC"
+            timezone_value = self._normalize_timezone_str(timezone_str)
             task.next_run_at = self.compute_next_run_at(
                 cycle_type=task.cycle_type,
                 time_point=dict(task.time_point or {}),
@@ -938,16 +942,79 @@ class A2AScheduleService:
             "interval time_point.start_at_local must be an ISO datetime string"
         )
 
-    @staticmethod
-    def _to_utc_from_local_iso(value: str, *, timezone_str: str) -> str:
+    @classmethod
+    def _to_utc_from_local_iso(cls, value: str, *, timezone_str: str) -> str:
         try:
             local_naive = datetime.fromisoformat(value)
         except ValueError as exc:
             raise A2AScheduleValidationError(
                 "interval time_point.start_at_local must be a valid ISO datetime"
             ) from exc
-        tz = resolve_timezone(timezone_str, default="UTC")
+        timezone_value = cls._normalize_timezone_str(timezone_str)
+        tz = resolve_timezone(timezone_value, default="UTC")
         return ensure_utc(local_naive.replace(tzinfo=tz)).isoformat()
+
+    def format_local_datetime(
+        self,
+        value: datetime | None,
+        *,
+        timezone_str: str,
+    ) -> str | None:
+        if value is None:
+            return None
+        timezone_value = self._normalize_timezone_str(timezone_str)
+        tz = resolve_timezone(timezone_value, default="UTC")
+        local_dt = ensure_utc(value).astimezone(tz)
+        return self._format_local_minute_iso(local_dt)
+
+    def serialize_time_point_for_response(
+        self,
+        *,
+        cycle_type: str,
+        time_point: Dict[str, Any] | None,
+        timezone_str: str,
+    ) -> Dict[str, Any]:
+        payload = dict(time_point or {})
+        if cycle_type != A2AScheduleTask.CYCLE_INTERVAL:
+            return payload
+
+        timezone_value = self._normalize_timezone_str(timezone_str)
+        normalized: Dict[str, Any] = {}
+        if "minutes" in payload:
+            normalized["minutes"] = payload["minutes"]
+
+        start_at_local = payload.get("start_at_local")
+        if isinstance(start_at_local, str) and start_at_local.strip():
+            raw_local = start_at_local.strip()
+            normalized["start_at_local"] = raw_local
+            try:
+                normalized_local = self._normalize_interval_start_at_local(raw_local)
+            except A2AScheduleValidationError:
+                normalized_local = None
+            if normalized_local is not None:
+                normalized["start_at_local"] = normalized_local
+                normalized["start_at_utc"] = self._to_utc_from_local_iso(
+                    normalized_local,
+                    timezone_str=timezone_value,
+                )
+
+        start_at_utc = payload.get("start_at_utc")
+        if isinstance(start_at_utc, str) and start_at_utc.strip():
+            raw_utc = start_at_utc.strip()
+            if "start_at_utc" not in normalized:
+                normalized["start_at_utc"] = raw_utc
+            if "start_at_local" not in normalized:
+                try:
+                    start_at_dt = self._resolve_interval_start_at_utc(raw_utc)
+                except A2AScheduleValidationError:
+                    start_at_dt = None
+                if start_at_dt is not None:
+                    normalized["start_at_local"] = self.format_local_datetime(
+                        start_at_dt,
+                        timezone_str=timezone_value,
+                    )
+
+        return normalized
 
     @staticmethod
     def _resolve_interval_start_at_utc(value: Any) -> Optional[datetime]:
@@ -1192,11 +1259,12 @@ class A2AScheduleService:
         is_superuser: bool = False,
     ) -> datetime:
         normalized_cycle = self._normalize_cycle_type(cycle_type)
+        timezone_value = self._normalize_timezone_str(timezone_str)
         normalized_point = self._normalize_time_point(
             cycle_type=normalized_cycle,
             time_point=time_point,
             is_superuser=is_superuser,
-            timezone_str=timezone_str,
+            timezone_str=timezone_value,
         )
 
         if normalized_cycle == A2AScheduleTask.CYCLE_INTERVAL:
@@ -1219,7 +1287,7 @@ class A2AScheduleService:
                 guard_utc=guard,
             )
 
-        tz = resolve_timezone(timezone_str, default="UTC")
+        tz = resolve_timezone(timezone_value, default="UTC")
         after_local = ensure_utc(after_utc).astimezone(tz)
         guard_utc = ensure_utc(not_before_utc or after_utc)
 

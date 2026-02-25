@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Dict
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -30,7 +28,7 @@ from app.services.a2a_schedule_service import (
     A2AScheduleValidationError,
     a2a_schedule_service,
 )
-from app.utils.timezone_util import ensure_utc, resolve_timezone
+from app.utils.timezone_util import resolve_timezone
 
 router = StrictAPIRouter(prefix="/me/a2a/schedules", tags=["a2a-schedules"])
 
@@ -59,64 +57,6 @@ def _resolve_schedule_timezone(
     return user_key
 
 
-def _format_local_datetime(
-    value: datetime | None,
-    *,
-    timezone_str: str,
-) -> str | None:
-    if value is None:
-        return None
-    tz = resolve_timezone(timezone_str, default="UTC")
-    local_dt = ensure_utc(value).astimezone(tz)
-    return local_dt.strftime("%Y-%m-%dT%H:%M")
-
-
-def _serialize_time_point(
-    *,
-    cycle_type: str,
-    time_point: Dict[str, Any] | None,
-    timezone_str: str,
-) -> Dict[str, Any]:
-    payload = dict(time_point or {})
-    if cycle_type != "interval":
-        return payload
-
-    normalized: Dict[str, Any] = {}
-    if "minutes" in payload:
-        normalized["minutes"] = payload["minutes"]
-
-    start_at_local = payload.get("start_at_local")
-    if isinstance(start_at_local, str) and start_at_local.strip():
-        normalized["start_at_local"] = start_at_local.strip()
-        try:
-            local_naive = datetime.fromisoformat(normalized["start_at_local"])
-            if local_naive.tzinfo is None:
-                tz = resolve_timezone(timezone_str, default="UTC")
-                normalized["start_at_utc"] = ensure_utc(
-                    local_naive.replace(tzinfo=tz)
-                ).isoformat()
-        except ValueError:
-            pass
-
-    start_at_utc = payload.get("start_at_utc")
-    if isinstance(start_at_utc, str) and start_at_utc.strip():
-        if "start_at_utc" not in normalized:
-            normalized["start_at_utc"] = start_at_utc.strip()
-        if "start_at_local" not in normalized:
-            try:
-                candidate = start_at_utc.strip()
-                if candidate.endswith("Z"):
-                    candidate = candidate.replace("Z", "+00:00")
-                normalized["start_at_local"] = _format_local_datetime(
-                    datetime.fromisoformat(candidate),
-                    timezone_str=timezone_str,
-                )
-            except ValueError:
-                pass
-
-    return normalized
-
-
 def _build_task_response(
     task,
     *,
@@ -128,7 +68,7 @@ def _build_task_response(
         agent_id=task.agent_id,
         prompt=task.prompt,
         cycle_type=task.cycle_type,
-        time_point=_serialize_time_point(
+        time_point=a2a_schedule_service.serialize_time_point_for_response(
             cycle_type=task.cycle_type,
             time_point=dict(task.time_point or {}),
             timezone_str=schedule_timezone,
@@ -138,7 +78,7 @@ def _build_task_response(
         conversation_policy=task.conversation_policy,
         enabled=bool(task.enabled),
         next_run_at_utc=task.next_run_at,
-        next_run_at_local=_format_local_datetime(
+        next_run_at_local=a2a_schedule_service.format_local_datetime(
             task.next_run_at,
             timezone_str=schedule_timezone,
         ),
@@ -147,6 +87,23 @@ def _build_task_response(
         consecutive_failures=int(task.consecutive_failures or 0),
         created_at=task.created_at,
         updated_at=task.updated_at,
+    )
+
+
+def _build_toggle_response(
+    task,
+    *,
+    schedule_timezone: str,
+) -> A2AScheduleToggleResponse:
+    return A2AScheduleToggleResponse(
+        id=task.id,
+        schedule_timezone=schedule_timezone,
+        enabled=bool(task.enabled),
+        next_run_at_utc=task.next_run_at,
+        next_run_at_local=a2a_schedule_service.format_local_datetime(
+            task.next_run_at,
+            timezone_str=schedule_timezone,
+        ),
     )
 
 
@@ -322,16 +279,7 @@ async def enable_schedule_task(
     except A2AScheduleValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return A2AScheduleToggleResponse(
-        id=task.id,
-        schedule_timezone=schedule_timezone,
-        enabled=bool(task.enabled),
-        next_run_at_utc=task.next_run_at,
-        next_run_at_local=_format_local_datetime(
-            task.next_run_at,
-            timezone_str=schedule_timezone,
-        ),
-    )
+    return _build_toggle_response(task, schedule_timezone=schedule_timezone)
 
 
 @router.post("/{task_id}/disable", response_model=A2AScheduleToggleResponse)
@@ -353,16 +301,7 @@ async def disable_schedule_task(
     except A2AScheduleNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    return A2AScheduleToggleResponse(
-        id=task.id,
-        schedule_timezone=schedule_timezone,
-        enabled=bool(task.enabled),
-        next_run_at_utc=task.next_run_at,
-        next_run_at_local=_format_local_datetime(
-            task.next_run_at,
-            timezone_str=schedule_timezone,
-        ),
-    )
+    return _build_toggle_response(task, schedule_timezone=schedule_timezone)
 
 
 @router.post("/{task_id}/mark-failed", response_model=A2AScheduleTaskResponse)
