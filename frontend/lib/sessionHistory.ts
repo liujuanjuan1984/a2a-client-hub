@@ -106,6 +106,13 @@ export const mapSessionMessagesToChatMessages = (
           ? projectPrimaryTextContent(blocks)
           : fallbackContent
         : fallbackContent;
+    const hasRenderablePayload =
+      role === "agent"
+        ? blocks.length > 0 || normalizedContent.trim().length > 0
+        : normalizedContent.trim().length > 0;
+    if (!hasRenderablePayload) {
+      return;
+    }
     mapped.push({
       id: messageId,
       role,
