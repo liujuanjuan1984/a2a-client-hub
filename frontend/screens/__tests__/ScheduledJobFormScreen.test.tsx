@@ -1,4 +1,4 @@
-import { act, create } from "react-test-renderer";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { ScheduledJobFormScreen } from "@/screens/ScheduledJobFormScreen";
 import { useSessionStore } from "@/store/session";
@@ -26,6 +26,13 @@ let capturedSubmit: (() => void) | null = null;
 let capturedChange: ((patch: unknown) => void) | null = null;
 let capturedAgentOptions: { id: string; name: string }[] = [];
 let capturedTimeZone: string | undefined = undefined;
+let renderedScreen: ReactTestRenderer | null = null;
+
+const flushMicrotasks = async (count = 3) => {
+  for (let index = 0; index < count; index += 1) {
+    await Promise.resolve();
+  }
+};
 
 jest.mock("react-native/Libraries/Utilities/Dimensions", () => ({
   get: () => ({
@@ -136,6 +143,15 @@ jest.mock("@/lib/navigation", () => ({
 }));
 
 describe("ScheduledJobFormScreen", () => {
+  afterEach(async () => {
+    if (!renderedScreen) return;
+    await act(async () => {
+      renderedScreen?.unmount();
+      renderedScreen = null;
+      await flushMicrotasks();
+    });
+  });
+
   beforeEach(() => {
     mockCreateScheduledJob.mockReset();
     mockGetScheduledJob.mockReset();
@@ -162,6 +178,7 @@ describe("ScheduledJobFormScreen", () => {
     capturedChange = null;
     capturedAgentOptions = [];
     capturedTimeZone = undefined;
+    renderedScreen = null;
     mockAgents.splice(0, mockAgents.length, {
       id: "agent-1",
       source: "personal",
@@ -187,7 +204,7 @@ describe("ScheduledJobFormScreen", () => {
     });
 
     await act(async () => {
-      create(<ScheduledJobFormScreen />);
+      renderedScreen = create(<ScheduledJobFormScreen />);
     });
 
     expect(capturedSubmit).toBeTruthy();
@@ -252,7 +269,7 @@ describe("ScheduledJobFormScreen", () => {
     const expectedStartAtLocal = "2026-02-23T09:30";
 
     await act(async () => {
-      create(<ScheduledJobFormScreen />);
+      renderedScreen = create(<ScheduledJobFormScreen />);
     });
 
     expect(capturedSubmit).toBeTruthy();
@@ -297,7 +314,7 @@ describe("ScheduledJobFormScreen", () => {
 
   it("rejects invalid interval start datetime", async () => {
     await act(async () => {
-      create(<ScheduledJobFormScreen />);
+      renderedScreen = create(<ScheduledJobFormScreen />);
     });
 
     expect(capturedSubmit).toBeTruthy();
@@ -346,7 +363,7 @@ describe("ScheduledJobFormScreen", () => {
       });
     });
 
-    mockGetScheduledJob.mockResolvedValue({
+    const loadedJob = {
       id: "job-1",
       name: "Interval Summary",
       agent_id: "agent-1",
@@ -361,14 +378,24 @@ describe("ScheduledJobFormScreen", () => {
       enabled: true,
       conversation_policy: "new_each_run",
       last_run_status: "idle",
+    };
+    let resolveGetJob: ((value: typeof loadedJob) => void) | null = null;
+    const getJobPromise = new Promise<typeof loadedJob>((resolve) => {
+      resolveGetJob = resolve;
     });
+    mockGetScheduledJob.mockReturnValue(getJobPromise);
     mockUpdateScheduledJob.mockResolvedValue({
       id: "job-1",
     });
 
     await act(async () => {
-      create(<ScheduledJobFormScreen jobId="job-1" />);
-      await Promise.resolve();
+      renderedScreen = create(<ScheduledJobFormScreen jobId="job-1" />);
+    });
+
+    await act(async () => {
+      resolveGetJob?.(loadedJob);
+      await getJobPromise.catch(() => undefined);
+      await flushMicrotasks(5);
     });
 
     expect(capturedSubmit).toBeTruthy();
@@ -417,7 +444,7 @@ describe("ScheduledJobFormScreen", () => {
     );
 
     await act(async () => {
-      create(<ScheduledJobFormScreen />);
+      renderedScreen = create(<ScheduledJobFormScreen />);
     });
 
     expect(capturedAgentOptions).toEqual([
