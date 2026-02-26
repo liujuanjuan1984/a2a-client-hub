@@ -5,8 +5,6 @@ import {
 } from "@/lib/api/pagination";
 import { type UnifiedSessionSource } from "@/lib/sessionIds";
 
-const BLOCKS_QUERY_BATCH_SIZE = 200;
-
 export type SessionListItem = {
   conversationId: string;
   source: UnifiedSessionSource;
@@ -21,28 +19,30 @@ export type SessionListItem = {
 
 export type SessionMessageBlockItem = {
   id: string;
-  messageId: string;
-  seq: number;
   type: string;
   content?: string | null;
-  contentLength: number;
   isFinished: boolean;
 };
 
-export type SessionMessageBlocksItem = {
+export type SessionMessageBlockDetailItem = {
+  id: string;
   messageId: string;
-  role: "user" | "agent" | "system";
-  blockCount: number;
-  hasBlocks: boolean;
-  blocks: SessionMessageBlockItem[];
+  type: string;
+  content?: string | null;
+  isFinished: boolean;
 };
 
 export type SessionMessageItem = {
   id: string;
   role: "user" | "agent" | "system";
   created_at: string;
-  metadata?: Record<string, unknown> | null;
+  status?: string;
   blocks?: SessionMessageBlockItem[];
+};
+
+export type SessionMessagesPageInfo = {
+  hasMoreBefore: boolean;
+  nextBefore?: string | null;
 };
 
 export type SessionContinueBinding = {
@@ -92,105 +92,81 @@ export const listSessionsPage = async (options?: {
 
 export const listSessionMessagesPage = async (
   conversationId: string,
-  options?: { page?: number; size?: number },
+  options?: { before?: string | null; limit?: number },
 ) => {
-  const page = options?.page ?? 1;
-  const size = options?.size ?? 100;
+  const limit = options?.limit ?? 8;
+  const before =
+    typeof options?.before === "string" && options.before.trim().length > 0
+      ? options.before.trim()
+      : null;
   const response = await apiRequest<
     {
       items: SessionMessageItem[];
-      pagination?: unknown;
-      meta?: unknown;
+      pageInfo?: SessionMessagesPageInfo;
     },
-    { page: number; size: number }
+    {
+      before?: string;
+      limit: number;
+    }
   >(`/me/conversations/${encodeURIComponent(conversationId)}/messages:query`, {
     method: "POST",
-    body: { page, size },
+    body: {
+      ...(before ? { before } : {}),
+      limit,
+    },
   });
 
-  const parsed = parsePaginatedListResponse(response);
-  const nextPage = resolveNextPageWithFallback({ parsed, page, size });
-
-  const messageIds = Array.from(
-    new Set(
-      parsed.items
-        .map((item) => item.id.trim())
-        .filter((item) => item.length > 0),
-    ),
-  );
-  if (messageIds.length === 0) {
-    return { ...parsed, nextPage };
-  }
-
-  const blocksByMessageId = new Map<string, SessionMessageBlockItem[]>();
-  for (
-    let start = 0;
-    start < messageIds.length;
-    start += BLOCKS_QUERY_BATCH_SIZE
-  ) {
-    const batchIds = messageIds.slice(start, start + BLOCKS_QUERY_BATCH_SIZE);
-    const blocksResponse = await querySessionMessageBlocks(conversationId, {
-      messageIds: batchIds,
-      mode: "full",
-    });
-    blocksResponse.items.forEach((item) => {
-      const sortedBlocks = [...(item.blocks ?? [])].sort(
-        (lhs, rhs) => lhs.seq - rhs.seq,
-      );
-      blocksByMessageId.set(item.messageId, sortedBlocks);
-    });
-  }
-
-  const hydratedItems = parsed.items.map((item) => {
-    return {
-      ...item,
-      blocks: blocksByMessageId.get(item.id) ?? [],
-    };
-  });
+  const resolvedItems = Array.isArray(response.items) ? response.items : [];
+  const resolvedPageInfo =
+    response.pageInfo &&
+    typeof response.pageInfo === "object" &&
+    response.pageInfo.hasMoreBefore === true
+      ? {
+          hasMoreBefore: true,
+          nextBefore:
+            typeof response.pageInfo.nextBefore === "string"
+              ? response.pageInfo.nextBefore
+              : null,
+        }
+      : {
+          hasMoreBefore: false,
+          nextBefore:
+            response.pageInfo &&
+            typeof response.pageInfo === "object" &&
+            typeof response.pageInfo.nextBefore === "string"
+              ? response.pageInfo.nextBefore
+              : null,
+        };
 
   return {
-    ...parsed,
-    items: hydratedItems,
-    nextPage,
+    items: resolvedItems,
+    pageInfo: resolvedPageInfo,
   };
 };
 
 export const querySessionMessageBlocks = async (
   conversationId: string,
-  payload: {
-    messageIds: string[];
-    mode?: "full" | "text_with_placeholders" | "outline";
-  },
-): Promise<{
-  items: SessionMessageBlocksItem[];
-  meta?: Record<string, unknown>;
-}> => {
+  options: { blockIds: string[] },
+) => {
+  const blockIds = Array.isArray(options.blockIds)
+    ? options.blockIds
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter((value) => value.length > 0)
+    : [];
+  if (blockIds.length === 0) {
+    return { items: [] as SessionMessageBlockDetailItem[] };
+  }
   const response = await apiRequest<
-    {
-      items: SessionMessageBlocksItem[];
-      meta?: Record<string, unknown>;
+    { items?: SessionMessageBlockDetailItem[] },
+    { blockIds: string[] }
+  >(`/me/conversations/${encodeURIComponent(conversationId)}/blocks:query`, {
+    method: "POST",
+    body: {
+      blockIds,
     },
-    {
-      messageIds: string[];
-      mode: "full" | "text_with_placeholders" | "outline";
-    }
-  >(
-    `/me/conversations/${encodeURIComponent(conversationId)}/messages/blocks:query`,
-    {
-      method: "POST",
-      body: {
-        messageIds: payload.messageIds,
-        mode: payload.mode ?? "full",
-      },
-    },
-  );
-
+  });
   return {
     items: Array.isArray(response.items) ? response.items : [],
-    meta:
-      response.meta && typeof response.meta === "object"
-        ? response.meta
-        : undefined,
   };
 };
 

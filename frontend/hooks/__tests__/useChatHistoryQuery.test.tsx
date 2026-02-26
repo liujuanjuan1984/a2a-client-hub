@@ -3,9 +3,14 @@ import { renderHook } from "@testing-library/react-native";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { type ChatMessage } from "@/lib/api/chat-utils";
+import { listSessionMessagesPage } from "@/lib/api/sessions";
 
 jest.mock("@/hooks/usePaginatedList", () => ({
   usePaginatedList: jest.fn(),
+}));
+
+jest.mock("@/lib/api/sessions", () => ({
+  listSessionMessagesPage: jest.fn(),
 }));
 
 jest.mock("@/lib/storage/mmkv", () => ({
@@ -17,6 +22,7 @@ jest.mock("@/lib/storage/mmkv", () => ({
 }));
 
 const mockedUsePaginatedList = jest.mocked(usePaginatedList);
+const mockedListSessionMessagesPage = jest.mocked(listSessionMessagesPage);
 
 const createPaginatedResult = (
   items: unknown[],
@@ -39,6 +45,7 @@ const createPaginatedResult = (
 describe("useChatHistoryQuery", () => {
   beforeEach(() => {
     mockedUsePaginatedList.mockReset();
+    mockedListSessionMessagesPage.mockReset();
   });
 
   it("maps session history messages without truncating loaded pages", () => {
@@ -125,5 +132,73 @@ describe("useChatHistoryQuery", () => {
 
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];
     expect(options?.enabled).toBe(false);
+  });
+
+  it("loads timeline pages with before cursor chaining", async () => {
+    let fetchPage: ((page: number) => Promise<{ nextPage?: number }>) | null =
+      null;
+    mockedUsePaginatedList.mockImplementation((options: any) => {
+      fetchPage = options.fetchPage;
+      return createPaginatedResult([]);
+    });
+    mockedListSessionMessagesPage
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "msg-2",
+            role: "agent",
+            created_at: "2026-02-12T00:00:01.000Z",
+            status: "done",
+            blocks: [],
+          },
+        ],
+        pageInfo: { hasMoreBefore: true, nextBefore: "cursor-1" },
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "msg-1",
+            role: "user",
+            created_at: "2026-02-12T00:00:00.000Z",
+            status: "done",
+            blocks: [],
+          },
+        ],
+        pageInfo: { hasMoreBefore: false, nextBefore: null },
+      });
+
+    renderHook(() =>
+      useSessionHistoryQuery({
+        conversationId: "conversation-1",
+        enabled: true,
+      }),
+    );
+    if (!fetchPage) {
+      throw new Error("fetchPage is unavailable");
+    }
+    const runFetchPage = fetchPage as unknown as (page: number) => Promise<{
+      nextPage?: number;
+    }>;
+    const firstResult = await runFetchPage(1);
+    expect(mockedListSessionMessagesPage).toHaveBeenNthCalledWith(
+      1,
+      "conversation-1",
+      {
+        before: null,
+        limit: 8,
+      },
+    );
+    expect(firstResult.nextPage).toBe(2);
+
+    const secondResult = await runFetchPage(2);
+    expect(mockedListSessionMessagesPage).toHaveBeenNthCalledWith(
+      2,
+      "conversation-1",
+      {
+        before: "cursor-1",
+        limit: 8,
+      },
+    );
+    expect(secondResult.nextPage).toBeUndefined();
   });
 });

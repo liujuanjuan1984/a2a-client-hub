@@ -31,6 +31,7 @@ export function ChatTimelinePanel({
   historyLoading,
   historyError,
   onCaptureContentSizeAnchor,
+  onLoadBlockContent,
   onRetry,
   onListContentSizeChange,
   onListScroll,
@@ -53,6 +54,7 @@ export function ChatTimelinePanel({
   historyLoading: boolean;
   historyError: string | null;
   onCaptureContentSizeAnchor: () => void;
+  onLoadBlockContent: (messageId: string, blockId: string) => Promise<boolean>;
   onRetry: () => void;
   onListContentSizeChange: (w: number, h: number) => void;
   onListScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -97,6 +99,7 @@ export function ChatTimelinePanel({
             isLastMessage={index === messages.length - 1}
             sessionStreamState={session?.streamState}
             onLayoutChangeStart={onCaptureContentSizeAnchor}
+            onLoadBlockContent={onLoadBlockContent}
             onRetry={onRetry}
           />
         )}

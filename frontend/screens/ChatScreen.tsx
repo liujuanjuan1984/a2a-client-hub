@@ -66,6 +66,7 @@ export function ChatScreen({
         historyLoading={controller.historyLoading}
         historyError={controller.historyError}
         onCaptureContentSizeAnchor={controller.captureContentSizeAnchor}
+        onLoadBlockContent={controller.handleLoadBlockContent}
         onRetry={controller.handleRetry}
         onListContentSizeChange={controller.handleListContentSizeChange}
         onListScroll={controller.handleListScroll}

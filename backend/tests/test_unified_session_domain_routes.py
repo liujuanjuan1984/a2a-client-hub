@@ -118,21 +118,30 @@ async def test_conversation_routes_use_conversation_id_only(
             source="user_input",
         )
     )
-    async_db_session.add(
-        AgentMessageBlock(
-            user_id=user.id,
-            message_id=agent_message.id,
-            block_seq=1,
-            block_type="text",
-            content="world",
-            start_event_seq=1,
-            end_event_seq=1,
-            start_event_id="evt-route-1",
-            end_event_id="evt-route-1",
-            is_finished=True,
-            source="stream",
-        )
+    agent_text_block = AgentMessageBlock(
+        user_id=user.id,
+        message_id=agent_message.id,
+        block_seq=1,
+        block_type="text",
+        content="world",
+        start_event_seq=1,
+        end_event_seq=1,
+        start_event_id="evt-route-1",
+        end_event_id="evt-route-1",
+        is_finished=True,
+        source="stream",
     )
+    agent_reasoning_block = AgentMessageBlock(
+        user_id=user.id,
+        message_id=agent_message.id,
+        block_seq=2,
+        block_type="reasoning",
+        content="internal-thought",
+        is_finished=True,
+        source="stream",
+    )
+    async_db_session.add(agent_text_block)
+    async_db_session.add(agent_reasoning_block)
     await async_db_session.commit()
 
     async with create_test_client(
@@ -152,45 +161,41 @@ async def test_conversation_routes_use_conversation_id_only(
         assert str(scheduled_session.id) in conversation_ids
         assert all("id" not in item for item in list_payload["items"])
 
-        manual_msgs_resp = await client.post(
+        messages_resp = await client.post(
             f"/me/conversations/{manual_session.id}/messages:query",
-            json={"page": 1, "size": 50},
+            json={"limit": 8},
         )
-        assert manual_msgs_resp.status_code == 200
-        msgs_payload = manual_msgs_resp.json()
-        assert msgs_payload["meta"]["source"] == "manual"
-        assert msgs_payload["meta"]["conversationId"] == str(manual_session.id)
-        assert len(msgs_payload["items"]) == 2
-        user_item = next(
-            item for item in msgs_payload["items"] if item["role"] == "user"
+        assert messages_resp.status_code == 200
+        messages_payload = messages_resp.json()
+        assert len(messages_payload["items"]) == 2
+        messages_user_item = next(
+            item for item in messages_payload["items"] if item["role"] == "user"
         )
-        agent_item = next(
-            item for item in msgs_payload["items"] if item["role"] == "agent"
+        messages_agent_item = next(
+            item for item in messages_payload["items"] if item["role"] == "agent"
         )
-        assert user_item["id"] == str(user_message.id)
-        assert agent_item["id"] == str(agent_message.id)
-        assert "message_blocks" not in agent_item.get("metadata", {})
-        assert "content" not in user_item
-        assert "content" not in agent_item
-        assert agent_item.get("metadata", {}).get("block_count") == 1
+        assert messages_user_item["id"] == str(user_message.id)
+        assert messages_agent_item["id"] == str(agent_message.id)
+        assert len(messages_user_item["blocks"]) == 1
+        assert len(messages_agent_item["blocks"]) == 2
+        assert messages_agent_item["blocks"][0]["content"] == "world"
+        assert messages_agent_item["blocks"][1]["type"] == "reasoning"
+        assert messages_agent_item["blocks"][1]["content"] == ""
+        assert messages_payload["pageInfo"]["hasMoreBefore"] is False
+        assert messages_payload["pageInfo"]["nextBefore"] is None
 
-        blocks_resp = await client.post(
-            f"/me/conversations/{manual_session.id}/messages/blocks:query",
-            json={"messageIds": [str(agent_message.id)], "mode": "full"},
+        block_detail_resp = await client.post(
+            f"/me/conversations/{manual_session.id}/blocks:query",
+            json={"blockIds": [str(agent_reasoning_block.id)]},
         )
-        assert blocks_resp.status_code == 200
-        blocks_payload = blocks_resp.json()
-        assert blocks_payload["meta"]["conversationId"] == str(manual_session.id)
-        assert blocks_payload["meta"]["mode"] == "full"
-        assert len(blocks_payload["items"]) == 1
-        assert blocks_payload["items"][0]["messageId"] == str(agent_message.id)
-        assert blocks_payload["items"][0]["role"] == "agent"
-        assert blocks_payload["items"][0]["blockCount"] == 1
-        assert blocks_payload["items"][0]["hasBlocks"] is True
-        assert len(blocks_payload["items"][0]["blocks"]) == 1
-        assert blocks_payload["items"][0]["blocks"][0]["type"] == "text"
-        assert blocks_payload["items"][0]["blocks"][0]["content"] == "world"
-        assert blocks_payload["items"][0]["blocks"][0]["isFinished"] is True
+        assert block_detail_resp.status_code == 200
+        block_detail_payload = block_detail_resp.json()
+        assert len(block_detail_payload["items"]) == 1
+        assert block_detail_payload["items"][0]["id"] == str(agent_reasoning_block.id)
+        assert block_detail_payload["items"][0]["messageId"] == str(agent_message.id)
+        assert block_detail_payload["items"][0]["type"] == "reasoning"
+        assert block_detail_payload["items"][0]["content"] == "internal-thought"
+        assert block_detail_payload["items"][0]["isFinished"] is True
 
         continue_resp = await client.post(
             f"/me/conversations/{manual_session.id}:continue"
@@ -278,13 +283,13 @@ async def test_invalid_conversation_id_returns_400(
     ) as client:
         resp = await client.post(
             "/me/conversations/not-a-uuid/messages:query",
-            json={"page": 1, "size": 20},
+            json={"limit": 8},
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "invalid_conversation_id"
 
 
-async def test_invalid_message_id_returns_400(
+async def test_invalid_messages_cursor_returns_400(
     async_db_session,
     async_session_maker,
 ):
@@ -297,11 +302,126 @@ async def test_invalid_message_id_returns_400(
         current_user=user,
     ) as client:
         resp = await client.post(
-            f"/me/conversations/{conversation_id}/messages/blocks:query",
-            json={"messageIds": ["not-a-uuid"], "mode": "full"},
+            f"/me/conversations/{conversation_id}/messages:query",
+            json={"before": "not-valid-cursor", "limit": 8},
         )
         assert resp.status_code == 400
-        assert resp.json()["detail"] == "invalid_message_id"
+        assert resp.json()["detail"] == "invalid_before_cursor"
+
+
+async def test_blocks_query_returns_404_when_block_not_found(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    conversation_id = uuid4()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/conversations/{conversation_id}/blocks:query",
+            json={"blockIds": [str(uuid4())]},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "block_not_found"
+
+
+async def test_blocks_query_rejects_cross_conversation_block(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="cross-block")
+    now = utc_now()
+
+    source_session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Source Thread",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    target_session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Target Thread",
+        last_active_at=now - timedelta(minutes=1),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(source_session)
+    async_db_session.add(target_session)
+    await async_db_session.flush()
+
+    source_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        conversation_id=source_session.id,
+    )
+    async_db_session.add(source_message)
+    await async_db_session.flush()
+
+    source_block = AgentMessageBlock(
+        user_id=user.id,
+        message_id=source_message.id,
+        block_seq=1,
+        block_type="tool_call",
+        content='{"tool":"search"}',
+        is_finished=True,
+        source="stream",
+    )
+    async_db_session.add(source_block)
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/conversations/{target_session.id}/blocks:query",
+            json={"blockIds": [str(source_block.id)]},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "block_not_found"
+
+
+async def test_legacy_timeline_and_blocks_routes_are_removed(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    conversation_id = uuid4()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/conversations/{conversation_id}/messages/timeline:query",
+            json={"limit": 8},
+        )
+        assert resp.status_code == 404
+
+        resp = await client.post(
+            f"/me/conversations/{conversation_id}/messages/blocks:query",
+            json={"messageIds": [str(uuid4())], "mode": "full"},
+        )
+        assert resp.status_code == 404
+
+        resp = await client.post(
+            f"/me/conversations/{conversation_id}/messages/{uuid4()}/blocks/1:query",
+        )
+        assert resp.status_code == 404
 
 
 async def test_list_sessions_filters_use_conversation_source_only(
@@ -457,19 +577,15 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
     ) as client:
         resp = await client.post(
             f"/me/conversations/{session.id}/messages:query",
-            json={"page": 1, "size": 50},
+            json={"limit": 8},
         )
         assert resp.status_code == 200
         payload = resp.json()
-        assert payload["meta"]["conversationId"] == str(session.id)
-        assert payload["meta"]["source"] == "manual"
-        assert payload["meta"]["upstream_session_id"] == "ses_local_hist_1"
         assert len(payload["items"]) == 2
         assert payload["items"][0]["role"] == "user"
         assert payload["items"][1]["role"] == "agent"
-        assert "content" not in payload["items"][0]
-        assert "content" not in payload["items"][1]
-        assert payload["items"][1]["metadata"]["block_count"] == 1
+        assert payload["items"][0]["blocks"][0]["content"] == "hello"
+        assert payload["items"][1]["blocks"][0]["content"] == "world"
 
 
 async def test_continue_keeps_external_session_id_empty_when_missing(

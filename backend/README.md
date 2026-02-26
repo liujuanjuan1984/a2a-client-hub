@@ -167,8 +167,7 @@ scheduled, and OpenCode sessions:
 
 - `POST /api/v1/me/conversations:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages:query`
-- `POST /api/v1/me/conversations/{conversation_id}/messages/blocks:query`
-- `POST /api/v1/me/conversations/{conversation_id}/messages/{message_id}/blocks/{block_seq}:query`
+- `POST /api/v1/me/conversations/{conversation_id}/blocks:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
 
 `conversations:query` supports optional `agent_id` filtering so Chat session
@@ -190,14 +189,16 @@ Client-generated chat sessions should use raw UUID conversation IDs, for example
 
 Message query contract boundary:
 
-- `messages:query` is a lightweight list endpoint and does not include
-  `metadata.message_blocks`.
+- `messages:query` is the primary chat read model and returns ordered
+  message timeline items with block payloads plus backward cursor pagination
+  (`pageInfo.hasMoreBefore`, `pageInfo.nextBefore`).
 - `SessionMessageItem.id` is the canonical local message UUID for all roles.
 - Message body is persisted and queried via ordered blocks for all roles
   (`user`/`agent`/`system`).
-- For block-level payloads (reasoning/tool/text blocks), call
-  `messages/blocks:query` (batch) or `messages/{message_id}/blocks/{block_seq}:query`
-  (single block detail) on demand.
+- `messages:query` keeps full `content` for `text` blocks; `reasoning`/`tool_call`
+  block `content` is fetched via `blocks:query` on demand.
+- `blocks:query` returns per-block `messageId` so clients can validate cache
+  injection ownership before patching local message state.
 
 Invoke message id contract:
 

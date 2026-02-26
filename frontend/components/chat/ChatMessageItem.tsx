@@ -19,6 +19,7 @@ export function ChatMessageItem({
   isLastMessage,
   sessionStreamState,
   onLayoutChangeStart,
+  onLoadBlockContent,
   onRetry,
 }: {
   message: ChatMessage;
@@ -26,6 +27,7 @@ export function ChatMessageItem({
   isLastMessage: boolean;
   sessionStreamState?: string | null;
   onLayoutChangeStart?: () => void;
+  onLoadBlockContent?: (messageId: string, blockId: string) => Promise<boolean>;
   onRetry: () => void;
 }) {
   const [expandedReasoningByBlockId, setExpandedReasoningByBlockId] = useState<
@@ -129,8 +131,10 @@ export function ChatMessageItem({
 
   const renderableBlocks = deriveRenderableBlocks(message);
   const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
+  const hasPlainContent = message.content.trim().length > 0;
   const plainTextExpanded = expandedTextByBlockId[message.id] ?? false;
-  const plainShouldCollapse = shouldCollapseByLength(message.content);
+  const plainShouldCollapse =
+    hasPlainContent && shouldCollapseByLength(message.content);
   const plainTopToggleAccessibilityLabel = plainTextExpanded
     ? "Collapse full text"
     : "Expand full text";
@@ -180,10 +184,25 @@ export function ChatMessageItem({
           {hasBlocks ? (
             renderableBlocks.map((block, blockIndex) => {
               const blockText = block.content;
-              if (blockText.length === 0) return null;
+              const blockHasContent = blockText.length > 0;
               const blockId = block.id || `${message.id}:${blockIndex}`;
               if (block.type === "reasoning") {
-                const expanded = expandedReasoningByBlockId[blockId];
+                const expanded =
+                  (expandedReasoningByBlockId[blockId] ?? false) &&
+                  blockHasContent;
+                const handleToggle = async () => {
+                  const shouldExpand = !expanded;
+                  if (shouldExpand && !blockHasContent && onLoadBlockContent) {
+                    const loaded = await onLoadBlockContent(
+                      message.id,
+                      blockId,
+                    );
+                    if (!loaded) {
+                      return;
+                    }
+                  }
+                  toggleReasoning(blockId);
+                };
                 return (
                   <View
                     key={blockId}
@@ -192,7 +211,9 @@ export function ChatMessageItem({
                     } rounded-xl bg-black/40 p-3`}
                   >
                     <Pressable
-                      onPress={() => toggleReasoning(blockId)}
+                      onPress={() => {
+                        handleToggle().catch(() => undefined);
+                      }}
                       accessibilityRole="button"
                       accessibilityLabel={
                         expanded
@@ -225,7 +246,22 @@ export function ChatMessageItem({
                 );
               }
               if (block.type === "tool_call") {
-                const expanded = expandedToolCallByBlockId[blockId];
+                const expanded =
+                  (expandedToolCallByBlockId[blockId] ?? false) &&
+                  blockHasContent;
+                const handleToggle = async () => {
+                  const shouldExpand = !expanded;
+                  if (shouldExpand && !blockHasContent && onLoadBlockContent) {
+                    const loaded = await onLoadBlockContent(
+                      message.id,
+                      blockId,
+                    );
+                    if (!loaded) {
+                      return;
+                    }
+                  }
+                  toggleToolCall(blockId);
+                };
                 return (
                   <View
                     key={blockId}
@@ -234,7 +270,9 @@ export function ChatMessageItem({
                     } rounded-xl bg-black/40 p-3`}
                   >
                     <Pressable
-                      onPress={() => toggleToolCall(blockId)}
+                      onPress={() => {
+                        handleToggle().catch(() => undefined);
+                      }}
                       accessibilityRole="button"
                       accessibilityLabel={
                         expanded
@@ -274,6 +312,9 @@ export function ChatMessageItem({
                 );
               }
               if (block.type === "text") {
+                if (!blockHasContent) {
+                  return null;
+                }
                 const blockExpanded = expandedTextByBlockId[blockId] ?? false;
                 const shouldCollapse = shouldCollapseByLength(blockText);
                 const topToggleAccessibilityLabel = blockExpanded
@@ -341,17 +382,27 @@ export function ChatMessageItem({
             })
           ) : (
             <View>
-              <Text
-                selectable
-                className={`break-all text-sm leading-6 font-normal ${message.role === "user" ? "text-white" : "text-slate-200"}`}
-                numberOfLines={
-                  plainShouldCollapse && !plainTextExpanded
-                    ? COLLAPSED_TEXT_LINES
-                    : undefined
-                }
-              >
-                {message.content}
-              </Text>
+              {hasPlainContent ? (
+                <View>
+                  <Text
+                    selectable
+                    className={`break-all text-sm leading-6 font-normal ${message.role === "user" ? "text-white" : "text-slate-200"}`}
+                    numberOfLines={
+                      plainShouldCollapse && !plainTextExpanded
+                        ? COLLAPSED_TEXT_LINES
+                        : undefined
+                    }
+                  >
+                    {message.content}
+                  </Text>
+                </View>
+              ) : (
+                <View className="rounded-lg bg-black/20 px-3 py-2">
+                  <Text className="text-[11px] font-medium text-slate-400">
+                    Content unavailable.
+                  </Text>
+                </View>
+              )}
               {plainShouldCollapse ? (
                 <Pressable
                   className="mt-2 rounded-lg bg-black/20 px-2.5 py-1"
