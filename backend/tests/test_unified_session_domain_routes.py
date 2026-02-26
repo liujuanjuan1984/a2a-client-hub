@@ -96,12 +96,14 @@ async def test_conversation_routes_use_conversation_id_only(
         user_id=user.id,
         sender="user",
         conversation_id=manual_session.id,
+        summary_text="hello",
         message_metadata={"context_id": "ctx-manual-1"},
     )
     agent_message = AgentMessage(
         user_id=user.id,
         sender="agent",
         conversation_id=manual_session.id,
+        summary_text="world",
         message_metadata={"context_id": "ctx-manual-1"},
     )
     async_db_session.add(user_message)
@@ -169,6 +171,8 @@ async def test_conversation_routes_use_conversation_id_only(
         )
         assert user_item["id"] == str(user_message.id)
         assert agent_item["id"] == str(agent_message.id)
+        assert user_item.get("metadata", {}).get("summary_text") == "hello"
+        assert agent_item.get("metadata", {}).get("summary_text") == "world"
         assert "message_blocks" not in agent_item.get("metadata", {})
         assert "content" not in user_item
         assert "content" not in agent_item

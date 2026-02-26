@@ -30,6 +30,18 @@ const buildAgentMessage = (
   ...overrides,
 });
 
+const buildUserMessage = (
+  overrides: Partial<ChatMessage> = {},
+): ChatMessage => ({
+  id: "user-message-1",
+  role: "user",
+  content: "",
+  createdAt: "2026-02-24T00:00:00.000Z",
+  status: "done",
+  blocks: [],
+  ...overrides,
+});
+
 describe("ChatMessageItem collapsible blocks", () => {
   it("shows bottom collapse action for expanded reasoning block", () => {
     const onLayoutChangeStart = jest.fn();
@@ -163,5 +175,29 @@ describe("ChatMessageItem collapsible blocks", () => {
       screen.getByTestId("chat-message-empty-agent-message-load-content"),
     );
     expect(onRequestMessageBlocks).toHaveBeenCalledWith("empty-agent-message");
+  });
+
+  it("allows user message to request blocks when content is missing", () => {
+    const onRequestMessageBlocks = jest.fn();
+    const message = buildUserMessage({
+      id: "empty-user-message",
+      content: "",
+      blocks: [],
+    });
+
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+        onRequestMessageBlocks={onRequestMessageBlocks}
+      />,
+    );
+
+    fireEvent.press(
+      screen.getByTestId("chat-message-empty-user-message-load-content"),
+    );
+    expect(onRequestMessageBlocks).toHaveBeenCalledWith("empty-user-message");
   });
 });

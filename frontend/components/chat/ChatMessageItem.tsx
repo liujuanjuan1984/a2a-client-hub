@@ -138,7 +138,7 @@ export function ChatMessageItem({
   const canRequestBlocks =
     typeof onRequestMessageBlocks === "function" &&
     message.status !== "streaming" &&
-    message.role === "agent" &&
+    (message.role === "agent" || message.role === "user") &&
     !hasPersistedBlocks;
   const plainTextExpanded = expandedTextByBlockId[message.id] ?? false;
   const plainShouldCollapse =

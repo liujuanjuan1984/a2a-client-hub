@@ -92,6 +92,26 @@ describe("session history mapping", () => {
     });
   });
 
+  it("maps user summary_text from header metadata", () => {
+    const mapped = mapSessionMessagesToChatMessages([
+      {
+        id: "f9b8b086-15ce-4f14-84f4-b9861064da18",
+        role: "user",
+        created_at: "2026-02-14T00:00:03.500Z",
+        metadata: {
+          summary_text: "hello from user",
+        },
+      },
+    ]);
+
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]).toMatchObject({
+      id: "f9b8b086-15ce-4f14-84f4-b9861064da18",
+      role: "user",
+      content: "hello from user",
+    });
+  });
+
   it("keeps empty messages when keepEmptyMessages is enabled", () => {
     const mapped = mapSessionMessagesToChatMessages(
       [

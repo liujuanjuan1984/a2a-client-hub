@@ -633,8 +633,15 @@ async def test_list_messages_returns_header_only_without_content_field(
         page=1,
         size=20,
     )
+    user_items = [item for item in items if item.get("role") == "user"]
     agent_items = [item for item in items if item.get("role") == "agent"]
+    assert len(user_items) == 1
     assert len(agent_items) == 1
+    assert user_items[0].get("metadata", {}).get("summary_text") == "hello"
+    assert (
+        agent_items[0].get("metadata", {}).get("summary_text")
+        == "should-not-be-read-from-header"
+    )
     assert "content" not in agent_items[0]
 
 

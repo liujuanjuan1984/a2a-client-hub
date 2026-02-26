@@ -180,12 +180,13 @@ class SessionHubService:
                 getattr(message, "message_metadata", None)
             )
             role = _sender_to_role(getattr(message, "sender", ""))
-            if isinstance(message.id, UUID) and role == "agent":
+            if isinstance(message.id, UUID) and role in {"user", "agent"}:
                 summary_text = normalize_non_empty_text(
                     getattr(message, "summary_text", None)
                 )
                 if summary_text:
                     message_metadata.setdefault("summary_text", summary_text)
+            if isinstance(message.id, UUID) and role == "agent":
                 if isinstance(message.status, str) and message.status.strip():
                     message_metadata.setdefault("stream_status", message.status.strip())
                 stream_meta = message_metadata.get("stream")
@@ -646,6 +647,7 @@ class SessionHubService:
             resolved_agent_status = "done" if success else "error"
         resolved_finish_reason = normalize_non_empty_text(finish_reason)
         resolved_error_code = normalize_non_empty_text(error_code)
+        user_summary_text = _derive_agent_summary_text(query)
         summary_text = _derive_agent_summary_text(response_content)
         requested_user_message = (
             await self._find_message_by_id_and_sender(
@@ -716,6 +718,7 @@ class SessionHubService:
                     sender="user",
                     status="done",
                     conversation_id=conversation_id,
+                    summary_text=user_summary_text,
                     metadata=metadata,
                     invoke_idempotency_key=normalized_idempotency_key,
                 )
@@ -753,6 +756,8 @@ class SessionHubService:
                 raise ValueError("message_id_conflict")
             if normalized_idempotency_key:
                 user_message.invoke_idempotency_key = normalized_idempotency_key
+            if user_summary_text and user_message.summary_text != user_summary_text:
+                user_message.summary_text = user_summary_text
         await self._ensure_idempotent_user_query(
             db,
             user_id=user_id,
