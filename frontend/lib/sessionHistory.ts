@@ -12,7 +12,6 @@ export type SessionMessageItem = {
   status?: string;
   blocks?: {
     id: string;
-    seq: number;
     type: string;
     content?: string | null;
     isFinished: boolean;
@@ -65,22 +64,20 @@ const mapBlocks = (item: SessionMessageItem): MessageBlock[] => {
     return [];
   }
   const createdAt = item.created_at;
-  return [...item.blocks]
-    .sort((lhs, rhs) => lhs.seq - rhs.seq)
-    .map((block, index) => {
-      const blockId =
-        typeof block.id === "string" && block.id.trim()
-          ? block.id
-          : `${item.id}:${index + 1}`;
-      return {
-        id: blockId,
-        type: block.type,
-        content: typeof block.content === "string" ? block.content : "",
-        isFinished: block.isFinished === true,
-        createdAt,
-        updatedAt: createdAt,
-      };
-    });
+  return item.blocks.map((block, index) => {
+    const blockId =
+      typeof block.id === "string" && block.id.trim()
+        ? block.id
+        : `${item.id}:${index + 1}`;
+    return {
+      id: blockId,
+      type: block.type,
+      content: typeof block.content === "string" ? block.content : "",
+      isFinished: block.isFinished === true,
+      createdAt,
+      updatedAt: createdAt,
+    };
+  });
 };
 
 export const mapSessionMessagesToChatMessages = (

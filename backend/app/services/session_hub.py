@@ -1525,7 +1525,6 @@ def _render_block_item(
     block_type = _normalize_block_type(block.block_type)
     return {
         "id": str(block.id),
-        "seq": int(block.block_seq),
         "type": block_type,
         "content": raw_content,
         "isFinished": bool(block.is_finished),

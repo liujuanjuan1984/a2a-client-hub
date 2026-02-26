@@ -10,7 +10,6 @@ describe("session history mapping", () => {
         blocks: [
           {
             id: "block-1",
-            seq: 1,
             type: "text",
             content: "final",
             isFinished: true,
@@ -35,7 +34,6 @@ describe("session history mapping", () => {
         blocks: [
           {
             id: "block-2",
-            seq: 1,
             type: "text",
             content: "final",
             isFinished: true,
@@ -90,7 +88,6 @@ describe("session history mapping", () => {
         blocks: [
           {
             id: "block-3",
-            seq: 1,
             type: "text",
             content: "partial",
             isFinished: false,
@@ -139,7 +136,6 @@ describe("session history mapping", () => {
         blocks: [
           {
             id: "block-4",
-            seq: 1,
             type: "text",
             content: "partial",
             isFinished: true,
@@ -162,7 +158,6 @@ describe("session history mapping", () => {
         blocks: [
           {
             id: "block-5",
-            seq: 1,
             type: "text",
             content: "failed",
             isFinished: true,

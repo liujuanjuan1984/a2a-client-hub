@@ -19,7 +19,6 @@ export type SessionListItem = {
 
 export type SessionMessageBlockItem = {
   id: string;
-  seq: number;
   type: string;
   content?: string | null;
   isFinished: boolean;

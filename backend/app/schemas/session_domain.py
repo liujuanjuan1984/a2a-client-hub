@@ -59,7 +59,6 @@ class SessionMessagesQueryRequest(BaseModel):
 
 class SessionMessageBlockItem(BaseModel):
     id: str
-    seq: int
     type: str
     content: Optional[str] = None
     is_finished: bool = Field(alias="isFinished")
