@@ -132,9 +132,16 @@ export function useChatScreenController({
       : null;
   const handleRequestMessageBlocks = useCallback(
     (messageId: string) => {
-      sessionHistoryQuery.loadMessageBlocks(messageId).catch(() => undefined);
+      sessionHistoryQuery.loadMessageBlocks(messageId).catch((error) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn("history.blocks.load_failed", {
+          conversationId,
+          messageId,
+          detail,
+        });
+      });
     },
-    [sessionHistoryQuery],
+    [conversationId, sessionHistoryQuery],
   );
   const isMessageBlocksLoading = useCallback(
     (messageId: string) =>
