@@ -192,6 +192,7 @@ async def test_conversation_routes_use_conversation_id_only(
         block_detail_payload = block_detail_resp.json()
         assert len(block_detail_payload["items"]) == 1
         assert block_detail_payload["items"][0]["id"] == str(agent_reasoning_block.id)
+        assert block_detail_payload["items"][0]["messageId"] == str(agent_message.id)
         assert block_detail_payload["items"][0]["type"] == "reasoning"
         assert block_detail_payload["items"][0]["content"] == "internal-thought"
         assert block_detail_payload["items"][0]["isFinished"] is True

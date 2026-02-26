@@ -26,6 +26,7 @@ export type SessionMessageBlockItem = {
 
 export type SessionMessageBlockDetailItem = {
   id: string;
+  messageId: string;
   type: string;
   content?: string | null;
   isFinished: boolean;

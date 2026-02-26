@@ -197,6 +197,8 @@ Message query contract boundary:
   (`user`/`agent`/`system`).
 - `messages:query` keeps full `content` for `text` blocks; `reasoning`/`tool_call`
   block `content` is fetched via `blocks:query` on demand.
+- `blocks:query` returns per-block `messageId` so clients can validate cache
+  injection ownership before patching local message state.
 
 Invoke message id contract:
 

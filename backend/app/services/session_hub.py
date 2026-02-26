@@ -1580,6 +1580,7 @@ def _render_block_detail_item(
     raw_content = block.content if isinstance(block.content, str) else ""
     return {
         "id": str(block.id),
+        "messageId": str(block.message_id),
         "type": _normalize_block_type(block.block_type),
         "content": raw_content,
         "isFinished": bool(block.is_finished),

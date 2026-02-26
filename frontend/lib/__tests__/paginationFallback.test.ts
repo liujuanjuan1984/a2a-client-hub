@@ -156,6 +156,7 @@ describe("API modules using shared pagination fallback", () => {
       items: [
         {
           id: "block-1",
+          messageId: "message-1",
           type: "tool_call",
           content: '{"tool":"search"}',
           isFinished: true,
@@ -170,6 +171,7 @@ describe("API modules using shared pagination fallback", () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({
       id: "block-1",
+      messageId: "message-1",
       type: "tool_call",
       content: '{"tool":"search"}',
       isFinished: true,

@@ -758,6 +758,14 @@ export function useChatScreenController({
           toast.error("Load block failed", "Block content unavailable.");
           return false;
         }
+        const detailMessageId =
+          typeof blockDetail.messageId === "string"
+            ? blockDetail.messageId.trim()
+            : "";
+        if (!detailMessageId || detailMessageId !== resolvedMessageId) {
+          toast.error("Load block failed", "Block ownership mismatch.");
+          return false;
+        }
 
         updateConversationMessageWithUpdater(
           conversationId,

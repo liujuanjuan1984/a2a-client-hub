@@ -103,6 +103,7 @@ class SessionMessageBlocksQueryRequest(BaseModel):
 
 class SessionMessageBlockDetailItem(BaseModel):
     id: str
+    message_id: str = Field(alias="messageId")
     type: str
     content: Optional[str] = None
     is_finished: bool = Field(alias="isFinished")
