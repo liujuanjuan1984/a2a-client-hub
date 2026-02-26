@@ -4,24 +4,23 @@ import { FlatList, Modal, Pressable, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import { type AgentSession } from "@/lib/chat-utils";
-import { useConversationMessages } from "@/lib/chatHistoryCache";
+import { useConversationTitleMap } from "@/lib/chatHistoryCache";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import { useChatStore } from "@/store/chat";
 
 function SessionItem({
   conversationId,
   session,
+  title,
   isActive,
   onSelect,
 }: {
   conversationId: string;
   session: AgentSession;
+  title: string;
   isActive: boolean;
   onSelect: (id: string) => void;
 }) {
-  const messages = useConversationMessages(conversationId);
-  const firstUserMessage = messages?.find((m) => m.role === "user");
-  const title = firstUserMessage?.content?.trim() || "New Session";
   const createdAtText = formatLocalDateTimeYmdHm(
     session.createdAt ?? session.lastActiveAt,
   );
@@ -76,6 +75,9 @@ export function SessionPickerModal({
     if (!agentId) return [];
     return getSessionsByAgentId(agentId);
   }, [agentId, getSessionsByAgentId, sessions]);
+  const sessionTitles = useConversationTitleMap(
+    agentSessions.map(([conversationId]) => conversationId),
+  );
 
   return (
     <Modal
@@ -124,6 +126,7 @@ export function SessionPickerModal({
                 <SessionItem
                   conversationId={item[0]}
                   session={item[1]}
+                  title={sessionTitles[item[0]] ?? "New Session"}
                   isActive={item[0] === currentConversationId}
                   onSelect={(id) => {
                     onSelect(id);

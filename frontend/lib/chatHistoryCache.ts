@@ -1,5 +1,5 @@
 import { type InfiniteData } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
+import { useRef, useSyncExternalStore } from "react";
 
 import { type ChatMessage } from "@/lib/api/chat-utils";
 import { queryKeys } from "@/lib/queryKeys";
@@ -32,6 +32,12 @@ const readHistoryData = (conversationId: string) =>
 
 const flattenPages = (pages: ChatHistoryPage[]) =>
   normalizeMessages(pages.flatMap((page) => page.items ?? []));
+
+const buildConversationTitle = (messages: ChatMessage[]): string | null => {
+  const firstUserMessage = messages.find((message) => message.role === "user");
+  const title = firstUserMessage?.content?.trim();
+  return title ? title : null;
+};
 
 const writeMessages = (
   conversationId: string,
@@ -70,6 +76,10 @@ export const getConversationMessages = (
   return flattenPages(data.pages);
 };
 
+export const getConversationTitle = (conversationId: string): string | null => {
+  return buildConversationTitle(getConversationMessages(conversationId));
+};
+
 export const useConversationMessages = (
   conversationId: string,
 ): ChatMessage[] => {
@@ -90,6 +100,95 @@ export const useConversationMessages = (
   };
 
   const getSnapshot = () => getConversationMessages(conversationId);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+};
+
+export const getConversationTitleMap = (
+  conversationIds: string[],
+): Record<string, string> => {
+  if (conversationIds.length === 0) {
+    return {};
+  }
+
+  const wantedIds = new Set(
+    conversationIds.map((value) => value.trim()).filter((value) => value),
+  );
+  const titleMap: Record<string, string> = {};
+
+  queryClient
+    .getQueryCache()
+    .findAll({ queryKey: ["history", "chat"] })
+    .forEach((query) => {
+      const key = query.queryKey;
+      if (!Array.isArray(key) || key.length < 3) {
+        return;
+      }
+      const conversationId = key[2];
+      if (
+        typeof conversationId !== "string" ||
+        !wantedIds.has(conversationId)
+      ) {
+        return;
+      }
+      const title = getConversationTitle(conversationId);
+      if (title) {
+        titleMap[conversationId] = title;
+      }
+    });
+
+  return titleMap;
+};
+
+export const useConversationTitleMap = (
+  conversationIds: string[],
+): Record<string, string> => {
+  const normalizedConversationIds = Array.from(
+    new Set(
+      conversationIds
+        .map((conversationId) => conversationId.trim())
+        .filter(Boolean),
+    ),
+  );
+  const watchedConversationIds = new Set(normalizedConversationIds);
+
+  const subscribe = (onStoreChange: () => void) => {
+    return queryClient.getQueryCache().subscribe((event) => {
+      const key = event?.query?.queryKey;
+      if (!Array.isArray(key) || key.length < 3) {
+        return;
+      }
+      if (key[0] !== "history" || key[1] !== "chat") {
+        return;
+      }
+      const conversationId = key[2];
+      if (typeof conversationId !== "string") {
+        return;
+      }
+      if (
+        watchedConversationIds.size > 0 &&
+        !watchedConversationIds.has(conversationId)
+      ) {
+        return;
+      }
+      onStoreChange();
+    });
+  };
+
+  const lastSnapshotRef = useRef<Record<string, string>>({});
+  const getSnapshot = () => {
+    const nextSnapshot = getConversationTitleMap(normalizedConversationIds);
+    const previousSnapshot = lastSnapshotRef.current;
+    const previousKeys = Object.keys(previousSnapshot);
+    const nextKeys = Object.keys(nextSnapshot);
+    if (
+      previousKeys.length === nextKeys.length &&
+      nextKeys.every((key) => previousSnapshot[key] === nextSnapshot[key])
+    ) {
+      return previousSnapshot;
+    }
+    lastSnapshotRef.current = nextSnapshot;
+    return nextSnapshot;
+  };
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
 
