@@ -33,9 +33,9 @@ export function IconButton({
   ...props
 }: IconButtonProps) {
   const variants: Record<IconButtonVariant, string> = {
-    neo: "bg-yellow-500/90 active:bg-yellow-500",
-    primary: "bg-yellow-500/90 active:bg-yellow-500",
-    secondary: "bg-slate-800/60 border border-white/5 active:bg-slate-800",
+    neo: "bg-yellow-500/75 active:bg-yellow-500/90",
+    primary: "bg-yellow-500/75 active:bg-yellow-500/90",
+    secondary: "bg-slate-800/35 border border-white/10 active:bg-slate-800/60",
     outline: "border border-white/10 active:bg-white/5",
     ghost: "active:bg-white/5",
     danger: "bg-red-500/10 border border-red-500/20 active:bg-red-500/20",
@@ -56,12 +56,12 @@ export function IconButton({
   };
 
   const iconColors: Record<IconButtonVariant, string> = {
-    neo: "#000000",
-    primary: "#000000",
-    secondary: "#94a3b8",
+    neo: "#000000cc",
+    primary: "#000000cc",
+    secondary: "#64748b",
     outline: "#64748b",
-    ghost: "#64748b",
-    danger: "#f87171",
+    ghost: "#475569",
+    danger: "#f87171cc",
   };
 
   const isDisabled = disabled || loading;
