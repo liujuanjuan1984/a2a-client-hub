@@ -9,7 +9,7 @@ export function Input({ label, error, className, ...props }: InputProps) {
   return (
     <View className="gap-1.5">
       {label ? (
-        <Text className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+        <Text className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
           {label}
         </Text>
       ) : null}
@@ -19,7 +19,7 @@ export function Input({ label, error, className, ...props }: InputProps) {
         {...props}
       />
       {error ? (
-        <Text className="text-[11px] font-bold text-red-400/80">{error}</Text>
+        <Text className="text-[11px] font-medium text-red-400/80">{error}</Text>
       ) : null}
     </View>
   );

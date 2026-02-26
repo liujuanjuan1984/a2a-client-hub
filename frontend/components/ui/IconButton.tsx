@@ -33,12 +33,12 @@ export function IconButton({
   ...props
 }: IconButtonProps) {
   const variants: Record<IconButtonVariant, string> = {
-    neo: "bg-primary active:opacity-80",
-    primary: "bg-primary active:opacity-80",
-    secondary: "bg-slate-800 active:bg-slate-700",
-    outline: "border border-white/20 active:bg-white/10",
-    ghost: "active:bg-white/10",
-    danger: "bg-red-500/20 active:bg-red-500/30",
+    neo: "bg-yellow-500/75 active:bg-yellow-500/90",
+    primary: "bg-yellow-500/75 active:bg-yellow-500/90",
+    secondary: "bg-slate-800/35 border border-white/20 active:bg-slate-800/80",
+    outline: "border border-white/10 active:bg-white/5",
+    ghost: "active:bg-white/5",
+    danger: "bg-red-500/10 border border-red-500/20 active:bg-red-500/20",
   };
 
   const sizes: Record<IconButtonSize, string> = {
@@ -56,12 +56,12 @@ export function IconButton({
   };
 
   const iconColors: Record<IconButtonVariant, string> = {
-    neo: "#000000",
-    primary: "#000000",
-    secondary: "#FFFFFF",
-    outline: "#FFFFFF",
-    ghost: "#FFFFFF",
-    danger: "#f87171",
+    neo: "#000000cc",
+    primary: "#000000cc",
+    secondary: "#94a3b8",
+    outline: "#64748b",
+    ghost: "#475569",
+    danger: "#f87171cc",
   };
 
   const isDisabled = disabled || loading;

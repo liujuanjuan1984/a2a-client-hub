@@ -122,7 +122,7 @@ export function ScheduledJobForm({
   const isCurrentlyRunning = lastRunStatus === "running";
 
   const renderLabel = (text: string) => (
-    <Text className="mt-4 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+    <Text className="mt-4 text-[11px] font-medium uppercase tracking-wider text-slate-500">
       {text}
     </Text>
   );
@@ -131,7 +131,7 @@ export function ScheduledJobForm({
     <View className="mb-4 rounded-2xl bg-surface p-5 shadow-sm">
       {isCurrentlyRunning && (
         <View className="mb-5 rounded-xl bg-primary/10 p-4 border border-primary/20">
-          <Text className="text-[11px] font-bold text-primary leading-5">
+          <Text className="text-[11px] font-medium text-primary leading-5">
             Cannot edit a job while it is currently running. Please wait for it
             to finish or disable it first.
           </Text>
@@ -168,7 +168,7 @@ export function ScheduledJobForm({
               onPress={() => onChange({ agent_id: agent.id })}
             >
               <Text
-                className={`text-[11px] font-bold ${selected ? "text-primary" : "text-slate-400"}`}
+                className={`text-[11px] font-medium ${selected ? "text-primary" : "text-slate-400"}`}
               >
                 {agent.name}
               </Text>
@@ -197,7 +197,7 @@ export function ScheduledJobForm({
               }
             >
               <Text
-                className={`text-[11px] font-bold ${selected ? "text-primary" : "text-slate-400"}`}
+                className={`text-[11px] font-medium ${selected ? "text-primary" : "text-slate-400"}`}
               >
                 {option.label}
               </Text>
@@ -232,7 +232,7 @@ export function ScheduledJobForm({
                   }
                 >
                   <Text
-                    className={`text-[11px] font-bold ${selected ? "text-primary" : "text-slate-400"}`}
+                    className={`text-[11px] font-medium ${selected ? "text-primary" : "text-slate-400"}`}
                   >
                     {option.label}
                   </Text>
@@ -361,7 +361,7 @@ export function ScheduledJobForm({
               onPress={() => onChange({ conversation_policy: option.value })}
             >
               <Text
-                className={`text-[11px] font-bold ${selected ? "text-primary" : "text-slate-400"}`}
+                className={`text-[11px] font-medium ${selected ? "text-primary" : "text-slate-400"}`}
               >
                 {option.label}
               </Text>
