@@ -195,16 +195,14 @@ export function ScheduledJobCard({
           <Button
             label="Edit"
             size="xs"
-            variant={job.enabled ? "outline" : "secondary"}
+            variant="secondary"
             iconLeft="create-outline"
             onPress={onEdit}
           />
           <Button
             label={promptExpanded ? "Less" : "Info"}
             size="xs"
-            variant={
-              promptExpanded ? "primary" : job.enabled ? "outline" : "secondary"
-            }
+            variant={promptExpanded ? "primary" : "secondary"}
             iconLeft={
               promptExpanded ? "chevron-up" : "information-circle-outline"
             }
@@ -213,9 +211,7 @@ export function ScheduledJobCard({
           <Button
             label={executionsOpen ? "Hide" : "History"}
             size="xs"
-            variant={
-              executionsOpen ? "primary" : job.enabled ? "outline" : "secondary"
-            }
+            variant={executionsOpen ? "primary" : "secondary"}
             iconLeft={executionsOpen ? "time" : "time-outline"}
             onPress={onToggleExecutions}
           />
