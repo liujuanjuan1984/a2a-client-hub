@@ -105,16 +105,13 @@ export const listSessionTimelinePage = async (
       before?: string;
       limit: number;
     }
-  >(
-    `/me/conversations/${encodeURIComponent(conversationId)}/messages/timeline:query`,
-    {
-      method: "POST",
-      body: {
-        ...(before ? { before } : {}),
-        limit,
-      },
+  >(`/me/conversations/${encodeURIComponent(conversationId)}/messages:query`, {
+    method: "POST",
+    body: {
+      ...(before ? { before } : {}),
+      limit,
     },
-  );
+  });
 
   const resolvedItems = Array.isArray(response.items) ? response.items : [];
   const resolvedPageInfo =

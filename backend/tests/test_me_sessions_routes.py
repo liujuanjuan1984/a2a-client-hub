@@ -177,7 +177,7 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         assert "session_id" not in continue_payload
 
         msgs_resp = await client.post(
-            f"/me/conversations/{session.id}/messages/timeline:query",
+            f"/me/conversations/{session.id}/messages:query",
             json={"limit": 8},
         )
         assert msgs_resp.status_code == 200

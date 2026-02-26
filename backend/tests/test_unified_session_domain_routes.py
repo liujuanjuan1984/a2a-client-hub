@@ -153,7 +153,7 @@ async def test_conversation_routes_use_conversation_id_only(
         assert all("id" not in item for item in list_payload["items"])
 
         timeline_resp = await client.post(
-            f"/me/conversations/{manual_session.id}/messages/timeline:query",
+            f"/me/conversations/{manual_session.id}/messages:query",
             json={"limit": 8},
         )
         assert timeline_resp.status_code == 200
@@ -259,7 +259,7 @@ async def test_invalid_conversation_id_returns_400(
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/conversations/not-a-uuid/messages/timeline:query",
+            "/me/conversations/not-a-uuid/messages:query",
             json={"limit": 8},
         )
         assert resp.status_code == 400
@@ -279,14 +279,14 @@ async def test_invalid_timeline_cursor_returns_400(
         current_user=user,
     ) as client:
         resp = await client.post(
-            f"/me/conversations/{conversation_id}/messages/timeline:query",
+            f"/me/conversations/{conversation_id}/messages:query",
             json={"before": "not-valid-cursor", "limit": 8},
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "invalid_before_cursor"
 
 
-async def test_legacy_messages_and_blocks_routes_are_removed(
+async def test_legacy_timeline_and_blocks_routes_are_removed(
     async_db_session,
     async_session_maker,
 ):
@@ -299,14 +299,19 @@ async def test_legacy_messages_and_blocks_routes_are_removed(
         current_user=user,
     ) as client:
         resp = await client.post(
-            f"/me/conversations/{conversation_id}/messages:query",
-            json={"page": 1, "size": 20},
+            f"/me/conversations/{conversation_id}/messages/timeline:query",
+            json={"limit": 8},
         )
         assert resp.status_code == 404
 
         resp = await client.post(
             f"/me/conversations/{conversation_id}/messages/blocks:query",
             json={"messageIds": [str(uuid4())], "mode": "full"},
+        )
+        assert resp.status_code == 404
+
+        resp = await client.post(
+            f"/me/conversations/{conversation_id}/messages/{uuid4()}/blocks/1:query",
         )
         assert resp.status_code == 404
 
@@ -463,7 +468,7 @@ async def test_timeline_query_reads_local_history_for_opencode_bound_conversatio
         current_user=user,
     ) as client:
         resp = await client.post(
-            f"/me/conversations/{session.id}/messages/timeline:query",
+            f"/me/conversations/{session.id}/messages:query",
             json={"limit": 8},
         )
         assert resp.status_code == 200

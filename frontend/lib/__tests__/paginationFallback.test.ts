@@ -138,7 +138,7 @@ describe("API modules using shared pagination fallback", () => {
       nextBefore: "cursor-1",
     });
     expect(mockedApiRequest).toHaveBeenCalledWith(
-      "/me/conversations/conversation-1/messages/timeline:query",
+      "/me/conversations/conversation-1/messages:query",
       {
         method: "POST",
         body: {

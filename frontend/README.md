@@ -106,14 +106,14 @@ Notes:
   history-title derivation).
 
 Chat timeline loading is unified via
-`POST /me/conversations/{conversation_id}/messages/timeline:query`
+`POST /me/conversations/{conversation_id}/messages:query`
 (`limit` + `before` cursor for backward pagination from latest window).
 To avoid transport contention, chat history auto-refetch is paused while a
 message is actively streaming.
 
 Message id contract:
 
-- `messages/timeline:query` returns canonical local UUIDs in `item.id`.
+- `messages:query` returns canonical local UUIDs in `item.id`.
 - Frontend store/cache keys must use `item.id` only.
 - Do not rely on alias ids from metadata.
 - Stream events must use snake_case contract fields: `message_id`, `event_id`, `seq`.

@@ -68,10 +68,10 @@ async def list_unified_sessions(
 
 
 @router.post(
-    "/{conversation_id}/messages/timeline:query",
+    "/{conversation_id}/messages:query",
     response_model=SessionTimelineQueryResponse,
 )
-async def list_unified_session_timeline(
+async def list_unified_session_messages(
     *,
     conversation_id: str,
     payload: SessionTimelineQueryRequest,

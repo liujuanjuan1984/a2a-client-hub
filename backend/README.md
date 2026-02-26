@@ -166,7 +166,7 @@ The backend now exposes a unified conversation read model for manual,
 scheduled, and OpenCode sessions:
 
 - `POST /api/v1/me/conversations:query`
-- `POST /api/v1/me/conversations/{conversation_id}/messages/timeline:query`
+- `POST /api/v1/me/conversations/{conversation_id}/messages:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
 
 `conversations:query` supports optional `agent_id` filtering so Chat session
@@ -188,7 +188,7 @@ Client-generated chat sessions should use raw UUID conversation IDs, for example
 
 Message query contract boundary:
 
-- `messages/timeline:query` is the primary chat read model and returns ordered
+- `messages:query` is the primary chat read model and returns ordered
   message timeline items with block payloads plus backward cursor pagination
   (`pageInfo.hasMoreBefore`, `pageInfo.nextBefore`).
 - `SessionTimelineMessageItem.id` is the canonical local message UUID for all roles.

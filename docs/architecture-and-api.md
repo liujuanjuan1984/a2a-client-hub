@@ -146,7 +146,7 @@ that agent only.
 ### Query Unified Session Timeline (Primary Chat Read Model)
 
 ```bash
-curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages/timeline:query" \
+curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages:query" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -155,7 +155,7 @@ curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages/timeline
   }'
 ```
 
-`messages/timeline:query` returns ordered timeline items including blocks and
+`messages:query` returns ordered timeline items including blocks and
 cursor page info (`hasMoreBefore`, `nextBefore`) for backward pagination.
 
 ## Notes
