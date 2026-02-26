@@ -10,10 +10,8 @@ export type SessionMessageItem = {
   role: string;
   created_at: string;
   status?: string;
-  metadata?: Record<string, unknown> | null;
   blocks?: {
     id: string;
-    messageId: string;
     seq: number;
     type: string;
     content?: string | null;
@@ -33,11 +31,27 @@ const normalizeSessionMessageRole = (value: string): ChatRole => {
   return "system";
 };
 
-const resolveMessageStatus = (status: unknown): "streaming" | "done" => {
+const resolveMessageStatus = (
+  status: unknown,
+): NonNullable<ChatMessage["status"]> => {
   if (typeof status !== "string") {
     return "done";
   }
-  return status.trim().toLowerCase() === "streaming" ? "streaming" : "done";
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "streaming" || normalized === "in_progress") {
+    return "streaming";
+  }
+  if (normalized === "error" || normalized === "failed") {
+    return "error";
+  }
+  if (
+    normalized === "interrupted" ||
+    normalized === "cancelled" ||
+    normalized === "canceled"
+  ) {
+    return "interrupted";
+  }
+  return "done";
 };
 
 const rolePriority = (role: ChatRole): number => {

@@ -182,8 +182,6 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         )
         assert msgs_resp.status_code == 200
         msgs_payload = msgs_resp.json()
-        assert msgs_payload["meta"]["conversationId"] == str(session.id)
-        assert msgs_payload["meta"]["source"] == "scheduled"
         assert len(msgs_payload["items"]) == 2
         assert msgs_payload["items"][0]["role"] == "user"
         assert msgs_payload["items"][1]["role"] == "agent"

@@ -19,11 +19,9 @@ export type SessionListItem = {
 
 export type SessionMessageBlockItem = {
   id: string;
-  messageId: string;
   seq: number;
   type: string;
   content?: string | null;
-  contentLength: number;
   isFinished: boolean;
 };
 
@@ -32,7 +30,6 @@ export type SessionMessageItem = {
   role: "user" | "agent" | "system";
   created_at: string;
   status?: string;
-  metadata?: Record<string, unknown> | null;
   blocks?: SessionMessageBlockItem[];
 };
 
@@ -99,7 +96,6 @@ export const listSessionMessagesPage = async (
     {
       items: SessionMessageItem[];
       pageInfo?: SessionMessagesPageInfo;
-      meta?: unknown;
     },
     {
       before?: string;
@@ -138,10 +134,6 @@ export const listSessionMessagesPage = async (
   return {
     items: resolvedItems,
     pageInfo: resolvedPageInfo,
-    meta:
-      response.meta && typeof response.meta === "object"
-        ? (response.meta as Record<string, unknown>)
-        : undefined,
   };
 };
 

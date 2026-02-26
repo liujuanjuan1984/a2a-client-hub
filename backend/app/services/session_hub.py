@@ -156,19 +156,6 @@ class SessionHubService:
         limit: int,
     ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
         resolved_conversation_id = _parse_conversation_id(conversation_id)
-        target = await self._resolve_conversation_target(
-            db,
-            user_id=user_id,
-            conversation_id=resolved_conversation_id,
-        )
-        session = target.thread if target else None
-        external_session_id = normalize_non_empty_text(
-            session.external_session_id if session else None
-        )
-        resolved_source = _resolve_session_source(
-            thread_source=session.source if session else None,
-            fallback_source=target.source if target else None,
-        )
 
         cursor = _parse_messages_before_cursor(before) if before else None
         sender_priority = case(
@@ -231,26 +218,7 @@ class SessionHubService:
         items: list[dict[str, Any]] = []
         next_before_cursor: str | None = None
         for message in messages:
-            message_metadata = _sanitize_message_metadata_for_api(
-                getattr(message, "message_metadata", None)
-            )
             role = _sender_to_role(getattr(message, "sender", ""))
-            if isinstance(message.id, UUID) and role == "agent":
-                if isinstance(message.status, str) and message.status.strip():
-                    message_metadata.setdefault("stream_status", message.status.strip())
-                stream_meta = message_metadata.get("stream")
-                if not isinstance(stream_meta, dict):
-                    stream_meta = {}
-                if message.finish_reason:
-                    stream_meta.setdefault("finish_reason", message.finish_reason)
-                if message.error_code:
-                    existing_error = stream_meta.get("error")
-                    if not isinstance(existing_error, dict):
-                        existing_error = {}
-                    existing_error.setdefault("error_code", message.error_code)
-                    stream_meta["error"] = existing_error
-                if stream_meta:
-                    message_metadata["stream"] = stream_meta
             raw_blocks = (
                 blocks_by_message_id.get(message.id, [])
                 if isinstance(message.id, UUID)
@@ -265,7 +233,6 @@ class SessionHubService:
                     "role": role,
                     "created_at": message.created_at,
                     "status": status,
-                    "metadata": message_metadata,
                     "blocks": _render_blocks(raw_blocks),
                 }
             )
@@ -284,26 +251,11 @@ class SessionHubService:
             except (TypeError, ValueError):
                 next_before_cursor = None
 
-        meta = {
-            "conversationId": str(resolved_conversation_id),
-            "source": resolved_source,
-            "agent_id": (
-                str(session.agent_id)
-                if session and isinstance(session.agent_id, UUID)
-                else None
-            ),
-            "agent_source": (
-                session.agent_source
-                if session and isinstance(session.agent_source, str)
-                else None
-            ),
-            "upstream_session_id": external_session_id,
-        }
         page_info = {
             "hasMoreBefore": has_more_before,
             "nextBefore": next_before_cursor,
         }
-        return items, {"pageInfo": page_info, "meta": meta}, False
+        return items, {"pageInfo": page_info}, False
 
     async def continue_session(
         self,
@@ -1533,16 +1485,6 @@ def _derive_session_title_from_query(query: str) -> str | None:
     return trimmed_query[: ConversationThread.TITLE_MAX_LENGTH]
 
 
-def _sanitize_message_metadata_for_api(metadata: Any) -> dict[str, Any]:
-    resolved = dict(metadata) if isinstance(metadata, dict) else {}
-    resolved.pop("message_blocks", None)
-    resolved.pop("_block_cursor", None)
-    for key in list(resolved.keys()):
-        if isinstance(key, str) and key.startswith("_"):
-            resolved.pop(key, None)
-    return resolved
-
-
 def _normalize_block_type(raw_type: str | None) -> str:
     normalized = (raw_type or "").strip().lower()
     if normalized in {"text", "reasoning", "tool_call", "system_error"}:
@@ -1583,11 +1525,9 @@ def _render_block_item(
     block_type = _normalize_block_type(block.block_type)
     return {
         "id": str(block.id),
-        "messageId": str(block.message_id),
         "seq": int(block.block_seq),
         "type": block_type,
         "content": raw_content,
-        "contentLength": len(raw_content),
         "isFinished": bool(block.is_finished),
     }
 

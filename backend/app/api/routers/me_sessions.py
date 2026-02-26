@@ -98,7 +98,6 @@ async def list_unified_session_messages(
         {
             "items": items,
             "pageInfo": extra["pageInfo"],
-            "meta": extra["meta"],
         }
     )
 

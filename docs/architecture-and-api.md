@@ -157,6 +157,8 @@ curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages:query" \
 
 `messages:query` returns ordered timeline items including blocks and
 cursor page info (`hasMoreBefore`, `nextBefore`) for backward pagination.
+The response is minimal by design: no top-level `meta`, and no per-message
+`metadata` object.
 
 ## Notes
 

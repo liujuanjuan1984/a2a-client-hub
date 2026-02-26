@@ -149,12 +149,10 @@ describe("useChatHistoryQuery", () => {
             role: "agent",
             created_at: "2026-02-12T00:00:01.000Z",
             status: "done",
-            metadata: {},
             blocks: [],
           },
         ],
         pageInfo: { hasMoreBefore: true, nextBefore: "cursor-1" },
-        meta: undefined,
       })
       .mockResolvedValueOnce({
         items: [
@@ -163,12 +161,10 @@ describe("useChatHistoryQuery", () => {
             role: "user",
             created_at: "2026-02-12T00:00:00.000Z",
             status: "done",
-            metadata: {},
             blocks: [],
           },
         ],
         pageInfo: { hasMoreBefore: false, nextBefore: null },
-        meta: undefined,
       });
 
     renderHook(() =>

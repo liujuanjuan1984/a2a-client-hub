@@ -14,7 +14,7 @@ export type ChatMessage = {
   role: ChatRole;
   content: string;
   createdAt: string;
-  status?: "streaming" | "done";
+  status?: "streaming" | "done" | "error" | "interrupted";
   blocks?: MessageBlock[];
 };
 

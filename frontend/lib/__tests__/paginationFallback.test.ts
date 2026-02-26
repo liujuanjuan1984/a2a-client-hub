@@ -117,7 +117,6 @@ describe("API modules using shared pagination fallback", () => {
           role: "agent",
           created_at: "2026-02-24T00:00:01.000Z",
           status: "done",
-          metadata: {},
           blocks: [],
         },
       ],
@@ -125,7 +124,6 @@ describe("API modules using shared pagination fallback", () => {
         hasMoreBefore: true,
         nextBefore: "cursor-1",
       },
-      meta: { conversationId: "conversation-1", source: "manual" },
     } as any);
 
     const result = await listSessionMessagesPage("conversation-1", {

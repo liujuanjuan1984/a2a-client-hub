@@ -59,22 +59,10 @@ class SessionMessagesQueryRequest(BaseModel):
 
 class SessionMessageBlockItem(BaseModel):
     id: str
-    message_id: str = Field(alias="messageId")
     seq: int
     type: str
     content: Optional[str] = None
-    content_length: int = Field(alias="contentLength")
     is_finished: bool = Field(alias="isFinished")
-
-    model_config = {"populate_by_name": True}
-
-
-class SessionMessagesMeta(BaseModel):
-    conversation_id: str = Field(alias="conversationId")
-    source: SessionSource
-    agent_id: Optional[str] = None
-    agent_source: Optional[AgentSource] = None
-    upstream_session_id: Optional[str] = None
 
     model_config = {"populate_by_name": True}
 
@@ -84,7 +72,6 @@ class SessionMessageItem(BaseModel):
     role: Literal["user", "agent", "system"]
     created_at: datetime
     status: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
     blocks: list[SessionMessageBlockItem] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
@@ -100,7 +87,6 @@ class SessionMessagesPageInfo(BaseModel):
 class SessionMessagesQueryResponse(BaseModel):
     items: list[SessionMessageItem]
     page_info: SessionMessagesPageInfo = Field(alias="pageInfo")
-    meta: SessionMessagesMeta
 
     model_config = {"populate_by_name": True}
 
@@ -117,7 +103,6 @@ __all__ = [
     "SessionContinueResponse",
     "SessionListResponse",
     "SessionMessageBlockItem",
-    "SessionMessagesMeta",
     "SessionMessageItem",
     "SessionMessagesPageInfo",
     "SessionMessagesQueryRequest",

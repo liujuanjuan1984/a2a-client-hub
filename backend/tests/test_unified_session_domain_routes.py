@@ -159,7 +159,6 @@ async def test_conversation_routes_use_conversation_id_only(
         assert messages_resp.status_code == 200
         messages_payload = messages_resp.json()
         assert len(messages_payload["items"]) == 2
-        assert messages_payload["meta"]["conversationId"] == str(manual_session.id)
         messages_user_item = next(
             item for item in messages_payload["items"] if item["role"] == "user"
         )
@@ -473,9 +472,6 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
         )
         assert resp.status_code == 200
         payload = resp.json()
-        assert payload["meta"]["conversationId"] == str(session.id)
-        assert payload["meta"]["source"] == "manual"
-        assert payload["meta"]["upstream_session_id"] == "ses_local_hist_1"
         assert len(payload["items"]) == 2
         assert payload["items"][0]["role"] == "user"
         assert payload["items"][1]["role"] == "agent"
