@@ -665,6 +665,58 @@ async def test_hub_interrupt_reply_rejects_legacy_payload_fields(
     assert fake_extensions.calls == []
 
 
+@pytest.mark.parametrize("reply", ["once", "reject", "always"])
+@pytest.mark.asyncio
+async def test_hub_opencode_permission_reply_accepts_supported_reply_values(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    reply: str,
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_permission_reply_values@example.com",
+        user_email="alice_permission_reply_values@example.com",
+        token="secret-token-opencode-permission-values",
+    )
+
+    fake_extensions = _FakeExtensionsService()
+    monkeypatch.setattr(
+        opencode_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_opencode_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply",
+            json={
+                "request_id": "perm-reply-values",
+                "reply": reply,
+            },
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["success"] is True
+        assert payload["result"] == {"ok": True, "request_id": "perm-reply-values"}
+
+    permission_calls = [
+        call
+        for call in fake_extensions.calls
+        if call["fn"] == "opencode_reply_permission"
+    ]
+    assert len(permission_calls) == 1
+    assert permission_calls[0]["reply"] == reply
+
+
 @pytest.mark.asyncio
 async def test_hub_prompt_async_rejects_invalid_directory_type_with_400(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
@@ -771,6 +823,7 @@ async def test_hub_opencode_session_continue_maps_extension_error_to_http_status
         ("invalid_params", "Invalid params", 400),
     ],
 )
+@pytest.mark.parametrize("reply", ["once", "reject", "always"])
 @pytest.mark.asyncio
 async def test_hub_opencode_permission_reply_maps_extension_error_to_http_status(
     async_session_maker,
@@ -779,6 +832,7 @@ async def test_hub_opencode_permission_reply_maps_extension_error_to_http_status
     error_code: str,
     message: str,
     expected_status: int,
+    reply: str,
 ) -> None:
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
 
@@ -810,7 +864,7 @@ async def test_hub_opencode_permission_reply_maps_extension_error_to_http_status
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply",
             json={
                 "request_id": "perm-404",
-                "reply": "once",
+                "reply": reply,
             },
         )
         assert resp.status_code == expected_status
@@ -818,6 +872,8 @@ async def test_hub_opencode_permission_reply_maps_extension_error_to_http_status
         assert payload["success"] is False
         assert payload["error_code"] == error_code
         assert payload["upstream_error"] == {"message": message}
+    assert len(fake_extensions.calls) == 1
+    assert fake_extensions.calls[0]["reply"] == reply
 
 
 @pytest.mark.parametrize(
