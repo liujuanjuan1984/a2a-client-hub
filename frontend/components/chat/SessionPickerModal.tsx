@@ -3,34 +3,34 @@ import React from "react";
 import { FlatList, Modal, Pressable, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
-import { type AgentSession } from "@/lib/chat-utils";
-import { useConversationTitleMap } from "@/lib/chatHistoryCache";
+import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
+import { type SessionListItem } from "@/lib/api/sessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import { useChatStore } from "@/store/chat";
 
 function SessionItem({
-  conversationId,
-  session,
-  title,
+  item,
   isActive,
   onSelect,
 }: {
-  conversationId: string;
-  session: AgentSession;
-  title: string;
+  item: SessionListItem;
   isActive: boolean;
   onSelect: (id: string) => void;
 }) {
   const createdAtText = formatLocalDateTimeYmdHm(
-    session.createdAt ?? session.lastActiveAt,
+    item.created_at ?? item.last_active_at,
   );
+  const title =
+    typeof item.title === "string" && item.title.trim().length > 0
+      ? item.title
+      : "Session";
 
   return (
     <Pressable
       className={`mb-2 flex-row items-center justify-between rounded-xl p-4 ${
         isActive ? "bg-primary/10 border border-primary/20" : "bg-black/20"
       }`}
-      onPress={() => onSelect(conversationId)}
+      onPress={() => onSelect(item.conversationId)}
     >
       <View className="flex-1">
         <Text
@@ -66,18 +66,22 @@ export function SessionPickerModal({
   const generateConversationId = useChatStore(
     (state) => state.generateConversationId,
   );
-  const getSessionsByAgentId = useChatStore(
-    (state) => state.getSessionsByAgentId,
-  );
-  const sessions = useChatStore((state) => state.sessions);
+  const normalizedAgentId =
+    typeof agentId === "string" && agentId.trim().length > 0
+      ? agentId.trim()
+      : null;
 
-  const agentSessions = React.useMemo(() => {
-    if (!agentId) return [];
-    return getSessionsByAgentId(agentId);
-  }, [agentId, getSessionsByAgentId, sessions]);
-  const sessionTitles = useConversationTitleMap(
-    agentSessions.map(([conversationId]) => conversationId),
-  );
+  const {
+    items: agentSessions,
+    loading,
+    loadingMore,
+    hasMore,
+    loadMore,
+  } = useSessionsDirectoryQuery({
+    agentId: normalizedAgentId,
+    enabled: visible && Boolean(normalizedAgentId),
+    size: 50,
+  });
 
   return (
     <Modal
@@ -114,27 +118,45 @@ export function SessionPickerModal({
               onClose();
             }}
           />
-          {agentSessions.length === 0 ? (
+          {!normalizedAgentId ? (
+            <View className="py-8 items-center">
+              <Text className="text-slate-400">No agent selected.</Text>
+            </View>
+          ) : loading ? (
+            <View className="py-8 items-center">
+              <Text className="text-slate-400">Loading sessions...</Text>
+            </View>
+          ) : agentSessions.length === 0 ? (
             <View className="py-8 items-center">
               <Text className="text-slate-400">No previous sessions.</Text>
             </View>
           ) : (
             <FlatList
               data={agentSessions}
-              keyExtractor={(item) => item[0]}
+              keyExtractor={(item) => item.conversationId}
               renderItem={({ item }) => (
                 <SessionItem
-                  conversationId={item[0]}
-                  session={item[1]}
-                  title={sessionTitles[item[0]] ?? "New Session"}
-                  isActive={item[0] === currentConversationId}
+                  item={item}
+                  isActive={item.conversationId === currentConversationId}
                   onSelect={(id) => {
                     onSelect(id);
                     onClose();
                   }}
                 />
               )}
+              onEndReachedThreshold={0.4}
+              onEndReached={() => {
+                if (!hasMore || loadingMore) return;
+                loadMore().catch(() => undefined);
+              }}
               contentContainerStyle={{ paddingBottom: 24 }}
+              ListFooterComponent={
+                loadingMore ? (
+                  <View className="py-3 items-center">
+                    <Text className="text-[11px] text-slate-500">Loading…</Text>
+                  </View>
+                ) : null
+              }
             />
           )}
         </View>

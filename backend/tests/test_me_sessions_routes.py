@@ -187,3 +187,54 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         assert len(msgs_payload["items"]) == 2
         assert msgs_payload["items"][0]["role"] == "user"
         assert msgs_payload["items"][1]["role"] == "agent"
+
+
+async def test_me_sessions_query_supports_agent_id_filter(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent_a = await _create_agent(async_db_session, user_id=user.id, suffix="a")
+    agent_b = await _create_agent(async_db_session, user_id=user.id, suffix="b")
+    now = utc_now()
+
+    session_a = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent_a.id,
+        agent_source="personal",
+        title="Session A",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    session_b = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent_b.id,
+        agent_source="personal",
+        title="Session B",
+        last_active_at=now - timedelta(minutes=1),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session_a)
+    async_db_session.add(session_b)
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/conversations:query",
+            json={"page": 1, "size": 20, "agent_id": str(agent_a.id)},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["pagination"]["total"] == 1
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["conversationId"] == str(session_a.id)
+    assert payload["items"][0]["agent_id"] == str(agent_a.id)

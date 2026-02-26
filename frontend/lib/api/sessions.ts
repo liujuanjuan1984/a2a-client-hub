@@ -55,9 +55,14 @@ export const listSessionsPage = async (options?: {
   page?: number;
   size?: number;
   source?: UnifiedSessionSource;
+  agent_id?: string;
 }) => {
   const page = options?.page ?? 1;
   const size = options?.size ?? 50;
+  const agentId =
+    typeof options?.agent_id === "string" && options.agent_id.trim().length > 0
+      ? options.agent_id.trim()
+      : null;
   const response = await apiRequest<
     {
       items: SessionListItem[];
@@ -68,6 +73,7 @@ export const listSessionsPage = async (options?: {
       page: number;
       size: number;
       source?: UnifiedSessionSource;
+      agent_id?: string;
     }
   >("/me/conversations:query", {
     method: "POST",
@@ -75,6 +81,7 @@ export const listSessionsPage = async (options?: {
       page,
       size,
       ...(options?.source ? { source: options.source } : {}),
+      ...(agentId ? { agent_id: agentId } : {}),
     },
   });
 

@@ -24,7 +24,29 @@ export const queryKeys = {
         : (["scheduled-jobs", "executions", taskId] as const),
   },
   sessions: {
-    directory: () => ["sessions", "directory"] as const,
+    directory: (filters?: {
+      source?: string;
+      agentId?: string;
+      size?: number;
+    }) => {
+      const resolvedFilters: Record<string, string | number> = {};
+      if (typeof filters?.source === "string" && filters.source.trim()) {
+        resolvedFilters.source = filters.source.trim();
+      }
+      if (typeof filters?.agentId === "string" && filters.agentId.trim()) {
+        resolvedFilters.agent_id = filters.agentId.trim();
+      }
+      if (
+        typeof filters?.size === "number" &&
+        Number.isFinite(filters.size) &&
+        filters.size > 0
+      ) {
+        resolvedFilters.size = Math.floor(filters.size);
+      }
+      return Object.keys(resolvedFilters).length > 0
+        ? (["sessions", "directory", resolvedFilters] as const)
+        : (["sessions", "directory"] as const);
+    },
     scheduledJobs: () => ["scheduled-jobs", "list"] as const,
     scheduledJobExecutions: (taskId: string) =>
       ["scheduled-jobs", "executions", taskId] as const,

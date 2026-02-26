@@ -59,7 +59,6 @@ type ChatState = {
     },
   ) => void;
   clearPendingInterrupt: (conversationId: string, requestId?: string) => void;
-  getSessionsByAgentId: (agentId: string) => [string, AgentSession][];
   getLatestConversationIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
   generateConversationId: () => string;
@@ -375,14 +374,12 @@ export const useChatStore = create<ChatState>()(
           set,
         );
       },
-      getSessionsByAgentId: (agentId) => {
-        const sessions = Object.entries(get().sessions).filter(
-          ([_, session]) => session.agentId === agentId,
-        );
-        return sortSessionsByLastActive(sessions);
-      },
       getLatestConversationIdByAgentId: (agentId) => {
-        const sessions = get().getSessionsByAgentId(agentId);
+        const sessions = sortSessionsByLastActive(
+          Object.entries(get().sessions).filter(
+            ([_, session]) => session.agentId === agentId,
+          ),
+        );
         return sessions[0]?.[0];
       },
       cleanupSessions: () => {

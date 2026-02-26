@@ -171,6 +171,9 @@ scheduled, and OpenCode sessions:
 - `POST /api/v1/me/conversations/{conversation_id}/messages/{message_id}/blocks/{block_seq}:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
 
+`conversations:query` supports optional `agent_id` filtering so Chat session
+directory views can be fetched per-agent directly from backend.
+
 `continue` now returns the canonical fields and binding metadata:
 
 - `conversationId` (canonical conversation id)

@@ -190,6 +190,24 @@ jest.mock("@/hooks/useChatHistoryQuery", () => ({
   useSessionHistoryQuery: () => mockSessionHistoryState,
 }));
 
+jest.mock("@/hooks/useSessionsDirectoryQuery", () => ({
+  useSessionsDirectoryQuery: () => ({
+    error: null,
+    isError: false,
+    items: [],
+    setItems: jest.fn(),
+    nextPage: null,
+    hasMore: false,
+    loading: false,
+    refreshing: false,
+    loadingMore: false,
+    reset: jest.fn(),
+    loadFirstPage: jest.fn(async () => true),
+    loadMore: jest.fn(async () => {}),
+    refresh: jest.fn(async () => {}),
+  }),
+}));
+
 jest.mock("@/store/chat", () => ({
   useChatStore: (selector: (state: typeof mockChatState) => unknown) =>
     mockUseChatStore(selector),

@@ -21,6 +21,10 @@ class SessionQueryRequest(BaseModel):
         None,
         description="Filter by source (manual/scheduled)",
     )
+    agent_id: Optional[UUID] = Field(
+        None,
+        description="Filter by agent id.",
+    )
 
 
 class SessionViewItem(BaseModel):

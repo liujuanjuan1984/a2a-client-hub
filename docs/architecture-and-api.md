@@ -135,9 +135,13 @@ curl -X POST "$API_BASE_URL/me/conversations:query" \
   -H "Content-Type: application/json" \
   -d '{
     "page": 1,
-    "size": 20
+    "size": 20,
+    "agent_id": "<AGENT_ID>"
   }'
 ```
+
+`agent_id` is optional. When provided, the result is server-side filtered for
+that agent only.
 
 ### Query Unified Session Messages
 

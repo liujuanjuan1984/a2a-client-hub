@@ -87,6 +87,28 @@ describe("API modules using shared pagination fallback", () => {
     expect(result.nextPage).toBe(2);
   });
 
+  it("passes agent_id filter in sessions query body", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      items: [],
+      pagination: { page: 1, pages: 1 },
+    } as any);
+
+    await listSessionsPage({
+      page: 1,
+      size: 20,
+      agent_id: "agent-123",
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith("/me/conversations:query", {
+      method: "POST",
+      body: {
+        page: 1,
+        size: 20,
+        agent_id: "agent-123",
+      },
+    });
+  });
+
   it("resolves session messages nextPage from size heuristic", async () => {
     mockedApiRequest.mockResolvedValueOnce({
       items: [

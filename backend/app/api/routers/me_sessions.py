@@ -61,6 +61,7 @@ async def list_unified_sessions(
         page=payload.page,
         size=payload.size,
         source=payload.source,
+        agent_id=payload.agent_id,
     )
     if db_mutated:
         await commit_safely(db)

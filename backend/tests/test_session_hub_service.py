@@ -71,10 +71,50 @@ async def test_list_sessions_falls_back_to_session_title_for_placeholder_thread_
         page=1,
         size=50,
         source="manual",
+        agent_id=None,
     )
 
     assert len(items) == 1
     assert items[0]["title"] == "Session"
+
+
+async def test_list_sessions_filters_by_agent_id(async_db_session):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    kept_agent_id = uuid4()
+    skipped_agent_id = uuid4()
+    async_db_session.add(
+        ConversationThread(
+            user_id=user.id,
+            source=ConversationThread.SOURCE_MANUAL,
+            agent_id=kept_agent_id,
+            title="Session A",
+            last_active_at=utc_now(),
+            status=ConversationThread.STATUS_ACTIVE,
+        )
+    )
+    async_db_session.add(
+        ConversationThread(
+            user_id=user.id,
+            source=ConversationThread.SOURCE_MANUAL,
+            agent_id=skipped_agent_id,
+            title="Session B",
+            last_active_at=utc_now(),
+            status=ConversationThread.STATUS_ACTIVE,
+        )
+    )
+    await async_db_session.flush()
+
+    items, _, _ = await session_hub_service.list_sessions(
+        async_db_session,
+        user_id=user.id,
+        page=1,
+        size=50,
+        source="manual",
+        agent_id=kept_agent_id,
+    )
+
+    assert len(items) == 1
+    assert items[0]["agent_id"] == kept_agent_id
 
 
 async def test_bind_external_session_with_state_updates_title_from_invoke_hints(
