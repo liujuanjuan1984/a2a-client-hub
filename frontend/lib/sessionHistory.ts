@@ -20,12 +20,36 @@ export type SessionMessageItem = {
   }[];
 };
 
+type MapSessionMessagesOptions = {
+  keepEmptyMessages?: boolean;
+};
+
 const normalizeSessionMessageRole = (value: string): ChatRole => {
   const role = value.toLowerCase();
   if (role === "assistant") return "agent";
   if (role === "agent") return "agent";
   if (role === "user") return "user";
   return "system";
+};
+
+const resolveHeaderFallbackText = (
+  metadata: Record<string, unknown> | null | undefined,
+) => {
+  if (!metadata || typeof metadata !== "object") {
+    return "";
+  }
+  const candidates = [
+    metadata.summary_text,
+    metadata.summaryText,
+    metadata.content_preview,
+    metadata.contentPreview,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate;
+    }
+  }
+  return "";
 };
 
 const mapBlocks = (item: SessionMessageItem): MessageBlock[] => {
@@ -53,7 +77,9 @@ const mapBlocks = (item: SessionMessageItem): MessageBlock[] => {
 
 export const mapSessionMessagesToChatMessages = (
   items: SessionMessageItem[],
+  options?: MapSessionMessagesOptions,
 ): ChatMessage[] => {
+  const keepEmptyMessages = options?.keepEmptyMessages === true;
   const mapped: ChatMessage[] = [];
   items.forEach((item) => {
     const role = normalizeSessionMessageRole(item.role);
@@ -62,15 +88,17 @@ export const mapSessionMessagesToChatMessages = (
       return;
     }
     const blocks = mapBlocks(item);
-    const normalizedContent = projectPrimaryTextContent(blocks);
-    const hasRenderablePayload = normalizedContent.trim().length > 0;
-    if (!hasRenderablePayload) {
+    const blockContent = projectPrimaryTextContent(blocks);
+    const headerFallback = resolveHeaderFallbackText(item.metadata);
+    const normalizedContent =
+      blockContent.trim().length > 0 ? blockContent : headerFallback;
+    if (normalizedContent.trim().length === 0 && !keepEmptyMessages) {
       return;
     }
     mapped.push({
       id: messageId,
       role,
-      content: normalizedContent ?? "",
+      content: normalizedContent,
       createdAt: item.created_at,
       status: "done" as const,
       blocks,

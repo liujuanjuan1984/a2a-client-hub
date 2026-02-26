@@ -140,4 +140,28 @@ describe("ChatMessageItem collapsible blocks", () => {
       screen.getByTestId("chat-message-plain-message:text-expand"),
     ).toBeTruthy();
   });
+
+  it("requests message blocks on demand when content is not loaded", () => {
+    const onRequestMessageBlocks = jest.fn();
+    const message = buildAgentMessage({
+      id: "empty-agent-message",
+      content: "",
+      blocks: [],
+    });
+
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+        onRequestMessageBlocks={onRequestMessageBlocks}
+      />,
+    );
+
+    fireEvent.press(
+      screen.getByTestId("chat-message-empty-agent-message-load-content"),
+    );
+    expect(onRequestMessageBlocks).toHaveBeenCalledWith("empty-agent-message");
+  });
 });

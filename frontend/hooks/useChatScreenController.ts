@@ -130,6 +130,17 @@ export function useChatScreenController({
     sessionHistoryQuery.error instanceof Error
       ? sessionHistoryQuery.error.message
       : null;
+  const handleRequestMessageBlocks = useCallback(
+    (messageId: string) => {
+      sessionHistoryQuery.loadMessageBlocks(messageId).catch(() => undefined);
+    },
+    [sessionHistoryQuery],
+  );
+  const isMessageBlocksLoading = useCallback(
+    (messageId: string) =>
+      sessionHistoryQuery.isMessageBlocksLoading(messageId),
+    [sessionHistoryQuery],
+  );
   const sessionSource = session?.source ?? null;
   const pendingInterrupt = session?.pendingInterrupt ?? null;
   const pendingQuestionCount =
@@ -780,5 +791,7 @@ export function useChatScreenController({
     handleQuestionOptionPick,
     handleQuestionReply,
     handleQuestionReject,
+    handleRequestMessageBlocks,
+    isMessageBlocksLoading,
   };
 }

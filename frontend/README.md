@@ -109,6 +109,10 @@ History loading is unified via
 `POST /me/conversations/{conversation_id}/messages:query`.
 To avoid transport contention, chat history auto-refetch is paused while a
 message is actively streaming.
+`messages:query` is treated as a header-only endpoint in frontend (no automatic
+full blocks hydration). Message blocks are fetched on demand via
+`POST /me/conversations/{conversation_id}/messages/blocks:query` when content
+needs to be displayed in detail.
 
 Message id contract:
 

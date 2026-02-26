@@ -124,45 +124,6 @@ describe("API modules using shared pagination fallback", () => {
         },
       ],
     } as any);
-    mockedApiRequest.mockResolvedValueOnce({
-      items: [
-        {
-          messageId: "msg-1",
-          role: "user",
-          blockCount: 1,
-          hasBlocks: true,
-          blocks: [
-            {
-              id: "msg-1:block-1",
-              messageId: "msg-1",
-              seq: 1,
-              type: "text",
-              content: "hello",
-              contentLength: 5,
-              isFinished: true,
-            },
-          ],
-        },
-        {
-          messageId: "msg-2",
-          role: "agent",
-          blockCount: 1,
-          hasBlocks: true,
-          blocks: [
-            {
-              id: "msg-2:block-1",
-              messageId: "msg-2",
-              seq: 1,
-              type: "text",
-              content: "world",
-              contentLength: 5,
-              isFinished: true,
-            },
-          ],
-        },
-      ],
-      meta: { conversationId: "conversation-1", mode: "full" },
-    } as any);
 
     const result = await listSessionMessagesPage("conversation-1", {
       page: 1,
@@ -172,8 +133,9 @@ describe("API modules using shared pagination fallback", () => {
     expect(result.nextPage).toBe(2);
     expect(result.items[1]).toMatchObject({
       id: "msg-2",
-      blocks: [expect.objectContaining({ id: "msg-2:block-1" })],
+      role: "agent",
     });
+    expect(mockedApiRequest).toHaveBeenCalledTimes(1);
   });
 
   it("resolves scheduled jobs nextPage from parsed pagination", async () => {

@@ -5,8 +5,6 @@ import {
 } from "@/lib/api/pagination";
 import { type UnifiedSessionSource } from "@/lib/sessionIds";
 
-const BLOCKS_QUERY_BATCH_SIZE = 200;
-
 export type SessionListItem = {
   conversationId: string;
   source: UnifiedSessionSource;
@@ -110,49 +108,7 @@ export const listSessionMessagesPage = async (
 
   const parsed = parsePaginatedListResponse(response);
   const nextPage = resolveNextPageWithFallback({ parsed, page, size });
-
-  const messageIds = Array.from(
-    new Set(
-      parsed.items
-        .map((item) => item.id.trim())
-        .filter((item) => item.length > 0),
-    ),
-  );
-  if (messageIds.length === 0) {
-    return { ...parsed, nextPage };
-  }
-
-  const blocksByMessageId = new Map<string, SessionMessageBlockItem[]>();
-  for (
-    let start = 0;
-    start < messageIds.length;
-    start += BLOCKS_QUERY_BATCH_SIZE
-  ) {
-    const batchIds = messageIds.slice(start, start + BLOCKS_QUERY_BATCH_SIZE);
-    const blocksResponse = await querySessionMessageBlocks(conversationId, {
-      messageIds: batchIds,
-      mode: "full",
-    });
-    blocksResponse.items.forEach((item) => {
-      const sortedBlocks = [...(item.blocks ?? [])].sort(
-        (lhs, rhs) => lhs.seq - rhs.seq,
-      );
-      blocksByMessageId.set(item.messageId, sortedBlocks);
-    });
-  }
-
-  const hydratedItems = parsed.items.map((item) => {
-    return {
-      ...item,
-      blocks: blocksByMessageId.get(item.id) ?? [],
-    };
-  });
-
-  return {
-    ...parsed,
-    items: hydratedItems,
-    nextPage,
-  };
+  return { ...parsed, nextPage };
 };
 
 export const querySessionMessageBlocks = async (

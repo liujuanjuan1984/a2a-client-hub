@@ -71,4 +71,46 @@ describe("session history mapping", () => {
 
     expect(mapped).toEqual([]);
   });
+
+  it("uses metadata summary_text when blocks are absent", () => {
+    const mapped = mapSessionMessagesToChatMessages([
+      {
+        id: "4f08d8cb-93f5-4df5-b01c-383afbb2be26",
+        role: "assistant",
+        created_at: "2026-02-14T00:00:03.000Z",
+        metadata: {
+          summary_text: "summary from header",
+        },
+      },
+    ]);
+
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]).toMatchObject({
+      id: "4f08d8cb-93f5-4df5-b01c-383afbb2be26",
+      role: "agent",
+      content: "summary from header",
+    });
+  });
+
+  it("keeps empty messages when keepEmptyMessages is enabled", () => {
+    const mapped = mapSessionMessagesToChatMessages(
+      [
+        {
+          id: "5f4d5d35-9099-49a0-8ce2-2cf56d79314d",
+          role: "user",
+          created_at: "2026-02-14T00:00:04.000Z",
+          metadata: {},
+        },
+      ],
+      { keepEmptyMessages: true },
+    );
+
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]).toMatchObject({
+      id: "5f4d5d35-9099-49a0-8ce2-2cf56d79314d",
+      role: "user",
+      content: "",
+      blocks: [],
+    });
+  });
 });

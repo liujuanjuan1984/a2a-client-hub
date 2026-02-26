@@ -145,6 +145,8 @@ const mockSessionHistoryState = {
   error: null as Error | null,
   messages: [] as unknown[],
   loadMore: jest.fn(),
+  loadMessageBlocks: jest.fn(async () => {}),
+  isMessageBlocksLoading: jest.fn(() => false),
 };
 
 const mockUseChatStore = ((

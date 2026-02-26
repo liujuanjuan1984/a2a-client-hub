@@ -19,6 +19,7 @@ import {
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import {
   listSessionMessagesPage,
+  querySessionMessageBlocks,
   type SessionMessageItem,
 } from "@/lib/api/sessions";
 import { mergeExternalSessionRef, type AgentSession } from "@/lib/chat-utils";
@@ -36,6 +37,8 @@ import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { queryClient } from "@/services/queryClient";
 import { type AgentSource } from "@/store/agents";
+
+const BLOCKS_QUERY_BATCH_SIZE = 200;
 
 export type ChatRuntimeState = {
   sessions: Record<string, AgentSession>;
@@ -364,8 +367,49 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const size = 100;
     const maxPages = 20;
 
-    const collectPage = (items: SessionMessageItem[]) => {
-      const mapped = mapSessionMessagesToChatMessages(items);
+    const hydratePageBlocks = async (items: SessionMessageItem[]) => {
+      const messageIds = Array.from(
+        new Set(
+          items
+            .map((item) => (typeof item.id === "string" ? item.id.trim() : ""))
+            .filter((item) => item.length > 0),
+        ),
+      );
+      if (messageIds.length === 0) {
+        return items;
+      }
+
+      const blocksByMessageId = new Map<string, SessionMessageItem["blocks"]>();
+      for (
+        let start = 0;
+        start < messageIds.length;
+        start += BLOCKS_QUERY_BATCH_SIZE
+      ) {
+        const batchIds = messageIds.slice(
+          start,
+          start + BLOCKS_QUERY_BATCH_SIZE,
+        );
+        const response = await querySessionMessageBlocks(conversationId, {
+          messageIds: batchIds,
+          mode: "full",
+        });
+        response.items.forEach((item) => {
+          const sortedBlocks = [...(item.blocks ?? [])].sort(
+            (left, right) => left.seq - right.seq,
+          );
+          blocksByMessageId.set(item.messageId, sortedBlocks);
+        });
+      }
+
+      return items.map((item) => ({
+        ...item,
+        blocks: blocksByMessageId.get(item.id) ?? [],
+      }));
+    };
+
+    const collectPage = async (items: SessionMessageItem[]) => {
+      const hydratedItems = await hydratePageBlocks(items);
+      const mapped = mapSessionMessagesToChatMessages(hydratedItems);
       mapped.forEach((message) => {
         recovered.set(message.id, message);
       });
@@ -389,17 +433,17 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       const startPage = Math.max(1, totalPages - tailPageWindow + 1);
       for (let page = startPage; page <= totalPages; page += 1) {
         if (page === 1) {
-          collectPage(firstPage.items);
+          await collectPage(firstPage.items);
           continue;
         }
         const response = await listSessionMessagesPage(conversationId, {
           page,
           size,
         });
-        collectPage(response.items);
+        await collectPage(response.items);
       }
     } else {
-      collectPage(firstPage.items);
+      await collectPage(firstPage.items);
       let nextPage =
         typeof firstPage.nextPage === "number" ? firstPage.nextPage : undefined;
       let requestCount = 1;
@@ -413,7 +457,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           page: nextPage,
           size,
         });
-        collectPage(response.items);
+        await collectPage(response.items);
         nextPage =
           typeof response.nextPage === "number" ? response.nextPage : undefined;
         requestCount += 1;

@@ -77,6 +77,8 @@ export function ChatScreen({
         onQuestionOptionPick={controller.handleQuestionOptionPick}
         onQuestionReply={controller.handleQuestionReply}
         onQuestionReject={controller.handleQuestionReject}
+        onRequestMessageBlocks={controller.handleRequestMessageBlocks}
+        isMessageBlocksLoading={controller.isMessageBlocksLoading}
       />
 
       <ShortcutManagerModal
