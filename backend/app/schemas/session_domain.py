@@ -90,6 +90,32 @@ class SessionMessagesQueryResponse(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class SessionMessageBlocksQueryRequest(BaseModel):
+    block_ids: list[UUID] = Field(
+        alias="blockIds",
+        min_length=1,
+        max_length=50,
+        description="Block ids to fetch content details for.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessageBlockDetailItem(BaseModel):
+    id: str
+    type: str
+    content: Optional[str] = None
+    is_finished: bool = Field(alias="isFinished")
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessageBlocksQueryResponse(BaseModel):
+    items: list[SessionMessageBlockDetailItem]
+
+    model_config = {"populate_by_name": True}
+
+
 class SessionContinueResponse(BaseModel):
     conversation_id: str = Field(alias="conversationId")
     source: SessionSource
@@ -102,6 +128,9 @@ __all__ = [
     "SessionContinueResponse",
     "SessionListResponse",
     "SessionMessageBlockItem",
+    "SessionMessageBlockDetailItem",
+    "SessionMessageBlocksQueryRequest",
+    "SessionMessageBlocksQueryResponse",
     "SessionMessageItem",
     "SessionMessagesPageInfo",
     "SessionMessagesQueryRequest",

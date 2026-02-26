@@ -257,6 +257,43 @@ class SessionHubService:
         }
         return items, {"pageInfo": page_info}, False
 
+    async def list_message_blocks(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: str,
+        block_ids: list[UUID],
+    ) -> tuple[list[dict[str, Any]], bool]:
+        resolved_conversation_id = _parse_conversation_id(conversation_id)
+        ordered_ids = _dedupe_uuid_list_keep_order(block_ids)
+        if not ordered_ids:
+            return [], False
+
+        stmt = (
+            select(AgentMessageBlock)
+            .join(AgentMessage, AgentMessage.id == AgentMessageBlock.message_id)
+            .where(
+                and_(
+                    AgentMessageBlock.user_id == user_id,
+                    AgentMessage.user_id == user_id,
+                    AgentMessage.conversation_id == resolved_conversation_id,
+                    AgentMessageBlock.id.in_(ordered_ids),
+                )
+            )
+        )
+        blocks = list((await db.scalars(stmt)).all())
+        by_id = {
+            block.id: block
+            for block in blocks
+            if isinstance(block.id, UUID) and isinstance(block.message_id, UUID)
+        }
+        if any(block_id not in by_id for block_id in ordered_ids):
+            raise ValueError("block_not_found")
+
+        items = [_render_block_detail_item(by_id[block_id]) for block_id in ordered_ids]
+        return items, False
+
     async def continue_session(
         self,
         db: AsyncSession,
@@ -1523,6 +1560,8 @@ def _render_block_item(
 ) -> dict[str, Any]:
     raw_content = block.content if isinstance(block.content, str) else ""
     block_type = _normalize_block_type(block.block_type)
+    if block_type in {"reasoning", "tool_call"}:
+        raw_content = ""
     return {
         "id": str(block.id),
         "type": block_type,
@@ -1533,6 +1572,31 @@ def _render_block_item(
 
 def _render_blocks(blocks: list[AgentMessageBlock]) -> list[dict[str, Any]]:
     return [_render_block_item(block) for block in blocks]
+
+
+def _render_block_detail_item(
+    block: AgentMessageBlock,
+) -> dict[str, Any]:
+    raw_content = block.content if isinstance(block.content, str) else ""
+    return {
+        "id": str(block.id),
+        "type": _normalize_block_type(block.block_type),
+        "content": raw_content,
+        "isFinished": bool(block.is_finished),
+    }
+
+
+def _dedupe_uuid_list_keep_order(values: list[UUID]) -> list[UUID]:
+    deduped: list[UUID] = []
+    seen: set[UUID] = set()
+    for value in values:
+        if not isinstance(value, UUID):
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped
 
 
 def _derive_session_title_from_invoke_metadata(

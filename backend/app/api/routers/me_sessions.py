@@ -12,6 +12,8 @@ from app.db.transaction import commit_safely
 from app.schemas.session_domain import (
     SessionContinueResponse,
     SessionListResponse,
+    SessionMessageBlocksQueryRequest,
+    SessionMessageBlocksQueryResponse,
     SessionMessagesQueryRequest,
     SessionMessagesQueryResponse,
     SessionQueryRequest,
@@ -100,6 +102,35 @@ async def list_unified_session_messages(
             "pageInfo": extra["pageInfo"],
         }
     )
+
+
+@router.post(
+    "/{conversation_id}/blocks:query",
+    response_model=SessionMessageBlocksQueryResponse,
+)
+async def list_unified_session_message_blocks(
+    *,
+    conversation_id: str,
+    payload: SessionMessageBlocksQueryRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> SessionMessageBlocksQueryResponse:
+    try:
+        items, db_mutated = await session_hub_service.list_message_blocks(
+            db,
+            user_id=current_user.id,
+            conversation_id=conversation_id,
+            block_ids=payload.block_ids,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        raise HTTPException(
+            status_code=_status_code_for_session_error(detail),
+            detail=detail,
+        ) from exc
+    if db_mutated:
+        await commit_safely(db)
+    return SessionMessageBlocksQueryResponse.model_validate({"items": items})
 
 
 @router.post("/{conversation_id}:continue", response_model=SessionContinueResponse)

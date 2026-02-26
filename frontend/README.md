@@ -115,6 +115,8 @@ Message id contract:
 
 - `messages:query` returns canonical local UUIDs in `item.id`.
 - Frontend store/cache keys must use `item.id` only.
+- Non-text block details (`reasoning`/`tool_call`) are fetched on demand via
+  `POST /me/conversations/{conversation_id}/blocks:query`.
 - Stream events must use snake_case contract fields: `message_id`, `event_id`, `seq`.
 - Invoke payloads should carry both `userMessageId` and `agentMessageId` (UUID).
 - Message status semantics are preserved from history payloads (`streaming`,

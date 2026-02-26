@@ -7,7 +7,11 @@ import {
   listScheduledJobExecutionsPage,
   listScheduledJobsPage,
 } from "@/lib/api/scheduledJobs";
-import { listSessionMessagesPage, listSessionsPage } from "@/lib/api/sessions";
+import {
+  listSessionMessagesPage,
+  listSessionsPage,
+  querySessionMessageBlocks,
+} from "@/lib/api/sessions";
 
 jest.mock("@/lib/api/client", () => ({
   apiRequest: jest.fn(),
@@ -142,6 +146,40 @@ describe("API modules using shared pagination fallback", () => {
         body: {
           before: "cursor-0",
           limit: 8,
+        },
+      },
+    );
+  });
+
+  it("queries block details by blockIds", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: "block-1",
+          type: "tool_call",
+          content: '{"tool":"search"}',
+          isFinished: true,
+        },
+      ],
+    } as any);
+
+    const result = await querySessionMessageBlocks("conversation-1", {
+      blockIds: ["block-1"],
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      id: "block-1",
+      type: "tool_call",
+      content: '{"tool":"search"}',
+      isFinished: true,
+    });
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/conversations/conversation-1/blocks:query",
+      {
+        method: "POST",
+        body: {
+          blockIds: ["block-1"],
         },
       },
     );

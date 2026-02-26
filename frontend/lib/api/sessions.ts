@@ -24,6 +24,13 @@ export type SessionMessageBlockItem = {
   isFinished: boolean;
 };
 
+export type SessionMessageBlockDetailItem = {
+  id: string;
+  type: string;
+  content?: string | null;
+  isFinished: boolean;
+};
+
 export type SessionMessageItem = {
   id: string;
   role: "user" | "agent" | "system";
@@ -133,6 +140,32 @@ export const listSessionMessagesPage = async (
   return {
     items: resolvedItems,
     pageInfo: resolvedPageInfo,
+  };
+};
+
+export const querySessionMessageBlocks = async (
+  conversationId: string,
+  options: { blockIds: string[] },
+) => {
+  const blockIds = Array.isArray(options.blockIds)
+    ? options.blockIds
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter((value) => value.length > 0)
+    : [];
+  if (blockIds.length === 0) {
+    return { items: [] as SessionMessageBlockDetailItem[] };
+  }
+  const response = await apiRequest<
+    { items?: SessionMessageBlockDetailItem[] },
+    { blockIds: string[] }
+  >(`/me/conversations/${encodeURIComponent(conversationId)}/blocks:query`, {
+    method: "POST",
+    body: {
+      blockIds,
+    },
+  });
+  return {
+    items: Array.isArray(response.items) ? response.items : [],
   };
 };
 

@@ -235,6 +235,7 @@ jest.mock("@/hooks/useShortcutsQuery", () => ({
 
 jest.mock("@/lib/api/sessions", () => ({
   continueSession: (...args: unknown[]) => mockContinueSession(...args),
+  querySessionMessageBlocks: jest.fn(async () => ({ items: [] })),
 }));
 
 jest.mock("@/lib/api/a2aExtensions", () => ({

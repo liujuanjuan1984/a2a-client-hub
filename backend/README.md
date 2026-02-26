@@ -167,6 +167,7 @@ scheduled, and OpenCode sessions:
 
 - `POST /api/v1/me/conversations:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages:query`
+- `POST /api/v1/me/conversations/{conversation_id}/blocks:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
 
 `conversations:query` supports optional `agent_id` filtering so Chat session
@@ -194,6 +195,8 @@ Message query contract boundary:
 - `SessionMessageItem.id` is the canonical local message UUID for all roles.
 - Message body is persisted and queried via ordered blocks for all roles
   (`user`/`agent`/`system`).
+- `messages:query` keeps full `content` for `text` blocks; `reasoning`/`tool_call`
+  block `content` is fetched via `blocks:query` on demand.
 
 Invoke message id contract:
 

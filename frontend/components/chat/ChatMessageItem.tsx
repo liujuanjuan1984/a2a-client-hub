@@ -19,6 +19,7 @@ export function ChatMessageItem({
   isLastMessage,
   sessionStreamState,
   onLayoutChangeStart,
+  onLoadBlockContent,
   onRetry,
 }: {
   message: ChatMessage;
@@ -26,6 +27,7 @@ export function ChatMessageItem({
   isLastMessage: boolean;
   sessionStreamState?: string | null;
   onLayoutChangeStart?: () => void;
+  onLoadBlockContent?: (messageId: string, blockId: string) => Promise<boolean>;
   onRetry: () => void;
 }) {
   const [expandedReasoningByBlockId, setExpandedReasoningByBlockId] = useState<
@@ -182,10 +184,25 @@ export function ChatMessageItem({
           {hasBlocks ? (
             renderableBlocks.map((block, blockIndex) => {
               const blockText = block.content;
-              if (blockText.length === 0) return null;
+              const blockHasContent = blockText.length > 0;
               const blockId = block.id || `${message.id}:${blockIndex}`;
               if (block.type === "reasoning") {
-                const expanded = expandedReasoningByBlockId[blockId];
+                const expanded =
+                  (expandedReasoningByBlockId[blockId] ?? false) &&
+                  blockHasContent;
+                const handleToggle = async () => {
+                  const shouldExpand = !expanded;
+                  if (shouldExpand && !blockHasContent && onLoadBlockContent) {
+                    const loaded = await onLoadBlockContent(
+                      message.id,
+                      blockId,
+                    );
+                    if (!loaded) {
+                      return;
+                    }
+                  }
+                  toggleReasoning(blockId);
+                };
                 return (
                   <View
                     key={blockId}
@@ -194,7 +211,9 @@ export function ChatMessageItem({
                     } rounded-xl bg-black/40 p-3`}
                   >
                     <Pressable
-                      onPress={() => toggleReasoning(blockId)}
+                      onPress={() => {
+                        handleToggle().catch(() => undefined);
+                      }}
                       accessibilityRole="button"
                       accessibilityLabel={
                         expanded
@@ -227,7 +246,22 @@ export function ChatMessageItem({
                 );
               }
               if (block.type === "tool_call") {
-                const expanded = expandedToolCallByBlockId[blockId];
+                const expanded =
+                  (expandedToolCallByBlockId[blockId] ?? false) &&
+                  blockHasContent;
+                const handleToggle = async () => {
+                  const shouldExpand = !expanded;
+                  if (shouldExpand && !blockHasContent && onLoadBlockContent) {
+                    const loaded = await onLoadBlockContent(
+                      message.id,
+                      blockId,
+                    );
+                    if (!loaded) {
+                      return;
+                    }
+                  }
+                  toggleToolCall(blockId);
+                };
                 return (
                   <View
                     key={blockId}
@@ -236,7 +270,9 @@ export function ChatMessageItem({
                     } rounded-xl bg-black/40 p-3`}
                   >
                     <Pressable
-                      onPress={() => toggleToolCall(blockId)}
+                      onPress={() => {
+                        handleToggle().catch(() => undefined);
+                      }}
                       accessibilityRole="button"
                       accessibilityLabel={
                         expanded
@@ -276,6 +312,9 @@ export function ChatMessageItem({
                 );
               }
               if (block.type === "text") {
+                if (!blockHasContent) {
+                  return null;
+                }
                 const blockExpanded = expandedTextByBlockId[blockId] ?? false;
                 const shouldCollapse = shouldCollapseByLength(blockText);
                 const topToggleAccessibilityLabel = blockExpanded

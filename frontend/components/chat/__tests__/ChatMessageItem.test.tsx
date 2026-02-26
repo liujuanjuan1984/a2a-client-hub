@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react-native";
+import { fireEvent, render, waitFor } from "@testing-library/react-native";
 
 import { ChatMessageItem } from "@/components/chat/ChatMessageItem";
 import { type ChatMessage } from "@/lib/api/chat-utils";
@@ -113,6 +113,82 @@ describe("ChatMessageItem collapsible blocks", () => {
     fireEvent.press(screen.getByTestId("chat-message-tool-1-collapse-bottom"));
     expect(onLayoutChangeStart).toHaveBeenCalledTimes(2);
     expect(screen.getByText("Show Tool Call")).toBeTruthy();
+  });
+
+  it("loads tool call content before expanding when block content is empty", async () => {
+    const onLayoutChangeStart = jest.fn();
+    const onLoadBlockContent = jest.fn(async () => false);
+    const message = buildAgentMessage({
+      blocks: [
+        {
+          id: "tool-empty",
+          type: "tool_call",
+          content: "",
+          isFinished: true,
+          createdAt: "2026-02-24T00:00:00.000Z",
+          updatedAt: "2026-02-24T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+        onLayoutChangeStart={onLayoutChangeStart}
+        onLoadBlockContent={onLoadBlockContent}
+      />,
+    );
+
+    fireEvent.press(screen.getByText("Show Tool Call"));
+
+    await waitFor(() => {
+      expect(onLoadBlockContent).toHaveBeenCalledWith(
+        "message-1",
+        "tool-empty",
+      );
+    });
+    expect(onLayoutChangeStart).not.toHaveBeenCalled();
+  });
+
+  it("expands after tool call content is loaded", async () => {
+    const onLayoutChangeStart = jest.fn();
+    const onLoadBlockContent = jest.fn(async () => true);
+    const message = buildAgentMessage({
+      blocks: [
+        {
+          id: "tool-empty",
+          type: "tool_call",
+          content: "",
+          isFinished: true,
+          createdAt: "2026-02-24T00:00:00.000Z",
+          updatedAt: "2026-02-24T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+        onLayoutChangeStart={onLayoutChangeStart}
+        onLoadBlockContent={onLoadBlockContent}
+      />,
+    );
+
+    fireEvent.press(screen.getByText("Show Tool Call"));
+
+    await waitFor(() => {
+      expect(onLoadBlockContent).toHaveBeenCalledWith(
+        "message-1",
+        "tool-empty",
+      );
+      expect(onLayoutChangeStart).toHaveBeenCalled();
+    });
   });
 
   it("uses bottom collapse action for expanded long text content", () => {
