@@ -42,7 +42,7 @@ export function ChatComposer({
   onScrollToBottom?: () => void;
 }) {
   return (
-    <View className="relative border-t border-slate-800 px-3 sm:px-6 py-4">
+    <View className="relative border-t border-slate-800 px-2 sm:px-6 py-4">
       {pendingInterrupt ? (
         <View className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
           <Text className="text-xs text-amber-200">

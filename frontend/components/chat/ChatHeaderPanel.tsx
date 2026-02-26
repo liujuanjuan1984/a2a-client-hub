@@ -32,7 +32,7 @@ export function ChatHeaderPanel({
 }) {
   return (
     <View
-      className="border-b border-white/5 bg-background px-3 sm:px-6 pb-4"
+      className="border-b border-white/5 bg-background px-2 sm:px-6 pb-4"
       style={{ paddingTop: topInset }}
     >
       <View className="flex-row items-center justify-between">
