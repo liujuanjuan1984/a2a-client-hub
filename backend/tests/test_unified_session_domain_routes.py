@@ -169,8 +169,6 @@ async def test_conversation_routes_use_conversation_id_only(
         )
         assert user_item["id"] == str(user_message.id)
         assert agent_item["id"] == str(agent_message.id)
-        assert "summary_text" not in user_item.get("metadata", {})
-        assert "summary_text" not in agent_item.get("metadata", {})
         assert "message_blocks" not in agent_item.get("metadata", {})
         assert "content" not in user_item
         assert "content" not in agent_item

@@ -1,6 +1,6 @@
 """Agent-related database models."""
 
-from sqlalchemy import Column, ForeignKey, Index, String, Text, text
+from sqlalchemy import Column, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -54,11 +54,6 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
         String(64),
         nullable=True,
         comment="Normalized error code for failed/incomplete stream.",
-    )
-    summary_text = Column(
-        Text,
-        nullable=True,
-        comment="Short materialized summary for quick list rendering.",
     )
     sender = Column(
         String(16),

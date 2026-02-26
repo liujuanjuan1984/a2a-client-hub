@@ -637,8 +637,6 @@ async def test_list_messages_returns_header_only_without_content_field(
     agent_items = [item for item in items if item.get("role") == "agent"]
     assert len(user_items) == 1
     assert len(agent_items) == 1
-    assert "summary_text" not in user_items[0].get("metadata", {})
-    assert "summary_text" not in agent_items[0].get("metadata", {})
     assert "content" not in agent_items[0]
 
 
@@ -734,7 +732,6 @@ async def test_list_timeline_messages_returns_blocks_and_before_cursor(
     assert isinstance(first_cursor, str)
     assert first_cursor
     assert all("blocks" in item for item in first_items)
-    assert all("summary_text" not in item.get("metadata", {}) for item in first_items)
     assert all(item["status"] == "done" for item in first_items)
 
     second_items, second_extra, _ = await session_hub_service.list_timeline_messages(
