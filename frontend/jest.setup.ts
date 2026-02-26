@@ -80,8 +80,8 @@ jest.mock("@expo/vector-icons", () => {
 jest.mock("react-native/Libraries/AppState/AppState", () => ({
   AppState: {
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
-    currentState: "active"
-  }
+    currentState: "active",
+  },
 }));
 
 jest.mock("react-native/Libraries/Utilities/Dimensions", () => {

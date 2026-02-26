@@ -29,7 +29,7 @@ export function Button({
   const variants = {
     neo: "bg-yellow-500/75 active:bg-yellow-500/90",
     primary: "bg-yellow-500/75 active:bg-yellow-500/90",
-    secondary: "bg-slate-800/35 border border-white/10 active:bg-slate-800/60",
+    secondary: "bg-slate-800/35 border border-white/20 active:bg-slate-800/80",
     outline: "border border-white/10 active:bg-white/5",
     ghost: "active:bg-white/5",
     danger: "bg-red-500/10 border border-red-500/20 active:bg-red-500/20",
@@ -52,7 +52,7 @@ export function Button({
   const textColors = {
     neo: "text-black/80",
     primary: "text-black/80",
-    secondary: "text-slate-400",
+    secondary: "text-slate-300",
     outline: "text-slate-400",
     ghost: "text-slate-500",
     danger: "text-red-400/80",
