@@ -17,7 +17,7 @@ from app.db.models.base import SCHEMA_NAME
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'ed8708329a6f'
+revision: str = 'ed8708329a6f'  # pragma: allowlist secret
 down_revision: Union[str, None] = 'r202602241900'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

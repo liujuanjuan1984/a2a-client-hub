@@ -19,13 +19,13 @@ from app.api.error_handlers import (
 from app.core.config import settings
 from app.core.http_client import close_global_http_client, init_global_http_client
 from app.core.logging import get_logger, setup_logging
+from app.db.session import AsyncSessionLocal
 from app.integrations.a2a_client import get_a2a_service, shutdown_a2a_service
 from app.integrations.a2a_extensions import (
     get_a2a_extensions_service,
     shutdown_a2a_extensions_service,
 )
 from app.middleware.debug_logging import DebugLoggingMiddleware
-from app.db.session import AsyncSessionLocal
 from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.a2a_schedule_job import ensure_a2a_schedule_job
 from app.services.health import run_health_checks
@@ -110,7 +110,6 @@ def include_all_routers() -> None:
         "app.api.routers.a2a_extensions_opencode",
         "app.api.routers.hub_a2a_extensions_opencode",
         "app.api.routers.opencode_session_directory",
-
         "app.api.routers.me_sessions",
         "app.api.routers.invitations",
         "app.api.routers.shortcuts",

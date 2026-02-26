@@ -1,5 +1,5 @@
 import time
-from typing import List, Optional
+from typing import List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,13 +33,13 @@ class A2AProxyService:
         """
         now = time.time()
         if (
-            force_refresh 
-            or not cls._is_initialized 
-            or not cls._cached_allowed_hosts 
+            force_refresh
+            or not cls._is_initialized
+            or not cls._cached_allowed_hosts
             or (now - cls._last_refresh > cls._ttl)
         ):
             await cls.refresh_cache(db)
-        
+
         return cls._cached_allowed_hosts
 
     @classmethod
@@ -50,7 +50,7 @@ class A2AProxyService:
         allowed_hosts = list(settings.a2a_proxy_allowed_hosts)
 
         try:
-            stmt = select(A2AProxyAllowlist.host_pattern).where(A2AProxyAllowlist.is_enabled == True)
+            stmt = select(A2AProxyAllowlist.host_pattern).where(A2AProxyAllowlist.is_enabled)
             result = await db.execute(stmt)
             db_hosts = result.scalars().all()
             allowed_hosts.extend(db_hosts)
@@ -64,7 +64,6 @@ class A2AProxyService:
         cls._cached_allowed_hosts = list(set(allowed_hosts))
         cls._last_refresh = time.time()
         cls._is_initialized = True
-
 
 
 a2a_proxy_service = A2AProxyService()
