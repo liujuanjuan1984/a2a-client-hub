@@ -54,6 +54,14 @@ class SessionMessagesQueryRequest(BaseModel):
     size: int = Field(100, ge=1, le=200, description="Page size")
 
 
+class SessionTimelineQueryRequest(BaseModel):
+    before: Optional[str] = Field(
+        None,
+        description="Opaque cursor to fetch older messages.",
+    )
+    limit: int = Field(8, ge=1, le=50, description="Page size for timeline window")
+
+
 class SessionMessageItem(BaseModel):
     id: str
     role: Literal["user", "agent", "system"]
@@ -122,6 +130,32 @@ class SessionMessagesMeta(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class SessionTimelineMessageItem(BaseModel):
+    id: str
+    role: Literal["user", "agent", "system"]
+    created_at: datetime
+    status: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    blocks: list[SessionMessageBlockItem] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionTimelinePageInfo(BaseModel):
+    has_more_before: bool = Field(alias="hasMoreBefore")
+    next_before: Optional[str] = Field(alias="nextBefore", default=None)
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionTimelineQueryResponse(BaseModel):
+    items: list[SessionTimelineMessageItem]
+    page_info: SessionTimelinePageInfo = Field(alias="pageInfo")
+    meta: SessionMessagesMeta
+
+    model_config = {"populate_by_name": True}
+
+
 class SessionMessagesListResponse(
     ListResponse[SessionMessageItem, SessionMessagesMeta]
 ):
@@ -150,6 +184,10 @@ __all__ = [
     "SessionMessagesListResponse",
     "SessionMessagesMeta",
     "SessionMessagesQueryRequest",
+    "SessionTimelineMessageItem",
+    "SessionTimelinePageInfo",
+    "SessionTimelineQueryRequest",
+    "SessionTimelineQueryResponse",
     "SessionQueryRequest",
     "SessionSource",
     "SessionViewItem",

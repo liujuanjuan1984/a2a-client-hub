@@ -96,14 +96,12 @@ async def test_conversation_routes_use_conversation_id_only(
         user_id=user.id,
         sender="user",
         conversation_id=manual_session.id,
-        summary_text="hello",
         message_metadata={"context_id": "ctx-manual-1"},
     )
     agent_message = AgentMessage(
         user_id=user.id,
         sender="agent",
         conversation_id=manual_session.id,
-        summary_text="world",
         message_metadata={"context_id": "ctx-manual-1"},
     )
     async_db_session.add(user_message)
@@ -171,12 +169,32 @@ async def test_conversation_routes_use_conversation_id_only(
         )
         assert user_item["id"] == str(user_message.id)
         assert agent_item["id"] == str(agent_message.id)
-        assert user_item.get("metadata", {}).get("summary_text") == "hello"
-        assert agent_item.get("metadata", {}).get("summary_text") == "world"
+        assert "summary_text" not in user_item.get("metadata", {})
+        assert "summary_text" not in agent_item.get("metadata", {})
         assert "message_blocks" not in agent_item.get("metadata", {})
         assert "content" not in user_item
         assert "content" not in agent_item
         assert "block_count" not in agent_item.get("metadata", {})
+
+        timeline_resp = await client.post(
+            f"/me/conversations/{manual_session.id}/messages/timeline:query",
+            json={"limit": 8},
+        )
+        assert timeline_resp.status_code == 200
+        timeline_payload = timeline_resp.json()
+        assert len(timeline_payload["items"]) == 2
+        assert timeline_payload["meta"]["conversationId"] == str(manual_session.id)
+        timeline_user_item = next(
+            item for item in timeline_payload["items"] if item["role"] == "user"
+        )
+        timeline_agent_item = next(
+            item for item in timeline_payload["items"] if item["role"] == "agent"
+        )
+        assert len(timeline_user_item["blocks"]) == 1
+        assert len(timeline_agent_item["blocks"]) == 1
+        assert timeline_agent_item["blocks"][0]["content"] == "world"
+        assert timeline_payload["pageInfo"]["hasMoreBefore"] is False
+        assert timeline_payload["pageInfo"]["nextBefore"] is None
 
         blocks_resp = await client.post(
             f"/me/conversations/{manual_session.id}/messages/blocks:query",
@@ -286,6 +304,26 @@ async def test_invalid_conversation_id_returns_400(
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "invalid_conversation_id"
+
+
+async def test_invalid_timeline_cursor_returns_400(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    conversation_id = uuid4()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/conversations/{conversation_id}/messages/timeline:query",
+            json={"before": "not-valid-cursor", "limit": 8},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "invalid_before_cursor"
 
 
 async def test_invalid_message_id_returns_400(

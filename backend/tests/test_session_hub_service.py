@@ -637,11 +637,8 @@ async def test_list_messages_returns_header_only_without_content_field(
     agent_items = [item for item in items if item.get("role") == "agent"]
     assert len(user_items) == 1
     assert len(agent_items) == 1
-    assert user_items[0].get("metadata", {}).get("summary_text") == "hello"
-    assert (
-        agent_items[0].get("metadata", {}).get("summary_text")
-        == "should-not-be-read-from-header"
-    )
+    assert "summary_text" not in user_items[0].get("metadata", {})
+    assert "summary_text" not in agent_items[0].get("metadata", {})
     assert "content" not in agent_items[0]
 
 
@@ -692,6 +689,88 @@ async def test_list_messages_does_not_query_blocks_for_header_path(
     )
 
     assert len(items) == 2
+
+
+async def test_list_timeline_messages_returns_blocks_and_before_cursor(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    for index in range(3):
+        await session_hub_service.record_local_invoke_messages(
+            async_db_session,
+            session=thread,
+            source="manual",
+            user_id=user.id,
+            agent_id=uuid4(),
+            agent_source="personal",
+            query=f"hello-{index}",
+            response_content=f"world-{index}",
+            success=True,
+            context_id="ctx-1",
+            idempotency_key=f"timeline-{index}",
+        )
+    await async_db_session.flush()
+
+    first_items, first_extra, _ = await session_hub_service.list_timeline_messages(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        before=None,
+        limit=2,
+    )
+    assert len(first_items) == 2
+    assert first_extra["pageInfo"]["hasMoreBefore"] is True
+    first_cursor = first_extra["pageInfo"]["nextBefore"]
+    assert isinstance(first_cursor, str)
+    assert first_cursor
+    assert all("blocks" in item for item in first_items)
+    assert all("summary_text" not in item.get("metadata", {}) for item in first_items)
+    assert all(item["status"] == "done" for item in first_items)
+
+    second_items, second_extra, _ = await session_hub_service.list_timeline_messages(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        before=first_cursor,
+        limit=2,
+    )
+    assert len(second_items) == 2
+    assert second_extra["pageInfo"]["nextBefore"] != first_cursor
+    assert {item["id"] for item in second_items}.isdisjoint(
+        {item["id"] for item in first_items}
+    )
+
+
+async def test_list_timeline_messages_rejects_invalid_cursor(async_db_session):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    with pytest.raises(ValueError, match="invalid_before_cursor"):
+        await session_hub_service.list_timeline_messages(
+            async_db_session,
+            user_id=user.id,
+            conversation_id=str(thread.id),
+            before="not-a-valid-cursor",
+            limit=8,
+        )
 
 
 async def test_query_message_blocks_overwrite_snapshot_without_text_duplication(

@@ -8,12 +8,16 @@ This module provides a single read model for session list/history/continue acros
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
+import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +30,7 @@ from app.services.conversation_identity import conversation_identity_service
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
-from app.utils.timezone_util import utc_now
+from app.utils.timezone_util import ensure_utc, utc_now
 
 SessionSource = Literal["manual", "scheduled"]
 ResolvedSource = Literal["manual", "scheduled"]
@@ -37,6 +41,13 @@ BlocksQueryMode = Literal["full", "text_with_placeholders", "outline"]
 class ResolvedConversationTarget:
     source: ResolvedSource
     thread: ConversationThread
+
+
+@dataclass(frozen=True)
+class TimelineBeforeCursor:
+    created_at: datetime
+    sender_priority: int
+    message_id: UUID
 
 
 class SessionHubService:
@@ -180,12 +191,6 @@ class SessionHubService:
                 getattr(message, "message_metadata", None)
             )
             role = _sender_to_role(getattr(message, "sender", ""))
-            if isinstance(message.id, UUID) and role in {"user", "agent"}:
-                summary_text = normalize_non_empty_text(
-                    getattr(message, "summary_text", None)
-                )
-                if summary_text:
-                    message_metadata.setdefault("summary_text", summary_text)
             if isinstance(message.id, UUID) and role == "agent":
                 if isinstance(message.status, str) and message.status.strip():
                     message_metadata.setdefault("stream_status", message.status.strip())
@@ -232,6 +237,165 @@ class SessionHubService:
             "pages": pages,
         }
         return items, {"pagination": pagination, "meta": meta}, False
+
+    async def list_timeline_messages(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: str,
+        before: str | None,
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
+        resolved_conversation_id = _parse_conversation_id(conversation_id)
+        target = await self._resolve_conversation_target(
+            db,
+            user_id=user_id,
+            conversation_id=resolved_conversation_id,
+        )
+        session = target.thread if target else None
+        external_session_id = normalize_non_empty_text(
+            session.external_session_id if session else None
+        )
+        resolved_source = _resolve_session_source(
+            thread_source=session.source if session else None,
+            fallback_source=target.source if target else None,
+        )
+
+        cursor = _parse_timeline_before_cursor(before) if before else None
+        sender_priority = case(
+            (AgentMessage.sender.in_(["user", "automation"]), 0),
+            else_=1,
+        )
+        stmt = select(AgentMessage).where(
+            and_(
+                AgentMessage.user_id == user_id,
+                AgentMessage.conversation_id == resolved_conversation_id,
+            )
+        )
+        if cursor is not None:
+            stmt = stmt.where(
+                or_(
+                    AgentMessage.created_at < cursor.created_at,
+                    and_(
+                        AgentMessage.created_at == cursor.created_at,
+                        sender_priority < cursor.sender_priority,
+                    ),
+                    and_(
+                        AgentMessage.created_at == cursor.created_at,
+                        sender_priority == cursor.sender_priority,
+                        AgentMessage.id < cursor.message_id,
+                    ),
+                )
+            )
+
+        rows = list(
+            (
+                await db.scalars(
+                    stmt.order_by(
+                        AgentMessage.created_at.desc(),
+                        sender_priority.desc(),
+                        AgentMessage.id.desc(),
+                    ).limit(limit + 1)
+                )
+            ).all()
+        )
+        has_more_before = len(rows) > limit
+        if has_more_before:
+            rows = rows[:limit]
+        messages = list(reversed(rows))
+
+        message_ids = [
+            message.id for message in messages if isinstance(message.id, UUID)
+        ]
+        blocks_by_message_id: dict[UUID, list[AgentMessageBlock]] = {}
+        if message_ids:
+            blocks = await agent_message_block_handler.list_blocks_by_message_ids(
+                db,
+                user_id=user_id,
+                message_ids=message_ids,
+            )
+            for block in blocks:
+                if not isinstance(block.message_id, UUID):
+                    continue
+                blocks_by_message_id.setdefault(block.message_id, []).append(block)
+
+        items: list[dict[str, Any]] = []
+        next_before_cursor: str | None = None
+        for message in messages:
+            message_metadata = _sanitize_message_metadata_for_api(
+                getattr(message, "message_metadata", None)
+            )
+            role = _sender_to_role(getattr(message, "sender", ""))
+            if isinstance(message.id, UUID) and role == "agent":
+                if isinstance(message.status, str) and message.status.strip():
+                    message_metadata.setdefault("stream_status", message.status.strip())
+                stream_meta = message_metadata.get("stream")
+                if not isinstance(stream_meta, dict):
+                    stream_meta = {}
+                if message.finish_reason:
+                    stream_meta.setdefault("finish_reason", message.finish_reason)
+                if message.error_code:
+                    existing_error = stream_meta.get("error")
+                    if not isinstance(existing_error, dict):
+                        existing_error = {}
+                    existing_error.setdefault("error_code", message.error_code)
+                    stream_meta["error"] = existing_error
+                if stream_meta:
+                    message_metadata["stream"] = stream_meta
+            raw_blocks = (
+                blocks_by_message_id.get(message.id, [])
+                if isinstance(message.id, UUID)
+                else []
+            )
+            status = (
+                normalize_non_empty_text(getattr(message, "status", None)) or "done"
+            )
+            items.append(
+                {
+                    "id": str(message.id),
+                    "role": role,
+                    "created_at": message.created_at,
+                    "status": status,
+                    "metadata": message_metadata,
+                    "blocks": _render_blocks_for_mode(raw_blocks, mode="full"),
+                }
+            )
+
+        if has_more_before and items:
+            oldest = items[0]
+            role_priority = _sender_priority_for_role(str(oldest.get("role") or ""))
+            try:
+                oldest_created_at = ensure_utc(oldest["created_at"])
+                oldest_id = UUID(str(oldest["id"]))
+                next_before_cursor = _encode_timeline_before_cursor(
+                    created_at=oldest_created_at,
+                    sender_priority=role_priority,
+                    message_id=oldest_id,
+                )
+            except (TypeError, ValueError):
+                next_before_cursor = None
+
+        meta = {
+            "conversationId": str(resolved_conversation_id),
+            "source": resolved_source,
+            "agent_id": (
+                str(session.agent_id)
+                if session and isinstance(session.agent_id, UUID)
+                else None
+            ),
+            "agent_source": (
+                session.agent_source
+                if session and isinstance(session.agent_source, str)
+                else None
+            ),
+            "upstream_session_id": external_session_id,
+        }
+        page_info = {
+            "hasMoreBefore": has_more_before,
+            "nextBefore": next_before_cursor,
+        }
+        return items, {"pageInfo": page_info, "meta": meta}, False
 
     async def query_message_blocks(
         self,
@@ -647,8 +811,6 @@ class SessionHubService:
             resolved_agent_status = "done" if success else "error"
         resolved_finish_reason = normalize_non_empty_text(finish_reason)
         resolved_error_code = normalize_non_empty_text(error_code)
-        user_summary_text = _derive_agent_summary_text(query)
-        summary_text = _derive_agent_summary_text(response_content)
         requested_user_message = (
             await self._find_message_by_id_and_sender(
                 db,
@@ -718,7 +880,6 @@ class SessionHubService:
                     sender="user",
                     status="done",
                     conversation_id=conversation_id,
-                    summary_text=user_summary_text,
                     metadata=metadata,
                     invoke_idempotency_key=normalized_idempotency_key,
                 )
@@ -756,8 +917,6 @@ class SessionHubService:
                 raise ValueError("message_id_conflict")
             if normalized_idempotency_key:
                 user_message.invoke_idempotency_key = normalized_idempotency_key
-            if user_summary_text and user_message.summary_text != user_summary_text:
-                user_message.summary_text = user_summary_text
         await self._ensure_idempotent_user_query(
             db,
             user_id=user_id,
@@ -782,7 +941,6 @@ class SessionHubService:
                     status=resolved_agent_status,
                     finish_reason=resolved_finish_reason,
                     error_code=resolved_error_code,
-                    summary_text=summary_text,
                     metadata=agent_metadata,
                     invoke_idempotency_key=normalized_idempotency_key,
                 )
@@ -819,7 +977,6 @@ class SessionHubService:
                     status=resolved_agent_status,
                     finish_reason=resolved_finish_reason,
                     error_code=resolved_error_code,
-                    summary_text=summary_text,
                     message_metadata=agent_metadata,
                     invoke_idempotency_key=normalized_idempotency_key,
                 )
@@ -835,7 +992,6 @@ class SessionHubService:
                 status=resolved_agent_status,
                 finish_reason=resolved_finish_reason,
                 error_code=resolved_error_code,
-                summary_text=summary_text,
                 message_metadata=agent_metadata,
                 invoke_idempotency_key=normalized_idempotency_key,
             )
@@ -1489,6 +1645,62 @@ def _parse_message_id(value: str) -> UUID:
         raise ValueError("invalid_message_id") from exc
 
 
+def _encode_timeline_before_cursor(
+    *,
+    created_at: datetime,
+    sender_priority: int,
+    message_id: UUID,
+) -> str:
+    payload = {
+        "created_at": ensure_utc(created_at).isoformat(),
+        "sender_priority": 0 if sender_priority <= 0 else 1,
+        "message_id": str(message_id),
+    }
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    ).decode("utf-8")
+    return encoded.rstrip("=")
+
+
+def _parse_timeline_before_cursor(raw: str) -> TimelineBeforeCursor:
+    trimmed = (raw or "").strip()
+    if not trimmed:
+        raise ValueError("invalid_before_cursor")
+    padding = "=" * (-len(trimmed) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(f"{trimmed}{padding}".encode("utf-8"))
+        payload = json.loads(decoded.decode("utf-8"))
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid_before_cursor") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError("invalid_before_cursor")
+    created_at_raw = payload.get("created_at")
+    sender_priority_raw = payload.get("sender_priority")
+    message_id_raw = payload.get("message_id")
+    if not isinstance(created_at_raw, str) or not isinstance(message_id_raw, str):
+        raise ValueError("invalid_before_cursor")
+    try:
+        created_at = ensure_utc(
+            datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+        )
+        message_id = UUID(message_id_raw)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("invalid_before_cursor") from exc
+
+    try:
+        sender_priority = int(sender_priority_raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid_before_cursor") from exc
+    if sender_priority not in {0, 1}:
+        raise ValueError("invalid_before_cursor")
+    return TimelineBeforeCursor(
+        created_at=created_at,
+        sender_priority=sender_priority,
+        message_id=message_id,
+    )
+
+
 def _build_continue_response(
     *,
     conversation_id: UUID,
@@ -1525,20 +1737,15 @@ def _sender_to_role(sender: str) -> str:
     return "system"
 
 
+def _sender_priority_for_role(role: str) -> int:
+    return 0 if role == "user" else 1
+
+
 def _derive_session_title_from_query(query: str) -> str | None:
     trimmed_query = query.strip() if isinstance(query, str) else ""
     if not trimmed_query:
         return None
     return trimmed_query[: ConversationThread.TITLE_MAX_LENGTH]
-
-
-def _derive_agent_summary_text(content: str | None, *, max_chars: int = 2048) -> str:
-    if not isinstance(content, str):
-        return ""
-    trimmed = content.strip()
-    if not trimmed:
-        return ""
-    return trimmed[:max_chars]
 
 
 def _sanitize_message_metadata_for_api(metadata: Any) -> dict[str, Any]:

@@ -42,8 +42,6 @@ export function ChatTimelinePanel({
   onQuestionOptionPick,
   onQuestionReply,
   onQuestionReject,
-  onRequestMessageBlocks,
-  isMessageBlocksLoading,
 }: {
   listRef: React.RefObject<FlatList<ChatMessage> | null>;
   messages: ChatMessage[];
@@ -66,8 +64,6 @@ export function ChatTimelinePanel({
   onQuestionOptionPick: (index: number, value: string) => void;
   onQuestionReply: () => void;
   onQuestionReject: () => void;
-  onRequestMessageBlocks: (messageId: string) => void;
-  isMessageBlocksLoading: (messageId: string) => boolean;
 }) {
   return (
     <>
@@ -102,8 +98,6 @@ export function ChatTimelinePanel({
             sessionStreamState={session?.streamState}
             onLayoutChangeStart={onCaptureContentSizeAnchor}
             onRetry={onRetry}
-            onRequestMessageBlocks={onRequestMessageBlocks}
-            messageBlocksLoading={isMessageBlocksLoading(item.id)}
           />
         )}
         contentContainerStyle={{ paddingBottom: 24 }}

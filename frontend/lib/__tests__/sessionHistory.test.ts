@@ -72,43 +72,45 @@ describe("session history mapping", () => {
     expect(mapped).toEqual([]);
   });
 
-  it("uses metadata summary_text when blocks are absent", () => {
+  it("skips entries when no blocks are present by default", () => {
     const mapped = mapSessionMessagesToChatMessages([
       {
         id: "4f08d8cb-93f5-4df5-b01c-383afbb2be26",
         role: "assistant",
         created_at: "2026-02-14T00:00:03.000Z",
-        metadata: {
-          summary_text: "summary from header",
-        },
+        metadata: {},
       },
     ]);
 
-    expect(mapped).toHaveLength(1);
-    expect(mapped[0]).toMatchObject({
-      id: "4f08d8cb-93f5-4df5-b01c-383afbb2be26",
-      role: "agent",
-      content: "summary from header",
-    });
+    expect(mapped).toEqual([]);
   });
 
-  it("maps user summary_text from header metadata", () => {
+  it("maps streaming status from timeline payload", () => {
     const mapped = mapSessionMessagesToChatMessages([
       {
         id: "f9b8b086-15ce-4f14-84f4-b9861064da18",
-        role: "user",
+        role: "assistant",
         created_at: "2026-02-14T00:00:03.500Z",
-        metadata: {
-          summary_text: "hello from user",
-        },
+        status: "streaming",
+        blocks: [
+          {
+            id: "block-3",
+            messageId: "f9b8b086-15ce-4f14-84f4-b9861064da18",
+            seq: 1,
+            type: "text",
+            content: "partial",
+            isFinished: false,
+          },
+        ],
       },
     ]);
 
     expect(mapped).toHaveLength(1);
     expect(mapped[0]).toMatchObject({
       id: "f9b8b086-15ce-4f14-84f4-b9861064da18",
-      role: "user",
-      content: "hello from user",
+      role: "agent",
+      content: "partial",
+      status: "streaming",
     });
   });
 

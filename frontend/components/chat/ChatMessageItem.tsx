@@ -20,8 +20,6 @@ export function ChatMessageItem({
   sessionStreamState,
   onLayoutChangeStart,
   onRetry,
-  onRequestMessageBlocks,
-  messageBlocksLoading = false,
 }: {
   message: ChatMessage;
   index: number;
@@ -29,8 +27,6 @@ export function ChatMessageItem({
   sessionStreamState?: string | null;
   onLayoutChangeStart?: () => void;
   onRetry: () => void;
-  onRequestMessageBlocks?: (messageId: string) => void;
-  messageBlocksLoading?: boolean;
 }) {
   const [expandedReasoningByBlockId, setExpandedReasoningByBlockId] = useState<
     Record<string, boolean>
@@ -132,14 +128,8 @@ export function ChatMessageItem({
   }, [handleCopyPayload, message]);
 
   const renderableBlocks = deriveRenderableBlocks(message);
-  const hasPersistedBlocks = (message.blocks?.length ?? 0) > 0;
   const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
   const hasPlainContent = message.content.trim().length > 0;
-  const canRequestBlocks =
-    typeof onRequestMessageBlocks === "function" &&
-    message.status !== "streaming" &&
-    (message.role === "agent" || message.role === "user") &&
-    !hasPersistedBlocks;
   const plainTextExpanded = expandedTextByBlockId[message.id] ?? false;
   const plainShouldCollapse =
     hasPlainContent && shouldCollapseByLength(message.content);
@@ -366,47 +356,12 @@ export function ChatMessageItem({
                   >
                     {message.content}
                   </Text>
-                  {canRequestBlocks ? (
-                    <Pressable
-                      className="mt-2 self-start rounded-lg bg-black/30 px-2.5 py-1"
-                      accessibilityRole="button"
-                      accessibilityLabel="Load message details"
-                      testID={`chat-message-${message.id}-load-content`}
-                      onPress={() => onRequestMessageBlocks?.(message.id)}
-                    >
-                      <Text className="text-[11px] font-medium text-slate-300">
-                        Load details
-                      </Text>
-                    </Pressable>
-                  ) : null}
                 </View>
               ) : (
                 <View className="rounded-lg bg-black/20 px-3 py-2">
-                  {messageBlocksLoading ? (
-                    <View className="flex-row items-center gap-2">
-                      <ActivityIndicator size="small" color="#34D399" />
-                      <Text className="text-[11px] font-medium text-slate-400">
-                        Loading content...
-                      </Text>
-                    </View>
-                  ) : (
-                    <Text className="text-[11px] font-medium text-slate-400">
-                      Content is not loaded.
-                    </Text>
-                  )}
-                  {canRequestBlocks ? (
-                    <Pressable
-                      className="mt-2 self-start rounded-lg bg-black/30 px-2.5 py-1"
-                      accessibilityRole="button"
-                      accessibilityLabel="Load message content"
-                      testID={`chat-message-${message.id}-load-content`}
-                      onPress={() => onRequestMessageBlocks?.(message.id)}
-                    >
-                      <Text className="text-[11px] font-medium text-slate-300">
-                        Load content
-                      </Text>
-                    </Pressable>
-                  ) : null}
+                  <Text className="text-[11px] font-medium text-slate-400">
+                    Content unavailable.
+                  </Text>
                 </View>
               )}
               {plainShouldCollapse ? (

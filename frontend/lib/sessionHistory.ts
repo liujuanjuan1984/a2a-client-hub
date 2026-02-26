@@ -9,6 +9,7 @@ export type SessionMessageItem = {
   id: string;
   role: string;
   created_at: string;
+  status?: string;
   metadata?: Record<string, unknown> | null;
   blocks?: {
     id: string;
@@ -32,24 +33,17 @@ const normalizeSessionMessageRole = (value: string): ChatRole => {
   return "system";
 };
 
-const resolveHeaderFallbackText = (
-  metadata: Record<string, unknown> | null | undefined,
-) => {
-  if (!metadata || typeof metadata !== "object") {
-    return "";
+const resolveMessageStatus = (status: unknown): "streaming" | "done" => {
+  if (typeof status !== "string") {
+    return "done";
   }
-  const candidates = [
-    metadata.summary_text,
-    metadata.summaryText,
-    metadata.content_preview,
-    metadata.contentPreview,
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim().length > 0) {
-      return candidate;
-    }
-  }
-  return "";
+  return status.trim().toLowerCase() === "streaming" ? "streaming" : "done";
+};
+
+const rolePriority = (role: ChatRole): number => {
+  if (role === "user") return 0;
+  if (role === "agent") return 1;
+  return 2;
 };
 
 const mapBlocks = (item: SessionMessageItem): MessageBlock[] => {
@@ -89,9 +83,8 @@ export const mapSessionMessagesToChatMessages = (
     }
     const blocks = mapBlocks(item);
     const blockContent = projectPrimaryTextContent(blocks);
-    const headerFallback = resolveHeaderFallbackText(item.metadata);
     const normalizedContent =
-      blockContent.trim().length > 0 ? blockContent : headerFallback;
+      blockContent.trim().length > 0 ? blockContent : "";
     if (normalizedContent.trim().length === 0 && !keepEmptyMessages) {
       return;
     }
@@ -100,9 +93,19 @@ export const mapSessionMessagesToChatMessages = (
       role,
       content: normalizedContent,
       createdAt: item.created_at,
-      status: "done" as const,
+      status: resolveMessageStatus(item.status),
       blocks,
     });
   });
-  return mapped.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return mapped.sort((left, right) => {
+    const timeDiff = left.createdAt.localeCompare(right.createdAt);
+    if (timeDiff !== 0) {
+      return timeDiff;
+    }
+    const roleDiff = rolePriority(left.role) - rolePriority(right.role);
+    if (roleDiff !== 0) {
+      return roleDiff;
+    }
+    return left.id.localeCompare(right.id);
+  });
 };

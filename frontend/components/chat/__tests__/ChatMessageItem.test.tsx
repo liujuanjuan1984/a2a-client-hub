@@ -153,8 +153,7 @@ describe("ChatMessageItem collapsible blocks", () => {
     ).toBeTruthy();
   });
 
-  it("requests message blocks on demand when content is not loaded", () => {
-    const onRequestMessageBlocks = jest.fn();
+  it("shows placeholder when agent content is unavailable", () => {
     const message = buildAgentMessage({
       id: "empty-agent-message",
       content: "",
@@ -167,18 +166,13 @@ describe("ChatMessageItem collapsible blocks", () => {
         index={0}
         isLastMessage
         onRetry={jest.fn()}
-        onRequestMessageBlocks={onRequestMessageBlocks}
       />,
     );
 
-    fireEvent.press(
-      screen.getByTestId("chat-message-empty-agent-message-load-content"),
-    );
-    expect(onRequestMessageBlocks).toHaveBeenCalledWith("empty-agent-message");
+    expect(screen.getByText("Content unavailable.")).toBeTruthy();
   });
 
-  it("allows user message to request blocks when content is missing", () => {
-    const onRequestMessageBlocks = jest.fn();
+  it("shows placeholder when user content is unavailable", () => {
     const message = buildUserMessage({
       id: "empty-user-message",
       content: "",
@@ -191,13 +185,9 @@ describe("ChatMessageItem collapsible blocks", () => {
         index={0}
         isLastMessage
         onRetry={jest.fn()}
-        onRequestMessageBlocks={onRequestMessageBlocks}
       />,
     );
 
-    fireEvent.press(
-      screen.getByTestId("chat-message-empty-user-message-load-content"),
-    );
-    expect(onRequestMessageBlocks).toHaveBeenCalledWith("empty-user-message");
+    expect(screen.getByText("Content unavailable.")).toBeTruthy();
   });
 });

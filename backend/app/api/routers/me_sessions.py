@@ -19,6 +19,8 @@ from app.schemas.session_domain import (
     SessionMessagesMeta,
     SessionMessagesQueryRequest,
     SessionQueryRequest,
+    SessionTimelineQueryRequest,
+    SessionTimelineQueryResponse,
     SessionViewItem,
 )
 from app.services.session_hub import session_hub_service
@@ -102,6 +104,42 @@ async def list_unified_session_messages(
         items=items,
         pagination=extra["pagination"],
         meta=SessionMessagesMeta(**extra["meta"]),
+    )
+
+
+@router.post(
+    "/{conversation_id}/messages/timeline:query",
+    response_model=SessionTimelineQueryResponse,
+)
+async def list_unified_session_timeline(
+    *,
+    conversation_id: str,
+    payload: SessionTimelineQueryRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> SessionTimelineQueryResponse:
+    try:
+        items, extra, db_mutated = await session_hub_service.list_timeline_messages(
+            db,
+            user_id=current_user.id,
+            conversation_id=conversation_id,
+            before=payload.before,
+            limit=payload.limit,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        raise HTTPException(
+            status_code=_status_code_for_session_error(detail),
+            detail=detail,
+        ) from exc
+    if db_mutated:
+        await commit_safely(db)
+    return SessionTimelineQueryResponse.model_validate(
+        {
+            "items": items,
+            "pageInfo": extra["pageInfo"],
+            "meta": extra["meta"],
+        }
     )
 
 
