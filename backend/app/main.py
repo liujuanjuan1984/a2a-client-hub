@@ -25,6 +25,8 @@ from app.integrations.a2a_extensions import (
     shutdown_a2a_extensions_service,
 )
 from app.middleware.debug_logging import DebugLoggingMiddleware
+from app.db.session import AsyncSessionLocal
+from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.a2a_schedule_job import ensure_a2a_schedule_job
 from app.services.health import run_health_checks
 from app.services.scheduler import shutdown_scheduler, start_scheduler
@@ -50,6 +52,11 @@ async def app_lifespan(_: FastAPI):
 
     get_a2a_extensions_service()
     logger.info("A2A extensions service initialised during startup")
+
+    # Initialise A2A proxy allowlist cache
+    async with AsyncSessionLocal() as db:
+        await a2a_proxy_service.refresh_cache(db)
+    logger.info("A2A proxy allowlist cache initialised during startup")
 
     try:
         yield
@@ -100,6 +107,9 @@ def include_all_routers() -> None:
         "app.api.routers.admin_a2a_agents",
         "app.api.routers.admin_proxy_allowlist",
         "app.api.routers.a2a_schedules",
+        "app.api.routers.a2a_extensions_opencode",
+        "app.api.routers.hub_a2a_extensions_opencode",
+        "app.api.routers.opencode_session_directory",
 
         "app.api.routers.me_sessions",
         "app.api.routers.invitations",

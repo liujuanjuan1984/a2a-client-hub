@@ -70,6 +70,16 @@ async def update_proxy_allowlist_entry(
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
 
+    if payload.host_pattern and payload.host_pattern != entry.host_pattern:
+        # Check if new pattern already exists
+        stmt = select(A2AProxyAllowlist).where(A2AProxyAllowlist.host_pattern == payload.host_pattern)
+        existing = await db.execute(stmt)
+        if existing.scalars().first():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Host pattern '{payload.host_pattern}' already exists",
+            )
+
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(entry, key, value)
