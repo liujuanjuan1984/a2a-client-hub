@@ -155,8 +155,23 @@ curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages:query" \
   }'
 ```
 
-`messages:query` returns message headers only (id/role/created_at/metadata).
-Message bodies are loaded from block endpoints for all roles.
+`messages:query` returns message headers only (id/role/created_at/metadata)
+without blocks.
+
+### Query Unified Session Timeline (Primary Chat Read Model)
+
+```bash
+curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages/timeline:query" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "limit": 8,
+    "before": "<OPAQUE_CURSOR_OR_NULL>"
+  }'
+```
+
+`messages/timeline:query` returns ordered timeline items including blocks and
+cursor page info (`hasMoreBefore`, `nextBefore`) for backward pagination.
 
 ### Query Message Blocks (Batch)
 

@@ -167,6 +167,7 @@ scheduled, and OpenCode sessions:
 
 - `POST /api/v1/me/conversations:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages:query`
+- `POST /api/v1/me/conversations/{conversation_id}/messages/timeline:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages/blocks:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages/{message_id}/blocks/{block_seq}:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
@@ -192,6 +193,9 @@ Message query contract boundary:
 
 - `messages:query` is a lightweight list endpoint and does not include
   `metadata.message_blocks`.
+- `messages/timeline:query` is the primary chat read model and returns ordered
+  message timeline items with block payloads plus backward cursor pagination
+  (`pageInfo.hasMoreBefore`, `pageInfo.nextBefore`).
 - `SessionMessageItem.id` is the canonical local message UUID for all roles.
 - Message body is persisted and queried via ordered blocks for all roles
   (`user`/`agent`/`system`).
