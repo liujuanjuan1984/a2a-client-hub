@@ -177,8 +177,8 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         assert "session_id" not in continue_payload
 
         msgs_resp = await client.post(
-            f"/me/conversations/{session.id}/messages:query",
-            json={"page": 1, "size": 50},
+            f"/me/conversations/{session.id}/messages/timeline:query",
+            json={"limit": 8},
         )
         assert msgs_resp.status_code == 200
         msgs_payload = msgs_resp.json()
@@ -187,6 +187,8 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         assert len(msgs_payload["items"]) == 2
         assert msgs_payload["items"][0]["role"] == "user"
         assert msgs_payload["items"][1]["role"] == "agent"
+        assert len(msgs_payload["items"][0]["blocks"]) == 1
+        assert len(msgs_payload["items"][1]["blocks"]) == 1
 
 
 async def test_me_sessions_query_supports_agent_id_filter(

@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.schemas.pagination import ListResponse, Pagination
+from app.schemas.pagination import Pagination
 
 SessionSource = Literal["manual", "scheduled"]
 AgentSource = Literal["personal", "shared"]
@@ -49,24 +49,12 @@ class SessionListResponse(BaseModel):
     pagination: Pagination
 
 
-class SessionMessagesQueryRequest(BaseModel):
-    page: int = Field(1, ge=1, description="Page number (1-indexed)")
-    size: int = Field(100, ge=1, le=200, description="Page size")
-
-
 class SessionTimelineQueryRequest(BaseModel):
     before: Optional[str] = Field(
         None,
         description="Opaque cursor to fetch older messages.",
     )
     limit: int = Field(8, ge=1, le=50, description="Page size for timeline window")
-
-
-class SessionMessageItem(BaseModel):
-    id: str
-    role: Literal["user", "agent", "system"]
-    created_at: datetime
-    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SessionMessageBlockItem(BaseModel):
@@ -77,45 +65,6 @@ class SessionMessageBlockItem(BaseModel):
     content: Optional[str] = None
     content_length: int = Field(alias="contentLength")
     is_finished: bool = Field(alias="isFinished")
-
-    model_config = {"populate_by_name": True}
-
-
-SessionBlocksMode = Literal["full", "text_with_placeholders", "outline"]
-
-
-class SessionMessageBlocksQueryRequest(BaseModel):
-    message_ids: list[str] = Field(alias="messageIds", min_length=1, max_length=200)
-    mode: SessionBlocksMode = "full"
-
-    model_config = {"populate_by_name": True}
-
-
-class SessionMessageBlocksItem(BaseModel):
-    message_id: str = Field(alias="messageId")
-    role: Literal["user", "agent", "system"]
-    block_count: int = Field(alias="blockCount")
-    has_blocks: bool = Field(alias="hasBlocks")
-    blocks: list[SessionMessageBlockItem]
-
-    model_config = {"populate_by_name": True}
-
-
-class SessionMessageBlocksQueryMeta(BaseModel):
-    conversation_id: str = Field(alias="conversationId")
-    mode: SessionBlocksMode
-
-    model_config = {"populate_by_name": True}
-
-
-class SessionMessageBlocksQueryResponse(BaseModel):
-    items: list[SessionMessageBlocksItem]
-    meta: SessionMessageBlocksQueryMeta
-
-
-class SessionMessageBlockDetailResponse(BaseModel):
-    message_id: str = Field(alias="messageId")
-    block: SessionMessageBlockItem
 
     model_config = {"populate_by_name": True}
 
@@ -156,12 +105,6 @@ class SessionTimelineQueryResponse(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class SessionMessagesListResponse(
-    ListResponse[SessionMessageItem, SessionMessagesMeta]
-):
-    pass
-
-
 class SessionContinueResponse(BaseModel):
     conversation_id: str = Field(alias="conversationId")
     source: SessionSource
@@ -172,18 +115,9 @@ class SessionContinueResponse(BaseModel):
 
 __all__ = [
     "SessionContinueResponse",
-    "SessionBlocksMode",
     "SessionListResponse",
-    "SessionMessageBlockDetailResponse",
     "SessionMessageBlockItem",
-    "SessionMessageBlocksItem",
-    "SessionMessageBlocksQueryMeta",
-    "SessionMessageBlocksQueryRequest",
-    "SessionMessageBlocksQueryResponse",
-    "SessionMessageItem",
-    "SessionMessagesListResponse",
     "SessionMessagesMeta",
-    "SessionMessagesQueryRequest",
     "SessionTimelineMessageItem",
     "SessionTimelinePageInfo",
     "SessionTimelineQueryRequest",

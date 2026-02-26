@@ -7,11 +7,7 @@ import {
   listScheduledJobExecutionsPage,
   listScheduledJobsPage,
 } from "@/lib/api/scheduledJobs";
-import {
-  listSessionMessagesPage,
-  listSessionTimelinePage,
-  listSessionsPage,
-} from "@/lib/api/sessions";
+import { listSessionTimelinePage, listSessionsPage } from "@/lib/api/sessions";
 
 jest.mock("@/lib/api/client", () => ({
   apiRequest: jest.fn(),
@@ -111,35 +107,6 @@ describe("API modules using shared pagination fallback", () => {
         agent_id: "agent-123",
       },
     });
-  });
-
-  it("resolves session messages nextPage from size heuristic", async () => {
-    mockedApiRequest.mockResolvedValueOnce({
-      items: [
-        {
-          id: "msg-1",
-          role: "user",
-          created_at: "2026-02-24T00:00:00.000Z",
-        },
-        {
-          id: "msg-2",
-          role: "agent",
-          created_at: "2026-02-24T00:00:01.000Z",
-        },
-      ],
-    } as any);
-
-    const result = await listSessionMessagesPage("conversation-1", {
-      page: 1,
-      size: 2,
-    });
-
-    expect(result.nextPage).toBe(2);
-    expect(result.items[1]).toMatchObject({
-      id: "msg-2",
-      role: "agent",
-    });
-    expect(mockedApiRequest).toHaveBeenCalledTimes(1);
   });
 
   it("queries timeline page with before cursor and limit", async () => {

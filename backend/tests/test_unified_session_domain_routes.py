@@ -152,28 +152,6 @@ async def test_conversation_routes_use_conversation_id_only(
         assert str(scheduled_session.id) in conversation_ids
         assert all("id" not in item for item in list_payload["items"])
 
-        manual_msgs_resp = await client.post(
-            f"/me/conversations/{manual_session.id}/messages:query",
-            json={"page": 1, "size": 50},
-        )
-        assert manual_msgs_resp.status_code == 200
-        msgs_payload = manual_msgs_resp.json()
-        assert msgs_payload["meta"]["source"] == "manual"
-        assert msgs_payload["meta"]["conversationId"] == str(manual_session.id)
-        assert len(msgs_payload["items"]) == 2
-        user_item = next(
-            item for item in msgs_payload["items"] if item["role"] == "user"
-        )
-        agent_item = next(
-            item for item in msgs_payload["items"] if item["role"] == "agent"
-        )
-        assert user_item["id"] == str(user_message.id)
-        assert agent_item["id"] == str(agent_message.id)
-        assert "message_blocks" not in agent_item.get("metadata", {})
-        assert "content" not in user_item
-        assert "content" not in agent_item
-        assert "block_count" not in agent_item.get("metadata", {})
-
         timeline_resp = await client.post(
             f"/me/conversations/{manual_session.id}/messages/timeline:query",
             json={"limit": 8},
@@ -188,29 +166,13 @@ async def test_conversation_routes_use_conversation_id_only(
         timeline_agent_item = next(
             item for item in timeline_payload["items"] if item["role"] == "agent"
         )
+        assert timeline_user_item["id"] == str(user_message.id)
+        assert timeline_agent_item["id"] == str(agent_message.id)
         assert len(timeline_user_item["blocks"]) == 1
         assert len(timeline_agent_item["blocks"]) == 1
         assert timeline_agent_item["blocks"][0]["content"] == "world"
         assert timeline_payload["pageInfo"]["hasMoreBefore"] is False
         assert timeline_payload["pageInfo"]["nextBefore"] is None
-
-        blocks_resp = await client.post(
-            f"/me/conversations/{manual_session.id}/messages/blocks:query",
-            json={"messageIds": [str(agent_message.id)], "mode": "full"},
-        )
-        assert blocks_resp.status_code == 200
-        blocks_payload = blocks_resp.json()
-        assert blocks_payload["meta"]["conversationId"] == str(manual_session.id)
-        assert blocks_payload["meta"]["mode"] == "full"
-        assert len(blocks_payload["items"]) == 1
-        assert blocks_payload["items"][0]["messageId"] == str(agent_message.id)
-        assert blocks_payload["items"][0]["role"] == "agent"
-        assert blocks_payload["items"][0]["blockCount"] == 1
-        assert blocks_payload["items"][0]["hasBlocks"] is True
-        assert len(blocks_payload["items"][0]["blocks"]) == 1
-        assert blocks_payload["items"][0]["blocks"][0]["type"] == "text"
-        assert blocks_payload["items"][0]["blocks"][0]["content"] == "world"
-        assert blocks_payload["items"][0]["blocks"][0]["isFinished"] is True
 
         continue_resp = await client.post(
             f"/me/conversations/{manual_session.id}:continue"
@@ -297,8 +259,8 @@ async def test_invalid_conversation_id_returns_400(
         current_user=user,
     ) as client:
         resp = await client.post(
-            "/me/conversations/not-a-uuid/messages:query",
-            json={"page": 1, "size": 20},
+            "/me/conversations/not-a-uuid/messages/timeline:query",
+            json={"limit": 8},
         )
         assert resp.status_code == 400
         assert resp.json()["detail"] == "invalid_conversation_id"
@@ -324,7 +286,7 @@ async def test_invalid_timeline_cursor_returns_400(
         assert resp.json()["detail"] == "invalid_before_cursor"
 
 
-async def test_invalid_message_id_returns_400(
+async def test_legacy_messages_and_blocks_routes_are_removed(
     async_db_session,
     async_session_maker,
 ):
@@ -337,11 +299,16 @@ async def test_invalid_message_id_returns_400(
         current_user=user,
     ) as client:
         resp = await client.post(
-            f"/me/conversations/{conversation_id}/messages/blocks:query",
-            json={"messageIds": ["not-a-uuid"], "mode": "full"},
+            f"/me/conversations/{conversation_id}/messages:query",
+            json={"page": 1, "size": 20},
         )
-        assert resp.status_code == 400
-        assert resp.json()["detail"] == "invalid_message_id"
+        assert resp.status_code == 404
+
+        resp = await client.post(
+            f"/me/conversations/{conversation_id}/messages/blocks:query",
+            json={"messageIds": [str(uuid4())], "mode": "full"},
+        )
+        assert resp.status_code == 404
 
 
 async def test_list_sessions_filters_use_conversation_source_only(
@@ -416,7 +383,7 @@ async def test_list_sessions_filters_use_conversation_source_only(
         assert scheduled_resp.json()["pagination"]["total"] == 0
 
 
-async def test_messages_query_reads_local_history_for_opencode_bound_conversation(
+async def test_timeline_query_reads_local_history_for_opencode_bound_conversation(
     async_db_session,
     async_session_maker,
 ):
@@ -496,8 +463,8 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
         current_user=user,
     ) as client:
         resp = await client.post(
-            f"/me/conversations/{session.id}/messages:query",
-            json={"page": 1, "size": 50},
+            f"/me/conversations/{session.id}/messages/timeline:query",
+            json={"limit": 8},
         )
         assert resp.status_code == 200
         payload = resp.json()
@@ -507,9 +474,8 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
         assert len(payload["items"]) == 2
         assert payload["items"][0]["role"] == "user"
         assert payload["items"][1]["role"] == "agent"
-        assert "content" not in payload["items"][0]
-        assert "content" not in payload["items"][1]
-        assert "block_count" not in payload["items"][1]["metadata"]
+        assert payload["items"][0]["blocks"][0]["content"] == "hello"
+        assert payload["items"][1]["blocks"][0]["content"] == "world"
 
 
 async def test_continue_keeps_external_session_id_empty_when_missing(

@@ -27,14 +27,6 @@ export type SessionMessageBlockItem = {
   isFinished: boolean;
 };
 
-export type SessionMessageBlocksItem = {
-  messageId: string;
-  role: "user" | "agent" | "system";
-  blockCount: number;
-  hasBlocks: boolean;
-  blocks: SessionMessageBlockItem[];
-};
-
 export type SessionMessageItem = {
   id: string;
   role: "user" | "agent" | "system";
@@ -87,29 +79,6 @@ export const listSessionsPage = async (options?: {
       ...(options?.source ? { source: options.source } : {}),
       ...(agentId ? { agent_id: agentId } : {}),
     },
-  });
-
-  const parsed = parsePaginatedListResponse(response);
-  const nextPage = resolveNextPageWithFallback({ parsed, page, size });
-  return { ...parsed, nextPage };
-};
-
-export const listSessionMessagesPage = async (
-  conversationId: string,
-  options?: { page?: number; size?: number },
-) => {
-  const page = options?.page ?? 1;
-  const size = options?.size ?? 100;
-  const response = await apiRequest<
-    {
-      items: SessionMessageItem[];
-      pagination?: unknown;
-      meta?: unknown;
-    },
-    { page: number; size: number }
-  >(`/me/conversations/${encodeURIComponent(conversationId)}/messages:query`, {
-    method: "POST",
-    body: { page, size },
   });
 
   const parsed = parsePaginatedListResponse(response);
@@ -175,45 +144,6 @@ export const listSessionTimelinePage = async (
     meta:
       response.meta && typeof response.meta === "object"
         ? (response.meta as Record<string, unknown>)
-        : undefined,
-  };
-};
-
-export const querySessionMessageBlocks = async (
-  conversationId: string,
-  payload: {
-    messageIds: string[];
-    mode?: "full" | "text_with_placeholders" | "outline";
-  },
-): Promise<{
-  items: SessionMessageBlocksItem[];
-  meta?: Record<string, unknown>;
-}> => {
-  const response = await apiRequest<
-    {
-      items: SessionMessageBlocksItem[];
-      meta?: Record<string, unknown>;
-    },
-    {
-      messageIds: string[];
-      mode: "full" | "text_with_placeholders" | "outline";
-    }
-  >(
-    `/me/conversations/${encodeURIComponent(conversationId)}/messages/blocks:query`,
-    {
-      method: "POST",
-      body: {
-        messageIds: payload.messageIds,
-        mode: payload.mode ?? "full",
-      },
-    },
-  );
-
-  return {
-    items: Array.isArray(response.items) ? response.items : [],
-    meta:
-      response.meta && typeof response.meta === "object"
-        ? response.meta
         : undefined,
   };
 };

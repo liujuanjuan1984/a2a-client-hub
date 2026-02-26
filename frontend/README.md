@@ -110,14 +110,10 @@ Chat timeline loading is unified via
 (`limit` + `before` cursor for backward pagination from latest window).
 To avoid transport contention, chat history auto-refetch is paused while a
 message is actively streaming.
-`messages:query` remains a lightweight header-only endpoint (no message blocks),
-and `messages/blocks:query` is reserved for explicit block-inspection scenarios
-rather than default chat rendering.
 
 Message id contract:
 
-- `messages:query` and `messages/timeline:query` both return canonical local
-  UUIDs in `item.id`.
+- `messages/timeline:query` returns canonical local UUIDs in `item.id`.
 - Frontend store/cache keys must use `item.id` only.
 - Do not rely on alias ids from metadata.
 - Stream events must use snake_case contract fields: `message_id`, `event_id`, `seq`.

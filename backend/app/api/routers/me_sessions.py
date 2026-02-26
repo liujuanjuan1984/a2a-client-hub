@@ -12,12 +12,6 @@ from app.db.transaction import commit_safely
 from app.schemas.session_domain import (
     SessionContinueResponse,
     SessionListResponse,
-    SessionMessageBlockDetailResponse,
-    SessionMessageBlocksQueryRequest,
-    SessionMessageBlocksQueryResponse,
-    SessionMessagesListResponse,
-    SessionMessagesMeta,
-    SessionMessagesQueryRequest,
     SessionQueryRequest,
     SessionTimelineQueryRequest,
     SessionTimelineQueryResponse,
@@ -74,40 +68,6 @@ async def list_unified_sessions(
 
 
 @router.post(
-    "/{conversation_id}/messages:query",
-    response_model=SessionMessagesListResponse,
-)
-async def list_unified_session_messages(
-    *,
-    conversation_id: str,
-    payload: SessionMessagesQueryRequest,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_user),
-) -> SessionMessagesListResponse:
-    try:
-        items, extra, db_mutated = await session_hub_service.list_messages(
-            db,
-            user_id=current_user.id,
-            conversation_id=conversation_id,
-            page=payload.page,
-            size=payload.size,
-        )
-    except ValueError as exc:
-        detail = str(exc)
-        raise HTTPException(
-            status_code=_status_code_for_session_error(detail),
-            detail=detail,
-        ) from exc
-    if db_mutated:
-        await commit_safely(db)
-    return SessionMessagesListResponse(
-        items=items,
-        pagination=extra["pagination"],
-        meta=SessionMessagesMeta(**extra["meta"]),
-    )
-
-
-@router.post(
     "/{conversation_id}/messages/timeline:query",
     response_model=SessionTimelineQueryResponse,
 )
@@ -141,69 +101,6 @@ async def list_unified_session_timeline(
             "meta": extra["meta"],
         }
     )
-
-
-@router.post(
-    "/{conversation_id}/messages/blocks:query",
-    response_model=SessionMessageBlocksQueryResponse,
-)
-async def query_unified_message_blocks(
-    *,
-    conversation_id: str,
-    payload: SessionMessageBlocksQueryRequest,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_user),
-) -> SessionMessageBlocksQueryResponse:
-    try:
-        items, meta, db_mutated = await session_hub_service.query_message_blocks(
-            db,
-            user_id=current_user.id,
-            conversation_id=conversation_id,
-            message_ids=payload.message_ids,
-            mode=payload.mode,
-        )
-    except ValueError as exc:
-        detail = str(exc)
-        raise HTTPException(
-            status_code=_status_code_for_session_error(detail),
-            detail=detail,
-        ) from exc
-    if db_mutated:
-        await commit_safely(db)
-    return SessionMessageBlocksQueryResponse.model_validate(
-        {"items": items, "meta": meta}
-    )
-
-
-@router.post(
-    "/{conversation_id}/messages/{message_id}/blocks/{block_seq}:query",
-    response_model=SessionMessageBlockDetailResponse,
-)
-async def query_unified_message_block_detail(
-    *,
-    conversation_id: str,
-    message_id: str,
-    block_seq: int,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_user),
-) -> SessionMessageBlockDetailResponse:
-    try:
-        payload, db_mutated = await session_hub_service.query_message_block_detail(
-            db,
-            user_id=current_user.id,
-            conversation_id=conversation_id,
-            message_id=message_id,
-            block_seq=block_seq,
-        )
-    except ValueError as exc:
-        detail = str(exc)
-        raise HTTPException(
-            status_code=_status_code_for_session_error(detail),
-            detail=detail,
-        ) from exc
-    if db_mutated:
-        await commit_safely(db)
-    return SessionMessageBlockDetailResponse.model_validate(payload)
 
 
 @router.post("/{conversation_id}:continue", response_model=SessionContinueResponse)
