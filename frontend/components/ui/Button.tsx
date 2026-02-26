@@ -27,12 +27,12 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants = {
-    neo: "bg-primary active:opacity-80",
-    primary: "bg-primary active:opacity-80",
-    secondary: "bg-gray-800 active:bg-gray-700",
-    outline: "border border-white/20 active:bg-white/10",
-    ghost: "active:bg-white/10",
-    danger: "bg-red-500/20 active:bg-red-500/30",
+    neo: "bg-yellow-500/90 active:bg-yellow-500",
+    primary: "bg-yellow-500/90 active:bg-yellow-500",
+    secondary: "bg-slate-800/60 border border-white/5 active:bg-slate-800",
+    outline: "border border-white/10 active:bg-white/5",
+    ghost: "active:bg-white/5",
+    danger: "bg-red-500/10 border border-red-500/20 active:bg-red-500/20",
   };
 
   const sizes = {
@@ -50,20 +50,20 @@ export function Button({
   };
 
   const textColors = {
-    neo: "text-black",
-    primary: "text-black",
-    secondary: "text-white",
-    outline: "text-white/80",
-    ghost: "text-white/80",
-    danger: "text-red-400",
+    neo: "text-black/90",
+    primary: "text-black/90",
+    secondary: "text-slate-300",
+    outline: "text-slate-400",
+    ghost: "text-slate-400",
+    danger: "text-red-400/90",
   };
 
   const iconColors = {
     neo: "#000000",
     primary: "#000000",
-    secondary: "#FFFFFF",
-    outline: "#FFFFFF",
-    ghost: "#FFFFFF",
+    secondary: "#94a3b8",
+    outline: "#64748b",
+    ghost: "#64748b",
     danger: "#f87171",
   };
 
