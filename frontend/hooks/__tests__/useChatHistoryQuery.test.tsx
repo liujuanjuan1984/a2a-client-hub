@@ -3,14 +3,14 @@ import { renderHook } from "@testing-library/react-native";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { type ChatMessage } from "@/lib/api/chat-utils";
-import { listSessionTimelinePage } from "@/lib/api/sessions";
+import { listSessionMessagesPage } from "@/lib/api/sessions";
 
 jest.mock("@/hooks/usePaginatedList", () => ({
   usePaginatedList: jest.fn(),
 }));
 
 jest.mock("@/lib/api/sessions", () => ({
-  listSessionTimelinePage: jest.fn(),
+  listSessionMessagesPage: jest.fn(),
 }));
 
 jest.mock("@/lib/storage/mmkv", () => ({
@@ -22,7 +22,7 @@ jest.mock("@/lib/storage/mmkv", () => ({
 }));
 
 const mockedUsePaginatedList = jest.mocked(usePaginatedList);
-const mockedListSessionTimelinePage = jest.mocked(listSessionTimelinePage);
+const mockedListSessionMessagesPage = jest.mocked(listSessionMessagesPage);
 
 const createPaginatedResult = (
   items: unknown[],
@@ -45,7 +45,7 @@ const createPaginatedResult = (
 describe("useChatHistoryQuery", () => {
   beforeEach(() => {
     mockedUsePaginatedList.mockReset();
-    mockedListSessionTimelinePage.mockReset();
+    mockedListSessionMessagesPage.mockReset();
   });
 
   it("maps session history messages without truncating loaded pages", () => {
@@ -141,7 +141,7 @@ describe("useChatHistoryQuery", () => {
       fetchPage = options.fetchPage;
       return createPaginatedResult([]);
     });
-    mockedListSessionTimelinePage
+    mockedListSessionMessagesPage
       .mockResolvedValueOnce({
         items: [
           {
@@ -184,7 +184,7 @@ describe("useChatHistoryQuery", () => {
       nextPage?: number;
     }>;
     const firstResult = await runFetchPage(1);
-    expect(mockedListSessionTimelinePage).toHaveBeenNthCalledWith(
+    expect(mockedListSessionMessagesPage).toHaveBeenNthCalledWith(
       1,
       "conversation-1",
       {
@@ -195,7 +195,7 @@ describe("useChatHistoryQuery", () => {
     expect(firstResult.nextPage).toBe(2);
 
     const secondResult = await runFetchPage(2);
-    expect(mockedListSessionTimelinePage).toHaveBeenNthCalledWith(
+    expect(mockedListSessionMessagesPage).toHaveBeenNthCalledWith(
       2,
       "conversation-1",
       {

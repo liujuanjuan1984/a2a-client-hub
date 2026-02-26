@@ -12,9 +12,9 @@ from app.db.transaction import commit_safely
 from app.schemas.session_domain import (
     SessionContinueResponse,
     SessionListResponse,
+    SessionMessagesQueryRequest,
+    SessionMessagesQueryResponse,
     SessionQueryRequest,
-    SessionTimelineQueryRequest,
-    SessionTimelineQueryResponse,
     SessionViewItem,
 )
 from app.services.session_hub import session_hub_service
@@ -69,17 +69,17 @@ async def list_unified_sessions(
 
 @router.post(
     "/{conversation_id}/messages:query",
-    response_model=SessionTimelineQueryResponse,
+    response_model=SessionMessagesQueryResponse,
 )
 async def list_unified_session_messages(
     *,
     conversation_id: str,
-    payload: SessionTimelineQueryRequest,
+    payload: SessionMessagesQueryRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
-) -> SessionTimelineQueryResponse:
+) -> SessionMessagesQueryResponse:
     try:
-        items, extra, db_mutated = await session_hub_service.list_timeline_messages(
+        items, extra, db_mutated = await session_hub_service.list_messages(
             db,
             user_id=current_user.id,
             conversation_id=conversation_id,
@@ -94,7 +94,7 @@ async def list_unified_session_messages(
         ) from exc
     if db_mutated:
         await commit_safely(db)
-    return SessionTimelineQueryResponse.model_validate(
+    return SessionMessagesQueryResponse.model_validate(
         {
             "items": items,
             "pageInfo": extra["pageInfo"],

@@ -7,7 +7,7 @@ import {
   listScheduledJobExecutionsPage,
   listScheduledJobsPage,
 } from "@/lib/api/scheduledJobs";
-import { listSessionTimelinePage, listSessionsPage } from "@/lib/api/sessions";
+import { listSessionMessagesPage, listSessionsPage } from "@/lib/api/sessions";
 
 jest.mock("@/lib/api/client", () => ({
   apiRequest: jest.fn(),
@@ -128,7 +128,7 @@ describe("API modules using shared pagination fallback", () => {
       meta: { conversationId: "conversation-1", source: "manual" },
     } as any);
 
-    const result = await listSessionTimelinePage("conversation-1", {
+    const result = await listSessionMessagesPage("conversation-1", {
       before: "cursor-0",
       limit: 8,
     });

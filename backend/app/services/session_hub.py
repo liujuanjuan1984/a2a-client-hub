@@ -43,7 +43,7 @@ class ResolvedConversationTarget:
 
 
 @dataclass(frozen=True)
-class TimelineBeforeCursor:
+class MessagesBeforeCursor:
     created_at: datetime
     sender_priority: int
     message_id: UUID
@@ -146,7 +146,7 @@ class SessionHubService:
 
         return items
 
-    async def list_timeline_messages(
+    async def list_messages(
         self,
         db: AsyncSession,
         *,
@@ -170,7 +170,7 @@ class SessionHubService:
             fallback_source=target.source if target else None,
         )
 
-        cursor = _parse_timeline_before_cursor(before) if before else None
+        cursor = _parse_messages_before_cursor(before) if before else None
         sender_priority = case(
             (AgentMessage.sender.in_(["user", "automation"]), 0),
             else_=1,
@@ -276,7 +276,7 @@ class SessionHubService:
             try:
                 oldest_created_at = ensure_utc(oldest["created_at"])
                 oldest_id = UUID(str(oldest["id"]))
-                next_before_cursor = _encode_timeline_before_cursor(
+                next_before_cursor = _encode_messages_before_cursor(
                     created_at=oldest_created_at,
                     sender_priority=role_priority,
                     message_id=oldest_id,
@@ -1430,7 +1430,7 @@ def _parse_conversation_id(value: str) -> UUID:
         raise ValueError("invalid_conversation_id") from exc
 
 
-def _encode_timeline_before_cursor(
+def _encode_messages_before_cursor(
     *,
     created_at: datetime,
     sender_priority: int,
@@ -1447,7 +1447,7 @@ def _encode_timeline_before_cursor(
     return encoded.rstrip("=")
 
 
-def _parse_timeline_before_cursor(raw: str) -> TimelineBeforeCursor:
+def _parse_messages_before_cursor(raw: str) -> MessagesBeforeCursor:
     trimmed = (raw or "").strip()
     if not trimmed:
         raise ValueError("invalid_before_cursor")
@@ -1479,7 +1479,7 @@ def _parse_timeline_before_cursor(raw: str) -> TimelineBeforeCursor:
         raise ValueError("invalid_before_cursor") from exc
     if sender_priority not in {0, 1}:
         raise ValueError("invalid_before_cursor")
-    return TimelineBeforeCursor(
+    return MessagesBeforeCursor(
         created_at=created_at,
         sender_priority=sender_priority,
         message_id=message_id,

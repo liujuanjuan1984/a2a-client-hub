@@ -21,14 +21,14 @@ from tests.utils import create_user
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
-async def _list_timeline_items(
+async def _list_message_items(
     async_db_session,
     *,
     user_id,
     conversation_id: str,
     limit: int = 50,
 ):
-    items, _, _ = await session_hub_service.list_timeline_messages(
+    items, _, _ = await session_hub_service.list_messages(
         async_db_session,
         user_id=user_id,
         conversation_id=conversation_id,
@@ -291,20 +291,20 @@ async def test_record_local_invoke_messages_is_idempotent_with_key(
     assert messages[0].invoke_idempotency_key == "run:abc:scheduled"
     assert messages[-1].sender == "agent"
     assert messages[-1].invoke_idempotency_key == "run:abc:scheduled"
-    timeline_items = await _list_timeline_items(
+    message_items = await _list_message_items(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
     )
-    assert len(timeline_items) == 2
+    assert len(message_items) == 2
     user_item = next(
         item
-        for item in timeline_items
+        for item in message_items
         if item["id"] == str(first_refs["user_message_id"])
     )
     agent_item = next(
         item
-        for item in timeline_items
+        for item in message_items
         if item["id"] == str(first_refs["agent_message_id"])
     )
     assert user_item["role"] == "user"
@@ -373,20 +373,20 @@ async def test_record_local_invoke_messages_normalizes_overlong_idempotency_key(
     assert first_refs["agent_message_id"] == second_refs["agent_message_id"]
     assert messages[0].invoke_idempotency_key == expected_key
     assert messages[-1].invoke_idempotency_key == expected_key
-    timeline_items = await _list_timeline_items(
+    message_items = await _list_message_items(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
     )
-    assert len(timeline_items) == 2
+    assert len(message_items) == 2
     user_item = next(
         item
-        for item in timeline_items
+        for item in message_items
         if item["id"] == str(first_refs["user_message_id"])
     )
     agent_item = next(
         item
-        for item in timeline_items
+        for item in message_items
         if item["id"] == str(first_refs["agent_message_id"])
     )
     assert len(user_item["blocks"]) == 1
@@ -593,19 +593,19 @@ async def test_record_local_invoke_messages_rejects_idempotency_query_conflict(
             idempotency_key="same-key",
         )
 
-    timeline_items = await _list_timeline_items(
+    message_items = await _list_message_items(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
     )
     user_item = next(
-        item for item in timeline_items if item["id"] == str(refs["user_message_id"])
+        item for item in message_items if item["id"] == str(refs["user_message_id"])
     )
     assert len(user_item["blocks"]) == 1
     assert user_item["blocks"][0]["content"] == "first-query"
 
 
-async def test_list_timeline_messages_returns_blocks_and_before_cursor(
+async def test_list_messages_returns_blocks_and_before_cursor(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -635,7 +635,7 @@ async def test_list_timeline_messages_returns_blocks_and_before_cursor(
         )
     await async_db_session.flush()
 
-    first_items, first_extra, _ = await session_hub_service.list_timeline_messages(
+    first_items, first_extra, _ = await session_hub_service.list_messages(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
@@ -650,7 +650,7 @@ async def test_list_timeline_messages_returns_blocks_and_before_cursor(
     assert all("blocks" in item for item in first_items)
     assert all(item["status"] == "done" for item in first_items)
 
-    second_items, second_extra, _ = await session_hub_service.list_timeline_messages(
+    second_items, second_extra, _ = await session_hub_service.list_messages(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
@@ -664,7 +664,7 @@ async def test_list_timeline_messages_returns_blocks_and_before_cursor(
     )
 
 
-async def test_list_timeline_messages_rejects_invalid_cursor(async_db_session):
+async def test_list_messages_rejects_invalid_cursor(async_db_session):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     thread = ConversationThread(
         user_id=user.id,
@@ -677,7 +677,7 @@ async def test_list_timeline_messages_rejects_invalid_cursor(async_db_session):
     await async_db_session.flush()
 
     with pytest.raises(ValueError, match="invalid_before_cursor"):
-        await session_hub_service.list_timeline_messages(
+        await session_hub_service.list_messages(
             async_db_session,
             user_id=user.id,
             conversation_id=str(thread.id),
@@ -686,7 +686,7 @@ async def test_list_timeline_messages_rejects_invalid_cursor(async_db_session):
         )
 
 
-async def test_list_timeline_messages_overwrite_snapshot_without_text_duplication(
+async def test_list_messages_overwrite_snapshot_without_text_duplication(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -741,12 +741,12 @@ async def test_list_timeline_messages_overwrite_snapshot_without_text_duplicatio
     )
     await async_db_session.flush()
 
-    timeline_items = await _list_timeline_items(
+    message_items = await _list_message_items(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
     )
-    agent_items = [item for item in timeline_items if item.get("role") == "agent"]
+    agent_items = [item for item in message_items if item.get("role") == "agent"]
     assert len(agent_items) == 1
     agent_item = agent_items[0]
     assert agent_item["id"] == str(agent_message_id)
@@ -757,7 +757,7 @@ async def test_list_timeline_messages_overwrite_snapshot_without_text_duplicatio
     assert text_blocks[0]["content"] == "final content"
 
 
-async def test_list_timeline_messages_overwrite_preserves_block_boundaries(
+async def test_list_messages_overwrite_preserves_block_boundaries(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -836,12 +836,12 @@ async def test_list_timeline_messages_overwrite_preserves_block_boundaries(
     )
     await async_db_session.flush()
 
-    timeline_items = await _list_timeline_items(
+    message_items = await _list_message_items(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
     )
-    agent_items = [item for item in timeline_items if item.get("role") == "agent"]
+    agent_items = [item for item in message_items if item.get("role") == "agent"]
     assert len(agent_items) == 1
     agent_item = agent_items[0]
     assert agent_item["id"] == str(agent_message_id)

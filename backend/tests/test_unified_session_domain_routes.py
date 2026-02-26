@@ -152,27 +152,27 @@ async def test_conversation_routes_use_conversation_id_only(
         assert str(scheduled_session.id) in conversation_ids
         assert all("id" not in item for item in list_payload["items"])
 
-        timeline_resp = await client.post(
+        messages_resp = await client.post(
             f"/me/conversations/{manual_session.id}/messages:query",
             json={"limit": 8},
         )
-        assert timeline_resp.status_code == 200
-        timeline_payload = timeline_resp.json()
-        assert len(timeline_payload["items"]) == 2
-        assert timeline_payload["meta"]["conversationId"] == str(manual_session.id)
-        timeline_user_item = next(
-            item for item in timeline_payload["items"] if item["role"] == "user"
+        assert messages_resp.status_code == 200
+        messages_payload = messages_resp.json()
+        assert len(messages_payload["items"]) == 2
+        assert messages_payload["meta"]["conversationId"] == str(manual_session.id)
+        messages_user_item = next(
+            item for item in messages_payload["items"] if item["role"] == "user"
         )
-        timeline_agent_item = next(
-            item for item in timeline_payload["items"] if item["role"] == "agent"
+        messages_agent_item = next(
+            item for item in messages_payload["items"] if item["role"] == "agent"
         )
-        assert timeline_user_item["id"] == str(user_message.id)
-        assert timeline_agent_item["id"] == str(agent_message.id)
-        assert len(timeline_user_item["blocks"]) == 1
-        assert len(timeline_agent_item["blocks"]) == 1
-        assert timeline_agent_item["blocks"][0]["content"] == "world"
-        assert timeline_payload["pageInfo"]["hasMoreBefore"] is False
-        assert timeline_payload["pageInfo"]["nextBefore"] is None
+        assert messages_user_item["id"] == str(user_message.id)
+        assert messages_agent_item["id"] == str(agent_message.id)
+        assert len(messages_user_item["blocks"]) == 1
+        assert len(messages_agent_item["blocks"]) == 1
+        assert messages_agent_item["blocks"][0]["content"] == "world"
+        assert messages_payload["pageInfo"]["hasMoreBefore"] is False
+        assert messages_payload["pageInfo"]["nextBefore"] is None
 
         continue_resp = await client.post(
             f"/me/conversations/{manual_session.id}:continue"
@@ -266,7 +266,7 @@ async def test_invalid_conversation_id_returns_400(
         assert resp.json()["detail"] == "invalid_conversation_id"
 
 
-async def test_invalid_timeline_cursor_returns_400(
+async def test_invalid_messages_cursor_returns_400(
     async_db_session,
     async_session_maker,
 ):
@@ -388,7 +388,7 @@ async def test_list_sessions_filters_use_conversation_source_only(
         assert scheduled_resp.json()["pagination"]["total"] == 0
 
 
-async def test_timeline_query_reads_local_history_for_opencode_bound_conversation(
+async def test_messages_query_reads_local_history_for_opencode_bound_conversation(
     async_db_session,
     async_session_maker,
 ):

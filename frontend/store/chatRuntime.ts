@@ -17,7 +17,7 @@ import {
   isAuthFailureError,
 } from "@/lib/api/client";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
-import { listSessionTimelinePage } from "@/lib/api/sessions";
+import { listSessionMessagesPage } from "@/lib/api/sessions";
 import { mergeExternalSessionRef, type AgentSession } from "@/lib/chat-utils";
 import {
   addConversationMessage,
@@ -372,7 +372,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     };
 
     for (let requestCount = 0; requestCount < maxPages; requestCount += 1) {
-      const response = await listSessionTimelinePage(conversationId, {
+      const response = await listSessionMessagesPage(conversationId, {
         before,
         limit,
       });

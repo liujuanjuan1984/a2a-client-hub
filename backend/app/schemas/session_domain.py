@@ -49,7 +49,7 @@ class SessionListResponse(BaseModel):
     pagination: Pagination
 
 
-class SessionTimelineQueryRequest(BaseModel):
+class SessionMessagesQueryRequest(BaseModel):
     before: Optional[str] = Field(
         None,
         description="Opaque cursor to fetch older messages.",
@@ -79,7 +79,7 @@ class SessionMessagesMeta(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class SessionTimelineMessageItem(BaseModel):
+class SessionMessageItem(BaseModel):
     id: str
     role: Literal["user", "agent", "system"]
     created_at: datetime
@@ -90,16 +90,16 @@ class SessionTimelineMessageItem(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class SessionTimelinePageInfo(BaseModel):
+class SessionMessagesPageInfo(BaseModel):
     has_more_before: bool = Field(alias="hasMoreBefore")
     next_before: Optional[str] = Field(alias="nextBefore", default=None)
 
     model_config = {"populate_by_name": True}
 
 
-class SessionTimelineQueryResponse(BaseModel):
-    items: list[SessionTimelineMessageItem]
-    page_info: SessionTimelinePageInfo = Field(alias="pageInfo")
+class SessionMessagesQueryResponse(BaseModel):
+    items: list[SessionMessageItem]
+    page_info: SessionMessagesPageInfo = Field(alias="pageInfo")
     meta: SessionMessagesMeta
 
     model_config = {"populate_by_name": True}
@@ -118,10 +118,10 @@ __all__ = [
     "SessionListResponse",
     "SessionMessageBlockItem",
     "SessionMessagesMeta",
-    "SessionTimelineMessageItem",
-    "SessionTimelinePageInfo",
-    "SessionTimelineQueryRequest",
-    "SessionTimelineQueryResponse",
+    "SessionMessageItem",
+    "SessionMessagesPageInfo",
+    "SessionMessagesQueryRequest",
+    "SessionMessagesQueryResponse",
     "SessionQueryRequest",
     "SessionSource",
     "SessionViewItem",

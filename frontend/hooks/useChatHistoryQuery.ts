@@ -2,18 +2,18 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { usePaginatedList } from "@/hooks/usePaginatedList";
 import { type ChatMessage } from "@/lib/api/chat-utils";
-import { listSessionTimelinePage } from "@/lib/api/sessions";
+import { listSessionMessagesPage } from "@/lib/api/sessions";
 import { queryKeys } from "@/lib/queryKeys";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 
-const TIMELINE_PAGE_LIMIT = 8;
+const MESSAGES_PAGE_LIMIT = 8;
 
-const timelineCursorStore = new Map<string, Map<number, string | null>>();
+const messageCursorStore = new Map<string, Map<number, string | null>>();
 
-const resolveCursorMap = (
+const resolveMessageCursorMap = (
   conversationId: string,
 ): Map<number, string | null> => {
-  const existing = timelineCursorStore.get(conversationId);
+  const existing = messageCursorStore.get(conversationId);
   if (existing) {
     if (!existing.has(1)) {
       existing.set(1, null);
@@ -21,7 +21,7 @@ const resolveCursorMap = (
     return existing;
   }
   const created = new Map<number, string | null>([[1, null]]);
-  timelineCursorStore.set(conversationId, created);
+  messageCursorStore.set(conversationId, created);
   return created;
 };
 
@@ -57,7 +57,7 @@ export function useSessionHistoryQuery(options: {
       cursorByPageRef.current = new Map<number, string | null>([[1, null]]);
       return;
     }
-    cursorByPageRef.current = resolveCursorMap(conversationId);
+    cursorByPageRef.current = resolveMessageCursorMap(conversationId);
     cursorByPageRef.current.set(1, null);
   }, [conversationId]);
 
@@ -72,9 +72,9 @@ export function useSessionHistoryQuery(options: {
         resolvedPage > 1
           ? (cursorByPageRef.current.get(resolvedPage) ?? null)
           : null;
-      const response = await listSessionTimelinePage(conversationId, {
+      const response = await listSessionMessagesPage(conversationId, {
         before,
-        limit: TIMELINE_PAGE_LIMIT,
+        limit: MESSAGES_PAGE_LIMIT,
       });
       const nextBefore =
         typeof response.pageInfo.nextBefore === "string" &&

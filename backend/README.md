@@ -191,7 +191,7 @@ Message query contract boundary:
 - `messages:query` is the primary chat read model and returns ordered
   message timeline items with block payloads plus backward cursor pagination
   (`pageInfo.hasMoreBefore`, `pageInfo.nextBefore`).
-- `SessionTimelineMessageItem.id` is the canonical local message UUID for all roles.
+- `SessionMessageItem.id` is the canonical local message UUID for all roles.
 - Message body is persisted and queried via ordered blocks for all roles
   (`user`/`agent`/`system`).
 

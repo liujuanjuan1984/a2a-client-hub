@@ -36,7 +36,7 @@ export type SessionMessageItem = {
   blocks?: SessionMessageBlockItem[];
 };
 
-export type SessionTimelinePageInfo = {
+export type SessionMessagesPageInfo = {
   hasMoreBefore: boolean;
   nextBefore?: string | null;
 };
@@ -86,7 +86,7 @@ export const listSessionsPage = async (options?: {
   return { ...parsed, nextPage };
 };
 
-export const listSessionTimelinePage = async (
+export const listSessionMessagesPage = async (
   conversationId: string,
   options?: { before?: string | null; limit?: number },
 ) => {
@@ -98,7 +98,7 @@ export const listSessionTimelinePage = async (
   const response = await apiRequest<
     {
       items: SessionMessageItem[];
-      pageInfo?: SessionTimelinePageInfo;
+      pageInfo?: SessionMessagesPageInfo;
       meta?: unknown;
     },
     {
