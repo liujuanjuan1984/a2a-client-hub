@@ -195,14 +195,16 @@ export function ScheduledJobCard({
           <Button
             label="Edit"
             size="xs"
-            variant="secondary"
+            variant={job.enabled ? "outline" : "secondary"}
             iconLeft="create-outline"
             onPress={onEdit}
           />
           <Button
             label={promptExpanded ? "Less" : "Info"}
             size="xs"
-            variant="secondary"
+            variant={
+              promptExpanded ? "primary" : job.enabled ? "outline" : "secondary"
+            }
             iconLeft={
               promptExpanded ? "chevron-up" : "information-circle-outline"
             }
@@ -211,7 +213,9 @@ export function ScheduledJobCard({
           <Button
             label={executionsOpen ? "Hide" : "History"}
             size="xs"
-            variant="secondary"
+            variant={
+              executionsOpen ? "primary" : job.enabled ? "outline" : "secondary"
+            }
             iconLeft={executionsOpen ? "time" : "time-outline"}
             onPress={onToggleExecutions}
           />
@@ -222,6 +226,7 @@ export function ScheduledJobCard({
             label="Stop"
             size="xs"
             variant="danger"
+            className="bg-red-500/40"
             loading={markingFailed}
             disabled={!onMarkFailed}
             onPress={handleMarkFailed}
