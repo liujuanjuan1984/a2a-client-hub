@@ -1,5 +1,9 @@
 import React from "react";
 import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
 
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatHeaderPanel } from "@/components/chat/ChatHeaderPanel";
@@ -7,6 +11,7 @@ import { ChatTimelinePanel } from "@/components/chat/ChatTimelinePanel";
 import { SessionPickerModal } from "@/components/chat/SessionPickerModal";
 import { ShortcutManagerModal } from "@/components/chat/ShortcutManagerModal";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { IconButton } from "@/components/ui/IconButton";
 import { useChatScreenController } from "@/hooks/useChatScreenController";
 
 export function ChatScreen({
@@ -21,16 +26,29 @@ export function ChatScreen({
     conversationId,
   });
 
+  const animatedButtonStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(controller.showScrollToBottom ? 1 : 0, {
+      duration: 200,
+    }),
+    transform: [
+      {
+        scale: withTiming(controller.showScrollToBottom ? 1 : 0.8, {
+          duration: 200,
+        }),
+      },
+    ],
+  }));
+
   if (!controller.agent) {
     if (!controller.hasFetchedAgents) {
       return <FullscreenLoader message="Restoring session..." />;
     }
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
-        <Text className="text-xl font-semibold text-white">
+        <Text className="text-xl font-bold text-black">
           Select an agent first
         </Text>
-        <Text className="mt-2 text-center text-sm text-muted">
+        <Text className="mt-2 text-center text-sm text-black">
           Choose an agent from the list to start chatting.
         </Text>
       </View>
@@ -78,6 +96,21 @@ export function ChatScreen({
         onQuestionReply={controller.handleQuestionReply}
         onQuestionReject={controller.handleQuestionReject}
       />
+
+      <Animated.View
+        style={animatedButtonStyle}
+        className="absolute bottom-24 right-4 z-50"
+        pointerEvents={controller.showScrollToBottom ? "auto" : "none"}
+      >
+        <IconButton
+          icon="chevron-down"
+          variant="primary"
+          size="sm"
+          onPress={() => controller.scrollToBottom(true)}
+          accessibilityLabel="Scroll to bottom"
+          className="rounded-xl shadow-lg"
+        />
+      </Animated.View>
 
       <ShortcutManagerModal
         visible={controller.showShortcutManager}

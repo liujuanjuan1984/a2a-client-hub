@@ -99,9 +99,9 @@ def _validate_artifact_update(data: dict[str, Any]) -> list[str]:
     opencode_metadata = _as_dict(artifact_metadata.get("opencode"))
     candidates = [data, artifact, opencode_metadata]
 
-    if not _has_non_empty_text(candidates, ("message_id", "messageId")):
+    if not _has_non_empty_text(candidates, ("message_id",)):
         errors.append("ArtifactUpdate object missing required field: 'message_id'.")
-    if not _has_non_empty_text(candidates, ("event_id", "eventId")):
+    if not _has_non_empty_text(candidates, ("event_id",)):
         errors.append("ArtifactUpdate object missing required field: 'event_id'.")
     return errors
 

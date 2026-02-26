@@ -8,7 +8,7 @@ import {
 
 interface ButtonProps extends PressableProps {
   label: string;
-  variant?: "primary" | "outline" | "ghost" | "danger" | "secondary";
+  variant?: "primary" | "outline" | "ghost" | "danger" | "secondary" | "neo";
   size?: "xs" | "sm" | "md" | "lg";
   loading?: boolean;
   iconLeft?: React.ComponentProps<typeof Ionicons>["name"];
@@ -27,11 +27,12 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants = {
-    primary: "bg-primary",
-    secondary: "bg-slate-800",
-    outline: "border border-slate-700",
-    ghost: "",
-    danger: "border border-red-500/20 bg-red-500/10",
+    neo: "bg-primary active:opacity-80",
+    primary: "bg-primary active:opacity-80",
+    secondary: "bg-gray-800 active:bg-gray-700",
+    outline: "border border-white/20 active:bg-white/10",
+    ghost: "active:bg-white/10",
+    danger: "bg-red-500/20 active:bg-red-500/30",
   };
 
   const sizes = {
@@ -42,25 +43,27 @@ export function Button({
   };
 
   const textSizes = {
-    xs: "text-[10px]",
-    sm: "text-xs",
+    xs: "text-[11px]",
+    sm: "text-[11px]",
     md: "text-sm",
     lg: "text-base",
   };
 
   const textColors = {
-    primary: "text-white",
+    neo: "text-black",
+    primary: "text-black",
     secondary: "text-white",
-    outline: "text-white",
-    ghost: "text-white",
+    outline: "text-white/80",
+    ghost: "text-white/80",
     danger: "text-red-400",
   };
 
   const iconColors = {
-    primary: "#ffffff",
-    secondary: "#ffffff",
-    outline: "#ffffff",
-    ghost: "#ffffff",
+    neo: "#000000",
+    primary: "#000000",
+    secondary: "#FFFFFF",
+    outline: "#FFFFFF",
+    ghost: "#FFFFFF",
     danger: "#f87171",
   };
 
@@ -75,7 +78,7 @@ export function Button({
 
   return (
     <Pressable
-      className={`rounded-2xl flex-row items-center justify-center ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-50" : ""} ${className || ""}`}
+      className={`flex-row items-center justify-center rounded-xl ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-40" : ""} ${className || ""}`}
       disabled={isDisabled}
       {...props}
     >
@@ -87,9 +90,7 @@ export function Button({
           style={{ marginRight: 8 }}
         />
       ) : null}
-      <Text
-        className={`font-semibold ${textColors[variant]} ${textSizes[size]}`}
-      >
+      <Text className={`font-bold ${textColors[variant]} ${textSizes[size]}`}>
         {label}
       </Text>
       {!loading && iconRight ? (
@@ -103,7 +104,7 @@ export function Button({
       {loading && (
         <ActivityIndicator
           size="small"
-          color={variant === "danger" ? "#f87171" : "#ffffff"}
+          color={iconColors[variant]}
           style={{ marginLeft: 8 }}
         />
       )}

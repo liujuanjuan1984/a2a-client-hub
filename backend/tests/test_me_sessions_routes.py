@@ -9,6 +9,7 @@ from app.api.routers import me_sessions
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
+from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
@@ -58,6 +59,7 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         async_db_session,
         user_id=user.id,
         is_superuser=user.is_superuser,
+        timezone_str=user.timezone or "UTC",
         name="Nightly",
         agent_id=agent.id,
         prompt="ping",
@@ -101,22 +103,41 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         "schedule_execution_id": str(execution.id),
         "agent_id": str(agent.id),
     }
+    user_message = AgentMessage(
+        user_id=user.id,
+        sender="automation",
+        conversation_id=session.id,
+        message_metadata=metadata,
+    )
+    agent_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        message_metadata={**metadata, "success": True},
+    )
+    async_db_session.add(user_message)
+    async_db_session.add(agent_message)
+    await async_db_session.flush()
     async_db_session.add(
-        AgentMessage(
+        AgentMessageBlock(
             user_id=user.id,
-            sender="automation",
+            message_id=user_message.id,
+            block_seq=1,
+            block_type="text",
             content="ping",
-            conversation_id=session.id,
-            message_metadata=metadata,
+            is_finished=True,
+            source="user_input",
         )
     )
     async_db_session.add(
-        AgentMessage(
+        AgentMessageBlock(
             user_id=user.id,
-            sender="agent",
+            message_id=agent_message.id,
+            block_seq=1,
+            block_type="text",
             content="pong",
-            conversation_id=session.id,
-            message_metadata={**metadata, "success": True},
+            is_finished=True,
+            source="finalize_snapshot",
         )
     )
     await async_db_session.commit()

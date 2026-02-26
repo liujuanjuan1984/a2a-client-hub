@@ -45,34 +45,21 @@ describe("useChatHistoryQuery", () => {
     const items: SessionMessageItem[] = Array.from({ length: 520 }, (_, i) => {
       const minute = String(Math.floor(i / 60)).padStart(2, "0");
       const second = String(i % 60).padStart(2, "0");
+      const messageId = `msg-${i}`;
       return {
-        id: `msg-${i}`,
+        id: messageId,
         role: i % 2 === 0 ? "assistant" : "user",
-        content: `content-${i}`,
+        blocks: [
+          {
+            id: `${messageId}:block-1`,
+            messageId,
+            seq: 1,
+            type: "text",
+            content: `content-${i}`,
+            isFinished: true,
+          },
+        ],
         created_at: `2026-02-12T00:${minute}:${second}.000Z`,
-        metadata:
-          i === 0
-            ? {
-                message_blocks: [
-                  {
-                    id: "blk-r",
-                    type: "reasoning",
-                    content: "reasoning-0",
-                    is_finished: true,
-                    created_at: "2026-02-12T00:00:00.100Z",
-                    updated_at: "2026-02-12T00:00:00.200Z",
-                  },
-                  {
-                    id: "blk-t",
-                    type: "tool_call",
-                    content: "tool-0",
-                    is_finished: true,
-                    created_at: "2026-02-12T00:00:00.300Z",
-                    updated_at: "2026-02-12T00:00:00.400Z",
-                  },
-                ],
-              }
-            : undefined,
       };
     });
 
@@ -92,14 +79,9 @@ describe("useChatHistoryQuery", () => {
       content: "content-0",
       blocks: [
         expect.objectContaining({
-          id: "blk-r",
-          type: "reasoning",
-          content: "reasoning-0",
-        }),
-        expect.objectContaining({
-          id: "blk-t",
-          type: "tool_call",
-          content: "tool-0",
+          id: "msg-0:block-1",
+          type: "text",
+          content: "content-0",
         }),
       ],
     });

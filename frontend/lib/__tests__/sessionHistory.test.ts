@@ -1,76 +1,55 @@
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 
 describe("session history mapping", () => {
-  it("hydrates agent blocks from metadata.message_blocks", () => {
-    const mapped = mapSessionMessagesToChatMessages(
-      [
-        {
-          id: "msg-1",
-          role: "assistant",
-          content: "final",
-          created_at: "2026-02-14T00:00:00.000Z",
-          metadata: {
-            message_blocks: [
-              {
-                id: "blk-1",
-                type: "reasoning",
-                content: "thinking",
-                is_finished: true,
-                created_at: "2026-02-14T00:00:00.100Z",
-                updated_at: "2026-02-14T00:00:00.200Z",
-              },
-              {
-                id: "blk-2",
-                type: "text",
-                content: "final",
-                is_finished: true,
-                created_at: "2026-02-14T00:00:00.300Z",
-                updated_at: "2026-02-14T00:00:00.400Z",
-              },
-            ],
+  it("maps canonical ids from block-based history", () => {
+    const mapped = mapSessionMessagesToChatMessages([
+      {
+        id: "1c7cf18e-4936-4de0-84f5-edf2e636ed41",
+        role: "assistant",
+        created_at: "2026-02-14T00:00:00.000Z",
+        blocks: [
+          {
+            id: "block-1",
+            messageId: "1c7cf18e-4936-4de0-84f5-edf2e636ed41",
+            seq: 1,
+            type: "text",
+            content: "final",
+            isFinished: true,
           },
-        },
-      ],
-      "session-1",
-    );
-
-    expect(mapped[0]?.blocks).toEqual([
-      {
-        id: "blk-1",
-        type: "reasoning",
-        content: "thinking",
-        isFinished: true,
-        createdAt: "2026-02-14T00:00:00.100Z",
-        updatedAt: "2026-02-14T00:00:00.200Z",
-      },
-      {
-        id: "blk-2",
-        type: "text",
-        content: "final",
-        isFinished: true,
-        createdAt: "2026-02-14T00:00:00.300Z",
-        updatedAt: "2026-02-14T00:00:00.400Z",
+        ],
       },
     ]);
+
+    expect(mapped[0]).toMatchObject({
+      id: "1c7cf18e-4936-4de0-84f5-edf2e636ed41",
+      role: "agent",
+      content: "final",
+    });
   });
 
-  it("falls back to one text block when metadata blocks are absent", () => {
-    const mapped = mapSessionMessagesToChatMessages(
-      [
-        {
-          id: "msg-2",
-          role: "assistant",
-          content: "final",
-          created_at: "2026-02-14T00:00:01.000Z",
-          metadata: {},
-        },
-      ],
-      "session-2",
-    );
+  it("builds one text block for agent message content", () => {
+    const mapped = mapSessionMessagesToChatMessages([
+      {
+        id: "2fbe098d-7af0-4bf9-8402-a1778aeeeb2f",
+        role: "assistant",
+        created_at: "2026-02-14T00:00:01.000Z",
+        metadata: {},
+        blocks: [
+          {
+            id: "block-2",
+            messageId: "2fbe098d-7af0-4bf9-8402-a1778aeeeb2f",
+            seq: 1,
+            type: "text",
+            content: "final",
+            isFinished: true,
+          },
+        ],
+      },
+    ]);
 
     expect(mapped[0]?.blocks).toEqual([
       {
-        id: "msg-2:text",
+        id: "block-2",
         type: "text",
         content: "final",
         isFinished: true,
@@ -80,33 +59,16 @@ describe("session history mapping", () => {
     ]);
   });
 
-  it("removes json-style quoting from legacy agent contents", () => {
-    const mapped = mapSessionMessagesToChatMessages(
-      [
-        {
-          id: "msg-3",
-          role: "assistant",
-          content: '"Task(artifacts=[Artifact(artifact_id="id")])"',
-          created_at: "2026-02-14T00:00:02.000Z",
-          metadata: {},
-        },
-      ],
-      "session-3",
-    );
+  it("skips entries that do not provide block payload", () => {
+    const mapped = mapSessionMessagesToChatMessages([
+      {
+        id: "3b9bdc78-93f3-4489-82e5-6967e35ecf36",
+        role: "assistant",
+        created_at: "2026-02-14T00:00:02.000Z",
+        metadata: {},
+      },
+    ]);
 
-    expect(mapped[0]).toMatchObject({
-      role: "agent",
-      content: 'Task(artifacts=[Artifact(artifact_id="id")])',
-      blocks: [
-        {
-          id: "msg-3:text",
-          type: "text",
-          content: 'Task(artifacts=[Artifact(artifact_id="id")])',
-          isFinished: true,
-          createdAt: "2026-02-14T00:00:02.000Z",
-          updatedAt: "2026-02-14T00:00:02.000Z",
-        },
-      ],
-    });
+    expect(mapped).toEqual([]);
   });
 });

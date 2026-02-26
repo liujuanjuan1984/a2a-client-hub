@@ -2,6 +2,7 @@ import {
   CHAT_LIST_BOTTOM_STICK_THRESHOLD,
   getAnchoredOffsetAfterContentResize,
   getDistanceToBottom,
+  shouldShowScrollToBottom,
   shouldStickToBottom,
 } from "@/lib/chatScroll";
 
@@ -54,6 +55,51 @@ describe("chatScroll", () => {
         CHAT_LIST_BOTTOM_STICK_THRESHOLD + 30,
       ),
     ).toBe(true);
+  });
+
+  describe("shouldShowScrollToBottom", () => {
+    it("returns false when content is shorter than viewport", () => {
+      expect(
+        shouldShowScrollToBottom({
+          offsetY: 0,
+          viewportHeight: 600,
+          contentHeight: 400,
+        }),
+      ).toBe(false);
+    });
+
+    it("returns true when distance to bottom exceeds one screen height", () => {
+      expect(
+        shouldShowScrollToBottom({
+          offsetY: 100,
+          viewportHeight: 600,
+          contentHeight: 2000,
+        }),
+      ).toBe(true);
+    });
+
+    it("returns false when distance to bottom is within one screen height", () => {
+      expect(
+        shouldShowScrollToBottom({
+          offsetY: 1000,
+          viewportHeight: 600,
+          contentHeight: 2000,
+        }),
+      ).toBe(false);
+    });
+
+    it("supports custom threshold", () => {
+      expect(
+        shouldShowScrollToBottom(
+          {
+            offsetY: 1000,
+            viewportHeight: 600,
+            contentHeight: 2000,
+          },
+          200,
+        ),
+      ).toBe(true);
+    });
   });
 
   it("computes anchored offset when content grows", () => {

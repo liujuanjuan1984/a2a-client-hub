@@ -1,5 +1,11 @@
 import "@testing-library/react-native/extend-expect";
 
+jest.mock("react-native-reanimated", () => {
+  const Reanimated = require("react-native-reanimated/mock");
+  Reanimated.default.call = () => {};
+  return Reanimated;
+});
+
 if (typeof globalThis.window === "undefined") {
   globalThis.window = globalThis as unknown as Window & typeof globalThis;
 }

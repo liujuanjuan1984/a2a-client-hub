@@ -58,13 +58,16 @@ class _InvokeState:
     metadata: dict[str, Any]
     stream_identity: dict[str, Any]
     stream_usage: dict[str, Any]
-    user_message_id: str | None
-    client_agent_message_id: str | None
+    user_message_id: str | None = None
+    agent_message_id: str | None = None
     message_refs: dict[str, UUID] | None = None
     persisted_response_content: str | None = None
     persisted_success: bool | None = None
     persisted_error_code: str | None = None
     persisted_finish_reason: str | None = None
+    idempotency_key: str | None = None
+    next_event_seq: int = 1
+    persisted_block_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -187,6 +190,10 @@ async def _prepare_state(
         context_id=payload.context_id,
         metadata=payload.metadata,
     )
+    normalized_user_message_id = _normalize_optional_message_id(payload.user_message_id)
+    normalized_agent_message_id = _normalize_optional_message_id(
+        payload.agent_message_id
+    )
     return _InvokeState(
         local_session_id=local_session_id,
         local_source=local_source,
@@ -194,8 +201,8 @@ async def _prepare_state(
         metadata=resolved_invoke_metadata,
         stream_identity={},
         stream_usage={},
-        user_message_id=payload.user_message_id,
-        client_agent_message_id=payload.client_agent_message_id,
+        user_message_id=normalized_user_message_id,
+        agent_message_id=normalized_agent_message_id,
         message_refs=None,
         persisted_response_content=None,
         persisted_success=None,
@@ -286,8 +293,6 @@ def _build_stream_metadata_from_outcome(
         final_metadata.update(state.stream_identity)
     if state.stream_usage:
         final_metadata["usage"] = dict(state.stream_usage)
-    if outcome.message_blocks:
-        final_metadata["message_blocks"] = list(outcome.message_blocks)
     normalized_error_message = normalize_non_empty_text(outcome.error_message)
     stream_error = None
     if not outcome.success and (normalized_error_message or outcome.error_code):
@@ -324,6 +329,223 @@ def _resolve_invoke_idempotency_key(
     return None
 
 
+def _coerce_uuid(value: Any) -> UUID | None:
+    if isinstance(value, UUID):
+        return value
+    if isinstance(value, str):
+        try:
+            return UUID(value.strip())
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _normalize_optional_message_id(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    resolved = _coerce_uuid(trimmed)
+    if resolved is None:
+        raise ValueError("invalid_message_id")
+    return str(resolved)
+
+
+def _resolve_agent_status_from_outcome(outcome: StreamOutcome) -> str:
+    if outcome.success:
+        return "done"
+    if outcome.finish_reason.value in {
+        "client_disconnect",
+        "timeout_total",
+        "timeout_idle",
+    }:
+        return "interrupted"
+    return "error"
+
+
+def _rewrite_stream_event_contract(
+    event_payload: dict[str, Any],
+    *,
+    local_message_id: str,
+    event_id: str | None = None,
+    seq: int | None = None,
+) -> None:
+    if event_payload.get("kind") != "artifact-update":
+        return
+    event_payload.pop("messageId", None)
+    event_payload.pop("eventId", None)
+    event_payload.pop("eventSeq", None)
+    event_payload.pop("sequence", None)
+    event_payload["message_id"] = local_message_id
+    if event_id:
+        event_payload["event_id"] = event_id
+    if isinstance(seq, int) and seq > 0:
+        event_payload["seq"] = seq
+
+    artifact = event_payload.get("artifact")
+    if isinstance(artifact, dict):
+        artifact.pop("messageId", None)
+        artifact.pop("eventId", None)
+        artifact.pop("eventSeq", None)
+        artifact.pop("sequence", None)
+        artifact["message_id"] = local_message_id
+        if event_id:
+            artifact["event_id"] = event_id
+        if isinstance(seq, int) and seq > 0:
+            artifact["seq"] = seq
+        metadata = artifact.get("metadata")
+        if isinstance(metadata, dict):
+            opencode = metadata.get("opencode")
+            if isinstance(opencode, dict):
+                opencode.pop("messageId", None)
+                opencode.pop("eventId", None)
+                opencode.pop("eventSeq", None)
+                opencode.pop("sequence", None)
+                opencode["message_id"] = local_message_id
+                if event_id:
+                    opencode["event_id"] = event_id
+                if isinstance(seq, int) and seq > 0:
+                    opencode["seq"] = seq
+
+
+async def _ensure_local_message_headers(
+    *,
+    state: _InvokeState,
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    query: str,
+    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
+    stream_enabled: bool,
+) -> None:
+    if state.local_session_id is None or state.local_source is None:
+        return
+    existing_agent_id = (
+        _coerce_uuid(state.message_refs.get("agent_message_id"))
+        if isinstance(state.message_refs, dict)
+        else None
+    )
+    existing_user_id = (
+        _coerce_uuid(state.message_refs.get("user_message_id"))
+        if isinstance(state.message_refs, dict)
+        else None
+    )
+    if existing_agent_id is not None and existing_user_id is not None:
+        return
+
+    idempotency_key = state.idempotency_key or _resolve_invoke_idempotency_key(
+        state=state,
+        transport=transport,
+    )
+    state.idempotency_key = idempotency_key
+    async with AsyncSessionLocal() as persist_db:
+        if not hasattr(persist_db, "scalar"):
+            return
+        refs = await session_hub_service.ensure_local_invoke_message_headers_by_local_session_id(
+            persist_db,
+            local_session_id=state.local_session_id,
+            source=state.local_source,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            context_id=state.context_id,
+            invoke_metadata=state.metadata,
+            extra_metadata={"transport": transport, "stream": stream_enabled},
+            idempotency_key=idempotency_key,
+            user_message_id=_coerce_uuid(state.user_message_id),
+            agent_message_id=_coerce_uuid(state.agent_message_id),
+        )
+        await commit_safely(persist_db)
+    if refs:
+        state.message_refs = refs
+        if state.user_message_id is None:
+            resolved_user_message_id = _coerce_uuid(refs.get("user_message_id"))
+            if resolved_user_message_id is not None:
+                state.user_message_id = str(resolved_user_message_id)
+        if state.agent_message_id is None:
+            resolved_agent_message_id = _coerce_uuid(refs.get("agent_message_id"))
+            if resolved_agent_message_id is not None:
+                state.agent_message_id = str(resolved_agent_message_id)
+
+
+async def _persist_stream_block_update(
+    *,
+    state: _InvokeState,
+    event_payload: dict[str, Any],
+    user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    query: str,
+    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
+    stream_enabled: bool,
+) -> None:
+    stream_block = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        event_payload
+    )
+    if stream_block is None:
+        return
+    await _ensure_local_message_headers(
+        state=state,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        query=query,
+        transport=transport,
+        stream_enabled=stream_enabled,
+    )
+    agent_message_id = (
+        _coerce_uuid(state.message_refs.get("agent_message_id"))
+        if isinstance(state.message_refs, dict)
+        else None
+    )
+    if agent_message_id is None:
+        return
+    raw_seq = stream_block.get("seq")
+    resolved_seq = raw_seq if isinstance(raw_seq, int) and raw_seq > 0 else None
+    if resolved_seq is None:
+        resolved_seq = state.next_event_seq
+    state.next_event_seq = max(state.next_event_seq, resolved_seq + 1)
+    _rewrite_stream_event_contract(
+        event_payload,
+        local_message_id=str(agent_message_id),
+        event_id=(
+            str(stream_block.get("event_id"))
+            if isinstance(stream_block.get("event_id"), str)
+            else None
+        ),
+        seq=resolved_seq,
+    )
+
+    async with AsyncSessionLocal() as persist_db:
+        if not hasattr(persist_db, "scalar"):
+            return
+        persisted_block = await session_hub_service.append_agent_message_block_update(
+            persist_db,
+            user_id=user_id,
+            agent_message_id=agent_message_id,
+            seq=resolved_seq,
+            block_type=str(stream_block.get("block_type") or "text"),
+            content=str(stream_block.get("content") or ""),
+            append=bool(stream_block.get("append", True)),
+            is_finished=bool(stream_block.get("is_finished", False)),
+            event_id=(
+                str(stream_block.get("event_id"))
+                if isinstance(stream_block.get("event_id"), str)
+                else None
+            ),
+            source=(
+                str(stream_block.get("source"))
+                if isinstance(stream_block.get("source"), str)
+                else None
+            ),
+        )
+        if persisted_block is not None:
+            await commit_safely(persist_db)
+            state.persisted_block_count += 1
+
+
 async def _persist_local_outcome(
     *,
     state: _InvokeState,
@@ -338,16 +560,31 @@ async def _persist_local_outcome(
 ) -> None:
     if state.local_session_id is None or state.local_source is None:
         return
+    await _ensure_local_message_headers(
+        state=state,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        query=query,
+        transport=transport,
+        stream_enabled=stream_enabled,
+    )
+    await _persist_synthetic_final_block_if_needed(
+        state=state,
+        outcome=outcome,
+        user_id=user_id,
+    )
     persisted_content = outcome.final_text or str(outcome.error_message or "")
     metadata_payload = _build_stream_metadata_from_outcome(
         state=state,
         outcome=outcome,
         response_metadata=response_metadata,
     )
-    idempotency_key = _resolve_invoke_idempotency_key(
+    idempotency_key = state.idempotency_key or _resolve_invoke_idempotency_key(
         state=state,
         transport=transport,
     )
+    state.idempotency_key = idempotency_key
     async with AsyncSessionLocal() as persist_db:
         message_refs = (
             await session_hub_service.record_local_invoke_messages_by_local_session_id(
@@ -361,12 +598,15 @@ async def _persist_local_outcome(
                 response_content=persisted_content,
                 success=outcome.success,
                 context_id=state.context_id,
-                user_message_id=state.user_message_id,
-                client_agent_message_id=state.client_agent_message_id,
                 invoke_metadata=state.metadata,
                 extra_metadata={"transport": transport, "stream": stream_enabled},
                 response_metadata=metadata_payload,
                 idempotency_key=idempotency_key,
+                agent_status=_resolve_agent_status_from_outcome(outcome),
+                finish_reason=outcome.finish_reason.value,
+                error_code=outcome.error_code,
+                user_message_id=_coerce_uuid(state.user_message_id),
+                agent_message_id=_coerce_uuid(state.agent_message_id),
             )
         )
         await commit_safely(persist_db)
@@ -375,6 +615,53 @@ async def _persist_local_outcome(
     state.persisted_response_content = persisted_content
     state.persisted_error_code = outcome.error_code
     state.persisted_finish_reason = outcome.finish_reason.value
+
+
+async def _persist_synthetic_final_block_if_needed(
+    *,
+    state: _InvokeState,
+    outcome: StreamOutcome,
+    user_id: UUID,
+) -> None:
+    if not isinstance(outcome.final_text, str) or not outcome.final_text:
+        return
+    if state.local_session_id is None or state.local_source is None:
+        return
+    agent_message_id = (
+        _coerce_uuid(state.message_refs.get("agent_message_id"))
+        if isinstance(state.message_refs, dict)
+        else None
+    )
+    if agent_message_id is None:
+        return
+    async with AsyncSessionLocal() as persist_db:
+        if not hasattr(persist_db, "scalar"):
+            return
+        has_blocks = await session_hub_service.has_agent_message_blocks(
+            persist_db,
+            user_id=user_id,
+            agent_message_id=agent_message_id,
+        )
+        if has_blocks:
+            return
+        resolved_seq = state.next_event_seq if state.next_event_seq > 0 else 1
+        persisted_block = await session_hub_service.append_agent_message_block_update(
+            persist_db,
+            user_id=user_id,
+            agent_message_id=agent_message_id,
+            seq=resolved_seq,
+            block_type="text",
+            content=outcome.final_text,
+            append=False,
+            is_finished=True,
+            event_id=None,
+            source="finalize_snapshot",
+        )
+        if persisted_block is None:
+            return
+        await commit_safely(persist_db)
+        state.next_event_seq = max(state.next_event_seq, resolved_seq + 1)
+        state.persisted_block_count += 1
 
 
 def _build_consume_stream_callbacks(
@@ -392,6 +679,16 @@ def _build_consume_stream_callbacks(
 ]:
     async def on_event(event_payload: dict[str, Any]) -> None:
         _collect_stream_hints(state=state, event_payload=event_payload)
+        await _persist_stream_block_update(
+            state=state,
+            event_payload=event_payload,
+            user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            transport=transport,
+            stream_enabled=stream_enabled,
+        )
 
     async def on_finalized(outcome: StreamOutcome) -> None:
         await _persist_local_outcome(
@@ -555,7 +852,7 @@ async def run_http_invoke(
             on_event=on_event,
             on_finalized=on_finalized,
             resume_from_sequence=payload.resume_from_sequence,
-            cache_key=payload.user_message_id,
+            cache_key=state.user_message_id,
         )
 
     on_event, on_finalized = _build_consume_stream_callbacks(
@@ -708,7 +1005,7 @@ async def run_ws_invoke(
         on_finalized=on_finalized,
         send_stream_end=send_stream_end,
         resume_from_sequence=payload.resume_from_sequence,
-        cache_key=payload.user_message_id,
+        cache_key=state.user_message_id,
     )
 
 
@@ -995,6 +1292,12 @@ async def run_http_invoke_route(
                 },
                 max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
             )
+        except ValueError as exc:
+            await _release_invoke_guard(guard_key)
+            raise HTTPException(
+                status_code=status_code_for_invoke_session_error(str(exc)),
+                detail=str(exc),
+            ) from exc
         except Exception:
             await _release_invoke_guard(guard_key)
             raise
