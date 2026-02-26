@@ -1,4 +1,5 @@
 import "@testing-library/react-native/extend-expect";
+import { queryClient } from "@/services/queryClient";
 
 jest.mock("react-native-reanimated", () => {
   const Reanimated = require("react-native-reanimated/mock");
@@ -103,4 +104,9 @@ jest.mock("react-native/Libraries/Utilities/Dimensions", () => {
     default: dimensionsModule,
     ...dimensionsModule,
   };
+});
+
+afterEach(async () => {
+  await queryClient.cancelQueries();
+  queryClient.clear();
 });

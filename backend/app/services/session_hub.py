@@ -48,8 +48,14 @@ class SessionHubService:
         page: int,
         size: int,
         source: Optional[SessionSource],
+        agent_id: Optional[UUID],
     ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
-        page_items = await self._list_local_sessions(db, user_id=user_id, source=source)
+        page_items = await self._list_local_sessions(
+            db,
+            user_id=user_id,
+            source=source,
+            agent_id=agent_id,
+        )
         total = len(page_items)
         pages = (total + size - 1) // size if size else 0
         offset = (page - 1) * size
@@ -69,6 +75,7 @@ class SessionHubService:
         *,
         user_id: UUID,
         source: Optional[SessionSource],
+        agent_id: Optional[UUID],
     ) -> list[dict[str, Any]]:
         stmt = (
             select(ConversationThread)
@@ -98,6 +105,8 @@ class SessionHubService:
                 fallback_source=None,
             )
             if source and source != resolved_source:
+                continue
+            if agent_id and thread.agent_id != agent_id:
                 continue
             title_fallback = (
                 "Scheduled Session"

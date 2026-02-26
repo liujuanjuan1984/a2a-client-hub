@@ -20,7 +20,12 @@ class _A2AErrorCodeStatus:
         "invalid_conversation_id": 400,
         "runtime_invalid": 400,
         "invalid_request": 400,
+        "invalid_params": 400,
         "invalid_query": 400,
+        "method_disabled": 403,
+        "interrupt_request_not_found": 404,
+        "interrupt_request_expired": 409,
+        "interrupt_type_mismatch": 409,
         # client-side coordination
         "invoke_inflight": 409,
         # upstream-related

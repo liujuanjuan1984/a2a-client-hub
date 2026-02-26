@@ -75,6 +75,63 @@ def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
     )
 
 
+def test_map_business_error_code_prefers_error_data_type() -> None:
+    ext = _resolved_extension(metadata_key="opencode_session_id")
+    assert (
+        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+            {
+                "code": -32001,
+                "data": {"type": "METHOD_DISABLED"},
+            },
+            ext,
+        )
+        == "method_disabled"
+    )
+
+
+def test_map_business_error_code_maps_jsonrpc_invalid_params() -> None:
+    ext = _resolved_extension(metadata_key="opencode_session_id")
+    assert (
+        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+            {"code": -32602},
+            ext,
+        )
+        == "invalid_params"
+    )
+
+
+def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
+    ext = ResolvedInterruptCallbackExtension(
+        uri="urn:opencode-a2a:opencode-interrupt-callback/v1",
+        required=False,
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={"reply_permission": "opencode.permission.reply"},
+        business_code_map={-32004: "interrupt_request_not_found"},
+    )
+    assert (
+        A2AExtensionsService._map_interrupt_business_error_code(  # noqa: SLF001
+            {
+                "code": -32004,
+                "data": {"type": "INTERRUPT_REQUEST_EXPIRED"},
+            },
+            ext,
+        )
+        == "interrupt_request_expired"
+    )
+    assert (
+        A2AExtensionsService._map_interrupt_business_error_code(  # noqa: SLF001
+            {
+                "code": -32602,
+                "data": {"type": "INTERRUPT_TYPE_MISMATCH"},
+            },
+            ext,
+        )
+        == "interrupt_type_mismatch"
+    )
+
+
 @pytest.mark.asyncio
 async def test_continue_session_uses_dynamic_binding_metadata_key(
     monkeypatch: pytest.MonkeyPatch,

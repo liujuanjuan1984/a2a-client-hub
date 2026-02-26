@@ -135,10 +135,22 @@ Unified error semantics (`error_code` -> HTTP status):
 | Session not found | `session_not_found` | 404 |
 | Session access forbidden | `session_forbidden` | 403 |
 | Outbound domain not allowed / invalid configuration | `outbound_not_allowed` | 403 |
+| Runtime/session input invalid | `runtime_invalid` | 400 |
+| Invalid request payload | `invalid_request` | 400 |
+| Invalid params / invalid field | `invalid_params` | 400 |
+| Invalid query payload | `invalid_query` | 400 |
+| Upstream method disabled by contract | `method_disabled` | 403 |
+| Upstream method not supported | `method_not_supported` | 400 |
+| Interrupt request not found | `interrupt_request_not_found` | 404 |
+| Interrupt request expired | `interrupt_request_expired` | 409 |
+| Interrupt type mismatch | `interrupt_type_mismatch` | 409 |
 | Upstream unreachable | `upstream_unreachable` | 503 |
 | Upstream HTTP non-2xx | `upstream_http_error` | 502 |
-| Upstream JSON-RPC business error | `upstream_error` | 502 |
+| Upstream payload contract error | `upstream_payload_error` | 502 |
+| Upstream JSON-RPC business error (unclassified) | `upstream_error` | 502 |
+| Agent unavailable | `agent_unavailable` | 503 |
 | Request timeout | `timeout` | 504 |
+| Client reset required | `client_reset` | 502 |
 | Contract unsupported / incompatible during execution | `not_supported` | 400 |
 | Extension contract validation failed | `extension_contract_error` | 400 |
 | Duplicate concurrent call in the same session | `invoke_inflight` | 409 |
@@ -158,6 +170,9 @@ scheduled, and OpenCode sessions:
 - `POST /api/v1/me/conversations/{conversation_id}/messages/blocks:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages/{message_id}/blocks/{block_seq}:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
+
+`conversations:query` supports optional `agent_id` filtering so Chat session
+directory views can be fetched per-agent directly from backend.
 
 `continue` now returns the canonical fields and binding metadata:
 

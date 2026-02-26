@@ -15,7 +15,6 @@ const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
 const mockToastError = jest.fn();
 const mockContinueSession = jest.fn();
-const mockSyncShortcuts = jest.fn();
 const mockAddShortcut = jest.fn();
 const mockUpdateShortcut = jest.fn();
 const mockRemoveShortcut = jest.fn();
@@ -120,45 +119,23 @@ const mockChatState: {
   getSessionsByAgentId: jest.fn(() => []),
 };
 
-const mockMessageState: {
-  messages: Record<
-    string,
-    { id: string; role: string; content: string; createdAt: string }[]
-  >;
-  setMessages: jest.Mock;
-} = {
-  messages: {},
-  setMessages: jest.fn(),
-};
-
 type MockShortcut = {
   id: string;
   title: string;
   prompt: string;
   isDefault: boolean;
   order: number;
+  agentId?: string | null;
 };
 
-const mockShortcutState: {
+const mockShortcutQueryState: {
   shortcuts: MockShortcut[];
-  isSyncing: boolean;
-  syncError: string | null;
-  syncShortcuts: jest.Mock;
-  addShortcut: jest.Mock;
-  updateShortcut: jest.Mock;
-  removeShortcut: jest.Mock;
   getShortcutsForAgent: jest.Mock;
 } = {
   shortcuts: [],
-  isSyncing: false,
-  syncError: null,
-  syncShortcuts: mockSyncShortcuts,
-  addShortcut: mockAddShortcut,
-  updateShortcut: mockUpdateShortcut,
-  removeShortcut: mockRemoveShortcut,
   getShortcutsForAgent: jest
     .fn()
-    .mockImplementation(() => mockShortcutState.shortcuts),
+    .mockImplementation(() => mockShortcutQueryState.shortcuts),
 };
 
 const mockSessionHistoryState = {
@@ -177,14 +154,6 @@ const mockUseChatStore = ((
   getState: () => typeof mockChatState;
 };
 mockUseChatStore.getState = () => mockChatState;
-
-const mockUseMessageStore = ((
-  selector: (state: typeof mockMessageState) => unknown,
-) => selector(mockMessageState)) as unknown as {
-  (selector: (state: typeof mockMessageState) => unknown): unknown;
-  getState: () => typeof mockMessageState;
-};
-mockUseMessageStore.getState = () => mockMessageState;
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({
@@ -221,6 +190,24 @@ jest.mock("@/hooks/useChatHistoryQuery", () => ({
   useSessionHistoryQuery: () => mockSessionHistoryState,
 }));
 
+jest.mock("@/hooks/useSessionsDirectoryQuery", () => ({
+  useSessionsDirectoryQuery: () => ({
+    error: null,
+    isError: false,
+    items: [],
+    setItems: jest.fn(),
+    nextPage: null,
+    hasMore: false,
+    loading: false,
+    refreshing: false,
+    loadingMore: false,
+    reset: jest.fn(),
+    loadFirstPage: jest.fn(async () => true),
+    loadMore: jest.fn(async () => {}),
+    refresh: jest.fn(async () => {}),
+  }),
+}));
+
 jest.mock("@/store/chat", () => ({
   useChatStore: (selector: (state: typeof mockChatState) => unknown) =>
     mockUseChatStore(selector),
@@ -231,13 +218,17 @@ jest.mock("@/store/agents", () => ({
     selector(mockAgentStoreState),
 }));
 
-jest.mock("@/store/messages", () => ({
-  useMessageStore: (selector: (state: typeof mockMessageState) => unknown) =>
-    mockUseMessageStore(selector),
-}));
-
-jest.mock("@/store/shortcuts", () => ({
-  useShortcutStore: () => mockShortcutState,
+jest.mock("@/hooks/useShortcutsQuery", () => ({
+  useShortcutsQuery: () => mockShortcutQueryState,
+  useCreateShortcutMutation: () => ({
+    mutateAsync: (...args: unknown[]) => mockAddShortcut(...args),
+  }),
+  useUpdateShortcutMutation: () => ({
+    mutateAsync: (...args: unknown[]) => mockUpdateShortcut(...args),
+  }),
+  useDeleteShortcutMutation: () => ({
+    mutateAsync: (...args: unknown[]) => mockRemoveShortcut(...args),
+  }),
 }));
 
 jest.mock("@/lib/api/sessions", () => ({
@@ -299,7 +290,6 @@ describe("ChatScreen interrupt handling", () => {
   const conversationId = "conversation-1";
 
   beforeEach(() => {
-    mockSyncShortcuts.mockReset().mockResolvedValue(undefined);
     mockAddShortcut.mockReset().mockResolvedValue(undefined);
     mockUpdateShortcut.mockReset().mockResolvedValue(undefined);
     mockRemoveShortcut.mockReset().mockResolvedValue(undefined);
@@ -317,15 +307,26 @@ describe("ChatScreen interrupt handling", () => {
     mockChatState.sendMessage.mockReset();
     mockChatState.clearPendingInterrupt.mockReset();
     mockChatState.bindExternalSession.mockReset();
-    mockMessageState.setMessages.mockReset();
-    mockMessageState.messages = { [conversationId]: [] };
     mockSessionHistoryState.loadMore.mockReset();
     mockSessionHistoryState.messages = [];
     mockSessionHistoryState.error = null;
     mockSessionHistoryState.loading = false;
     mockSessionHistoryState.loadingMore = false;
     mockSessionHistoryState.nextPage = undefined;
-    mockShortcutState.shortcuts = [];
+    mockShortcutQueryState.shortcuts = [];
+    mockShortcutQueryState.getShortcutsForAgent.mockClear();
+    mockShortcutQueryState.getShortcutsForAgent.mockImplementation(
+      (agentId: string | null) => {
+        if (!agentId) {
+          return mockShortcutQueryState.shortcuts.filter(
+            (item) => !item.agentId,
+          );
+        }
+        return mockShortcutQueryState.shortcuts.filter(
+          (item) => !item.agentId || item.agentId === agentId,
+        );
+      },
+    );
     mockContinueSession.mockResolvedValue({});
     mockReplyPermission.mockResolvedValue({ ok: true, requestId: "perm-1" });
     mockReplyQuestion.mockResolvedValue({ ok: true, requestId: "q-1" });
@@ -462,16 +463,14 @@ describe("ChatScreen interrupt handling", () => {
   });
 
   it("uses explicit expand/collapse for long plain text messages", async () => {
-    mockMessageState.messages = {
-      [conversationId]: [
-        {
-          id: "message-1",
-          role: "agent",
-          content: "A".repeat(5000),
-          createdAt: "2026-02-16T00:00:00.000Z",
-        },
-      ],
-    };
+    mockSessionHistoryState.messages = [
+      {
+        id: "message-1",
+        role: "agent",
+        content: "A".repeat(5000),
+        createdAt: "2026-02-16T00:00:00.000Z",
+      },
+    ];
 
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
@@ -513,16 +512,14 @@ describe("ChatScreen interrupt handling", () => {
     flatListProto.scrollToOffset = scrollToOffsetSpy;
 
     try {
-      mockMessageState.messages = {
-        [conversationId]: [
-          {
-            id: "message-anchor",
-            role: "agent",
-            content: "A".repeat(5000),
-            createdAt: "2026-02-16T00:00:00.000Z",
-          },
-        ],
-      };
+      mockSessionHistoryState.messages = [
+        {
+          id: "message-anchor",
+          role: "agent",
+          content: "A".repeat(5000),
+          createdAt: "2026-02-16T00:00:00.000Z",
+        },
+      ];
 
       const tree = renderChatScreen(conversationId);
       const root = tree.root;
@@ -590,11 +587,11 @@ describe("ChatScreen interrupt handling", () => {
       await saveButton.props.onPress();
     });
 
-    expect(mockAddShortcut).toHaveBeenCalledWith(
-      "Daily Summary",
-      "Summarize today in 3 points.",
-      null,
-    );
+    expect(mockAddShortcut).toHaveBeenCalledWith({
+      title: "Daily Summary",
+      prompt: "Summarize today in 3 points.",
+      agentId: null,
+    });
     expect(mockToastSuccess).toHaveBeenCalledWith(
       "Shortcut saved",
       '"Daily Summary" is now available.',
@@ -605,7 +602,7 @@ describe("ChatScreen interrupt handling", () => {
   });
 
   it("edits existing shortcut and updates title/prompt", async () => {
-    mockShortcutState.shortcuts = [
+    mockShortcutQueryState.shortcuts = [
       {
         id: "shortcut-1",
         title: "Old title",
@@ -644,13 +641,13 @@ describe("ChatScreen interrupt handling", () => {
       await updateButton.props.onPress();
     });
 
-    expect(mockUpdateShortcut).toHaveBeenCalledWith(
-      "shortcut-1",
-      "Updated title",
-      "Updated prompt",
-      "agent-1",
-      false,
-    );
+    expect(mockUpdateShortcut).toHaveBeenCalledWith({
+      shortcutId: "shortcut-1",
+      title: "Updated title",
+      prompt: "Updated prompt",
+      agentId: "agent-1",
+      clearAgent: false,
+    });
     expect(mockToastSuccess).toHaveBeenCalledWith(
       "Shortcut updated",
       '"Updated title" has been updated.',
@@ -661,7 +658,7 @@ describe("ChatScreen interrupt handling", () => {
   });
 
   it("does not show edit action for default shortcut", () => {
-    mockShortcutState.shortcuts = [
+    mockShortcutQueryState.shortcuts = [
       {
         id: "shortcut-default",
         title: "Default title",

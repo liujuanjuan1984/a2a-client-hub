@@ -2,7 +2,7 @@ import { renderHook } from "@testing-library/react-native";
 
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
-import { type SessionMessageItem } from "@/lib/sessionHistory";
+import { type ChatMessage } from "@/lib/api/chat-utils";
 
 jest.mock("@/hooks/usePaginatedList", () => ({
   usePaginatedList: jest.fn(),
@@ -42,24 +42,26 @@ describe("useChatHistoryQuery", () => {
   });
 
   it("maps session history messages without truncating loaded pages", () => {
-    const items: SessionMessageItem[] = Array.from({ length: 520 }, (_, i) => {
+    const items: ChatMessage[] = Array.from({ length: 520 }, (_, i) => {
       const minute = String(Math.floor(i / 60)).padStart(2, "0");
       const second = String(i % 60).padStart(2, "0");
       const messageId = `msg-${i}`;
       return {
         id: messageId,
-        role: i % 2 === 0 ? "assistant" : "user",
+        role: i % 2 === 0 ? "agent" : "user",
+        content: `content-${i}`,
         blocks: [
           {
             id: `${messageId}:block-1`,
-            messageId,
-            seq: 1,
             type: "text",
             content: `content-${i}`,
             isFinished: true,
+            createdAt: `2026-02-12T00:${minute}:${second}.000Z`,
+            updatedAt: `2026-02-12T00:${minute}:${second}.000Z`,
           },
         ],
-        created_at: `2026-02-12T00:${minute}:${second}.000Z`,
+        createdAt: `2026-02-12T00:${minute}:${second}.000Z`,
+        status: "done",
       };
     });
 

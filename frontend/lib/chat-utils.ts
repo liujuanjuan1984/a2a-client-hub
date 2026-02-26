@@ -193,8 +193,8 @@ const normalizeSessionForPersistence = (
 ): AgentSession => ({
   agentId: session.agentId,
   createdAt: getSessionCreatedAt(session),
-  source: session.source ?? null,
-  contextId: session.contextId ?? null,
+  source: null,
+  contextId: null,
   runtimeStatus: null,
   pendingInterrupt: null,
   streamState: "idle",
@@ -202,18 +202,9 @@ const normalizeSessionForPersistence = (
   transport: "http_json",
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
-  metadata: session.metadata ?? {},
-  externalSessionRef: session.externalSessionRef ?? null,
+  metadata: {},
+  externalSessionRef: null,
   lastActiveAt: getSessionLastActiveAt(session),
-  ...(typeof session.lastReceivedSequence === "number"
-    ? { lastReceivedSequence: session.lastReceivedSequence }
-    : {}),
-  ...(session.lastUserMessageId
-    ? { lastUserMessageId: session.lastUserMessageId }
-    : {}),
-  ...(session.lastAgentMessageId
-    ? { lastAgentMessageId: session.lastAgentMessageId }
-    : {}),
 });
 
 export const buildPersistedSessions = (
