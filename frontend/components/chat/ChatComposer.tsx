@@ -69,6 +69,20 @@ export function ChatComposer({
             />
           </Pressable>
 
+          {input.length > 0 && (
+            <Pressable
+              className="h-9 w-9 items-center justify-center rounded-xl bg-gray-800"
+              onPress={() => {
+                onInputChange("");
+                inputRef.current?.focus();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Clear input"
+            >
+              <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+            </Pressable>
+          )}
+
           {showScrollToBottom && (
             <Pressable
               className="h-9 w-9 items-center justify-center rounded-xl bg-gray-800"
@@ -82,20 +96,6 @@ export function ChatComposer({
         </View>
 
         <View className="flex-row items-center gap-3">
-          {input.length > 0 && (
-            <Pressable
-              className="h-9 px-2 items-center justify-center"
-              onPress={() => {
-                onInputChange("");
-                inputRef.current?.focus();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Clear input"
-            >
-              <Text className="text-xs font-medium text-gray-400">CLEAR</Text>
-            </Pressable>
-          )}
-
           {input.trim().length > 0 && (
             <Pressable
               className={`h-9 w-9 items-center justify-center rounded-xl ${
