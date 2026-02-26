@@ -638,6 +638,55 @@ async def test_list_messages_returns_header_only_without_content_field(
     assert "content" not in agent_items[0]
 
 
+async def test_list_messages_does_not_query_blocks_for_header_path(
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="world",
+        success=True,
+        context_id="ctx-1",
+    )
+    await async_db_session.flush()
+
+    async def _fail_if_called(**_kwargs):  # noqa: ANN001
+        raise AssertionError("messages:query should not fetch blocks")
+
+    monkeypatch.setattr(
+        session_hub_module.agent_message_block_handler,
+        "list_blocks_by_message_ids",
+        _fail_if_called,
+    )
+
+    items, _, _ = await session_hub_service.list_messages(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        page=1,
+        size=20,
+    )
+
+    assert len(items) == 2
+
+
 async def test_query_message_blocks_overwrite_snapshot_without_text_duplication(
     async_db_session,
 ):
@@ -708,7 +757,7 @@ async def test_query_message_blocks_overwrite_snapshot_without_text_duplication(
     metadata = agent_item["metadata"]
     assert isinstance(metadata, dict)
     assert "message_blocks" not in metadata
-    assert metadata.get("block_count") == 1
+    assert "block_count" not in metadata
 
     block_items, meta, _ = await session_hub_service.query_message_blocks(
         async_db_session,
@@ -824,7 +873,7 @@ async def test_list_messages_overwrite_preserves_block_boundaries(
     metadata = agent_item["metadata"]
     assert isinstance(metadata, dict)
     assert "message_blocks" not in metadata
-    assert metadata.get("block_count") == 2
+    assert "block_count" not in metadata
 
     block_items, meta, _ = await session_hub_service.query_message_blocks(
         async_db_session,

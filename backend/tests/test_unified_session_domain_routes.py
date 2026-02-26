@@ -172,7 +172,7 @@ async def test_conversation_routes_use_conversation_id_only(
         assert "message_blocks" not in agent_item.get("metadata", {})
         assert "content" not in user_item
         assert "content" not in agent_item
-        assert agent_item.get("metadata", {}).get("block_count") == 1
+        assert "block_count" not in agent_item.get("metadata", {})
 
         blocks_resp = await client.post(
             f"/me/conversations/{manual_session.id}/messages/blocks:query",
@@ -469,7 +469,7 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
         assert payload["items"][1]["role"] == "agent"
         assert "content" not in payload["items"][0]
         assert "content" not in payload["items"][1]
-        assert payload["items"][1]["metadata"]["block_count"] == 1
+        assert "block_count" not in payload["items"][1]["metadata"]
 
 
 async def test_continue_keeps_external_session_id_empty_when_missing(

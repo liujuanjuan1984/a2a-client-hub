@@ -168,20 +168,6 @@ class SessionHubService:
             offset=offset,
             conversation_id=resolved_conversation_id,
         )
-        message_ids = [
-            message.id for message in messages if isinstance(message.id, UUID)
-        ]
-        blocks_by_message_id: dict[UUID, list[AgentMessageBlock]] = {}
-        if message_ids:
-            blocks = await agent_message_block_handler.list_blocks_by_message_ids(
-                db,
-                user_id=user_id,
-                message_ids=message_ids,
-            )
-            for block in blocks:
-                if not isinstance(block.message_id, UUID):
-                    continue
-                blocks_by_message_id.setdefault(block.message_id, []).append(block)
         total = await agent_message_handler.count_agent_messages(
             db,
             user_id=user_id,
@@ -194,11 +180,12 @@ class SessionHubService:
                 getattr(message, "message_metadata", None)
             )
             role = _sender_to_role(getattr(message, "sender", ""))
-            if isinstance(message.id, UUID):
-                block_entries = blocks_by_message_id.get(message.id, [])
-                if block_entries:
-                    message_metadata["block_count"] = len(block_entries)
             if isinstance(message.id, UUID) and role == "agent":
+                summary_text = normalize_non_empty_text(
+                    getattr(message, "summary_text", None)
+                )
+                if summary_text:
+                    message_metadata.setdefault("summary_text", summary_text)
                 if isinstance(message.status, str) and message.status.strip():
                     message_metadata.setdefault("stream_status", message.status.strip())
                 stream_meta = message_metadata.get("stream")
