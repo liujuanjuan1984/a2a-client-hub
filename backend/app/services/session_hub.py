@@ -34,7 +34,6 @@ from app.utils.timezone_util import ensure_utc, utc_now
 
 SessionSource = Literal["manual", "scheduled"]
 ResolvedSource = Literal["manual", "scheduled"]
-BlocksQueryMode = Literal["full", "text_with_placeholders", "outline"]
 
 
 @dataclass(frozen=True)
@@ -146,97 +145,6 @@ class SessionHubService:
             )
 
         return items
-
-    async def list_messages(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        conversation_id: str,
-        page: int,
-        size: int,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
-        resolved_conversation_id = _parse_conversation_id(conversation_id)
-        target = await self._resolve_conversation_target(
-            db,
-            user_id=user_id,
-            conversation_id=resolved_conversation_id,
-        )
-        session = target.thread if target else None
-        external_session_id = normalize_non_empty_text(
-            session.external_session_id if session else None
-        )
-
-        resolved_source = _resolve_session_source(
-            thread_source=session.source if session else None,
-            fallback_source=target.source if target else None,
-        )
-        offset = (page - 1) * size
-        messages = await agent_message_handler.list_agent_messages(
-            db,
-            user_id=user_id,
-            limit=size,
-            offset=offset,
-            conversation_id=resolved_conversation_id,
-        )
-        total = await agent_message_handler.count_agent_messages(
-            db,
-            user_id=user_id,
-            conversation_id=resolved_conversation_id,
-        )
-        pages = (total + size - 1) // size if size else 0
-        items: list[dict[str, Any]] = []
-        for message in messages:
-            message_metadata = _sanitize_message_metadata_for_api(
-                getattr(message, "message_metadata", None)
-            )
-            role = _sender_to_role(getattr(message, "sender", ""))
-            if isinstance(message.id, UUID) and role == "agent":
-                if isinstance(message.status, str) and message.status.strip():
-                    message_metadata.setdefault("stream_status", message.status.strip())
-                stream_meta = message_metadata.get("stream")
-                if not isinstance(stream_meta, dict):
-                    stream_meta = {}
-                if message.finish_reason:
-                    stream_meta.setdefault("finish_reason", message.finish_reason)
-                if message.error_code:
-                    existing_error = stream_meta.get("error")
-                    if not isinstance(existing_error, dict):
-                        existing_error = {}
-                    existing_error.setdefault("error_code", message.error_code)
-                    stream_meta["error"] = existing_error
-                if stream_meta:
-                    message_metadata["stream"] = stream_meta
-            items.append(
-                {
-                    "id": str(message.id),
-                    "role": role,
-                    "created_at": message.created_at,
-                    "metadata": message_metadata,
-                }
-            )
-        meta = {
-            "conversationId": str(resolved_conversation_id),
-            "source": resolved_source,
-            "agent_id": (
-                str(session.agent_id)
-                if session and isinstance(session.agent_id, UUID)
-                else None
-            ),
-            "agent_source": (
-                session.agent_source
-                if session and isinstance(session.agent_source, str)
-                else None
-            ),
-            "upstream_session_id": external_session_id,
-        }
-        pagination = {
-            "page": page,
-            "size": size,
-            "total": int(total),
-            "pages": pages,
-        }
-        return items, {"pagination": pagination, "meta": meta}, False
 
     async def list_timeline_messages(
         self,
@@ -358,7 +266,7 @@ class SessionHubService:
                     "created_at": message.created_at,
                     "status": status,
                     "metadata": message_metadata,
-                    "blocks": _render_blocks_for_mode(raw_blocks, mode="full"),
+                    "blocks": _render_blocks(raw_blocks),
                 }
             )
 
@@ -396,119 +304,6 @@ class SessionHubService:
             "nextBefore": next_before_cursor,
         }
         return items, {"pageInfo": page_info, "meta": meta}, False
-
-    async def query_message_blocks(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        conversation_id: str,
-        message_ids: list[str],
-        mode: BlocksQueryMode,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
-        resolved_conversation_id = _parse_conversation_id(conversation_id)
-        if mode not in {"full", "text_with_placeholders", "outline"}:
-            raise ValueError("invalid_blocks_mode")
-
-        if not message_ids:
-            raise ValueError("invalid_message_id")
-
-        resolved_message_ids: list[UUID] = []
-        for message_id in message_ids:
-            resolved = _parse_message_id(message_id)
-            if resolved not in resolved_message_ids:
-                resolved_message_ids.append(resolved)
-
-        rows = list(
-            (
-                await db.scalars(
-                    select(AgentMessage).where(
-                        and_(
-                            AgentMessage.user_id == user_id,
-                            AgentMessage.conversation_id == resolved_conversation_id,
-                            AgentMessage.id.in_(resolved_message_ids),
-                        )
-                    )
-                )
-            ).all()
-        )
-        message_by_id = {row.id: row for row in rows if isinstance(row.id, UUID)}
-        if len(message_by_id) != len(resolved_message_ids):
-            raise ValueError("message_not_found")
-
-        blocks_by_message_id: dict[UUID, list[AgentMessageBlock]] = {}
-        if resolved_message_ids:
-            blocks = await agent_message_block_handler.list_blocks_by_message_ids(
-                db,
-                user_id=user_id,
-                message_ids=resolved_message_ids,
-            )
-            for block in blocks:
-                if not isinstance(block.message_id, UUID):
-                    continue
-                blocks_by_message_id.setdefault(block.message_id, []).append(block)
-
-        items: list[dict[str, Any]] = []
-        for message_id in resolved_message_ids:
-            message = message_by_id[message_id]
-            role = _sender_to_role(getattr(message, "sender", ""))
-            raw_blocks = blocks_by_message_id.get(message_id, [])
-            rendered_blocks = _render_blocks_for_mode(raw_blocks, mode=mode)
-            block_count = len(raw_blocks)
-            has_blocks = bool(raw_blocks)
-            items.append(
-                {
-                    "messageId": str(message_id),
-                    "role": role,
-                    "blockCount": block_count,
-                    "hasBlocks": has_blocks,
-                    "blocks": rendered_blocks,
-                }
-            )
-
-        meta = {
-            "conversationId": str(resolved_conversation_id),
-            "mode": mode,
-        }
-        return items, meta, False
-
-    async def query_message_block_detail(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        conversation_id: str,
-        message_id: str,
-        block_seq: int,
-    ) -> tuple[dict[str, Any], bool]:
-        resolved_conversation_id = _parse_conversation_id(conversation_id)
-        resolved_message_id = _parse_message_id(message_id)
-        if block_seq <= 0:
-            raise ValueError("invalid_block_seq")
-        message = await db.scalar(
-            select(AgentMessage).where(
-                and_(
-                    AgentMessage.user_id == user_id,
-                    AgentMessage.conversation_id == resolved_conversation_id,
-                    AgentMessage.id == resolved_message_id,
-                )
-            )
-        )
-        if message is None:
-            raise ValueError("message_not_found")
-        block = await agent_message_block_handler.find_block_by_message_and_block_seq(
-            db,
-            user_id=user_id,
-            message_id=resolved_message_id,
-            block_seq=block_seq,
-        )
-        if block is None:
-            raise ValueError("block_not_found")
-        rendered = _render_block_item(block, mode="full")
-        return {
-            "messageId": str(resolved_message_id),
-            "block": rendered,
-        }, False
 
     async def continue_session(
         self,
@@ -1635,16 +1430,6 @@ def _parse_conversation_id(value: str) -> UUID:
         raise ValueError("invalid_conversation_id") from exc
 
 
-def _parse_message_id(value: str) -> UUID:
-    trimmed = (value or "").strip()
-    if not trimmed:
-        raise ValueError("message_id is required")
-    try:
-        return UUID(trimmed)
-    except (ValueError, TypeError) as exc:
-        raise ValueError("invalid_message_id") from exc
-
-
 def _encode_timeline_before_cursor(
     *,
     created_at: datetime,
@@ -1793,32 +1578,22 @@ def _write_block_cursor_state(metadata: dict[str, Any], cursor: dict[str, int]) 
 
 def _render_block_item(
     block: AgentMessageBlock,
-    *,
-    mode: BlocksQueryMode,
 ) -> dict[str, Any]:
     raw_content = block.content if isinstance(block.content, str) else ""
     block_type = _normalize_block_type(block.block_type)
-    if mode == "full":
-        rendered_content = raw_content
-    elif mode == "text_with_placeholders":
-        rendered_content = raw_content if block_type == "text" else None
-    else:
-        rendered_content = None
     return {
         "id": str(block.id),
         "messageId": str(block.message_id),
         "seq": int(block.block_seq),
         "type": block_type,
-        "content": rendered_content,
+        "content": raw_content,
         "contentLength": len(raw_content),
         "isFinished": bool(block.is_finished),
     }
 
 
-def _render_blocks_for_mode(
-    blocks: list[AgentMessageBlock], *, mode: BlocksQueryMode
-) -> list[dict[str, Any]]:
-    return [_render_block_item(block, mode=mode) for block in blocks]
+def _render_blocks(blocks: list[AgentMessageBlock]) -> list[dict[str, Any]]:
+    return [_render_block_item(block) for block in blocks]
 
 
 def _derive_session_title_from_invoke_metadata(
