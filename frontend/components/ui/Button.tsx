@@ -90,7 +90,9 @@ export function Button({
           style={{ marginRight: 8 }}
         />
       ) : null}
-      <Text className={`font-bold ${textColors[variant]} ${textSizes[size]}`}>
+      <Text
+        className={`${size === "xs" ? "font-medium" : "font-bold"} ${textColors[variant]} ${textSizes[size]}`}
+      >
         {label}
       </Text>
       {!loading && iconRight ? (
