@@ -51,9 +51,9 @@ const isValidHHMM = (value: string) => {
   return true;
 };
 
-const normalizeIntervalMinutes = (value: number) => {
+const normalizeScheduleMinutes = (value: number) => {
   const clamped = Math.max(5, Math.min(1440, value));
-  return Math.ceil(clamped / 5) * 5;
+  return clamped;
 };
 
 const normalizeTimePoint = (
@@ -66,7 +66,7 @@ const normalizeTimePoint = (
     return {
       minutes:
         typeof minutes === "number" && Number.isFinite(minutes)
-          ? normalizeIntervalMinutes(minutes)
+          ? normalizeScheduleMinutes(minutes)
           : 10,
     };
   }
@@ -77,7 +77,7 @@ const normalizeTimePoint = (
     return {
       minutes:
         typeof minutes === "number" && Number.isFinite(minutes)
-          ? normalizeIntervalMinutes(minutes)
+          ? normalizeScheduleMinutes(minutes)
           : 10,
       ...(typeof startAtLocal === "string" && startAtLocal.trim()
         ? { start_at_local: startAtLocal.trim() }
@@ -364,7 +364,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           typeof rawStartAt === "string" ? rawStartAt : "",
         );
         normalized.time_point = {
-          minutes: normalizeIntervalMinutes(
+          minutes: normalizeScheduleMinutes(
             Number((normalized.time_point as any)?.minutes),
           ),
           ...(normalizedStartAtLocal

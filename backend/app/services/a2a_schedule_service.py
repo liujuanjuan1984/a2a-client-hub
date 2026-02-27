@@ -61,6 +61,9 @@ class ClaimedA2AScheduleTask:
 class A2AScheduleService:
     """CRUD, validation, and dispatch helpers for A2A schedules."""
 
+    _schedule_minutes_min = 5
+    _schedule_minutes_max = 24 * 60
+
     _allowed_cycle_types = {
         A2AScheduleTask.CYCLE_DAILY,
         A2AScheduleTask.CYCLE_WEEKLY,
@@ -857,8 +860,9 @@ class A2AScheduleService:
 
         if cycle_type == A2AScheduleTask.CYCLE_INTERVAL:
             minutes_raw = time_point.get("minutes", time_point.get("interval_minutes"))
-            minutes = self._normalize_interval_minutes(
-                minutes_raw, is_superuser=is_superuser
+            minutes = self._normalize_schedule_minutes(
+                minutes_raw,
+                cycle_type="interval",
             )
             interval_start_at_local = self._normalize_interval_start_at_local(
                 time_point.get("start_at_local")
@@ -873,8 +877,9 @@ class A2AScheduleService:
             return normalized
         if cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
             minutes_raw = time_point.get("minutes", time_point.get("interval_minutes"))
-            minutes = self._normalize_interval_minutes(
-                minutes_raw, is_superuser=is_superuser
+            minutes = self._normalize_schedule_minutes(
+                minutes_raw,
+                cycle_type="sequential",
             )
             if time_point.get("start_at_local") not in (None, "") or time_point.get(
                 "start_at_utc"
@@ -912,41 +917,24 @@ class A2AScheduleService:
 
         raise A2AScheduleValidationError("Unsupported cycle_type")
 
-    @staticmethod
-    def _ceil_to_multiple(value: int, base: int) -> int:
-        if base <= 0:
-            return value
-        return ((value + base - 1) // base) * base
-
-    def _normalize_interval_minutes(
-        self, value: Any, *, is_superuser: bool = False
+    def _normalize_schedule_minutes(
+        self,
+        value: Any,
+        *,
+        cycle_type: str,
     ) -> int:
         minutes = self._coerce_int(value)
         if minutes is None:
-            raise A2AScheduleValidationError("interval time_point requires minutes")
-
-        min_interval = (
-            1 if is_superuser else max(settings.a2a_schedule_min_interval_minutes, 1)
-        )
-
-        # Soft normalization:
-        # - round up to the next multiple of 5 if not superuser
-        # - clamp to [min_interval, 1440]
-        if minutes < min_interval:
             raise A2AScheduleValidationError(
-                f"interval minutes cannot be less than {min_interval}"
+                f"{cycle_type} time_point requires minutes"
             )
+        return max(self._schedule_minutes_min, min(self._schedule_minutes_max, minutes))
 
-        minutes = min(minutes, 24 * 60)
-
-        if not is_superuser:
-            normalized = self._ceil_to_multiple(minutes, 5)
-        else:
-            normalized = minutes
-
-        if normalized > 24 * 60:
-            normalized = 24 * 60
-        return normalized
+    def _sanitize_schedule_minutes_for_read(self, value: Any) -> int:
+        minutes = self._coerce_int(value)
+        if minutes is None:
+            return self._schedule_minutes_min
+        return max(self._schedule_minutes_min, min(self._schedule_minutes_max, minutes))
 
     @staticmethod
     def _format_local_minute_iso(dt: datetime) -> str:
@@ -1021,19 +1009,19 @@ class A2AScheduleService:
     ) -> Dict[str, Any]:
         payload = dict(time_point or {})
         if cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
-            minutes = self._coerce_int(
+            minutes = self._sanitize_schedule_minutes_for_read(
                 payload.get("minutes", payload.get("interval_minutes"))
             )
-            if minutes is None:
-                return {}
             return {"minutes": minutes}
         if cycle_type != A2AScheduleTask.CYCLE_INTERVAL:
             return payload
 
         timezone_value = self._normalize_timezone_str(timezone_str)
-        normalized: Dict[str, Any] = {}
-        if "minutes" in payload:
-            normalized["minutes"] = payload["minutes"]
+        normalized: Dict[str, Any] = {
+            "minutes": self._sanitize_schedule_minutes_for_read(
+                payload.get("minutes", payload.get("interval_minutes"))
+            )
+        }
 
         start_at_local = payload.get("start_at_local")
         if isinstance(start_at_local, str) and start_at_local.strip():
@@ -1104,20 +1092,12 @@ class A2AScheduleService:
         time_point: Dict[str, Any] | None,
         after_utc: datetime,
     ) -> datetime:
-        minutes = self._coerce_int(
+        minutes = self._sanitize_schedule_minutes_for_read(
             (time_point or {}).get(
                 "minutes", (time_point or {}).get("interval_minutes")
             )
         )
-        if minutes is None:
-            raise A2AScheduleValidationError("sequential time_point requires minutes")
-        if minutes <= 0:
-            raise A2AScheduleValidationError(
-                "sequential time_point.minutes must be a positive integer"
-            )
-        # Be tolerant of legacy dirty values while avoiding extreme scheduling gaps.
-        capped_minutes = min(minutes, 24 * 60)
-        return ensure_utc(after_utc) + timedelta(minutes=capped_minutes)
+        return ensure_utc(after_utc) + timedelta(minutes=minutes)
 
     @staticmethod
     def _next_interval_candidate(
@@ -1244,9 +1224,9 @@ class A2AScheduleService:
         is_superuser: bool = False,
     ) -> datetime:
         if cycle_type == A2AScheduleTask.CYCLE_INTERVAL:
-            minutes = self._normalize_interval_minutes(
+            minutes = self._normalize_schedule_minutes(
                 time_point.get("minutes", time_point.get("interval_minutes")),
-                is_superuser=is_superuser,
+                cycle_type="interval",
             )
             return after_local + timedelta(minutes=minutes)
 
@@ -1349,11 +1329,11 @@ class A2AScheduleService:
             )
 
         if normalized_cycle == A2AScheduleTask.CYCLE_INTERVAL:
-            minutes = self._normalize_interval_minutes(
+            minutes = self._normalize_schedule_minutes(
                 normalized_point.get(
                     "minutes", normalized_point.get("interval_minutes")
                 ),
-                is_superuser=is_superuser,
+                cycle_type="interval",
             )
             interval = timedelta(minutes=minutes)
             after = ensure_utc(after_utc)
