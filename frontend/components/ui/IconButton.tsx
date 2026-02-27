@@ -35,7 +35,7 @@ export function IconButton({
   const variants: Record<IconButtonVariant, string> = {
     neo: "bg-yellow-500/75 active:bg-yellow-500/90",
     primary: "bg-yellow-500/75 active:bg-yellow-500/90",
-    secondary: "bg-slate-800/35 border border-white/20 active:bg-slate-800/80",
+    secondary: "bg-slate-700/55 active:bg-slate-600/65",
     outline: "border border-white/10 active:bg-white/5",
     ghost: "active:bg-white/5",
     danger: "bg-red-500/10 border border-red-500/20 active:bg-red-500/20",
@@ -58,7 +58,7 @@ export function IconButton({
   const iconColors: Record<IconButtonVariant, string> = {
     neo: "#000000cc",
     primary: "#000000cc",
-    secondary: "#94a3b8",
+    secondary: "#e2e8f0",
     outline: "#64748b",
     ghost: "#475569",
     danger: "#f87171cc",

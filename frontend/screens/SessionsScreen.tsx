@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
@@ -9,23 +9,15 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useContinueSession } from "@/hooks/useContinueSession";
 import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
-import {
-  A2AExtensionCallError,
-  promptOpencodeSessionAsync,
-} from "@/lib/api/a2aExtensions";
 import { type SessionListItem } from "@/lib/api/sessions";
 import {
   getSessionTimelineText,
   resolveSessionAgentPresentation,
 } from "@/lib/sessionDirectoryPresentation";
-import { toast } from "@/lib/toast";
 
 export function SessionsScreen() {
   const { continueSession } = useContinueSession();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
-  const [promptingConversationId, setPromptingConversationId] = useState<
-    string | null
-  >(null);
 
   const {
     items,
@@ -58,81 +50,6 @@ export function SessionsScreen() {
       lastActiveAt: item.last_active_at ?? item.created_at ?? null,
     });
   };
-
-  const resolvePromptSource = (
-    item: SessionListItem,
-  ): "personal" | "shared" | null => {
-    if (item.agent_source === "personal" || item.agent_source === "shared") {
-      return item.agent_source;
-    }
-    if (!item.agent_id) {
-      return null;
-    }
-    const fallbackSource = agentLookup.get(item.agent_id)?.source;
-    if (fallbackSource === "personal" || fallbackSource === "shared") {
-      return fallbackSource;
-    }
-    return null;
-  };
-
-  const canPromptAsync = (item: SessionListItem) =>
-    item.external_provider === "opencode" &&
-    typeof item.external_session_id === "string" &&
-    item.external_session_id.trim().length > 0 &&
-    typeof item.agent_id === "string" &&
-    item.agent_id.trim().length > 0 &&
-    resolvePromptSource(item) !== null;
-
-  const handlePromptAsync = async (item: SessionListItem) => {
-    if (!canPromptAsync(item)) {
-      return;
-    }
-    const sessionId = item.external_session_id!.trim();
-    const agentId = item.agent_id!.trim();
-    const source = resolvePromptSource(item);
-    if (!source) {
-      return;
-    }
-    setPromptingConversationId(item.conversationId);
-    try {
-      await promptOpencodeSessionAsync({
-        source,
-        agentId,
-        sessionId,
-        request: {
-          parts: [
-            {
-              type: "text",
-              text: "Continue from the latest context and summarize next steps.",
-            },
-          ],
-          noReply: true,
-        },
-      });
-      toast.success(
-        "Async continue started",
-        "The upstream session accepted prompt_async.",
-      );
-      await refresh();
-    } catch (error) {
-      const message =
-        error instanceof A2AExtensionCallError
-          ? error.errorCode === "session_forbidden"
-            ? "You do not have permission to continue this external session."
-            : error.message
-          : error instanceof Error
-            ? error.message
-            : "Failed to trigger async continue.";
-      toast.error("Async continue failed", message);
-    } finally {
-      setPromptingConversationId(null);
-    }
-  };
-
-  // Logic Reserve for future integration
-  if (false as boolean) {
-    console.log(handlePromptAsync, promptingConversationId);
-  }
 
   return (
     <ScreenContainer>
@@ -170,9 +87,6 @@ export function SessionsScreen() {
               const title = item.title;
               const agent = resolveSessionAgentPresentation(item, agentLookup);
               const timeline = getSessionTimelineText(item);
-              const canAsyncPrompt = canPromptAsync(item);
-              const isPrompting =
-                promptingConversationId === item.conversationId;
               return (
                 <View
                   key={item.conversationId}
@@ -205,17 +119,7 @@ export function SessionsScreen() {
                       </Text>
                     </View>
                     <View className="flex-row items-center">
-                      {canAsyncPrompt ? (
-                        <Button
-                          label="Async Continue"
-                          size="xs"
-                          variant="secondary"
-                          loading={isPrompting}
-                          disabled={isPrompting}
-                          onPress={() => handlePromptAsync(item)}
-                          className="mr-2"
-                        />
-                      ) : null}
+                      {/* Async Continue is intentionally hidden for now. See #381. */}
                       <IconButton
                         size="xs"
                         variant="primary"
