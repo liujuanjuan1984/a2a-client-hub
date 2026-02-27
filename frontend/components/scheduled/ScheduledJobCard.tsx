@@ -66,6 +66,7 @@ type ScheduledJobCardProps = {
   executionsLoadingMore?: boolean;
   onToggleEnabled: () => void | Promise<void>;
   onEdit: () => void;
+  onDelete?: () => void | Promise<void>;
   onMarkFailed?: () => void | Promise<void>;
   onToggleExecutions: () => void;
   onLoadMoreExecutions?: () => void;
@@ -82,6 +83,7 @@ export function ScheduledJobCard({
   executionsLoadingMore,
   onToggleEnabled,
   onEdit,
+  onDelete,
   onMarkFailed,
   onToggleExecutions,
   onLoadMoreExecutions,
@@ -95,6 +97,7 @@ export function ScheduledJobCard({
       : null;
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [markingFailed, setMarkingFailed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const canMarkFailed = job.last_run_status === "running";
 
@@ -129,6 +132,24 @@ export function ScheduledJobCard({
       await onMarkFailed();
     } finally {
       setMarkingFailed(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete || deleting) return;
+    const confirmed = await confirmAction({
+      title: "Delete scheduled job?",
+      message: "This action cannot be undone.",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -199,6 +220,15 @@ export function ScheduledJobCard({
             variant="secondary"
             iconLeft="create-outline"
             onPress={onEdit}
+          />
+          <Button
+            label="Delete"
+            size="xs"
+            variant="secondary"
+            iconLeft="trash-outline"
+            loading={deleting}
+            disabled={!onDelete}
+            onPress={handleDelete}
           />
           <ExpandToggle
             expanded={promptExpanded}

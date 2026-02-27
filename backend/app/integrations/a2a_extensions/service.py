@@ -21,7 +21,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionUpstreamError,
 )
-from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient
+from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient, JsonRpcResponse
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
 from app.integrations.a2a_extensions.opencode_interrupt_callback import (
     resolve_opencode_interrupt_callback,
@@ -381,6 +381,56 @@ class A2AExtensionsService:
         normalized["opencode"] = opencode
         return normalized
 
+    @staticmethod
+    def _record_extension_metric(
+        metric_key: str, success: bool, error_code: Optional[str]
+    ) -> None:
+        a2a_extension_metrics.record_call(
+            metric_key,
+            success=success,
+            error_code=error_code,
+        )
+
+    async def _perform_jsonrpc_call(
+        self,
+        *,
+        runtime: A2ARuntime,
+        jsonrpc_url: str,
+        method_name: str,
+        params: Dict[str, Any],
+    ) -> JsonRpcResponse:
+        await self._get_http()
+        assert self._jsonrpc is not None  # constructed alongside _http
+        try:
+            return await self._call_with_retry(
+                url=jsonrpc_url,
+                method=method_name,
+                params=params,
+                headers=dict(runtime.resolved.headers),
+                timeout_seconds=max(settings.a2a_default_timeout, 1.0),
+            )
+        except httpx.TransportError as exc:
+            raise A2AExtensionUpstreamError(
+                message=str(exc),
+                error_code="upstream_unreachable",
+                upstream_error={"message": str(exc), "type": type(exc).__name__},
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise A2AExtensionUpstreamError(
+                message=str(exc),
+                error_code="upstream_http_error",
+                upstream_error={
+                    "message": str(exc),
+                    "status_code": (exc.response.status_code if exc.response else None),
+                },
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise A2AExtensionUpstreamError(
+                message=str(exc),
+                error_code="upstream_error",
+                upstream_error={"message": str(exc), "type": type(exc).__name__},
+            ) from exc
+
     async def _invoke_opencode_method(
         self,
         *,
@@ -404,38 +454,13 @@ class A2AExtensionsService:
                 },
                 meta={"extension_uri": ext.uri},
             )
-        metric_key = f"{ext.uri}:{method_name}"
-        await self._get_http()
-        assert self._jsonrpc is not None  # constructed alongside _http
-        try:
-            resp = await self._call_with_retry(
-                url=jsonrpc_url,
-                method=method_name,
-                params=params,
-                headers=dict(runtime.resolved.headers),
-                timeout_seconds=max(settings.a2a_default_timeout, 1.0),
-            )
-        except httpx.TransportError as exc:
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_unreachable",
-                upstream_error={"message": str(exc), "type": type(exc).__name__},
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_http_error",
-                upstream_error={
-                    "message": str(exc),
-                    "status_code": exc.response.status_code if exc.response else None,
-                },
-            ) from exc
-        except Exception as exc:  # noqa: BLE001
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_error",
-                upstream_error={"message": str(exc), "type": type(exc).__name__},
-            ) from exc
+
+        resp = await self._perform_jsonrpc_call(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method_name,
+            params=params,
+        )
 
         meta = self._build_call_meta(
             ext=ext,
@@ -444,6 +469,7 @@ class A2AExtensionsService:
             meta_extra=meta_extra,
         )
 
+        metric_key = f"{ext.uri}:{method_name}"
         if resp.ok:
             resolved_result: Optional[Dict[str, Any]]
             if normalize_envelope:
@@ -456,20 +482,13 @@ class A2AExtensionsService:
                 resolved_result = dict(resp.result)
             else:
                 resolved_result = {"raw": resp.result}
-            a2a_extension_metrics.record_call(
-                metric_key,
-                success=True,
-                error_code=None,
-            )
+
+            self._record_extension_metric(metric_key, success=True, error_code=None)
             return ExtensionCallResult(success=True, result=resolved_result, meta=meta)
 
         error = resp.error or {}
         error_code = self._map_business_error_code(error, ext)
-        a2a_extension_metrics.record_call(
-            metric_key,
-            success=False,
-            error_code=error_code,
-        )
+        self._record_extension_metric(metric_key, success=False, error_code=error_code)
         return ExtensionCallResult(
             success=False,
             error_code=error_code,
@@ -739,38 +758,13 @@ class A2AExtensionsService:
                 },
                 meta={"extension_uri": ext.uri},
             )
-        metric_key = f"{ext.uri}:{method_name}"
-        await self._get_http()
-        assert self._jsonrpc is not None  # constructed alongside _http
-        try:
-            resp = await self._call_with_retry(
-                url=jsonrpc_url,
-                method=method_name,
-                params=params,
-                headers=dict(runtime.resolved.headers),
-                timeout_seconds=max(settings.a2a_default_timeout, 1.0),
-            )
-        except httpx.TransportError as exc:
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_unreachable",
-                upstream_error={"message": str(exc), "type": type(exc).__name__},
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_http_error",
-                upstream_error={
-                    "message": str(exc),
-                    "status_code": exc.response.status_code if exc.response else None,
-                },
-            ) from exc
-        except Exception as exc:  # noqa: BLE001
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_error",
-                upstream_error={"message": str(exc), "type": type(exc).__name__},
-            ) from exc
+
+        resp = await self._perform_jsonrpc_call(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method_name,
+            params=params,
+        )
 
         meta: Dict[str, Any] = {
             "extension_uri": ext.uri,
@@ -779,21 +773,14 @@ class A2AExtensionsService:
         if meta_extra:
             meta.update(meta_extra)
 
+        metric_key = f"{ext.uri}:{method_name}"
         if resp.ok:
-            a2a_extension_metrics.record_call(
-                metric_key,
-                success=True,
-                error_code=None,
-            )
+            self._record_extension_metric(metric_key, success=True, error_code=None)
             return ExtensionCallResult(success=True, result=resp.result, meta=meta)
 
         error = resp.error or {}
         error_code = self._map_interrupt_business_error_code(error, ext)
-        a2a_extension_metrics.record_call(
-            metric_key,
-            success=False,
-            error_code=error_code,
-        )
+        self._record_extension_metric(metric_key, success=False, error_code=error_code)
         return ExtensionCallResult(
             success=False,
             error_code=error_code,
