@@ -29,7 +29,7 @@ from app.services.a2a_schedule_service import (
     A2AScheduleValidationError,
     a2a_schedule_service,
 )
-from app.utils.timezone_util import resolve_timezone
+from app.utils.timezone_util import normalize_timezone, resolve_timezone
 
 router = StrictAPIRouter(prefix="/me/a2a/schedules", tags=["a2a-schedules"])
 
@@ -39,10 +39,12 @@ def _resolve_schedule_timezone(
     user_timezone: str | None,
     requested_timezone: str | None = None,
 ) -> str:
-    user_value = (user_timezone or "").strip() or "UTC"
+    user_value = normalize_timezone(user_timezone)
     user_key = resolve_timezone(user_value, default="UTC").key
     requested_value = (
-        (requested_timezone or "").strip() if requested_timezone is not None else None
+        normalize_timezone(requested_timezone)
+        if requested_timezone is not None
+        else None
     )
     if requested_value:
         try:

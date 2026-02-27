@@ -4,17 +4,15 @@ import { Pressable, Switch, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { KeyValueInputRow } from "@/components/ui/KeyValueInputRow";
-import type {
-  HubA2AAuthType,
-  HubA2AAvailabilityPolicy,
-} from "@/lib/api/hubA2aAgentsAdmin";
+import { type A2AAuthType } from "@/lib/api/a2aAgents";
+import type { HubA2AAvailabilityPolicy } from "@/lib/api/hubA2aAgentsAdmin";
 import type {
   HubAgentFormErrors,
   HubAgentFormValues,
 } from "@/screens/admin/hubAgentFormState";
 import type { HeaderRow } from "@/screens/admin/hubAgentFormUtils";
 
-const authTypes: { label: string; value: HubA2AAuthType }[] = [
+const authTypes: { label: string; value: A2AAuthType }[] = [
   { label: "No Auth", value: "none" },
   { label: "Bearer", value: "bearer" },
 ];
@@ -39,7 +37,7 @@ type HubAgentFormSectionsProps = {
   onCardUrlChange: (value: string) => void;
   onEnabledChange: (value: boolean) => void;
   onAvailabilityPolicyChange: (value: HubA2AAvailabilityPolicy) => void;
-  onAuthTypeChange: (value: HubA2AAuthType) => void;
+  onAuthTypeChange: (value: A2AAuthType) => void;
   onAuthHeaderChange: (value: string) => void;
   onAuthSchemeChange: (value: string) => void;
   onTokenChange: (value: string) => void;

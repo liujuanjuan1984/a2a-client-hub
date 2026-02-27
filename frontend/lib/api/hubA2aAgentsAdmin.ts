@@ -1,14 +1,14 @@
+import { type A2AAuthType } from "@/lib/api/a2aAgents";
 import { apiRequest } from "@/lib/api/client";
 
 export type HubA2AAvailabilityPolicy = "public" | "allowlist";
-export type HubA2AAuthType = "none" | "bearer";
 
 export type HubA2AAgentAdminResponse = {
   id: string;
   name: string;
   card_url: string;
   availability_policy: HubA2AAvailabilityPolicy;
-  auth_type: HubA2AAuthType;
+  auth_type: A2AAuthType;
   auth_header?: string | null;
   auth_scheme?: string | null;
   enabled: boolean;
@@ -37,7 +37,7 @@ export type HubA2AAgentAdminCreate = {
   name: string;
   card_url: string;
   availability_policy: HubA2AAvailabilityPolicy;
-  auth_type: HubA2AAuthType;
+  auth_type: A2AAuthType;
   auth_header?: string | null;
   auth_scheme?: string | null;
   enabled: boolean;

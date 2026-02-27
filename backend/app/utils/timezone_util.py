@@ -72,6 +72,12 @@ def ensure_utc(datetime_obj: datetime) -> datetime:
     return datetime_obj.astimezone(timezone.utc)
 
 
+def normalize_timezone(timezone_str: Optional[str], default: str = "UTC") -> str:
+    """Normalize timezone string, defaulting to UTC if empty or invalid."""
+
+    return (timezone_str or default).strip() or default
+
+
 def resolve_timezone(timezone_str: Optional[str], *, default: str = "UTC") -> ZoneInfo:
     """Best-effort conversion from preference value to ZoneInfo instance."""
 
@@ -138,6 +144,7 @@ __all__ = [
     "get_day_window",
     "get_next_day_window",
     "get_previous_day_window",
+    "normalize_timezone",
     "resolve_timezone",
     "utc_now",
     "utc_now_iso",

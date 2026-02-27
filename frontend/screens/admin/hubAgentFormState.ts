@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
 
+import { type A2AAuthType } from "@/lib/api/a2aAgents";
 import type {
   HubA2AAgentAdminCreate,
   HubA2AAgentAdminResponse,
-  HubA2AAuthType,
   HubA2AAvailabilityPolicy,
 } from "@/lib/api/hubA2aAgentsAdmin";
 import { generateId } from "@/lib/id";
@@ -25,7 +25,7 @@ export type HubAgentFormValues = {
   cardUrl: string;
   enabled: boolean;
   availabilityPolicy: HubA2AAvailabilityPolicy;
-  authType: HubA2AAuthType;
+  authType: A2AAuthType;
   authHeader: string;
   authScheme: string;
   token: string;
@@ -66,7 +66,7 @@ type HubAgentComparablePayload = {
   card_url: string;
   enabled: boolean;
   availability_policy: HubA2AAvailabilityPolicy;
-  auth_type: HubA2AAuthType;
+  auth_type: A2AAuthType;
   auth_header: string | null;
   auth_scheme: string | null;
   tags: string[];
@@ -150,7 +150,7 @@ export const useHubAgentFormState = () => {
     },
     [],
   );
-  const setAuthType = useCallback((value: HubA2AAuthType) => {
+  const setAuthType = useCallback((value: A2AAuthType) => {
     setValues((prev) => ({ ...prev, authType: value }));
   }, []);
   const setAuthHeader = useCallback((value: string) => {

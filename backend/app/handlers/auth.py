@@ -22,7 +22,7 @@ from app.core.security import (
 )
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.utils.timezone_util import utc_now
+from app.utils.timezone_util import normalize_timezone, utc_now
 
 logger = get_logger(__name__)
 
@@ -87,12 +87,6 @@ class RegistrationResult:
     timezone: str
 
 
-def _normalize_timezone(timezone: Optional[str]) -> str:
-    if isinstance(timezone, str) and timezone.strip():
-        return timezone.strip()
-    return "UTC"
-
-
 async def register_user(
     db: AsyncSession,
     *,
@@ -117,7 +111,7 @@ async def register_user(
     should_be_superuser = settings.first_user_superuser and is_first_user
 
     password_hash = get_password_hash(password)
-    timezone_value = _normalize_timezone(timezone)
+    timezone_value = normalize_timezone(timezone)
     user = User(
         email=email,
         name=name,

@@ -17,7 +17,13 @@ from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.transaction import commit_safely
 from app.handlers import auth as auth_handler
-from app.utils.timezone_util import ensure_utc, resolve_timezone, utc_now
+from app.utils.timezone_util import (
+    ensure_utc,
+    normalize_timezone,
+    resolve_timezone,
+    utc_now,
+)
+from app.utils.validation import normalize_required_text
 
 _MANUAL_FAILURE_MESSAGE = "Stopped by user as failed"
 
@@ -67,10 +73,6 @@ class A2AScheduleService:
         A2AScheduleTask.CYCLE_MONTHLY,
         A2AScheduleTask.CYCLE_INTERVAL,
     }
-
-    @staticmethod
-    def _normalize_timezone_str(timezone_str: str | None) -> str:
-        return (timezone_str or "UTC").strip() or "UTC"
 
     async def list_tasks(
         self,
@@ -133,7 +135,7 @@ class A2AScheduleService:
         normalized_name = self._normalize_name(name)
         normalized_prompt = self._normalize_prompt(prompt)
         normalized_cycle = self._normalize_cycle_type(cycle_type)
-        timezone_value = self._normalize_timezone_str(timezone_str)
+        timezone_value = normalize_timezone(timezone_str)
         normalized_point = self._normalize_time_point(
             cycle_type=normalized_cycle,
             time_point=time_point,
@@ -779,12 +781,25 @@ class A2AScheduleService:
             )
 
     def _normalize_name(self, value: str) -> str:
-        normalized = (value or "").strip()
-        if not normalized:
-            raise A2AScheduleValidationError("Task name is required")
+        normalized = normalize_required_text(
+            value=value,
+            field_label="Task name",
+            validation_error_cls=A2AScheduleValidationError,
+        )
         if len(normalized) > 120:
             raise A2AScheduleValidationError("Task name must be <= 120 characters")
         return normalized
+
+    def _normalize_prompt(self, value: str) -> str:
+        normalized = normalize_required_text(
+            value=value,
+            field_label="Prompt",
+            validation_error_cls=A2AScheduleValidationError,
+        )
+        if len(normalized) > 128_000:
+            raise A2AScheduleValidationError("Prompt exceeds max length")
+        return normalized
+
 
     def _normalize_prompt(self, value: str) -> str:
         normalized = (value or "").strip()

@@ -9,26 +9,11 @@ from uuid import UUID
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
 from app.utils.auth_headers import resolve_stored_auth_fields
-
-
+from app.utils.validation import normalize_required_text
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.a2a_agent_credential import A2AAgentCredential
-
-
-def normalize_required_text(
-    *,
-    value: str,
-    field_label: str,
-    validation_error_cls: Type[Exception],
-) -> str:
-    """Normalize required text fields and raise service-specific errors."""
-
-    trimmed = (value or "").strip()
-    if not trimmed:
-        raise validation_error_cls(f"{field_label} is required")
-    return trimmed
 
 
 def normalize_auth_type(

@@ -1,4 +1,9 @@
-import { type A2AAgentCardValidationResponse } from "@/lib/api/a2aAgents";
+import {
+  type A2AAgentCardValidationResponse,
+  type A2AAgentInvokeRequest,
+  type A2AAgentInvokeResponse,
+  type WsTicketResponse,
+} from "@/lib/api/a2aAgents";
 import { apiRequest } from "@/lib/api/client";
 
 export type HubA2AAgentUserResponse = {
@@ -19,31 +24,6 @@ export type HubA2AAgentUserListResponse = {
   meta: Record<string, unknown>;
 };
 
-export type HubA2AAgentInvokeRequest = {
-  query: string;
-  conversationId?: string;
-  contextId?: string;
-  userMessageId?: string;
-  agentMessageId?: string;
-  resumeFromSequence?: number;
-  metadata?: Record<string, unknown>;
-};
-
-export type HubA2AAgentInvokeResponse = {
-  success: boolean;
-  content?: string | null;
-  error?: string | null;
-  error_code?: string | null;
-  agent_name?: string | null;
-  agent_url?: string | null;
-};
-
-export type HubWsTicketResponse = {
-  token: string;
-  expires_at: string;
-  expires_in: number;
-};
-
 export const listHubAgents = (page = 1, size = 200) =>
   apiRequest<HubA2AAgentUserListResponse>("/a2a/agents", {
     query: { page, size },
@@ -51,16 +31,16 @@ export const listHubAgents = (page = 1, size = 200) =>
 
 export const invokeHubAgent = (
   agentId: string,
-  payload: HubA2AAgentInvokeRequest,
+  payload: A2AAgentInvokeRequest,
 ) =>
-  apiRequest<HubA2AAgentInvokeResponse, HubA2AAgentInvokeRequest>(
+  apiRequest<A2AAgentInvokeResponse, A2AAgentInvokeRequest>(
     `/a2a/agents/${encodeURIComponent(agentId)}/invoke`,
     { method: "POST", body: payload },
   );
 
 // These endpoints are expected to be added as part of hub streaming parity work.
 export const getHubInvokeWsTicket = (agentId: string) =>
-  apiRequest<HubWsTicketResponse>(
+  apiRequest<WsTicketResponse>(
     `/a2a/agents/${encodeURIComponent(agentId)}/invoke/ws-token`,
     { method: "POST" },
   );

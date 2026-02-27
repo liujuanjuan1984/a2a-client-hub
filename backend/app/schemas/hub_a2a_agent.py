@@ -8,9 +8,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.a2a_common import A2AAuthType
 from app.schemas.pagination import ListResponse, Pagination
 
-HubA2AAuthType = Literal["none", "bearer"]
 HubA2AAvailabilityPolicy = Literal["public", "allowlist"]
 
 
@@ -18,7 +18,7 @@ class HubA2AAgentBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     card_url: str = Field(..., min_length=4, max_length=1024)
     availability_policy: HubA2AAvailabilityPolicy = Field(default="public")
-    auth_type: HubA2AAuthType = Field(default="none")
+    auth_type: A2AAuthType = Field(default="none")
     auth_header: Optional[str] = Field(default=None)
     auth_scheme: Optional[str] = Field(default=None)
     enabled: bool = Field(default=True)
@@ -38,7 +38,7 @@ class HubA2AAgentAdminUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
     card_url: Optional[str] = Field(default=None, min_length=4, max_length=1024)
     availability_policy: Optional[HubA2AAvailabilityPolicy] = None
-    auth_type: Optional[HubA2AAuthType] = None
+    auth_type: Optional[A2AAuthType] = None
     auth_header: Optional[str] = None
     auth_scheme: Optional[str] = None
     enabled: Optional[bool] = None
@@ -126,7 +126,7 @@ class HubA2AAllowlistReplaceRequest(BaseModel):
 
 
 __all__ = [
-    "HubA2AAuthType",
+    "A2AAuthType",
     "HubA2AAvailabilityPolicy",
     "HubA2AAgentAdminCreate",
     "HubA2AAgentAdminUpdate",

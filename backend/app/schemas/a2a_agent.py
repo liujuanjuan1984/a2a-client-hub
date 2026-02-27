@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
+from app.schemas.a2a_common import A2AAuthType
 from app.schemas.pagination import ListResponse, Pagination
-
-A2AAuthType = Literal["none", "bearer"]
 
 
 class A2AAgentBase(BaseModel):
