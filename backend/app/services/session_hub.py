@@ -600,6 +600,27 @@ class SessionHubService:
             return True, error_code or None
         return False, error_code or None
 
+    @staticmethod
+    def _status_error_for_cancel_error_code(error_code: str | None) -> str:
+        if error_code in {"timeout", "agent_unavailable"}:
+            return "upstream_unreachable"
+        if error_code in {
+            "upstream_http_error",
+            "outbound_not_allowed",
+            "client_reset",
+        }:
+            return "upstream_http_error"
+        return "upstream_error"
+
+    @classmethod
+    def _resolve_status_error_from_cancel_errors(cls, error_codes: list[str]) -> str:
+        mapped = [cls._status_error_for_cancel_error_code(code) for code in error_codes]
+        if "upstream_unreachable" in mapped:
+            return "upstream_unreachable"
+        if "upstream_http_error" in mapped:
+            return "upstream_http_error"
+        return "upstream_error"
+
     async def preempt_inflight_invoke(
         self,
         *,
@@ -615,6 +636,7 @@ class SessionHubService:
             return False
 
         preempted = False
+        failed_error_codes: list[str] = []
         for snapshot in snapshots:
             if snapshot.task_id is None:
                 marked = await self._mark_inflight_cancel_requested(
@@ -627,15 +649,29 @@ class SessionHubService:
                     preempted = True
                 continue
 
-            success, _ = await self._cancel_inflight_task(
+            success, error_code = await self._cancel_inflight_task(
                 user_id=user_id,
                 conversation_id=conversation_id,
                 snapshot=snapshot,
                 reason=reason,
             )
             if not success:
-                raise ValueError("invoke_interrupt_failed")
+                failed_error_codes.append(error_code or "upstream_error")
+                continue
             preempted = True
+        if preempted:
+            if failed_error_codes:
+                logger.warning(
+                    "Partial inflight preemption failure",
+                    extra={
+                        "user_id": str(user_id),
+                        "conversation_id": str(conversation_id),
+                        "failed_error_codes": failed_error_codes,
+                    },
+                )
+            return True
+        if failed_error_codes:
+            raise ValueError("invoke_interrupt_failed")
         return preempted
 
     async def cancel_session(
@@ -672,6 +708,7 @@ class SessionHubService:
         accepted_task_id: str | None = None
         pending_requested = False
         terminal_task_id: str | None = None
+        failed_error_codes: list[str] = []
         for snapshot in snapshots:
             if snapshot.task_id is None:
                 marked = await self._mark_inflight_cancel_requested(
@@ -699,17 +736,18 @@ class SessionHubService:
                     terminal_task_id = snapshot.task_id
                 continue
 
-            if error_code in {"timeout", "agent_unavailable"}:
-                raise ValueError("upstream_unreachable")
-            if error_code in {
-                "upstream_http_error",
-                "outbound_not_allowed",
-                "client_reset",
-            }:
-                raise ValueError("upstream_http_error")
-            raise ValueError("upstream_error")
+            failed_error_codes.append(error_code or "upstream_error")
 
         if accepted_task_id is not None:
+            if failed_error_codes:
+                logger.warning(
+                    "Session cancel partially failed after accepted cancellation",
+                    extra={
+                        "user_id": str(user_id),
+                        "conversation_id": str(resolved_conversation_id),
+                        "failed_error_codes": failed_error_codes,
+                    },
+                )
             return (
                 {
                     "conversationId": str(resolved_conversation_id),
@@ -721,6 +759,15 @@ class SessionHubService:
             )
 
         if pending_requested:
+            if failed_error_codes:
+                logger.warning(
+                    "Session cancel partially failed while pending cancellation remains",
+                    extra={
+                        "user_id": str(user_id),
+                        "conversation_id": str(resolved_conversation_id),
+                        "failed_error_codes": failed_error_codes,
+                    },
+                )
             return (
                 {
                     "conversationId": str(resolved_conversation_id),
@@ -732,6 +779,15 @@ class SessionHubService:
             )
 
         if terminal_task_id is not None:
+            if failed_error_codes:
+                logger.warning(
+                    "Session cancel partially failed with terminal tasks present",
+                    extra={
+                        "user_id": str(user_id),
+                        "conversation_id": str(resolved_conversation_id),
+                        "failed_error_codes": failed_error_codes,
+                    },
+                )
             return (
                 {
                     "conversationId": str(resolved_conversation_id),
@@ -740,6 +796,11 @@ class SessionHubService:
                     "status": "already_terminal",
                 },
                 False,
+            )
+
+        if failed_error_codes:
+            raise ValueError(
+                self._resolve_status_error_from_cancel_errors(failed_error_codes)
             )
 
         return (

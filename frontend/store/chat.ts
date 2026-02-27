@@ -25,7 +25,16 @@ import { type AgentSource } from "@/store/agents";
 import { executeChatRuntime } from "@/store/chatRuntime";
 
 const requestSessionCancel = (conversationId: string) => {
-  chatConnectionService.cancelSession(conversationId).catch(() => undefined);
+  chatConnectionService
+    .cancelSession(conversationId)
+    .then((result) => {
+      if (result?.status === "pending") {
+        console.info("Server accepted pending cancellation for conversation", {
+          conversationId,
+        });
+      }
+    })
+    .catch(() => undefined);
 };
 
 type ChatState = {
