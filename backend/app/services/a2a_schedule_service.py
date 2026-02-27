@@ -66,6 +66,7 @@ class A2AScheduleService:
         A2AScheduleTask.CYCLE_WEEKLY,
         A2AScheduleTask.CYCLE_MONTHLY,
         A2AScheduleTask.CYCLE_INTERVAL,
+        A2AScheduleTask.CYCLE_SEQUENTIAL,
     }
 
     @staticmethod
@@ -380,6 +381,14 @@ class A2AScheduleService:
         task.consecutive_failures = (task.consecutive_failures or 0) + 1
         if task.consecutive_failures >= threshold:
             task.enabled = False
+        if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            if task.enabled:
+                task.next_run_at = self._compute_sequential_next_run_at(
+                    time_point=dict(task.time_point or {}),
+                    after_utc=now_utc,
+                )
+            else:
+                task.next_run_at = None
 
         await commit_safely(db)
         await db.refresh(task)
@@ -525,14 +534,18 @@ class A2AScheduleService:
         ) or False
 
         scheduled_for = ensure_utc(selected_task.next_run_at or now_utc)
-        next_run_at = self.compute_next_run_at(
-            cycle_type=selected_task.cycle_type,
-            time_point=dict(selected_task.time_point or {}),
-            timezone_str=timezone_value,
-            after_utc=scheduled_for,
-            not_before_utc=now_utc,
-            is_superuser=is_superuser,
-        )
+        if selected_task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            # Sequential tasks are re-scheduled only after the current run completes.
+            next_run_at = None
+        else:
+            next_run_at = self.compute_next_run_at(
+                cycle_type=selected_task.cycle_type,
+                time_point=dict(selected_task.time_point or {}),
+                timezone_str=timezone_value,
+                after_utc=scheduled_for,
+                not_before_utc=now_utc,
+                is_superuser=is_superuser,
+            )
 
         run_id = uuid4()
         selected_task.next_run_at = next_run_at
@@ -609,6 +622,7 @@ class A2AScheduleService:
             )
             execution = await db.scalar(exec_stmt)
             final_task_status = A2AScheduleTask.STATUS_FAILED
+            sequential_after_utc = now_utc
 
             if (
                 execution is not None
@@ -637,8 +651,12 @@ class A2AScheduleService:
                 db.add(recovered)
             elif execution.status == A2AScheduleExecution.STATUS_SUCCESS:
                 final_task_status = A2AScheduleTask.STATUS_SUCCESS
+                if execution.finished_at is not None:
+                    sequential_after_utc = ensure_utc(execution.finished_at)
             elif execution.status == A2AScheduleExecution.STATUS_FAILED:
                 final_task_status = A2AScheduleTask.STATUS_FAILED
+                if execution.finished_at is not None:
+                    sequential_after_utc = ensure_utc(execution.finished_at)
 
             task.last_run_status = final_task_status
             task.last_run_at = now_utc
@@ -650,6 +668,14 @@ class A2AScheduleService:
                 task.consecutive_failures = (task.consecutive_failures or 0) + 1
                 if task.consecutive_failures >= failure_threshold:
                     task.enabled = False
+            if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+                if task.enabled:
+                    task.next_run_at = self._compute_sequential_next_run_at(
+                        time_point=dict(task.time_point or {}),
+                        after_utc=sequential_after_utc,
+                    )
+                else:
+                    task.next_run_at = None
             recovered_count += 1
 
         await commit_safely(db)
@@ -704,6 +730,14 @@ class A2AScheduleService:
             pass
         else:
             raise A2AScheduleValidationError("Unsupported final status for task run")
+        if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            if task.enabled:
+                task.next_run_at = self._compute_sequential_next_run_at(
+                    time_point=dict(task.time_point or {}),
+                    after_utc=task.last_run_at or ensure_utc(finished_at),
+                )
+            else:
+                task.next_run_at = None
 
         return True
 
@@ -806,7 +840,7 @@ class A2AScheduleService:
         normalized = (value or "").strip().lower()
         if normalized not in self._allowed_cycle_types:
             raise A2AScheduleValidationError(
-                "cycle_type must be one of daily, weekly, monthly, interval"
+                "cycle_type must be one of daily, weekly, monthly, interval, sequential"
             )
         return normalized
 
@@ -837,6 +871,18 @@ class A2AScheduleService:
                     timezone_str=timezone_str,
                 )
             return normalized
+        if cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            minutes_raw = time_point.get("minutes", time_point.get("interval_minutes"))
+            minutes = self._normalize_interval_minutes(
+                minutes_raw, is_superuser=is_superuser
+            )
+            if time_point.get("start_at_local") not in (None, "") or time_point.get(
+                "start_at_utc"
+            ) not in (None, ""):
+                raise A2AScheduleValidationError(
+                    "sequential does not support start_at_local/start_at_utc; use minutes only"
+                )
+            return {"minutes": minutes}
 
         hh, mm = self._parse_hhmm(time_point.get("time"))
         normalized: Dict[str, Any] = {"time": f"{hh:02d}:{mm:02d}"}
@@ -974,6 +1020,13 @@ class A2AScheduleService:
         timezone_str: str,
     ) -> Dict[str, Any]:
         payload = dict(time_point or {})
+        if cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            minutes = self._coerce_int(
+                payload.get("minutes", payload.get("interval_minutes"))
+            )
+            if minutes is None:
+                return {}
+            return {"minutes": minutes}
         if cycle_type != A2AScheduleTask.CYCLE_INTERVAL:
             return payload
 
@@ -1044,6 +1097,27 @@ class A2AScheduleService:
             dt = dt.replace(tzinfo=timezone.utc)
 
         return ensure_utc(dt)
+
+    def _compute_sequential_next_run_at(
+        self,
+        *,
+        time_point: Dict[str, Any] | None,
+        after_utc: datetime,
+    ) -> datetime:
+        minutes = self._coerce_int(
+            (time_point or {}).get(
+                "minutes", (time_point or {}).get("interval_minutes")
+            )
+        )
+        if minutes is None:
+            raise A2AScheduleValidationError("sequential time_point requires minutes")
+        if minutes <= 0:
+            raise A2AScheduleValidationError(
+                "sequential time_point.minutes must be a positive integer"
+            )
+        # Be tolerant of legacy dirty values while avoiding extreme scheduling gaps.
+        capped_minutes = min(minutes, 24 * 60)
+        return ensure_utc(after_utc) + timedelta(minutes=capped_minutes)
 
     @staticmethod
     def _next_interval_candidate(
@@ -1265,6 +1339,14 @@ class A2AScheduleService:
             is_superuser=is_superuser,
             timezone_str=timezone_value,
         )
+        if normalized_cycle == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            after = ensure_utc(after_utc)
+            guard = ensure_utc(not_before_utc or after_utc)
+            baseline = after if after >= guard else guard
+            return self._compute_sequential_next_run_at(
+                time_point=normalized_point,
+                after_utc=baseline,
+            )
 
         if normalized_cycle == A2AScheduleTask.CYCLE_INTERVAL:
             minutes = self._normalize_interval_minutes(

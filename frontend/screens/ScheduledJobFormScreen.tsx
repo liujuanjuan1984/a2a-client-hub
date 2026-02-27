@@ -61,6 +61,15 @@ const normalizeTimePoint = (
   timePoint: unknown,
 ) => {
   const current = (timePoint ?? {}) as ScheduleTimePoint;
+  if (cycleType === "sequential") {
+    const minutes = (current as { minutes?: unknown })?.minutes;
+    return {
+      minutes:
+        typeof minutes === "number" && Number.isFinite(minutes)
+          ? normalizeIntervalMinutes(minutes)
+          : 10,
+    };
+  }
   if (cycleType === "interval") {
     const minutes = (current as { minutes?: unknown })?.minutes;
     const startAtLocal = (current as { start_at_local?: unknown })
@@ -279,6 +288,13 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       }
       if (!isValidHHMM(time.trim())) {
         toast.error("Validation failed", "Time must be HH:MM (00:00-23:59).");
+        return false;
+      }
+    }
+    if (form.cycle_type === "sequential") {
+      const minutes = (form.time_point as { minutes?: unknown })?.minutes;
+      if (typeof minutes !== "number" || !Number.isFinite(minutes)) {
+        toast.error("Validation failed", "Sequential minutes is required.");
         return false;
       }
     }

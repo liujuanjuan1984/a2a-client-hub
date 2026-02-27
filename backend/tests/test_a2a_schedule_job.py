@@ -167,6 +167,31 @@ async def test_claim_next_due_task_obeys_agent_concurrency_limit(
     assert claim.task_id == task_b.id
 
 
+async def test_claim_next_due_task_sequential_holds_next_run_until_finalize(
+    async_db_session,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="sequential")
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    task.cycle_type = A2AScheduleTask.CYCLE_SEQUENTIAL
+    task.time_point = {"minutes": 15}
+    await async_db_session.commit()
+
+    claim = await a2a_schedule_service.claim_next_due_task(async_db_session, now=now)
+    assert claim is not None
+    assert claim.task_id == task.id
+    await async_db_session.refresh(task)
+    assert task.last_run_status == A2AScheduleTask.STATUS_RUNNING
+    assert task.current_run_id is not None
+    assert task.next_run_at is None
+
+
 async def test_execute_claimed_task_resets_consecutive_failures_on_success(
     async_db_session,
     async_session_maker,
@@ -836,6 +861,63 @@ async def test_recover_stale_running_task_backfills_missing_execution(
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
     assert len(executions) == 1
     assert executions[0].status == A2AScheduleExecution.STATUS_FAILED
+
+
+async def test_recover_stale_sequential_task_reschedules_next_run(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="recover-sequential",
+    )
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    run_id = uuid4()
+    stale_started_at = now - timedelta(minutes=30)
+    task.cycle_type = A2AScheduleTask.CYCLE_SEQUENTIAL
+    task.time_point = {"minutes": 60}
+    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+    task.current_run_id = run_id
+    task.running_started_at = stale_started_at
+    task.next_run_at = None
+    execution = A2AScheduleExecution(
+        user_id=user.id,
+        task_id=task.id,
+        run_id=run_id,
+        scheduled_for=stale_started_at,
+        started_at=stale_started_at,
+        status=A2AScheduleExecution.STATUS_RUNNING,
+    )
+    async_db_session.add(execution)
+    await async_db_session.commit()
+
+    recovered = await a2a_schedule_service.recover_stale_running_tasks(
+        async_db_session,
+        now=now,
+        timeout_seconds=60,
+    )
+    assert recovered == 1
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+        )
+
+    assert refreshed_task is not None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
+    assert refreshed_task.current_run_id is None
+    assert refreshed_task.running_started_at is None
+    assert refreshed_task.next_run_at is not None
+    assert refreshed_task.next_run_at >= now + timedelta(minutes=59)
 
 
 async def test_dispatch_due_a2a_schedules_skips_cycle_when_db_connection_refused(

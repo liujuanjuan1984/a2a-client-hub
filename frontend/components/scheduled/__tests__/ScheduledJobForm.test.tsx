@@ -103,4 +103,33 @@ describe("ScheduledJobForm", () => {
       String(onChange.mock.calls[0]?.[0]?.time_point?.start_at_local ?? ""),
     ).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:00$/);
   });
+
+  it("uses minutes-only payload when switching to sequential", () => {
+    const onChange = jest.fn();
+    const form: ScheduledJobPayload = {
+      ...basePayload,
+      cycle_type: "interval",
+      time_point: { minutes: 15, start_at_local: "2026-02-23T09:30" },
+    };
+    const { getByText } = render(
+      <ScheduledJobForm
+        form={form}
+        saving={false}
+        editing={false}
+        agentOptions={[]}
+        onChange={onChange}
+        onSubmit={() => undefined}
+        onCancel={() => undefined}
+        timeZone="UTC"
+      />,
+    );
+
+    fireEvent.press(getByText("Sequential"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith({
+      cycle_type: "sequential",
+      time_point: { minutes: 15 },
+    });
+  });
 });
