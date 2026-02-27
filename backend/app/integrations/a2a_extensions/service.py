@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, Mapping, Optional
 
 import httpx
 from a2a.types import AgentCard
@@ -268,6 +268,93 @@ class A2AExtensionsService:
             meta.update(meta_extra)
         return meta
 
+    @staticmethod
+    def _should_short_circuit_limit_without_offset(
+        ext: ResolvedExtension,
+        *,
+        page: int,
+    ) -> bool:
+        return (
+            ext.pagination.mode == "limit"
+            and page > 1
+            and not ext.pagination.supports_offset
+        )
+
+    def _build_limit_without_offset_result(
+        self,
+        *,
+        ext: ResolvedExtension,
+        page: int,
+        size: int,
+        meta_extra: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        short_circuit_meta = {"short_circuit_reason": "limit_without_offset"}
+        if meta_extra:
+            short_circuit_meta.update(meta_extra)
+        return ExtensionCallResult(
+            success=True,
+            result={
+                "raw": [],
+                "items": [],
+                "pagination": {"page": page, "size": size},
+            },
+            meta=self._build_call_meta(
+                ext=ext,
+                page=page,
+                size=size,
+                meta_extra=short_circuit_meta,
+            ),
+        )
+
+    async def _invoke_jsonrpc_extension_method(
+        self,
+        *,
+        runtime: A2ARuntime,
+        extension_uri: str,
+        method_name: Optional[str],
+        method_key: str,
+        jsonrpc_url: str,
+        params: Dict[str, Any],
+        meta: Dict[str, Any],
+        map_error_code: Callable[[Dict[str, Any]], str],
+        build_success_result: Callable[[JsonRpcResponse], Any],
+    ) -> ExtensionCallResult:
+        if not method_name:
+            return ExtensionCallResult(
+                success=False,
+                error_code="method_not_supported",
+                upstream_error={
+                    "message": f"Method {method_key} is not supported by upstream"
+                },
+                meta={"extension_uri": extension_uri},
+            )
+
+        resp = await self._perform_jsonrpc_call(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method_name,
+            params=params,
+        )
+
+        metric_key = f"{extension_uri}:{method_name}"
+        if resp.ok:
+            self._record_extension_metric(metric_key, success=True, error_code=None)
+            return ExtensionCallResult(
+                success=True,
+                result=build_success_result(resp),
+                meta=meta,
+            )
+
+        error = resp.error or {}
+        error_code = map_error_code(error)
+        self._record_extension_metric(metric_key, success=False, error_code=error_code)
+        return ExtensionCallResult(
+            success=False,
+            error_code=error_code,
+            upstream_error=error,
+            meta=meta,
+        )
+
     async def _resolve_opencode_extension(
         self, runtime: A2ARuntime
     ) -> tuple[ResolvedExtension, str]:
@@ -445,24 +532,6 @@ class A2AExtensionsService:
         normalize_envelope: bool = True,
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        method_name = ext.methods.get(method_key)
-        if not method_name:
-            return ExtensionCallResult(
-                success=False,
-                error_code="method_not_supported",
-                upstream_error={
-                    "message": f"Method {method_key} is not supported by upstream"
-                },
-                meta={"extension_uri": ext.uri},
-            )
-
-        resp = await self._perform_jsonrpc_call(
-            runtime=runtime,
-            jsonrpc_url=jsonrpc_url,
-            method_name=method_name,
-            params=params,
-        )
-
         meta = self._build_call_meta(
             ext=ext,
             page=page,
@@ -470,31 +539,24 @@ class A2AExtensionsService:
             meta_extra=meta_extra,
         )
 
-        metric_key = f"{ext.uri}:{method_name}"
-        if resp.ok:
-            resolved_result: Optional[Dict[str, Any]]
-            if normalize_envelope:
-                resolved_result = self._normalize_envelope(
-                    resp.result,
-                    page=page,
-                    size=size,
-                )
-            elif isinstance(resp.result, dict):
-                resolved_result = dict(resp.result)
-            else:
-                resolved_result = {"raw": resp.result}
-
-            self._record_extension_metric(metric_key, success=True, error_code=None)
-            return ExtensionCallResult(success=True, result=resolved_result, meta=meta)
-
-        error = resp.error or {}
-        error_code = self._map_business_error_code(error, ext)
-        self._record_extension_metric(metric_key, success=False, error_code=error_code)
-        return ExtensionCallResult(
-            success=False,
-            error_code=error_code,
-            upstream_error=error,
+        return await self._invoke_jsonrpc_extension_method(
+            runtime=runtime,
+            extension_uri=ext.uri,
+            method_name=ext.methods.get(method_key),
+            method_key=method_key,
+            jsonrpc_url=jsonrpc_url,
+            params=params,
             meta=meta,
+            map_error_code=lambda error: self._map_business_error_code(error, ext),
+            build_success_result=lambda resp: (
+                self._normalize_envelope(resp.result, page=page, size=size)
+                if normalize_envelope
+                else (
+                    dict(resp.result)
+                    if isinstance(resp.result, dict)
+                    else {"raw": resp.result}
+                )
+            ),
         )
 
     async def opencode_list_sessions(
@@ -513,24 +575,11 @@ class A2AExtensionsService:
             page=page,
             size=size,
         )
-        if (
-            ext.pagination.mode == "limit"
-            and resolved_page > 1
-            and not ext.pagination.supports_offset
-        ):
-            return ExtensionCallResult(
-                success=True,
-                result={
-                    "raw": [],
-                    "items": [],
-                    "pagination": {"page": resolved_page, "size": resolved_size},
-                },
-                meta=self._build_call_meta(
-                    ext=ext,
-                    page=resolved_page,
-                    size=resolved_size,
-                    meta_extra={"short_circuit_reason": "limit_without_offset"},
-                ),
+        if self._should_short_circuit_limit_without_offset(ext, page=resolved_page):
+            return self._build_limit_without_offset_result(
+                ext=ext,
+                page=resolved_page,
+                size=resolved_size,
             )
 
         params: Dict[str, Any] = self._build_pagination_params(
@@ -573,27 +622,12 @@ class A2AExtensionsService:
             page=page,
             size=size,
         )
-        if (
-            ext.pagination.mode == "limit"
-            and resolved_page > 1
-            and not ext.pagination.supports_offset
-        ):
-            return ExtensionCallResult(
-                success=True,
-                result={
-                    "raw": [],
-                    "items": [],
-                    "pagination": {"page": resolved_page, "size": resolved_size},
-                },
-                meta=self._build_call_meta(
-                    ext=ext,
-                    page=resolved_page,
-                    size=resolved_size,
-                    meta_extra={
-                        "session_id": resolved_session_id,
-                        "short_circuit_reason": "limit_without_offset",
-                    },
-                ),
+        if self._should_short_circuit_limit_without_offset(ext, page=resolved_page):
+            return self._build_limit_without_offset_result(
+                ext=ext,
+                page=resolved_page,
+                size=resolved_size,
+                meta_extra={"session_id": resolved_session_id},
             )
 
         params: Dict[str, Any] = {
@@ -749,24 +783,6 @@ class A2AExtensionsService:
         params: Dict[str, Any],
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        method_name = ext.methods.get(method_key)
-        if not method_name:
-            return ExtensionCallResult(
-                success=False,
-                error_code="method_not_supported",
-                upstream_error={
-                    "message": f"Method {method_key} is not supported by upstream"
-                },
-                meta={"extension_uri": ext.uri},
-            )
-
-        resp = await self._perform_jsonrpc_call(
-            runtime=runtime,
-            jsonrpc_url=jsonrpc_url,
-            method_name=method_name,
-            params=params,
-        )
-
         meta: Dict[str, Any] = {
             "extension_uri": ext.uri,
             "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
@@ -774,19 +790,18 @@ class A2AExtensionsService:
         if meta_extra:
             meta.update(meta_extra)
 
-        metric_key = f"{ext.uri}:{method_name}"
-        if resp.ok:
-            self._record_extension_metric(metric_key, success=True, error_code=None)
-            return ExtensionCallResult(success=True, result=resp.result, meta=meta)
-
-        error = resp.error or {}
-        error_code = self._map_interrupt_business_error_code(error, ext)
-        self._record_extension_metric(metric_key, success=False, error_code=error_code)
-        return ExtensionCallResult(
-            success=False,
-            error_code=error_code,
-            upstream_error=error,
+        return await self._invoke_jsonrpc_extension_method(
+            runtime=runtime,
+            extension_uri=ext.uri,
+            method_name=ext.methods.get(method_key),
+            method_key=method_key,
+            jsonrpc_url=jsonrpc_url,
+            params=params,
             meta=meta,
+            map_error_code=lambda error: self._map_interrupt_business_error_code(
+                error, ext
+            ),
+            build_success_result=lambda resp: resp.result,
         )
 
     async def opencode_reply_permission(

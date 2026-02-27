@@ -4,19 +4,16 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Query, Response, WebSocket, status
+from fastapi import Depends, Query, Response, WebSocket, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_hub
+from app.api.routers.card_validation_route import run_card_validation_route
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.controls import summarize_query
-from app.integrations.a2a_client.errors import (
-    A2AAgentUnavailableError,
-    A2AClientResetRequiredError,
-)
 from app.integrations.a2a_client.validators import validate_message
 from app.schemas.a2a_agent_card import A2AAgentCardValidationResponse
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
@@ -25,7 +22,6 @@ from app.schemas.hub_a2a_agent import (
     HubA2AAgentUserResponse,
 )
 from app.schemas.ws_ticket import WsTicketResponse
-from app.services.a2a_agent_card_validation import fetch_and_validate_agent_card
 from app.services.hub_a2a_agents import HubA2AAgentNotFoundError, hub_a2a_agent_service
 from app.services.hub_a2a_runtime import (
     HubA2ARuntimeNotFoundError,
@@ -87,31 +83,22 @@ async def validate_hub_agent_card(
     current_user: User = Depends(get_current_user),
 ) -> A2AAgentCardValidationResponse:
     response.headers["Cache-Control"] = "no-store"
-
-    try:
-        runtime = await hub_a2a_runtime_builder.build(
+    return await run_card_validation_route(
+        build_runtime=lambda: hub_a2a_runtime_builder.build(
             db, user_id=current_user.id, agent_id=agent_id
-        )
-    except HubA2ARuntimeNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except HubA2ARuntimeValidationError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    logger.info(
-        "Hub A2A agent card validation requested",
-        extra={
+        ),
+        runtime_not_found_errors=(HubA2ARuntimeNotFoundError,),
+        runtime_not_found_status_code=404,
+        runtime_validation_errors=(HubA2ARuntimeValidationError,),
+        runtime_validation_status_code=502,
+        gateway=get_a2a_service().gateway,
+        logger=logger,
+        log_message="Hub A2A agent card validation requested",
+        log_extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
-            "agent_url": redact_url_for_logging(runtime.resolved.url),
         },
     )
-    try:
-        return await fetch_and_validate_agent_card(
-            gateway=get_a2a_service().gateway,
-            resolved=runtime.resolved,
-        )
-    except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post(
