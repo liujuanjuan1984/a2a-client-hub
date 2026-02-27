@@ -7,6 +7,8 @@ export type MessageBlock = {
   isFinished: boolean;
   createdAt: string;
   updatedAt: string;
+  parentId?: string | null;
+  children?: MessageBlock[];
 };
 
 export type ChatMessage = {
@@ -30,6 +32,7 @@ export type StreamBlockUpdate = {
   delta: string;
   append: boolean;
   done: boolean;
+  parentId: string | null;
 };
 
 export type RuntimeStatusEvent = {
@@ -402,6 +405,11 @@ export const extractStreamBlockUpdate = (
     pickString(data, ["role"]) ?? pickString(opencodeMetadata, ["role"]),
   );
 
+  const parentId =
+    pickString(opencodeMetadata, ["parent_id", "parentId"]) ??
+    pickString(metadata, ["parent_id", "parentId"]) ??
+    null;
+
   return {
     eventId,
     seq: seq ?? null,
@@ -414,69 +422,128 @@ export const extractStreamBlockUpdate = (
     delta,
     append,
     done,
+    parentId,
   };
 };
 
 export const applyStreamBlockUpdate = (
   current: MessageBlock[] | undefined,
   update: StreamBlockUpdate,
-) => {
-  const blocks = [...(current ?? [])];
+): MessageBlock[] => {
   const now = new Date().toISOString();
-  const overwrite = update.source === "final_snapshot" || !update.append;
-  const lastBlock = blocks[blocks.length - 1];
 
-  if (overwrite) {
+  const updateBlocks = (
+    blocks: MessageBlock[],
+    targetUpdate: StreamBlockUpdate,
+  ): MessageBlock[] => {
+    const nextBlocks = [...blocks];
+    if (targetUpdate.parentId) {
+      let found = false;
+      const updated = nextBlocks.map((block) => {
+        if (block.id === targetUpdate.parentId) {
+          found = true;
+          return {
+            ...block,
+            children: updateBlocks(block.children ?? [], {
+              ...targetUpdate,
+              parentId: null,
+            }),
+          };
+        }
+        if (block.children && block.children.length > 0) {
+          const children = updateBlocks(block.children, targetUpdate);
+          if (children !== block.children) {
+            found = true;
+            return { ...block, children };
+          }
+        }
+        return block;
+      });
+      if (found) return updated;
+      // If parentId was specified but not found, fallback to top-level or ignore?
+      // Best to fallback to top-level to avoid losing data, but strip parentId to avoid recursion.
+      return updateBlocks(nextBlocks, { ...targetUpdate, parentId: null });
+    }
+
+    const overwrite =
+      targetUpdate.source === "final_snapshot" || !targetUpdate.append;
+    const lastBlock = nextBlocks[nextBlocks.length - 1];
+
+    if (overwrite) {
+      if (
+        lastBlock &&
+        lastBlock.type === targetUpdate.blockType &&
+        lastBlock.isFinished === false
+      ) {
+        lastBlock.content = targetUpdate.delta;
+        lastBlock.isFinished = targetUpdate.done;
+        lastBlock.updatedAt = now;
+        return nextBlocks;
+      }
+      if (lastBlock && lastBlock.isFinished === false) {
+        // Don't auto-finish reasoning if starting a tool_call child (even if we are at root)
+        if (
+          !(
+            lastBlock.type === "reasoning" &&
+            targetUpdate.blockType === "tool_call"
+          )
+        ) {
+          lastBlock.isFinished = true;
+          lastBlock.updatedAt = now;
+        }
+      }
+      nextBlocks.push({
+        id:
+          targetUpdate.artifactId ||
+          `${targetUpdate.messageId}:${nextBlocks.length + 1}`,
+        type: targetUpdate.blockType,
+        content: targetUpdate.delta,
+        isFinished: targetUpdate.done,
+        createdAt: now,
+        updatedAt: now,
+        parentId: targetUpdate.parentId,
+      });
+      return nextBlocks;
+    }
+
     if (
       lastBlock &&
-      lastBlock.type === update.blockType &&
+      lastBlock.type === targetUpdate.blockType &&
       lastBlock.isFinished === false
     ) {
-      lastBlock.content = update.delta;
-      lastBlock.isFinished = update.done;
+      lastBlock.content = `${lastBlock.content}${targetUpdate.delta}`;
+      lastBlock.isFinished = targetUpdate.done;
       lastBlock.updatedAt = now;
-      return blocks;
+      return nextBlocks;
     }
+
     if (lastBlock && lastBlock.isFinished === false) {
-      lastBlock.isFinished = true;
-      lastBlock.updatedAt = now;
+      if (
+        !(
+          lastBlock.type === "reasoning" &&
+          targetUpdate.blockType === "tool_call"
+        )
+      ) {
+        lastBlock.isFinished = true;
+        lastBlock.updatedAt = now;
+      }
     }
-    blocks.push({
-      id: `${update.messageId}:${blocks.length + 1}`,
-      type: update.blockType,
-      content: update.delta,
-      isFinished: update.done,
+
+    nextBlocks.push({
+      id:
+        targetUpdate.artifactId ||
+        `${targetUpdate.messageId}:${nextBlocks.length + 1}`,
+      type: targetUpdate.blockType,
+      content: targetUpdate.delta,
+      isFinished: targetUpdate.done,
       createdAt: now,
       updatedAt: now,
+      parentId: targetUpdate.parentId,
     });
-    return blocks;
-  }
+    return nextBlocks;
+  };
 
-  if (
-    lastBlock &&
-    lastBlock.type === update.blockType &&
-    lastBlock.isFinished === false
-  ) {
-    lastBlock.content = `${lastBlock.content}${update.delta}`;
-    lastBlock.isFinished = update.done;
-    lastBlock.updatedAt = now;
-    return blocks;
-  }
-
-  if (lastBlock && lastBlock.isFinished === false) {
-    lastBlock.isFinished = true;
-    lastBlock.updatedAt = now;
-  }
-
-  blocks.push({
-    id: `${update.messageId}:${blocks.length + 1}`,
-    type: update.blockType,
-    content: update.delta,
-    isFinished: update.done,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return blocks;
+  return updateBlocks(current ?? [], update);
 };
 
 export const projectPrimaryTextContent = (

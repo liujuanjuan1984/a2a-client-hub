@@ -83,7 +83,7 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[0]?.content).toBe("thinking more");
   });
 
-  it("creates a new block and finalizes previous block when type switches", () => {
+  it("keeps reasoning block active when a tool_call starts (nested support)", () => {
     let blocks: MessageBlock[] | undefined = undefined;
     blocks = applyStreamBlockUpdate(
       blocks,
@@ -110,8 +110,39 @@ describe("block-based stream parser and reducer", () => {
 
     expect(blocks).toHaveLength(2);
     expect(blocks?.[0]?.type).toBe("reasoning");
-    expect(blocks?.[0]?.isFinished).toBe(true);
+    // Reasoning block should stay active for potential children
+    expect(blocks?.[0]?.isFinished).toBe(false);
     expect(blocks?.[1]?.type).toBe("tool_call");
+  });
+
+  it("supports explicit nesting via parentId", () => {
+    let blocks: MessageBlock[] | undefined = undefined;
+    const reasoningUpdate = mustParse(
+      buildBlockUpdatePayload({
+        blockType: "reasoning",
+        delta: "thinking",
+        artifactId: "blk-reasoning",
+        seq: 1,
+      }),
+    );
+    blocks = applyStreamBlockUpdate(blocks, reasoningUpdate);
+
+    const toolUpdatePayload = buildBlockUpdatePayload({
+      blockType: "tool_call",
+      delta: "run()",
+      artifactId: "blk-tool",
+      seq: 2,
+    });
+    // @ts-ignore - injecting parentId for test
+    toolUpdatePayload.artifact.metadata.opencode.parent_id = "blk-reasoning";
+
+    blocks = applyStreamBlockUpdate(blocks, mustParse(toolUpdatePayload));
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks?.[0]?.type).toBe("reasoning");
+    expect(blocks?.[0]?.children).toHaveLength(1);
+    expect(blocks?.[0]?.children?.[0]?.type).toBe("tool_call");
+    expect(blocks?.[0]?.children?.[0]?.content).toBe("run()");
   });
 
   it("projects only text blocks into message content", () => {

@@ -540,6 +540,11 @@ async def _persist_stream_block_update(
                 if isinstance(stream_block.get("source"), str)
                 else None
             ),
+            parent_id=(
+                UUID(str(stream_block.get("parent_id")))
+                if stream_block.get("parent_id")
+                else None
+            ),
         )
         if persisted_block is not None:
             await commit_safely(persist_db)

@@ -463,6 +463,8 @@ class A2AInvokeService:
 
         seq = cls._pick_int(payload, ("seq",))
         source = cls._StreamTextAccumulator._extract_artifact_source(artifact)
+        parent_id = cls._pick_non_empty_str(opencode_metadata, ("parent_id", "parentId"))
+
         return {
             "event_id": event_id,
             "seq": seq,
@@ -472,6 +474,7 @@ class A2AInvokeService:
             "append": resolved_append,
             "is_finished": payload.get("lastChunk") is True,
             "source": source,
+            "parent_id": parent_id,
         }
 
     @classmethod
@@ -643,6 +646,7 @@ class A2AInvokeService:
         def __init__(self) -> None:
             self._blocks: list[dict[str, Any]] = []
             self._block_seq = 0
+            self._active_reasoning_block_id: str | None = None
 
         @staticmethod
         def _extract_text_from_parts(parts: Any) -> str:
@@ -726,18 +730,26 @@ class A2AInvokeService:
                     return raw_text
             return ""
 
-        def _push_new_block(self, block_type: str, delta: str, done: bool) -> None:
+        def _push_new_block(
+            self, block_type: str, delta: str, done: bool, parent_id: str | None = None
+        ) -> str:
             now = self._block_seq
             self._block_seq += 1
-            self._blocks.append(
-                {
-                    "id": f"block-{now + 1}",
-                    "type": block_type,
-                    "content": delta,
-                    "is_finished": done,
-                    "seq": now,
-                }
-            )
+            block_id = f"block-{now + 1}"
+            new_block = {
+                "id": block_id,
+                "type": block_type,
+                "content": delta,
+                "is_finished": done,
+                "seq": now,
+            }
+            if parent_id:
+                new_block["parentId"] = parent_id
+            self._blocks.append(new_block)
+
+            if block_type == "reasoning" and not done:
+                self._active_reasoning_block_id = block_id
+            return block_id
 
         def _apply_block_update(
             self,
@@ -747,41 +759,61 @@ class A2AInvokeService:
             append: bool,
             done: bool,
             source: str | None,
+            parent_id: str | None = None,
         ) -> None:
             if not delta:
                 return
-            overwrite = (not append) or source == "final_snapshot"
-            last = self._blocks[-1] if self._blocks else None
 
-            if overwrite:
-                if (
-                    isinstance(last, dict)
-                    and last.get("type") == block_type
-                    and last.get("is_finished") is False
-                ):
-                    last["content"] = delta
-                    last["is_finished"] = done
-                    return
-                if isinstance(last, dict) and last.get("is_finished") is False:
-                    last["is_finished"] = True
-                self._push_new_block(block_type, delta, done)
-                return
+            resolved_parent_id = parent_id
+            if not resolved_parent_id and block_type == "tool_call":
+                resolved_parent_id = self._active_reasoning_block_id
+
+            overwrite = (not append) or source == "final_snapshot"
+
+            target_block = None
+            last = self._blocks[-1] if self._blocks else None
 
             if (
                 isinstance(last, dict)
                 and last.get("type") == block_type
                 and last.get("is_finished") is False
+                and last.get("parentId") == resolved_parent_id
             ):
-                current = last.get("content")
-                last["content"] = (
-                    f"{current if isinstance(current, str) else ''}{delta}"
+                target_block = last
+            elif (
+                block_type == "reasoning"
+                and self._active_reasoning_block_id
+                and not resolved_parent_id
+            ):
+                target_block = next(
+                    (
+                        b
+                        for b in reversed(self._blocks)
+                        if b["id"] == self._active_reasoning_block_id
+                    ),
+                    None,
                 )
-                last["is_finished"] = done
+
+            if target_block:
+                if overwrite:
+                    target_block["content"] = delta
+                else:
+                    current = target_block.get("content")
+                    target_block["content"] = (
+                        f"{current if isinstance(current, str) else ''}{delta}"
+                    )
+                target_block["is_finished"] = done
+                if block_type == "reasoning" and done:
+                    self._active_reasoning_block_id = None
                 return
 
             if isinstance(last, dict) and last.get("is_finished") is False:
-                last["is_finished"] = True
-            self._push_new_block(block_type, delta, done)
+                if not (last.get("type") == "reasoning" and block_type == "tool_call"):
+                    last["is_finished"] = True
+                    if last.get("type") == "reasoning":
+                        self._active_reasoning_block_id = None
+
+            self._push_new_block(block_type, delta, done, parent_id=resolved_parent_id)
 
         def consume(self, payload: dict[str, Any]) -> None:
             if payload.get("kind") == "artifact-update":
@@ -796,12 +828,16 @@ class A2AInvokeService:
                     append = self._resolve_append(payload, artifact)
                     done = self._resolve_done(payload, artifact)
                     source = self._extract_artifact_source(artifact)
+                    metadata = artifact.get("metadata") or {}
+                    opencode = metadata.get("opencode") or {}
+                    parent_id = opencode.get("parent_id") or opencode.get("parentId")
                     self._apply_block_update(
                         block_type=block_type,
                         delta=delta,
                         append=append,
                         done=done,
                         source=source,
+                        parent_id=parent_id,
                     )
                     return
 

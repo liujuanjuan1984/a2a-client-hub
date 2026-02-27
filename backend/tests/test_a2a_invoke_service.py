@@ -289,6 +289,52 @@ async def test_sse_invokes_complete_metadata_before_complete():
 
 
 @pytest.mark.asyncio
+async def test_stream_accumulator_supports_nesting():
+    accumulator = a2a_invoke_service._StreamTextAccumulator()
+    
+    # Start reasoning
+    accumulator.consume({
+        "kind": "artifact-update",
+        "artifact": {
+            "parts": [{"kind": "text", "text": "thinking"}],
+            "metadata": {"opencode": {"block_type": "reasoning"}},
+        },
+        "lastChunk": False,
+    })
+    
+    # Start tool_call (should be nested)
+    accumulator.consume({
+        "kind": "artifact-update",
+        "artifact": {
+            "parts": [{"kind": "text", "text": "run_tool()"}],
+            "metadata": {"opencode": {"block_type": "tool_call"}},
+        },
+        "lastChunk": True,
+    })
+    
+    # Finish reasoning
+    accumulator.consume({
+        "kind": "artifact-update",
+        "artifact": {
+            "parts": [{"kind": "text", "text": "done"}],
+            "metadata": {"opencode": {"block_type": "reasoning"}},
+        },
+        "lastChunk": True,
+        "append": True,
+    })
+    
+    blocks = accumulator._blocks
+    assert len(blocks) == 2
+    assert blocks[0]["type"] == "reasoning"
+    assert blocks[0]["is_finished"] is True
+    assert blocks[0]["content"] == "thinkingdone"
+    
+    assert blocks[1]["type"] == "tool_call"
+    assert blocks[1]["parentId"] == blocks[0]["id"]
+    assert blocks[1]["is_finished"] is True
+
+
+@pytest.mark.asyncio
 async def test_sse_on_complete_ignores_non_typed_events():
     completed: list[str] = []
 

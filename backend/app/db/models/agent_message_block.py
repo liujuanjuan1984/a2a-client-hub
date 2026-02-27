@@ -77,6 +77,13 @@ class AgentMessageBlock(Base, TimestampMixin, UserOwnedMixin):
         nullable=True,
         comment="Last applied upstream event id.",
     )
+    parent_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{SCHEMA_NAME}.agent_message_blocks.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="Parent block ID for nested structures.",
+    )
 
     message = relationship(
         "AgentMessage",

@@ -1035,6 +1035,7 @@ class SessionHubService:
         is_finished: bool,
         event_id: str | None = None,
         source: str | None = None,
+        parent_id: UUID | None = None,
     ) -> AgentMessageBlock | None:
         if seq <= 0:
             return None
@@ -1060,6 +1061,16 @@ class SessionHubService:
 
         normalized_type = _normalize_block_type(block_type)
         normalized_source = normalize_non_empty_text(source)
+
+        resolved_parent_id = parent_id
+        if not resolved_parent_id and normalized_type == "tool_call":
+            active_parent_id_str = cursor_state.get("active_reasoning_block_id")
+            if active_parent_id_str:
+                try:
+                    resolved_parent_id = UUID(active_parent_id_str)
+                except (ValueError, TypeError):
+                    pass
+
         overwrite = (not append) or normalized_source in {
             "final_snapshot",
             "finalize_snapshot",
@@ -1085,32 +1096,54 @@ class SessionHubService:
                 )
             )
 
+        target_block: AgentMessageBlock | None = None
+        if (
+            active_block is not None
+            and active_block.block_type == normalized_type
+            and not bool(active_block.is_finished)
+            and active_block.parent_id == resolved_parent_id
+        ):
+            target_block = active_block
+        elif (
+            normalized_type == "reasoning"
+            and not resolved_parent_id
+            and cursor_state.get("active_reasoning_block_id")
+        ):
+            active_reasoning_id_str = cursor_state["active_reasoning_block_id"]
+            if active_reasoning_id_str:
+                try:
+                    target_block = await agent_message_block_handler.find_block_by_id(
+                        db, user_id=user_id, block_id=UUID(active_reasoning_id_str)
+                    )
+                except (ValueError, TypeError):
+                    pass
+
         persisted_block: AgentMessageBlock | None = None
         if overwrite:
-            if (
-                active_block is not None
-                and active_block.block_type == normalized_type
-                and not bool(active_block.is_finished)
-            ):
-                active_block.content = normalized_content
-                active_block.is_finished = bool(is_finished)
-                active_block.source = normalized_source or active_block.source
-                if active_block.start_event_seq is None:
-                    active_block.start_event_seq = seq
+            if target_block is not None and not bool(target_block.is_finished):
+                target_block.content = normalized_content
+                target_block.is_finished = bool(is_finished)
+                target_block.source = normalized_source or target_block.source
+                if target_block.start_event_seq is None:
+                    target_block.start_event_seq = seq
                 if (
-                    active_block.end_event_seq is None
-                    or seq >= active_block.end_event_seq
+                    target_block.end_event_seq is None
+                    or seq >= target_block.end_event_seq
                 ):
-                    active_block.end_event_seq = seq
+                    target_block.end_event_seq = seq
                 normalized_event_id = normalize_non_empty_text(event_id)
-                if normalized_event_id and not active_block.start_event_id:
-                    active_block.start_event_id = normalized_event_id
+                if normalized_event_id and not target_block.start_event_id:
+                    target_block.start_event_id = normalized_event_id
                 if normalized_event_id:
-                    active_block.end_event_id = normalized_event_id
-                persisted_block = active_block
+                    target_block.end_event_id = normalized_event_id
+                persisted_block = target_block
             else:
                 if active_block is not None and not bool(active_block.is_finished):
-                    active_block.is_finished = True
+                    if not (
+                        active_block.block_type == "reasoning"
+                        and normalized_type == "tool_call"
+                    ):
+                        active_block.is_finished = True
                 next_block_seq = (
                     max(
                         cursor_state["last_block_seq"],
@@ -1132,37 +1165,38 @@ class SessionHubService:
                     end_event_seq=seq,
                     start_event_id=normalized_event_id,
                     end_event_id=normalized_event_id,
+                    parent_id=resolved_parent_id,
                 )
         else:
-            if (
-                active_block is not None
-                and active_block.block_type == normalized_type
-                and not bool(active_block.is_finished)
-            ):
+            if target_block is not None and not bool(target_block.is_finished):
                 current_content = (
-                    active_block.content
-                    if isinstance(active_block.content, str)
+                    target_block.content
+                    if isinstance(target_block.content, str)
                     else ""
                 )
-                active_block.content = f"{current_content}{normalized_content}"
-                active_block.is_finished = bool(is_finished)
-                active_block.source = normalized_source or active_block.source
-                if active_block.start_event_seq is None:
-                    active_block.start_event_seq = seq
+                target_block.content = f"{current_content}{normalized_content}"
+                target_block.is_finished = bool(is_finished)
+                target_block.source = normalized_source or target_block.source
+                if target_block.start_event_seq is None:
+                    target_block.start_event_seq = seq
                 if (
-                    active_block.end_event_seq is None
-                    or seq >= active_block.end_event_seq
+                    target_block.end_event_seq is None
+                    or seq >= target_block.end_event_seq
                 ):
-                    active_block.end_event_seq = seq
+                    target_block.end_event_seq = seq
                 normalized_event_id = normalize_non_empty_text(event_id)
-                if normalized_event_id and not active_block.start_event_id:
-                    active_block.start_event_id = normalized_event_id
+                if normalized_event_id and not target_block.start_event_id:
+                    target_block.start_event_id = normalized_event_id
                 if normalized_event_id:
-                    active_block.end_event_id = normalized_event_id
-                persisted_block = active_block
+                    target_block.end_event_id = normalized_event_id
+                persisted_block = target_block
             else:
                 if active_block is not None and not bool(active_block.is_finished):
-                    active_block.is_finished = True
+                    if not (
+                        active_block.block_type == "reasoning"
+                        and normalized_type == "tool_call"
+                    ):
+                        active_block.is_finished = True
                 next_block_seq = (
                     max(
                         cursor_state["last_block_seq"],
@@ -1184,6 +1218,7 @@ class SessionHubService:
                     end_event_seq=seq,
                     start_event_id=normalized_event_id,
                     end_event_id=normalized_event_id,
+                    parent_id=resolved_parent_id,
                 )
 
         if persisted_block is None:
@@ -1193,6 +1228,13 @@ class SessionHubService:
             cursor_state["last_block_seq"],
             int(getattr(persisted_block, "block_seq", 0) or 0),
         )
+
+        if normalized_type == "reasoning":
+            if not bool(getattr(persisted_block, "is_finished", False)):
+                cursor_state["active_reasoning_block_id"] = str(persisted_block.id)
+            else:
+                cursor_state["active_reasoning_block_id"] = None
+
         if bool(getattr(persisted_block, "is_finished", False)):
             cursor_state["active_block_seq"] = 0
         else:
@@ -1544,14 +1586,16 @@ def _read_block_cursor_state(metadata: dict[str, Any]) -> dict[str, int]:
         "last_event_seq": _int_or_zero(cursor.get("last_event_seq")),
         "last_block_seq": _int_or_zero(cursor.get("last_block_seq")),
         "active_block_seq": _int_or_zero(cursor.get("active_block_seq")),
+        "active_reasoning_block_id": cursor.get("active_reasoning_block_id"),
     }
 
 
-def _write_block_cursor_state(metadata: dict[str, Any], cursor: dict[str, int]) -> None:
+def _write_block_cursor_state(metadata: dict[str, Any], cursor: dict[str, Any]) -> None:
     metadata["_block_cursor"] = {
         "last_event_seq": int(max(cursor.get("last_event_seq", 0), 0)),
         "last_block_seq": int(max(cursor.get("last_block_seq", 0), 0)),
         "active_block_seq": int(max(cursor.get("active_block_seq", 0), 0)),
+        "active_reasoning_block_id": cursor.get("active_reasoning_block_id"),
     }
 
 
@@ -1562,12 +1606,15 @@ def _render_block_item(
     block_type = _normalize_block_type(block.block_type)
     if block_type in {"reasoning", "tool_call"}:
         raw_content = ""
-    return {
+    res = {
         "id": str(block.id),
         "type": block_type,
         "content": raw_content,
         "isFinished": bool(block.is_finished),
     }
+    if block.parent_id:
+        res["parentId"] = str(block.parent_id)
+    return res
 
 
 def _render_blocks(blocks: list[AgentMessageBlock]) -> list[dict[str, Any]]:
@@ -1578,13 +1625,16 @@ def _render_block_detail_item(
     block: AgentMessageBlock,
 ) -> dict[str, Any]:
     raw_content = block.content if isinstance(block.content, str) else ""
-    return {
+    res = {
         "id": str(block.id),
         "messageId": str(block.message_id),
         "type": _normalize_block_type(block.block_type),
         "content": raw_content,
         "isFinished": bool(block.is_finished),
     }
+    if block.parent_id:
+        res["parentId"] = str(block.parent_id)
+    return res
 
 
 def _dedupe_uuid_list_keep_order(values: list[UUID]) -> list[UUID]:
@@ -1654,6 +1704,7 @@ async def _create_block_with_conflict_recovery(
     end_event_seq: int | None,
     start_event_id: str | None,
     end_event_id: str | None,
+    parent_id: UUID | None = None,
 ) -> AgentMessageBlock | None:
     """Insert one block with best-effort recovery for concurrent same-seq writes."""
     try:
@@ -1671,6 +1722,7 @@ async def _create_block_with_conflict_recovery(
                 end_event_seq=end_event_seq,
                 start_event_id=start_event_id,
                 end_event_id=end_event_id,
+                parent_id=parent_id,
             )
     except IntegrityError as exc:
         if not _is_idempotency_unique_violation(

@@ -63,6 +63,25 @@ async def list_blocks_by_message_id(
     return list(result.scalars().all())
 
 
+async def find_block_by_id(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    block_id: UUID,
+) -> AgentMessageBlock | None:
+    stmt = (
+        select(AgentMessageBlock)
+        .where(
+            and_(
+                AgentMessageBlock.user_id == user_id,
+                AgentMessageBlock.id == block_id,
+            )
+        )
+        .limit(1)
+    )
+    return await db.scalar(stmt)
+
+
 async def find_block_by_message_and_block_seq(
     db: AsyncSession,
     *,
@@ -122,6 +141,7 @@ async def create_block(
     end_event_seq: int | None = None,
     start_event_id: str | None = None,
     end_event_id: str | None = None,
+    parent_id: UUID | None = None,
 ) -> AgentMessageBlock:
     block = AgentMessageBlock(
         user_id=user_id,
@@ -135,6 +155,7 @@ async def create_block(
         end_event_seq=end_event_seq,
         start_event_id=start_event_id,
         end_event_id=end_event_id,
+        parent_id=parent_id,
     )
     db.add(block)
     await db.flush()
@@ -162,6 +183,7 @@ async def has_blocks_for_message(
 
 __all__ = [
     "create_block",
+    "find_block_by_id",
     "find_block_by_message_and_block_seq",
     "find_last_block_for_message",
     "has_blocks_for_message",
