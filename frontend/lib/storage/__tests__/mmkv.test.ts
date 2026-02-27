@@ -221,7 +221,7 @@ describe("mmkvStateStorage native resilience", () => {
     const { mmkvStateStorage, stores } = loadNativeStorageModule();
     const chatPayload = JSON.stringify({ state: { sessions: {} } });
     const messagesPayload = JSON.stringify({ state: { byId: {} } });
-    const agentsPayload = JSON.stringify({ state: { agents: [] } });
+    const agentsPayload = JSON.stringify({ state: { activeAgentId: null } });
 
     await mmkvStateStorage.setItem("a2a-client-hub.chat", chatPayload);
     await mmkvStateStorage.setItem("a2a-client-hub.messages", messagesPayload);
@@ -231,123 +231,73 @@ describe("mmkvStateStorage native resilience", () => {
       chatPayload,
     );
     expect(
-      stores.get("a2a-chat-storage")?.get("a2a-client-hub.chat.bak"),
-    ).toBeUndefined();
-    expect(
       stores.get("a2a-messages-storage")?.get("a2a-client-hub.messages"),
     ).toBe(messagesPayload);
     expect(
-      stores.get("a2a-messages-storage")?.get("a2a-client-hub.messages.bak"),
-    ).toBeUndefined();
-    expect(
       stores.get("a2a-client-hub-storage")?.get("a2a-client-hub.agents"),
-    ).toBe(agentsPayload);
-    expect(
-      stores.get("a2a-client-hub-storage")?.get("a2a-client-hub.agents.bak"),
     ).toBe(agentsPayload);
   });
 
-  it("recovers corrupted payload from backup", async () => {
+  it("drops invalid MMKV payload and keeps fail-open behavior", async () => {
     const { mmkvStateStorage, stores } = loadNativeStorageModule();
-    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
     const key = "a2a-client-hub.agents";
-    const payload = JSON.stringify({ state: { agents: [{ id: "a-1" }] } });
+    const payload = JSON.stringify({ state: { activeAgentId: "agent-1" } });
 
     await mmkvStateStorage.setItem(key, payload);
     const defaultStore = stores.get("a2a-client-hub-storage");
     expect(defaultStore).toBeDefined();
-    defaultStore?.set(key, "{broken-json");
-
-    await expect(mmkvStateStorage.getItem(key)).resolves.toBe(payload);
-    expect(defaultStore?.get(key)).toBe(payload);
-    expect(warnSpy).toHaveBeenCalledWith(
-      "[storage] Recovered persisted payload from backup.",
-      { key },
-    );
-
-    errorSpy.mockRestore();
-    warnSpy.mockRestore();
-  });
-
-  it("drops key when both primary and backup are invalid", async () => {
-    const { mmkvStateStorage, stores } = loadNativeStorageModule();
-    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const key = "a2a-client-hub.agents";
-    const backupKey = `${key}.bak`;
-
-    await mmkvStateStorage.setItem(
-      key,
-      JSON.stringify({ state: { agents: [] } }),
-    );
-    const defaultStore = stores.get("a2a-client-hub-storage");
-    defaultStore?.set(key, "{broken-json");
-    defaultStore?.set(backupKey, "{also-broken");
+    defaultStore?.set(key, JSON.stringify({ state: { activeAgentId: 123 } }));
 
     await expect(mmkvStateStorage.getItem(key)).resolves.toBeNull();
     expect(defaultStore?.has(key)).toBe(false);
-    expect(defaultStore?.has(backupKey)).toBe(false);
     expect(warnSpy).toHaveBeenCalledWith(
-      "[storage] Dropped corrupted persisted payload.",
+      "[storage] Dropped invalid MMKV payload.",
       { key },
     );
-
-    errorSpy.mockRestore();
     warnSpy.mockRestore();
   });
 
-  it("validates payload schema and recovers from backup", async () => {
-    const { mmkvStateStorage, stores } = loadNativeStorageModule();
-    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+  it("does not read AsyncStorage when MMKV instance is available", async () => {
+    const { mmkvStateStorage, asyncStore, asyncStorage } =
+      loadNativeStorageModule();
     const key = "a2a-client-hub.agents";
-    const payload = JSON.stringify({ state: { activeAgentId: "agent-1" } });
-
-    await mmkvStateStorage.setItem(key, payload);
-    const defaultStore = stores.get("a2a-client-hub-storage");
-    defaultStore?.set(key, JSON.stringify({ state: { activeAgentId: 123 } }));
-
-    await expect(mmkvStateStorage.getItem(key)).resolves.toBe(payload);
-    expect(warnSpy).toHaveBeenCalledWith(
-      "[storage] Recovered persisted payload from backup.",
-      { key },
+    asyncStore.set(
+      key,
+      JSON.stringify({ state: { activeAgentId: "agent-1" } }),
     );
 
-    errorSpy.mockRestore();
-    warnSpy.mockRestore();
+    await expect(mmkvStateStorage.getItem(key)).resolves.toBeNull();
+    expect(asyncStorage.getItem).not.toHaveBeenCalled();
   });
 
-  it("reads through AsyncStorage fallback on MMKV miss and repairs MMKV", async () => {
-    const { mmkvStateStorage, stores, asyncStore } = loadNativeStorageModule();
+  it("drops cache write when native set fails", async () => {
     const key = "a2a-client-hub.agents";
-    const payload = JSON.stringify({ state: { activeAgentId: "agent-1" } });
-    asyncStore.set(key, payload);
-
-    await expect(mmkvStateStorage.getItem(key)).resolves.toBe(payload);
-    const defaultStore = stores.get("a2a-client-hub-storage");
-    expect(defaultStore?.get(key)).toBe(payload);
-  });
-
-  it("falls back to AsyncStorage when native write/delete fails", async () => {
-    const key = "a2a-client-hub.agents";
-    const payload = JSON.stringify({ state: { agents: [] } });
+    const payload = JSON.stringify({ state: { activeAgentId: null } });
     const { mmkvStateStorage, asyncStorage, asyncStore } =
       loadNativeStorageModule({
         failSetKeys: [`a2a-client-hub-storage:${key}`],
-        failDeleteKeys: [`a2a-client-hub-storage:${key}`],
       });
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(
       mmkvStateStorage.setItem(key, payload),
     ).resolves.toBeUndefined();
-    expect(asyncStorage.setItem).toHaveBeenCalledWith(key, payload);
-    expect(asyncStore.get(key)).toBe(payload);
+    expect(asyncStorage.setItem).not.toHaveBeenCalled();
+    expect(asyncStore.has(key)).toBe(false);
+
+    errorSpy.mockRestore();
+  });
+
+  it("keeps fail-open when native delete fails", async () => {
+    const key = "a2a-client-hub.agents";
+    const { mmkvStateStorage, asyncStorage } = loadNativeStorageModule({
+      failDeleteKeys: [`a2a-client-hub-storage:${key}`],
+    });
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(mmkvStateStorage.removeItem(key)).resolves.toBeUndefined();
-    expect(asyncStorage.removeItem).toHaveBeenCalledWith(key);
-    expect(asyncStore.has(key)).toBe(false);
+    expect(asyncStorage.removeItem).not.toHaveBeenCalled();
 
     errorSpy.mockRestore();
   });

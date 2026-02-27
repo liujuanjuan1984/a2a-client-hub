@@ -30,9 +30,8 @@ Server state and client state are intentionally separated:
 
 - Auth token remains memory-only and is recovered via refresh-cookie flow; it is not persisted in local storage.
 - Native MMKV persistence uses isolated instances by key family to reduce interference between high-volume and regular stores.
-- High-volume chat payloads use lightweight persistence without backup duplication.
-- Non-chat persisted keys use best-effort `.bak` backup for corruption recovery.
-- If persisted JSON is corrupted, storage attempts backup recovery first, then safely drops corrupted payloads.
+- Persisted data is treated as disposable cache: invalid payloads are dropped instead of recovered.
+- High-volume chat payloads use bounded persistence strategy (compaction on web quota pressure).
 
 ## Routing Conventions
 
