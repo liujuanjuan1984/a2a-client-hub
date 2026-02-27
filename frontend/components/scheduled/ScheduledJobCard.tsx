@@ -158,7 +158,7 @@ export function ScheduledJobCard({
     >
       <View className="p-5">
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-[11px] font-semibold uppercase tracking-widest text-neo-green">
+          <Text className="text-[9px] font-semibold uppercase tracking-widest text-neo-green">
             {agentName}
           </Text>
           <View className="bg-black/20 rounded px-1.5 py-0.5">
@@ -204,7 +204,7 @@ export function ScheduledJobCard({
 
         {promptExpanded && (
           <View className="mt-4 pt-4 border-t border-white/5">
-            <Text className={`text-sm leading-6 ${tone.prompt}`}>
+            <Text className={`text-[11px] leading-5 ${tone.prompt}`}>
               {job.prompt}
             </Text>
           </View>
@@ -213,13 +213,15 @@ export function ScheduledJobCard({
 
       <View className="flex-row items-center justify-between gap-3 bg-black/30 px-5 py-3">
         <View className="flex-row items-center gap-2">
-          <Button
-            label="Edit"
-            size="xs"
-            variant="secondary"
-            iconLeft="create-outline"
-            onPress={onEdit}
-          />
+          {!canMarkFailed ? (
+            <Button
+              label="Edit"
+              size="xs"
+              variant="secondary"
+              iconLeft="create-outline"
+              onPress={onEdit}
+            />
+          ) : null}
           <Button
             label={promptExpanded ? "Less" : "More"}
             size="xs"
@@ -248,16 +250,18 @@ export function ScheduledJobCard({
               onPress={handleMarkFailed}
             />
           ) : null}
-          <Button
-            label="Delete"
-            size="xs"
-            variant="danger"
-            className="bg-red-500/40"
-            iconLeft="trash-outline"
-            loading={deleting}
-            disabled={!onDelete}
-            onPress={handleDelete}
-          />
+          {!canMarkFailed ? (
+            <Button
+              label="Delete"
+              size="xs"
+              variant="danger"
+              className="bg-red-500/40"
+              iconLeft="trash-outline"
+              loading={deleting}
+              disabled={!onDelete}
+              onPress={handleDelete}
+            />
+          ) : null}
         </View>
       </View>
 

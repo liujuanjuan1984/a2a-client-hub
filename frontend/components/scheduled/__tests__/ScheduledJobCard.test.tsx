@@ -117,6 +117,8 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     expect(JSON.stringify(tree)).toContain("Stop");
+    expect(JSON.stringify(tree)).not.toContain("Edit");
+    expect(JSON.stringify(tree)).not.toContain("Delete");
   });
 
   it("hides Stop Running button for non-running jobs", () => {

@@ -52,7 +52,7 @@ export function ChatComposer({
         </View>
       ) : null}
 
-      <View className="mb-2 flex-row items-center justify-between">
+      <View className="mb-2 flex-row items-center justify-between rounded-xl bg-black/25 px-2 py-1">
         <View className="flex-row items-center gap-2">
           <Pressable
             className={`h-9 w-14 items-center justify-center rounded-xl ${

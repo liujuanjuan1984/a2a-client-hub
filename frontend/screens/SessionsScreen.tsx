@@ -94,7 +94,7 @@ export function SessionsScreen() {
                   <View className="p-5 pb-4">
                     <View className="flex-row items-center justify-between mb-1.5">
                       <Text
-                        className="text-[11px] font-semibold uppercase tracking-widest text-neo-green"
+                        className="text-[9px] font-semibold uppercase tracking-widest text-neo-green"
                         numberOfLines={1}
                       >
                         {agent.name}
@@ -104,7 +104,7 @@ export function SessionsScreen() {
                       </Text>
                     </View>
                     <Text
-                      className="text-base font-medium text-white/90"
+                      className="text-[11px] font-medium text-white/90"
                       numberOfLines={2}
                     >
                       {title}
@@ -113,7 +113,7 @@ export function SessionsScreen() {
 
                   <View className="flex-row items-center justify-between gap-3 bg-black/30 px-5 py-2">
                     <View className="flex-1">
-                      <Text className="text-[11px] font-medium text-slate-500">
+                      <Text className="text-[9px] font-medium text-slate-500">
                         {timeline.timelineRangeText}
                       </Text>
                     </View>
