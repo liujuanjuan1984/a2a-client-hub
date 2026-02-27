@@ -6,9 +6,9 @@ import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 
 export default function TabsLayout() {
   const insets = useAppSafeArea({ maxBottomInset: 20 });
-  const fallbackBottomInset = Platform.OS === "web" ? 2 : 0;
+  const fallbackBottomInset = Platform.OS === "web" ? 1 : 0;
   const tabBarBottomInset = Math.max(insets.bottom, fallbackBottomInset);
-  const tabBarPaddingBottom = Math.max(tabBarBottomInset, 4);
+  const tabBarPaddingBottom = Math.max(tabBarBottomInset, 1);
   const tabBarHeight = 54 + tabBarPaddingBottom;
 
   return (
@@ -23,7 +23,7 @@ export default function TabsLayout() {
           lineHeight: 14,
         },
         tabBarStyle: {
-          backgroundColor: "#171B24",
+          backgroundColor: "#0B0E14",
           borderTopColor: "rgba(255, 255, 255, 0.08)",
           borderTopWidth: 1,
           height: tabBarHeight,
