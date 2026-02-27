@@ -164,6 +164,72 @@ async def test_preempt_inflight_invoke_marks_pending_cancel_when_task_not_bound(
     }
 
 
+async def test_preempt_inflight_invoke_keeps_old_token_when_new_inflight_registered(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    old_calls: dict[str, str] = {}
+
+    class _OldGateway:
+        async def cancel_task(
+            self, *, resolved, task_id, metadata=None
+        ):  # noqa: ANN001
+            old_calls["task_id"] = str(task_id)
+            old_calls["reason"] = str((metadata or {}).get("source"))
+            return {"success": True}
+
+    class _NewGateway:
+        async def cancel_task(
+            self, *, resolved, task_id, metadata=None
+        ):  # noqa: ANN001, ARG002
+            return {"success": True}
+
+    old_token = await session_hub_service.register_inflight_invoke(
+        user_id=user.id,
+        conversation_id=thread.id,
+        gateway=_OldGateway(),
+        resolved=object(),
+    )
+
+    preempted = await session_hub_service.preempt_inflight_invoke(
+        user_id=user.id,
+        conversation_id=thread.id,
+        reason="invoke_interrupt",
+    )
+    assert preempted is True
+
+    # New invoke registers after preempt; the old token must remain cancellable.
+    await session_hub_service.register_inflight_invoke(
+        user_id=user.id,
+        conversation_id=thread.id,
+        gateway=_NewGateway(),
+        resolved=object(),
+    )
+
+    bound = await session_hub_service.bind_inflight_task_id(
+        user_id=user.id,
+        conversation_id=thread.id,
+        token=old_token,
+        task_id="task-old-late",
+    )
+    assert bound is True
+    assert old_calls == {
+        "task_id": "task-old-late",
+        "reason": "invoke_interrupt",
+    }
+
+
 async def test_cancel_session_accepts_pending_cancel_when_task_not_bound(
     async_db_session,
 ):
@@ -202,7 +268,7 @@ async def test_cancel_session_accepts_pending_cancel_when_task_not_bound(
     assert payload["conversationId"] == str(thread.id)
     assert payload["taskId"] is None
     assert payload["cancelled"] is True
-    assert payload["status"] == "accepted"
+    assert payload["status"] == "pending"
 
 
 async def test_cancel_session_accepts_and_unregisters_inflight_task(async_db_session):

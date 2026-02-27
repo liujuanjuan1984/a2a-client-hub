@@ -55,7 +55,7 @@ export type SessionCancelResult = {
   conversationId: string;
   taskId?: string | null;
   cancelled: boolean;
-  status: "accepted" | "no_inflight" | "already_terminal";
+  status: "accepted" | "pending" | "no_inflight" | "already_terminal";
 };
 
 export const listSessionsPage = async (options?: {

@@ -131,6 +131,7 @@ class SessionCancelResponse(BaseModel):
     cancelled: bool
     status: Literal[
         "accepted",
+        "pending",
         "no_inflight",
         "already_terminal",
     ]

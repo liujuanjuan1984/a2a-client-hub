@@ -334,7 +334,7 @@ async def test_me_sessions_cancel_accepts_pending_when_task_id_not_bound(
     assert payload["conversationId"] == str(session.id)
     assert payload["taskId"] is None
     assert payload["cancelled"] is True
-    assert payload["status"] == "accepted"
+    assert payload["status"] == "pending"
 
 
 async def test_me_sessions_cancel_maps_upstream_error_to_bad_gateway(
