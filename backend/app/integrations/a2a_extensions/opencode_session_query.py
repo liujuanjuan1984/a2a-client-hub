@@ -6,49 +6,25 @@ from typing import Any, Dict, Mapping, Optional
 
 from a2a.types import AgentCard
 
+from app.integrations.a2a_extensions.contract_utils import (
+    as_dict,
+    build_business_code_map,
+    normalize_method_name,
+    require_int,
+    require_str,
+    resolve_jsonrpc_interface,
+)
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.types import (
-    JsonRpcInterface,
     PageSizePagination,
     ResolvedExtension,
 )
 
 OPENCODE_SESSION_QUERY_URI = "urn:opencode-a2a:opencode-session-query/v1"
 OPENCODE_SESSION_BINDING_URI = "urn:opencode-a2a:opencode-session-binding/v1"
-
-
-def _as_dict(value: Any) -> Dict[str, Any]:
-    if isinstance(value, dict):
-        return dict(value)
-    return {}
-
-
-def _require_str(value: Any, *, field: str) -> str:
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
-
-
-def _normalize_method_name(value: Any, *, field: str) -> Optional[str]:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise A2AExtensionContractError(f"'{field}' must be a string if provided")
-    normalized = value.strip()
-    return normalized or None
-
-
-def _require_int(value: Any, *, field: str) -> int:
-    if isinstance(value, bool):
-        raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
-        return int(value.strip())
-    raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
 
 
 def _resolve_pagination_size(
@@ -64,7 +40,7 @@ def _resolve_pagination_size(
     for key in candidates:
         if key not in pagination:
             continue
-        return _require_int(
+        return require_int(
             pagination.get(key),
             field=f"pagination.{key}",
         )
@@ -79,26 +55,9 @@ def _resolve_session_binding_metadata_key(
     for candidate in extensions:
         if getattr(candidate, "uri", None) != OPENCODE_SESSION_BINDING_URI:
             continue
-        params = _as_dict(getattr(candidate, "params", None))
-        return _require_str(params.get("metadata_key"), field="params.metadata_key")
+        params = as_dict(getattr(candidate, "params", None))
+        return require_str(params.get("metadata_key"), field="params.metadata_key")
     return None
-
-
-def _normalize_error_token(name: str, *, code_value: int) -> str:
-    normalized = []
-    pending_sep = False
-    for ch in name.strip().lower():
-        if ch.isalnum():
-            if pending_sep and normalized:
-                normalized.append("_")
-            normalized.append(ch)
-            pending_sep = False
-            continue
-        pending_sep = True
-    token = "".join(normalized).strip("_")
-    if token:
-        return token
-    return f"business_code_{abs(code_value)}"
 
 
 def _parse_pagination_params(
@@ -153,23 +112,23 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
         )
 
     required = bool(getattr(ext, "required", False))
-    params: Dict[str, Any] = _as_dict(getattr(ext, "params", None))
+    params: Dict[str, Any] = as_dict(getattr(ext, "params", None))
 
-    methods = _as_dict(params.get("methods"))
-    list_sessions_method = _require_str(
+    methods = as_dict(params.get("methods"))
+    list_sessions_method = require_str(
         methods.get("list_sessions"), field="methods.list_sessions"
     )
-    get_messages_method = _require_str(
+    get_messages_method = require_str(
         methods.get("get_session_messages"),
         field="methods.get_session_messages",
     )
-    prompt_async_method = _normalize_method_name(
+    prompt_async_method = normalize_method_name(
         methods.get("prompt_async"),
         field="methods.prompt_async",
     )
 
-    pagination = _as_dict(params.get("pagination"))
-    mode = _require_str(pagination.get("mode"), field="pagination.mode")
+    pagination = as_dict(params.get("pagination"))
+    mode = require_str(pagination.get("mode"), field="pagination.mode")
     if mode == "page_size":
         default_size = _resolve_pagination_size(
             pagination,
@@ -202,16 +161,8 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
         raise A2AExtensionContractError("Extension pagination sizes are invalid")
     pagination_params, supports_offset = _parse_pagination_params(pagination, mode=mode)
 
-    errors = _as_dict(params.get("errors"))
-    business_codes = _as_dict(errors.get("business_codes"))
-    code_to_error: Dict[int, str] = {}
-    for name, code in business_codes.items():
-        try:
-            code_value = _require_int(code, field="errors.business_codes.*")
-        except A2AExtensionContractError:
-            continue
-        token = _normalize_error_token(str(name), code_value=code_value)
-        code_to_error.setdefault(code_value, token)
+    errors = as_dict(params.get("errors"))
+    code_to_error = build_business_code_map(errors.get("business_codes"))
 
     session_binding_metadata_key = _resolve_session_binding_metadata_key(extensions)
 
@@ -220,28 +171,10 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
     if isinstance(result_envelope, dict):
         envelope_mapping = dict(result_envelope)
 
-    # Pick the JSON-RPC interface URL from additional_interfaces; fall back to card.url.
-    jsonrpc_url: Optional[str] = None
-    additional = getattr(card, "additional_interfaces", None) or []
-    for iface in additional:
-        transport = (getattr(iface, "transport", "") or "").strip().lower()
-        url = (getattr(iface, "url", "") or "").strip()
-        if transport == "jsonrpc" and url:
-            jsonrpc_url = url
-            break
-    fallback_used = False
-    if not jsonrpc_url:
-        jsonrpc_url = (getattr(card, "url", "") or "").strip()
-        fallback_used = True
-    if not jsonrpc_url:
-        raise A2AExtensionContractError(
-            "Agent card is missing a JSON-RPC interface URL"
-        )
-
     return ResolvedExtension(
         uri=OPENCODE_SESSION_QUERY_URI,
         required=required,
-        jsonrpc=JsonRpcInterface(url=jsonrpc_url, fallback_used=fallback_used),
+        jsonrpc=resolve_jsonrpc_interface(card),
         methods={
             "list_sessions": list_sessions_method,
             "get_session_messages": get_messages_method,
