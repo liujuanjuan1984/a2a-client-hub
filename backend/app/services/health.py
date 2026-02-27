@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any, Dict, Literal
 
@@ -42,21 +41,13 @@ def _format_result(
     return result
 
 
-def _check_database() -> Dict[str, Any]:
+async def _check_database() -> Dict[str, Any]:
     started = time.perf_counter()
     timestamp = utc_now_iso()
 
-    async def _probe() -> None:
+    try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
-
-    try:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(_probe())
-        else:
-            asyncio.run_coroutine_threadsafe(_probe(), loop).result()
         return _format_result(
             "database",
             "healthy",
@@ -85,8 +76,8 @@ def _check_database() -> Dict[str, Any]:
         )
 
 
-def run_health_checks() -> tuple[HealthStatus, list[Dict[str, Any]]]:
-    checks = [_check_database(), _check_a2a()]
+async def run_health_checks() -> tuple[HealthStatus, list[Dict[str, Any]]]:
+    checks = [await _check_database(), _check_a2a()]
 
     overall: HealthStatus = "healthy"
     if any(check["status"] == "unhealthy" for check in checks):

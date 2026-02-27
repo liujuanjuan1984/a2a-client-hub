@@ -14,21 +14,11 @@ interface ExpandToggleProps {
   type?: string;
   accessibilityLabel?: string;
   testID?: string;
+  showChevron?: boolean;
 }
 
-/**
- * Standardized Expand/Collapse toggle component.
- * Uses a chevron-down icon that rotates 180 degrees when expanded.
- */
-export function ExpandToggle({
-  expanded,
-  onToggle,
-  label,
-  type,
-  accessibilityLabel,
-  testID,
-}: ExpandToggleProps) {
-  const rotation = useSharedValue(0);
+function ExpandToggleChevron({ expanded }: { expanded: boolean }) {
+  const rotation = useSharedValue(expanded ? 180 : 0);
 
   useEffect(() => {
     rotation.value = withSpring(expanded ? 180 : 0, {
@@ -43,6 +33,25 @@ export function ExpandToggle({
     };
   });
 
+  return (
+    <Animated.View style={[{ marginLeft: 4 }, animatedStyle]}>
+      <Ionicons name="chevron-down" size={14} color="#94a3b8" />
+    </Animated.View>
+  );
+}
+
+/**
+ * Standardized Expand/Collapse toggle component.
+ */
+export function ExpandToggle({
+  expanded,
+  onToggle,
+  label,
+  type,
+  accessibilityLabel,
+  testID,
+  showChevron = true,
+}: ExpandToggleProps) {
   // Standard labels per issue requirements:
   // 1. Technical/Logic block: Show [Type] / Hide [Type]
   // 2. Normal text: Show more / Show less
@@ -65,9 +74,7 @@ export function ExpandToggle({
       <Text className="text-[11px] font-medium tracking-wide text-slate-400">
         {displayLabel}
       </Text>
-      <Animated.View style={[{ marginLeft: 4 }, animatedStyle]}>
-        <Ionicons name="chevron-down" size={14} color="#94a3b8" />
-      </Animated.View>
+      {showChevron ? <ExpandToggleChevron expanded={expanded} /> : null}
     </Pressable>
   );
 }

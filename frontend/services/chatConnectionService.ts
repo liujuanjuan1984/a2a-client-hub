@@ -5,6 +5,7 @@ import {
   type A2AAgentInvokeRequest,
 } from "@/lib/api/a2aAgents";
 import {
+  ApiRequestError,
   isAuthorizationFailureError,
   isAuthFailureError,
 } from "@/lib/api/client";
@@ -132,6 +133,19 @@ const resolveWsText = async (data: unknown): Promise<string | null> => {
   return null;
 };
 
+const isSessionNotFoundCancellationError = (error: unknown): boolean => {
+  if (!(error instanceof ApiRequestError)) {
+    return false;
+  }
+  if (error.errorCode === "session_not_found") {
+    return true;
+  }
+  if (error.status !== 404) {
+    return false;
+  }
+  return error.message.includes("session_not_found");
+};
+
 class ChatConnectionService {
   private readonly abortControllers = new Map<string, AbortController>();
   private readonly wsConnections = new Map<string, WsConnection>();
@@ -172,6 +186,14 @@ class ChatConnectionService {
     } catch (error) {
       if (isAuthFailureError(error) || isAuthorizationFailureError(error)) {
         return null;
+      }
+      if (isSessionNotFoundCancellationError(error)) {
+        return {
+          conversationId: normalizedConversationId,
+          taskId: null,
+          cancelled: false,
+          status: "no_inflight",
+        };
       }
       console.warn("Failed to request server-side task cancellation", {
         conversationId: normalizedConversationId,

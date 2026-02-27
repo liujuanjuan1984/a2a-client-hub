@@ -117,6 +117,8 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     expect(JSON.stringify(tree)).toContain("Stop");
+    expect(JSON.stringify(tree)).not.toContain("Edit");
+    expect(JSON.stringify(tree)).not.toContain("Delete");
   });
 
   it("hides Stop Running button for non-running jobs", () => {
@@ -136,7 +138,7 @@ describe("ScheduledJobCard visuals", () => {
     expect(JSON.stringify(tree)).not.toContain("Stop");
   });
 
-  it("toggles prompt expansion with Show/Hide Prompt labels", () => {
+  it("toggles prompt expansion with More/Less labels", () => {
     const job = {
       id: "6",
       name: "Job",
@@ -154,16 +156,16 @@ describe("ScheduledJobCard visuals", () => {
 
     // Prompt should be hidden by default
     expect(queryByText(job.prompt)).toBeNull();
-    expect(getByText("Show Prompt")).toBeTruthy();
+    expect(getByText("More")).toBeTruthy();
 
-    // Click Show Prompt to expand
-    fireEvent.press(getByText("Show Prompt"));
+    // Click More to expand
+    fireEvent.press(getByText("More"));
 
     expect(getByText(job.prompt)).toBeTruthy();
-    expect(getByText("Hide Prompt")).toBeTruthy();
+    expect(getByText("Less")).toBeTruthy();
 
-    // Click Hide Prompt to collapse
-    fireEvent.press(getByText("Hide Prompt"));
+    // Click Less to collapse
+    fireEvent.press(getByText("Less"));
     expect(queryByText(job.prompt)).toBeNull();
   });
 

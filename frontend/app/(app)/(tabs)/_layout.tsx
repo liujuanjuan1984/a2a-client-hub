@@ -5,11 +5,11 @@ import { Platform } from "react-native";
 import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 
 export default function TabsLayout() {
-  const insets = useAppSafeArea({ maxBottomInset: 40 });
-  const fallbackBottomInset = Platform.OS === "web" ? 2 : 0;
+  const insets = useAppSafeArea({ maxBottomInset: 16 });
+  const fallbackBottomInset = Platform.OS === "web" ? 1 : 0;
   const tabBarBottomInset = Math.max(insets.bottom, fallbackBottomInset);
-  const tabBarPaddingBottom = Math.max(tabBarBottomInset, 8);
-  const tabBarHeight = 58 + tabBarPaddingBottom;
+  const tabBarPaddingBottom = Math.max(tabBarBottomInset, 1);
+  const tabBarHeight = 50 + tabBarPaddingBottom;
 
   return (
     <Tabs
@@ -18,22 +18,22 @@ export default function TabsLayout() {
         tabBarActiveTintColor: "#FFDE03",
         tabBarInactiveTintColor: "#999999",
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: "bold",
-          lineHeight: 16,
+          lineHeight: 14,
         },
         tabBarStyle: {
-          backgroundColor: "#171B24",
+          backgroundColor: "#0B0E14",
           borderTopColor: "rgba(255, 255, 255, 0.08)",
           borderTopWidth: 1,
           height: tabBarHeight,
           minHeight: tabBarHeight,
-          paddingTop: 0,
+          paddingTop: 2,
           paddingBottom: tabBarPaddingBottom,
           elevation: 0,
         },
         tabBarItemStyle: {
-          minHeight: 56,
+          minHeight: 48,
         },
       }}
     >

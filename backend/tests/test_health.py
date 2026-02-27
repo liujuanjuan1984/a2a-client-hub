@@ -22,10 +22,13 @@ def _mock_core_probes(monkeypatch: pytest.MonkeyPatch) -> None:
             "last_checked_at": timestamp,
         }
 
+    async def healthy_database_probe() -> Dict[str, Any]:
+        return healthy_probe("database")
+
     monkeypatch.setattr(
         health_service,
         "_check_database",
-        lambda: healthy_probe("database"),
+        healthy_database_probe,
     )
     monkeypatch.setattr(
         health_service,
@@ -51,7 +54,7 @@ def test_health_endpoint_returns_checks(monkeypatch: pytest.MonkeyPatch) -> None
 def test_health_endpoint_database_failure_returns_503(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def failing_db_probe() -> Dict[str, Any]:
+    async def failing_db_probe() -> Dict[str, Any]:
         return {
             "name": "database",
             "status": "unhealthy",
