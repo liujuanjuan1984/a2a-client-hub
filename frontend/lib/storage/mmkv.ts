@@ -16,8 +16,11 @@ const LEGACY_STORAGE_KEYS = [
   "a2a-client-hub.shortcuts",
 ];
 const CHAT_QUOTA_FALLBACK_LIMITS = [40, 20, 10, 5, 1] as const;
+const MMKV_INSTANCE_ID_DEFAULT = "a2a-client-hub-storage";
+const MMKV_INSTANCE_ID_CHAT = "a2a-chat-storage";
+const MMKV_INSTANCE_ID_MESSAGES = "a2a-messages-storage";
 
-let mmkvInstance: MMKV | null = null;
+const mmkvInstances: Record<string, MMKV> = {};
 
 const bytesToHex = (bytes: Uint8Array) =>
   Array.from(bytes)
@@ -35,9 +38,45 @@ const generateEncryptionKey = async () => {
   return bytesToHex(bytes);
 };
 
-const getMmkvInstance = async () => {
+const getBackupKey = (name: string) => `${name}.bak`;
+
+const shouldRunConsistencyCheck = (name: string) =>
+  name.startsWith("a2a-client-hub.");
+
+const isValidPersistedPayload = (name: string, value: string): boolean => {
+  if (!shouldRunConsistencyCheck(name)) {
+    return true;
+  }
+  try {
+    JSON.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const shouldBackupKey = (name: string): boolean => {
+  if (name === CHAT_PERSIST_KEY) {
+    return false;
+  }
+  return !name.includes("messages");
+};
+
+const getInstanceId = (name: string) => {
+  if (name.includes("messages")) {
+    return MMKV_INSTANCE_ID_MESSAGES;
+  }
+  if (name === CHAT_PERSIST_KEY || name.includes("chat")) {
+    return MMKV_INSTANCE_ID_CHAT;
+  }
+  return MMKV_INSTANCE_ID_DEFAULT;
+};
+
+const getMmkvInstance = async (
+  instanceId: string = MMKV_INSTANCE_ID_DEFAULT,
+) => {
   if (isWeb || isExpoGo) return null;
-  if (mmkvInstance) return mmkvInstance;
+  if (mmkvInstances[instanceId]) return mmkvInstances[instanceId];
 
   try {
     let encryptionKey = await SecureStore.getItemAsync(MMKV_ENCRYPTION_KEY);
@@ -45,13 +84,16 @@ const getMmkvInstance = async () => {
       encryptionKey = await generateEncryptionKey();
       await SecureStore.setItemAsync(MMKV_ENCRYPTION_KEY, encryptionKey);
     }
-    mmkvInstance = new MMKV({
-      id: "a2a-client-hub-storage",
+    mmkvInstances[instanceId] = new MMKV({
+      id: instanceId,
       encryptionKey,
     });
-    return mmkvInstance;
+    return mmkvInstances[instanceId];
   } catch (error) {
-    console.error("[storage] Failed to initialize encrypted MMKV:", error);
+    console.error(
+      `[storage] Failed to initialize encrypted MMKV (${instanceId}):`,
+      error,
+    );
     return null;
   }
 };
@@ -210,9 +252,63 @@ export const mmkvStateStorage: StateStorage = {
         ? window.localStorage.getItem(name)
         : null;
     }
-    const mmkv = await getMmkvInstance();
+    const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
-      return mmkv.getString(name) ?? null;
+      try {
+        const value = mmkv.getString(name);
+        if (typeof value !== "string") {
+          return null;
+        }
+        if (!isValidPersistedPayload(name, value)) {
+          throw new Error("Invalid JSON payload");
+        }
+        return value;
+      } catch (error) {
+        const backupKey = getBackupKey(name);
+        console.error(
+          `[storage] Corrupted persisted payload detected for ${name}.`,
+          error,
+        );
+        try {
+          const backup = mmkv.getString(backupKey);
+          if (
+            typeof backup === "string" &&
+            isValidPersistedPayload(name, backup)
+          ) {
+            try {
+              mmkv.set(name, backup);
+            } catch (restoreError) {
+              console.warn(
+                `[storage] Failed to restore ${name} from backup to primary key.`,
+                restoreError,
+              );
+            }
+            console.warn("[storage] Recovered persisted payload from backup.", {
+              key: name,
+            });
+            return backup;
+          }
+        } catch (backupError) {
+          console.error(
+            `[storage] Failed to read backup for ${name}.`,
+            backupError,
+          );
+        }
+
+        try {
+          mmkv.delete(name);
+          mmkv.delete(backupKey);
+        } catch (cleanupError) {
+          console.warn(
+            `[storage] Failed to cleanup corrupted payload for ${name}.`,
+            cleanupError,
+          );
+        }
+        console.warn("[storage] Dropped corrupted persisted payload.", {
+          key: name,
+        });
+        return null;
+      }
     }
     return await asyncStorageFallback.getItem(name);
   },
@@ -223,12 +319,29 @@ export const mmkvStateStorage: StateStorage = {
       }
       return;
     }
-    const mmkv = await getMmkvInstance();
+    const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
-      mmkv.set(name, value);
-      return;
+      try {
+        mmkv.set(name, value);
+        if (shouldBackupKey(name)) {
+          mmkv.set(getBackupKey(name), value);
+        }
+        return;
+      } catch (error) {
+        console.error(
+          `[storage] Failed to write ${name} to MMKV, falling back to AsyncStorage.`,
+          error,
+        );
+      }
     }
-    await asyncStorageFallback.setItem(name, value);
+    try {
+      await asyncStorageFallback.setItem(name, value);
+    } catch (fallbackError) {
+      console.error(
+        `[storage] AsyncStorage fallback write failed for ${name}.`,
+        fallbackError,
+      );
+    }
   },
   removeItem: async (name) => {
     if (isWeb) {
@@ -237,12 +350,27 @@ export const mmkvStateStorage: StateStorage = {
       }
       return;
     }
-    const mmkv = await getMmkvInstance();
+    const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
-      mmkv.delete(name);
-      return;
+      try {
+        mmkv.delete(name);
+        mmkv.delete(getBackupKey(name));
+        return;
+      } catch (error) {
+        console.error(
+          `[storage] Failed to delete ${name} from MMKV, falling back to AsyncStorage.`,
+          error,
+        );
+      }
     }
-    await asyncStorageFallback.removeItem(name);
+    try {
+      await asyncStorageFallback.removeItem(name);
+    } catch (fallbackError) {
+      console.error(
+        `[storage] AsyncStorage fallback delete failed for ${name}.`,
+        fallbackError,
+      );
+    }
   },
 };
 
