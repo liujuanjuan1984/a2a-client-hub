@@ -15,7 +15,7 @@ from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.services.agent_common import AgentValidationMixin, encrypt_bearer_token
+from app.services.agent_common import BaseAgentService
 
 ALLOWED_AUTH_TYPES = {"none", "bearer"}
 ALLOWED_AVAILABILITY_POLICIES = {"public", "allowlist"}
@@ -55,7 +55,7 @@ class HubA2AAllowlistRecord:
     user_name: Optional[str]
 
 
-class HubA2AAgentService(AgentValidationMixin):
+class HubA2AAgentService(BaseAgentService):
     """Business logic wrapper for hub A2A agent CRUD and credential handling."""
 
     _validation_error_cls = HubA2AAgentValidationError
@@ -169,7 +169,7 @@ class HubA2AAgentService(AgentValidationMixin):
         if normalized_auth_type == "bearer":
             token_last4 = await self._upsert_credential(
                 db,
-                admin_user_id=admin_user_id,
+                user_id=admin_user_id,
                 agent_id=agent.id,
                 token=token,
             )
@@ -254,9 +254,7 @@ class HubA2AAgentService(AgentValidationMixin):
         agent.updated_by_user_id = admin_user_id
         # Hub agents are admin-managed, and "delete" should also purge any stored
         # credential/allowlist rows to reduce long-term secret exposure.
-        await db.execute(
-            delete(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent.id)
-        )
+        await self._delete_credentials(db, agent_id=agent.id)
         await db.execute(
             delete(HubA2AAgentAllowlistEntry).where(
                 HubA2AAgentAllowlistEntry.agent_id == agent.id
@@ -448,12 +446,6 @@ class HubA2AAgentService(AgentValidationMixin):
             raise HubA2AAgentNotFoundError("Hub A2A agent not found")
         return agent
 
-    async def _get_credential(
-        self, db: AsyncSession, *, agent_id: UUID
-    ) -> Optional[A2AAgentCredential]:
-        stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
-        return await db.scalar(stmt)
-
     async def _sync_credentials(
         self,
         db: AsyncSession,
@@ -463,13 +455,7 @@ class HubA2AAgentService(AgentValidationMixin):
         token: Optional[str],
     ) -> tuple[Optional[str], bool]:
         if agent.auth_type == "none":
-            credential = await self._get_credential(db, agent_id=agent.id)
-            if credential:
-                await db.execute(
-                    delete(A2AAgentCredential).where(
-                        A2AAgentCredential.agent_id == agent.id
-                    )
-                )
+            await self._delete_credentials(db, agent_id=agent.id)
             return None, False
 
         if agent.auth_type != "bearer":
@@ -483,42 +469,11 @@ class HubA2AAgentService(AgentValidationMixin):
 
         last4 = await self._upsert_credential(
             db,
-            admin_user_id=admin_user_id,
+            user_id=admin_user_id,
             agent_id=agent.id,
             token=token,
         )
         return last4, True
-
-    async def _upsert_credential(
-        self,
-        db: AsyncSession,
-        *,
-        admin_user_id: UUID,
-        agent_id: UUID,
-        token: Optional[str],
-    ) -> Optional[str]:
-        encrypted_value, last4 = encrypt_bearer_token(
-            vault=self._vault,
-            token=token,
-            validation_error_cls=HubA2AAgentValidationError,
-        )
-
-        credential = await self._get_credential(db, agent_id=agent_id)
-        if credential is None:
-            credential = A2AAgentCredential(
-                agent_id=agent_id,
-                encrypted_token=encrypted_value,
-                token_last4=last4,
-                encryption_version=1,
-                created_by_user_id=admin_user_id,
-            )
-            db.add(credential)
-        else:
-            credential.encrypted_token = encrypted_value
-            credential.token_last4 = last4
-            credential.created_by_user_id = admin_user_id
-
-        return last4
 
     async def _resolve_user(
         self, db: AsyncSession, *, user_id: Optional[UUID], email: Optional[str]
@@ -548,38 +503,6 @@ class HubA2AAgentService(AgentValidationMixin):
         normalized = (value or "").strip().lower()
         if normalized not in ALLOWED_AVAILABILITY_POLICIES:
             raise HubA2AAgentValidationError("Unsupported availability_policy")
-        return normalized
-
-    def _normalize_tags(self, value: Optional[Iterable[str]]) -> List[str]:
-        if value is None:
-            return []
-        seen: set[str] = set()
-        items: list[str] = []
-        for raw in value:
-            if raw is None:
-                continue
-            trimmed = str(raw).strip()
-            if not trimmed:
-                continue
-            lowered = trimmed.lower()
-            if lowered in seen:
-                continue
-            seen.add(lowered)
-            items.append(trimmed)
-        return items
-
-    def _normalize_headers(self, value: Optional[Dict[str, str]]) -> Dict[str, str]:
-        if value is None:
-            return {}
-        normalized: dict[str, str] = {}
-        for key, header_value in value.items():
-            if key is None:
-                continue
-            k = str(key).strip()
-            if not k:
-                continue
-            v = "" if header_value is None else str(header_value)
-            normalized[k] = v
         return normalized
 
 

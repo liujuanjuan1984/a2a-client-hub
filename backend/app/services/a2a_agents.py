@@ -8,14 +8,14 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, delete, select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.transaction import commit_safely
-from app.services.agent_common import AgentValidationMixin, encrypt_bearer_token
+from app.services.agent_common import BaseAgentService
 
 ALLOWED_AUTH_TYPES = {"none", "bearer"}
 
@@ -38,7 +38,7 @@ class A2AAgentRecord:
     token_last4: Optional[str]
 
 
-class A2AAgentService(AgentValidationMixin):
+class A2AAgentService(BaseAgentService):
     """Business logic wrapper for A2A agent CRUD and credential handling."""
 
     _validation_error_cls = A2AAgentValidationError
@@ -248,26 +248,6 @@ class A2AAgentService(AgentValidationMixin):
         if existing is not None:
             raise A2AAgentValidationError("Agent card URL already exists")
 
-    async def _get_credential(
-        self,
-        db: AsyncSession,
-        *,
-        agent_id: UUID,
-    ) -> Optional[A2AAgentCredential]:
-        stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
-        return await db.scalar(stmt)
-
-    async def _delete_credentials(
-        self,
-        db: AsyncSession,
-        *,
-        agent_id: UUID,
-    ) -> None:
-        # Hard-delete credential rows to minimize secret retention.
-        await db.execute(
-            delete(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
-        )
-
     async def _sync_credentials(
         self,
         db: AsyncSession,
@@ -295,67 +275,6 @@ class A2AAgentService(AgentValidationMixin):
             agent_id=agent.id,
             token=token,
         )
-
-    async def _upsert_credential(
-        self,
-        db: AsyncSession,
-        *,
-        user_id: UUID,
-        agent_id: UUID,
-        token: Optional[str],
-    ) -> Optional[str]:
-        encrypted_value, last4 = encrypt_bearer_token(
-            vault=self._vault,
-            token=token,
-            validation_error_cls=A2AAgentValidationError,
-        )
-
-        credential = await self._get_credential(db, agent_id=agent_id)
-        if credential is None:
-            # Purge legacy soft-deleted rows before insert to satisfy unique constraint.
-            await self._delete_credentials(db, agent_id=agent_id)
-            credential = A2AAgentCredential(
-                agent_id=agent_id,
-                created_by_user_id=user_id,
-                encrypted_token=encrypted_value,
-                token_last4=last4,
-                encryption_version=1,
-            )
-            db.add(credential)
-        else:
-            credential.encrypted_token = encrypted_value
-            credential.token_last4 = last4
-            credential.created_by_user_id = user_id
-
-        return last4
-
-    def _normalize_tags(self, tags: Optional[Iterable[str]]) -> List[str]:
-        if tags is None:
-            return []
-        normalized: List[str] = []
-        for tag in tags:
-            if tag is None:
-                continue
-            value = str(tag).strip()
-            if value:
-                normalized.append(value)
-        return normalized
-
-    def _normalize_headers(self, headers: Optional[Dict[str, str]]) -> Dict[str, str]:
-        if headers is None:
-            return {}
-        if not isinstance(headers, dict):
-            raise A2AAgentValidationError("extra_headers must be a dictionary")
-        normalized: Dict[str, str] = {}
-        for key, value in headers.items():
-            if key is None:
-                continue
-            header_key = str(key).strip()
-            if not header_key:
-                raise A2AAgentValidationError("extra_headers contains empty key")
-            header_value = "" if value is None else str(value).strip()
-            normalized[header_key] = header_value
-        return normalized
 
 
 a2a_agent_service = A2AAgentService()

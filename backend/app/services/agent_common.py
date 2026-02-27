@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import ipaddress
-from typing import Any, Optional, Type
+from typing import Any, Dict, Iterable, List, Optional, Type
 from urllib.parse import urlparse
+from uuid import UUID
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
 from app.utils.auth_headers import resolve_stored_auth_fields
+
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.a2a_agent_credential import A2AAgentCredential
 
 
 def normalize_required_text(
@@ -151,8 +158,104 @@ class AgentValidationMixin:
         )
 
 
+class BaseAgentService(AgentValidationMixin):
+    """Base business logic for A2A agent management."""
+
+    _vault: Any
+
+    async def _get_credential(
+        self,
+        db: AsyncSession,
+        *,
+        agent_id: UUID,
+    ) -> Optional[A2AAgentCredential]:
+        stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
+        return await db.scalar(stmt)
+
+    async def _delete_credentials(
+        self,
+        db: AsyncSession,
+        *,
+        agent_id: UUID,
+    ) -> None:
+        # Hard-delete credential rows to minimize secret retention.
+        await db.execute(
+            delete(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
+        )
+
+    async def _upsert_credential(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent_id: UUID,
+        token: Optional[str],
+    ) -> Optional[str]:
+        encrypted_value, last4 = encrypt_bearer_token(
+            vault=self._vault,
+            token=token,
+            validation_error_cls=self._validation_error_cls,
+        )
+
+        credential = await self._get_credential(db, agent_id=agent_id)
+        if credential is None:
+            # Purge legacy soft-deleted rows before insert to satisfy unique constraint.
+            await self._delete_credentials(db, agent_id=agent_id)
+            credential = A2AAgentCredential(
+                agent_id=agent_id,
+                created_by_user_id=user_id,
+                encrypted_token=encrypted_value,
+                token_last4=last4,
+                encryption_version=1,
+            )
+            db.add(credential)
+        else:
+            credential.encrypted_token = encrypted_value
+            credential.token_last4 = last4
+            credential.created_by_user_id = user_id
+
+        return last4
+
+    def _normalize_tags(self, tags: Optional[Iterable[str]]) -> List[str]:
+        if tags is None:
+            return []
+        seen: set[str] = set()
+        normalized: List[str] = []
+        for tag in tags:
+            if tag is None:
+                continue
+            value = str(tag).strip()
+            if not value:
+                continue
+            lowered = value.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            normalized.append(value)
+        return normalized
+
+    def _normalize_headers(self, headers: Optional[Dict[str, str]]) -> Dict[str, str]:
+        if headers is None:
+            return {}
+        if not isinstance(headers, dict):
+            raise self._validation_error_cls("extra_headers must be a dictionary")
+        normalized: Dict[str, str] = {}
+        for key, value in headers.items():
+            if key is None:
+                continue
+            header_key = str(key).strip()
+            if not header_key:
+                # HubA2AAgentService allowed empty keys but A2AAgentService didn't.
+                # Standardizing on strict validation.
+                continue
+            header_value = "" if value is None else str(value).strip()
+            normalized[header_key] = header_value
+        return normalized
+
+
 __all__ = [
     "AgentValidationMixin",
+    "BaseAgentService",
     "encrypt_bearer_token",
     "normalize_auth_type",
     "normalize_required_text",

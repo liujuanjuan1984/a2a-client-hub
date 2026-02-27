@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secret_vault import hub_a2a_secret_vault
-from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.integrations.a2a_client.service import ResolvedAgent
 from app.services.hub_a2a_agents import HubA2AAgentNotFoundError, hub_a2a_agent_service
 from app.services.runtime_auth import build_resolved_runtime_agent
+from app.services.runtime_common import BaseA2ARuntimeBuilder
 
 
 class HubA2ARuntimeError(RuntimeError):
@@ -36,11 +34,14 @@ class HubA2ARuntime:
     resolved: ResolvedAgent
 
 
-class HubA2ARuntimeBuilder:
+class HubA2ARuntimeBuilder(BaseA2ARuntimeBuilder):
     """Builds resolved runtime configuration from stored hub agent records."""
 
     def __init__(self) -> None:
-        self._vault = hub_a2a_secret_vault
+        super().__init__(
+            vault=hub_a2a_secret_vault,
+            validation_error_cls=HubA2ARuntimeValidationError,
+        )
 
     async def build(
         self,
@@ -68,7 +69,7 @@ class HubA2ARuntimeBuilder:
             auth_scheme=agent.auth_scheme,
             credential=credential,
             vault=self._vault,
-            validation_error_cls=HubA2ARuntimeValidationError,
+            validation_error_cls=self._validation_error_cls,
         )
 
         return HubA2ARuntime(
@@ -77,12 +78,6 @@ class HubA2ARuntimeBuilder:
             agent_url=agent.card_url,
             resolved=resolved,
         )
-
-    async def _get_credential(
-        self, db: AsyncSession, *, agent_id: UUID
-    ) -> Optional[A2AAgentCredential]:
-        stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
-        return await db.scalar(stmt)
 
 
 hub_a2a_runtime_builder = HubA2ARuntimeBuilder()
