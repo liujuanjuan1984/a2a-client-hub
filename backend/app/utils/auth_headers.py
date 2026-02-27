@@ -56,7 +56,34 @@ def build_auth_header_pair(
     return header_name, header_value
 
 
+def build_proxy_auth_headers(
+    *,
+    auth_type: str,
+    token: str | None,
+    auth_header: str | None = None,
+    auth_scheme: str | None = None,
+    extra_headers: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Build complete header set for A2A proxy requests."""
+
+    headers = dict(extra_headers or {})
+    if auth_type == "bearer":
+        token_value = (token or "").strip()
+        if not token_value:
+            raise ValueError("Bearer token is required")
+        header_name, header_value = build_auth_header_pair(
+            auth_header=auth_header,
+            auth_scheme=auth_scheme,
+            token=token_value,
+        )
+        headers[header_name] = header_value
+    elif auth_type != "none":
+        raise ValueError(f"Unsupported auth_type: {auth_type}")
+    return headers
+
+
 __all__ = [
     "build_auth_header_pair",
+    "build_proxy_auth_headers",
     "resolve_stored_auth_fields",
 ]
