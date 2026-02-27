@@ -140,14 +140,14 @@ def read_root() -> Dict[str, Any]:
 
 
 @app.get("/health")
-def health_check() -> JSONResponse:
+async def health_check() -> JSONResponse:
     """
     Health check endpoint
 
     Returns:
         API health status
     """
-    overall_status, checks = run_health_checks()
+    overall_status, checks = await run_health_checks()
     response_status = (
         status.HTTP_200_OK
         if overall_status != "unhealthy"
