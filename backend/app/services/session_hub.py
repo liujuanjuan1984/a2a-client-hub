@@ -109,9 +109,7 @@ class SessionHubService:
 
         # Count total
         count_stmt = (
-            select(func.count())
-            .select_from(ConversationThread)
-            .where(and_(*filters))
+            select(func.count()).select_from(ConversationThread).where(and_(*filters))
         )
         total = (await db.execute(count_stmt)).scalar() or 0
 
