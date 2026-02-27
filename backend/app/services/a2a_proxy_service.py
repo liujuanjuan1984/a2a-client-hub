@@ -50,7 +50,9 @@ class A2AProxyService:
         allowed_hosts = list(settings.a2a_proxy_allowed_hosts)
 
         try:
-            stmt = select(A2AProxyAllowlist.host_pattern).where(A2AProxyAllowlist.is_enabled)
+            stmt = select(A2AProxyAllowlist.host_pattern).where(
+                A2AProxyAllowlist.is_enabled
+            )
             result = await db.execute(stmt)
             db_hosts = result.scalars().all()
             allowed_hosts.extend(db_hosts)

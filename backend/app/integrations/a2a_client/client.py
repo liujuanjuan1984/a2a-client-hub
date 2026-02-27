@@ -27,8 +27,6 @@ from a2a.utils.constants import (
     PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
 
-from app.core.config import settings
-from app.services.a2a_proxy_service import a2a_proxy_service
 from app.core.http_client import get_global_http_client
 from app.core.logging import get_logger
 from app.integrations.a2a_client.controls import summarize_query
@@ -37,6 +35,7 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
     A2AOutboundNotAllowedError,
 )
+from app.services.a2a_proxy_service import a2a_proxy_service
 from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,

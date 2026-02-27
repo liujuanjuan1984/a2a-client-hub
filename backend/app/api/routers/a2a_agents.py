@@ -13,8 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_me
 from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
-from app.core.config import settings
-from app.services.a2a_proxy_service import a2a_proxy_service
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.integrations.a2a_client import get_a2a_service
@@ -44,6 +42,7 @@ from app.services.a2a_agents import (
     A2AAgentValidationError,
     a2a_agent_service,
 )
+from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.a2a_runtime import (
     A2ARuntimeNotFoundError,
     A2ARuntimeValidationError,

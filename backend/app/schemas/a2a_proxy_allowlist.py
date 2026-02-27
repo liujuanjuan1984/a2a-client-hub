@@ -8,9 +8,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class A2AProxyAllowlistBase(BaseModel):
-    host_pattern: str = Field(..., description="The host pattern allowed (e.g., example.com, *.openai.com)")
+    host_pattern: str = Field(
+        ..., description="The host pattern allowed (e.g., example.com, *.openai.com)"
+    )
     is_enabled: bool = Field(True, description="Whether this allowlist entry is active")
-    remark: Optional[str] = Field(None, description="Remark or reason for this allowlist entry")
+    remark: Optional[str] = Field(
+        None, description="Remark or reason for this allowlist entry"
+    )
 
 
 class A2AProxyAllowlistCreate(A2AProxyAllowlistBase):

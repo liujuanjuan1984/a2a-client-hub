@@ -10,7 +10,6 @@ import httpx
 from a2a.types import AgentCard
 
 from app.core.config import settings
-from app.services.a2a_proxy_service import a2a_proxy_service
 from app.core.http_client import get_global_http_client
 from app.core.logging import get_logger
 from app.integrations.a2a_client import get_a2a_service
@@ -34,6 +33,7 @@ from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
 )
+from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.a2a_runtime import A2ARuntime
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,

@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db, get_current_admin_user
 from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
-from app.core.config import settings
-from app.services.a2a_proxy_service import a2a_proxy_service
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.schemas.hub_a2a_agent import (
@@ -25,6 +23,7 @@ from app.schemas.hub_a2a_agent import (
     HubA2AAllowlistListResponse,
     HubA2AAllowlistReplaceRequest,
 )
+from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.hub_a2a_agents import (
     HubA2AAgentNotFoundError,
     HubA2AAgentValidationError,
