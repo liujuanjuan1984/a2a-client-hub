@@ -1,16 +1,17 @@
-import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
+
+import pytest
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
 from app.services.agent_common import (
     AgentValidationMixin,
+    delete_agent_credentials,
     encrypt_bearer_token,
+    get_agent_credential,
     normalize_auth_type,
     normalize_required_text,
     resolve_agent_auth_fields,
-    get_agent_credential,
-    delete_agent_credentials,
     upsert_agent_credential,
 )
 
@@ -210,6 +211,7 @@ async def test_upsert_agent_credential_updates_existing():
 @pytest.mark.asyncio
 async def test_upsert_agent_credential_creates_new():
     db = AsyncMock()
+    db.add = MagicMock()
     vault = _Vault(is_configured=True)
     agent_id = uuid4()
     user_id = uuid4()
