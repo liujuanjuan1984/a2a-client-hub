@@ -55,6 +55,7 @@ from app.services.invoke_route_runner import (
 )
 from app.utils.auth_headers import build_auth_header_pair
 from app.utils.logging_redaction import redact_url_for_logging
+from app.utils.pagination import paginate
 
 router = StrictAPIRouter(prefix="/me/a2a/agents", tags=["a2a"])
 logger = get_logger(__name__)
@@ -120,18 +121,10 @@ async def list_agents(
         },
     )
     items = await a2a_agent_service.list_agents(db, user_id=current_user.id)
-    total = len(items)
-    pages = (total + size - 1) // size if size else 0
-    offset = (page - 1) * size
-    page_items = items[offset : offset + size]
+    page_items, pagination = paginate(items, page=page, size=size)
     return A2AAgentListResponse(
         items=[_build_response(item) for item in page_items],
-        pagination={
-            "page": page,
-            "size": size,
-            "total": total,
-            "pages": pages,
-        },
+        pagination=pagination,
         meta={},
     )
 

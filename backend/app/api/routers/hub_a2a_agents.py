@@ -38,6 +38,7 @@ from app.services.invoke_route_runner import (
     run_ws_invoke_route,
 )
 from app.utils.logging_redaction import redact_url_for_logging
+from app.utils.pagination import paginate
 
 router = StrictAPIRouter(prefix="/a2a/agents", tags=["a2a-catalog"])
 logger = get_logger(__name__)
@@ -54,10 +55,7 @@ async def list_hub_agents_for_user(
     items = await hub_a2a_agent_service.list_visible_agents_for_user(
         db, user_id=current_user.id
     )
-    total = len(items)
-    pages = (total + size - 1) // size if size else 0
-    offset = (page - 1) * size
-    page_items = items[offset : offset + size]
+    page_items, pagination = paginate(items, page=page, size=size)
     return HubA2AAgentUserListResponse(
         items=[
             HubA2AAgentUserResponse(
@@ -68,7 +66,7 @@ async def list_hub_agents_for_user(
             )
             for item in page_items
         ],
-        pagination={"page": page, "size": size, "total": total, "pages": pages},
+        pagination=pagination,
         meta={},
     )
 

@@ -32,6 +32,7 @@ from app.services.hub_a2a_agents import (
     hub_a2a_agent_service,
 )
 from app.utils.logging_redaction import redact_url_for_logging
+from app.utils.pagination import paginate
 
 router = StrictAPIRouter(prefix="/admin/a2a/agents", tags=["admin-a2a"])
 logger = get_logger(__name__)
@@ -69,13 +70,10 @@ async def list_hub_agents_admin(
     size: int = Query(50, ge=1, le=200, description="Page size"),
 ) -> HubA2AAgentAdminListResponse:
     items = await hub_a2a_agent_service.list_agents_admin(db)
-    total = len(items)
-    pages = (total + size - 1) // size if size else 0
-    offset = (page - 1) * size
-    page_items = items[offset : offset + size]
+    page_items, pagination = paginate(items, page=page, size=size)
     return HubA2AAgentAdminListResponse(
         items=[_build_admin_response(item) for item in page_items],
-        pagination={"page": page, "size": size, "total": total, "pages": pages},
+        pagination=pagination,
         meta={},
     )
 

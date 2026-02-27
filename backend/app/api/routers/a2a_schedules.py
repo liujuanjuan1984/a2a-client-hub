@@ -29,6 +29,7 @@ from app.services.a2a_schedule_service import (
     A2AScheduleValidationError,
     a2a_schedule_service,
 )
+from app.utils.pagination import paginate
 from app.utils.timezone_util import normalize_timezone, resolve_timezone
 
 router = StrictAPIRouter(prefix="/me/a2a/schedules", tags=["a2a-schedules"])
@@ -191,17 +192,13 @@ async def list_schedule_tasks(
         page=page,
         size=size,
     )
+    _, pagination = paginate(items, page=page, size=size, total=total)
     return A2AScheduleTaskListResponse(
         items=[
             _build_task_response(item, schedule_timezone=schedule_timezone)
             for item in items
         ],
-        pagination={
-            "page": page,
-            "size": size,
-            "total": total,
-            "pages": (total + size - 1) // size if size else 0,
-        },
+        pagination=pagination,
         meta={},
     )
 
@@ -336,13 +333,9 @@ async def list_schedule_executions(
             size=size,
         )
     )
+    _, pagination = paginate(items, page=page, size=size, total=total)
     return A2AScheduleExecutionListResponse(
         items=[A2AScheduleExecutionResponse.model_validate(item) for item in items],
-        pagination={
-            "page": page,
-            "size": size,
-            "total": total,
-            "pages": (total + size - 1) // size if size else 0,
-        },
+        pagination=pagination,
         meta={"task_id": task_id},
     )

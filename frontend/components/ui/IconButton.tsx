@@ -5,20 +5,18 @@ import {
   type PressableProps,
 } from "react-native";
 
-type IconButtonVariant =
-  | "primary"
-  | "outline"
-  | "ghost"
-  | "danger"
-  | "secondary"
-  | "neo";
-type IconButtonSize = "xs" | "sm" | "md" | "lg";
+import {
+  type ButtonSize,
+  type ButtonVariant,
+  buttonIconColors,
+  buttonVariants,
+} from "./buttonStyles";
 
 type IconButtonProps = Omit<PressableProps, "accessibilityLabel"> & {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   accessibilityLabel: string;
-  variant?: IconButtonVariant;
-  size?: IconButtonSize;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
   loading?: boolean;
 };
 
@@ -32,36 +30,18 @@ export function IconButton({
   accessibilityLabel,
   ...props
 }: IconButtonProps) {
-  const variants: Record<IconButtonVariant, string> = {
-    neo: "bg-yellow-500/75 active:bg-yellow-500/90",
-    primary: "bg-yellow-500/75 active:bg-yellow-500/90",
-    secondary: "bg-slate-800/35 border border-white/20 active:bg-slate-800/80",
-    outline: "border border-white/10 active:bg-white/5",
-    ghost: "active:bg-white/5",
-    danger: "bg-red-500/10 border border-red-500/20 active:bg-red-500/20",
-  };
-
-  const sizes: Record<IconButtonSize, string> = {
+  const sizes: Record<ButtonSize, string> = {
     xs: "h-8 w-8",
     sm: "h-10 w-10",
     md: "h-11 w-11",
     lg: "h-12 w-12",
   };
 
-  const iconSizes: Record<IconButtonSize, number> = {
+  const iconSizes: Record<ButtonSize, number> = {
     xs: 14,
     sm: 18,
     md: 20,
     lg: 22,
-  };
-
-  const iconColors: Record<IconButtonVariant, string> = {
-    neo: "#000000cc",
-    primary: "#000000cc",
-    secondary: "#94a3b8",
-    outline: "#64748b",
-    ghost: "#475569",
-    danger: "#f87171cc",
   };
 
   const isDisabled = disabled || loading;
@@ -70,17 +50,17 @@ export function IconButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      className={`items-center justify-center rounded-xl ${variants[variant]} ${sizes[size]} ${isDisabled ? "opacity-40" : ""} ${className || ""}`}
+      className={`items-center justify-center rounded-xl ${buttonVariants[variant]} ${sizes[size]} ${isDisabled ? "opacity-40" : ""} ${className || ""}`}
       disabled={isDisabled}
       {...props}
     >
       {loading ? (
-        <ActivityIndicator size="small" color={iconColors[variant]} />
+        <ActivityIndicator size="small" color={buttonIconColors[variant]} />
       ) : (
         <Ionicons
           name={icon}
           size={iconSizes[size]}
-          color={iconColors[variant]}
+          color={buttonIconColors[variant]}
         />
       )}
     </Pressable>
