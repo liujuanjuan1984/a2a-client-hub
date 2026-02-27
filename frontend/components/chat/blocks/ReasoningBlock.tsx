@@ -54,6 +54,7 @@ export function ReasoningBlock({
           handleToggle().catch(() => undefined);
         }}
         type="Reasoning"
+        showChevron={false}
       />
       {expanded && blockHasContent ? (
         <View>
@@ -68,6 +69,7 @@ export function ReasoningBlock({
               expanded
               onToggle={toggleReasoning}
               testID={`chat-message-${blockId}-collapse-bottom`}
+              showChevron={false}
             />
           </View>
         </View>

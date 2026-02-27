@@ -54,6 +54,7 @@ export function ToolCallBlock({
           handleToggle().catch(() => undefined);
         }}
         type="Tool Call"
+        showChevron={false}
       />
 
       {expanded && blockHasContent ? (
@@ -69,6 +70,7 @@ export function ToolCallBlock({
               expanded
               onToggle={toggleToolCall}
               testID={`chat-message-${blockId}-collapse-bottom`}
+              showChevron={false}
             />
           </View>
         </View>

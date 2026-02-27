@@ -58,6 +58,7 @@ export function TextBlock({
             expanded={expanded}
             onToggle={toggleTextExpansion}
             testID={`chat-message-${blockId}-expand`}
+            showChevron={false}
           />
         </View>
       ) : null}
@@ -67,6 +68,7 @@ export function TextBlock({
             expanded
             onToggle={toggleTextExpansion}
             testID={`chat-message-${blockId}-collapse-bottom`}
+            showChevron={false}
           />
         </View>
       ) : null}
