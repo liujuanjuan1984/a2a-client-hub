@@ -3,7 +3,6 @@ import { useState } from "react";
 import { Switch, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
-import { ExpandToggle } from "@/components/ui/ExpandToggle";
 import {
   type IntervalTimePoint,
   type ScheduledJob,
@@ -222,18 +221,11 @@ export function ScheduledJobCard({
             onPress={onEdit}
           />
           <Button
-            label="Delete"
+            label={promptExpanded ? "Less" : "More"}
             size="xs"
             variant="secondary"
-            iconLeft="trash-outline"
-            loading={deleting}
-            disabled={!onDelete}
-            onPress={handleDelete}
-          />
-          <ExpandToggle
-            expanded={promptExpanded}
-            type="Prompt"
-            onToggle={() => setPromptExpanded(!promptExpanded)}
+            iconLeft={promptExpanded ? "chevron-up" : "chevron-down"}
+            onPress={() => setPromptExpanded(!promptExpanded)}
           />
           <Button
             label={executionsOpen ? "Hide" : "History"}
@@ -244,17 +236,29 @@ export function ScheduledJobCard({
           />
         </View>
 
-        {canMarkFailed ? (
+        <View className="flex-row items-center gap-2">
+          {canMarkFailed ? (
+            <Button
+              label="Stop"
+              size="xs"
+              variant="danger"
+              className="bg-red-500/40"
+              loading={markingFailed}
+              disabled={!onMarkFailed}
+              onPress={handleMarkFailed}
+            />
+          ) : null}
           <Button
-            label="Stop"
+            label="Delete"
             size="xs"
             variant="danger"
             className="bg-red-500/40"
-            loading={markingFailed}
-            disabled={!onMarkFailed}
-            onPress={handleMarkFailed}
+            iconLeft="trash-outline"
+            loading={deleting}
+            disabled={!onDelete}
+            onPress={handleDelete}
           />
-        ) : null}
+        </View>
       </View>
 
       {executionsOpen ? (

@@ -27,8 +27,8 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants = {
-    neo: "bg-yellow-500/75 active:bg-yellow-500/90",
-    primary: "bg-yellow-500/75 active:bg-yellow-500/90",
+    neo: "bg-yellow-400/85 active:bg-yellow-300/90",
+    primary: "bg-yellow-400/85 active:bg-yellow-300/90",
     secondary: "bg-slate-700/55 active:bg-slate-600/65",
     outline: "border border-white/10 active:bg-white/5",
     ghost: "active:bg-white/5",

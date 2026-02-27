@@ -156,7 +156,7 @@ export function AgentListScreen() {
                 </View>
 
                 <Button
-                  label="Open Chat"
+                  label="Chat"
                   size="sm"
                   variant="primary"
                   iconRight="chevron-forward"

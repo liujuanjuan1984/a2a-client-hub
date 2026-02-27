@@ -4,7 +4,6 @@ import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
-import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useContinueSession } from "@/hooks/useContinueSession";
@@ -120,14 +119,16 @@ export function SessionsScreen() {
                     </View>
                     <View className="flex-row items-center">
                       {/* Async Continue is intentionally hidden for now. See #381. */}
-                      <IconButton
+                      <Button
+                        label="Open"
                         size="xs"
                         variant="primary"
-                        icon="chevron-forward"
-                        accessibilityLabel="Continue session"
+                        iconRight="chevron-forward"
                         disabled={!item.agent_id}
                         onPress={() => handleContinueSession(item)}
-                        className="rounded-full w-7 h-7"
+                        accessibilityRole="button"
+                        accessibilityLabel="Open session"
+                        className="py-1.5 pl-3 pr-2"
                       />
                     </View>
                   </View>

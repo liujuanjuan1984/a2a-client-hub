@@ -111,7 +111,7 @@ export function ChatMessageItem({
           delayLongPress={500}
           className={`px-4 py-3 rounded-2xl shadow-sm ${
             message.role === "user"
-              ? "bg-[#1E222D] border border-primary/40"
+              ? "bg-[#1E222D]"
               : message.role === "agent"
                 ? "bg-surface"
                 : "bg-slate-900"
