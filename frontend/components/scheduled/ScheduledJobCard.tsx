@@ -201,8 +201,8 @@ export function ScheduledJobCard({
             onPress={onEdit}
           />
           <ExpandToggle
-            label={promptExpanded ? "Less" : "Info"}
             expanded={promptExpanded}
+            type="Prompt"
             onToggle={() => setPromptExpanded(!promptExpanded)}
           />
           <Button
