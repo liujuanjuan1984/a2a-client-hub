@@ -9,6 +9,7 @@ from app.api.routers import me_sessions
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.agent_message import AgentMessage
+from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
@@ -58,6 +59,7 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         async_db_session,
         user_id=user.id,
         is_superuser=user.is_superuser,
+        timezone_str=user.timezone or "UTC",
         name="Nightly",
         agent_id=agent.id,
         prompt="ping",
@@ -101,22 +103,41 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
         "schedule_execution_id": str(execution.id),
         "agent_id": str(agent.id),
     }
+    user_message = AgentMessage(
+        user_id=user.id,
+        sender="automation",
+        conversation_id=session.id,
+        message_metadata=metadata,
+    )
+    agent_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        message_metadata={**metadata, "success": True},
+    )
+    async_db_session.add(user_message)
+    async_db_session.add(agent_message)
+    await async_db_session.flush()
     async_db_session.add(
-        AgentMessage(
+        AgentMessageBlock(
             user_id=user.id,
-            sender="automation",
+            message_id=user_message.id,
+            block_seq=1,
+            block_type="text",
             content="ping",
-            conversation_id=session.id,
-            message_metadata=metadata,
+            is_finished=True,
+            source="user_input",
         )
     )
     async_db_session.add(
-        AgentMessage(
+        AgentMessageBlock(
             user_id=user.id,
-            sender="agent",
+            message_id=agent_message.id,
+            block_seq=1,
+            block_type="text",
             content="pong",
-            conversation_id=session.id,
-            message_metadata={**metadata, "success": True},
+            is_finished=True,
+            source="finalize_snapshot",
         )
     )
     await async_db_session.commit()
@@ -157,12 +178,63 @@ async def test_me_sessions_scheduled_list_detail_and_messages(
 
         msgs_resp = await client.post(
             f"/me/conversations/{session.id}/messages:query",
-            json={"page": 1, "size": 50},
+            json={"limit": 8},
         )
         assert msgs_resp.status_code == 200
         msgs_payload = msgs_resp.json()
-        assert msgs_payload["meta"]["conversationId"] == str(session.id)
-        assert msgs_payload["meta"]["source"] == "scheduled"
         assert len(msgs_payload["items"]) == 2
         assert msgs_payload["items"][0]["role"] == "user"
         assert msgs_payload["items"][1]["role"] == "agent"
+        assert len(msgs_payload["items"][0]["blocks"]) == 1
+        assert len(msgs_payload["items"][1]["blocks"]) == 1
+
+
+async def test_me_sessions_query_supports_agent_id_filter(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent_a = await _create_agent(async_db_session, user_id=user.id, suffix="a")
+    agent_b = await _create_agent(async_db_session, user_id=user.id, suffix="b")
+    now = utc_now()
+
+    session_a = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent_a.id,
+        agent_source="personal",
+        title="Session A",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    session_b = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent_b.id,
+        agent_source="personal",
+        title="Session B",
+        last_active_at=now - timedelta(minutes=1),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session_a)
+    async_db_session.add(session_b)
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/conversations:query",
+            json={"page": 1, "size": 20, "agent_id": str(agent_a.id)},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["pagination"]["total"] == 1
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["conversationId"] == str(session_a.id)
+    assert payload["items"][0]["agent_id"] == str(agent_a.id)

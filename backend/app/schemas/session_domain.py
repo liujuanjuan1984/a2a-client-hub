@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.schemas.pagination import ListResponse, Pagination
+from app.schemas.pagination import Pagination
 
 SessionSource = Literal["manual", "scheduled"]
 AgentSource = Literal["personal", "shared"]
@@ -20,6 +20,10 @@ class SessionQueryRequest(BaseModel):
     source: Optional[SessionSource] = Field(
         None,
         description="Filter by source (manual/scheduled)",
+    )
+    agent_id: Optional[UUID] = Field(
+        None,
+        description="Filter by agent id.",
     )
 
 
@@ -46,32 +50,71 @@ class SessionListResponse(BaseModel):
 
 
 class SessionMessagesQueryRequest(BaseModel):
-    page: int = Field(1, ge=1, description="Page number (1-indexed)")
-    size: int = Field(100, ge=1, le=200, description="Page size")
+    before: Optional[str] = Field(
+        None,
+        description="Opaque cursor to fetch older messages.",
+    )
+    limit: int = Field(8, ge=1, le=50, description="Page size for timeline window")
+
+
+class SessionMessageBlockItem(BaseModel):
+    id: str
+    type: str
+    content: Optional[str] = None
+    is_finished: bool = Field(alias="isFinished")
+
+    model_config = {"populate_by_name": True}
 
 
 class SessionMessageItem(BaseModel):
     id: str
     role: Literal["user", "agent", "system"]
-    content: str
     created_at: datetime
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class SessionMessagesMeta(BaseModel):
-    conversation_id: str = Field(alias="conversationId")
-    source: SessionSource
-    agent_id: Optional[str] = None
-    agent_source: Optional[AgentSource] = None
-    upstream_session_id: Optional[str] = None
+    status: str
+    blocks: list[SessionMessageBlockItem] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 
 
-class SessionMessagesListResponse(
-    ListResponse[SessionMessageItem, SessionMessagesMeta]
-):
-    pass
+class SessionMessagesPageInfo(BaseModel):
+    has_more_before: bool = Field(alias="hasMoreBefore")
+    next_before: Optional[str] = Field(alias="nextBefore", default=None)
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessagesQueryResponse(BaseModel):
+    items: list[SessionMessageItem]
+    page_info: SessionMessagesPageInfo = Field(alias="pageInfo")
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessageBlocksQueryRequest(BaseModel):
+    block_ids: list[UUID] = Field(
+        alias="blockIds",
+        min_length=1,
+        max_length=50,
+        description="Block ids to fetch content details for.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessageBlockDetailItem(BaseModel):
+    id: str
+    message_id: str = Field(alias="messageId")
+    type: str
+    content: Optional[str] = None
+    is_finished: bool = Field(alias="isFinished")
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessageBlocksQueryResponse(BaseModel):
+    items: list[SessionMessageBlockDetailItem]
+
+    model_config = {"populate_by_name": True}
 
 
 class SessionContinueResponse(BaseModel):
@@ -85,10 +128,14 @@ class SessionContinueResponse(BaseModel):
 __all__ = [
     "SessionContinueResponse",
     "SessionListResponse",
+    "SessionMessageBlockItem",
+    "SessionMessageBlockDetailItem",
+    "SessionMessageBlocksQueryRequest",
+    "SessionMessageBlocksQueryResponse",
     "SessionMessageItem",
-    "SessionMessagesListResponse",
-    "SessionMessagesMeta",
+    "SessionMessagesPageInfo",
     "SessionMessagesQueryRequest",
+    "SessionMessagesQueryResponse",
     "SessionQueryRequest",
     "SessionSource",
     "SessionViewItem",

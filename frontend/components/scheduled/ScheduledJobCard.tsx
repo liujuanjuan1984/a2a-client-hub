@@ -1,9 +1,9 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, Switch, Text, View } from "react-native";
+import { Switch, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
+import { ExpandToggle } from "@/components/ui/ExpandToggle";
 import {
   type IntervalTimePoint,
   type ScheduledJob,
@@ -16,42 +16,42 @@ import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 
 const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
-  running: "text-blue-300",
-  success: "text-emerald-300",
-  failed: "text-red-300",
+  running: "text-blue-400",
+  success: "text-emerald-400",
+  failed: "text-red-400",
 };
 
 const getCardTone = (job: ScheduledJob) => {
   if (!job.enabled) {
     return {
-      container: "border-slate-800 bg-slate-900/10 grayscale",
+      container: "opacity-80",
       title: "text-slate-500",
-      text: "text-slate-500",
+      text: "text-slate-600",
       prompt: "text-slate-600",
-      statusText: "Disabled",
-      iconColor: "#64748b",
-      switchTrack: { false: "#334155", true: "#475569" },
+      statusText: "DISABLED",
+      iconColor: "#475569",
+      switchTrack: { false: "#1E293B", true: "#334155" },
     };
   }
   if (job.last_run_status === "running") {
     return {
-      container: "border-blue-500/50 bg-blue-900/20",
-      title: "text-blue-100",
-      text: "text-blue-200/80",
-      prompt: "text-blue-200/90",
-      statusText: "Running",
-      iconColor: "#93c5fd",
-      switchTrack: { false: "#334155", true: "#3b82f6" },
+      container: "border-2 border-primary/40",
+      title: "text-primary",
+      text: "text-slate-300",
+      prompt: "text-white",
+      statusText: "RUNNING",
+      iconColor: "#FACC15",
+      switchTrack: { false: "#000000", true: "#FACC15" },
     };
   }
   return {
-    container: "border-slate-800 bg-slate-900/30",
+    container: "border border-white/5",
     title: "text-white",
-    text: "text-slate-400",
+    text: "text-slate-500",
     prompt: "text-slate-300",
-    statusText: "Enabled",
-    iconColor: "#94a3b8",
-    switchTrack: { false: "#334155", true: "#5c6afb" },
+    statusText: "ENABLED",
+    iconColor: "#FFFFFF",
+    switchTrack: { false: "#0F172A", true: "#FACC15" },
   };
 };
 
@@ -66,6 +66,7 @@ type ScheduledJobCardProps = {
   executionsLoadingMore?: boolean;
   onToggleEnabled: () => void | Promise<void>;
   onEdit: () => void;
+  onDelete?: () => void | Promise<void>;
   onMarkFailed?: () => void | Promise<void>;
   onToggleExecutions: () => void;
   onLoadMoreExecutions?: () => void;
@@ -82,14 +83,13 @@ export function ScheduledJobCard({
   executionsLoadingMore,
   onToggleEnabled,
   onEdit,
+  onDelete,
   onMarkFailed,
   onToggleExecutions,
   onLoadMoreExecutions,
 }: ScheduledJobCardProps) {
   const router = useRouter();
   const tone = getCardTone(job);
-  const historyLabel = executionsOpen ? "Hide" : "History";
-  const historyIcon = executionsOpen ? "time" : "time-outline";
   const intervalTimePoint =
     job.cycle_type === "interval" &&
     typeof (job.time_point as IntervalTimePoint)?.minutes === "number"
@@ -97,6 +97,7 @@ export function ScheduledJobCard({
       : null;
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [markingFailed, setMarkingFailed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const canMarkFailed = job.last_run_status === "running";
 
@@ -134,112 +135,121 @@ export function ScheduledJobCard({
     }
   };
 
+  const handleDelete = async () => {
+    if (!onDelete || deleting) return;
+    const confirmed = await confirmAction({
+      title: "Delete scheduled job?",
+      message: "This action cannot be undone.",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <View
-      className={`mb-4 overflow-hidden rounded-2xl border ${tone.container}`}
+      className={`mb-4 rounded-2xl overflow-hidden bg-surface shadow-sm ${tone.container}`}
     >
-      <View className="p-4">
-        <View className="flex-row items-start justify-between">
-          <View className="flex-1 pr-3">
-            <Text className={`text-base font-semibold ${tone.title}`}>
-              {job.name}
-            </Text>
-            <Text className={`mt-1 text-xs ${tone.text}`}>
-              Agent: {agentName}
-            </Text>
-            <Text className={`mt-1 text-xs ${tone.text}`}>
-              {job.cycle_type}
-            </Text>
-            {intervalTimePoint ? (
-              <Text className={`mt-1 text-xs ${tone.text}`}>
-                Interval: every {intervalTimePoint.minutes} min, start{" "}
-                {formatLocalDateTime(intervalTimePoint.start_at, timeZone)}
-              </Text>
-            ) : null}
-            <Text className={`mt-1 text-xs ${tone.text}`}>
-              Next: {formatLocalDateTime(job.next_run_at, timeZone)}
-            </Text>
-            <Text className={`mt-1 text-xs ${tone.text}`}>
-              Last: {formatLocalDateTime(job.last_run_at, timeZone)} (
-              {job.last_run_status ?? "-"})
-            </Text>
-          </View>
-          <View className="flex-row items-center gap-2">
-            <Text className={`text-xs font-semibold ${tone.title}`}>
+      <View className="p-5">
+        <View className="flex-row items-center justify-between mb-2">
+          <Text className="text-[11px] font-semibold uppercase tracking-widest text-neo-green">
+            {agentName}
+          </Text>
+          <View className="bg-black/20 rounded px-1.5 py-0.5">
+            <Text className={`text-[9px] font-bold ${tone.text}`}>
               {tone.statusText}
             </Text>
-            <Switch
-              value={job.enabled}
-              disabled={togglingEnabled}
-              trackColor={tone.switchTrack}
-              thumbColor={job.enabled ? "#ffffff" : "#e2e8f0"}
-              ios_backgroundColor="#334155"
-              onValueChange={async () => {
-                if (togglingEnabled) return;
-                setTogglingEnabled(true);
-                try {
-                  blurActiveElement();
-                  await onToggleEnabled();
-                } finally {
-                  setTogglingEnabled(false);
-                }
-              }}
-              accessibilityLabel={`Job enabled: ${tone.statusText}`}
-            />
           </View>
         </View>
 
-        <Text
-          className={`mt-3 text-xs ${tone.prompt}`}
-          numberOfLines={promptExpanded ? undefined : 2}
-        >
-          {job.prompt}
-        </Text>
-        <View className="mt-1 items-end">
-          <Pressable
-            className="rounded px-1 py-1 active:bg-slate-800/30"
-            onPress={() => setPromptExpanded((value) => !value)}
-            accessibilityRole="button"
-            accessibilityLabel="Toggle prompt expansion"
-          >
-            <Text className={`text-xs font-medium ${tone.text}`}>
-              {promptExpanded ? "Show less" : "Read more"}
+        <View className="flex-row items-start justify-between">
+          <View className="flex-1 pr-3">
+            <Text className={`text-sm font-bold ${tone.title}`}>
+              {job.name}
             </Text>
-          </Pressable>
+            <Text className={`mt-1.5 text-[11px] font-normal ${tone.text}`}>
+              {job.cycle_type} • Every {intervalTimePoint?.minutes ?? "-"} min
+            </Text>
+            <Text className={`mt-0.5 text-[11px] font-normal ${tone.text}`}>
+              Next:{" "}
+              {job.next_run_at_local ??
+                formatLocalDateTime(job.next_run_at_utc, timeZone)}
+            </Text>
+          </View>
+          <Switch
+            value={job.enabled}
+            disabled={togglingEnabled}
+            trackColor={tone.switchTrack}
+            thumbColor="#FFFFFF"
+            ios_backgroundColor="#374151"
+            onValueChange={async () => {
+              if (togglingEnabled) return;
+              setTogglingEnabled(true);
+              try {
+                blurActiveElement();
+                await onToggleEnabled();
+              } finally {
+                setTogglingEnabled(false);
+              }
+            }}
+            accessibilityLabel={`Job enabled: ${tone.statusText}`}
+          />
         </View>
+
+        {promptExpanded && (
+          <View className="mt-4 pt-4 border-t border-white/5">
+            <Text className={`text-sm leading-6 ${tone.prompt}`}>
+              {job.prompt}
+            </Text>
+          </View>
+        )}
       </View>
 
-      <View className="flex-row items-center justify-start gap-3 border-t border-slate-800/50 bg-slate-900/50 px-4 py-3">
-        <Pressable
-          className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
-          onPress={onEdit}
-          accessibilityRole="button"
-          accessibilityLabel="Edit"
-          accessibilityHint="Edit this scheduled job"
-        >
-          <Ionicons name="create-outline" size={14} color={tone.iconColor} />
-          <Text className={`text-xs font-medium ${tone.text}`}>Edit</Text>
-        </Pressable>
-
-        <Pressable
-          className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
-          onPress={onToggleExecutions}
-          accessibilityRole="button"
-          accessibilityLabel={historyLabel}
-          accessibilityHint={`${historyLabel} execution history`}
-        >
-          <Ionicons name={historyIcon} size={14} color={tone.iconColor} />
-          <Text className={`text-xs font-medium ${tone.text}`}>
-            {historyLabel}
-          </Text>
-        </Pressable>
+      <View className="flex-row items-center justify-between gap-3 bg-black/30 px-5 py-3">
+        <View className="flex-row items-center gap-2">
+          <Button
+            label="Edit"
+            size="xs"
+            variant="secondary"
+            iconLeft="create-outline"
+            onPress={onEdit}
+          />
+          <Button
+            label="Delete"
+            size="xs"
+            variant="secondary"
+            iconLeft="trash-outline"
+            loading={deleting}
+            disabled={!onDelete}
+            onPress={handleDelete}
+          />
+          <ExpandToggle
+            expanded={promptExpanded}
+            type="Prompt"
+            onToggle={() => setPromptExpanded(!promptExpanded)}
+          />
+          <Button
+            label={executionsOpen ? "Hide" : "History"}
+            size="xs"
+            variant={executionsOpen ? "primary" : "secondary"}
+            iconLeft={executionsOpen ? "time" : "time-outline"}
+            onPress={onToggleExecutions}
+          />
+        </View>
 
         {canMarkFailed ? (
           <Button
-            className="ml-auto"
-            label="Stop Running"
+            label="Stop"
             size="xs"
             variant="danger"
+            className="bg-red-500/40"
             loading={markingFailed}
             disabled={!onMarkFailed}
             onPress={handleMarkFailed}
@@ -248,21 +258,25 @@ export function ScheduledJobCard({
       </View>
 
       {executionsOpen ? (
-        <View className="px-4 pb-4 pt-3">
-          <View className="rounded-xl border border-slate-700 bg-slate-900/80 p-3">
+        <View className="bg-black/10 px-5 pb-5 pt-1">
+          <View className="rounded-xl bg-black/20 p-4">
             {executionsLoading ? (
-              <Text className="text-xs text-muted">Loading history...</Text>
+              <Text className="text-[11px] font-medium text-slate-500">
+                Loading history...
+              </Text>
             ) : executions.length === 0 ? (
-              <Text className="text-xs text-muted">No executions yet.</Text>
+              <Text className="text-[11px] font-medium text-slate-500">
+                No executions yet.
+              </Text>
             ) : (
               <>
                 {executions.map((execution) => (
                   <View
                     key={execution.id}
-                    className="mb-2 rounded-lg border border-slate-700 p-2"
+                    className="mb-2 rounded-xl bg-black/20 p-3"
                   >
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-xs text-slate-300">
+                      <Text className="text-[10px] font-medium text-slate-500">
                         {formatLocalDateTime(
                           execution.finished_at ??
                             execution.started_at ??
@@ -270,23 +284,25 @@ export function ScheduledJobCard({
                           timeZone,
                         )}
                       </Text>
-                      <Text
-                        className={`text-xs font-semibold ${executionStatusColor[execution.status]}`}
-                      >
-                        {execution.status}
-                      </Text>
+                      <View className="rounded px-1 py-0.5 bg-black/20">
+                        <Text
+                          className={`text-[9px] font-bold ${executionStatusColor[execution.status]}`}
+                        >
+                          {execution.status.toUpperCase()}
+                        </Text>
+                      </View>
                     </View>
                     {execution.error_message ? (
-                      <Text className="mt-1 text-xs text-red-300">
+                      <Text className="mt-2 text-[11px] font-normal text-red-400/80">
                         {execution.error_message}
                       </Text>
                     ) : null}
                     {execution.conversation_id ? (
                       <Button
-                        className="mt-2 self-start"
+                        className="mt-3 self-start"
                         label="Open Session"
                         size="xs"
-                        variant="outline"
+                        variant="secondary"
                         onPress={() => openExecutionSession(execution)}
                       />
                     ) : null}
@@ -296,9 +312,7 @@ export function ScheduledJobCard({
                 {executionsHasMore ? (
                   <Button
                     className="mt-2 self-start"
-                    label={
-                      executionsLoadingMore ? "Loading..." : "Load more history"
-                    }
+                    label={executionsLoadingMore ? "Loading..." : "More"}
                     size="xs"
                     variant="secondary"
                     loading={executionsLoadingMore}

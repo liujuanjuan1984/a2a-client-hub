@@ -54,6 +54,9 @@ describe("datetime helpers", () => {
     expect(formatLocalDateTimeYmdHm("2026-02-12T07:08:30Z")).toBe(
       "2026-02-12 07:08",
     );
+    expect(formatLocalDateTime("2026-02-23T08:15", "Asia/Shanghai")).toBe(
+      "2026-02-23 08:15",
+    );
   });
 
   it("returns placeholders and passthrough values for empty or invalid input", () => {
@@ -76,6 +79,9 @@ describe("datetime helpers", () => {
         "2026-02-23T00:15:00+00:00",
         "Asia/Shanghai",
       ),
+    ).toBe("2026-02-23T08:15");
+    expect(
+      formatDateTimeLocalInputValue("2026-02-23T08:15", "Asia/Shanghai"),
     ).toBe("2026-02-23T08:15");
     expect(formatDateTimeLocalInputValue("bad-date")).toBe("");
   });

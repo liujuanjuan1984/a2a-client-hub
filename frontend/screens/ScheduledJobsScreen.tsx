@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
@@ -12,7 +13,7 @@ import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useScheduledJobExecutionsQuery } from "@/hooks/useScheduledJobExecutionsQuery";
 import { useScheduledJobs } from "@/hooks/useScheduledJobs";
 import { useScheduledJobsQuery } from "@/hooks/useScheduledJobsQuery";
-import { DEFAULT_TIME_ZONE } from "@/lib/datetime";
+import { resolveUserTimeZone } from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { buildScheduledJobEditHref, scheduledJobNewHref } from "@/lib/routes";
 import { toast } from "@/lib/toast";
@@ -21,9 +22,9 @@ import { useSessionStore } from "@/store/session";
 export function ScheduledJobsScreen() {
   const router = useRouter();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
-  const { markJobFailed, toggleJobStatus } = useScheduledJobs();
+  const { markJobFailed, toggleJobStatus, removeJob } = useScheduledJobs();
   const userTimeZone = useSessionStore((state) => state.user?.timezone);
-  const scheduleTimeZone = userTimeZone?.trim() || DEFAULT_TIME_ZONE;
+  const scheduleTimeZone = userTimeZone?.trim() || resolveUserTimeZone();
 
   const [expandedExecutionsTaskId, setExpandedExecutionsTaskId] = useState<
     string | null
@@ -53,11 +54,11 @@ export function ScheduledJobsScreen() {
         const br = b.last_run_status === "running";
         if (ar !== br) return ar ? -1 : 1;
 
-        const at = a.next_run_at
-          ? new Date(a.next_run_at).getTime()
+        const at = a.next_run_at_utc
+          ? new Date(a.next_run_at_utc).getTime()
           : Number.POSITIVE_INFINITY;
-        const bt = b.next_run_at
-          ? new Date(b.next_run_at).getTime()
+        const bt = b.next_run_at_utc
+          ? new Date(b.next_run_at_utc).getTime()
           : Number.POSITIVE_INFINITY;
         if (at !== bt) return at - bt;
       }
@@ -105,24 +106,32 @@ export function ScheduledJobsScreen() {
         style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#FFFFFF"
+            colors={["#FFFFFF"]}
+          />
         }
       >
         {loading ? (
           <View className="mt-8 items-center">
-            <Text className="text-sm text-muted">Loading jobs...</Text>
+            <Text className="text-sm text-gray-400">Loading jobs...</Text>
           </View>
         ) : sortedJobs.length === 0 ? (
-          <View className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
-            <Text className="text-base font-semibold text-white">
+          <View className="mt-8 rounded-2xl bg-surface p-8 items-center shadow-sm">
+            <View className="h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 mb-4">
+              <Ionicons name="time-outline" size={32} color="#FACC15" />
+            </View>
+            <Text className="text-base font-bold text-white">
               No scheduled jobs
             </Text>
-            <Text className="mt-2 text-sm text-muted">
+            <Text className="mt-2 text-center text-[11px] font-medium text-slate-400">
               Create your first recurring task to automate prompts.
             </Text>
             <Button
-              className="mt-4 self-start"
-              label="Create job"
+              className="mt-6"
+              label="Create a job"
               size="sm"
               iconRight="chevron-forward"
               onPress={() => {
@@ -138,7 +147,7 @@ export function ScheduledJobsScreen() {
               <ScheduledJobCard
                 key={job.id}
                 job={job}
-                timeZone={scheduleTimeZone}
+                timeZone={job.schedule_timezone || scheduleTimeZone}
                 agentName={
                   agentOptions.find((agent) => agent.id === job.agent_id)
                     ?.name ?? job.agent_id
@@ -166,6 +175,19 @@ export function ScheduledJobsScreen() {
                 onEdit={() => {
                   blurActiveElement();
                   router.push(buildScheduledJobEditHref(job.id));
+                }}
+                onDelete={async () => {
+                  try {
+                    await removeJob(job);
+                    toast.success(
+                      "Job deleted",
+                      "The scheduled task has been removed.",
+                    );
+                  } catch (error) {
+                    const message =
+                      error instanceof Error ? error.message : "Delete failed.";
+                    toast.error("Delete failed", message);
+                  }
                 }}
                 onMarkFailed={async () => {
                   try {

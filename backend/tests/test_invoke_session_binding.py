@@ -40,3 +40,17 @@ def test_status_code_and_http_error_mapping_normalizes_inputs() -> None:
         ws_error_code_for_invoke_session_error(" SESSION-NOT-FOUND ")
         == "session_not_found"
     )
+    assert status_code_for_invoke_session_error("idempotency_conflict") == 409
+    assert (
+        ws_error_code_for_invoke_session_error("idempotency_conflict")
+        == "idempotency_conflict"
+    )
+    assert status_code_for_invoke_session_error("message_id_conflict") == 409
+    assert (
+        ws_error_code_for_invoke_session_error("message_id_conflict")
+        == "message_id_conflict"
+    )
+    assert (
+        ws_error_code_for_invoke_session_error("invalid_message_id")
+        == "invalid_message_id"
+    )

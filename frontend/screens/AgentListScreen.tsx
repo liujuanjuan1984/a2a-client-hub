@@ -1,12 +1,5 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import {
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-  Pressable,
-} from "react-native";
+import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
@@ -93,20 +86,20 @@ export function AgentListScreen() {
           <RefreshControl
             refreshing={isFetching}
             onRefresh={onRefresh}
-            tintColor="#5c6afb"
-            colors={["#5c6afb"]}
+            tintColor="#FFFFFF"
+            colors={["#FFFFFF"]}
           />
         }
       >
         {agents.length === 0 ? (
-          <View className="rounded-3xl border border-slate-800 bg-slate-900/50 p-8 items-center">
-            <View className="h-16 w-16 items-center justify-center rounded-full bg-slate-800 mb-4">
-              <Text className="text-xs font-bold text-slate-500">A2A</Text>
+          <View className="rounded-2xl bg-surface p-8 items-center">
+            <View className="h-16 w-16 items-center justify-center rounded-2xl bg-primary mb-4">
+              <Text className="text-[11px] font-bold text-black">A2A</Text>
             </View>
-            <Text className="text-lg font-semibold text-white">
+            <Text className="text-base font-bold text-white">
               No agents yet
             </Text>
-            <Text className="mt-2 text-center text-sm text-muted">
+            <Text className="mt-2 text-center text-sm text-slate-400">
               Add your first agent to start chatting with A2A services.
             </Text>
             <Button
@@ -122,64 +115,50 @@ export function AgentListScreen() {
           agents.map((agent) => (
             <View
               key={agent.id}
-              className="mb-4 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/30"
+              className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
             >
               <View className="p-5">
-                <View className="flex-row items-start justify-between">
-                  <View className="flex-1 pr-4">
-                    <Text
-                      className="text-xl font-bold text-white"
-                      numberOfLines={1}
-                    >
-                      {agent.name}
-                    </Text>
-                    {agent.source === "shared" ? (
-                      <View className="mt-2 self-start rounded-full bg-slate-800/60 px-2.5 py-1">
-                        <Text className="text-[11px] font-semibold text-slate-200">
-                          Shared
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
+                <View className="flex-row items-center justify-between">
+                  <Text
+                    className="text-base font-bold text-white flex-1 pr-4"
+                    numberOfLines={1}
+                  >
+                    {agent.name}
+                  </Text>
+                  <Text
+                    className={`text-[9px] font-bold uppercase tracking-widest ${
+                      agent.source === "shared"
+                        ? "text-neo-green"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {agent.source === "shared" ? "SHARED" : "PERSONAL"}
+                  </Text>
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-between gap-3 border-t border-slate-800/50 bg-slate-900/50 px-5 py-3">
+              <View className="flex-row items-center justify-between gap-3 bg-black/30 px-5 py-3">
                 <View className="flex-row items-center gap-2">
-                  <Pressable
-                    className="flex-row items-center gap-1 rounded-lg px-3 py-2 active:bg-slate-800/40"
+                  <Button
+                    label={agent.source === "personal" ? "Edit" : "Details"}
+                    size="sm"
+                    variant="secondary"
+                    iconLeft={
+                      agent.source === "personal"
+                        ? "create-outline"
+                        : "information-outline"
+                    }
                     onPress={() => {
                       blurActiveElement();
                       router.push(`/agents/${agent.id}`);
                     }}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      agent.source === "personal"
-                        ? "Edit agent"
-                        : "Agent details"
-                    }
-                    accessibilityHint={`${
-                      agent.source === "personal" ? "Edit" : "View"
-                    } ${agent.name}`}
-                  >
-                    <Ionicons
-                      name={
-                        agent.source === "personal"
-                          ? "create-outline"
-                          : "information-outline"
-                      }
-                      size={14}
-                      color="#94a3b8"
-                    />
-                    <Text className="text-xs font-medium text-slate-400">
-                      {agent.source === "personal" ? "Edit" : "Details"}
-                    </Text>
-                  </Pressable>
+                  />
                 </View>
 
                 <Button
                   label="Open Chat"
                   size="sm"
+                  variant="primary"
                   iconRight="chevron-forward"
                   onPress={() => handleChat(agent.id)}
                   accessibilityRole="button"

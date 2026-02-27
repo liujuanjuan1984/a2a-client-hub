@@ -25,10 +25,14 @@ import {
 } from "@/lib/api/a2aExtensions";
 import { type ChatMessage } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
-import { continueSession } from "@/lib/api/sessions";
-import { isSameMessageList } from "@/lib/chat-utils";
+import { continueSession, querySessionMessageBlocks } from "@/lib/api/sessions";
+import {
+  getConversationMessages,
+  updateConversationMessageWithUpdater,
+} from "@/lib/chatHistoryCache";
 import {
   getAnchoredOffsetAfterContentResize,
+  shouldShowScrollToBottom,
   shouldStickToBottom,
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
@@ -37,8 +41,6 @@ import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
-import { useMessageStore } from "@/store/messages";
-import { useShortcutStore } from "@/store/shortcuts";
 
 type WebTextInputKeyPressEvent =
   NativeSyntheticEvent<TextInputKeyPressEventData> & {
@@ -74,19 +76,17 @@ export function useChatScreenController({
   );
   const ensureSession = useChatStore((state) => state.ensureSession);
   const sendMessage = useChatStore((state) => state.sendMessage);
+  const retryMessage = useChatStore((state) => state.retryMessage);
+  const resumeMessage = useChatStore((state) => state.resumeMessage);
   const clearPendingInterrupt = useChatStore(
     (state) => state.clearPendingInterrupt,
   );
   const session = useChatStore((state) =>
     conversationId ? state.sessions[conversationId] : undefined,
   );
-  const setMessages = useMessageStore((state) => state.setMessages);
-  const messages = useMessageStore((state) =>
-    conversationId ? (state.messages[conversationId] ?? []) : [],
-  );
-  const { syncShortcuts } = useShortcutStore();
 
   const [input, setInput] = useState("");
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const suppressAutoScrollRef = useRef(false);
   const shouldStickToBottomRef = useRef(true);
   const forceScrollToBottomRef = useRef(false);
@@ -111,6 +111,7 @@ export function useChatScreenController({
     contentHeight: number;
   } | null>(null);
   const loadingEarlierRef = useRef(false);
+  const blockDetailInFlightRef = useRef<Set<string>>(new Set());
   const inputRef = useRef<TextInput>(null);
   const isInitialLoadRef = useRef(true);
   const minInputHeight = 44;
@@ -123,6 +124,7 @@ export function useChatScreenController({
     enabled: Boolean(conversationId),
     paused: historyPaused,
   });
+  const messages = sessionHistoryQuery.messages;
 
   useRefreshOnFocus(sessionHistoryQuery.loadFirstPage);
 
@@ -180,6 +182,20 @@ export function useChatScreenController({
     listRef.current?.scrollToEnd({ animated });
   }, []);
 
+  const scheduleScrollSettleTimer = useCallback(() => {
+    try {
+      scrollSettleTimerRef.current = setTimeout(() => {
+        scrollToBottom(false);
+        forceScrollToBottomRef.current = false;
+      }, SEND_SCROLL_SETTLE_MS);
+    } catch {
+      // Test runtimes may not provide NativeTiming-backed timers.
+      scrollSettleTimerRef.current = null;
+      scrollToBottom(false);
+      forceScrollToBottomRef.current = false;
+    }
+  }, [scrollToBottom]);
+
   const scheduleStickToBottom = useCallback(
     (animated: boolean) => {
       if (!shouldStickToBottomRef.current && !forceScrollToBottomRef.current) {
@@ -189,12 +205,9 @@ export function useChatScreenController({
         scrollToBottom(animated);
       });
       clearScrollSettleTimer();
-      scrollSettleTimerRef.current = setTimeout(() => {
-        scrollToBottom(false);
-        forceScrollToBottomRef.current = false;
-      }, SEND_SCROLL_SETTLE_MS);
+      scheduleScrollSettleTimer();
     },
-    [clearScrollSettleTimer, scrollToBottom],
+    [clearScrollSettleTimer, scheduleScrollSettleTimer, scrollToBottom],
   );
 
   useEffect(() => {
@@ -204,17 +217,10 @@ export function useChatScreenController({
   }, [activeAgentId, conversationId, ensureSession]);
 
   useEffect(() => {
-    syncShortcuts().catch(() => {
-      // Keep shortcut sync failure non-blocking for UX.
-    });
-  }, [syncShortcuts]);
-
-  useEffect(() => {
     if (!conversationId || !activeAgentId) return;
     const boundAgentId = activeAgentId;
     const normalizedConversationId = conversationId;
-    const hasHistory =
-      messages.length > 0 || sessionHistoryQuery.messages.length > 0;
+    const hasHistory = messages.length > 0;
     if (sessionSource === "manual" && !hasHistory) {
       return;
     }
@@ -273,48 +279,10 @@ export function useChatScreenController({
     activeAgentId,
     ensureSession,
     messages.length,
-    sessionHistoryQuery.messages.length,
     conversationId,
     router,
     sessionSource,
   ]);
-
-  const mergeHistoryMessages = useCallback(
-    (incoming: ChatMessage[]) => {
-      if (!conversationId) return;
-      const current = useMessageStore.getState().messages[conversationId] ?? [];
-      const merged = new Map<string, ChatMessage>();
-      current.forEach((message) => {
-        merged.set(message.id, message);
-      });
-      incoming.forEach((message) => {
-        const existing = merged.get(message.id);
-        const isActivelyStreaming = session?.streamState === "streaming";
-        if (
-          existing &&
-          existing.status === "streaming" &&
-          isActivelyStreaming
-        ) {
-          return;
-        }
-        merged.set(message.id, message);
-      });
-      const nextMessages = Array.from(merged.values()).sort((a, b) =>
-        a.createdAt.localeCompare(b.createdAt),
-      );
-      if (isSameMessageList(current, nextMessages)) {
-        return;
-      }
-      setMessages(conversationId, nextMessages);
-    },
-    [conversationId, setMessages, session?.streamState],
-  );
-
-  useEffect(() => {
-    if (!conversationId) return;
-    if (sessionHistoryQuery.messages.length === 0) return;
-    mergeHistoryMessages(sessionHistoryQuery.messages);
-  }, [mergeHistoryMessages, conversationId, sessionHistoryQuery.messages]);
 
   useEffect(() => {
     if (!pendingInterrupt || pendingInterrupt.type !== "question") {
@@ -443,6 +411,11 @@ export function useChatScreenController({
         contentHeight,
       });
       scrollOffsetRef.current = offsetY;
+
+      setShowScrollToBottom(
+        shouldShowScrollToBottom({ offsetY, viewportHeight, contentHeight }),
+      );
+
       if (
         offsetY <= HISTORY_AUTOLOAD_THRESHOLD &&
         typeof historyNextPage === "number" &&
@@ -716,35 +689,125 @@ export function useChatScreenController({
       session?.streamState === "streaming"
     )
       return;
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.role === "user") {
-      sendMessage(
-        conversationId,
-        activeAgentId,
-        lastMessage.content,
-        agent?.source || "personal",
-      );
-    } else {
-      const lastUserMessage = [...messages]
-        .reverse()
-        .find((m) => m.role === "user");
-      if (lastUserMessage) {
-        sendMessage(
-          conversationId,
-          activeAgentId,
-          lastUserMessage.content,
-          agent?.source || "personal",
-        );
+    const runRetry = async () => {
+      try {
+        if (session?.streamState === "recoverable") {
+          if (typeof resumeMessage === "function") {
+            await resumeMessage(conversationId);
+          }
+          return;
+        }
+        if (typeof retryMessage === "function") {
+          await retryMessage(
+            conversationId,
+            activeAgentId,
+            agent?.source || "personal",
+          );
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to retry message.";
+        toast.error("Retry failed", message);
       }
-    }
+    };
+    runRetry();
   }, [
     activeAgentId,
     agent?.source,
     conversationId,
-    messages,
-    sendMessage,
+    retryMessage,
+    resumeMessage,
     session?.streamState,
   ]);
+
+  const handleLoadBlockContent = useCallback(
+    async (messageId: string, blockId: string): Promise<boolean> => {
+      if (!conversationId) {
+        return false;
+      }
+      const resolvedMessageId = messageId.trim();
+      const resolvedBlockId = blockId.trim();
+      if (!resolvedMessageId || !resolvedBlockId) {
+        return false;
+      }
+
+      const latestMessage = getConversationMessages(conversationId).find(
+        (item) => item.id === resolvedMessageId,
+      );
+      const latestBlock = latestMessage?.blocks?.find(
+        (item) => item.id === resolvedBlockId,
+      );
+      if (latestBlock && latestBlock.content.length > 0) {
+        return true;
+      }
+
+      const inFlightKey = `${conversationId}:${resolvedBlockId}`;
+      if (blockDetailInFlightRef.current.has(inFlightKey)) {
+        return false;
+      }
+      blockDetailInFlightRef.current.add(inFlightKey);
+
+      try {
+        const response = await querySessionMessageBlocks(conversationId, {
+          blockIds: [resolvedBlockId],
+        });
+        const blockDetail = response.items.find(
+          (item) => item.id.trim() === resolvedBlockId,
+        );
+        if (!blockDetail) {
+          toast.error("Load block failed", "Block content unavailable.");
+          return false;
+        }
+        const detailMessageId =
+          typeof blockDetail.messageId === "string"
+            ? blockDetail.messageId.trim()
+            : "";
+        if (!detailMessageId || detailMessageId !== resolvedMessageId) {
+          toast.error("Load block failed", "Block ownership mismatch.");
+          return false;
+        }
+
+        updateConversationMessageWithUpdater(
+          conversationId,
+          resolvedMessageId,
+          (message) => {
+            const nextBlocks = (message.blocks ?? []).map((item) =>
+              item.id === resolvedBlockId
+                ? {
+                    ...item,
+                    type:
+                      typeof blockDetail.type === "string" &&
+                      blockDetail.type.trim().length > 0
+                        ? blockDetail.type
+                        : item.type,
+                    content:
+                      typeof blockDetail.content === "string"
+                        ? blockDetail.content
+                        : "",
+                    isFinished:
+                      typeof blockDetail.isFinished === "boolean"
+                        ? blockDetail.isFinished
+                        : item.isFinished,
+                  }
+                : item,
+            );
+            return {
+              blocks: nextBlocks,
+            };
+          },
+        );
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Load block failed.";
+        toast.error("Load block failed", message);
+        return false;
+      } finally {
+        blockDetailInFlightRef.current.delete(inFlightKey);
+      }
+    },
+    [conversationId],
+  );
 
   const toggleDetails = useCallback(() => {
     setShowDetails((current) => !current);
@@ -780,6 +843,8 @@ export function useChatScreenController({
     questionAnswers,
     showDetails,
     toggleDetails,
+    showScrollToBottom,
+    scrollToBottom,
     showShortcutManager,
     showSessionPicker,
     openShortcutManager,
@@ -803,6 +868,7 @@ export function useChatScreenController({
     handleListContentSizeChange,
     handleListScroll,
     captureContentSizeAnchor,
+    handleLoadBlockContent,
     handleRetry,
     handlePermissionReply,
     handleQuestionAnswerChange,

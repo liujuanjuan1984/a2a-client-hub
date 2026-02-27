@@ -54,6 +54,7 @@ async def test_schedule_routes_crud_and_toggle(
                 "cycle_type": "daily",
                 "time_point": {"time": "09:15"},
                 "enabled": True,
+                "schedule_timezone": user.timezone or "UTC",
             },
         )
         assert create_resp.status_code == 201
@@ -139,9 +140,79 @@ async def test_schedule_create_rejects_unowned_agent(
                 "cycle_type": "daily",
                 "time_point": {"time": "08:00"},
                 "enabled": True,
+                "schedule_timezone": current_user.timezone or "UTC",
             },
         )
         assert resp.status_code == 400
+
+
+async def test_schedule_create_rejects_mismatched_schedule_timezone(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(
+        async_db_session,
+        skip_onboarding_defaults=True,
+        timezone="Asia/Shanghai",
+    )
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="tz-mismatch")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Timezone mismatch",
+                "agent_id": str(agent.id),
+                "prompt": "hello",
+                "cycle_type": "daily",
+                "time_point": {"time": "08:00"},
+                "enabled": False,
+                "schedule_timezone": "UTC",
+            },
+        )
+        assert resp.status_code == 400
+        assert (
+            resp.json()["detail"]
+            == "schedule_timezone must match current user's timezone"
+        )
+
+
+async def test_schedule_create_rejects_invalid_schedule_timezone(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(
+        async_db_session,
+        skip_onboarding_defaults=True,
+        timezone="Asia/Shanghai",
+    )
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="tz-invalid")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Timezone invalid",
+                "agent_id": str(agent.id),
+                "prompt": "hello",
+                "cycle_type": "daily",
+                "time_point": {"time": "08:00"},
+                "enabled": False,
+                "schedule_timezone": "Invalid/Timezone",
+            },
+        )
+        assert resp.status_code == 400
+        assert (
+            resp.json()["detail"] == "schedule_timezone must be a valid IANA timezone"
+        )
 
 
 async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
@@ -155,6 +226,7 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
         async_db_session,
         user_id=user.id,
         is_superuser=False,
+        timezone_str=user.timezone or "UTC",
         name="Running task",
         agent_id=agent.id,
         prompt="ping",
@@ -235,6 +307,7 @@ async def test_schedule_mark_failed_rejects_non_running_task(
         async_db_session,
         user_id=user.id,
         is_superuser=False,
+        timezone_str=user.timezone or "UTC",
         name="Idle task",
         agent_id=agent.id,
         prompt="ping",
@@ -272,6 +345,7 @@ async def test_schedule_mark_failed_backfills_missing_execution(
         async_db_session,
         user_id=user.id,
         is_superuser=False,
+        timezone_str=user.timezone or "UTC",
         name="Running task no execution",
         agent_id=agent.id,
         prompt="ping",
@@ -335,6 +409,7 @@ async def test_schedule_create_interval_normalizes_minutes(
                 "cycle_type": "interval",
                 "time_point": {"minutes": 9},
                 "enabled": False,
+                "schedule_timezone": user.timezone or "UTC",
             },
         )
         assert resp.status_code == 201
@@ -373,16 +448,68 @@ async def test_schedule_create_interval_accepts_start_at(
                 "cycle_type": "interval",
                 "time_point": {
                     "minutes": 30,
-                    "start_at": "2026-02-23T08:15",
+                    "start_at_local": "2026-02-23T08:15",
                 },
                 "enabled": False,
+                "schedule_timezone": user.timezone or "UTC",
             },
         )
         assert resp.status_code == 201
         payload = resp.json()
         assert payload["cycle_type"] == "interval"
         assert payload["time_point"]["minutes"] == 30
-        assert payload["time_point"]["start_at"] == "2026-02-23T00:15:00+00:00"
+        assert payload["time_point"]["start_at_local"] == "2026-02-23T08:15"
+        assert payload["time_point"]["start_at_utc"] == "2026-02-23T00:15:00+00:00"
+
+
+async def test_schedule_enable_interval_accepts_persisted_utc_start_at(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 1)
+
+    user = await create_user(
+        async_db_session,
+        skip_onboarding_defaults=True,
+        timezone="Asia/Shanghai",
+    )
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="enable")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        create_resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Interval enable",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "cycle_type": "interval",
+                "time_point": {
+                    "minutes": 30,
+                    "start_at_local": "2026-02-23T08:15",
+                },
+                "enabled": False,
+                "schedule_timezone": user.timezone or "UTC",
+            },
+        )
+        assert create_resp.status_code == 201
+        created = create_resp.json()
+        task_id = created["id"]
+        assert created["time_point"]["start_at_local"] == "2026-02-23T08:15"
+        assert created["time_point"]["start_at_utc"] == "2026-02-23T00:15:00+00:00"
+
+        enable_resp = await client.post(f"/me/a2a/schedules/{task_id}/enable")
+        assert enable_resp.status_code == 200
+        enabled_payload = enable_resp.json()
+        assert enabled_payload["enabled"] is True
+        assert enabled_payload["next_run_at_utc"] is not None
+        assert enabled_payload["next_run_at_local"] is not None
 
 
 async def test_schedule_create_interval_rejects_start_at_with_timezone_offset(
@@ -411,15 +538,16 @@ async def test_schedule_create_interval_rejects_start_at_with_timezone_offset(
                 "cycle_type": "interval",
                 "time_point": {
                     "minutes": 30,
-                    "start_at": "2026-02-23T08:15:00+08:00",
+                    "start_at_local": "2026-02-23T08:15:00+08:00",
                 },
                 "enabled": False,
+                "schedule_timezone": user.timezone or "UTC",
             },
         )
         assert resp.status_code == 400
         assert (
             resp.json()["detail"]
-            == "interval time_point.start_at must be timezone-naive "
+            == "interval time_point.start_at_local must be timezone-naive "
             "(without Z or offset)"
         )
 
@@ -446,6 +574,7 @@ async def test_schedule_create_weekly_uses_iso_weekday(
                 "cycle_type": "weekly",
                 "time_point": {"weekday": 1, "time": "09:15"},
                 "enabled": False,
+                "schedule_timezone": user.timezone or "UTC",
             },
         )
         assert resp.status_code == 201
@@ -481,6 +610,7 @@ async def test_schedule_create_rejects_over_quota(
                 "cycle_type": "daily",
                 "time_point": {"time": "09:00"},
                 "enabled": True,
+                "schedule_timezone": user.timezone or "UTC",
             },
         )
         assert resp1.status_code == 201
@@ -495,6 +625,7 @@ async def test_schedule_create_rejects_over_quota(
                 "cycle_type": "daily",
                 "time_point": {"time": "10:00"},
                 "enabled": True,
+                "schedule_timezone": user.timezone or "UTC",
             },
         )
         assert resp2.status_code == 403
@@ -532,6 +663,7 @@ async def test_schedule_admin_bypasses_quota_and_interval(
                 "cycle_type": "interval",
                 "time_point": {"minutes": 1},
                 "enabled": True,
+                "schedule_timezone": admin_user.timezone or "UTC",
             },
         )
         assert resp.status_code == 201
@@ -568,6 +700,7 @@ async def test_schedule_interval_enforces_minimum(
                 "cycle_type": "interval",
                 "time_point": {"minutes": 30},
                 "enabled": True,
+                "schedule_timezone": user.timezone or "UTC",
             },
         )
         assert resp.status_code == 400

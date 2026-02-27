@@ -14,7 +14,7 @@ export type ChatMessage = {
   role: ChatRole;
   content: string;
   createdAt: string;
-  status?: "streaming" | "done";
+  status?: "streaming" | "done" | "error" | "interrupted";
   blocks?: MessageBlock[];
 };
 
@@ -334,32 +334,27 @@ export const extractStreamBlockUpdate = (
   }
 
   const messageId =
-    pickString(data, ["message_id", "messageId"]) ??
-    pickString(artifact ?? null, ["message_id", "messageId"]) ??
-    pickString(opencodeMetadata, ["message_id", "messageId"]);
+    pickString(data, ["message_id"]) ??
+    pickString(artifact ?? null, ["message_id"]) ??
+    pickString(opencodeMetadata, ["message_id"]);
   // New contract: missing message_id events are invalid and should be ignored.
   if (!messageId) {
     return null;
   }
 
   const eventId =
-    pickString(data, ["event_id", "eventId"]) ??
-    pickString(artifact ?? null, ["event_id", "eventId"]) ??
-    pickString(opencodeMetadata, ["event_id", "eventId"]);
+    pickString(data, ["event_id"]) ??
+    pickString(artifact ?? null, ["event_id"]) ??
+    pickString(opencodeMetadata, ["event_id"]);
   // V2 contract: every stream event must carry event_id.
   if (!eventId) {
     return null;
   }
 
   const seq =
-    pickInteger(data, ["seq", "event_seq", "sequence", "eventSeq"]) ??
-    pickInteger(artifact ?? null, [
-      "seq",
-      "event_seq",
-      "sequence",
-      "eventSeq",
-    ]) ??
-    pickInteger(opencodeMetadata, ["seq", "event_seq", "sequence", "eventSeq"]);
+    pickInteger(data, ["seq"]) ??
+    pickInteger(artifact ?? null, ["seq"]) ??
+    pickInteger(opencodeMetadata, ["seq"]);
 
   const artifactId =
     pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ??

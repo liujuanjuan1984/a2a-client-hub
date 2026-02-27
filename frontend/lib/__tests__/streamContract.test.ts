@@ -250,6 +250,26 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed).toBeNull();
   });
 
+  it("ignores chunks using camelCase message/event fields only", () => {
+    const payload = {
+      kind: "artifact-update",
+      task_id: "task-1",
+      messageId: "msg-camel",
+      eventId: "evt-camel",
+      artifact: {
+        artifact_id: "task-1:stream",
+        parts: [{ kind: "text", text: "hello" }],
+        metadata: {
+          opencode: {
+            block_type: "text",
+          },
+        },
+      },
+    };
+    const parsed = extractStreamBlockUpdate(payload);
+    expect(parsed).toBeNull();
+  });
+
   it("accepts chunks without seq and marks seq as null", () => {
     const payload = buildBlockUpdatePayload({
       blockType: "text",

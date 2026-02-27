@@ -42,6 +42,7 @@ describe("ScheduledJobCard visuals", () => {
     executionsLoading: false,
     onToggleEnabled: jest.fn(),
     onEdit: jest.fn(),
+    onDelete: jest.fn(),
     onMarkFailed: jest.fn(),
     onToggleExecutions: jest.fn(),
   };
@@ -52,7 +53,8 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: true,
       last_run_status: "running" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     let root: any;
     act(() => {
@@ -60,8 +62,7 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("border-blue-500/50");
-    expect(containerClasses).toContain("bg-blue-900/20");
+    expect(containerClasses).toContain("border-primary");
   });
 
   it("applies grayscale styling when job is disabled", () => {
@@ -70,7 +71,8 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: false,
       last_run_status: "success" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     let root: any;
     act(() => {
@@ -78,8 +80,8 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("grayscale");
-    expect(containerClasses).toContain("bg-slate-900/10");
+    expect(containerClasses).toContain("bg-surface");
+    expect(containerClasses).toContain("opacity-80");
   });
 
   it("applies default styling when job is enabled but not running", () => {
@@ -88,7 +90,8 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: true,
       last_run_status: "success" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     let root: any;
     act(() => {
@@ -96,8 +99,7 @@ describe("ScheduledJobCard visuals", () => {
     });
     const tree = root.toJSON();
     const containerClasses = tree.props.className;
-    expect(containerClasses).toContain("border-slate-800");
-    expect(containerClasses).toContain("bg-slate-900/30");
+    expect(containerClasses).toContain("bg-surface");
   });
 
   it("shows Stop Running button for running jobs", () => {
@@ -106,14 +108,15 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: true,
       last_run_status: "running" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     let root: any;
     act(() => {
       root = create(<ScheduledJobCard {...defaultProps} job={job as any} />);
     });
     const tree = root.toJSON();
-    expect(JSON.stringify(tree)).toContain("Stop Running");
+    expect(JSON.stringify(tree)).toContain("Stop");
   });
 
   it("hides Stop Running button for non-running jobs", () => {
@@ -122,39 +125,46 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: true,
       last_run_status: "success" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     let root: any;
     act(() => {
       root = create(<ScheduledJobCard {...defaultProps} job={job as any} />);
     });
     const tree = root.toJSON();
-    expect(JSON.stringify(tree)).not.toContain("Stop Running");
+    expect(JSON.stringify(tree)).not.toContain("Stop");
   });
 
-  it("toggles prompt expansion with Read more and Show less", () => {
+  it("toggles prompt expansion with Show/Hide Prompt labels", () => {
     const job = {
       id: "6",
       name: "Job",
       enabled: true,
-      prompt:
-        "This is a long scheduled prompt text used to verify expand and collapse behavior in card UI.",
+      prompt: "Scheduled prompt text",
       cycle_type: "daily" as const,
       time_point: { time: "09:00" },
       last_run_status: "success" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
-    const { getByLabelText, getByText } = render(
+    const { getByText, queryByText } = render(
       <ScheduledJobCard {...defaultProps} job={job as any} />,
     );
 
-    expect(getByText("Read more")).toBeTruthy();
-    expect(getByText(job.prompt).props.numberOfLines).toBe(2);
+    // Prompt should be hidden by default
+    expect(queryByText(job.prompt)).toBeNull();
+    expect(getByText("Show Prompt")).toBeTruthy();
 
-    fireEvent.press(getByLabelText("Toggle prompt expansion"));
+    // Click Show Prompt to expand
+    fireEvent.press(getByText("Show Prompt"));
 
-    expect(getByText("Show less")).toBeTruthy();
-    expect(getByText(job.prompt).props.numberOfLines).toBeUndefined();
+    expect(getByText(job.prompt)).toBeTruthy();
+    expect(getByText("Hide Prompt")).toBeTruthy();
+
+    // Click Hide Prompt to collapse
+    fireEvent.press(getByText("Hide Prompt"));
+    expect(queryByText(job.prompt)).toBeNull();
   });
 
   it("shows interval details including minutes and start time", () => {
@@ -166,15 +176,55 @@ describe("ScheduledJobCard visuals", () => {
       cycle_type: "interval" as const,
       time_point: {
         minutes: 15,
-        start_at: "2026-02-23T10:00:00Z",
+        start_at_local: "2026-02-23T18:00",
+        start_at_utc: "2026-02-23T10:00:00Z",
       },
       last_run_status: "success" as const,
-      next_run_at: "2026-02-23T10:00:00Z",
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
     };
     const { getByText } = render(
       <ScheduledJobCard {...defaultProps} job={job as any} />,
     );
 
-    expect(getByText(/Interval: every 15 min, start/)).toBeTruthy();
+    expect(getByText(/Every 15 min/)).toBeTruthy();
+  });
+});
+
+jest.mock("@/lib/confirm", () => ({
+  confirmAction: jest.fn(() => Promise.resolve(true)),
+}));
+
+describe("ScheduledJobCard interactions", () => {
+  const defaultProps = {
+    agentName: "Agent One",
+    executions: [],
+    executionsOpen: false,
+    executionsLoading: false,
+    onToggleEnabled: jest.fn(),
+    onEdit: jest.fn(),
+    onDelete: jest.fn(),
+    onMarkFailed: jest.fn(),
+    onToggleExecutions: jest.fn(),
+  };
+
+  it("calls onDelete when Delete button is pressed and confirmed", async () => {
+    const job = {
+      id: "8",
+      name: "Job",
+      enabled: true,
+      last_run_status: "success" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const { getByText } = render(
+      <ScheduledJobCard {...defaultProps} job={job as any} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(getByText("Delete"));
+    });
+
+    expect(defaultProps.onDelete).toHaveBeenCalled();
   });
 });

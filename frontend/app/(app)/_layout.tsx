@@ -74,7 +74,7 @@ export default function AppLayout() {
     const friendlyMessage =
       error instanceof Error ? error.message : "Unable to sync account.";
     return (
-      <View className="flex-1 items-center justify-center bg-background px-6">
+      <View className="flex-1 items-center justify-center bg-background px-4">
         <Text className="text-lg font-semibold text-white">Sync failed</Text>
         <Text className="mt-3 text-center text-base text-muted">
           {friendlyMessage}

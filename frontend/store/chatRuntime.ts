@@ -17,17 +17,22 @@ import {
   isAuthFailureError,
 } from "@/lib/api/client";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
-import {
-  listSessionMessagesPage,
-  type SessionMessageItem,
-} from "@/lib/api/sessions";
+import { listSessionMessagesPage } from "@/lib/api/sessions";
 import { mergeExternalSessionRef, type AgentSession } from "@/lib/chat-utils";
+import {
+  addConversationMessage,
+  getConversationMessages,
+  rekeyConversationMessage,
+  setConversationMessages,
+  updateConversationMessage,
+  updateConversationMessageWithUpdater,
+} from "@/lib/chatHistoryCache";
+import { mergeChatMessagesByCanonicalId } from "@/lib/messageMerge";
 import { queryKeys } from "@/lib/queryKeys";
 import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { queryClient } from "@/services/queryClient";
 import { type AgentSource } from "@/store/agents";
-import { useMessageStore } from "@/store/messages";
 
 export type ChatRuntimeState = {
   sessions: Record<string, AgentSession>;
@@ -154,7 +159,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   get: () => TState,
   set: ChatRuntimeSetState<TState>,
 ) => {
-  const messageStore = useMessageStore.getState();
   const buildSessionsPatch = (
     sessions: Record<string, AgentSession>,
   ): Partial<TState> => ({ sessions }) as Partial<TState>;
@@ -294,8 +298,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   };
 
   const resolveExistingTargetMessageIds = () => {
-    const currentMessages =
-      useMessageStore.getState().messages[conversationId] ?? [];
+    const currentMessages = getConversationMessages(conversationId);
     const existingIds = new Set(currentMessages.map((message) => message.id));
     const targets = Array.from(activeStreamMessageIds).filter((id) =>
       existingIds.has(id),
@@ -310,7 +313,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const targetMessageIds = resolveExistingTargetMessageIds();
     const now = new Date().toISOString();
     targetMessageIds.forEach((messageId) => {
-      messageStore.updateMessageWithUpdater(
+      updateConversationMessageWithUpdater(
         conversationId,
         messageId,
         (message) => {
@@ -342,85 +345,47 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   };
 
   const mergeHistoryMessagesById = (incoming: ChatMessage[]) => {
-    const current = useMessageStore.getState().messages[conversationId] ?? [];
-    const merged = new Map<string, ChatMessage>();
-    current.forEach((message) => {
-      merged.set(message.id, message);
+    const current = getConversationMessages(conversationId);
+    const session = get().sessions[conversationId];
+    const isActivelyStreaming = session?.streamState === "streaming";
+    const nextMessages = mergeChatMessagesByCanonicalId({
+      current,
+      incoming,
+      isActivelyStreaming,
     });
-    incoming.forEach((message) => {
-      const existing = merged.get(message.id);
-      const session = get().sessions[conversationId];
-      const isActivelyStreaming = session?.streamState === "streaming";
-      if (existing && existing.status === "streaming" && isActivelyStreaming) {
-        return;
-      }
-      merged.set(message.id, message);
-    });
-    const nextMessages = Array.from(merged.values()).sort((left, right) =>
-      left.createdAt.localeCompare(right.createdAt),
-    );
-    messageStore.setMessages(conversationId, nextMessages);
+    setConversationMessages(conversationId, nextMessages);
   };
 
   const backfillHistoryAfterSequenceGap = async () => {
     const recovered = new Map<string, ChatMessage>();
-    const size = 100;
-    const maxPages = 20;
+    const limit = 50;
+    const maxPages = 6;
+    let before: string | null = null;
 
-    const collectPage = (items: SessionMessageItem[]) => {
-      const mapped = mapSessionMessagesToChatMessages(items, conversationId);
+    const collectPage = (
+      items: Parameters<typeof mapSessionMessagesToChatMessages>[0],
+    ) => {
+      const mapped = mapSessionMessagesToChatMessages(items);
       mapped.forEach((message) => {
         recovered.set(message.id, message);
       });
     };
 
-    const firstPage = await listSessionMessagesPage(conversationId, {
-      page: 1,
-      size,
-    });
-    const pagination =
-      firstPage.pagination && typeof firstPage.pagination === "object"
-        ? (firstPage.pagination as Record<string, unknown>)
-        : null;
-    const totalPages =
-      pagination && typeof pagination.pages === "number"
-        ? pagination.pages
-        : null;
-
-    if (typeof totalPages === "number" && totalPages > 1) {
-      const tailPageWindow = 3;
-      const startPage = Math.max(1, totalPages - tailPageWindow + 1);
-      for (let page = startPage; page <= totalPages; page += 1) {
-        if (page === 1) {
-          collectPage(firstPage.items);
-          continue;
-        }
-        const response = await listSessionMessagesPage(conversationId, {
-          page,
-          size,
-        });
-        collectPage(response.items);
+    for (let requestCount = 0; requestCount < maxPages; requestCount += 1) {
+      const response = await listSessionMessagesPage(conversationId, {
+        before,
+        limit,
+      });
+      collectPage(response.items);
+      const nextBefore =
+        typeof response.pageInfo.nextBefore === "string" &&
+        response.pageInfo.nextBefore.trim().length > 0
+          ? response.pageInfo.nextBefore.trim()
+          : null;
+      if (!response.pageInfo.hasMoreBefore || !nextBefore) {
+        break;
       }
-    } else {
-      collectPage(firstPage.items);
-      let nextPage =
-        typeof firstPage.nextPage === "number" ? firstPage.nextPage : undefined;
-      let requestCount = 1;
-
-      while (
-        typeof nextPage === "number" &&
-        requestCount < maxPages &&
-        nextPage > 1
-      ) {
-        const response = await listSessionMessagesPage(conversationId, {
-          page: nextPage,
-          size,
-        });
-        collectPage(response.items);
-        nextPage =
-          typeof response.nextPage === "number" ? response.nextPage : undefined;
-        requestCount += 1;
-      }
+      before = nextBefore;
     }
 
     if (recovered.size > 0) {
@@ -439,8 +404,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         return mapped;
       }
 
-      const currentMessages =
-        useMessageStore.getState().messages[conversationId] ?? [];
+      const currentMessages = getConversationMessages(conversationId);
       const hasExactTarget = currentMessages.some(
         (message) => message.id === chunk.messageId,
       );
@@ -455,14 +419,14 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         (message) => message.id === placeholderId,
       );
       if (hasActivePlaceholder) {
-        messageStore.rekeyMessage(
+        rekeyConversationMessage(
           conversationId,
           placeholderId,
           chunk.messageId,
         );
         activeStreamMessageIds.delete(placeholderId);
       } else {
-        messageStore.addMessage(conversationId, {
+        addConversationMessage(conversationId, {
           id: chunk.messageId,
           role: "agent",
           content: "",
@@ -477,7 +441,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     };
 
     const targetMessageId = resolveChunkMessageId();
-    messageStore.updateMessageWithUpdater(
+    updateConversationMessageWithUpdater(
       conversationId,
       targetMessageId,
       (message) => {
@@ -726,7 +690,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       if (!response.success) {
         const message =
           response.error || response.error_code || "Request failed.";
-        messageStore.updateMessage(conversationId, activeAgentMessageId, {
+        updateConversationMessage(conversationId, activeAgentMessageId, {
           content: message,
           status: "done",
         });
@@ -737,14 +701,14 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         return;
       }
 
-      messageStore.updateMessage(conversationId, activeAgentMessageId, {
+      updateConversationMessage(conversationId, activeAgentMessageId, {
         content: response.content ?? "",
         status: "done",
       });
       markSessionIdle();
     } catch (error) {
       const message = buildApiErrorMessage(error);
-      messageStore.updateMessage(conversationId, activeAgentMessageId, {
+      updateConversationMessage(conversationId, activeAgentMessageId, {
         content: message,
         status: "done",
       });
@@ -769,7 +733,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const message = isAuthFailureError(error)
       ? "Authentication expired. Please sign in again."
       : buildApiErrorMessage(error);
-    messageStore.updateMessage(conversationId, activeAgentMessageId, {
+    updateConversationMessage(conversationId, activeAgentMessageId, {
       content: message,
       status: "done",
     });

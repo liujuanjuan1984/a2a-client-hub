@@ -7,7 +7,11 @@ import {
   listScheduledJobExecutionsPage,
   listScheduledJobsPage,
 } from "@/lib/api/scheduledJobs";
-import { listSessionMessagesPage, listSessionsPage } from "@/lib/api/sessions";
+import {
+  listSessionMessagesPage,
+  listSessionsPage,
+  querySessionMessageBlocks,
+} from "@/lib/api/sessions";
 
 jest.mock("@/lib/api/client", () => ({
   apiRequest: jest.fn(),
@@ -87,30 +91,100 @@ describe("API modules using shared pagination fallback", () => {
     expect(result.nextPage).toBe(2);
   });
 
-  it("resolves session messages nextPage from size heuristic", async () => {
+  it("passes agent_id filter in sessions query body", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      items: [],
+      pagination: { page: 1, pages: 1 },
+    } as any);
+
+    await listSessionsPage({
+      page: 1,
+      size: 20,
+      agent_id: "agent-123",
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith("/me/conversations:query", {
+      method: "POST",
+      body: {
+        page: 1,
+        size: 20,
+        agent_id: "agent-123",
+      },
+    });
+  });
+
+  it("queries timeline page with before cursor and limit", async () => {
     mockedApiRequest.mockResolvedValueOnce({
       items: [
         {
-          id: "msg-1",
-          role: "user",
-          content: "hello",
-          created_at: "2026-02-24T00:00:00.000Z",
-        },
-        {
           id: "msg-2",
           role: "agent",
-          content: "world",
           created_at: "2026-02-24T00:00:01.000Z",
+          status: "done",
+          blocks: [],
+        },
+      ],
+      pageInfo: {
+        hasMoreBefore: true,
+        nextBefore: "cursor-1",
+      },
+    } as any);
+
+    const result = await listSessionMessagesPage("conversation-1", {
+      before: "cursor-0",
+      limit: 8,
+    });
+
+    expect(result.pageInfo).toEqual({
+      hasMoreBefore: true,
+      nextBefore: "cursor-1",
+    });
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/conversations/conversation-1/messages:query",
+      {
+        method: "POST",
+        body: {
+          before: "cursor-0",
+          limit: 8,
+        },
+      },
+    );
+  });
+
+  it("queries block details by blockIds", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: "block-1",
+          messageId: "message-1",
+          type: "tool_call",
+          content: '{"tool":"search"}',
+          isFinished: true,
         },
       ],
     } as any);
 
-    const result = await listSessionMessagesPage("conversation-1", {
-      page: 1,
-      size: 2,
+    const result = await querySessionMessageBlocks("conversation-1", {
+      blockIds: ["block-1"],
     });
 
-    expect(result.nextPage).toBe(2);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      id: "block-1",
+      messageId: "message-1",
+      type: "tool_call",
+      content: '{"tool":"search"}',
+      isFinished: true,
+    });
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/conversations/conversation-1/blocks:query",
+      {
+        method: "POST",
+        body: {
+          blockIds: ["block-1"],
+        },
+      },
+    );
   });
 
   it("resolves scheduled jobs nextPage from parsed pagination", async () => {
@@ -123,6 +197,7 @@ describe("API modules using shared pagination fallback", () => {
           prompt: "Hello",
           cycle_type: "daily",
           time_point: { time: "07:00" },
+          schedule_timezone: "UTC",
           enabled: true,
           conversation_policy: "new_each_run",
           created_at: "2026-02-24T00:00:00.000Z",

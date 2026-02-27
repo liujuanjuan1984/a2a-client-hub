@@ -118,34 +118,45 @@ curl -X POST "$API_BASE_URL/me/a2a/agents/<AGENT_ID>/invoke" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
-    "query":"Summarize today'\''s key updates"
+    "query":"Summarize today'\''s key updates",
+    "userMessageId":"550e8400-e29b-41d4-a716-446655440000",
+    "agentMessageId":"550e8400-e29b-41d4-a716-446655440001"
   }'
 ```
+
+`userMessageId` and `agentMessageId` are optional but recommended for
+client/server message identity consistency. Both must be UUID strings when provided.
 
 ### Query Unified Sessions
 
 ```bash
-curl -X POST "$API_BASE_URL/me/sessions:query" \
+curl -X POST "$API_BASE_URL/me/conversations:query" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
     "page": 1,
     "size": 20,
-    "refresh": false
+    "agent_id": "<AGENT_ID>"
   }'
 ```
 
-### Query Unified Session Messages
+`agent_id` is optional. When provided, the result is server-side filtered for
+that agent only.
+
+### Query Unified Session Timeline (Primary Chat Read Model)
 
 ```bash
-curl -X POST "$API_BASE_URL/me/sessions/<SESSION_ID>/messages:query" \
+curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages:query" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
-    "page": 1,
-    "size": 50
+    "limit": 8,
+    "before": "<OPAQUE_CURSOR_OR_NULL>"
   }'
 ```
+
+`messages:query` returns ordered timeline items including blocks and
+cursor page info (`hasMoreBefore`, `nextBefore`) for backward pagination.
 
 ## Notes
 

@@ -1,18 +1,28 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import React, { useCallback, useState } from "react";
-import { Platform, Pressable, Text, View } from "react-native";
+import React, { useCallback } from "react";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  Text,
+  View,
+} from "react-native";
+
+import { GenericBlock } from "./blocks/GenericBlock";
+import { ReasoningBlock } from "./blocks/ReasoningBlock";
+import { TextBlock } from "./blocks/TextBlock";
+import { ToolCallBlock } from "./blocks/ToolCallBlock";
 
 import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
-import { COLLAPSED_TEXT_LINES, shouldCollapseByLength } from "@/lib/chat-utils";
 import { toast } from "@/lib/toast";
 
 export function ChatMessageItem({
   message,
-  index,
   isLastMessage,
   sessionStreamState,
   onLayoutChangeStart,
+  onLoadBlockContent,
   onRetry,
 }: {
   message: ChatMessage;
@@ -20,51 +30,9 @@ export function ChatMessageItem({
   isLastMessage: boolean;
   sessionStreamState?: string | null;
   onLayoutChangeStart?: () => void;
+  onLoadBlockContent?: (messageId: string, blockId: string) => Promise<boolean>;
   onRetry: () => void;
 }) {
-  const [expandedReasoningByBlockId, setExpandedReasoningByBlockId] = useState<
-    Record<string, boolean>
-  >({});
-  const [expandedToolCallByBlockId, setExpandedToolCallByBlockId] = useState<
-    Record<string, boolean>
-  >({});
-  const [expandedTextByBlockId, setExpandedTextByBlockId] = useState<
-    Record<string, boolean>
-  >({});
-
-  const toggleReasoning = useCallback(
-    (blockId: string) => {
-      onLayoutChangeStart?.();
-      setExpandedReasoningByBlockId((current) => ({
-        ...current,
-        [blockId]: !current[blockId],
-      }));
-    },
-    [onLayoutChangeStart],
-  );
-
-  const toggleToolCall = useCallback(
-    (blockId: string) => {
-      onLayoutChangeStart?.();
-      setExpandedToolCallByBlockId((current) => ({
-        ...current,
-        [blockId]: !current[blockId],
-      }));
-    },
-    [onLayoutChangeStart],
-  );
-
-  const toggleTextExpansion = useCallback(
-    (blockId: string) => {
-      onLayoutChangeStart?.();
-      setExpandedTextByBlockId((current) => ({
-        ...current,
-        [blockId]: !current[blockId],
-      }));
-    },
-    [onLayoutChangeStart],
-  );
-
   const deriveRenderableBlocks = useCallback(
     (msg: ChatMessage): MessageBlock[] => {
       const persisted = msg.blocks ?? [];
@@ -123,39 +91,17 @@ export function ChatMessageItem({
 
   const renderableBlocks = deriveRenderableBlocks(message);
   const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
-  const plainTextExpanded = expandedTextByBlockId[message.id] ?? false;
-  const plainShouldCollapse = shouldCollapseByLength(message.content);
-  const plainTopToggleAccessibilityLabel = plainTextExpanded
-    ? "Collapse full text"
-    : "Expand full text";
-  const plainTopToggleLabel = plainTextExpanded ? "Show less" : "Read more";
+  const hasPlainContent = message.content.trim().length > 0;
   const canRetry =
     isLastMessage &&
     message.role === "agent" &&
     sessionStreamState &&
     ["error", "recoverable"].includes(sessionStreamState);
   const userCopyButtonPositionClass = "right-0";
-  const renderBottomCollapseAction = (testId: string, onPress: () => void) => {
-    return (
-      <View className="mt-2 items-end">
-        <Pressable
-          className="rounded-md px-2 py-1"
-          accessibilityRole="button"
-          accessibilityLabel="Collapse full text"
-          testID={testId}
-          onPress={onPress}
-        >
-          <Text className="text-xs font-semibold text-slate-300">
-            Show less
-          </Text>
-        </Pressable>
-      </View>
-    );
-  };
 
   return (
     <View
-      className={`mb-3 flex ${
+      className={`mb-4 flex ${
         message.role === "user" ? "items-end" : "items-start"
       }`}
     >
@@ -163,221 +109,110 @@ export function ChatMessageItem({
         <Pressable
           onLongPress={handleCopyMessage}
           delayLongPress={500}
-          className={`px-4 py-3 ${
+          className={`px-4 py-3 rounded-2xl shadow-sm ${
             message.role === "user"
-              ? "rounded-2xl rounded-tr-sm bg-primary"
+              ? "bg-[#1E222D] border border-primary/40"
               : message.role === "agent"
-                ? "rounded-2xl rounded-tl-sm bg-slate-800"
-                : "rounded-2xl bg-slate-900"
+                ? "bg-surface"
+                : "bg-slate-900"
           }`}
         >
           {hasBlocks ? (
             renderableBlocks.map((block, blockIndex) => {
-              const blockText = block.content;
-              if (blockText.length === 0) return null;
               const blockId = block.id || `${message.id}:${blockIndex}`;
-              if (block.type === "reasoning") {
-                const expanded = expandedReasoningByBlockId[blockId];
-                return (
-                  <View
-                    key={blockId}
-                    className={`${
-                      blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                  >
-                    <Pressable
-                      onPress={() => toggleReasoning(blockId)}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        expanded
-                          ? "Hide reasoning details"
-                          : "Show reasoning details"
-                      }
-                    >
-                      <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                        {expanded ? "Hide Reasoning" : "Show Reasoning"}
-                      </Text>
-                    </Pressable>
-                    {expanded ? (
-                      <View>
-                        <Text
-                          selectable
-                          className="mt-1 break-all text-xs text-slate-300"
-                        >
-                          {blockText}
-                        </Text>
-                        {renderBottomCollapseAction(
-                          `chat-message-${blockId}-collapse-bottom`,
-                          () => toggleReasoning(blockId),
-                        )}
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              }
-              if (block.type === "tool_call") {
-                const expanded = expandedToolCallByBlockId[blockId];
-                return (
-                  <View
-                    key={blockId}
-                    className={`${
-                      blockIndex > 0 ? "mt-3" : ""
-                    } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                  >
-                    <Pressable
-                      onPress={() => toggleToolCall(blockId)}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        expanded
-                          ? "Hide tool call details"
-                          : "Show tool call details"
-                      }
-                    >
-                      <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                        {expanded ? "Hide Tool Call" : "Show Tool Call"}
-                      </Text>
-                    </Pressable>
-                    {expanded ? (
-                      <View>
-                        <Text
-                          selectable
-                          className="mt-1 break-all text-xs text-slate-300"
-                        >
-                          {blockText}
-                        </Text>
-                        {renderBottomCollapseAction(
-                          `chat-message-${blockId}-collapse-bottom`,
-                          () => toggleToolCall(blockId),
-                        )}
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              }
-              if (block.type === "text") {
-                const blockExpanded = expandedTextByBlockId[blockId] ?? false;
-                const shouldCollapse = shouldCollapseByLength(blockText);
-                const topToggleAccessibilityLabel = blockExpanded
-                  ? "Collapse full text"
-                  : "Expand full text";
-                const topToggleLabel = blockExpanded
-                  ? "Show less"
-                  : "Read more";
+              const isFirst = blockIndex === 0;
 
-                return (
-                  <View key={blockId} className="rounded-xl">
-                    <Text
-                      selectable
-                      className={`${
-                        blockIndex > 0 ? "mt-3" : ""
-                      } break-all text-sm text-white`}
-                      numberOfLines={
-                        shouldCollapse && !blockExpanded
-                          ? COLLAPSED_TEXT_LINES
-                          : undefined
-                      }
-                    >
-                      {blockText}
-                    </Text>
-                    {shouldCollapse ? (
-                      <Pressable
-                        className="mt-2 rounded-md px-2 py-1"
-                        accessibilityRole="button"
-                        accessibilityLabel={topToggleAccessibilityLabel}
-                        testID={`chat-message-${blockId}-expand`}
-                        onPress={() => toggleTextExpansion(blockId)}
-                      >
-                        <Text className="text-xs font-semibold text-slate-300">
-                          {topToggleLabel}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                    {shouldCollapse && blockExpanded
-                      ? renderBottomCollapseAction(
-                          `chat-message-${blockId}-collapse-bottom`,
-                          () => toggleTextExpansion(blockId),
-                        )
-                      : null}
-                  </View>
-                );
+              switch (block.type) {
+                case "reasoning":
+                  return (
+                    <ReasoningBlock
+                      key={blockId}
+                      block={block}
+                      fallbackBlockId={blockId}
+                      messageId={message.id}
+                      onLayoutChangeStart={onLayoutChangeStart}
+                      onLoadBlockContent={onLoadBlockContent}
+                      isFirst={isFirst}
+                    />
+                  );
+                case "tool_call":
+                  return (
+                    <ToolCallBlock
+                      key={blockId}
+                      block={block}
+                      fallbackBlockId={blockId}
+                      messageId={message.id}
+                      onLayoutChangeStart={onLayoutChangeStart}
+                      onLoadBlockContent={onLoadBlockContent}
+                      isFirst={isFirst}
+                    />
+                  );
+                case "text":
+                  return (
+                    <TextBlock
+                      key={blockId}
+                      block={block}
+                      fallbackBlockId={blockId}
+                      isAgent={message.role === "agent"}
+                      onLayoutChangeStart={onLayoutChangeStart}
+                      isFirst={isFirst}
+                    />
+                  );
+                default:
+                  return (
+                    <GenericBlock
+                      key={blockId}
+                      block={block}
+                      fallbackBlockId={blockId}
+                      isFirst={isFirst}
+                    />
+                  );
               }
-              return (
-                <View
-                  key={blockId}
-                  className={`${
-                    blockIndex > 0 ? "mt-3" : ""
-                  } rounded-xl border border-slate-700/70 bg-slate-900/70 px-3 py-2`}
-                >
-                  <Text className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                    {block.type}
-                  </Text>
-                  <Text
-                    selectable
-                    className="mt-1 break-all text-xs text-slate-300"
-                  >
-                    {blockText}
-                  </Text>
-                </View>
-              );
             })
           ) : (
-            <View className="rounded-xl">
-              <Text
-                selectable
-                className="break-all text-sm text-white"
-                numberOfLines={
-                  plainShouldCollapse && !plainTextExpanded
-                    ? COLLAPSED_TEXT_LINES
-                    : undefined
-                }
-              >
-                {message.content}
-              </Text>
-              {plainShouldCollapse ? (
-                <Pressable
-                  className="mt-2 rounded-md px-2 py-1"
-                  accessibilityRole="button"
-                  accessibilityLabel={plainTopToggleAccessibilityLabel}
-                  testID={`chat-message-${message.id}-expand`}
-                  onPress={() => toggleTextExpansion(message.id)}
-                >
-                  <Text className="text-xs font-semibold text-slate-300">
-                    {plainTopToggleLabel}
+            <View>
+              {hasPlainContent ? (
+                <TextBlock
+                  content={message.content}
+                  fallbackBlockId={message.id}
+                  isAgent={message.role === "agent"}
+                  onLayoutChangeStart={onLayoutChangeStart}
+                  isFirst
+                />
+              ) : (
+                <View className="rounded-lg bg-black/20 px-3 py-2">
+                  <Text className="text-[11px] font-medium text-slate-400">
+                    Content unavailable.
                   </Text>
-                </Pressable>
-              ) : null}
-              {plainShouldCollapse && plainTextExpanded
-                ? renderBottomCollapseAction(
-                    `chat-message-${message.id}-collapse-bottom`,
-                    () => toggleTextExpansion(message.id),
-                  )
-                : null}
+                </View>
+              )}
             </View>
           )}
           {message.status === "streaming" ? (
-            <Text className="mt-1 text-[10px] text-muted">Streaming...</Text>
+            <View className="mt-2 flex-row items-center gap-2">
+              <ActivityIndicator size="small" color="#34D399" />
+              <Text className="text-[11px] font-medium italic text-neo-green/60">
+                Streaming...
+              </Text>
+            </View>
           ) : null}
         </Pressable>
         <Pressable
-          className={`absolute bottom-2 ${userCopyButtonPositionClass} rounded-lg px-2 py-2 opacity-45`}
+          className={`absolute bottom-2 ${userCopyButtonPositionClass} rounded-lg px-2 py-2 opacity-30`}
           onPress={handleCopyMessage}
           accessibilityRole="button"
           accessibilityLabel="Copy message"
         >
-          <Ionicons
-            name="copy-outline"
-            size={16}
-            color={message.role === "user" ? "#ffffff" : "#cbd5e1"}
-          />
+          <Ionicons name="copy-outline" size={16} color="#FFFFFF" />
         </Pressable>
       </View>
       {canRetry && (
         <Pressable
           onPress={onRetry}
-          className="mt-1.5 flex-row items-center gap-1 opacity-70"
+          className="mt-2 flex-row items-center gap-1.5 opacity-60"
         >
-          <Ionicons name="refresh" size={12} color="#94a3b8" />
-          <Text className="text-[10px] font-semibold text-slate-400">
+          <Ionicons name="refresh" size={12} color="#FFFFFF" />
+          <Text className="text-[11px] font-bold text-white uppercase tracking-wider">
             Retry
           </Text>
         </Pressable>

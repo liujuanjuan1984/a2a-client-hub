@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -13,8 +15,13 @@ from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_message import AgentMessage
+from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.services.a2a_schedule_job import _execute_claimed_task
+from app.services.a2a_schedule_job import (
+    _execute_claimed_task,
+    _refresh_ops_metrics,
+    dispatch_due_a2a_schedules,
+)
 from app.services.a2a_schedule_service import (
     ClaimedA2AScheduleTask,
     a2a_schedule_service,
@@ -187,7 +194,19 @@ async def test_execute_claimed_task_resets_consecutive_failures_on_success(
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
-                    {"content": "all good"},
+                    {
+                        "kind": "artifact-update",
+                        "artifact": {
+                            "parts": [{"kind": "text", "text": "all good"}],
+                            "metadata": {
+                                "opencode": {
+                                    "block_type": "text",
+                                    "message_id": "msg-success-1",
+                                    "event_id": "evt-success-1",
+                                }
+                            },
+                        },
+                    },
                     {"kind": "status-update", "final": True},
                 ]
             ),
@@ -336,7 +355,13 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
             "kind": "artifact-update",
             "artifact": {
                 "parts": [{"kind": "text", "text": "partial response"}],
-                "metadata": {"opencode": {"block_type": "text"}},
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "message_id": "msg-timeout-partial",
+                        "event_id": "evt-timeout-partial-1",
+                    }
+                },
             },
         }
         await asyncio.sleep(0.05)
@@ -372,16 +397,25 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
             select(AgentMessage).where(AgentMessage.id == execution.agent_message_id)
         )
     assert agent_message is not None
-    assert agent_message.content == "partial response"
     metadata = agent_message.message_metadata
     assert isinstance(metadata, dict)
     assert metadata["success"] is False
     assert metadata["stream"]["schema_version"] == 1
     assert metadata["stream"]["finish_reason"] == "timeout_total"
     assert metadata["stream"]["error"]["error_code"] == "timeout"
-    message_blocks = metadata["message_blocks"]
-    assert isinstance(message_blocks, list)
-    assert message_blocks[0]["content"] == "partial response"
+    assert "block_count" not in metadata
+    assert "message_blocks" not in metadata
+
+    async with async_session_maker() as check_db:
+        blocks = (
+            await check_db.scalars(
+                select(AgentMessageBlock)
+                .where(AgentMessageBlock.message_id == execution.agent_message_id)
+                .order_by(AgentMessageBlock.block_seq.asc())
+            )
+        ).all()
+    assert blocks
+    assert blocks[0].content == "partial response"
 
 
 async def test_execute_claimed_task_runtime_failure_does_not_create_conversation(
@@ -530,7 +564,13 @@ async def test_execute_claimed_task_persists_readable_agent_content(
                         "kind": "artifact-update",
                         "artifact": {
                             "parts": [{"kind": "text", "text": "Readable answer"}],
-                            "metadata": {"opencode": {"block_type": "text"}},
+                            "metadata": {
+                                "opencode": {
+                                    "block_type": "text",
+                                    "message_id": "msg-readable-1",
+                                    "event_id": "evt-readable-1",
+                                }
+                            },
                         },
                     },
                     {"kind": "status-update", "final": True},
@@ -563,7 +603,15 @@ async def test_execute_claimed_task_persists_readable_agent_content(
     assert len(messages) >= 2
     agent_messages = [message for message in messages if message.sender == "agent"]
     assert agent_messages
-    assert agent_messages[-1].content == "Readable answer"
+    async with async_session_maker() as check_db:
+        blocks = (
+            await check_db.scalars(
+                select(AgentMessageBlock)
+                .where(AgentMessageBlock.message_id == agent_messages[-1].id)
+                .order_by(AgentMessageBlock.block_seq.asc())
+            )
+        ).all()
+    assert blocks
 
 
 async def test_execute_claimed_task_creates_new_conversation_each_run(
@@ -591,7 +639,19 @@ async def test_execute_claimed_task_creates_new_conversation_each_run(
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
-                    {"content": "ok"},
+                    {
+                        "kind": "artifact-update",
+                        "artifact": {
+                            "parts": [{"kind": "text", "text": "ok"}],
+                            "metadata": {
+                                "opencode": {
+                                    "block_type": "text",
+                                    "message_id": "msg-new-conv-1",
+                                    "event_id": "evt-new-conv-1",
+                                }
+                            },
+                        },
+                    },
                     {"kind": "status-update", "final": True},
                 ]
             ),
@@ -776,3 +836,115 @@ async def test_recover_stale_running_task_backfills_missing_execution(
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
     assert len(executions) == 1
     assert executions[0].status == A2AScheduleExecution.STATUS_FAILED
+
+
+async def test_dispatch_due_a2a_schedules_skips_cycle_when_db_connection_refused(
+    async_db_session,  # noqa: ARG001
+    monkeypatch,
+    caplog,
+) -> None:
+    ensure_workers_mock = AsyncMock()
+    refresh_metrics_mock = AsyncMock()
+
+    async def _raise_connection_refused(*_args, **_kwargs):
+        raise ConnectionRefusedError("db unavailable")
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        ensure_workers_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        refresh_metrics_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        _raise_connection_refused,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await dispatch_due_a2a_schedules(batch_size=1)
+
+    assert ensure_workers_mock.await_count == 0
+    assert refresh_metrics_mock.await_count == 0
+    assert "database connectivity issue during stale-task recovery." in caplog.text
+
+
+async def test_dispatch_due_a2a_schedules_skips_cycle_when_claim_db_connection_refused(
+    async_db_session,  # noqa: ARG001
+    monkeypatch,
+    caplog,
+) -> None:
+    ensure_workers_mock = AsyncMock()
+    refresh_metrics_mock = AsyncMock()
+
+    async def _recover_ok(*_args, **_kwargs):
+        return 0
+
+    async def _claim_raises(*_args, **_kwargs):
+        raise ConnectionRefusedError("db unavailable")
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        ensure_workers_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        refresh_metrics_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        _recover_ok,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_due_task",
+        _claim_raises,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await dispatch_due_a2a_schedules(batch_size=1)
+
+    assert ensure_workers_mock.await_count == 1
+    assert refresh_metrics_mock.await_count == 0
+    assert "database connectivity issue while claiming due tasks." in caplog.text
+
+
+async def test_dispatch_due_a2a_schedules_reraises_non_connectivity_errors(
+    async_db_session,  # noqa: ARG001
+    monkeypatch,
+) -> None:
+    async def _raise_unexpected(*_args, **_kwargs):
+        raise RuntimeError("unexpected recovery failure")
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        _raise_unexpected,
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected recovery failure"):
+        await dispatch_due_a2a_schedules(batch_size=1)
+
+
+async def test_refresh_ops_metrics_skips_when_db_connection_refused(
+    monkeypatch,
+    caplog,
+) -> None:
+    class _RefusedSessionContext:
+        async def __aenter__(self):
+            raise ConnectionRefusedError("db unavailable")
+
+        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+            return False
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.AsyncSessionLocal",
+        lambda: _RefusedSessionContext(),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await _refresh_ops_metrics()
+
+    assert (
+        "Skip schedule ops metrics refresh due to database connectivity issue."
+        in caplog.text
+    )

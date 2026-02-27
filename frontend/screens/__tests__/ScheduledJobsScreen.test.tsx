@@ -4,6 +4,7 @@ import { ScheduledJobsScreen } from "@/screens/ScheduledJobsScreen";
 
 const mockToggleJobStatus = jest.fn();
 const mockMarkJobFailed = jest.fn();
+const mockRemoveJob = jest.fn();
 const mockLoadFirstPage = jest.fn();
 const mockLoadMore = jest.fn();
 let mockJobs: any[] = [];
@@ -12,6 +13,7 @@ jest.mock("@/hooks/useScheduledJobs", () => ({
   useScheduledJobs: () => ({
     markJobFailed: mockMarkJobFailed,
     toggleJobStatus: mockToggleJobStatus,
+    removeJob: mockRemoveJob,
   }),
 }));
 
@@ -90,31 +92,36 @@ describe("ScheduledJobsScreen sorting", () => {
         id: "1",
         enabled: false,
         last_run_status: "failed",
-        next_run_at: "2026-02-23T10:00:00Z",
+        next_run_at_utc: "2026-02-23T10:00:00Z",
+        schedule_timezone: "UTC",
       },
       {
         id: "2",
         enabled: true,
         last_run_status: "running",
-        next_run_at: "2026-02-23T11:00:00Z",
+        next_run_at_utc: "2026-02-23T11:00:00Z",
+        schedule_timezone: "UTC",
       },
       {
         id: "3",
         enabled: true,
         last_run_status: "success",
-        next_run_at: "2026-02-23T09:00:00Z",
+        next_run_at_utc: "2026-02-23T09:00:00Z",
+        schedule_timezone: "UTC",
       },
       {
         id: "4",
         enabled: true,
         last_run_status: "success",
-        next_run_at: "2026-02-23T12:00:00Z",
+        next_run_at_utc: "2026-02-23T12:00:00Z",
+        schedule_timezone: "UTC",
       },
       {
         id: "5",
         enabled: false,
         last_run_status: "running",
-        next_run_at: "2026-02-23T08:00:00Z",
+        next_run_at_utc: "2026-02-23T08:00:00Z",
+        schedule_timezone: "UTC",
       },
     ];
 

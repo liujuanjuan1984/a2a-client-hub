@@ -18,14 +18,14 @@ export function PageHeader({ title, subtitle, rightElement }: PageHeaderProps) {
     <View className="flex-row items-start justify-between">
       <View className="flex-1 pr-4">
         <Text
-          className="text-2xl font-semibold text-white"
+          className="text-xl font-bold text-white"
           style={{ lineHeight: PAGE_HEADER_TITLE_LINE_HEIGHT }}
         >
           {title}
         </Text>
         {subtitle ? (
           <Text
-            className="text-sm text-muted"
+            className="text-[11px] font-medium text-slate-500"
             style={{
               marginTop: PAGE_HEADER_SUBTITLE_GAP,
               lineHeight: PAGE_HEADER_SUBTITLE_LINE_HEIGHT,

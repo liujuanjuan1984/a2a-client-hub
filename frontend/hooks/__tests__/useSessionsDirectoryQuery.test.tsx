@@ -55,7 +55,7 @@ describe("useSessionsDirectoryQuery", () => {
     const { result } = renderHook(() => useSessionsDirectoryQuery());
 
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];
-    expect(options?.queryKey).toEqual(["sessions", "directory"]);
+    expect(options?.queryKey).toEqual(["sessions", "directory", { size: 50 }]);
 
     await options?.fetchPage(1);
     expect(mockedListDirectoryPage).toHaveBeenNthCalledWith(1, {
@@ -72,6 +72,29 @@ describe("useSessionsDirectoryQuery", () => {
     expect(mockedListDirectoryPage).toHaveBeenNthCalledWith(2, {
       page: 1,
       size: 50,
+    });
+  });
+
+  it("supports agent-scoped directory query", async () => {
+    renderHook(() =>
+      useSessionsDirectoryQuery({
+        agentId: "agent-1",
+        size: 20,
+      }),
+    );
+
+    const options = mockedUsePaginatedList.mock.calls[0]?.[0];
+    expect(options?.queryKey).toEqual([
+      "sessions",
+      "directory",
+      { agent_id: "agent-1", size: 20 },
+    ]);
+
+    await options?.fetchPage(3);
+    expect(mockedListDirectoryPage).toHaveBeenCalledWith({
+      page: 3,
+      size: 20,
+      agent_id: "agent-1",
     });
   });
 });

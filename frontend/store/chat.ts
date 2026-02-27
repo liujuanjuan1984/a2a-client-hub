@@ -10,12 +10,19 @@ import {
   sortSessionsByLastActive,
   type AgentSession,
 } from "@/lib/chat-utils";
-import { generateId, generateUuid } from "@/lib/id";
+import {
+  addConversationMessage,
+  clearAllConversationMessages,
+  getConversationMessages,
+  listConversationIdsWithHistory,
+  removeConversationMessages,
+  updateConversationMessage,
+} from "@/lib/chatHistoryCache";
+import { generateUuid } from "@/lib/id";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
 import { executeChatRuntime } from "@/store/chatRuntime";
-import { useMessageStore } from "@/store/messages";
 
 type ChatState = {
   sessions: Record<string, AgentSession>;
@@ -33,6 +40,11 @@ type ChatState = {
     content: string,
     agentSource: AgentSource,
   ) => Promise<void>;
+  retryMessage: (
+    conversationId: string,
+    agentId: string,
+    agentSource: AgentSource,
+  ) => Promise<void>;
   resumeMessage: (conversationId: string) => Promise<void>;
   cancelMessage: (conversationId: string) => void;
   resetSession: (conversationId: string, agentId: string) => void;
@@ -47,7 +59,6 @@ type ChatState = {
     },
   ) => void;
   clearPendingInterrupt: (conversationId: string, requestId?: string) => void;
-  getSessionsByAgentId: (agentId: string) => [string, AgentSession][];
   getLatestConversationIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
   generateConversationId: () => string;
@@ -156,7 +167,7 @@ export const useChatStore = create<ChatState>()(
             [conversationId]: createAgentSession(agentId),
           },
         }));
-        useMessageStore.getState().removeMessages(conversationId);
+        removeConversationMessages(conversationId);
       },
 
       resumeMessage: async (conversationId) => {
@@ -188,8 +199,7 @@ export const useChatStore = create<ChatState>()(
 
         get().cancelMessage(conversationId);
 
-        const messageStore = useMessageStore.getState();
-        const messages = messageStore.messages[conversationId] ?? [];
+        const messages = getConversationMessages(conversationId);
         const userMessage = messages.find((m) => m.id === userMessageId);
         if (!userMessage) return;
 
@@ -210,7 +220,7 @@ export const useChatStore = create<ChatState>()(
           conversationId,
           {
             userMessageId,
-            clientAgentMessageId: agentMessageId,
+            agentMessageId,
             resumeFromSequence: resumeFromSequence ?? undefined,
           },
         );
@@ -235,14 +245,14 @@ export const useChatStore = create<ChatState>()(
         get().cancelMessage(conversationId);
 
         const userMessage = {
-          id: generateId(),
+          id: generateUuid(),
           role: "user" as const,
           content: trimmed,
           createdAt: new Date().toISOString(),
           status: "done" as const,
         };
 
-        const agentMessageId = generateId();
+        const agentMessageId = generateUuid();
         const agentMessage = {
           id: agentMessageId,
           role: "agent" as const,
@@ -270,15 +280,14 @@ export const useChatStore = create<ChatState>()(
           },
         }));
 
-        const messageStore = useMessageStore.getState();
-        messageStore.addMessage(conversationId, userMessage);
-        messageStore.addMessage(conversationId, agentMessage);
+        addConversationMessage(conversationId, userMessage);
+        addConversationMessage(conversationId, agentMessage);
 
         const session =
           get().sessions[conversationId] ?? createAgentSession(agentId);
         const payload = buildInvokePayload(trimmed, session, conversationId, {
           userMessageId: userMessage.id,
-          clientAgentMessageId: agentMessage.id,
+          agentMessageId: agentMessage.id,
         });
 
         await executeChatRuntime(
@@ -291,22 +300,93 @@ export const useChatStore = create<ChatState>()(
           set,
         );
       },
-      getSessionsByAgentId: (agentId) => {
-        const sessions = Object.entries(get().sessions).filter(
-          ([_, session]) => session.agentId === agentId,
+      retryMessage: async (conversationId, agentId, agentSource) => {
+        const session = get().sessions[conversationId];
+        const userMessageId = session?.lastUserMessageId;
+        const agentMessageId = session?.lastAgentMessageId;
+        if (!userMessageId || !agentMessageId) {
+          return;
+        }
+        const messages = getConversationMessages(conversationId);
+        const userMessage = messages.find(
+          (message) => message.id === userMessageId && message.role === "user",
         );
-        return sortSessionsByLastActive(sessions);
+        if (!userMessage) {
+          return;
+        }
+
+        get().cancelMessage(conversationId);
+
+        const existingAgentMessage = messages.find(
+          (message) =>
+            message.id === agentMessageId && message.role === "agent",
+        );
+        if (existingAgentMessage) {
+          updateConversationMessage(conversationId, agentMessageId, {
+            content: "",
+            blocks: [],
+            status: "streaming",
+          });
+        } else {
+          addConversationMessage(conversationId, {
+            id: agentMessageId,
+            role: "agent",
+            content: "",
+            blocks: [],
+            createdAt: new Date().toISOString(),
+            status: "streaming",
+          });
+        }
+
+        set((state) => ({
+          sessions: {
+            ...state.sessions,
+            [conversationId]: {
+              ...(state.sessions[conversationId] ??
+                createAgentSession(agentId)),
+              lastActiveAt: new Date().toISOString(),
+              streamState: "streaming",
+              lastStreamError: null,
+              lastUserMessageId: userMessageId,
+              lastAgentMessageId: agentMessageId,
+              lastReceivedSequence: undefined,
+              pendingInterrupt: null,
+            },
+          },
+        }));
+
+        const payload = buildInvokePayload(
+          userMessage.content,
+          get().sessions[conversationId] ?? createAgentSession(agentId),
+          conversationId,
+          {
+            userMessageId,
+            agentMessageId,
+          },
+        );
+        await executeChatRuntime(
+          conversationId,
+          agentId,
+          agentSource,
+          payload,
+          agentMessageId,
+          get,
+          set,
+        );
       },
       getLatestConversationIdByAgentId: (agentId) => {
-        const sessions = get().getSessionsByAgentId(agentId);
+        const sessions = sortSessionsByLastActive(
+          Object.entries(get().sessions).filter(
+            ([_, session]) => session.agentId === agentId,
+          ),
+        );
         return sessions[0]?.[0];
       },
       cleanupSessions: () => {
         set((state) => {
-          const messageStore = useMessageStore.getState();
           const cleanupPlan = buildSessionCleanupPlan(
             state.sessions,
-            Object.keys(messageStore.messages),
+            listConversationIdsWithHistory(),
           );
           if (!cleanupPlan.changed) {
             return state;
@@ -314,16 +394,16 @@ export const useChatStore = create<ChatState>()(
 
           cleanupPlan.expiredConversationIds.forEach((conversationId) => {
             chatConnectionService.cancelSession(conversationId);
-            messageStore.removeMessages(conversationId);
+            removeConversationMessages(conversationId);
           });
           cleanupPlan.trimmedConversationIds.forEach((conversationId) => {
             chatConnectionService.cancelSession(conversationId);
-            messageStore.removeMessages(conversationId);
+            removeConversationMessages(conversationId);
           });
 
           cleanupPlan.orphanedMessageConversationIds.forEach(
             (conversationId) => {
-              messageStore.removeMessages(conversationId);
+              removeConversationMessages(conversationId);
             },
           );
 
@@ -333,6 +413,7 @@ export const useChatStore = create<ChatState>()(
       generateConversationId: () => generateUuid(),
       clearAll: () => {
         chatConnectionService.clearAll();
+        clearAllConversationMessages();
         set({ sessions: {} });
       },
     }),
