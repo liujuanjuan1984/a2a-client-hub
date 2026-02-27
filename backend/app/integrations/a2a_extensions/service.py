@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 import httpx
 from a2a.types import AgentCard
@@ -22,7 +22,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionUpstreamError,
 )
-from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient
+from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient, JsonRpcResponse
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
 from app.integrations.a2a_extensions.opencode_interrupt_callback import (
     resolve_opencode_interrupt_callback,
@@ -41,6 +41,27 @@ from app.utils.outbound_url import (
 )
 
 logger = get_logger(__name__)
+
+_JSONRPC_STANDARD_ERROR_CODE_MAP: dict[int, str] = {
+    -32600: "invalid_request",
+    -32601: "method_not_supported",
+    -32602: "invalid_params",
+}
+
+_ERROR_DATA_TYPE_TO_ERROR_CODE: dict[str, str] = {
+    "session_not_found": "session_not_found",
+    "session_forbidden": "session_forbidden",
+    "method_disabled": "method_disabled",
+    "upstream_unreachable": "upstream_unreachable",
+    "upstream_http_error": "upstream_http_error",
+    "upstream_payload_error": "upstream_payload_error",
+    "interrupt_request_not_found": "interrupt_request_not_found",
+    "interrupt_request_expired": "interrupt_request_expired",
+    "interrupt_type_mismatch": "interrupt_type_mismatch",
+    "invalid_field": "invalid_params",
+    "missing_field": "invalid_params",
+    "invalid_pagination_mode": "invalid_params",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,26 +280,79 @@ class A2AExtensionsService:
 
     @staticmethod
     def _map_business_error_code(error: Dict[str, Any], ext: ResolvedExtension) -> str:
-        code = error.get("code")
-        mapped = None
-        if isinstance(code, int):
-            mapped = ext.business_code_map.get(code)
-        elif isinstance(code, str) and code.strip().lstrip("-").isdigit():
-            mapped = ext.business_code_map.get(int(code.strip()))
-        return mapped or "upstream_error"
+        return A2AExtensionsService._map_upstream_error_code(  # noqa: SLF001
+            error=error,
+            business_code_map=ext.business_code_map,
+        )
 
     @staticmethod
     def _map_interrupt_business_error_code(
         error: Dict[str, Any],
         ext: ResolvedInterruptCallbackExtension,
     ) -> str:
+        return A2AExtensionsService._map_upstream_error_code(  # noqa: SLF001
+            error=error,
+            business_code_map=ext.business_code_map,
+        )
+
+    @staticmethod
+    def _coerce_jsonrpc_error_code(error: Dict[str, Any]) -> Optional[int]:
         code = error.get("code")
-        mapped = None
+        if isinstance(code, bool):
+            return None
         if isinstance(code, int):
-            mapped = ext.business_code_map.get(code)
-        elif isinstance(code, str) and code.strip().lstrip("-").isdigit():
-            mapped = ext.business_code_map.get(int(code.strip()))
-        return mapped or "upstream_error"
+            return code
+        if isinstance(code, str):
+            normalized = code.strip()
+            if normalized.lstrip("-").isdigit():
+                return int(normalized)
+        return None
+
+    @staticmethod
+    def _normalize_error_data_type(error: Dict[str, Any]) -> Optional[str]:
+        data = error.get("data")
+        if not isinstance(data, dict):
+            return None
+        raw_type = data.get("type")
+        if not isinstance(raw_type, str):
+            return None
+        normalized = []
+        pending_sep = False
+        for ch in raw_type.strip().lower():
+            if ch.isalnum():
+                if pending_sep and normalized:
+                    normalized.append("_")
+                normalized.append(ch)
+                pending_sep = False
+                continue
+            pending_sep = True
+        token = "".join(normalized).strip("_")
+        return token or None
+
+    @staticmethod
+    def _map_upstream_error_code(
+        *,
+        error: Dict[str, Any],
+        business_code_map: Mapping[int, str],
+    ) -> str:
+        normalized_data_type = A2AExtensionsService._normalize_error_data_type(error)
+        if normalized_data_type:
+            mapped_by_type = _ERROR_DATA_TYPE_TO_ERROR_CODE.get(normalized_data_type)
+            if mapped_by_type:
+                return mapped_by_type
+            if normalized_data_type.startswith("invalid_"):
+                return "invalid_params"
+
+        numeric_code = A2AExtensionsService._coerce_jsonrpc_error_code(error)
+        if numeric_code is not None:
+            mapped = business_code_map.get(numeric_code)
+            if mapped:
+                return mapped
+            mapped_standard = _JSONRPC_STANDARD_ERROR_CODE_MAP.get(numeric_code)
+            if mapped_standard:
+                return mapped_standard
+
+        return "upstream_error"
 
     @staticmethod
     def _normalize_extension_metadata(
@@ -308,6 +382,56 @@ class A2AExtensionsService:
         normalized["opencode"] = opencode
         return normalized
 
+    @staticmethod
+    def _record_extension_metric(
+        metric_key: str, success: bool, error_code: Optional[str]
+    ) -> None:
+        a2a_extension_metrics.record_call(
+            metric_key,
+            success=success,
+            error_code=error_code,
+        )
+
+    async def _perform_jsonrpc_call(
+        self,
+        *,
+        runtime: A2ARuntime,
+        jsonrpc_url: str,
+        method_name: str,
+        params: Dict[str, Any],
+    ) -> JsonRpcResponse:
+        await self._get_http()
+        assert self._jsonrpc is not None  # constructed alongside _http
+        try:
+            return await self._call_with_retry(
+                url=jsonrpc_url,
+                method=method_name,
+                params=params,
+                headers=dict(runtime.resolved.headers),
+                timeout_seconds=max(settings.a2a_default_timeout, 1.0),
+            )
+        except httpx.TransportError as exc:
+            raise A2AExtensionUpstreamError(
+                message=str(exc),
+                error_code="upstream_unreachable",
+                upstream_error={"message": str(exc), "type": type(exc).__name__},
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise A2AExtensionUpstreamError(
+                message=str(exc),
+                error_code="upstream_http_error",
+                upstream_error={
+                    "message": str(exc),
+                    "status_code": (exc.response.status_code if exc.response else None),
+                },
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise A2AExtensionUpstreamError(
+                message=str(exc),
+                error_code="upstream_error",
+                upstream_error={"message": str(exc), "type": type(exc).__name__},
+            ) from exc
+
     async def _invoke_opencode_method(
         self,
         *,
@@ -331,38 +455,13 @@ class A2AExtensionsService:
                 },
                 meta={"extension_uri": ext.uri},
             )
-        metric_key = f"{ext.uri}:{method_name}"
-        await self._get_http()
-        assert self._jsonrpc is not None  # constructed alongside _http
-        try:
-            resp = await self._call_with_retry(
-                url=jsonrpc_url,
-                method=method_name,
-                params=params,
-                headers=dict(runtime.resolved.headers),
-                timeout_seconds=max(settings.a2a_default_timeout, 1.0),
-            )
-        except httpx.TransportError as exc:
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_unreachable",
-                upstream_error={"message": str(exc), "type": type(exc).__name__},
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_http_error",
-                upstream_error={
-                    "message": str(exc),
-                    "status_code": exc.response.status_code if exc.response else None,
-                },
-            ) from exc
-        except Exception as exc:  # noqa: BLE001
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_error",
-                upstream_error={"message": str(exc), "type": type(exc).__name__},
-            ) from exc
+
+        resp = await self._perform_jsonrpc_call(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method_name,
+            params=params,
+        )
 
         meta = self._build_call_meta(
             ext=ext,
@@ -371,6 +470,7 @@ class A2AExtensionsService:
             meta_extra=meta_extra,
         )
 
+        metric_key = f"{ext.uri}:{method_name}"
         if resp.ok:
             resolved_result: Optional[Dict[str, Any]]
             if normalize_envelope:
@@ -383,20 +483,13 @@ class A2AExtensionsService:
                 resolved_result = dict(resp.result)
             else:
                 resolved_result = {"raw": resp.result}
-            a2a_extension_metrics.record_call(
-                metric_key,
-                success=True,
-                error_code=None,
-            )
+
+            self._record_extension_metric(metric_key, success=True, error_code=None)
             return ExtensionCallResult(success=True, result=resolved_result, meta=meta)
 
         error = resp.error or {}
         error_code = self._map_business_error_code(error, ext)
-        a2a_extension_metrics.record_call(
-            metric_key,
-            success=False,
-            error_code=error_code,
-        )
+        self._record_extension_metric(metric_key, success=False, error_code=error_code)
         return ExtensionCallResult(
             success=False,
             error_code=error_code,
@@ -666,38 +759,13 @@ class A2AExtensionsService:
                 },
                 meta={"extension_uri": ext.uri},
             )
-        metric_key = f"{ext.uri}:{method_name}"
-        await self._get_http()
-        assert self._jsonrpc is not None  # constructed alongside _http
-        try:
-            resp = await self._call_with_retry(
-                url=jsonrpc_url,
-                method=method_name,
-                params=params,
-                headers=dict(runtime.resolved.headers),
-                timeout_seconds=max(settings.a2a_default_timeout, 1.0),
-            )
-        except httpx.TransportError as exc:
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_unreachable",
-                upstream_error={"message": str(exc), "type": type(exc).__name__},
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_http_error",
-                upstream_error={
-                    "message": str(exc),
-                    "status_code": exc.response.status_code if exc.response else None,
-                },
-            ) from exc
-        except Exception as exc:  # noqa: BLE001
-            raise A2AExtensionUpstreamError(
-                message=str(exc),
-                error_code="upstream_error",
-                upstream_error={"message": str(exc), "type": type(exc).__name__},
-            ) from exc
+
+        resp = await self._perform_jsonrpc_call(
+            runtime=runtime,
+            jsonrpc_url=jsonrpc_url,
+            method_name=method_name,
+            params=params,
+        )
 
         meta: Dict[str, Any] = {
             "extension_uri": ext.uri,
@@ -706,21 +774,14 @@ class A2AExtensionsService:
         if meta_extra:
             meta.update(meta_extra)
 
+        metric_key = f"{ext.uri}:{method_name}"
         if resp.ok:
-            a2a_extension_metrics.record_call(
-                metric_key,
-                success=True,
-                error_code=None,
-            )
+            self._record_extension_metric(metric_key, success=True, error_code=None)
             return ExtensionCallResult(success=True, result=resp.result, meta=meta)
 
         error = resp.error or {}
         error_code = self._map_interrupt_business_error_code(error, ext)
-        a2a_extension_metrics.record_call(
-            metric_key,
-            success=False,
-            error_code=error_code,
-        )
+        self._record_extension_metric(metric_key, success=False, error_code=error_code)
         return ExtensionCallResult(
             success=False,
             error_code=error_code,

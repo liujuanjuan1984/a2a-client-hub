@@ -93,10 +93,21 @@ The Sessions tab now uses the backend unified conversation domain API
 
 - `manual` sessions (local chat sessions persisted by backend)
 - `scheduled` sessions (task execution sessions)
-- `opencode` sessions (remote extension-backed sessions)
 
-History loading is unified via
-`POST /me/conversations/{conversation_id}/messages:query`.
+Notes:
+
+- Backend `source` currently uses `manual` / `scheduled` only.
+- OpenCode binding is represented by external binding fields (for example
+  `external_provider` / `external_session_id`), not by a separate `source`
+  enum value.
+- Chat page SessionPicker queries backend with `agent_id` so each agent view
+  reads its session directory from server-side authority.
+- SessionPicker titles are rendered from backend `title` directly (no local
+  history-title derivation).
+
+Chat timeline loading is unified via
+`POST /me/conversations/{conversation_id}/messages:query`
+(`limit` + `before` cursor for backward pagination from latest window).
 To avoid transport contention, chat history auto-refetch is paused while a
 message is actively streaming.
 
@@ -104,9 +115,14 @@ Message id contract:
 
 - `messages:query` returns canonical local UUIDs in `item.id`.
 - Frontend store/cache keys must use `item.id` only.
-- Do not rely on alias ids from metadata.
+- Non-text block details (`reasoning`/`tool_call`) are fetched on demand via
+  `POST /me/conversations/{conversation_id}/blocks:query`.
+- `blocks:query` detail items include `messageId` and must match the target
+  message before cache patching.
 - Stream events must use snake_case contract fields: `message_id`, `event_id`, `seq`.
 - Invoke payloads should carry both `userMessageId` and `agentMessageId` (UUID).
+- Message status semantics are preserved from history payloads (`streaming`,
+  `done`, `error`, `interrupted`).
 
 ## Block-based Streaming
 

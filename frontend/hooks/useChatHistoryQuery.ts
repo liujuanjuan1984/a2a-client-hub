@@ -1,12 +1,46 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { usePaginatedList } from "@/hooks/usePaginatedList";
+import { type ChatMessage } from "@/lib/api/chat-utils";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
 import { queryKeys } from "@/lib/queryKeys";
-import {
-  mapSessionMessagesToChatMessages,
-  type SessionMessageItem,
-} from "@/lib/sessionHistory";
+import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
+
+const MESSAGES_PAGE_LIMIT = 8;
+
+const messageCursorStore = new Map<string, Map<number, string | null>>();
+
+const resolveMessageCursorMap = (
+  conversationId: string,
+): Map<number, string | null> => {
+  const existing = messageCursorStore.get(conversationId);
+  if (existing) {
+    if (!existing.has(1)) {
+      existing.set(1, null);
+    }
+    return existing;
+  }
+  const created = new Map<number, string | null>([[1, null]]);
+  messageCursorStore.set(conversationId, created);
+  return created;
+};
+
+const compareMessagesByTimeline = (left: ChatMessage, right: ChatMessage) => {
+  const createdAtDiff = left.createdAt.localeCompare(right.createdAt);
+  if (createdAtDiff !== 0) {
+    return createdAtDiff;
+  }
+  const rolePriority = (role: ChatMessage["role"]) => {
+    if (role === "user") return 0;
+    if (role === "agent") return 1;
+    return 2;
+  };
+  const roleDiff = rolePriority(left.role) - rolePriority(right.role);
+  if (roleDiff !== 0) {
+    return roleDiff;
+  }
+  return left.id.localeCompare(right.id);
+};
 
 export function useSessionHistoryQuery(options: {
   conversationId?: string;
@@ -14,21 +48,69 @@ export function useSessionHistoryQuery(options: {
   paused?: boolean;
 }) {
   const { conversationId, enabled, paused = false } = options;
+  const cursorByPageRef = useRef<Map<number, string | null>>(
+    new Map<number, string | null>([[1, null]]),
+  );
+
+  useEffect(() => {
+    if (!conversationId) {
+      cursorByPageRef.current = new Map<number, string | null>([[1, null]]);
+      return;
+    }
+    const map = resolveMessageCursorMap(conversationId);
+    // 关键修复：重入会话时，丢弃所有后续页面的旧 cursor 缓存，强制重新获取
+    Array.from(map.keys()).forEach((key) => {
+      if (key > 1) {
+        map.delete(key);
+      }
+    });
+    map.set(1, null);
+    cursorByPageRef.current = map;
+  }, [conversationId]);
 
   const fetchPage = useCallback(
     async (page: number) => {
       if (!conversationId) {
         throw new Error("Conversation id is required.");
       }
-      return await listSessionMessagesPage(conversationId, { page, size: 100 });
+      const resolvedPage =
+        Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+      const before =
+        resolvedPage > 1
+          ? (cursorByPageRef.current.get(resolvedPage) ?? null)
+          : null;
+      const response = await listSessionMessagesPage(conversationId, {
+        before,
+        limit: MESSAGES_PAGE_LIMIT,
+      });
+      const nextBefore =
+        typeof response.pageInfo.nextBefore === "string" &&
+        response.pageInfo.nextBefore.trim().length > 0
+          ? response.pageInfo.nextBefore.trim()
+          : null;
+      const nextPage =
+        response.pageInfo.hasMoreBefore && nextBefore
+          ? resolvedPage + 1
+          : undefined;
+      if (nextPage && nextBefore) {
+        cursorByPageRef.current.set(nextPage, nextBefore);
+      } else {
+        cursorByPageRef.current.delete(resolvedPage + 1);
+      }
+      return {
+        items: mapSessionMessagesToChatMessages(response.items, {
+          keepEmptyMessages: true,
+        }),
+        nextPage,
+      };
     },
     [conversationId],
   );
 
-  const query = usePaginatedList<SessionMessageItem>({
+  const query = usePaginatedList<ChatMessage>({
     queryKey: queryKeys.history.chat(conversationId ?? "missing"),
     fetchPage,
-    getKey: (item) => item.id,
+    getKey: (item) => item.id.trim(),
     errorTitle: "Load history failed",
     fallbackMessage: "Load failed.",
     enabled: enabled && Boolean(conversationId) && !paused,
@@ -38,12 +120,10 @@ export function useSessionHistoryQuery(options: {
     staleTime: 0,
   });
 
-  const messages = useMemo(() => {
-    if (!conversationId) {
-      return [];
-    }
-    return mapSessionMessagesToChatMessages(query.items);
-  }, [query.items, conversationId]);
+  const messages = useMemo(
+    () => [...query.items].sort(compareMessagesByTimeline),
+    [query.items],
+  );
 
   return {
     ...query,

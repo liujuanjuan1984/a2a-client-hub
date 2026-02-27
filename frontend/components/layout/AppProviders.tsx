@@ -7,6 +7,7 @@ import Toast from "react-native-toast-message";
 
 import { AuthBootstrap } from "@/components/auth/AuthBootstrap";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { mmkvStateStorage } from "@/lib/storage/mmkv";
 import { queryClient } from "@/services/queryClient";
 
 function onAppStateChange(status: AppStateStatus) {
@@ -22,6 +23,15 @@ export function AppProviders({ children }: PropsWithChildren) {
     }
     const subscription = AppState.addEventListener("change", onAppStateChange);
     return () => subscription?.remove?.();
+  }, []);
+
+  useEffect(() => {
+    Promise.resolve(
+      mmkvStateStorage.removeItem("a2a-client-hub.messages"),
+    ).catch(() => undefined);
+    Promise.resolve(
+      mmkvStateStorage.removeItem("a2a-client-hub.shortcuts"),
+    ).catch(() => undefined);
   }, []);
 
   return (

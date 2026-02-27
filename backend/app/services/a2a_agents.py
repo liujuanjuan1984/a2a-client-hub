@@ -8,16 +8,20 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, delete, select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.transaction import commit_safely
-from app.services.agent_common import AgentValidationMixin, encrypt_bearer_token
-
-ALLOWED_AUTH_TYPES = {"none", "bearer"}
+from app.services.agent_common import (
+    ALLOWED_AUTH_TYPES,
+    AgentValidationMixin,
+    delete_agent_credentials,
+    get_agent_credential,
+    upsert_agent_credential,
+)
 
 
 class A2AAgentError(RuntimeError):
@@ -205,7 +209,7 @@ class A2AAgentService(AgentValidationMixin):
     ) -> None:
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
         agent.soft_delete()
-        await self._delete_credentials(db, agent_id=agent.id)
+        await delete_agent_credentials(db, agent_id=agent.id)
         await commit_safely(db)
 
     # ----------------------
@@ -248,26 +252,6 @@ class A2AAgentService(AgentValidationMixin):
         if existing is not None:
             raise A2AAgentValidationError("Agent card URL already exists")
 
-    async def _get_credential(
-        self,
-        db: AsyncSession,
-        *,
-        agent_id: UUID,
-    ) -> Optional[A2AAgentCredential]:
-        stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
-        return await db.scalar(stmt)
-
-    async def _delete_credentials(
-        self,
-        db: AsyncSession,
-        *,
-        agent_id: UUID,
-    ) -> None:
-        # Hard-delete credential rows to minimize secret retention.
-        await db.execute(
-            delete(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
-        )
-
     async def _sync_credentials(
         self,
         db: AsyncSession,
@@ -277,13 +261,13 @@ class A2AAgentService(AgentValidationMixin):
         token: Optional[str],
     ) -> Optional[str]:
         if agent.auth_type == "none":
-            await self._delete_credentials(db, agent_id=agent.id)
+            await delete_agent_credentials(db, agent_id=agent.id)
             return None
 
         if agent.auth_type != "bearer":
             raise A2AAgentValidationError("Unsupported auth_type")
 
-        credential = await self._get_credential(db, agent_id=agent.id)
+        credential = await get_agent_credential(db, agent_id=agent.id)
         if token is None:
             if credential is None:
                 raise A2AAgentValidationError("Bearer token is required")
@@ -304,30 +288,14 @@ class A2AAgentService(AgentValidationMixin):
         agent_id: UUID,
         token: Optional[str],
     ) -> Optional[str]:
-        encrypted_value, last4 = encrypt_bearer_token(
+        return await upsert_agent_credential(
+            db,
             vault=self._vault,
+            agent_id=agent_id,
+            user_id=user_id,
             token=token,
             validation_error_cls=A2AAgentValidationError,
         )
-
-        credential = await self._get_credential(db, agent_id=agent_id)
-        if credential is None:
-            # Purge legacy soft-deleted rows before insert to satisfy unique constraint.
-            await self._delete_credentials(db, agent_id=agent_id)
-            credential = A2AAgentCredential(
-                agent_id=agent_id,
-                created_by_user_id=user_id,
-                encrypted_token=encrypted_value,
-                token_last4=last4,
-                encryption_version=1,
-            )
-            db.add(credential)
-        else:
-            credential.encrypted_token = encrypted_value
-            credential.token_last4 = last4
-            credential.created_by_user_id = user_id
-
-        return last4
 
     def _normalize_tags(self, tags: Optional[Iterable[str]]) -> List[str]:
         if tags is None:

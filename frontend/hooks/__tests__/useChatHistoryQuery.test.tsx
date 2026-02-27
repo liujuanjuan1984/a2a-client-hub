@@ -2,10 +2,15 @@ import { renderHook } from "@testing-library/react-native";
 
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { usePaginatedList } from "@/hooks/usePaginatedList";
-import { type SessionMessageItem } from "@/lib/sessionHistory";
+import { type ChatMessage } from "@/lib/api/chat-utils";
+import { listSessionMessagesPage } from "@/lib/api/sessions";
 
 jest.mock("@/hooks/usePaginatedList", () => ({
   usePaginatedList: jest.fn(),
+}));
+
+jest.mock("@/lib/api/sessions", () => ({
+  listSessionMessagesPage: jest.fn(),
 }));
 
 jest.mock("@/lib/storage/mmkv", () => ({
@@ -17,6 +22,7 @@ jest.mock("@/lib/storage/mmkv", () => ({
 }));
 
 const mockedUsePaginatedList = jest.mocked(usePaginatedList);
+const mockedListSessionMessagesPage = jest.mocked(listSessionMessagesPage);
 
 const createPaginatedResult = (
   items: unknown[],
@@ -39,27 +45,30 @@ const createPaginatedResult = (
 describe("useChatHistoryQuery", () => {
   beforeEach(() => {
     mockedUsePaginatedList.mockReset();
+    mockedListSessionMessagesPage.mockReset();
   });
 
   it("maps session history messages without truncating loaded pages", () => {
-    const items: SessionMessageItem[] = Array.from({ length: 520 }, (_, i) => {
+    const items: ChatMessage[] = Array.from({ length: 520 }, (_, i) => {
       const minute = String(Math.floor(i / 60)).padStart(2, "0");
       const second = String(i % 60).padStart(2, "0");
       const messageId = `msg-${i}`;
       return {
         id: messageId,
-        role: i % 2 === 0 ? "assistant" : "user",
+        role: i % 2 === 0 ? "agent" : "user",
+        content: `content-${i}`,
         blocks: [
           {
             id: `${messageId}:block-1`,
-            messageId,
-            seq: 1,
             type: "text",
             content: `content-${i}`,
             isFinished: true,
+            createdAt: `2026-02-12T00:${minute}:${second}.000Z`,
+            updatedAt: `2026-02-12T00:${minute}:${second}.000Z`,
           },
         ],
-        created_at: `2026-02-12T00:${minute}:${second}.000Z`,
+        createdAt: `2026-02-12T00:${minute}:${second}.000Z`,
+        status: "done",
       };
     });
 
@@ -123,5 +132,126 @@ describe("useChatHistoryQuery", () => {
 
     const options = mockedUsePaginatedList.mock.calls[0]?.[0];
     expect(options?.enabled).toBe(false);
+  });
+
+  it("loads timeline pages with before cursor chaining", async () => {
+    let fetchPage: ((page: number) => Promise<{ nextPage?: number }>) | null =
+      null;
+    mockedUsePaginatedList.mockImplementation((options: any) => {
+      fetchPage = options.fetchPage;
+      return createPaginatedResult([]);
+    });
+    mockedListSessionMessagesPage
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "msg-2",
+            role: "agent",
+            created_at: "2026-02-12T00:00:01.000Z",
+            status: "done",
+            blocks: [],
+          },
+        ],
+        pageInfo: { hasMoreBefore: true, nextBefore: "cursor-1" },
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "msg-1",
+            role: "user",
+            created_at: "2026-02-12T00:00:00.000Z",
+            status: "done",
+            blocks: [],
+          },
+        ],
+        pageInfo: { hasMoreBefore: false, nextBefore: null },
+      });
+
+    renderHook(() =>
+      useSessionHistoryQuery({
+        conversationId: "conversation-1",
+        enabled: true,
+      }),
+    );
+    if (!fetchPage) {
+      throw new Error("fetchPage is unavailable");
+    }
+    const runFetchPage = fetchPage as unknown as (page: number) => Promise<{
+      nextPage?: number;
+    }>;
+    const firstResult = await runFetchPage(1);
+    expect(mockedListSessionMessagesPage).toHaveBeenNthCalledWith(
+      1,
+      "conversation-1",
+      {
+        before: null,
+        limit: 8,
+      },
+    );
+    expect(firstResult.nextPage).toBe(2);
+
+    const secondResult = await runFetchPage(2);
+    expect(mockedListSessionMessagesPage).toHaveBeenNthCalledWith(
+      2,
+      "conversation-1",
+      {
+        before: "cursor-1",
+        limit: 8,
+      },
+    );
+    expect(secondResult.nextPage).toBeUndefined();
+  });
+
+  it("clears subsequent page cursors when conversation id changes or re-enters", async () => {
+    let fetchPage: ((page: number) => Promise<{ nextPage?: number }>) | null =
+      null;
+    mockedUsePaginatedList.mockImplementation((options: any) => {
+      fetchPage = options.fetchPage;
+      return createPaginatedResult([]);
+    });
+    mockedListSessionMessagesPage.mockResolvedValue({
+      items: [],
+      pageInfo: { hasMoreBefore: true, nextBefore: "cursor-next" },
+    });
+
+    const { rerender } = renderHook(
+      ({ conversationId }) =>
+        useSessionHistoryQuery({
+          conversationId,
+          enabled: true,
+        }),
+      {
+        initialProps: { conversationId: "conversation-reset-test" },
+      },
+    );
+
+    if (!fetchPage) throw new Error("fetchPage is unavailable");
+    const runFetchPage = fetchPage as unknown as (page: number) => Promise<{
+      nextPage?: number;
+    }>;
+
+    // Load page 1 -> next cursor stored for page 2
+    await runFetchPage(1);
+
+    // Verify page 2 would use the cursor
+    await runFetchPage(2);
+    expect(mockedListSessionMessagesPage).toHaveBeenLastCalledWith(
+      "conversation-reset-test",
+      { before: "cursor-next", limit: 8 },
+    );
+
+    // Change conversationId to clear the current ref's connection or reset it
+    rerender({ conversationId: "conversation-other" });
+    // Change back to original
+    rerender({ conversationId: "conversation-reset-test" });
+
+    mockedListSessionMessagesPage.mockClear();
+
+    // Now page 2 should NOT use the old cursor because it was cleared in useEffect
+    await runFetchPage(2);
+    expect(mockedListSessionMessagesPage).toHaveBeenLastCalledWith(
+      "conversation-reset-test",
+      { before: null, limit: 8 },
+    );
   });
 });

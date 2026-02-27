@@ -1,6 +1,6 @@
+import { getConversationMessages } from "@/lib/chatHistoryCache";
 import { useChatStore } from "@/store/chat";
 import { executeChatRuntime } from "@/store/chatRuntime";
-import { useMessageStore } from "@/store/messages";
 
 jest.mock("@/lib/storage/mmkv", () => ({
   createPersistStorage: () => ({
@@ -33,7 +33,6 @@ describe("chat store idempotency semantics", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useChatStore.getState().clearAll();
-    useMessageStore.getState().clearAll();
   });
 
   it("sendMessage creates UUID message ids and forwards userMessageId", async () => {
@@ -41,7 +40,7 @@ describe("chat store idempotency semantics", () => {
       .getState()
       .sendMessage("conv-1", "agent-1", "hello world", "personal");
 
-    const messages = useMessageStore.getState().messages["conv-1"] ?? [];
+    const messages = getConversationMessages("conv-1");
     expect(messages).toHaveLength(2);
 
     const userMessage = messages.find((message) => message.role === "user");
@@ -76,7 +75,7 @@ describe("chat store idempotency semantics", () => {
       .getState()
       .sendMessage("conv-2", "agent-1", "retry target", "personal");
 
-    const initialMessages = useMessageStore.getState().messages["conv-2"] ?? [];
+    const initialMessages = getConversationMessages("conv-2");
     const initialUserMessage = initialMessages.find(
       (message) => message.role === "user",
     );
@@ -91,8 +90,7 @@ describe("chat store idempotency semantics", () => {
 
     await useChatStore.getState().retryMessage("conv-2", "agent-1", "personal");
 
-    const messagesAfterRetry =
-      useMessageStore.getState().messages["conv-2"] ?? [];
+    const messagesAfterRetry = getConversationMessages("conv-2");
     expect(messagesAfterRetry).toHaveLength(2);
 
     const userMessageAfterRetry = messagesAfterRetry.find(

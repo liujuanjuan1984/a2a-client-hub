@@ -25,22 +25,22 @@ import {
 } from "@/lib/api/a2aExtensions";
 import { type ChatMessage } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
-import { continueSession } from "@/lib/api/sessions";
-import { isSameMessageList } from "@/lib/chat-utils";
+import { continueSession, querySessionMessageBlocks } from "@/lib/api/sessions";
+import {
+  getConversationMessages,
+  updateConversationMessageWithUpdater,
+} from "@/lib/chatHistoryCache";
 import {
   getAnchoredOffsetAfterContentResize,
   shouldShowScrollToBottom,
   shouldStickToBottom,
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
-import { mergeChatMessagesByCanonicalId } from "@/lib/messageMerge";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
-import { useMessageStore } from "@/store/messages";
-import { useShortcutStore } from "@/store/shortcuts";
 
 type WebTextInputKeyPressEvent =
   NativeSyntheticEvent<TextInputKeyPressEventData> & {
@@ -84,11 +84,6 @@ export function useChatScreenController({
   const session = useChatStore((state) =>
     conversationId ? state.sessions[conversationId] : undefined,
   );
-  const setMessages = useMessageStore((state) => state.setMessages);
-  const messages = useMessageStore((state) =>
-    conversationId ? (state.messages[conversationId] ?? []) : [],
-  );
-  const { syncShortcuts } = useShortcutStore();
 
   const [input, setInput] = useState("");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -116,6 +111,7 @@ export function useChatScreenController({
     contentHeight: number;
   } | null>(null);
   const loadingEarlierRef = useRef(false);
+  const blockDetailInFlightRef = useRef<Set<string>>(new Set());
   const inputRef = useRef<TextInput>(null);
   const isInitialLoadRef = useRef(true);
   const minInputHeight = 44;
@@ -128,6 +124,7 @@ export function useChatScreenController({
     enabled: Boolean(conversationId),
     paused: historyPaused,
   });
+  const messages = sessionHistoryQuery.messages;
 
   useRefreshOnFocus(sessionHistoryQuery.loadFirstPage);
 
@@ -220,17 +217,10 @@ export function useChatScreenController({
   }, [activeAgentId, conversationId, ensureSession]);
 
   useEffect(() => {
-    syncShortcuts().catch(() => {
-      // Keep shortcut sync failure non-blocking for UX.
-    });
-  }, [syncShortcuts]);
-
-  useEffect(() => {
     if (!conversationId || !activeAgentId) return;
     const boundAgentId = activeAgentId;
     const normalizedConversationId = conversationId;
-    const hasHistory =
-      messages.length > 0 || sessionHistoryQuery.messages.length > 0;
+    const hasHistory = messages.length > 0;
     if (sessionSource === "manual" && !hasHistory) {
       return;
     }
@@ -289,34 +279,10 @@ export function useChatScreenController({
     activeAgentId,
     ensureSession,
     messages.length,
-    sessionHistoryQuery.messages.length,
     conversationId,
     router,
     sessionSource,
   ]);
-
-  const mergeHistoryMessages = useCallback(
-    (incoming: ChatMessage[]) => {
-      if (!conversationId) return;
-      const current = useMessageStore.getState().messages[conversationId] ?? [];
-      const nextMessages = mergeChatMessagesByCanonicalId({
-        current,
-        incoming,
-        isActivelyStreaming: session?.streamState === "streaming",
-      });
-      if (isSameMessageList(current, nextMessages)) {
-        return;
-      }
-      setMessages(conversationId, nextMessages);
-    },
-    [conversationId, setMessages, session?.streamState],
-  );
-
-  useEffect(() => {
-    if (!conversationId) return;
-    if (sessionHistoryQuery.messages.length === 0) return;
-    mergeHistoryMessages(sessionHistoryQuery.messages);
-  }, [mergeHistoryMessages, conversationId, sessionHistoryQuery.messages]);
 
   useEffect(() => {
     if (!pendingInterrupt || pendingInterrupt.type !== "question") {
@@ -754,6 +720,95 @@ export function useChatScreenController({
     session?.streamState,
   ]);
 
+  const handleLoadBlockContent = useCallback(
+    async (messageId: string, blockId: string): Promise<boolean> => {
+      if (!conversationId) {
+        return false;
+      }
+      const resolvedMessageId = messageId.trim();
+      const resolvedBlockId = blockId.trim();
+      if (!resolvedMessageId || !resolvedBlockId) {
+        return false;
+      }
+
+      const latestMessage = getConversationMessages(conversationId).find(
+        (item) => item.id === resolvedMessageId,
+      );
+      const latestBlock = latestMessage?.blocks?.find(
+        (item) => item.id === resolvedBlockId,
+      );
+      if (latestBlock && latestBlock.content.length > 0) {
+        return true;
+      }
+
+      const inFlightKey = `${conversationId}:${resolvedBlockId}`;
+      if (blockDetailInFlightRef.current.has(inFlightKey)) {
+        return false;
+      }
+      blockDetailInFlightRef.current.add(inFlightKey);
+
+      try {
+        const response = await querySessionMessageBlocks(conversationId, {
+          blockIds: [resolvedBlockId],
+        });
+        const blockDetail = response.items.find(
+          (item) => item.id.trim() === resolvedBlockId,
+        );
+        if (!blockDetail) {
+          toast.error("Load block failed", "Block content unavailable.");
+          return false;
+        }
+        const detailMessageId =
+          typeof blockDetail.messageId === "string"
+            ? blockDetail.messageId.trim()
+            : "";
+        if (!detailMessageId || detailMessageId !== resolvedMessageId) {
+          toast.error("Load block failed", "Block ownership mismatch.");
+          return false;
+        }
+
+        updateConversationMessageWithUpdater(
+          conversationId,
+          resolvedMessageId,
+          (message) => {
+            const nextBlocks = (message.blocks ?? []).map((item) =>
+              item.id === resolvedBlockId
+                ? {
+                    ...item,
+                    type:
+                      typeof blockDetail.type === "string" &&
+                      blockDetail.type.trim().length > 0
+                        ? blockDetail.type
+                        : item.type,
+                    content:
+                      typeof blockDetail.content === "string"
+                        ? blockDetail.content
+                        : "",
+                    isFinished:
+                      typeof blockDetail.isFinished === "boolean"
+                        ? blockDetail.isFinished
+                        : item.isFinished,
+                  }
+                : item,
+            );
+            return {
+              blocks: nextBlocks,
+            };
+          },
+        );
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Load block failed.";
+        toast.error("Load block failed", message);
+        return false;
+      } finally {
+        blockDetailInFlightRef.current.delete(inFlightKey);
+      }
+    },
+    [conversationId],
+  );
+
   const toggleDetails = useCallback(() => {
     setShowDetails((current) => !current);
   }, []);
@@ -813,6 +868,7 @@ export function useChatScreenController({
     handleListContentSizeChange,
     handleListScroll,
     captureContentSizeAnchor,
+    handleLoadBlockContent,
     handleRetry,
     handlePermissionReply,
     handleQuestionAnswerChange,

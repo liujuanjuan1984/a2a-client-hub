@@ -7,7 +7,11 @@ import {
   listScheduledJobExecutionsPage,
   listScheduledJobsPage,
 } from "@/lib/api/scheduledJobs";
-import { listSessionMessagesPage, listSessionsPage } from "@/lib/api/sessions";
+import {
+  listSessionMessagesPage,
+  listSessionsPage,
+  querySessionMessageBlocks,
+} from "@/lib/api/sessions";
 
 jest.mock("@/lib/api/client", () => ({
   apiRequest: jest.fn(),
@@ -87,71 +91,100 @@ describe("API modules using shared pagination fallback", () => {
     expect(result.nextPage).toBe(2);
   });
 
-  it("resolves session messages nextPage from size heuristic", async () => {
+  it("passes agent_id filter in sessions query body", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      items: [],
+      pagination: { page: 1, pages: 1 },
+    } as any);
+
+    await listSessionsPage({
+      page: 1,
+      size: 20,
+      agent_id: "agent-123",
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith("/me/conversations:query", {
+      method: "POST",
+      body: {
+        page: 1,
+        size: 20,
+        agent_id: "agent-123",
+      },
+    });
+  });
+
+  it("queries timeline page with before cursor and limit", async () => {
     mockedApiRequest.mockResolvedValueOnce({
       items: [
-        {
-          id: "msg-1",
-          role: "user",
-          created_at: "2026-02-24T00:00:00.000Z",
-        },
         {
           id: "msg-2",
           role: "agent",
           created_at: "2026-02-24T00:00:01.000Z",
+          status: "done",
+          blocks: [],
         },
       ],
-    } as any);
-    mockedApiRequest.mockResolvedValueOnce({
-      items: [
-        {
-          messageId: "msg-1",
-          role: "user",
-          blockCount: 1,
-          hasBlocks: true,
-          blocks: [
-            {
-              id: "msg-1:block-1",
-              messageId: "msg-1",
-              seq: 1,
-              type: "text",
-              content: "hello",
-              contentLength: 5,
-              isFinished: true,
-            },
-          ],
-        },
-        {
-          messageId: "msg-2",
-          role: "agent",
-          blockCount: 1,
-          hasBlocks: true,
-          blocks: [
-            {
-              id: "msg-2:block-1",
-              messageId: "msg-2",
-              seq: 1,
-              type: "text",
-              content: "world",
-              contentLength: 5,
-              isFinished: true,
-            },
-          ],
-        },
-      ],
-      meta: { conversationId: "conversation-1", mode: "full" },
+      pageInfo: {
+        hasMoreBefore: true,
+        nextBefore: "cursor-1",
+      },
     } as any);
 
     const result = await listSessionMessagesPage("conversation-1", {
-      page: 1,
-      size: 2,
+      before: "cursor-0",
+      limit: 8,
     });
 
-    expect(result.nextPage).toBe(2);
-    expect(result.items[1]).toMatchObject({
-      id: "msg-2",
-      blocks: [expect.objectContaining({ id: "msg-2:block-1" })],
+    expect(result.pageInfo).toEqual({
+      hasMoreBefore: true,
+      nextBefore: "cursor-1",
     });
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/conversations/conversation-1/messages:query",
+      {
+        method: "POST",
+        body: {
+          before: "cursor-0",
+          limit: 8,
+        },
+      },
+    );
+  });
+
+  it("queries block details by blockIds", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: "block-1",
+          messageId: "message-1",
+          type: "tool_call",
+          content: '{"tool":"search"}',
+          isFinished: true,
+        },
+      ],
+    } as any);
+
+    const result = await querySessionMessageBlocks("conversation-1", {
+      blockIds: ["block-1"],
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      id: "block-1",
+      messageId: "message-1",
+      type: "tool_call",
+      content: '{"tool":"search"}',
+      isFinished: true,
+    });
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/conversations/conversation-1/blocks:query",
+      {
+        method: "POST",
+        body: {
+          blockIds: ["block-1"],
+        },
+      },
+    );
   });
 
   it("resolves scheduled jobs nextPage from parsed pagination", async () => {

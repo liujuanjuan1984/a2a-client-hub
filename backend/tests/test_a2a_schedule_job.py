@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -15,7 +17,11 @@ from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.services.a2a_schedule_job import _execute_claimed_task
+from app.services.a2a_schedule_job import (
+    _execute_claimed_task,
+    _refresh_ops_metrics,
+    dispatch_due_a2a_schedules,
+)
 from app.services.a2a_schedule_service import (
     ClaimedA2AScheduleTask,
     a2a_schedule_service,
@@ -830,3 +836,115 @@ async def test_recover_stale_running_task_backfills_missing_execution(
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
     assert len(executions) == 1
     assert executions[0].status == A2AScheduleExecution.STATUS_FAILED
+
+
+async def test_dispatch_due_a2a_schedules_skips_cycle_when_db_connection_refused(
+    async_db_session,  # noqa: ARG001
+    monkeypatch,
+    caplog,
+) -> None:
+    ensure_workers_mock = AsyncMock()
+    refresh_metrics_mock = AsyncMock()
+
+    async def _raise_connection_refused(*_args, **_kwargs):
+        raise ConnectionRefusedError("db unavailable")
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        ensure_workers_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        refresh_metrics_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        _raise_connection_refused,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await dispatch_due_a2a_schedules(batch_size=1)
+
+    assert ensure_workers_mock.await_count == 0
+    assert refresh_metrics_mock.await_count == 0
+    assert "database connectivity issue during stale-task recovery." in caplog.text
+
+
+async def test_dispatch_due_a2a_schedules_skips_cycle_when_claim_db_connection_refused(
+    async_db_session,  # noqa: ARG001
+    monkeypatch,
+    caplog,
+) -> None:
+    ensure_workers_mock = AsyncMock()
+    refresh_metrics_mock = AsyncMock()
+
+    async def _recover_ok(*_args, **_kwargs):
+        return 0
+
+    async def _claim_raises(*_args, **_kwargs):
+        raise ConnectionRefusedError("db unavailable")
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        ensure_workers_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        refresh_metrics_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        _recover_ok,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_due_task",
+        _claim_raises,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await dispatch_due_a2a_schedules(batch_size=1)
+
+    assert ensure_workers_mock.await_count == 1
+    assert refresh_metrics_mock.await_count == 0
+    assert "database connectivity issue while claiming due tasks." in caplog.text
+
+
+async def test_dispatch_due_a2a_schedules_reraises_non_connectivity_errors(
+    async_db_session,  # noqa: ARG001
+    monkeypatch,
+) -> None:
+    async def _raise_unexpected(*_args, **_kwargs):
+        raise RuntimeError("unexpected recovery failure")
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        _raise_unexpected,
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected recovery failure"):
+        await dispatch_due_a2a_schedules(batch_size=1)
+
+
+async def test_refresh_ops_metrics_skips_when_db_connection_refused(
+    monkeypatch,
+    caplog,
+) -> None:
+    class _RefusedSessionContext:
+        async def __aenter__(self):
+            raise ConnectionRefusedError("db unavailable")
+
+        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+            return False
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.AsyncSessionLocal",
+        lambda: _RefusedSessionContext(),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await _refresh_ops_metrics()
+
+    assert (
+        "Skip schedule ops metrics refresh due to database connectivity issue."
+        in caplog.text
+    )

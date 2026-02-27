@@ -31,6 +31,7 @@ export function ChatTimelinePanel({
   historyLoading,
   historyError,
   onCaptureContentSizeAnchor,
+  onLoadBlockContent,
   onRetry,
   onListContentSizeChange,
   onListScroll,
@@ -53,6 +54,7 @@ export function ChatTimelinePanel({
   historyLoading: boolean;
   historyError: string | null;
   onCaptureContentSizeAnchor: () => void;
+  onLoadBlockContent: (messageId: string, blockId: string) => Promise<boolean>;
   onRetry: () => void;
   onListContentSizeChange: (w: number, h: number) => void;
   onListScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -68,7 +70,7 @@ export function ChatTimelinePanel({
   return (
     <>
       {session?.streamState === "recoverable" ? (
-        <View className="mx-6 mt-3 flex-row items-center rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-3 py-2">
+        <View className="mx-2 sm:mx-6 mt-3 flex-row items-center rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-3 py-2">
           <ActivityIndicator size="small" color="#fcd34d" className="mr-2" />
           <Text className="text-xs text-yellow-300">
             Connection lost. Trying to recover the stream...
@@ -77,7 +79,7 @@ export function ChatTimelinePanel({
       ) : null}
 
       {session?.streamState === "error" ? (
-        <View className="mx-6 mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2">
+        <View className="mx-2 sm:mx-6 mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2">
           <Text className="text-xs text-red-300">
             Session recovery failed.
             {session.lastStreamError ? ` ${session.lastStreamError}` : ""}
@@ -87,7 +89,7 @@ export function ChatTimelinePanel({
 
       <FlatList
         ref={listRef}
-        className="mt-2 flex-1 px-6"
+        className="mt-2 flex-1 px-2 sm:px-6"
         data={messages ?? []}
         keyExtractor={(item) => item.id}
         renderItem={({ item, index }) => (
@@ -97,6 +99,7 @@ export function ChatTimelinePanel({
             isLastMessage={index === messages.length - 1}
             sessionStreamState={session?.streamState}
             onLayoutChangeStart={onCaptureContentSizeAnchor}
+            onLoadBlockContent={onLoadBlockContent}
             onRetry={onRetry}
           />
         )}

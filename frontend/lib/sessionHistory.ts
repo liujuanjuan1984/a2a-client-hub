@@ -9,15 +9,17 @@ export type SessionMessageItem = {
   id: string;
   role: string;
   created_at: string;
-  metadata?: Record<string, unknown> | null;
+  status?: string;
   blocks?: {
     id: string;
-    messageId: string;
-    seq: number;
     type: string;
     content?: string | null;
     isFinished: boolean;
   }[];
+};
+
+type MapSessionMessagesOptions = {
+  keepEmptyMessages?: boolean;
 };
 
 const normalizeSessionMessageRole = (value: string): ChatRole => {
@@ -28,32 +30,61 @@ const normalizeSessionMessageRole = (value: string): ChatRole => {
   return "system";
 };
 
+const resolveMessageStatus = (
+  status: unknown,
+): NonNullable<ChatMessage["status"]> => {
+  if (typeof status !== "string") {
+    return "done";
+  }
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "streaming" || normalized === "in_progress") {
+    return "streaming";
+  }
+  if (normalized === "error" || normalized === "failed") {
+    return "error";
+  }
+  if (
+    normalized === "interrupted" ||
+    normalized === "cancelled" ||
+    normalized === "canceled"
+  ) {
+    return "interrupted";
+  }
+  return "done";
+};
+
+const rolePriority = (role: ChatRole): number => {
+  if (role === "user") return 0;
+  if (role === "agent") return 1;
+  return 2;
+};
+
 const mapBlocks = (item: SessionMessageItem): MessageBlock[] => {
   if (!Array.isArray(item.blocks) || item.blocks.length === 0) {
     return [];
   }
   const createdAt = item.created_at;
-  return [...item.blocks]
-    .sort((lhs, rhs) => lhs.seq - rhs.seq)
-    .map((block, index) => {
-      const blockId =
-        typeof block.id === "string" && block.id.trim()
-          ? block.id
-          : `${item.id}:${index + 1}`;
-      return {
-        id: blockId,
-        type: block.type,
-        content: typeof block.content === "string" ? block.content : "",
-        isFinished: block.isFinished === true,
-        createdAt,
-        updatedAt: createdAt,
-      };
-    });
+  return item.blocks.map((block, index) => {
+    const blockId =
+      typeof block.id === "string" && block.id.trim()
+        ? block.id
+        : `${item.id}:${index + 1}`;
+    return {
+      id: blockId,
+      type: block.type,
+      content: typeof block.content === "string" ? block.content : "",
+      isFinished: block.isFinished === true,
+      createdAt,
+      updatedAt: createdAt,
+    };
+  });
 };
 
 export const mapSessionMessagesToChatMessages = (
   items: SessionMessageItem[],
+  options?: MapSessionMessagesOptions,
 ): ChatMessage[] => {
+  const keepEmptyMessages = options?.keepEmptyMessages === true;
   const mapped: ChatMessage[] = [];
   items.forEach((item) => {
     const role = normalizeSessionMessageRole(item.role);
@@ -62,19 +93,30 @@ export const mapSessionMessagesToChatMessages = (
       return;
     }
     const blocks = mapBlocks(item);
-    const normalizedContent = projectPrimaryTextContent(blocks);
-    const hasRenderablePayload = normalizedContent.trim().length > 0;
-    if (!hasRenderablePayload) {
+    const blockContent = projectPrimaryTextContent(blocks);
+    const normalizedContent =
+      blockContent.trim().length > 0 ? blockContent : "";
+    if (normalizedContent.trim().length === 0 && !keepEmptyMessages) {
       return;
     }
     mapped.push({
       id: messageId,
       role,
-      content: normalizedContent ?? "",
+      content: normalizedContent,
       createdAt: item.created_at,
-      status: "done" as const,
+      status: resolveMessageStatus(item.status),
       blocks,
     });
   });
-  return mapped.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return mapped.sort((left, right) => {
+    const timeDiff = left.createdAt.localeCompare(right.createdAt);
+    if (timeDiff !== 0) {
+      return timeDiff;
+    }
+    const roleDiff = rolePriority(left.role) - rolePriority(right.role);
+    if (roleDiff !== 0) {
+      return roleDiff;
+    }
+    return left.id.localeCompare(right.id);
+  });
 };

@@ -25,7 +25,7 @@ export function PageHeader({ title, subtitle, rightElement }: PageHeaderProps) {
         </Text>
         {subtitle ? (
           <Text
-            className="text-[11px] font-bold text-slate-500"
+            className="text-[11px] font-medium text-slate-500"
             style={{
               marginTop: PAGE_HEADER_SUBTITLE_GAP,
               lineHeight: PAGE_HEADER_SUBTITLE_LINE_HEIGHT,

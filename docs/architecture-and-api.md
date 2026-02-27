@@ -135,43 +135,28 @@ curl -X POST "$API_BASE_URL/me/conversations:query" \
   -H "Content-Type: application/json" \
   -d '{
     "page": 1,
-    "size": 20
+    "size": 20,
+    "agent_id": "<AGENT_ID>"
   }'
 ```
 
-### Query Unified Session Messages
+`agent_id` is optional. When provided, the result is server-side filtered for
+that agent only.
+
+### Query Unified Session Timeline (Primary Chat Read Model)
 
 ```bash
 curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages:query" \
   -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
-    "page": 1,
-    "size": 50
+    "limit": 8,
+    "before": "<OPAQUE_CURSOR_OR_NULL>"
   }'
 ```
 
-`messages:query` returns message headers only (id/role/created_at/metadata).
-Message bodies are loaded from block endpoints for all roles.
-
-### Query Message Blocks (Batch)
-
-```bash
-curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages/blocks:query" \
-  -H "Authorization: Bearer <ACCESS_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messageIds": ["<MESSAGE_ID_1>", "<MESSAGE_ID_2>"],
-    "mode": "full"
-  }'
-```
-
-### Query Message Block Detail
-
-```bash
-curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages/<MESSAGE_ID>/blocks/<BLOCK_SEQ>:query" \
-  -H "Authorization: Bearer <ACCESS_TOKEN>"
-```
+`messages:query` returns ordered timeline items including blocks and
+cursor page info (`hasMoreBefore`, `nextBefore`) for backward pagination.
 
 ## Notes
 

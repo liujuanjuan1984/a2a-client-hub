@@ -10,8 +10,6 @@ describe("mapSessionMessagesToChatMessages", () => {
         blocks: [
           {
             id: "m-1:b-1",
-            messageId: "m-1",
-            seq: 1,
             type: "text",
             content: "A",
             isFinished: true,
@@ -25,8 +23,6 @@ describe("mapSessionMessagesToChatMessages", () => {
         blocks: [
           {
             id: "m-2:b-1",
-            messageId: "m-2",
-            seq: 1,
             type: "text",
             content: "U",
             isFinished: true,
@@ -40,8 +36,6 @@ describe("mapSessionMessagesToChatMessages", () => {
         blocks: [
           {
             id: "m-3:b-1",
-            messageId: "m-3",
-            seq: 1,
             type: "text",
             content: "S",
             isFinished: true,

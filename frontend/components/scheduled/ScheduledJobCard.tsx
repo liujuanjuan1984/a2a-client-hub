@@ -65,6 +65,7 @@ type ScheduledJobCardProps = {
   executionsLoadingMore?: boolean;
   onToggleEnabled: () => void | Promise<void>;
   onEdit: () => void;
+  onDelete?: () => void | Promise<void>;
   onMarkFailed?: () => void | Promise<void>;
   onToggleExecutions: () => void;
   onLoadMoreExecutions?: () => void;
@@ -81,6 +82,7 @@ export function ScheduledJobCard({
   executionsLoadingMore,
   onToggleEnabled,
   onEdit,
+  onDelete,
   onMarkFailed,
   onToggleExecutions,
   onLoadMoreExecutions,
@@ -94,6 +96,7 @@ export function ScheduledJobCard({
       : null;
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [markingFailed, setMarkingFailed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const canMarkFailed = job.last_run_status === "running";
 
@@ -131,6 +134,24 @@ export function ScheduledJobCard({
     }
   };
 
+  const handleDelete = async () => {
+    if (!onDelete || deleting) return;
+    const confirmed = await confirmAction({
+      title: "Delete scheduled job?",
+      message: "This action cannot be undone.",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <View
       className={`mb-4 rounded-2xl overflow-hidden bg-surface shadow-sm ${tone.container}`}
@@ -152,10 +173,10 @@ export function ScheduledJobCard({
             <Text className={`text-sm font-bold ${tone.title}`}>
               {job.name}
             </Text>
-            <Text className={`mt-1.5 text-[11px] font-medium ${tone.text}`}>
+            <Text className={`mt-1.5 text-[11px] font-normal ${tone.text}`}>
               {job.cycle_type} • Every {intervalTimePoint?.minutes ?? "-"} min
             </Text>
-            <Text className={`mt-0.5 text-[11px] font-medium ${tone.text}`}>
+            <Text className={`mt-0.5 text-[11px] font-normal ${tone.text}`}>
               Next:{" "}
               {job.next_run_at_local ??
                 formatLocalDateTime(job.next_run_at_utc, timeZone)}
@@ -200,9 +221,18 @@ export function ScheduledJobCard({
             onPress={onEdit}
           />
           <Button
-            label={promptExpanded ? "Less" : "Info"}
+            label="Delete"
             size="xs"
             variant="secondary"
+            iconLeft="trash-outline"
+            loading={deleting}
+            disabled={!onDelete}
+            onPress={handleDelete}
+          />
+          <Button
+            label={promptExpanded ? "Less" : "Info"}
+            size="xs"
+            variant={promptExpanded ? "primary" : "secondary"}
             iconLeft={
               promptExpanded ? "chevron-up" : "information-circle-outline"
             }
@@ -211,7 +241,7 @@ export function ScheduledJobCard({
           <Button
             label={executionsOpen ? "Hide" : "History"}
             size="xs"
-            variant="secondary"
+            variant={executionsOpen ? "primary" : "secondary"}
             iconLeft={executionsOpen ? "time" : "time-outline"}
             onPress={onToggleExecutions}
           />
@@ -222,6 +252,7 @@ export function ScheduledJobCard({
             label="Stop"
             size="xs"
             variant="danger"
+            className="bg-red-500/40"
             loading={markingFailed}
             disabled={!onMarkFailed}
             onPress={handleMarkFailed}
@@ -248,7 +279,7 @@ export function ScheduledJobCard({
                     className="mb-2 rounded-xl bg-black/20 p-3"
                   >
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-[10px] font-bold text-slate-400">
+                      <Text className="text-[10px] font-medium text-slate-500">
                         {formatLocalDateTime(
                           execution.finished_at ??
                             execution.started_at ??
@@ -265,7 +296,7 @@ export function ScheduledJobCard({
                       </View>
                     </View>
                     {execution.error_message ? (
-                      <Text className="mt-2 text-[11px] font-medium text-red-400/80">
+                      <Text className="mt-2 text-[11px] font-normal text-red-400/80">
                         {execution.error_message}
                       </Text>
                     ) : null}

@@ -24,7 +24,7 @@ export function ConfirmDialog() {
       animationType="fade"
       onRequestClose={() => respond(false)}
     >
-      <View className="flex-1 items-center justify-center bg-black/60 px-6">
+      <View className="flex-1 items-center justify-center bg-black/60 px-4">
         <Pressable
           className="absolute inset-0"
           accessibilityRole="button"
