@@ -158,11 +158,11 @@ export function ScheduledJobCard({
     >
       <View className="p-5">
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-[9px] font-semibold uppercase tracking-widest text-neo-green">
+          <Text className="text-[10px] font-semibold uppercase tracking-widest text-neo-green">
             {agentName}
           </Text>
           <View className="bg-black/20 rounded px-1.5 py-0.5">
-            <Text className={`text-[9px] font-bold ${tone.text}`}>
+            <Text className={`text-[10px] font-bold ${tone.text}`}>
               {tone.statusText}
             </Text>
           </View>
@@ -170,7 +170,7 @@ export function ScheduledJobCard({
 
         <View className="flex-row items-start justify-between">
           <View className="flex-1 pr-3">
-            <Text className={`text-sm font-bold ${tone.title}`}>
+            <Text className={`text-[13px] font-semibold ${tone.title}`}>
               {job.name}
             </Text>
             <Text className={`mt-1.5 text-[11px] font-normal ${tone.text}`}>
@@ -211,7 +211,7 @@ export function ScheduledJobCard({
         )}
       </View>
 
-      <View className="flex-row items-center justify-between gap-3 bg-black/30 px-5 py-3">
+      <View className="flex-row items-center justify-between gap-3 bg-black/20 px-5 py-3">
         <View className="flex-row items-center gap-2">
           {!canMarkFailed ? (
             <Button

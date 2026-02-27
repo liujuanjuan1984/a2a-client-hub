@@ -44,7 +44,7 @@ export function Button({
 
   const textSizes = {
     xs: "text-[11px]",
-    sm: "text-[11px]",
+    sm: "text-[12px]",
     md: "text-sm",
     lg: "text-base",
   };

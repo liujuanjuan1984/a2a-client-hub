@@ -94,26 +94,26 @@ export function SessionsScreen() {
                   <View className="p-5 pb-4">
                     <View className="flex-row items-center justify-between mb-1.5">
                       <Text
-                        className="text-[9px] font-semibold uppercase tracking-widest text-neo-green"
+                        className="text-[10px] font-semibold uppercase tracking-widest text-neo-green"
                         numberOfLines={1}
                       >
                         {agent.name}
                       </Text>
-                      <Text className="text-[9px] font-bold text-slate-700 uppercase">
+                      <Text className="text-[10px] font-bold text-slate-700 uppercase">
                         {item.source}
                       </Text>
                     </View>
                     <Text
-                      className="text-[11px] font-medium text-white/90"
+                      className="text-[13px] font-semibold text-white/90"
                       numberOfLines={2}
                     >
                       {title}
                     </Text>
                   </View>
 
-                  <View className="flex-row items-center justify-between gap-3 bg-black/30 px-5 py-2">
+                  <View className="flex-row items-center justify-between gap-3 bg-black/20 px-5 py-3">
                     <View className="flex-1">
-                      <Text className="text-[9px] font-medium text-slate-500">
+                      <Text className="text-[10px] font-medium text-slate-500">
                         {timeline.timelineRangeText}
                       </Text>
                     </View>
@@ -121,14 +121,13 @@ export function SessionsScreen() {
                       {/* Async Continue is intentionally hidden for now. See #381. */}
                       <Button
                         label="Open"
-                        size="xs"
+                        size="sm"
                         variant="primary"
                         iconRight="chevron-forward"
                         disabled={!item.agent_id}
                         onPress={() => handleContinueSession(item)}
                         accessibilityRole="button"
                         accessibilityLabel="Open session"
-                        className="py-1.5 pl-3 pr-2"
                       />
                     </View>
                   </View>
