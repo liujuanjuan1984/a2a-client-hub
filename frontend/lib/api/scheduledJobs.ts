@@ -147,6 +147,11 @@ export const markScheduledJobFailed = (
     },
   );
 
+export const deleteScheduledJob = (jobId: string) =>
+  apiRequest<void>(`/me/a2a/schedules/${jobId}`, {
+    method: "DELETE",
+  });
+
 export const listScheduledJobExecutionsPage = async (
   taskId: string,
   options?: { page?: number; size?: number },
