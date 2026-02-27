@@ -9,6 +9,7 @@ import {
   isAuthFailureError,
 } from "@/lib/api/client";
 import { getHubInvokeWsTicket } from "@/lib/api/hubA2aAgentsUser";
+import { cancelSession as cancelSessionApi } from "@/lib/api/sessions";
 import { fetchSSE } from "@/lib/api/sse";
 import { ENV } from "@/lib/config";
 import type { AgentSource } from "@/store/agents";
@@ -138,7 +139,7 @@ class ChatConnectionService {
     return "http_json";
   }
 
-  cancelSession(conversationId: string) {
+  async cancelSession(conversationId: string): Promise<void> {
     const controller = this.abortControllers.get(conversationId);
     if (controller) {
       controller.abort();
@@ -154,6 +155,23 @@ class ChatConnectionService {
         // Ignore close errors.
       }
       this.wsConnections.delete(conversationId);
+    }
+
+    const normalizedConversationId = conversationId.trim();
+    if (!normalizedConversationId) {
+      return;
+    }
+
+    try {
+      await cancelSessionApi(normalizedConversationId);
+    } catch (error) {
+      if (isAuthFailureError(error) || isAuthorizationFailureError(error)) {
+        return;
+      }
+      console.warn("Failed to request server-side task cancellation", {
+        conversationId: normalizedConversationId,
+        error,
+      });
     }
   }
 

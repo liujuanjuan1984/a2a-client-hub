@@ -8,6 +8,7 @@ This module provides a single read model for session list/history/continue acros
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -15,7 +16,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Literal, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -47,6 +48,18 @@ class MessagesBeforeCursor:
     created_at: datetime
     sender_priority: int
     message_id: UUID
+
+
+@dataclass
+class _InflightInvokeEntry:
+    token: str
+    task_id: str | None = None
+    gateway: Any | None = None
+    resolved: Any | None = None
+
+
+_inflight_invokes_lock = asyncio.Lock()
+_inflight_invokes: dict[tuple[str, str], _InflightInvokeEntry] = {}
 
 
 class SessionHubService:
@@ -408,6 +421,169 @@ class SessionHubService:
             ),
             db_mutated,
         )
+
+    @staticmethod
+    def _inflight_key(*, user_id: UUID, conversation_id: UUID) -> tuple[str, str]:
+        return (str(user_id), str(conversation_id))
+
+    async def register_inflight_invoke(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        gateway: Any,
+        resolved: Any,
+    ) -> str:
+        token = str(uuid4())
+        key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
+        async with _inflight_invokes_lock:
+            _inflight_invokes[key] = _InflightInvokeEntry(
+                token=token,
+                task_id=None,
+                gateway=gateway,
+                resolved=resolved,
+            )
+        return token
+
+    async def bind_inflight_task_id(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        token: str,
+        task_id: str,
+    ) -> bool:
+        normalized_task_id = normalize_non_empty_text(task_id)
+        if not normalized_task_id:
+            return False
+        key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
+        async with _inflight_invokes_lock:
+            current = _inflight_invokes.get(key)
+            if current is None or current.token != token:
+                return False
+            current.task_id = normalized_task_id
+            return True
+
+    async def unregister_inflight_invoke(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        token: str,
+    ) -> bool:
+        key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
+        async with _inflight_invokes_lock:
+            current = _inflight_invokes.get(key)
+            if current is None or current.token != token:
+                return False
+            _inflight_invokes.pop(key, None)
+            return True
+
+    async def _get_inflight_invoke_snapshot(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> _InflightInvokeEntry | None:
+        key = self._inflight_key(user_id=user_id, conversation_id=conversation_id)
+        async with _inflight_invokes_lock:
+            current = _inflight_invokes.get(key)
+            if current is None:
+                return None
+            return _InflightInvokeEntry(
+                token=current.token,
+                task_id=current.task_id,
+                gateway=current.gateway,
+                resolved=current.resolved,
+            )
+
+    async def cancel_session(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        conversation_id: str,
+    ) -> tuple[dict[str, Any], bool]:
+        resolved_conversation_id = _parse_conversation_id(conversation_id)
+        target = await self._resolve_conversation_target(
+            db,
+            user_id=user_id,
+            conversation_id=resolved_conversation_id,
+        )
+        if target is None:
+            raise ValueError("session_not_found")
+
+        snapshot = await self._get_inflight_invoke_snapshot(
+            user_id=user_id,
+            conversation_id=resolved_conversation_id,
+        )
+        if (
+            snapshot is None
+            or snapshot.task_id is None
+            or snapshot.gateway is None
+            or snapshot.resolved is None
+        ):
+            return (
+                {
+                    "conversationId": str(resolved_conversation_id),
+                    "taskId": None,
+                    "cancelled": False,
+                    "status": "no_inflight",
+                },
+                False,
+            )
+
+        cancel_result = await snapshot.gateway.cancel_task(
+            resolved=snapshot.resolved,
+            task_id=snapshot.task_id,
+            metadata={"source": "hub_user_cancel"},
+        )
+        success = bool(cancel_result.get("success"))
+        error_code = normalize_non_empty_text(
+            str(cancel_result.get("error_code") or "")
+        )
+
+        if success:
+            await self.unregister_inflight_invoke(
+                user_id=user_id,
+                conversation_id=resolved_conversation_id,
+                token=snapshot.token,
+            )
+            return (
+                {
+                    "conversationId": str(resolved_conversation_id),
+                    "taskId": snapshot.task_id,
+                    "cancelled": True,
+                    "status": "accepted",
+                },
+                False,
+            )
+
+        if error_code in {"task_not_found", "task_not_cancelable", "invalid_task_id"}:
+            await self.unregister_inflight_invoke(
+                user_id=user_id,
+                conversation_id=resolved_conversation_id,
+                token=snapshot.token,
+            )
+            return (
+                {
+                    "conversationId": str(resolved_conversation_id),
+                    "taskId": snapshot.task_id,
+                    "cancelled": False,
+                    "status": "already_terminal",
+                },
+                False,
+            )
+
+        if error_code in {"timeout", "agent_unavailable"}:
+            raise ValueError("upstream_unreachable")
+        if error_code in {
+            "upstream_http_error",
+            "outbound_not_allowed",
+            "client_reset",
+        }:
+            raise ValueError("upstream_http_error")
+        raise ValueError("upstream_error")
 
     async def ensure_local_session_for_invoke(
         self,

@@ -12,7 +12,7 @@ jest.mock("@/lib/storage/mmkv", () => ({
 
 jest.mock("@/services/chatConnectionService", () => ({
   chatConnectionService: {
-    cancelSession: jest.fn(),
+    cancelSession: jest.fn(async () => {}),
     getPreferredTransport: jest.fn(() => "http_json"),
     clearAll: jest.fn(),
   },

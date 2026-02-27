@@ -125,7 +125,21 @@ class SessionContinueResponse(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class SessionCancelResponse(BaseModel):
+    conversation_id: str = Field(alias="conversationId")
+    task_id: Optional[str] = Field(alias="taskId", default=None)
+    cancelled: bool
+    status: Literal[
+        "accepted",
+        "no_inflight",
+        "already_terminal",
+    ]
+
+    model_config = {"populate_by_name": True}
+
+
 __all__ = [
+    "SessionCancelResponse",
     "SessionContinueResponse",
     "SessionListResponse",
     "SessionMessageBlockItem",

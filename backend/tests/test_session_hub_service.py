@@ -38,6 +38,180 @@ async def _list_message_items(
     return items
 
 
+async def test_cancel_session_returns_no_inflight_when_no_active_task(async_db_session):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    payload, db_mutated = await session_hub_service.cancel_session(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+    )
+
+    assert db_mutated is False
+    assert payload["conversationId"] == str(thread.id)
+    assert payload["taskId"] is None
+    assert payload["cancelled"] is False
+    assert payload["status"] == "no_inflight"
+
+
+async def test_cancel_session_accepts_and_unregisters_inflight_task(async_db_session):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    captured: dict[str, str] = {}
+
+    class _Gateway:
+        async def cancel_task(
+            self, *, resolved, task_id, metadata=None
+        ):  # noqa: ANN001
+            captured["task_id"] = str(task_id)
+            captured["resolved_name"] = str(getattr(resolved, "name", ""))
+            return {"success": True}
+
+    token = await session_hub_service.register_inflight_invoke(
+        user_id=user.id,
+        conversation_id=thread.id,
+        gateway=_Gateway(),
+        resolved=type("Resolved", (), {"name": "Demo Agent"})(),
+    )
+    bound = await session_hub_service.bind_inflight_task_id(
+        user_id=user.id,
+        conversation_id=thread.id,
+        token=token,
+        task_id="task-123",
+    )
+    assert bound is True
+
+    payload, db_mutated = await session_hub_service.cancel_session(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+    )
+
+    assert db_mutated is False
+    assert payload["cancelled"] is True
+    assert payload["status"] == "accepted"
+    assert payload["taskId"] == "task-123"
+    assert captured == {
+        "task_id": "task-123",
+        "resolved_name": "Demo Agent",
+    }
+
+    no_task_payload, _ = await session_hub_service.cancel_session(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+    )
+    assert no_task_payload["status"] == "no_inflight"
+
+
+async def test_cancel_session_treats_terminal_upstream_task_as_idempotent(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    class _Gateway:
+        async def cancel_task(
+            self, *, resolved, task_id, metadata=None
+        ):  # noqa: ANN001
+            return {"success": False, "error_code": "task_not_cancelable"}
+
+    token = await session_hub_service.register_inflight_invoke(
+        user_id=user.id,
+        conversation_id=thread.id,
+        gateway=_Gateway(),
+        resolved=object(),
+    )
+    await session_hub_service.bind_inflight_task_id(
+        user_id=user.id,
+        conversation_id=thread.id,
+        token=token,
+        task_id="task-terminal",
+    )
+
+    payload, db_mutated = await session_hub_service.cancel_session(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+    )
+
+    assert db_mutated is False
+    assert payload["cancelled"] is False
+    assert payload["status"] == "already_terminal"
+    assert payload["taskId"] == "task-terminal"
+
+
+async def test_cancel_session_raises_upstream_error_for_retryable_failures(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    class _Gateway:
+        async def cancel_task(
+            self, *, resolved, task_id, metadata=None
+        ):  # noqa: ANN001
+            return {"success": False, "error_code": "timeout"}
+
+    token = await session_hub_service.register_inflight_invoke(
+        user_id=user.id,
+        conversation_id=thread.id,
+        gateway=_Gateway(),
+        resolved=object(),
+    )
+    await session_hub_service.bind_inflight_task_id(
+        user_id=user.id,
+        conversation_id=thread.id,
+        token=token,
+        task_id="task-timeout",
+    )
+
+    with pytest.raises(ValueError, match="upstream_unreachable"):
+        await session_hub_service.cancel_session(
+            async_db_session,
+            user_id=user.id,
+            conversation_id=str(thread.id),
+        )
+
+
 async def test_record_local_invoke_messages_updates_manual_placeholder_title(
     async_db_session,
 ):

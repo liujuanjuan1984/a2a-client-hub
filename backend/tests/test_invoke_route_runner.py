@@ -451,6 +451,92 @@ def test_normalize_optional_message_id_validates_uuid_inputs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_consume_stream_callbacks_bind_task_id_and_unregister_inflight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_bind_inflight_task_id(
+        *,
+        user_id,  # noqa: ANN001, ARG001
+        conversation_id,  # noqa: ANN001, ARG001
+        token,  # noqa: ANN001
+        task_id,  # noqa: ANN001
+    ) -> bool:
+        captured["bound_token"] = token
+        captured["bound_task_id"] = task_id
+        return True
+
+    async def fake_unregister_inflight_invoke(
+        *,
+        user_id,  # noqa: ANN001, ARG001
+        conversation_id,  # noqa: ANN001, ARG001
+        token,  # noqa: ANN001
+    ) -> bool:
+        captured["unregistered_token"] = token
+        return True
+
+    async def fake_persist_local_outcome(**_kwargs):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "bind_inflight_task_id",
+        fake_bind_inflight_task_id,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "unregister_inflight_invoke",
+        fake_unregister_inflight_invoke,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_persist_local_outcome",
+        fake_persist_local_outcome,
+    )
+
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        user_message_id=None,
+        inflight_token="token-1",
+    )
+    on_event, on_finalized = invoke_route_runner._build_consume_stream_callbacks(
+        state=state,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        transport="http_json",
+        stream_enabled=False,
+    )
+
+    await on_event({"task": {"id": "task-xyz"}})
+    assert captured["bound_token"] == "token-1"
+    assert captured["bound_task_id"] == "task-xyz"
+    assert state.upstream_task_id == "task-xyz"
+
+    await on_finalized(
+        StreamOutcome(
+            success=True,
+            finish_reason=StreamFinishReason.SUCCESS,
+            final_text="ok",
+            error_message=None,
+            error_code=None,
+            elapsed_seconds=1.0,
+            idle_seconds=0.1,
+            terminal_event_seen=True,
+        )
+    )
+    assert captured["unregistered_token"] == "token-1"
+    assert state.inflight_token is None
+
+
+@pytest.mark.asyncio
 async def test_persist_stream_block_update_consumes_and_persists_optional_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

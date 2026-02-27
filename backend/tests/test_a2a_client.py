@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from a2a.client.errors import A2AClientHTTPError
 from a2a.types import Message, Role, TextPart
 
 from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
@@ -112,3 +113,45 @@ async def test_call_agent_falls_back_to_plain_string_without_json_wrapping() -> 
 
     assert result["success"] is True
     assert result["content"] == "Task(artifacts=[...])"
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_returns_success_for_valid_request() -> None:
+    class FakeClient:
+        async def cancel_task(self, request):
+            assert request.id == "task-1"
+            return {"id": request.id}
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_client = AsyncMock(return_value=FakeClient())
+
+    result = await a2a_client.cancel_task(" task-1 ")
+
+    assert result["success"] is True
+    assert result["task_id"] == "task-1"
+    assert result["task"] == {"id": "task-1"}
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_maps_http_status_error_codes() -> None:
+    class FakeClient:
+        async def cancel_task(self, _request):
+            raise A2AClientHTTPError(404, "Task not found")
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_client = AsyncMock(return_value=FakeClient())
+
+    result = await a2a_client.cancel_task("task-missing")
+
+    assert result["success"] is False
+    assert result["error_code"] == "task_not_found"
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_rejects_blank_task_id() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+
+    result = await a2a_client.cancel_task("  ")
+
+    assert result["success"] is False
+    assert result["error_code"] == "invalid_task_id"

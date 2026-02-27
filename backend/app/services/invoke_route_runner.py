@@ -66,6 +66,8 @@ class _InvokeState:
     persisted_error_code: str | None = None
     persisted_finish_reason: str | None = None
     idempotency_key: str | None = None
+    inflight_token: str | None = None
+    upstream_task_id: str | None = None
     next_event_seq: int = 1
     persisted_block_count: int = 0
 
@@ -208,6 +210,65 @@ async def _prepare_state(
         persisted_success=None,
         persisted_error_code=None,
     )
+
+
+async def _register_inflight_invoke(
+    *,
+    state: _InvokeState,
+    user_id: UUID,
+    gateway: Any,
+    resolved: Any,
+) -> None:
+    if state.local_session_id is None:
+        return
+    state.inflight_token = await session_hub_service.register_inflight_invoke(
+        user_id=user_id,
+        conversation_id=state.local_session_id,
+        gateway=gateway,
+        resolved=resolved,
+    )
+
+
+async def _bind_inflight_task_if_needed(
+    *,
+    state: _InvokeState,
+    user_id: UUID,
+) -> None:
+    if state.local_session_id is None or state.inflight_token is None:
+        return
+    raw_task_id = (
+        state.stream_identity.get("upstream_task_id")
+        if isinstance(state.stream_identity, dict)
+        else None
+    )
+    normalized_task_id = normalize_non_empty_text(
+        raw_task_id if isinstance(raw_task_id, str) else None
+    )
+    if not normalized_task_id or normalized_task_id == state.upstream_task_id:
+        return
+    bound = await session_hub_service.bind_inflight_task_id(
+        user_id=user_id,
+        conversation_id=state.local_session_id,
+        token=state.inflight_token,
+        task_id=normalized_task_id,
+    )
+    if bound:
+        state.upstream_task_id = normalized_task_id
+
+
+async def _unregister_inflight_invoke(
+    *,
+    state: _InvokeState,
+    user_id: UUID,
+) -> None:
+    if state.local_session_id is None or state.inflight_token is None:
+        return
+    await session_hub_service.unregister_inflight_invoke(
+        user_id=user_id,
+        conversation_id=state.local_session_id,
+        token=state.inflight_token,
+    )
+    state.inflight_token = None
 
 
 async def _close_open_transaction(db: AsyncSession) -> None:
@@ -679,6 +740,7 @@ def _build_consume_stream_callbacks(
 ]:
     async def on_event(event_payload: dict[str, Any]) -> None:
         _collect_stream_hints(state=state, event_payload=event_payload)
+        await _bind_inflight_task_if_needed(state=state, user_id=user_id)
         await _persist_stream_block_update(
             state=state,
             event_payload=event_payload,
@@ -691,16 +753,19 @@ def _build_consume_stream_callbacks(
         )
 
     async def on_finalized(outcome: StreamOutcome) -> None:
-        await _persist_local_outcome(
-            state=state,
-            outcome=outcome,
-            user_id=user_id,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            query=query,
-            transport=transport,
-            stream_enabled=stream_enabled,
-        )
+        try:
+            await _persist_local_outcome(
+                state=state,
+                outcome=outcome,
+                user_id=user_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                query=query,
+                transport=transport,
+                stream_enabled=stream_enabled,
+            )
+        finally:
+            await _unregister_inflight_invoke(state=state, user_id=user_id)
 
     return on_event, on_finalized
 
@@ -829,6 +894,12 @@ async def run_http_invoke(
         agent_source=agent_source,
         payload=payload,
     )
+    await _register_inflight_invoke(
+        state=state,
+        user_id=user_id,
+        gateway=gateway,
+        resolved=runtime.resolved,
+    )
 
     if stream:
         on_event, on_finalized = _build_consume_stream_callbacks(
@@ -840,20 +911,24 @@ async def run_http_invoke(
             transport="http_sse",
             stream_enabled=True,
         )
-        return a2a_invoke_service.stream_sse(
-            gateway=gateway,
-            resolved=runtime.resolved,
-            query=payload.query,
-            context_id=payload.context_id,
-            metadata=payload.metadata,
-            validate_message=validate_message,
-            logger=logger,
-            log_extra=log_extra,
-            on_event=on_event,
-            on_finalized=on_finalized,
-            resume_from_sequence=payload.resume_from_sequence,
-            cache_key=state.user_message_id,
-        )
+        try:
+            return a2a_invoke_service.stream_sse(
+                gateway=gateway,
+                resolved=runtime.resolved,
+                query=payload.query,
+                context_id=payload.context_id,
+                metadata=payload.metadata,
+                validate_message=validate_message,
+                logger=logger,
+                log_extra=log_extra,
+                on_event=on_event,
+                on_finalized=on_finalized,
+                resume_from_sequence=payload.resume_from_sequence,
+                cache_key=state.user_message_id,
+            )
+        except Exception:
+            await _unregister_inflight_invoke(state=state, user_id=user_id)
+            raise
 
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
@@ -864,18 +939,22 @@ async def run_http_invoke(
         transport="http_json",
         stream_enabled=False,
     )
-    outcome = await a2a_invoke_service.consume_stream(
-        gateway=gateway,
-        resolved=runtime.resolved,
-        query=payload.query,
-        context_id=payload.context_id,
-        metadata=payload.metadata,
-        validate_message=validate_message,
-        logger=logger,
-        log_extra=log_extra,
-        on_event=on_event,
-        on_finalized=on_finalized,
-    )
+    try:
+        outcome = await a2a_invoke_service.consume_stream(
+            gateway=gateway,
+            resolved=runtime.resolved,
+            query=payload.query,
+            context_id=payload.context_id,
+            metadata=payload.metadata,
+            validate_message=validate_message,
+            logger=logger,
+            log_extra=log_extra,
+            on_event=on_event,
+            on_finalized=on_finalized,
+        )
+    except Exception:
+        await _unregister_inflight_invoke(state=state, user_id=user_id)
+        raise
     success = bool(outcome.success)
     content = state.persisted_response_content
     if content is None:
@@ -917,6 +996,12 @@ async def run_background_invoke(
         agent_source=agent_source,
         payload=payload,
     )
+    await _register_inflight_invoke(
+        state=state,
+        user_id=user_id,
+        gateway=gateway,
+        resolved=runtime.resolved,
+    )
 
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
@@ -927,20 +1012,24 @@ async def run_background_invoke(
         transport="scheduled",
         stream_enabled=True,
     )
-    outcome = await a2a_invoke_service.consume_stream(
-        gateway=gateway,
-        resolved=runtime.resolved,
-        query=payload.query,
-        context_id=payload.context_id,
-        metadata=payload.metadata,
-        validate_message=validate_message,
-        logger=logger,
-        log_extra=log_extra,
-        on_event=on_event,
-        on_finalized=on_finalized,
-        total_timeout_seconds=total_timeout_seconds,
-        idle_timeout_seconds=idle_timeout_seconds,
-    )
+    try:
+        outcome = await a2a_invoke_service.consume_stream(
+            gateway=gateway,
+            resolved=runtime.resolved,
+            query=payload.query,
+            context_id=payload.context_id,
+            metadata=payload.metadata,
+            validate_message=validate_message,
+            logger=logger,
+            log_extra=log_extra,
+            on_event=on_event,
+            on_finalized=on_finalized,
+            total_timeout_seconds=total_timeout_seconds,
+            idle_timeout_seconds=idle_timeout_seconds,
+        )
+    except Exception:
+        await _unregister_inflight_invoke(state=state, user_id=user_id)
+        raise
     success = bool(outcome.success)
     response_content = state.persisted_response_content
     if response_content is None:
@@ -981,6 +1070,12 @@ async def run_ws_invoke(
         agent_source=agent_source,
         payload=payload,
     )
+    await _register_inflight_invoke(
+        state=state,
+        user_id=user_id,
+        gateway=gateway,
+        resolved=runtime.resolved,
+    )
     on_event, on_finalized = _build_consume_stream_callbacks(
         state=state,
         user_id=user_id,
@@ -990,23 +1085,27 @@ async def run_ws_invoke(
         transport="ws",
         stream_enabled=True,
     )
-    await a2a_invoke_service.stream_ws(
-        websocket=websocket,
-        gateway=gateway,
-        resolved=runtime.resolved,
-        query=payload.query,
-        context_id=payload.context_id,
-        metadata=payload.metadata,
-        validate_message=validate_message,
-        logger=logger,
-        log_extra=log_extra,
-        on_event=on_event,
-        on_error_metadata=on_error_metadata,
-        on_finalized=on_finalized,
-        send_stream_end=send_stream_end,
-        resume_from_sequence=payload.resume_from_sequence,
-        cache_key=state.user_message_id,
-    )
+    try:
+        await a2a_invoke_service.stream_ws(
+            websocket=websocket,
+            gateway=gateway,
+            resolved=runtime.resolved,
+            query=payload.query,
+            context_id=payload.context_id,
+            metadata=payload.metadata,
+            validate_message=validate_message,
+            logger=logger,
+            log_extra=log_extra,
+            on_event=on_event,
+            on_error_metadata=on_error_metadata,
+            on_finalized=on_finalized,
+            send_stream_end=send_stream_end,
+            resume_from_sequence=payload.resume_from_sequence,
+            cache_key=state.user_message_id,
+        )
+    except Exception:
+        await _unregister_inflight_invoke(state=state, user_id=user_id)
+        raise
 
 
 async def run_ws_invoke_with_session_recovery(

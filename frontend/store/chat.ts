@@ -24,6 +24,10 @@ import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
 import { executeChatRuntime } from "@/store/chatRuntime";
 
+const requestSessionCancel = (conversationId: string) => {
+  chatConnectionService.cancelSession(conversationId).catch(() => undefined);
+};
+
 type ChatState = {
   sessions: Record<string, AgentSession>;
   ensureSession: (
@@ -236,7 +240,7 @@ export const useChatStore = create<ChatState>()(
         );
       },
       cancelMessage: (conversationId) => {
-        chatConnectionService.cancelSession(conversationId);
+        requestSessionCancel(conversationId);
       },
       sendMessage: async (conversationId, agentId, content, agentSource) => {
         const trimmed = content.trim();
@@ -393,11 +397,11 @@ export const useChatStore = create<ChatState>()(
           }
 
           cleanupPlan.expiredConversationIds.forEach((conversationId) => {
-            chatConnectionService.cancelSession(conversationId);
+            requestSessionCancel(conversationId);
             removeConversationMessages(conversationId);
           });
           cleanupPlan.trimmedConversationIds.forEach((conversationId) => {
-            chatConnectionService.cancelSession(conversationId);
+            requestSessionCancel(conversationId);
             removeConversationMessages(conversationId);
           });
 

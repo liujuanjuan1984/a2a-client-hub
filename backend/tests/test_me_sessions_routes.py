@@ -12,6 +12,7 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_service import a2a_schedule_service
+from app.services.session_hub import session_hub_service
 from app.utils.timezone_util import utc_now
 from tests.api_utils import create_test_client
 from tests.utils import create_user
@@ -238,3 +239,101 @@ async def test_me_sessions_query_supports_agent_id_filter(
     assert len(payload["items"]) == 1
     assert payload["items"][0]["conversationId"] == str(session_a.id)
     assert payload["items"][0]["agent_id"] == str(agent_a.id)
+
+
+async def test_me_sessions_cancel_returns_accepted_for_inflight_task(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+
+    class _Gateway:
+        async def cancel_task(
+            self, *, resolved, task_id, metadata=None
+        ):  # noqa: ANN001
+            return {"success": True}
+
+    token = await session_hub_service.register_inflight_invoke(
+        user_id=user.id,
+        conversation_id=session.id,
+        gateway=_Gateway(),
+        resolved=object(),
+    )
+    await session_hub_service.bind_inflight_task_id(
+        user_id=user.id,
+        conversation_id=session.id,
+        token=token,
+        task_id="task-123",
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(f"/me/conversations/{session.id}/cancel")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["conversationId"] == str(session.id)
+    assert payload["taskId"] == "task-123"
+    assert payload["cancelled"] is True
+    assert payload["status"] == "accepted"
+
+
+async def test_me_sessions_cancel_maps_upstream_error_to_bad_gateway(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+
+    class _Gateway:
+        async def cancel_task(
+            self, *, resolved, task_id, metadata=None
+        ):  # noqa: ANN001
+            return {"success": False, "error_code": "upstream_error"}
+
+    token = await session_hub_service.register_inflight_invoke(
+        user_id=user.id,
+        conversation_id=session.id,
+        gateway=_Gateway(),
+        resolved=object(),
+    )
+    await session_hub_service.bind_inflight_task_id(
+        user_id=user.id,
+        conversation_id=session.id,
+        token=token,
+        task_id="task-failed",
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(f"/me/conversations/{session.id}/cancel")
+
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "upstream_error"
