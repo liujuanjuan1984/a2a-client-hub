@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import logging
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -20,6 +21,8 @@ from app.handlers import auth as auth_handler
 from app.utils.timezone_util import ensure_utc, resolve_timezone, utc_now
 
 _MANUAL_FAILURE_MESSAGE = "Stopped by user as failed"
+
+logger = logging.getLogger(__name__)
 
 
 class A2AScheduleError(RuntimeError):
@@ -541,6 +544,8 @@ class A2AScheduleService:
         selected_task.running_started_at = now_utc
         await commit_safely(db)
 
+        logger.info(f"Task {selected_task.id} claimed, run_id: {run_id}")
+
         return ClaimedA2AScheduleTask(
             task_id=selected_task.id,
             user_id=selected_task.user_id,
@@ -704,6 +709,11 @@ class A2AScheduleService:
             pass
         else:
             raise A2AScheduleValidationError("Unsupported final status for task run")
+
+        logger.info(
+            f"Task {task_id} finalized (run_id: {run_id}) "
+            f"with status: {final_status}, conv: {conversation_id}"
+        )
 
         return True
 
