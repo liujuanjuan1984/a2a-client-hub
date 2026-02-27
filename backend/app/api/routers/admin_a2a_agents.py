@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db, get_current_admin_user
 from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
-from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.schemas.hub_a2a_agent import (
@@ -24,6 +23,7 @@ from app.schemas.hub_a2a_agent import (
     HubA2AAllowlistListResponse,
     HubA2AAllowlistReplaceRequest,
 )
+from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.hub_a2a_agents import (
     HubA2AAgentNotFoundError,
     HubA2AAgentValidationError,
@@ -95,7 +95,7 @@ async def create_hub_agent_admin(
     response.headers["Cache-Control"] = "no-store"
     normalized_card_url = normalize_card_url(
         payload.card_url,
-        allowed_hosts=settings.a2a_proxy_allowed_hosts,
+        allowed_hosts=await a2a_proxy_service.get_effective_allowed_hosts(db),
     )
     logger.info(
         "Hub A2A agent create requested (admin)",
@@ -157,7 +157,7 @@ async def update_hub_agent_admin(
     normalized_card_url = (
         normalize_card_url(
             payload.card_url,
-            allowed_hosts=settings.a2a_proxy_allowed_hosts,
+            allowed_hosts=await a2a_proxy_service.get_effective_allowed_hosts(db),
         )
         if payload.card_url
         else None

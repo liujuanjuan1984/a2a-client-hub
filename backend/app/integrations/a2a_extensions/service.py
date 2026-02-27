@@ -33,6 +33,7 @@ from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
 )
+from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.a2a_runtime import A2ARuntime
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
@@ -114,7 +115,7 @@ class A2AExtensionsService:
         try:
             return validate_outbound_http_url(
                 url,
-                allowed_hosts=settings.a2a_proxy_allowed_hosts,
+                allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
                 purpose=purpose,
             )
         except OutboundURLNotAllowedError as exc:

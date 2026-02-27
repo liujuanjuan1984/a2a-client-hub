@@ -98,6 +98,15 @@ export function AdminHomeScreen() {
             router.push("/admin/hub-a2a");
           }}
         />
+        <AdminTile
+          title="Proxy Allowlist"
+          subtitle="Manage domains allowed for A2A proxying."
+          icon="shield-checkmark-outline"
+          onPress={() => {
+            blurActiveElement();
+            router.push("/admin/proxy-allowlist");
+          }}
+        />
       </View>
     </ScreenContainer>
   );

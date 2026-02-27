@@ -7,6 +7,7 @@ autogeneration.
 
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
+from app.db.models.a2a_proxy_allowlist import A2AProxyAllowlist
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_message import AgentMessage
@@ -24,6 +25,7 @@ from app.db.models.ws_ticket import WsTicket
 __all__ = [
     "A2AAgent",
     "A2AAgentCredential",
+    "A2AProxyAllowlist",
     "A2AScheduleExecution",
     "A2AScheduleTask",
     "AgentMessageBlock",
