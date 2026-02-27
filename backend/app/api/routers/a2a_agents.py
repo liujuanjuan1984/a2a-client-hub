@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_me
 from app.api.routers.card_url_validation import normalize_card_url
-from app.api.routers.card_validation_route import run_card_validation_route
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
@@ -269,22 +268,30 @@ async def validate_agent_card(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AAgentCardValidationResponse:
-    return await run_card_validation_route(
-        build_runtime=lambda: a2a_runtime_builder.build(
+    try:
+        runtime = await a2a_runtime_builder.build(
             db, user_id=current_user.id, agent_id=agent_id
-        ),
-        runtime_not_found_errors=(A2ARuntimeNotFoundError,),
-        runtime_not_found_status_code=404,
-        runtime_validation_errors=(A2ARuntimeValidationError,),
-        runtime_validation_status_code=400,
-        gateway=get_a2a_service().gateway,
-        logger=logger,
-        log_message="A2A agent card validation requested",
-        log_extra={
+        )
+    except A2ARuntimeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except A2ARuntimeValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    logger.info(
+        "A2A agent card validation requested",
+        extra={
             "user_id": str(current_user.id),
             "agent_id": str(agent_id),
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
         },
     )
+    try:
+        return await fetch_and_validate_agent_card(
+            gateway=get_a2a_service().gateway,
+            resolved=runtime.resolved,
+        )
+    except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post(
