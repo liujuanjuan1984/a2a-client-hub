@@ -4,7 +4,7 @@ This document outlines the standard operating procedures (SOP) for recovering th
 
 ## 1. Context and Problem
 
-A2A Scheduled Tasks are tracked with states (e.g., `pending`, `running`, `success`, `failed`). When an execution is claimed by a worker, the `status` of `A2AScheduleExecution` and `last_run_status` of `A2AScheduleTask` are set to `running`. 
+A2A Scheduled Tasks are tracked with states (e.g., `pending`, `running`, `success`, `failed`). When an execution is claimed by a worker, the `status` of `A2AScheduleExecution` and `last_run_status` of `A2AScheduleTask` are set to `running`.
 
 If the backend process is killed or restarted abruptly while a task is `running`, the status might never be updated to `failed` or `success`. These stale `running` states can:
 1. Block subsequent scheduling for the affected tasks.
