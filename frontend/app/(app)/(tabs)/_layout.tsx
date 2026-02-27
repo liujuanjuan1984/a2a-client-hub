@@ -5,11 +5,11 @@ import { Platform } from "react-native";
 import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 
 export default function TabsLayout() {
-  const insets = useAppSafeArea({ maxBottomInset: 20 });
+  const insets = useAppSafeArea({ maxBottomInset: 16 });
   const fallbackBottomInset = Platform.OS === "web" ? 1 : 0;
   const tabBarBottomInset = Math.max(insets.bottom, fallbackBottomInset);
   const tabBarPaddingBottom = Math.max(tabBarBottomInset, 1);
-  const tabBarHeight = 54 + tabBarPaddingBottom;
+  const tabBarHeight = 50 + tabBarPaddingBottom;
 
   return (
     <Tabs
@@ -33,7 +33,7 @@ export default function TabsLayout() {
           elevation: 0,
         },
         tabBarItemStyle: {
-          minHeight: 52,
+          minHeight: 48,
         },
       }}
     >

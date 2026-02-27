@@ -51,7 +51,7 @@ export function SessionsScreen() {
   };
 
   return (
-    <ScreenContainer>
+    <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
       <PageHeader
         title="Sessions"
         subtitle="Browse sessions across all agents."
@@ -59,7 +59,7 @@ export function SessionsScreen() {
 
       <ScrollView
         style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 18 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -91,7 +91,7 @@ export function SessionsScreen() {
                   key={item.conversationId}
                   className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
                 >
-                  <View className="p-5 pb-4">
+                  <View className="px-4 py-4 pb-3.5">
                     <View className="flex-row items-center justify-between mb-1.5">
                       <Text
                         className="text-[10px] font-semibold uppercase tracking-widest text-neo-green"
@@ -111,7 +111,7 @@ export function SessionsScreen() {
                     </Text>
                   </View>
 
-                  <View className="flex-row items-center justify-between gap-3 bg-black/20 px-5 py-3">
+                  <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
                     <View className="flex-1">
                       <Text className="text-[10px] font-medium text-slate-500">
                         {timeline.timelineRangeText}

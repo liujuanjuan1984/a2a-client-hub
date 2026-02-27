@@ -48,7 +48,7 @@ export function AgentListScreen() {
   };
 
   return (
-    <ScreenContainer>
+    <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
       <PageHeader
         title="Agents"
         subtitle="Manage your connected A2A services."
@@ -81,7 +81,7 @@ export function AgentListScreen() {
 
       <ScrollView
         style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 18 }}
         refreshControl={
           <RefreshControl
             refreshing={isFetching}
@@ -117,7 +117,7 @@ export function AgentListScreen() {
               key={agent.id}
               className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
             >
-              <View className="p-5">
+              <View className="px-4 py-4">
                 <View className="flex-row items-center justify-between">
                   <Text
                     className="text-[13px] font-semibold text-white flex-1 pr-4"
@@ -137,7 +137,7 @@ export function AgentListScreen() {
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-between gap-3 bg-black/20 px-5 py-3">
+              <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
                 <View className="flex-row items-center gap-2">
                   <Button
                     label={agent.source === "personal" ? "Edit" : "Details"}

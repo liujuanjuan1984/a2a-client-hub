@@ -83,7 +83,7 @@ export function ScheduledJobsScreen() {
   };
 
   return (
-    <ScreenContainer>
+    <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
       <PageHeader
         title="Scheduled Jobs"
         subtitle="Configure recurring prompts and inspect execution history."
@@ -104,7 +104,7 @@ export function ScheduledJobsScreen() {
 
       <ScrollView
         style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 18 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

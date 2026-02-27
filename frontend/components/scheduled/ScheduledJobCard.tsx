@@ -156,7 +156,7 @@ export function ScheduledJobCard({
     <View
       className={`mb-4 rounded-2xl overflow-hidden bg-surface shadow-sm ${tone.container}`}
     >
-      <View className="p-5">
+      <View className="px-4 py-4">
         <View className="flex-row items-center justify-between mb-2">
           <Text className="text-[10px] font-semibold uppercase tracking-widest text-neo-green">
             {agentName}
@@ -211,7 +211,7 @@ export function ScheduledJobCard({
         )}
       </View>
 
-      <View className="flex-row items-center justify-between gap-3 bg-black/20 px-5 py-3">
+      <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
         <View className="flex-row items-center gap-2">
           {!canMarkFailed ? (
             <Button
@@ -266,7 +266,7 @@ export function ScheduledJobCard({
       </View>
 
       {executionsOpen ? (
-        <View className="bg-black/10 px-5 pb-5 pt-1">
+        <View className="bg-black/10 px-4 pb-4 pt-1">
           <View className="rounded-xl bg-black/20 p-4">
             {executionsLoading ? (
               <Text className="text-[11px] font-medium text-slate-500">
