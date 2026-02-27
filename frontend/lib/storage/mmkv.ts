@@ -309,9 +309,7 @@ export const mmkvStateStorage: StateStorage = {
           if (!isValidPersistedPayload(name, value)) {
             try {
               mmkv.delete(name);
-            } catch {
-              // Keep fail-open behavior for cache reads.
-            }
+            } catch {}
             console.warn("[storage] Dropped invalid MMKV payload.", {
               key: name,
             });
