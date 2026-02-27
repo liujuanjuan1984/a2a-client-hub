@@ -1,7 +1,7 @@
-import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
+import { ExpandToggle } from "@/components/ui/ExpandToggle";
 import { type MessageBlock } from "@/lib/api/chat-utils";
 
 interface ToolCallBlockProps {
@@ -43,47 +43,18 @@ export function ToolCallBlock({
     toggleToolCall();
   };
 
-  const renderBottomCollapseAction = () => {
-    return (
-      <View className="mt-2 items-end">
-        <Pressable
-          className="rounded-lg bg-black/20 px-2.5 py-1"
-          accessibilityRole="button"
-          accessibilityLabel="Collapse full text"
-          testID={`chat-message-${blockId}-collapse-bottom`}
-          onPress={toggleToolCall}
-        >
-          <Text className="text-[11px] font-medium text-slate-500">
-            Show less
-          </Text>
-        </Pressable>
-      </View>
-    );
-  };
-
   return (
     <View
       key={blockId}
       className={`${!isFirst ? "mt-3" : ""} rounded-xl bg-black/40 p-3`}
     >
-      <Pressable
-        onPress={() => {
+      <ExpandToggle
+        expanded={expanded}
+        onToggle={() => {
           handleToggle().catch(() => undefined);
         }}
-        accessibilityRole="button"
-        accessibilityLabel={
-          expanded ? "Hide tool call details" : "Show tool call details"
-        }
-      >
-        <View className="flex-row items-center justify-between">
-          <View className="flex-row items-center gap-1.5">
-            <Ionicons name="construct" size={10} color="#64748B" />
-            <Text className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-              {expanded ? "Hide Tool Call" : "Show Tool Call"}
-            </Text>
-          </View>
-        </View>
-      </Pressable>
+        type="Tool Call"
+      />
 
       {expanded && blockHasContent ? (
         <View>
@@ -93,7 +64,13 @@ export function ToolCallBlock({
           >
             {blockText}
           </Text>
-          {renderBottomCollapseAction()}
+          <View className="mt-2 items-end">
+            <ExpandToggle
+              expanded
+              onToggle={toggleToolCall}
+              testID={`chat-message-${blockId}-collapse-bottom`}
+            />
+          </View>
         </View>
       ) : null}
     </View>

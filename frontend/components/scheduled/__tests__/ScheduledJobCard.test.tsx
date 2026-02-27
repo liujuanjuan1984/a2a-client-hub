@@ -136,7 +136,7 @@ describe("ScheduledJobCard visuals", () => {
     expect(JSON.stringify(tree)).not.toContain("Stop");
   });
 
-  it("toggles prompt expansion with Info and Less", () => {
+  it("toggles prompt expansion with Show/Hide Prompt labels", () => {
     const job = {
       id: "6",
       name: "Job",
@@ -154,16 +154,16 @@ describe("ScheduledJobCard visuals", () => {
 
     // Prompt should be hidden by default
     expect(queryByText(job.prompt)).toBeNull();
-    expect(getByText("Info")).toBeTruthy();
+    expect(getByText("Show Prompt")).toBeTruthy();
 
-    // Click Info to expand
-    fireEvent.press(getByText("Info"));
+    // Click Show Prompt to expand
+    fireEvent.press(getByText("Show Prompt"));
 
     expect(getByText(job.prompt)).toBeTruthy();
-    expect(getByText("Less")).toBeTruthy();
+    expect(getByText("Hide Prompt")).toBeTruthy();
 
-    // Click Less to collapse
-    fireEvent.press(getByText("Less"));
+    // Click Hide Prompt to collapse
+    fireEvent.press(getByText("Hide Prompt"));
     expect(queryByText(job.prompt)).toBeNull();
   });
 

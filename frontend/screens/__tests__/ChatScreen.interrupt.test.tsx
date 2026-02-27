@@ -289,6 +289,28 @@ const renderChatScreen = (conversationId: string) => {
   return tree;
 };
 
+const findPressableByTestId = (root: ReactTestInstance, testID: string) => {
+  const candidate = root
+    .findAll((node) => node.props?.testID === testID)
+    .find(
+      (node) =>
+        typeof node.props?.onPress === "function" ||
+        typeof node.props?.onToggle === "function",
+    );
+  if (!candidate) {
+    throw new Error(`Cannot find pressable node for testID: ${testID}`);
+  }
+  return candidate;
+};
+
+const pressNode = (node: ReactTestInstance) => {
+  const handler = node.props.onPress ?? node.props.onToggle;
+  if (typeof handler !== "function") {
+    throw new Error("Node does not expose onPress/onToggle handler");
+  }
+  handler();
+};
+
 describe("ChatScreen interrupt handling", () => {
   const conversationId = "conversation-1";
 
@@ -477,29 +499,28 @@ describe("ChatScreen interrupt handling", () => {
 
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
-    const expandButton = root.findAll((node) => {
-      return (
-        node.type === Object({}) ||
-        node.props?.testID === "chat-message-message-1:text-expand"
-      );
-    })[0];
+    const expandButton = findPressableByTestId(
+      root,
+      "chat-message-message-1:text-expand",
+    );
 
     expect(expandButton).toBeDefined();
-    expect(expandButton?.props.accessibilityLabel).toBe("Expand full text");
+    expect(containsText(root, "Show more")).toBe(true);
 
     act(() => {
-      expandButton.props.onPress();
+      pressNode(expandButton);
     });
 
-    const collapseButton = root.findByProps({
-      testID: "chat-message-message-1:text-expand",
-      accessibilityLabel: "Collapse full text",
-    });
+    expect(containsText(root, "Show less")).toBe(true);
+    const collapseButton = findPressableByTestId(
+      root,
+      "chat-message-message-1:text-expand",
+    );
     expect(collapseButton).toBeDefined();
-    const bottomCollapseButton = root.findByProps({
-      testID: "chat-message-message-1:text-collapse-bottom",
-      accessibilityLabel: "Collapse full text",
-    });
+    const bottomCollapseButton = findPressableByTestId(
+      root,
+      "chat-message-message-1:text-collapse-bottom",
+    );
     expect(bottomCollapseButton).toBeDefined();
     act(() => {
       tree.unmount();
@@ -540,9 +561,12 @@ describe("ChatScreen interrupt handling", () => {
       });
 
       act(() => {
-        root
-          .findByProps({ testID: "chat-message-message-anchor:text-expand" })
-          .props.onPress();
+        pressNode(
+          findPressableByTestId(
+            root,
+            "chat-message-message-anchor:text-expand",
+          ),
+        );
       });
 
       act(() => {

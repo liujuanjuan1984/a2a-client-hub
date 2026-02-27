@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
+import { ExpandToggle } from "@/components/ui/ExpandToggle";
 import { type MessageBlock } from "@/lib/api/chat-utils";
 import { COLLAPSED_TEXT_LINES, shouldCollapseByLength } from "@/lib/chat-utils";
 
@@ -36,29 +37,6 @@ export function TextBlock({
   }
 
   const shouldCollapse = shouldCollapseByLength(blockText);
-  const topToggleAccessibilityLabel = expanded
-    ? "Collapse full text"
-    : "Expand full text";
-  const topToggleLabel = expanded ? "Show less" : "Read more";
-
-  const renderBottomCollapseAction = () => {
-    return (
-      <View className="mt-2 items-end">
-        <Pressable
-          className="rounded-lg bg-black/20 px-2.5 py-1"
-          accessibilityRole="button"
-          accessibilityLabel="Collapse full text"
-          testID={`chat-message-${blockId}-collapse-bottom`}
-          onPress={toggleTextExpansion}
-        >
-          <Text className="text-[11px] font-medium text-slate-500">
-            Show less
-          </Text>
-        </Pressable>
-      </View>
-    );
-  };
-
   return (
     <View key={blockId}>
       <Text
@@ -75,19 +53,23 @@ export function TextBlock({
         {blockText}
       </Text>
       {shouldCollapse ? (
-        <Pressable
-          className="mt-2 rounded-lg bg-black/20 px-2.5 py-1"
-          accessibilityRole="button"
-          accessibilityLabel={topToggleAccessibilityLabel}
-          testID={`chat-message-${blockId}-expand`}
-          onPress={toggleTextExpansion}
-        >
-          <Text className="text-[11px] font-medium text-slate-500">
-            {topToggleLabel}
-          </Text>
-        </Pressable>
+        <View className="mt-2">
+          <ExpandToggle
+            expanded={expanded}
+            onToggle={toggleTextExpansion}
+            testID={`chat-message-${blockId}-expand`}
+          />
+        </View>
       ) : null}
-      {shouldCollapse && expanded ? renderBottomCollapseAction() : null}
+      {shouldCollapse && expanded ? (
+        <View className="mt-2 items-end">
+          <ExpandToggle
+            expanded
+            onToggle={toggleTextExpansion}
+            testID={`chat-message-${blockId}-collapse-bottom`}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
