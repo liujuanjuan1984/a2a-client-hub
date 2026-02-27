@@ -5,6 +5,7 @@ import { type MessageBlock } from "@/lib/api/chat-utils";
 
 interface ReasoningBlockProps {
   block: MessageBlock;
+  fallbackBlockId: string;
   messageId: string;
   onLayoutChangeStart?: () => void;
   onLoadBlockContent?: (messageId: string, blockId: string) => Promise<boolean>;
@@ -13,6 +14,7 @@ interface ReasoningBlockProps {
 
 export function ReasoningBlock({
   block,
+  fallbackBlockId,
   messageId,
   onLayoutChangeStart,
   onLoadBlockContent,
@@ -22,7 +24,7 @@ export function ReasoningBlock({
 
   const blockText = block.content;
   const blockHasContent = blockText.length > 0;
-  const blockId = block.id || `${messageId}:reasoning`;
+  const blockId = block.id || fallbackBlockId;
 
   const toggleReasoning = useCallback(() => {
     onLayoutChangeStart?.();

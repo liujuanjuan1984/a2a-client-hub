@@ -7,7 +7,7 @@ import { COLLAPSED_TEXT_LINES, shouldCollapseByLength } from "@/lib/chat-utils";
 interface TextBlockProps {
   block?: MessageBlock;
   content?: string;
-  messageId: string;
+  fallbackBlockId: string;
   isAgent: boolean;
   onLayoutChangeStart?: () => void;
   isFirst?: boolean;
@@ -16,7 +16,7 @@ interface TextBlockProps {
 export function TextBlock({
   block,
   content,
-  messageId,
+  fallbackBlockId,
   isAgent,
   onLayoutChangeStart,
   isFirst,
@@ -24,7 +24,7 @@ export function TextBlock({
   const [expanded, setExpanded] = useState(false);
 
   const blockText = block?.content ?? content ?? "";
-  const blockId = block?.id ?? messageId;
+  const blockId = block?.id ?? fallbackBlockId;
 
   const toggleTextExpansion = useCallback(() => {
     onLayoutChangeStart?.();

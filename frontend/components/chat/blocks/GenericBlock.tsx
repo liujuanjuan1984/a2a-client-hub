@@ -5,13 +5,17 @@ import { type MessageBlock } from "@/lib/api/chat-utils";
 
 interface GenericBlockProps {
   block: MessageBlock;
-  messageId: string;
+  fallbackBlockId: string;
   isFirst?: boolean;
 }
 
-export function GenericBlock({ block, messageId, isFirst }: GenericBlockProps) {
+export function GenericBlock({
+  block,
+  fallbackBlockId,
+  isFirst,
+}: GenericBlockProps) {
   const blockText = block.content;
-  const blockId = block.id || `${messageId}:generic`;
+  const blockId = block.id || fallbackBlockId;
 
   return (
     <View

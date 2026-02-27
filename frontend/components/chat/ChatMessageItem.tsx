@@ -128,6 +128,7 @@ export function ChatMessageItem({
                     <ReasoningBlock
                       key={blockId}
                       block={block}
+                      fallbackBlockId={blockId}
                       messageId={message.id}
                       onLayoutChangeStart={onLayoutChangeStart}
                       onLoadBlockContent={onLoadBlockContent}
@@ -139,6 +140,7 @@ export function ChatMessageItem({
                     <ToolCallBlock
                       key={blockId}
                       block={block}
+                      fallbackBlockId={blockId}
                       messageId={message.id}
                       onLayoutChangeStart={onLayoutChangeStart}
                       onLoadBlockContent={onLoadBlockContent}
@@ -150,7 +152,7 @@ export function ChatMessageItem({
                     <TextBlock
                       key={blockId}
                       block={block}
-                      messageId={message.id}
+                      fallbackBlockId={blockId}
                       isAgent={message.role === "agent"}
                       onLayoutChangeStart={onLayoutChangeStart}
                       isFirst={isFirst}
@@ -161,7 +163,7 @@ export function ChatMessageItem({
                     <GenericBlock
                       key={blockId}
                       block={block}
-                      messageId={message.id}
+                      fallbackBlockId={blockId}
                       isFirst={isFirst}
                     />
                   );
@@ -172,7 +174,7 @@ export function ChatMessageItem({
               {hasPlainContent ? (
                 <TextBlock
                   content={message.content}
-                  messageId={message.id}
+                  fallbackBlockId={message.id}
                   isAgent={message.role === "agent"}
                   onLayoutChangeStart={onLayoutChangeStart}
                   isFirst

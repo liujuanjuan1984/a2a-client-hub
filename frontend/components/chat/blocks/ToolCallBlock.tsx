@@ -6,6 +6,7 @@ import { type MessageBlock } from "@/lib/api/chat-utils";
 
 interface ToolCallBlockProps {
   block: MessageBlock;
+  fallbackBlockId: string;
   messageId: string;
   onLayoutChangeStart?: () => void;
   onLoadBlockContent?: (messageId: string, blockId: string) => Promise<boolean>;
@@ -14,6 +15,7 @@ interface ToolCallBlockProps {
 
 export function ToolCallBlock({
   block,
+  fallbackBlockId,
   messageId,
   onLayoutChangeStart,
   onLoadBlockContent,
@@ -23,7 +25,7 @@ export function ToolCallBlock({
 
   const blockText = block.content;
   const blockHasContent = blockText.length > 0;
-  const blockId = block.id || `${messageId}:tool_call`;
+  const blockId = block.id || fallbackBlockId;
 
   const toggleToolCall = useCallback(() => {
     onLayoutChangeStart?.();
