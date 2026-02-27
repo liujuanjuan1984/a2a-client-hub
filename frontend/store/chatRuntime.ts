@@ -397,7 +397,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   };
 
   const chunkBufferByMessageId = new Map<string, StreamBlockUpdate[]>();
-  let bufferTimeout: NodeJS.Timeout | null = null;
+  let bufferTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const flushChunkBuffer = () => {
     if (bufferTimeout) {
@@ -411,7 +411,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         conversationId,
         targetMessageId,
         (message) => {
-          let nextBlocks = message.blocks;
+          let nextBlocks = message.blocks?.map((block) => ({ ...block }));
           for (const chunk of chunks) {
             nextBlocks = applyStreamBlockUpdate(nextBlocks, chunk);
           }
@@ -756,6 +756,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       return;
     }
   } catch (error) {
+    flushChunkBuffer();
     if (!isAuthFailureError(error) && !isAuthorizationFailureError(error)) {
       throw error;
     }
