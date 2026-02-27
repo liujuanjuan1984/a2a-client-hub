@@ -292,6 +292,51 @@ async def test_me_sessions_cancel_returns_accepted_for_inflight_task(
     assert payload["status"] == "accepted"
 
 
+async def test_me_sessions_cancel_accepts_pending_when_task_id_not_bound(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+
+    class _Gateway:
+        async def cancel_task(
+            self, *, resolved, task_id, metadata=None
+        ):  # noqa: ANN001, ARG002
+            return {"success": True}
+
+    await session_hub_service.register_inflight_invoke(
+        user_id=user.id,
+        conversation_id=session.id,
+        gateway=_Gateway(),
+        resolved=object(),
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(f"/me/conversations/{session.id}/cancel")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["conversationId"] == str(session.id)
+    assert payload["taskId"] is None
+    assert payload["cancelled"] is True
+    assert payload["status"] == "accepted"
+
+
 async def test_me_sessions_cancel_maps_upstream_error_to_bad_gateway(
     async_db_session,
     async_session_maker,
