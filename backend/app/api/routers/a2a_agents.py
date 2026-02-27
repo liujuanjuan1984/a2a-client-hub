@@ -99,14 +99,6 @@ def _build_proxy_headers(payload: A2AAgentCardProxyRequest) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _raise_agent_http_error(exc: Exception) -> None:
-    if isinstance(exc, A2AAgentValidationError):
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if isinstance(exc, A2AAgentNotFoundError):
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    raise exc
-
-
 @router.get("", response_model=A2AAgentListResponse)
 async def list_agents(
     *,
@@ -175,8 +167,8 @@ async def create_agent(
             token=payload.token,
         )
         return _build_response(record)
-    except (A2AAgentValidationError, A2AAgentNotFoundError) as exc:
-        _raise_agent_http_error(exc)
+    except A2AAgentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.put("/{agent_id}", response_model=A2AAgentResponse)
@@ -223,8 +215,10 @@ async def update_agent(
             token=payload.token,
         )
         return _build_response(record)
-    except (A2AAgentValidationError, A2AAgentNotFoundError) as exc:
-        _raise_agent_http_error(exc)
+    except A2AAgentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except A2AAgentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.delete(

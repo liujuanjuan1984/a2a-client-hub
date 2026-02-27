@@ -443,29 +443,6 @@ export const applyStreamBlockUpdate = (
   const nextBlocks = [...blocks];
   const lastNextBlock = nextBlocks[nextBlocks.length - 1];
 
-  const markLastBlockFinishedIfNeeded = () => {
-    const candidate = nextBlocks[nextBlocks.length - 1];
-    if (!candidate || candidate.isFinished) {
-      return;
-    }
-    nextBlocks[nextBlocks.length - 1] = {
-      ...candidate,
-      isFinished: true,
-      updatedAt: now,
-    };
-  };
-
-  const appendNewBlock = () => {
-    nextBlocks.push({
-      id: `${update.messageId}:${nextBlocks.length + 1}`,
-      type: update.blockType,
-      content: update.delta,
-      isFinished: update.done,
-      createdAt: now,
-      updatedAt: now,
-    });
-  };
-
   if (overwrite) {
     if (
       lastNextBlock &&
@@ -480,14 +457,41 @@ export const applyStreamBlockUpdate = (
       };
       return nextBlocks;
     }
-    markLastBlockFinishedIfNeeded();
-    appendNewBlock();
+    if (lastNextBlock && !lastNextBlock.isFinished) {
+      nextBlocks[nextBlocks.length - 1] = {
+        ...lastNextBlock,
+        isFinished: true,
+        updatedAt: now,
+      };
+    }
+    nextBlocks.push({
+      id: `${update.messageId}:${nextBlocks.length + 1}`,
+      type: update.blockType,
+      content: update.delta,
+      isFinished: update.done,
+      createdAt: now,
+      updatedAt: now,
+    });
     return nextBlocks;
   }
 
   // Type mismatch or new block needed
-  markLastBlockFinishedIfNeeded();
-  appendNewBlock();
+  if (lastNextBlock && !lastNextBlock.isFinished) {
+    nextBlocks[nextBlocks.length - 1] = {
+      ...lastNextBlock,
+      isFinished: true,
+      updatedAt: now,
+    };
+  }
+
+  nextBlocks.push({
+    id: `${update.messageId}:${nextBlocks.length + 1}`,
+    type: update.blockType,
+    content: update.delta,
+    isFinished: update.done,
+    createdAt: now,
+    updatedAt: now,
+  });
   return nextBlocks;
 };
 

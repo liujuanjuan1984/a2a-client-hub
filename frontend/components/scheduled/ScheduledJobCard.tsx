@@ -2,13 +2,6 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Switch, Text, View } from "react-native";
 
-import {
-  LIST_CARD_AGENT_TEXT_CLASS,
-  LIST_CARD_BASE_CLASS,
-  LIST_CARD_FOOTER_CLASS,
-  LIST_CARD_HEADER_CLASS,
-  LIST_CARD_META_TEXT_CLASS,
-} from "@/components/layout/listCardStyles";
 import { Button } from "@/components/ui/Button";
 import {
   type IntervalTimePoint,
@@ -160,10 +153,14 @@ export function ScheduledJobCard({
   };
 
   return (
-    <View className={`${LIST_CARD_BASE_CLASS} bg-surface ${tone.container}`}>
-      <View className={LIST_CARD_HEADER_CLASS}>
+    <View
+      className={`mb-4 rounded-2xl overflow-hidden bg-surface shadow-sm ${tone.container}`}
+    >
+      <View className="px-4 py-4">
         <View className="flex-row items-center justify-between mb-2">
-          <Text className={LIST_CARD_AGENT_TEXT_CLASS}>{agentName}</Text>
+          <Text className="text-[10px] font-semibold uppercase tracking-widest text-neo-green">
+            {agentName}
+          </Text>
           <View className="bg-black/20 rounded px-1.5 py-0.5">
             <Text className={`text-[10px] font-bold ${tone.text}`}>
               {tone.statusText}
@@ -214,7 +211,7 @@ export function ScheduledJobCard({
         )}
       </View>
 
-      <View className={LIST_CARD_FOOTER_CLASS}>
+      <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
         <View className="flex-row items-center gap-2">
           {!canMarkFailed ? (
             <Button
@@ -287,7 +284,7 @@ export function ScheduledJobCard({
                     className="mb-2 rounded-xl bg-black/20 p-3"
                   >
                     <View className="flex-row items-center justify-between">
-                      <Text className={LIST_CARD_META_TEXT_CLASS}>
+                      <Text className="text-[10px] font-medium text-slate-500">
                         {formatLocalDateTime(
                           execution.finished_at ??
                             execution.started_at ??

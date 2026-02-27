@@ -16,7 +16,9 @@ import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import {
   createInvitation,
@@ -28,7 +30,6 @@ import {
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
-import { AdminBackHeader } from "@/screens/admin/AdminCommon";
 
 const statusColor = (status: InvitationResponse["status"]) => {
   if (status === "pending") return "text-amber-300";
@@ -162,15 +163,6 @@ export function AdminInvitationsScreen() {
     }
   }, []);
 
-  const handleBack = useCallback(() => {
-    blurActiveElement();
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
-    router.replace("/admin");
-  }, [router]);
-
   if (!isReady) {
     return <FullscreenLoader message="Checking permissions..." />;
   }
@@ -183,10 +175,25 @@ export function AdminInvitationsScreen() {
 
   return (
     <ScreenContainer>
-      <AdminBackHeader
+      <PageHeader
         title="Invitations"
         subtitle="Create and manage invitation codes."
-        onBackPress={handleBack}
+        rightElement={
+          <IconButton
+            accessibilityLabel="Go back"
+            icon="chevron-back"
+            size="sm"
+            variant="secondary"
+            onPress={() => {
+              blurActiveElement();
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/admin");
+              }
+            }}
+          />
+        }
       />
 
       <ScrollView

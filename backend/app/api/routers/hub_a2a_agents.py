@@ -87,6 +87,7 @@ async def validate_hub_agent_card(
     current_user: User = Depends(get_current_user),
 ) -> A2AAgentCardValidationResponse:
     response.headers["Cache-Control"] = "no-store"
+
     try:
         runtime = await hub_a2a_runtime_builder.build(
             db, user_id=current_user.id, agent_id=agent_id

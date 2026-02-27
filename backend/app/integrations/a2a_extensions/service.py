@@ -268,44 +268,6 @@ class A2AExtensionsService:
             meta.update(meta_extra)
         return meta
 
-    @staticmethod
-    def _should_short_circuit_limit_without_offset(
-        ext: ResolvedExtension,
-        *,
-        page: int,
-    ) -> bool:
-        return (
-            ext.pagination.mode == "limit"
-            and page > 1
-            and not ext.pagination.supports_offset
-        )
-
-    def _build_limit_without_offset_result(
-        self,
-        *,
-        ext: ResolvedExtension,
-        page: int,
-        size: int,
-        meta_extra: Optional[Dict[str, Any]] = None,
-    ) -> ExtensionCallResult:
-        short_circuit_meta = {"short_circuit_reason": "limit_without_offset"}
-        if meta_extra:
-            short_circuit_meta.update(meta_extra)
-        return ExtensionCallResult(
-            success=True,
-            result={
-                "raw": [],
-                "items": [],
-                "pagination": {"page": page, "size": size},
-            },
-            meta=self._build_call_meta(
-                ext=ext,
-                page=page,
-                size=size,
-                meta_extra=short_circuit_meta,
-            ),
-        )
-
     async def _resolve_opencode_extension(
         self, runtime: A2ARuntime
     ) -> tuple[ResolvedExtension, str]:
@@ -551,11 +513,24 @@ class A2AExtensionsService:
             page=page,
             size=size,
         )
-        if self._should_short_circuit_limit_without_offset(ext, page=resolved_page):
-            return self._build_limit_without_offset_result(
-                ext=ext,
-                page=resolved_page,
-                size=resolved_size,
+        if (
+            ext.pagination.mode == "limit"
+            and resolved_page > 1
+            and not ext.pagination.supports_offset
+        ):
+            return ExtensionCallResult(
+                success=True,
+                result={
+                    "raw": [],
+                    "items": [],
+                    "pagination": {"page": resolved_page, "size": resolved_size},
+                },
+                meta=self._build_call_meta(
+                    ext=ext,
+                    page=resolved_page,
+                    size=resolved_size,
+                    meta_extra={"short_circuit_reason": "limit_without_offset"},
+                ),
             )
 
         params: Dict[str, Any] = self._build_pagination_params(
@@ -598,12 +573,27 @@ class A2AExtensionsService:
             page=page,
             size=size,
         )
-        if self._should_short_circuit_limit_without_offset(ext, page=resolved_page):
-            return self._build_limit_without_offset_result(
-                ext=ext,
-                page=resolved_page,
-                size=resolved_size,
-                meta_extra={"session_id": resolved_session_id},
+        if (
+            ext.pagination.mode == "limit"
+            and resolved_page > 1
+            and not ext.pagination.supports_offset
+        ):
+            return ExtensionCallResult(
+                success=True,
+                result={
+                    "raw": [],
+                    "items": [],
+                    "pagination": {"page": resolved_page, "size": resolved_size},
+                },
+                meta=self._build_call_meta(
+                    ext=ext,
+                    page=resolved_page,
+                    size=resolved_size,
+                    meta_extra={
+                        "session_id": resolved_session_id,
+                        "short_circuit_reason": "limit_without_offset",
+                    },
+                ),
             )
 
         params: Dict[str, Any] = {

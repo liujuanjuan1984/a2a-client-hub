@@ -14,7 +14,9 @@ import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import {
   addHubAgentAllowlistAdmin,
@@ -27,7 +29,6 @@ import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
-import { AdminBackHeader, AdminStateCard } from "@/screens/admin/AdminCommon";
 import {
   buildAllowlistDraftFromEntries,
   hasAllowlistEmail,
@@ -86,10 +87,6 @@ export function AdminHubAgentAllowlistScreen({
     }
     await allowlistQuery.refetch();
   }, [agentId, agentQuery, allowlistQuery]);
-
-  const handleBack = useCallback(() => {
-    backOrHome(router, "/admin/hub-a2a");
-  }, [router]);
 
   const handleAddEmail = useCallback(async () => {
     if (mutating) return;
@@ -167,10 +164,18 @@ export function AdminHubAgentAllowlistScreen({
   if (!agentId) {
     return (
       <ScreenContainer>
-        <AdminBackHeader
+        <PageHeader
           title="Allowlist"
           subtitle="Missing agent id."
-          onBackPress={handleBack}
+          rightElement={
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
+              variant="secondary"
+              onPress={() => backOrHome(router, "/admin/hub-a2a")}
+            />
+          }
         />
       </ScreenContainer>
     );
@@ -187,20 +192,34 @@ export function AdminHubAgentAllowlistScreen({
         : "Could not load shared agent.";
     return (
       <ScreenContainer>
-        <AdminBackHeader
+        <PageHeader
           title="Allowlist"
           subtitle="Shared agent"
-          onBackPress={handleBack}
+          rightElement={
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
+              variant="secondary"
+              onPress={() => backOrHome(router, "/admin/hub-a2a")}
+            />
+          }
         />
-        <AdminStateCard
-          title="Load shared agent failed"
-          message={message}
-          tone="error"
-          actionLabel="Retry"
-          onAction={() => {
-            refresh().catch(() => undefined);
-          }}
-        />
+        <View className="mt-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
+          <Text className="text-base font-semibold text-red-200">
+            Load shared agent failed
+          </Text>
+          <Text className="mt-2 text-sm text-red-100/90">{message}</Text>
+          <Button
+            className="mt-4 self-start"
+            label="Retry"
+            size="sm"
+            variant="secondary"
+            onPress={() => {
+              refresh().catch(() => undefined);
+            }}
+          />
+        </View>
       </ScreenContainer>
     );
   }
@@ -208,15 +227,27 @@ export function AdminHubAgentAllowlistScreen({
   if (agentQuery.data?.availability_policy !== "allowlist") {
     return (
       <ScreenContainer>
-        <AdminBackHeader
+        <PageHeader
           title="Allowlist"
           subtitle={agentQuery.data?.name ?? "Shared agent"}
-          onBackPress={handleBack}
+          rightElement={
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
+              variant="secondary"
+              onPress={() => backOrHome(router, "/admin/hub-a2a")}
+            />
+          }
         />
-        <AdminStateCard
-          title="Allowlist is disabled"
-          message="This shared agent is not using allowlist policy."
-        />
+        <View className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
+          <Text className="text-base font-semibold text-white">
+            Allowlist is disabled
+          </Text>
+          <Text className="mt-2 text-sm text-muted">
+            This shared agent is not using allowlist policy.
+          </Text>
+        </View>
       </ScreenContainer>
     );
   }
@@ -228,30 +259,52 @@ export function AdminHubAgentAllowlistScreen({
         : "Could not load allowlist.";
     return (
       <ScreenContainer>
-        <AdminBackHeader
+        <PageHeader
           title="Allowlist"
           subtitle={agentQuery.data?.name ?? "Shared agent"}
-          onBackPress={handleBack}
+          rightElement={
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
+              variant="secondary"
+              onPress={() => backOrHome(router, "/admin/hub-a2a")}
+            />
+          }
         />
-        <AdminStateCard
-          title="Load allowlist failed"
-          message={message}
-          tone="error"
-          actionLabel="Retry"
-          onAction={() => {
-            refresh().catch(() => undefined);
-          }}
-        />
+        <View className="mt-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
+          <Text className="text-base font-semibold text-red-200">
+            Load allowlist failed
+          </Text>
+          <Text className="mt-2 text-sm text-red-100/90">{message}</Text>
+          <Button
+            className="mt-4 self-start"
+            label="Retry"
+            size="sm"
+            variant="secondary"
+            onPress={() => {
+              refresh().catch(() => undefined);
+            }}
+          />
+        </View>
       </ScreenContainer>
     );
   }
 
   return (
     <ScreenContainer>
-      <AdminBackHeader
+      <PageHeader
         title="Allowlist"
         subtitle={agentQuery.data?.name ?? "Shared agent"}
-        onBackPress={handleBack}
+        rightElement={
+          <IconButton
+            accessibilityLabel="Go back"
+            icon="chevron-back"
+            size="sm"
+            variant="secondary"
+            onPress={() => backOrHome(router, "/admin/hub-a2a")}
+          />
+        }
       />
 
       <ScrollView

@@ -7,6 +7,8 @@ import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
+import { IconButton } from "@/components/ui/IconButton";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
 import {
@@ -20,7 +22,6 @@ import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
-import { AdminBackHeader } from "@/screens/admin/AdminCommon";
 import { HubAgentFormSections } from "@/screens/admin/HubAgentFormSections";
 import {
   buildHubAgentComparablePayloadFromRecord,
@@ -192,10 +193,6 @@ export function AdminHubAgentDetailScreen({
     }
   }, [agent, agentId, deleting, queryClient, router]);
 
-  const handleBack = useCallback(() => {
-    backOrHome(router, "/admin/hub-a2a");
-  }, [router]);
-
   if (!isReady) {
     return <FullscreenLoader message="Checking permissions..." />;
   }
@@ -206,10 +203,18 @@ export function AdminHubAgentDetailScreen({
   if (!agentId) {
     return (
       <ScreenContainer>
-        <AdminBackHeader
+        <PageHeader
           title="Shared agent"
           subtitle="Missing agent id."
-          onBackPress={handleBack}
+          rightElement={
+            <IconButton
+              accessibilityLabel="Go back"
+              icon="chevron-back"
+              size="sm"
+              variant="secondary"
+              onPress={() => backOrHome(router, "/admin/hub-a2a")}
+            />
+          }
         />
       </ScreenContainer>
     );
@@ -227,10 +232,18 @@ export function AdminHubAgentDetailScreen({
 
   return (
     <ScreenContainer>
-      <AdminBackHeader
+      <PageHeader
         title="Shared agent"
         subtitle="Update directory entry and credentials."
-        onBackPress={handleBack}
+        rightElement={
+          <IconButton
+            accessibilityLabel="Go back"
+            icon="chevron-back"
+            size="sm"
+            variant="secondary"
+            onPress={() => backOrHome(router, "/admin/hub-a2a")}
+          />
+        }
       />
 
       <ScrollView
