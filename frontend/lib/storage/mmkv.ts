@@ -16,8 +16,11 @@ const LEGACY_STORAGE_KEYS = [
   "a2a-client-hub.shortcuts",
 ];
 const CHAT_QUOTA_FALLBACK_LIMITS = [40, 20, 10, 5, 1] as const;
+const MMKV_INSTANCE_ID_DEFAULT = "a2a-client-hub-storage";
+const MMKV_INSTANCE_ID_CHAT = "a2a-chat-storage";
+const MMKV_INSTANCE_ID_MESSAGES = "a2a-messages-storage";
 
-let mmkvInstance: MMKV | null = null;
+const mmkvInstances: Record<string, MMKV> = {};
 
 const bytesToHex = (bytes: Uint8Array) =>
   Array.from(bytes)
@@ -35,9 +38,94 @@ const generateEncryptionKey = async () => {
   return bytesToHex(bytes);
 };
 
-const getMmkvInstance = async () => {
+const shouldRunConsistencyCheck = (name: string) =>
+  name.startsWith("a2a-client-hub.");
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const isPersistEnvelopeShape = (value: unknown): boolean => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if ("version" in value && typeof value.version !== "number") {
+    return false;
+  }
+  if ("state" in value && !isRecord(value.state)) {
+    return false;
+  }
+  return true;
+};
+
+const persistedPayloadValidators: Record<string, (value: unknown) => boolean> =
+  {
+    [CHAT_PERSIST_KEY]: (value) => {
+      if (!isPersistEnvelopeShape(value)) {
+        return false;
+      }
+      if (!("state" in (value as Record<string, unknown>))) {
+        return false;
+      }
+      const state = (value as { state?: unknown }).state;
+      if (!isRecord(state)) {
+        return false;
+      }
+      if (!("sessions" in state)) {
+        return false;
+      }
+      return isRecord(state.sessions);
+    },
+    "a2a-client-hub.agents": (value) => {
+      if (!isPersistEnvelopeShape(value)) {
+        return false;
+      }
+      if (!("state" in (value as Record<string, unknown>))) {
+        return false;
+      }
+      const state = (value as { state?: unknown }).state;
+      if (!isRecord(state)) {
+        return false;
+      }
+      if (!("activeAgentId" in state)) {
+        return false;
+      }
+      return (
+        typeof state.activeAgentId === "string" || state.activeAgentId === null
+      );
+    },
+  };
+
+const isValidPersistedPayload = (name: string, value: string): boolean => {
+  if (!shouldRunConsistencyCheck(name)) {
+    return true;
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    const validator = persistedPayloadValidators[name];
+    if (!validator) {
+      return true;
+    }
+    return validator(parsed);
+  } catch {
+    return false;
+  }
+};
+
+const getInstanceId = (name: string) => {
+  if (name.includes("messages")) {
+    return MMKV_INSTANCE_ID_MESSAGES;
+  }
+  if (name === CHAT_PERSIST_KEY || name.includes("chat")) {
+    return MMKV_INSTANCE_ID_CHAT;
+  }
+  return MMKV_INSTANCE_ID_DEFAULT;
+};
+
+const getMmkvInstance = async (
+  instanceId: string = MMKV_INSTANCE_ID_DEFAULT,
+) => {
   if (isWeb || isExpoGo) return null;
-  if (mmkvInstance) return mmkvInstance;
+  if (mmkvInstances[instanceId]) return mmkvInstances[instanceId];
 
   try {
     let encryptionKey = await SecureStore.getItemAsync(MMKV_ENCRYPTION_KEY);
@@ -45,13 +133,16 @@ const getMmkvInstance = async () => {
       encryptionKey = await generateEncryptionKey();
       await SecureStore.setItemAsync(MMKV_ENCRYPTION_KEY, encryptionKey);
     }
-    mmkvInstance = new MMKV({
-      id: "a2a-client-hub-storage",
+    mmkvInstances[instanceId] = new MMKV({
+      id: instanceId,
       encryptionKey,
     });
-    return mmkvInstance;
+    return mmkvInstances[instanceId];
   } catch (error) {
-    console.error("[storage] Failed to initialize encrypted MMKV:", error);
+    console.error(
+      `[storage] Failed to initialize encrypted MMKV (${instanceId}):`,
+      error,
+    );
     return null;
   }
 };
@@ -210,11 +301,51 @@ export const mmkvStateStorage: StateStorage = {
         ? window.localStorage.getItem(name)
         : null;
     }
-    const mmkv = await getMmkvInstance();
+    const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
-      return mmkv.getString(name) ?? null;
+      try {
+        const value = mmkv.getString(name);
+        if (typeof value === "string") {
+          if (!isValidPersistedPayload(name, value)) {
+            try {
+              mmkv.delete(name);
+            } catch {}
+            console.warn("[storage] Dropped invalid MMKV payload.", {
+              key: name,
+            });
+            return null;
+          }
+          return value;
+        }
+        return null;
+      } catch (error) {
+        console.error(
+          `[storage] Failed to read MMKV payload for ${name}.`,
+          error,
+        );
+        return null;
+      }
     }
-    return await asyncStorageFallback.getItem(name);
+    try {
+      const fallbackValue = await asyncStorageFallback.getItem(name);
+      if (typeof fallbackValue !== "string") {
+        return null;
+      }
+      if (!isValidPersistedPayload(name, fallbackValue)) {
+        await asyncStorageFallback.removeItem(name);
+        console.warn("[storage] Dropped invalid AsyncStorage payload.", {
+          key: name,
+        });
+        return null;
+      }
+      return fallbackValue;
+    } catch (fallbackError) {
+      console.error(
+        `[storage] Failed to read AsyncStorage payload for ${name}.`,
+        fallbackError,
+      );
+      return null;
+    }
   },
   setItem: async (name, value) => {
     if (isWeb) {
@@ -223,12 +354,27 @@ export const mmkvStateStorage: StateStorage = {
       }
       return;
     }
-    const mmkv = await getMmkvInstance();
+    const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
-      mmkv.set(name, value);
-      return;
+      try {
+        mmkv.set(name, value);
+        return;
+      } catch (error) {
+        console.error(
+          `[storage] Failed to write MMKV payload for ${name}.`,
+          error,
+        );
+        return;
+      }
     }
-    await asyncStorageFallback.setItem(name, value);
+    try {
+      await asyncStorageFallback.setItem(name, value);
+    } catch (fallbackError) {
+      console.error(
+        `[storage] AsyncStorage fallback write failed for ${name}.`,
+        fallbackError,
+      );
+    }
   },
   removeItem: async (name) => {
     if (isWeb) {
@@ -237,12 +383,27 @@ export const mmkvStateStorage: StateStorage = {
       }
       return;
     }
-    const mmkv = await getMmkvInstance();
+    const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
-      mmkv.delete(name);
-      return;
+      try {
+        mmkv.delete(name);
+        return;
+      } catch (error) {
+        console.error(
+          `[storage] Failed to delete MMKV payload for ${name}.`,
+          error,
+        );
+        return;
+      }
     }
-    await asyncStorageFallback.removeItem(name);
+    try {
+      await asyncStorageFallback.removeItem(name);
+    } catch (fallbackError) {
+      console.error(
+        `[storage] AsyncStorage fallback delete failed for ${name}.`,
+        fallbackError,
+      );
+    }
   },
 };
 
