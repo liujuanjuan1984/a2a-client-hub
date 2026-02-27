@@ -1,5 +1,5 @@
 import { type SessionListItem } from "@/lib/api/sessions";
-import { formatLocalDateTimeYmdHm, formatLocalTimeHm } from "@/lib/datetime";
+import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import {
   getSessionTimelineText,
   resolveSessionAgentPresentation,
@@ -58,7 +58,7 @@ describe("sessionDirectoryPresentation", () => {
 
   it("formats timeline as a created-to-updated range", () => {
     const created = formatLocalDateTimeYmdHm("2026-02-20T10:00:00.000Z");
-    const updated = formatLocalTimeHm("2026-02-21T12:34:56.000Z");
+    const updated = formatLocalDateTimeYmdHm("2026-02-21T12:34:56.000Z");
     const result = getSessionTimelineText(
       createSession({
         created_at: "2026-02-20T10:00:00.000Z",
@@ -73,7 +73,6 @@ describe("sessionDirectoryPresentation", () => {
 
   it("falls back last updated to created time when missing", () => {
     const created = formatLocalDateTimeYmdHm("2026-02-20T10:00:00.000Z");
-    const updated = formatLocalTimeHm("2026-02-20T10:00:00.000Z");
     const result = getSessionTimelineText(
       createSession({
         created_at: "2026-02-20T10:00:00.000Z",
@@ -82,7 +81,7 @@ describe("sessionDirectoryPresentation", () => {
     );
 
     expect(result).toEqual({
-      timelineRangeText: `${created} - ${updated}`,
+      timelineRangeText: `${created} - ${created}`,
     });
   });
 });
