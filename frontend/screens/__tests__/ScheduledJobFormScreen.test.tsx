@@ -350,6 +350,97 @@ describe("ScheduledJobFormScreen", () => {
     expect(mockCreateScheduledJob).not.toHaveBeenCalled();
   });
 
+  it("normalizes sequential minutes and strips interval anchor fields", async () => {
+    mockCreateScheduledJob.mockResolvedValue({
+      id: "job-2",
+      name: "Sequential Summary",
+      agent_id: "agent-1",
+      prompt: "Summarize status",
+      cycle_type: "sequential",
+      time_point: {
+        minutes: 10,
+      },
+      schedule_timezone: "UTC",
+      enabled: true,
+    });
+
+    await act(async () => {
+      renderedScreen = create(<ScheduledJobFormScreen />);
+    });
+
+    expect(capturedSubmit).toBeTruthy();
+    expect(capturedChange).toBeTruthy();
+
+    await act(async () => {
+      capturedChange?.({
+        cycle_type: "sequential",
+        time_point: {
+          minutes: 3,
+          start_at_local: "2026-02-23T09:30",
+          start_at_utc: "2026-02-23T01:30:00.000Z",
+        },
+      });
+      capturedChange?.({
+        agent_id: "agent-1",
+        name: "Sequential Summary",
+        prompt: "Summarize status for this week",
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      capturedSubmit?.();
+      await Promise.resolve();
+    });
+
+    expect(mockCreateScheduledJob).toHaveBeenCalledTimes(1);
+    expect(mockCreateScheduledJob).toHaveBeenCalledWith({
+      name: "Sequential Summary",
+      agent_id: "agent-1",
+      prompt: "Summarize status for this week",
+      cycle_type: "sequential",
+      time_point: {
+        minutes: 5,
+      },
+      schedule_timezone: expect.any(String),
+      enabled: true,
+      conversation_policy: "new_each_run",
+    });
+  });
+
+  it("rejects invalid sequential minutes", async () => {
+    await act(async () => {
+      renderedScreen = create(<ScheduledJobFormScreen />);
+    });
+
+    expect(capturedSubmit).toBeTruthy();
+    expect(capturedChange).toBeTruthy();
+
+    await act(async () => {
+      capturedChange?.({
+        agent_id: "agent-1",
+        name: "Sequential Summary",
+        prompt: "Summarize status",
+        cycle_type: "sequential",
+        time_point: {
+          minutes: Number.NaN,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      capturedSubmit?.();
+      await Promise.resolve();
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Validation failed",
+      "Sequential minutes is required.",
+    );
+    expect(mockCreateScheduledJob).not.toHaveBeenCalled();
+  });
+
   it("accepts UTC-aware interval start datetime when editing existing job", async () => {
     act(() => {
       useSessionStore.setState({

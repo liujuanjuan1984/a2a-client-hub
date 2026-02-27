@@ -10,7 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.pagination import ListResponse, Pagination
 
-A2AScheduleCycleType = Literal["daily", "weekly", "monthly", "interval"]
+A2AScheduleCycleType = Literal[
+    "daily",
+    "weekly",
+    "monthly",
+    "interval",
+    "sequential",
+]
 A2AScheduleRunStatus = Literal["idle", "running", "success", "failed"]
 A2AScheduleExecutionStatus = Literal["running", "success", "failed"]
 A2AScheduleConversationPolicy = Literal["new_each_run", "reuse_single"]
@@ -28,7 +34,8 @@ class A2AScheduleTaskBase(BaseModel):
             "daily: {time:'HH:MM'}; "
             "weekly: {time:'HH:MM', weekday:1..7 (1=Monday, 7=Sunday)}; "
             "monthly: {time:'HH:MM', day:1..31}; "
-            "interval: {minutes:int, start_at_local?: str ('YYYY-MM-DDTHH:MM')}."
+            "interval: {minutes:int, start_at_local?: str ('YYYY-MM-DDTHH:MM')}; "
+            "sequential: {minutes:int}."
         ),
     )
 

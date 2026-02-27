@@ -42,6 +42,7 @@ outbound access.
   - Continue existing upstream sessions in the same chat UI flow.
 - Scheduled invocation
   - Create and manage recurring A2A schedule tasks.
+  - Support both anchor-based `interval` and completion-based `sequential` modes.
   - Track execution history for operational visibility.
 - Security controls
   - Outbound A2A host allowlist enforcement.

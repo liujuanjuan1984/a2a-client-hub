@@ -294,6 +294,66 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
         assert task.consecutive_failures == failures_after_first_call
 
 
+async def test_schedule_mark_failed_sequential_reschedules_next_run(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="mark-failed-sequential"
+    )
+
+    task = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        timezone_str=user.timezone or "UTC",
+        name="Sequential running task",
+        agent_id=agent.id,
+        prompt="ping",
+        cycle_type="sequential",
+        time_point={"minutes": 60},
+        enabled=True,
+    )
+    started_at = utc_now() - timedelta(minutes=3)
+    run_id = uuid4()
+    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+    task.current_run_id = run_id
+    task.running_started_at = started_at
+    task.next_run_at = None
+    async_db_session.add(
+        A2AScheduleExecution(
+            user_id=user.id,
+            task_id=task.id,
+            run_id=run_id,
+            scheduled_for=started_at,
+            started_at=started_at,
+            status=A2AScheduleExecution.STATUS_RUNNING,
+        )
+    )
+    await async_db_session.commit()
+    await async_db_session.refresh(task)
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/a2a/schedules/{task.id}/mark-failed",
+            json={},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["last_run_status"] == "failed"
+        assert payload["next_run_at_utc"] is not None
+
+        await async_db_session.refresh(task)
+        assert task.next_run_at is not None
+        assert task.last_run_at is not None
+        assert task.next_run_at >= task.last_run_at + timedelta(minutes=59)
+
+
 async def test_schedule_mark_failed_rejects_non_running_task(
     async_db_session,
     async_session_maker,
@@ -386,12 +446,7 @@ async def test_schedule_mark_failed_backfills_missing_execution(
 async def test_schedule_create_interval_normalizes_minutes(
     async_db_session,
     async_session_maker,
-    monkeypatch,
 ):
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 1)
-
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="interval")
 
@@ -415,18 +470,13 @@ async def test_schedule_create_interval_normalizes_minutes(
         assert resp.status_code == 201
         payload = resp.json()
         assert payload["cycle_type"] == "interval"
-        assert payload["time_point"] == {"minutes": 10}
+        assert payload["time_point"] == {"minutes": 9}
 
 
 async def test_schedule_create_interval_accepts_start_at(
     async_db_session,
     async_session_maker,
-    monkeypatch,
 ):
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 1)
-
     user = await create_user(
         async_db_session,
         skip_onboarding_defaults=True,
@@ -465,12 +515,7 @@ async def test_schedule_create_interval_accepts_start_at(
 async def test_schedule_enable_interval_accepts_persisted_utc_start_at(
     async_db_session,
     async_session_maker,
-    monkeypatch,
 ):
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 1)
-
     user = await create_user(
         async_db_session,
         skip_onboarding_defaults=True,
@@ -515,12 +560,7 @@ async def test_schedule_enable_interval_accepts_persisted_utc_start_at(
 async def test_schedule_create_interval_rejects_start_at_with_timezone_offset(
     async_db_session,
     async_session_maker,
-    monkeypatch,
 ):
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 1)
-
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(async_db_session, user_id=user.id, suffix="interval")
 
@@ -550,6 +590,149 @@ async def test_schedule_create_interval_rejects_start_at_with_timezone_offset(
             == "interval time_point.start_at_local must be timezone-naive "
             "(without Z or offset)"
         )
+
+
+async def test_schedule_create_sequential_normalizes_minutes_and_strips_anchors(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="sequential")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Sequential digest",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "cycle_type": "sequential",
+                "time_point": {"minutes": 9},
+                "enabled": False,
+                "schedule_timezone": user.timezone or "UTC",
+            },
+        )
+        assert resp.status_code == 201
+        payload = resp.json()
+        assert payload["cycle_type"] == "sequential"
+        assert payload["time_point"] == {"minutes": 9}
+
+
+async def test_schedule_create_sequential_rejects_start_anchor_fields(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="sequential")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Sequential digest",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "cycle_type": "sequential",
+                "time_point": {
+                    "minutes": 30,
+                    "start_at_local": "2026-02-23T08:15",
+                },
+                "enabled": False,
+                "schedule_timezone": user.timezone or "UTC",
+            },
+        )
+        assert resp.status_code == 400
+        assert (
+            resp.json()["detail"]
+            == "sequential does not support start_at_local/start_at_utc; use minutes only"
+        )
+
+
+async def test_schedule_get_sequential_omits_legacy_anchor_fields(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(
+        async_db_session,
+        skip_onboarding_defaults=True,
+        timezone="Asia/Shanghai",
+    )
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="sequential")
+    task = A2AScheduleTask(
+        user_id=user.id,
+        name="Sequential persisted UTC",
+        agent_id=agent.id,
+        prompt="ping",
+        cycle_type=A2AScheduleTask.CYCLE_SEQUENTIAL,
+        time_point={
+            "minutes": 99999,
+            "start_at_utc": "2026-02-23T00:15:00+00:00",
+            "start_at_local": "2026-02-23T08:15",
+        },
+        enabled=False,
+    )
+    async_db_session.add(task)
+    await async_db_session.commit()
+    await async_db_session.refresh(task)
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(f"/me/a2a/schedules/{task.id}")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["cycle_type"] == "sequential"
+        assert payload["time_point"] == {"minutes": 1440}
+
+
+async def test_schedule_get_interval_sanitizes_dirty_minutes(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(
+        async_db_session,
+        skip_onboarding_defaults=True,
+        timezone="Asia/Shanghai",
+    )
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="interval")
+    task = A2AScheduleTask(
+        user_id=user.id,
+        name="Interval dirty minutes",
+        agent_id=agent.id,
+        prompt="ping",
+        cycle_type=A2AScheduleTask.CYCLE_INTERVAL,
+        time_point={
+            "minutes": -7,
+            "start_at_utc": "2026-02-23T00:15:00+00:00",
+        },
+        enabled=False,
+    )
+    async_db_session.add(task)
+    await async_db_session.commit()
+    await async_db_session.refresh(task)
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(f"/me/a2a/schedules/{task.id}")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["cycle_type"] == "interval"
+        assert payload["time_point"]["minutes"] == 5
+        assert payload["time_point"]["start_at_utc"] == "2026-02-23T00:15:00+00:00"
+        assert payload["time_point"]["start_at_local"] == "2026-02-23T08:15"
 
 
 async def test_schedule_create_weekly_uses_iso_weekday(
@@ -632,7 +815,7 @@ async def test_schedule_create_rejects_over_quota(
         assert "limit" in resp2.json()["detail"].lower()
 
 
-async def test_schedule_admin_bypasses_quota_and_interval(
+async def test_schedule_admin_bypasses_quota_and_minutes_are_still_normalized(
     async_db_session,
     async_session_maker,
     monkeypatch,
@@ -640,7 +823,6 @@ async def test_schedule_admin_bypasses_quota_and_interval(
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "a2a_schedule_max_active_tasks_per_user", 0)
-    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 60)
 
     admin_user = await create_user(
         async_db_session, skip_onboarding_defaults=True, is_superuser=True
@@ -653,7 +835,7 @@ async def test_schedule_admin_bypasses_quota_and_interval(
         current_user=admin_user,
     ) as client:
         # Admin should be able to create task despite quota=0
-        # Admin should also be able to use interval < min_interval_minutes and not rounded to 5
+        # Minutes still follow shared clamp rules for both interval/sequential.
         resp = await client.post(
             "/me/a2a/schedules",
             json={
@@ -668,18 +850,13 @@ async def test_schedule_admin_bypasses_quota_and_interval(
         )
         assert resp.status_code == 201
         payload = resp.json()
-        assert payload["time_point"] == {"minutes": 1}
+        assert payload["time_point"] == {"minutes": 5}
 
 
-async def test_schedule_interval_enforces_minimum(
+async def test_schedule_interval_clamps_minutes_into_valid_range(
     async_db_session,
     async_session_maker,
-    monkeypatch,
 ):
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "a2a_schedule_min_interval_minutes", 60)
-
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(
         async_db_session, user_id=user.id, suffix="min_interval"
@@ -690,18 +867,32 @@ async def test_schedule_interval_enforces_minimum(
         async_session_maker=async_session_maker,
         current_user=user,
     ) as client:
-        # Should fail if minutes < min_interval_minutes
-        resp = await client.post(
+        low_resp = await client.post(
             "/me/a2a/schedules",
             json={
-                "name": "Invalid interval",
+                "name": "Low interval",
                 "agent_id": str(agent.id),
                 "prompt": "ping",
                 "cycle_type": "interval",
-                "time_point": {"minutes": 30},
+                "time_point": {"minutes": 1},
                 "enabled": True,
                 "schedule_timezone": user.timezone or "UTC",
             },
         )
-        assert resp.status_code == 400
-        assert "cannot be less than" in resp.json()["detail"].lower()
+        assert low_resp.status_code == 201
+        assert low_resp.json()["time_point"]["minutes"] == 5
+
+        high_resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "High interval",
+                "agent_id": str(agent.id),
+                "prompt": "ping",
+                "cycle_type": "interval",
+                "time_point": {"minutes": 99999},
+                "enabled": False,
+                "schedule_timezone": user.timezone or "UTC",
+            },
+        )
+        assert high_resp.status_code == 201
+        assert high_resp.json()["time_point"]["minutes"] == 1440
