@@ -12,7 +12,7 @@ jest.mock("@/lib/storage/mmkv", () => ({
 
 jest.mock("@/services/chatConnectionService", () => ({
   chatConnectionService: {
-    cancelSession: jest.fn(),
+    cancelSession: jest.fn(async () => {}),
     getPreferredTransport: jest.fn(() => "http_json"),
     clearAll: jest.fn(),
   },
@@ -122,5 +122,32 @@ describe("chat store idempotency semantics", () => {
       agentMessageId: initialAgentMessage?.id,
     });
     expect(runtimeCall?.[4]).toBe(initialAgentMessage?.id);
+  });
+
+  it("injects interrupt extension when sending during active stream", async () => {
+    useChatStore.getState().ensureSession("conv-3", "agent-1");
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-3": {
+          ...state.sessions["conv-3"],
+          streamState: "streaming",
+        },
+      },
+    }));
+
+    await useChatStore
+      .getState()
+      .sendMessage("conv-3", "agent-1", "interrupt this stream", "personal");
+
+    expect(mockedExecuteChatRuntime).toHaveBeenCalledTimes(1);
+    const runtimeCall = mockedExecuteChatRuntime.mock.calls[0];
+    expect(runtimeCall?.[3]).toMatchObject({
+      metadata: {
+        extensions: {
+          interrupt: true,
+        },
+      },
+    });
   });
 });

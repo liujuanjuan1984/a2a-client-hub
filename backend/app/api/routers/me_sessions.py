@@ -10,6 +10,7 @@ from app.api.routing import StrictAPIRouter
 from app.db.models.user import User
 from app.db.transaction import commit_safely
 from app.schemas.session_domain import (
+    SessionCancelResponse,
     SessionContinueResponse,
     SessionListResponse,
     SessionMessageBlocksQueryRequest,
@@ -155,6 +156,30 @@ async def continue_unified_session(
     if db_mutated:
         await commit_safely(db)
     return SessionContinueResponse.model_validate(payload)
+
+
+@router.post("/{conversation_id}/cancel", response_model=SessionCancelResponse)
+async def cancel_unified_session(
+    *,
+    conversation_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> SessionCancelResponse:
+    try:
+        payload, db_mutated = await session_hub_service.cancel_session(
+            db,
+            user_id=current_user.id,
+            conversation_id=conversation_id,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        raise HTTPException(
+            status_code=_status_code_for_session_error(detail),
+            detail=detail,
+        ) from exc
+    if db_mutated:
+        await commit_safely(db)
+    return SessionCancelResponse.model_validate(payload)
 
 
 __all__ = ["router"]

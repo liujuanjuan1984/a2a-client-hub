@@ -334,6 +334,8 @@ class A2AInvokeService:
         result_status_opencode_metadata = as_dict(
             result_status_metadata.get("opencode")
         )
+        result_task = as_dict(result.get("task"))
+        status_task = as_dict(status.get("task"))
 
         message_id = None
         event_id = None
@@ -350,6 +352,19 @@ class A2AInvokeService:
                 event_id = cls._pick_non_empty_str(candidate, ("event_id",))
 
         event_seq = cls._pick_int(root, ("seq",))
+        task_id = cls._pick_non_empty_str(root, ("task_id", "taskId"))
+        for candidate in (
+            task,
+            result_task,
+            status_task,
+            root_opencode_metadata,
+            status_opencode_metadata,
+            task_status_opencode_metadata,
+            result_status_opencode_metadata,
+        ):
+            if task_id is not None:
+                break
+            task_id = cls._pick_non_empty_str(candidate, ("task_id", "taskId", "id"))
 
         hints: dict[str, Any] = {}
         if message_id:
@@ -358,6 +373,8 @@ class A2AInvokeService:
             hints["upstream_event_id"] = event_id
         if event_seq is not None:
             hints["upstream_event_seq"] = event_seq
+        if task_id:
+            hints["upstream_task_id"] = task_id
         return hints
 
     @classmethod
