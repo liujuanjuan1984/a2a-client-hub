@@ -126,6 +126,14 @@ const toYmdHm = (date: Date, timeZone: string): string => {
   return `${values.year}-${pad2(values.month)}-${pad2(values.day)} ${pad2(values.hour)}:${pad2(values.minute)}`;
 };
 
+const toHm = (date: Date, timeZone: string): string => {
+  const values = toDateTimeParts(date, timeZone);
+  if (!values) {
+    return date.toISOString().slice(11, 16);
+  }
+  return `${pad2(values.hour)}:${pad2(values.minute)}`;
+};
+
 const hasValidCalendarDateTime = (parts: DateTimeParts): boolean => {
   const candidate = new Date(
     Date.UTC(
@@ -230,6 +238,21 @@ export const formatLocalDateTime = (
 
 export const formatLocalDateTimeYmdHm = (value?: string | null): string =>
   formatLocalDateTime(value);
+
+export const formatLocalTimeHm = (
+  value?: string | null,
+  timeZone?: string,
+): string => {
+  if (!value) return DATE_TIME_PLACEHOLDER;
+  const naiveParts = parseNaiveDateTimeInput(value);
+  if (naiveParts) {
+    return `${pad2(naiveParts.hour)}:${pad2(naiveParts.minute)}`;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const resolved = resolveEffectiveTimeZone(timeZone);
+  return toHm(date, resolved);
+};
 
 export const formatDateTimeLocalInputValue = (
   value?: string | null,

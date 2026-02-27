@@ -2,6 +2,7 @@ import {
   DEFAULT_TIME_ZONE,
   formatLocalDateTime,
   formatLocalDateTimeYmdHm,
+  formatLocalTimeHm,
   formatDateTimeLocalInputValue,
   getNextTopOfHourLocalInputValue,
   localDateTimeInputToUtcIso,
@@ -56,6 +57,10 @@ describe("datetime helpers", () => {
     );
     expect(formatLocalDateTime("2026-02-23T08:15", "Asia/Shanghai")).toBe(
       "2026-02-23 08:15",
+    );
+    expect(formatLocalTimeHm("2026-02-12T07:08:30Z")).toBe("07:08");
+    expect(formatLocalTimeHm("2026-02-23T08:15", "Asia/Shanghai")).toBe(
+      "08:15",
     );
   });
 

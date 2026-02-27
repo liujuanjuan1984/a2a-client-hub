@@ -2,6 +2,11 @@ import { useRouter } from "expo-router";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
+import {
+  LIST_CARD_FOOTER_CLASS,
+  LIST_CARD_HEADER_CLASS,
+  LIST_CARD_SURFACE_CLASS,
+} from "@/components/layout/listCardStyles";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
@@ -113,11 +118,8 @@ export function AgentListScreen() {
           </View>
         ) : (
           agents.map((agent) => (
-            <View
-              key={agent.id}
-              className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
-            >
-              <View className="px-4 py-4">
+            <View key={agent.id} className={LIST_CARD_SURFACE_CLASS}>
+              <View className={LIST_CARD_HEADER_CLASS}>
                 <View className="flex-row items-center justify-between">
                   <Text
                     className="text-[13px] font-semibold text-white flex-1 pr-4"
@@ -137,7 +139,7 @@ export function AgentListScreen() {
                 </View>
               </View>
 
-              <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
+              <View className={LIST_CARD_FOOTER_CLASS}>
                 <View className="flex-row items-center gap-2">
                   <Button
                     label={agent.source === "personal" ? "Edit" : "Details"}

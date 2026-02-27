@@ -2,6 +2,13 @@ import { useMemo } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
+import {
+  LIST_CARD_AGENT_TEXT_CLASS,
+  LIST_CARD_FOOTER_CLASS,
+  LIST_CARD_HEADER_CLASS,
+  LIST_CARD_META_TEXT_CLASS,
+  LIST_CARD_SURFACE_CLASS,
+} from "@/components/layout/listCardStyles";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -89,12 +96,12 @@ export function SessionsScreen() {
               return (
                 <View
                   key={item.conversationId}
-                  className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
+                  className={LIST_CARD_SURFACE_CLASS}
                 >
-                  <View className="px-4 py-4 pb-3.5">
+                  <View className={`${LIST_CARD_HEADER_CLASS} pb-3.5`}>
                     <View className="flex-row items-center justify-between mb-1.5">
                       <Text
-                        className="text-[10px] font-semibold uppercase tracking-widest text-neo-green"
+                        className={LIST_CARD_AGENT_TEXT_CLASS}
                         numberOfLines={1}
                       >
                         {agent.name}
@@ -111,9 +118,9 @@ export function SessionsScreen() {
                     </Text>
                   </View>
 
-                  <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
+                  <View className={LIST_CARD_FOOTER_CLASS}>
                     <View className="flex-1">
-                      <Text className="text-[10px] font-medium text-slate-500">
+                      <Text className={LIST_CARD_META_TEXT_CLASS}>
                         {timeline.timelineRangeText}
                       </Text>
                     </View>
