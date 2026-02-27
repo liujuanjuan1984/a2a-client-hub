@@ -1,6 +1,11 @@
 import { useEffect, useRef } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 
-import { ApiConfigError, refreshAccessToken } from "@/lib/api/client";
+import {
+  ApiConfigError,
+  ensureFreshAccessToken,
+  refreshAccessToken,
+} from "@/lib/api/client";
 import { useSessionStore } from "@/store/session";
 
 export function AuthBootstrap() {
@@ -19,10 +24,10 @@ export function AuthBootstrap() {
 
     (async () => {
       try {
-        const token = await refreshAccessToken();
+        const result = await refreshAccessToken();
         if (cancelled) return;
-        if (token) {
-          setAccessToken(token);
+        if (result) {
+          setAccessToken(result.accessToken, result.expiresInSeconds);
         }
       } finally {
         if (!cancelled) {
@@ -43,6 +48,51 @@ export function AuthBootstrap() {
       cancelled = true;
     };
   }, [hydrated, setAccessToken, setHydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const ensureTokenFresh = () => {
+      ensureFreshAccessToken().catch((error) => {
+        if (error instanceof ApiConfigError) {
+          console.error("[AuthBootstrap] Invalid API base URL:", error.message);
+        }
+      });
+    };
+
+    const onAppStateChange = (state: AppStateStatus) => {
+      if (state === "active") {
+        ensureTokenFresh();
+      }
+    };
+
+    const appStateSub = AppState.addEventListener("change", onAppStateChange);
+    const isWeb =
+      typeof document !== "undefined" && typeof window !== "undefined";
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        ensureTokenFresh();
+      }
+    };
+
+    const onOnline = () => {
+      ensureTokenFresh();
+    };
+
+    if (isWeb) {
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      window.addEventListener("online", onOnline);
+    }
+
+    return () => {
+      appStateSub.remove();
+      if (isWeb) {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        window.removeEventListener("online", onOnline);
+      }
+    };
+  }, [hydrated]);
 
   return null;
 }

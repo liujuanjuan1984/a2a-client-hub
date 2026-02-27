@@ -1,5 +1,8 @@
 import { apiRequest } from "@/lib/api/client";
-import { parsePaginatedListResponse } from "@/lib/api/pagination";
+import {
+  parsePaginatedListResponse,
+  resolveNextPageWithFallback,
+} from "@/lib/api/pagination";
 
 const DEFAULT_PAGE_SIZE = 50;
 type PageOptions = { page?: number; size?: number };
@@ -9,7 +12,11 @@ export type ScheduleCycleType = "daily" | "weekly" | "monthly" | "interval";
 export type DailyTimePoint = { time: string };
 export type WeeklyTimePoint = { weekday: number; time: string };
 export type MonthlyTimePoint = { day: number; time: string };
-export type IntervalTimePoint = { minutes: number; start_at?: string };
+export type IntervalTimePoint = {
+  minutes: number;
+  start_at_local?: string;
+  start_at_utc?: string;
+};
 export type ScheduleTimePoint =
   | DailyTimePoint
   | WeeklyTimePoint
@@ -23,10 +30,12 @@ export type ScheduledJob = {
   prompt: string;
   cycle_type: ScheduleCycleType;
   time_point: ScheduleTimePoint | Record<string, unknown>;
+  schedule_timezone: string;
   enabled: boolean;
   conversation_policy: "new_each_run" | "reuse_single";
   conversation_id?: string | null;
-  next_run_at?: string | null;
+  next_run_at_utc?: string | null;
+  next_run_at_local?: string | null;
   last_run_at?: string | null;
   last_run_status?: "idle" | "running" | "success" | "failed" | null;
   created_at: string;
@@ -54,12 +63,21 @@ export type ScheduledJobPayload = {
   prompt: string;
   cycle_type: ScheduleCycleType;
   time_point: ScheduleTimePoint;
+  schedule_timezone: string;
   enabled: boolean;
   conversation_policy: "new_each_run" | "reuse_single";
 };
 
 export type MarkScheduledJobFailedPayload = {
   reason?: string;
+};
+
+export type ScheduledJobToggleResponse = {
+  id: string;
+  schedule_timezone: string;
+  enabled: boolean;
+  next_run_at_utc?: string | null;
+  next_run_at_local?: string | null;
 };
 
 type ScheduledJobsListResponse =
@@ -81,14 +99,7 @@ export const listScheduledJobsPage = async ({
     },
   );
   const parsed = parsePaginatedListResponse(response);
-
-  // Backward-compatible heuristic when the backend doesn't send pagination.
-  const nextPage =
-    typeof parsed.nextPage === "number"
-      ? parsed.nextPage
-      : parsed.items.length >= size
-        ? page + 1
-        : undefined;
+  const nextPage = resolveNextPageWithFallback({ parsed, page, size });
 
   return { ...parsed, nextPage };
 };
@@ -115,12 +126,12 @@ export const updateScheduledJob = (
   );
 
 export const enableScheduledJob = (jobId: string) =>
-  apiRequest<void>(`/me/a2a/schedules/${jobId}/enable`, {
+  apiRequest<ScheduledJobToggleResponse>(`/me/a2a/schedules/${jobId}/enable`, {
     method: "POST",
   });
 
 export const disableScheduledJob = (jobId: string) =>
-  apiRequest<void>(`/me/a2a/schedules/${jobId}/disable`, {
+  apiRequest<ScheduledJobToggleResponse>(`/me/a2a/schedules/${jobId}/disable`, {
     method: "POST",
   });
 
@@ -135,6 +146,11 @@ export const markScheduledJobFailed = (
       body: payload,
     },
   );
+
+export const deleteScheduledJob = (jobId: string) =>
+  apiRequest<void>(`/me/a2a/schedules/${jobId}`, {
+    method: "DELETE",
+  });
 
 export const listScheduledJobExecutionsPage = async (
   taskId: string,
@@ -153,14 +169,7 @@ export const listScheduledJobExecutionsPage = async (
   );
 
   const parsed = parsePaginatedListResponse(response);
-
-  // Backward-compatible heuristic when the backend doesn't send pagination.
-  const nextPage =
-    typeof parsed.nextPage === "number"
-      ? parsed.nextPage
-      : parsed.items.length >= size
-        ? page + 1
-        : undefined;
+  const nextPage = resolveNextPageWithFallback({ parsed, page, size });
 
   return { ...parsed, nextPage };
 };

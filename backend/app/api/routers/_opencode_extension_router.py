@@ -28,6 +28,7 @@ from app.integrations.a2a_extensions.errors import (
 )
 from app.schemas.a2a_extension import (
     A2AExtensionPermissionReplyRequest,
+    A2AExtensionPromptAsyncRequest,
     A2AExtensionQueryRequest,
     A2AExtensionQuestionRejectRequest,
     A2AExtensionQuestionReplyRequest,
@@ -62,6 +63,12 @@ def _summarize_query_object(query: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         return {"keys": [], "size": 0}
     keys = sorted(str(k) for k in query.keys())[:20]
     return {"keys": keys, "size": len(query)}
+
+
+def _summarize_metadata_keys(metadata: Optional[Dict[str, Any]]) -> list[str]:
+    if not metadata:
+        return []
+    return sorted(str(k) for k in metadata.keys())[:20]
 
 
 def create_opencode_extension_router(
@@ -108,9 +115,9 @@ def create_opencode_extension_router(
             success=False,
             result=None,
             error_code=error_code,
-            upstream_error=upstream_error
-            if upstream_error is not None
-            else {"message": message},
+            upstream_error=(
+                upstream_error if upstream_error is not None else {"message": message}
+            ),
             meta=meta or {},
         )
         status_code = status_code_for_extension_error_code(error_code)
@@ -237,6 +244,51 @@ def create_opencode_extension_router(
         )
 
     @router.post(
+        "/{agent_id}/extensions/opencode/sessions/{session_id}:prompt-async",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def opencode_prompt_async(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        payload: A2AExtensionPromptAsyncRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime(db, current_user, agent_id)
+        request_keys = sorted(payload.request.keys())[:20]
+        metadata_keys = _summarize_metadata_keys(payload.metadata)
+        logger.info(
+            _scope_message("OpenCode session prompt_async requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "request_keys": request_keys,
+                "request_parts_count": (
+                    len(payload.request.get("parts", []))
+                    if isinstance(payload.request.get("parts"), list)
+                    else None
+                ),
+                "metadata_keys": metadata_keys,
+            },
+        )
+
+        return await _run_extension_call(
+            get_a2a_extensions_service().opencode_prompt_async(
+                runtime=runtime,
+                session_id=session_id,
+                request_payload=payload.request,
+                metadata=payload.metadata,
+            )
+        )
+
+    @router.post(
         "/{agent_id}/extensions/opencode/interrupts/permission:reply",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,
@@ -260,6 +312,7 @@ def create_opencode_extension_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
                 "reply": payload.reply,
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
             },
         )
         return await _run_extension_call(
@@ -267,6 +320,7 @@ def create_opencode_extension_router(
                 runtime=runtime,
                 request_id=payload.request_id,
                 reply=payload.reply,
+                metadata=payload.metadata,
             )
         )
 
@@ -294,6 +348,7 @@ def create_opencode_extension_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
                 "answers_count": len(payload.answers),
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
             },
         )
         return await _run_extension_call(
@@ -301,6 +356,7 @@ def create_opencode_extension_router(
                 runtime=runtime,
                 request_id=payload.request_id,
                 answers=payload.answers,
+                metadata=payload.metadata,
             )
         )
 
@@ -327,12 +383,14 @@ def create_opencode_extension_router(
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "request_id": payload.request_id,
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
             },
         )
         return await _run_extension_call(
             get_a2a_extensions_service().opencode_reject_question(
                 runtime=runtime,
                 request_id=payload.request_id,
+                metadata=payload.metadata,
             )
         )
 

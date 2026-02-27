@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import { ENV } from "../config";
 import { type ApiErrorResponse } from "./types";
 
-import { resetClientState } from "@/lib/resetClientState";
+import { resetAuthBoundState } from "@/lib/resetClientState";
 import { useSessionStore } from "@/store/session";
 
 export class ApiConfigError extends Error {
@@ -35,6 +35,24 @@ export class ApiRequestError extends Error {
     Object.setPrototypeOf(this, ApiRequestError.prototype);
   }
 }
+
+export class AuthExpiredError extends ApiRequestError {
+  constructor(message = "Authentication expired. Please sign in again.") {
+    super(message, 401, { errorCode: "auth_expired" });
+    this.name = "AuthExpiredError";
+    Object.setPrototypeOf(this, AuthExpiredError.prototype);
+  }
+}
+
+export const isAuthFailureError = (error: unknown): boolean => {
+  if (error instanceof AuthExpiredError) {
+    return true;
+  }
+  return error instanceof ApiRequestError && error.status === 401;
+};
+
+export const isAuthorizationFailureError = (error: unknown): boolean =>
+  error instanceof ApiRequestError && error.status === 403;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -77,9 +95,26 @@ const AUTH_LOGIN_PATH = "/auth/login";
 const AUTH_REGISTER_PATH = "/auth/register";
 const AUTH_REFRESH_PATH = "/auth/refresh";
 const AUTH_LOGOUT_PATH = "/auth/logout";
+const REFRESH_REQUEST_TIMEOUT_MS = 2_000;
+const REFRESH_COOLDOWN_MS = 10_000;
+const PROACTIVE_REFRESH_RATIO = 0.2;
+const PROACTIVE_REFRESH_MIN_LEAD_MS = 5_000;
+const PROACTIVE_REFRESH_MAX_LEAD_MS = 90_000;
 
-let refreshPromise: Promise<string | null> | null = null;
+type RefreshAccessTokenResult = {
+  accessToken: string;
+  expiresInSeconds: number | null;
+};
+
+type RefreshAccessTokenOptions = {
+  force?: boolean;
+  expectedAuthVersion?: number;
+};
+
+let refreshPromise: Promise<RefreshAccessTokenResult | null> | null = null;
+let refreshPromiseForAuthVersion: number | null = null;
 let refreshCooldownUntilMs = 0;
+let authResetting = false;
 
 const isAuthPath = (path: string) => {
   const authPaths = [
@@ -93,51 +128,163 @@ const isAuthPath = (path: string) => {
   );
 };
 
-const parseAccessTokenFromResponse = async (
+const isUnauthorizedStatusCode = (status: number): boolean => status === 401;
+
+const hasExpectedAuthVersion = (expectedAuthVersion?: number): boolean => {
+  if (expectedAuthVersion === undefined) {
+    return true;
+  }
+  return useSessionStore.getState().authVersion === expectedAuthVersion;
+};
+
+const parseExpiresInSeconds = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return null;
+};
+
+const parseRefreshPayloadFromResponse = async (
   response: Response,
-): Promise<string | null> => {
+): Promise<RefreshAccessTokenResult | null> => {
   if (!response.ok) return null;
   if (response.status === 204) return null;
   try {
     const json = (await response.json()) as unknown;
-    if (json && typeof json === "object" && "access_token" in json) {
-      const token = (json as { access_token?: unknown }).access_token;
-      return typeof token === "string" ? token : null;
+    if (!json || typeof json !== "object") return null;
+    const payload = json as Record<string, unknown>;
+    const nestedPayload =
+      payload.data && typeof payload.data === "object"
+        ? (payload.data as Record<string, unknown>)
+        : null;
+    const tokenRaw = payload.access_token ?? nestedPayload?.access_token;
+    if (typeof tokenRaw !== "string" || !tokenRaw.trim()) {
+      return null;
     }
+    const expiresInSeconds = parseExpiresInSeconds(
+      payload.expires_in ?? nestedPayload?.expires_in,
+    );
+    return {
+      accessToken: tokenRaw,
+      expiresInSeconds,
+    };
   } catch {
     // Ignore invalid JSON
   }
   return null;
 };
 
-export async function refreshAccessToken(): Promise<string | null> {
-  if (Date.now() < refreshCooldownUntilMs) {
+const computeProactiveRefreshLeadMs = (ttlSeconds: number | null): number => {
+  if (
+    typeof ttlSeconds !== "number" ||
+    !Number.isFinite(ttlSeconds) ||
+    ttlSeconds <= 0
+  ) {
+    return 30_000;
+  }
+  const ttlMs = ttlSeconds * 1000;
+  const calculated = Math.round(ttlMs * PROACTIVE_REFRESH_RATIO);
+  const cappedUpperBound = Math.max(
+    PROACTIVE_REFRESH_MIN_LEAD_MS,
+    Math.min(PROACTIVE_REFRESH_MAX_LEAD_MS, Math.floor(ttlMs * 0.5)),
+  );
+  return Math.min(
+    Math.max(calculated, PROACTIVE_REFRESH_MIN_LEAD_MS),
+    cappedUpperBound,
+  );
+};
+
+const applyRefreshedToken = (
+  result: RefreshAccessTokenResult,
+  options?: {
+    expectedAuthVersion?: number;
+  },
+): boolean => {
+  if (!hasExpectedAuthVersion(options?.expectedAuthVersion)) {
+    return false;
+  }
+  useSessionStore
+    .getState()
+    .setAccessToken(result.accessToken, result.expiresInSeconds);
+  return true;
+};
+
+export async function refreshAccessToken(
+  options: RefreshAccessTokenOptions = {},
+): Promise<RefreshAccessTokenResult | null> {
+  const force = Boolean(options.force);
+  const expectedAuthVersion = options.expectedAuthVersion;
+
+  if (!hasExpectedAuthVersion(expectedAuthVersion)) {
+    return null;
+  }
+
+  if (
+    refreshPromise &&
+    expectedAuthVersion !== undefined &&
+    refreshPromiseForAuthVersion !== null &&
+    refreshPromiseForAuthVersion !== expectedAuthVersion
+  ) {
+    return null;
+  }
+
+  if (!force && Date.now() < refreshCooldownUntilMs) {
     return null;
   }
 
   if (!refreshPromise) {
+    const session = useSessionStore.getState();
+    if (
+      expectedAuthVersion !== undefined &&
+      session.authVersion !== expectedAuthVersion
+    ) {
+      return null;
+    }
+    refreshPromiseForAuthVersion = session.authVersion;
+    if (session.token) {
+      session.setAuthStatus("refreshing");
+    }
     refreshPromise = (async () => {
       const url = buildUrl(AUTH_REFRESH_PATH);
-      const response = await fetch(url, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      return await parseAccessTokenFromResponse(response);
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        controller.abort();
+      }, REFRESH_REQUEST_TIMEOUT_MS);
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          signal: controller.signal,
+        });
+        return await parseRefreshPayloadFromResponse(response);
+      } finally {
+        clearTimeout(timer);
+      }
     })()
       .catch((error) => {
         if (error instanceof ApiConfigError) {
           throw error;
         }
+        if (error instanceof Error && error.name === "AbortError") {
+          return null;
+        }
         return null;
       })
       .finally(() => {
         refreshPromise = null;
+        refreshPromiseForAuthVersion = null;
       });
   }
-  let result: string | null;
+  let result: RefreshAccessTokenResult | null;
   try {
     result = await refreshPromise;
   } catch (error) {
@@ -149,17 +296,87 @@ export async function refreshAccessToken(): Promise<string | null> {
   }
   if (!result) {
     // Avoid repeated refresh storms when the cookie is missing/expired.
-    refreshCooldownUntilMs = Date.now() + 10_000;
+    refreshCooldownUntilMs = Date.now() + REFRESH_COOLDOWN_MS;
+    if (hasExpectedAuthVersion(expectedAuthVersion)) {
+      const { token, setAuthStatus } = useSessionStore.getState();
+      setAuthStatus(token ? "authenticated" : "expired");
+    }
+    return null;
+  }
+  if (hasExpectedAuthVersion(expectedAuthVersion)) {
+    useSessionStore.getState().setAuthStatus("authenticated");
   }
   return result;
 }
+
+export async function ensureFreshAccessToken(options?: {
+  expectedAuthVersion?: number;
+}): Promise<string | null> {
+  const session = useSessionStore.getState();
+  const token = session.token;
+  if (!token) {
+    return null;
+  }
+  if (!hasExpectedAuthVersion(options?.expectedAuthVersion)) {
+    return token;
+  }
+  const expiresAt = session.accessTokenExpiresAtMs;
+  if (!expiresAt) {
+    return token;
+  }
+
+  const leadMs = computeProactiveRefreshLeadMs(session.accessTokenTtlSeconds);
+  const jitterMaxMs = Math.min(10_000, Math.floor(leadMs * 0.2));
+  const jitterMs =
+    jitterMaxMs > 0 ? Math.floor(Math.random() * jitterMaxMs) : 0;
+  const shouldRefresh = Date.now() >= expiresAt - leadMs + jitterMs;
+  if (!shouldRefresh) {
+    return token;
+  }
+
+  const refreshed = await refreshAccessToken({
+    expectedAuthVersion: options?.expectedAuthVersion,
+  });
+  if (refreshed) {
+    applyRefreshedToken(refreshed, {
+      expectedAuthVersion: options?.expectedAuthVersion,
+    });
+    return refreshed.accessToken;
+  }
+  if (Date.now() < expiresAt) {
+    return token;
+  }
+  handleAuthExpiredOnce({
+    expectedAuthVersion: options?.expectedAuthVersion,
+  });
+  throw new AuthExpiredError();
+}
+
+export const handleAuthExpiredOnce = (options?: {
+  expectedAuthVersion?: number;
+}) => {
+  if (!hasExpectedAuthVersion(options?.expectedAuthVersion)) {
+    return;
+  }
+  if (authResetting) {
+    return;
+  }
+  authResetting = true;
+  try {
+    resetAuthBoundState();
+  } finally {
+    authResetting = false;
+  }
+};
 
 export async function apiRequest<Response, Body = unknown>(
   path: string,
   options: ApiRequestOptions<Body> = {},
 ): Promise<Response> {
   const { method = "GET", body, headers = {}, tokenOverride, query } = options;
-  const token = tokenOverride ?? useSessionStore.getState().token;
+  const sessionSnapshot = useSessionStore.getState();
+  let token = tokenOverride ?? sessionSnapshot.token;
+  const requestAuthVersion = sessionSnapshot.authVersion;
   const url = buildUrl(path, query);
   const shouldAttemptRefresh =
     !tokenOverride && !("Authorization" in headers) && !isAuthPath(path);
@@ -177,21 +394,36 @@ export async function apiRequest<Response, Body = unknown>(
     });
   };
 
+  if (shouldAttemptRefresh) {
+    token = await ensureFreshAccessToken({
+      expectedAuthVersion: requestAuthVersion,
+    });
+  }
+
   let response = await execute(token);
 
-  if (response.status === 401 && shouldAttemptRefresh) {
-    const refreshedToken = await refreshAccessToken();
-    if (refreshedToken) {
-      useSessionStore.getState().setAccessToken(refreshedToken);
-      response = await execute(refreshedToken);
+  if (isUnauthorizedStatusCode(response.status) && shouldAttemptRefresh) {
+    const refreshed = await refreshAccessToken({
+      force: true,
+      expectedAuthVersion: requestAuthVersion,
+    });
+    if (refreshed) {
+      applyRefreshedToken(refreshed, {
+        expectedAuthVersion: requestAuthVersion,
+      });
+      response = await execute(refreshed.accessToken);
 
-      // If we still can't authenticate after a refresh, stop retrying and clear
-      // local state to avoid request->refresh storms.
-      if (response.status === 401) {
-        resetClientState();
+      if (isUnauthorizedStatusCode(response.status)) {
+        handleAuthExpiredOnce({
+          expectedAuthVersion: requestAuthVersion,
+        });
+        throw new AuthExpiredError();
       }
     } else {
-      resetClientState();
+      handleAuthExpiredOnce({
+        expectedAuthVersion: requestAuthVersion,
+      });
+      throw new AuthExpiredError();
     }
   }
 

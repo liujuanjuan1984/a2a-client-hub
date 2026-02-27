@@ -1,15 +1,25 @@
 import { queryClient } from "@/services/queryClient";
 import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
-import { useMessageStore } from "@/store/messages";
 import { useSessionStore } from "@/store/session";
-import { useShortcutStore } from "@/store/shortcuts";
 
-export const resetClientState = () => {
+const removeLegacyPersistKey = (key: string) => {
+  import("@/lib/storage/mmkv")
+    .then(({ mmkvStateStorage }) => {
+      return Promise.resolve(mmkvStateStorage.removeItem(key));
+    })
+    .catch(() => undefined);
+};
+
+export const resetAuthBoundState = () => {
   useSessionStore.getState().clearSession();
   useAgentStore.getState().resetAgentUiState();
   useChatStore.getState().clearAll();
-  useMessageStore.getState().clearAll();
-  useShortcutStore.getState().clearAll();
+  removeLegacyPersistKey("a2a-client-hub.messages");
   queryClient.clear();
+};
+
+export const resetClientState = () => {
+  resetAuthBoundState();
+  removeLegacyPersistKey("a2a-client-hub.shortcuts");
 };

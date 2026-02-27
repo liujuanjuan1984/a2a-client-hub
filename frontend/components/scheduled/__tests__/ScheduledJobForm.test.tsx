@@ -13,6 +13,7 @@ describe("ScheduledJobForm", () => {
     time_point: {
       minutes: 10,
     },
+    schedule_timezone: "UTC",
     enabled: true,
     conversation_policy: "new_each_run",
   };
@@ -41,7 +42,7 @@ describe("ScheduledJobForm", () => {
     expect(onChange).toHaveBeenLastCalledWith({
       time_point: {
         minutes: 10,
-        start_at: "2026-02-23T09:30",
+        start_at_local: "2026-02-23T09:30",
       },
     });
   });
@@ -68,7 +69,7 @@ describe("ScheduledJobForm", () => {
     expect(onChange).toHaveBeenLastCalledWith({
       time_point: {
         minutes: 10,
-        start_at: "2026-02-23T12:35",
+        start_at_local: "2026-02-23T12:35",
       },
     });
   });
@@ -99,7 +100,7 @@ describe("ScheduledJobForm", () => {
     expect(onChange.mock.calls[0]?.[0]?.cycle_type).toBe("interval");
     expect(onChange.mock.calls[0]?.[0]?.time_point?.minutes).toBe(10);
     expect(
-      String(onChange.mock.calls[0]?.[0]?.time_point?.start_at ?? ""),
+      String(onChange.mock.calls[0]?.[0]?.time_point?.start_at_local ?? ""),
     ).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:00$/);
   });
 });

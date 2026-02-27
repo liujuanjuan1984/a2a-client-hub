@@ -3,6 +3,10 @@ import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { type PropsWithChildren } from "react";
 
 import { usePaginatedList } from "@/hooks/usePaginatedList";
+import {
+  cleanupTestQueryClient,
+  createTestQueryClient,
+} from "@/test-utils/queryClient";
 
 jest.mock("@/lib/toast", () => ({
   toast: {
@@ -22,15 +26,6 @@ jest.mock("@/lib/storage/mmkv", () => ({
 
 type Item = { id: string };
 
-const createQueryClient = () =>
-  new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-    },
-  });
-
 const createWrapper = (queryClient: QueryClient) => {
   return ({ children }: PropsWithChildren) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -38,8 +33,17 @@ const createWrapper = (queryClient: QueryClient) => {
 };
 
 describe("usePaginatedList", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(async () => {
+    await cleanupTestQueryClient(queryClient);
+  });
+
   it("keeps loadFirstPage stable across query state changes", async () => {
-    const queryClient = createQueryClient();
     const fetchPage = jest.fn(async (page: number) => {
       if (page === 1) {
         return {
@@ -83,7 +87,6 @@ describe("usePaginatedList", () => {
   });
 
   it("returns false when loadFirstPage fails", async () => {
-    const queryClient = createQueryClient();
     const fetchPage = jest.fn(async () => {
       throw new Error("boom");
     });
@@ -110,7 +113,6 @@ describe("usePaginatedList", () => {
   });
 
   it("refreshes only the first loaded page", async () => {
-    const queryClient = createQueryClient();
     const fetchPage = jest.fn(async (page: number) => {
       if (page === 1) {
         return {
@@ -174,7 +176,6 @@ describe("usePaginatedList", () => {
   });
 
   it("restores previously loaded pages when refresh fails", async () => {
-    const queryClient = createQueryClient();
     let failRefresh = false;
 
     const fetchPage = jest.fn(async (page: number) => {

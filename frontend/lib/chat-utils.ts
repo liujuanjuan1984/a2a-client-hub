@@ -119,7 +119,7 @@ export const buildInvokePayload = (
   conversationId: string,
   options?: {
     userMessageId?: string;
-    clientAgentMessageId?: string;
+    agentMessageId?: string;
     resumeFromSequence?: number;
   },
 ): A2AAgentInvokeRequest => {
@@ -127,8 +127,8 @@ export const buildInvokePayload = (
   if (options?.userMessageId) {
     payload.userMessageId = options.userMessageId;
   }
-  if (options?.clientAgentMessageId) {
-    payload.clientAgentMessageId = options.clientAgentMessageId;
+  if (options?.agentMessageId) {
+    payload.agentMessageId = options.agentMessageId;
   }
   if (options?.resumeFromSequence !== undefined) {
     payload.resumeFromSequence = options.resumeFromSequence;
@@ -193,8 +193,8 @@ const normalizeSessionForPersistence = (
 ): AgentSession => ({
   agentId: session.agentId,
   createdAt: getSessionCreatedAt(session),
-  source: session.source ?? null,
-  contextId: session.contextId ?? null,
+  source: null,
+  contextId: null,
   runtimeStatus: null,
   pendingInterrupt: null,
   streamState: "idle",
@@ -202,18 +202,9 @@ const normalizeSessionForPersistence = (
   transport: "http_json",
   inputModes: ["text/plain"],
   outputModes: ["text/plain"],
-  metadata: session.metadata ?? {},
-  externalSessionRef: session.externalSessionRef ?? null,
+  metadata: {},
+  externalSessionRef: null,
   lastActiveAt: getSessionLastActiveAt(session),
-  ...(typeof session.lastReceivedSequence === "number"
-    ? { lastReceivedSequence: session.lastReceivedSequence }
-    : {}),
-  ...(session.lastUserMessageId
-    ? { lastUserMessageId: session.lastUserMessageId }
-    : {}),
-  ...(session.lastAgentMessageId
-    ? { lastAgentMessageId: session.lastAgentMessageId }
-    : {}),
 });
 
 export const buildPersistedSessions = (

@@ -18,7 +18,10 @@ import {
   type ScheduleTimePoint,
   updateScheduledJob,
 } from "@/lib/api/scheduledJobs";
-import { localDateTimeInputToUtcIso } from "@/lib/datetime";
+import {
+  localDateTimeInputToUtcIso,
+  resolveUserTimeZone,
+} from "@/lib/datetime";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
@@ -32,6 +35,7 @@ const initialForm: ScheduledJobPayload = {
   prompt: "",
   cycle_type: "daily",
   time_point: { time: "07:00" },
+  schedule_timezone: "UTC",
   enabled: true,
   conversation_policy: "new_each_run",
 };
@@ -59,14 +63,15 @@ const normalizeTimePoint = (
   const current = (timePoint ?? {}) as ScheduleTimePoint;
   if (cycleType === "interval") {
     const minutes = (current as { minutes?: unknown })?.minutes;
-    const startAt = (current as { start_at?: unknown })?.start_at;
+    const startAtLocal = (current as { start_at_local?: unknown })
+      ?.start_at_local;
     return {
       minutes:
         typeof minutes === "number" && Number.isFinite(minutes)
           ? normalizeIntervalMinutes(minutes)
           : 10,
-      ...(typeof startAt === "string" && startAt.trim()
-        ? { start_at: startAt.trim() }
+      ...(typeof startAtLocal === "string" && startAtLocal.trim()
+        ? { start_at_local: startAtLocal.trim() }
         : {}),
     };
   }
@@ -97,6 +102,7 @@ type Snapshot = {
   cycle_type: ScheduleCycleType;
   time_point: unknown;
   enabled: boolean;
+  schedule_timezone: string;
   conversation_policy: "new_each_run" | "reuse_single";
 };
 
@@ -107,6 +113,7 @@ const buildSnapshot = (form: ScheduledJobPayload): Snapshot => ({
   cycle_type: form.cycle_type,
   time_point: normalizeTimePoint(form.cycle_type, form.time_point),
   enabled: form.enabled,
+  schedule_timezone: form.schedule_timezone,
   conversation_policy: form.conversation_policy,
 });
 
@@ -116,6 +123,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const userTimeZone = useSessionStore((state) => state.user?.timezone);
+  const scheduleTimeZone = userTimeZone?.trim() || resolveUserTimeZone();
   const goBackOrHome = useCallback(
     () => backOrHome(router, scheduledJobsHref),
     [router],
@@ -135,6 +143,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   const [loadingJob, setLoadingJob] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lastRunStatus, setLastRunStatus] = useState<string | null>(null);
+  const effectiveScheduleTimeZone = form.schedule_timezone || scheduleTimeZone;
 
   const initialSnapshotRef = useRef<Snapshot | null>(null);
 
@@ -145,6 +154,19 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
     if (agentOptions.length === 0) return;
     setForm((prev) => ({ ...prev, agent_id: agentOptions[0].id }));
   }, [editing, form.agent_id, agentOptions]);
+
+  useEffect(() => {
+    if (editing) return;
+    setForm((prev) => {
+      if (prev.schedule_timezone === scheduleTimeZone) {
+        return prev;
+      }
+      return {
+        ...prev,
+        schedule_timezone: scheduleTimeZone,
+      };
+    });
+  }, [editing, scheduleTimeZone]);
 
   useEffect(() => {
     if (!editing || !normalizedJobId) return;
@@ -162,6 +184,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           prompt: found.prompt,
           cycle_type: found.cycle_type,
           time_point: normalizeTimePoint(found.cycle_type, found.time_point),
+          schedule_timezone: found.schedule_timezone || scheduleTimeZone,
           enabled: found.enabled,
           conversation_policy: found.conversation_policy || "new_each_run",
         };
@@ -196,7 +219,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
     return () => {
       cancelled = true;
     };
-  }, [editing, normalizedJobId]);
+  }, [editing, normalizedJobId, scheduleTimeZone]);
 
   useEffect(() => {
     if (initialSnapshotRef.current) return;
@@ -266,7 +289,8 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
         return false;
       }
 
-      const rawStartAt = (form.time_point as { start_at?: unknown })?.start_at;
+      const rawStartAt = (form.time_point as { start_at_local?: unknown })
+        ?.start_at_local;
       if (typeof rawStartAt === "string" && rawStartAt.trim()) {
         if (!localDateTimeInputToUtcIso(rawStartAt)) {
           toast.error(
@@ -314,19 +338,22 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
         ...form,
         name: form.name.trim(),
         prompt: form.prompt.trim(),
+        schedule_timezone: effectiveScheduleTimeZone,
         time_point: normalizeTimePoint(form.cycle_type, form.time_point) as any,
       };
       if (normalized.cycle_type === "interval") {
-        const rawStartAt = (form.time_point as { start_at?: unknown })
-          ?.start_at;
-        const normalizedStartAt = localDateTimeInputToUtcIso(
+        const rawStartAt = (form.time_point as { start_at_local?: unknown })
+          ?.start_at_local;
+        const normalizedStartAtLocal = localDateTimeInputToUtcIso(
           typeof rawStartAt === "string" ? rawStartAt : "",
         );
         normalized.time_point = {
           minutes: normalizeIntervalMinutes(
             Number((normalized.time_point as any)?.minutes),
           ),
-          ...(normalizedStartAt ? { start_at: normalizedStartAt } : {}),
+          ...(normalizedStartAtLocal
+            ? { start_at_local: normalizedStartAtLocal }
+            : {}),
         } as any;
       }
 
@@ -345,7 +372,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       );
       allowNextNavigation();
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions.scheduledJobs(),
+        queryKey: queryKeys.schedules.listRoot(),
       });
       goBackOrHome();
     } catch (error) {
@@ -373,14 +400,16 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
 
       {loadingJob ? (
         <View className="mt-8 items-center">
-          <Text className="text-sm text-muted">Loading job...</Text>
+          <Text className="text-sm text-gray-400">Loading job...</Text>
         </View>
       ) : loadError ? (
-        <View className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
-          <Text className="text-base font-semibold text-white">
+        <View className="mt-8 rounded-2xl bg-surface p-6 shadow-sm">
+          <Text className="text-base font-bold text-white">
             Unable to load job
           </Text>
-          <Text className="mt-2 text-sm text-muted">{loadError}</Text>
+          <Text className="mt-2 text-[11px] font-medium text-slate-400">
+            {loadError}
+          </Text>
         </View>
       ) : (
         <View className="mt-3">
@@ -389,7 +418,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
             saving={saving}
             editing={editing}
             agentOptions={agentOptions}
-            timeZone={userTimeZone}
+            timeZone={effectiveScheduleTimeZone}
             lastRunStatus={lastRunStatus}
             onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
             onSubmit={handleSubmit}

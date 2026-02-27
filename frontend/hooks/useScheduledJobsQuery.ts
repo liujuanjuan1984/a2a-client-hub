@@ -24,7 +24,7 @@ export function useScheduledJobsQuery(options?: { enabled?: boolean }) {
   }, []);
 
   return usePaginatedList<ScheduledJob>({
-    queryKey: queryKeys.sessions.scheduledJobs(),
+    queryKey: queryKeys.schedules.list(),
     fetchPage,
     getKey: (item) => item.id,
     errorTitle: "Load jobs failed",

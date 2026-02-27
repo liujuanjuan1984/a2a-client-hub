@@ -11,8 +11,13 @@ import {
 } from "react-native";
 
 import { Button } from "@/components/ui/Button";
+import {
+  useCreateShortcutMutation,
+  useDeleteShortcutMutation,
+  useShortcutsQuery,
+  useUpdateShortcutMutation,
+} from "@/hooks/useShortcutsQuery";
 import { toast } from "@/lib/toast";
-import { useShortcutStore } from "@/store/shortcuts";
 
 export function ShortcutManagerModal({
   visible,
@@ -27,8 +32,10 @@ export function ShortcutManagerModal({
   initialPrompt: string;
   agentId?: string | null;
 }) {
-  const { getShortcutsForAgent, addShortcut, updateShortcut, removeShortcut } =
-    useShortcutStore();
+  const { getShortcutsForAgent } = useShortcutsQuery();
+  const createShortcutMutation = useCreateShortcutMutation();
+  const updateShortcutMutation = useUpdateShortcutMutation();
+  const deleteShortcutMutation = useDeleteShortcutMutation();
 
   const [shortcutManagerMode, setShortcutManagerMode] = useState<
     "list" | "create" | "edit"
@@ -103,19 +110,23 @@ export function ShortcutManagerModal({
 
     try {
       if (editingShortcutId) {
-        await updateShortcut(
-          editingShortcutId,
-          normalizedTitle,
-          normalizedPrompt,
-          targetAgentId,
-          !isAgentSpecific, // clearAgent
-        );
+        await updateShortcutMutation.mutateAsync({
+          shortcutId: editingShortcutId,
+          title: normalizedTitle,
+          prompt: normalizedPrompt,
+          agentId: targetAgentId,
+          clearAgent: !isAgentSpecific,
+        });
         toast.success(
           "Shortcut updated",
           `"${normalizedTitle}" has been updated.`,
         );
       } else {
-        await addShortcut(normalizedTitle, normalizedPrompt, targetAgentId);
+        await createShortcutMutation.mutateAsync({
+          title: normalizedTitle,
+          prompt: normalizedPrompt,
+          agentId: targetAgentId,
+        });
         toast.success(
           "Shortcut saved",
           `"${normalizedTitle}" is now available.`,
@@ -214,9 +225,11 @@ export function ShortcutManagerModal({
                           accessibilityRole="button"
                           accessibilityLabel={`Delete shortcut ${cmd.title}`}
                           onPress={async () => {
-                            await removeShortcut(cmd.id).catch(() => {
-                              toast.error("Failed to remove shortcut");
-                            });
+                            await deleteShortcutMutation
+                              .mutateAsync(cmd.id)
+                              .catch(() => {
+                                toast.error("Failed to remove shortcut");
+                              });
                           }}
                         >
                           <Text className="text-xs font-semibold text-red-400">

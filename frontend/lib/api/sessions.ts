@@ -1,5 +1,8 @@
 import { apiRequest } from "@/lib/api/client";
-import { parsePaginatedListResponse } from "@/lib/api/pagination";
+import {
+  parsePaginatedListResponse,
+  resolveNextPageWithFallback,
+} from "@/lib/api/pagination";
 import { type UnifiedSessionSource } from "@/lib/sessionIds";
 
 export type SessionListItem = {
@@ -14,12 +17,32 @@ export type SessionListItem = {
   created_at?: string | null;
 };
 
+export type SessionMessageBlockItem = {
+  id: string;
+  type: string;
+  content?: string | null;
+  isFinished: boolean;
+};
+
+export type SessionMessageBlockDetailItem = {
+  id: string;
+  messageId: string;
+  type: string;
+  content?: string | null;
+  isFinished: boolean;
+};
+
 export type SessionMessageItem = {
-  id?: string;
+  id: string;
   role: "user" | "agent" | "system";
-  content: string;
   created_at: string;
-  metadata?: Record<string, unknown> | null;
+  status?: string;
+  blocks?: SessionMessageBlockItem[];
+};
+
+export type SessionMessagesPageInfo = {
+  hasMoreBefore: boolean;
+  nextBefore?: string | null;
 };
 
 export type SessionContinueBinding = {
@@ -32,9 +55,14 @@ export const listSessionsPage = async (options?: {
   page?: number;
   size?: number;
   source?: UnifiedSessionSource;
+  agent_id?: string;
 }) => {
   const page = options?.page ?? 1;
   const size = options?.size ?? 50;
+  const agentId =
+    typeof options?.agent_id === "string" && options.agent_id.trim().length > 0
+      ? options.agent_id.trim()
+      : null;
   const response = await apiRequest<
     {
       items: SessionListItem[];
@@ -45,6 +73,7 @@ export const listSessionsPage = async (options?: {
       page: number;
       size: number;
       source?: UnifiedSessionSource;
+      agent_id?: string;
     }
   >("/me/conversations:query", {
     method: "POST",
@@ -52,46 +81,93 @@ export const listSessionsPage = async (options?: {
       page,
       size,
       ...(options?.source ? { source: options.source } : {}),
+      ...(agentId ? { agent_id: agentId } : {}),
     },
   });
 
   const parsed = parsePaginatedListResponse(response);
-  const pagination =
-    parsed.pagination && typeof parsed.pagination === "object"
-      ? (parsed.pagination as Record<string, unknown>)
-      : {};
-  const pages = typeof pagination.pages === "number" ? pagination.pages : 0;
-  const nextPage = pages > 0 && page < pages ? page + 1 : undefined;
+  const nextPage = resolveNextPageWithFallback({ parsed, page, size });
   return { ...parsed, nextPage };
 };
 
 export const listSessionMessagesPage = async (
   conversationId: string,
-  options?: { page?: number; size?: number },
+  options?: { before?: string | null; limit?: number },
 ) => {
-  const page = options?.page ?? 1;
-  const size = options?.size ?? 100;
+  const limit = options?.limit ?? 8;
+  const before =
+    typeof options?.before === "string" && options.before.trim().length > 0
+      ? options.before.trim()
+      : null;
   const response = await apiRequest<
     {
       items: SessionMessageItem[];
-      pagination?: unknown;
-      meta?: unknown;
+      pageInfo?: SessionMessagesPageInfo;
     },
-    { page: number; size: number }
+    {
+      before?: string;
+      limit: number;
+    }
   >(`/me/conversations/${encodeURIComponent(conversationId)}/messages:query`, {
     method: "POST",
-    body: { page, size },
+    body: {
+      ...(before ? { before } : {}),
+      limit,
+    },
   });
 
-  const parsed = parsePaginatedListResponse(response);
-  const nextPage =
-    typeof parsed.nextPage === "number"
-      ? parsed.nextPage
-      : parsed.items.length >= size
-        ? page + 1
-        : undefined;
+  const resolvedItems = Array.isArray(response.items) ? response.items : [];
+  const resolvedPageInfo =
+    response.pageInfo &&
+    typeof response.pageInfo === "object" &&
+    response.pageInfo.hasMoreBefore === true
+      ? {
+          hasMoreBefore: true,
+          nextBefore:
+            typeof response.pageInfo.nextBefore === "string"
+              ? response.pageInfo.nextBefore
+              : null,
+        }
+      : {
+          hasMoreBefore: false,
+          nextBefore:
+            response.pageInfo &&
+            typeof response.pageInfo === "object" &&
+            typeof response.pageInfo.nextBefore === "string"
+              ? response.pageInfo.nextBefore
+              : null,
+        };
 
-  return { ...parsed, nextPage };
+  return {
+    items: resolvedItems,
+    pageInfo: resolvedPageInfo,
+  };
+};
+
+export const querySessionMessageBlocks = async (
+  conversationId: string,
+  options: { blockIds: string[] },
+) => {
+  const blockIds = Array.isArray(options.blockIds)
+    ? options.blockIds
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter((value) => value.length > 0)
+    : [];
+  if (blockIds.length === 0) {
+    return { items: [] as SessionMessageBlockDetailItem[] };
+  }
+  const response = await apiRequest<
+    { items?: SessionMessageBlockDetailItem[] },
+    { blockIds: string[] }
+  >(`/me/conversations/${encodeURIComponent(conversationId)}/blocks:query`, {
+    method: "POST",
+    body: {
+      blockIds,
+    },
+  });
+  return {
+    items: Array.isArray(response.items) ? response.items : [],
+  };
 };
 
 export const continueSession = async (

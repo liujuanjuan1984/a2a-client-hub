@@ -50,8 +50,19 @@ export const useContinueSession = () => {
         router.push(buildChatRoute(agentId, resolvedConversationId));
         return true;
       } catch (error) {
+        const errorCode =
+          error && typeof error === "object" && "errorCode" in error
+            ? (error as { errorCode?: unknown }).errorCode
+            : null;
         const message =
-          error instanceof Error ? error.message : "Continue failed.";
+          (typeof errorCode === "string" &&
+            errorCode === "session_forbidden") ||
+          (error instanceof Error &&
+            error.message.trim() === "session_forbidden")
+            ? "You do not have permission to continue this session."
+            : error instanceof Error
+              ? error.message
+              : "Continue failed.";
         toast.error("Continue session failed", message);
         return false;
       }

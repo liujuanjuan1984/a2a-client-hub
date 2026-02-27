@@ -3,45 +3,47 @@ import React from "react";
 import { FlatList, Modal, Pressable, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
-import { type AgentSession } from "@/lib/chat-utils";
+import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
+import { type SessionListItem } from "@/lib/api/sessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import { useChatStore } from "@/store/chat";
-import { useMessageStore } from "@/store/messages";
 
 function SessionItem({
-  conversationId,
-  session,
+  item,
   isActive,
   onSelect,
 }: {
-  conversationId: string;
-  session: AgentSession;
+  item: SessionListItem;
   isActive: boolean;
   onSelect: (id: string) => void;
 }) {
-  const messages = useMessageStore((state) => state.messages[conversationId]);
-  const firstUserMessage = messages?.find((m) => m.role === "user");
-  const title = firstUserMessage?.content?.trim() || "New Session";
   const createdAtText = formatLocalDateTimeYmdHm(
-    session.createdAt ?? session.lastActiveAt,
+    item.created_at ?? item.last_active_at,
   );
-  const lastUpdatedAtText = formatLocalDateTimeYmdHm(session.lastActiveAt);
+  const title =
+    typeof item.title === "string" && item.title.trim().length > 0
+      ? item.title
+      : "Session";
 
   return (
     <Pressable
-      className={`mb-2 flex-row items-center justify-between rounded-xl border p-3 ${
-        isActive
-          ? "border-primary bg-primary/10"
-          : "border-slate-800 bg-slate-900"
+      className={`mb-2 flex-row items-center justify-between rounded-xl p-4 ${
+        isActive ? "bg-primary/10 border border-primary/20" : "bg-black/20"
       }`}
-      onPress={() => onSelect(conversationId)}
+      onPress={() => onSelect(item.conversationId)}
     >
       <View className="flex-1">
-        <Text className="text-sm text-slate-300" numberOfLines={2}>
+        <Text
+          className={`text-sm font-medium ${isActive ? "text-primary" : "text-white"}`}
+          numberOfLines={2}
+        >
           {title}
         </Text>
-        <Text className="mt-1 text-[10px] text-slate-500" numberOfLines={1}>
-          {createdAtText} - {lastUpdatedAtText}
+        <Text
+          className="mt-1 text-[11px] font-medium text-slate-500"
+          numberOfLines={1}
+        >
+          {createdAtText}
         </Text>
       </View>
     </Pressable>
@@ -64,15 +66,22 @@ export function SessionPickerModal({
   const generateConversationId = useChatStore(
     (state) => state.generateConversationId,
   );
-  const getSessionsByAgentId = useChatStore(
-    (state) => state.getSessionsByAgentId,
-  );
-  const sessions = useChatStore((state) => state.sessions);
+  const normalizedAgentId =
+    typeof agentId === "string" && agentId.trim().length > 0
+      ? agentId.trim()
+      : null;
 
-  const agentSessions = React.useMemo(() => {
-    if (!agentId) return [];
-    return getSessionsByAgentId(agentId);
-  }, [agentId, getSessionsByAgentId, sessions]);
+  const {
+    items: agentSessions,
+    loading,
+    loadingMore,
+    hasMore,
+    loadMore,
+  } = useSessionsDirectoryQuery({
+    agentId: normalizedAgentId,
+    enabled: visible && Boolean(normalizedAgentId),
+    size: 50,
+  });
 
   return (
     <Modal
@@ -88,18 +97,16 @@ export function SessionPickerModal({
           accessibilityLabel="Close session picker"
           onPress={onClose}
         />
-        <View className="w-full max-h-[80%] min-h-[50%] rounded-t-3xl border-t border-slate-800 bg-slate-950 p-6 sm:w-[min(94vw,760px)] lg:w-[min(90vw,960px)] sm:rounded-3xl sm:border">
+        <View className="w-full max-h-[80%] min-h-[50%] rounded-t-3xl bg-surface p-6 sm:w-[min(94vw,760px)] lg:w-[min(90vw,960px)] sm:rounded-3xl border-t border-white/5 sm:border">
           <View className="mb-6 flex-row items-center justify-between">
-            <Text className="text-lg font-semibold text-white">
-              Chat History
-            </Text>
+            <Text className="text-lg font-bold text-white">Chat History</Text>
             <Pressable
               onPress={onClose}
-              className="rounded-full bg-slate-800 p-2"
+              className="rounded-xl bg-slate-800 p-2 active:bg-slate-700"
               accessibilityRole="button"
               accessibilityLabel="Close session picker"
             >
-              <Ionicons name="close" size={20} color="#cbd5e1" />
+              <Ionicons name="close" size={20} color="#FFFFFF" />
             </Pressable>
           </View>
           <Button
@@ -111,26 +118,45 @@ export function SessionPickerModal({
               onClose();
             }}
           />
-          {agentSessions.length === 0 ? (
+          {!normalizedAgentId ? (
+            <View className="py-8 items-center">
+              <Text className="text-slate-400">No agent selected.</Text>
+            </View>
+          ) : loading ? (
+            <View className="py-8 items-center">
+              <Text className="text-slate-400">Loading sessions...</Text>
+            </View>
+          ) : agentSessions.length === 0 ? (
             <View className="py-8 items-center">
               <Text className="text-slate-400">No previous sessions.</Text>
             </View>
           ) : (
             <FlatList
               data={agentSessions}
-              keyExtractor={(item) => item[0]}
+              keyExtractor={(item) => item.conversationId}
               renderItem={({ item }) => (
                 <SessionItem
-                  conversationId={item[0]}
-                  session={item[1]}
-                  isActive={item[0] === currentConversationId}
+                  item={item}
+                  isActive={item.conversationId === currentConversationId}
                   onSelect={(id) => {
                     onSelect(id);
                     onClose();
                   }}
                 />
               )}
+              onEndReachedThreshold={0.4}
+              onEndReached={() => {
+                if (!hasMore || loadingMore) return;
+                loadMore().catch(() => undefined);
+              }}
               contentContainerStyle={{ paddingBottom: 24 }}
+              ListFooterComponent={
+                loadingMore ? (
+                  <View className="py-3 items-center">
+                    <Text className="text-[11px] text-slate-500">Loading…</Text>
+                  </View>
+                ) : null
+              }
             />
           )}
         </View>

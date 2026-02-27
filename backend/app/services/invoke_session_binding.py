@@ -9,7 +9,11 @@ def status_code_for_invoke_session_error(detail: str) -> int:
     normalized = normalize_error_code(detail)
     if normalized == "session_not_found":
         return 404
-    if normalized == "invoke_inflight":
+    if normalized in {
+        "invoke_inflight",
+        "idempotency_conflict",
+        "message_id_conflict",
+    }:
         return 409
     return 400
 
@@ -31,6 +35,12 @@ def ws_error_code_for_invoke_session_error(detail: str) -> str:
         return "session_not_found"
     if normalized == "invoke_inflight":
         return "invoke_inflight"
+    if normalized == "idempotency_conflict":
+        return "idempotency_conflict"
+    if normalized == "message_id_conflict":
+        return "message_id_conflict"
+    if normalized == "invalid_message_id":
+        return "invalid_message_id"
     return "invalid_conversation_id"
 
 

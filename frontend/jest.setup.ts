@@ -1,4 +1,11 @@
 import "@testing-library/react-native/extend-expect";
+import { queryClient } from "@/services/queryClient";
+
+jest.mock("react-native-reanimated", () => {
+  const Reanimated = require("react-native-reanimated/mock");
+  Reanimated.default.call = () => {};
+  return Reanimated;
+});
 
 if (typeof globalThis.window === "undefined") {
   globalThis.window = globalThis as unknown as Window & typeof globalThis;
@@ -74,8 +81,8 @@ jest.mock("@expo/vector-icons", () => {
 jest.mock("react-native/Libraries/AppState/AppState", () => ({
   AppState: {
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
-    currentState: "active"
-  }
+    currentState: "active",
+  },
 }));
 
 jest.mock("react-native/Libraries/Utilities/Dimensions", () => {
@@ -97,4 +104,9 @@ jest.mock("react-native/Libraries/Utilities/Dimensions", () => {
     default: dimensionsModule,
     ...dimensionsModule,
   };
+});
+
+afterEach(async () => {
+  await queryClient.cancelQueries();
+  queryClient.clear();
 });

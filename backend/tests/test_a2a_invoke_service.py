@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import suppress
 
 import pytest
 from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
-from app.services.a2a_invoke_service import a2a_invoke_service
+from app.services.a2a_invoke_service import StreamFinishReason, a2a_invoke_service
 
 
 class _BrokenGateway:
@@ -43,6 +44,15 @@ class _GatewayWithDelayedEvents:
         for event in self._events:
             await asyncio.sleep(self._delay_seconds)
             yield _DumpableEvent(event)
+
+
+class _GatewayWithSingleEventThenPending:
+    def __init__(self, first_event: dict):
+        self._first_event = first_event
+
+    async def stream(self, **kwargs):  # noqa: ARG002
+        yield _DumpableEvent(self._first_event)
+        await asyncio.Future()
 
 
 class _DummyWebSocket:
@@ -196,7 +206,7 @@ async def test_sse_on_complete_uses_typed_text_blocks_for_response_content():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_metadata_includes_message_blocks():
+async def test_sse_on_complete_metadata_is_empty_dict():
     metadata_payloads: list[dict] = []
 
     async def _on_complete_metadata(payload: dict):
@@ -234,30 +244,7 @@ async def test_sse_on_complete_metadata_includes_message_blocks():
     async for _ in response.body_iterator:
         pass
 
-    assert metadata_payloads == [
-        {
-            "message_blocks": [
-                {
-                    "id": "block-1",
-                    "type": "reasoning",
-                    "content": "thinking",
-                    "is_finished": True,
-                },
-                {
-                    "id": "block-2",
-                    "type": "tool_call",
-                    "content": "run_tool()",
-                    "is_finished": True,
-                },
-                {
-                    "id": "block-3",
-                    "type": "text",
-                    "content": "done",
-                    "is_finished": False,
-                },
-            ]
-        }
-    ]
+    assert metadata_payloads == [{}]
 
 
 @pytest.mark.asyncio
@@ -302,78 +289,7 @@ async def test_sse_invokes_complete_metadata_before_complete():
 
 
 @pytest.mark.asyncio
-async def test_sse_complete_metadata_uses_configurable_max_chars(monkeypatch):
-    original = settings.opencode_stream_metadata_max_chars
-    monkeypatch.setattr(settings, "opencode_stream_metadata_max_chars", 5)
-
-    metadata_payloads: list[dict] = []
-
-    async def _on_complete_metadata(payload: dict):
-        metadata_payloads.append(payload)
-
-    response = a2a_invoke_service.stream_sse(
-        gateway=_GatewayWithEvents(
-            [
-                _artifact_event(
-                    artifact_id="task-1:stream:reasoning",
-                    text="123456789",
-                    block_type="reasoning",
-                ),
-                _artifact_event(
-                    artifact_id="task-1:stream:tool_call",
-                    text="abcdefghi",
-                    block_type="tool_call",
-                ),
-                _artifact_event(
-                    artifact_id="task-1:stream",
-                    text="done",
-                    block_type="text",
-                ),
-            ]
-        ),
-        resolved=object(),
-        query="hello",
-        context_id=None,
-        metadata=None,
-        validate_message=lambda _: [],
-        logger=logging.getLogger(__name__),
-        log_extra={},
-        on_complete_metadata=_on_complete_metadata,
-    )
-    async for _ in response.body_iterator:
-        pass
-
-    assert metadata_payloads == [
-        {
-            "message_blocks": [
-                {
-                    "id": "block-1",
-                    "type": "reasoning",
-                    "content": "12345",
-                    "is_finished": True,
-                },
-                {
-                    "id": "block-2",
-                    "type": "tool_call",
-                    "content": "abcde",
-                    "is_finished": True,
-                },
-                {
-                    "id": "block-3",
-                    "type": "text",
-                    "content": "done",
-                    "is_finished": False,
-                },
-            ]
-        }
-    ]
-    monkeypatch.setattr(
-        settings, "opencode_stream_metadata_max_chars", original
-    )  # explicit reset for safety
-
-
-@pytest.mark.asyncio
-async def test_sse_on_complete_falls_back_for_non_typed_events():
+async def test_sse_on_complete_ignores_non_typed_events():
     completed: list[str] = []
 
     async def _on_complete(text: str):
@@ -401,7 +317,7 @@ async def test_sse_on_complete_falls_back_for_non_typed_events():
     async for _ in response.body_iterator:
         pass
 
-    assert completed == ["foobar"]
+    assert completed == [""]
 
 
 @pytest.mark.asyncio
@@ -509,7 +425,11 @@ async def test_sse_drops_invalid_artifact_update_events():
                     text="dropped",
                     block_type="text",
                 ),
-                {"content": "kept"},
+                _artifact_event(
+                    artifact_id="task-valid:stream",
+                    text="kept",
+                    block_type="text",
+                ),
             ]
         ),
         resolved=object(),
@@ -519,6 +439,7 @@ async def test_sse_drops_invalid_artifact_update_events():
         validate_message=lambda payload: (
             ["invalid artifact event"]
             if payload.get("kind") == "artifact-update"
+            and payload.get("artifact", {}).get("artifact_id") == "task-invalid:stream"
             else []
         ),
         logger=logging.getLogger(__name__),
@@ -530,7 +451,95 @@ async def test_sse_drops_invalid_artifact_update_events():
         pass
 
     assert completed == ["kept"]
-    assert observed_events == [{"content": "kept"}]
+    assert observed_events == [
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "artifact_id": "task-valid:stream",
+                "parts": [{"kind": "text", "text": "kept"}],
+                "metadata": {"opencode": {"block_type": "text"}},
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sse_cache_replays_mutated_event_payload_from_on_event():
+    from app.services.stream_cache.memory_cache import global_stream_cache
+
+    cache_key = "test-cache-on-event-mutation"
+    upstream_event = {
+        "kind": "artifact-update",
+        "message_id": "msg-upstream-1",
+        "artifact": {
+            "artifact_id": "task-cache:stream:text",
+            "parts": [{"kind": "text", "text": "hello"}],
+            "metadata": {
+                "opencode": {
+                    "block_type": "text",
+                    "event_id": "evt-cache-1",
+                    "message_id": "msg-upstream-1",
+                }
+            },
+        },
+    }
+
+    async def _rewrite_message_id(payload: dict) -> None:
+        payload["message_id"] = "msg-local-1"
+
+    initial = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents([upstream_event]),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_event=_rewrite_message_id,
+        cache_key=cache_key,
+    )
+    initial_frames: list[str] = []
+    async for chunk in initial.body_iterator:
+        initial_frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    artifact_lines = [
+        line
+        for line in "".join(initial_frames).splitlines()
+        if line.startswith("data: ") and '"kind": "artifact-update"' in line
+    ]
+    assert artifact_lines
+    assert json.loads(artifact_lines[0].removeprefix("data: "))["message_id"] == (
+        "msg-local-1"
+    )
+
+    replay = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents([]),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        resume_from_sequence=0,
+        cache_key=cache_key,
+    )
+    replay_frames: list[str] = []
+    async for chunk in replay.body_iterator:
+        replay_frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    replay_artifact_lines = [
+        line
+        for line in "".join(replay_frames).splitlines()
+        if line.startswith("data: ") and '"kind": "artifact-update"' in line
+    ]
+    assert replay_artifact_lines
+    assert json.loads(replay_artifact_lines[0].removeprefix("data: "))[
+        "message_id"
+    ] == ("msg-local-1")
+
+    await global_stream_cache.mark_completed(cache_key)
 
 
 @pytest.mark.asyncio
@@ -721,6 +730,86 @@ async def test_ws_stream_ignores_client_disconnect_without_sending_error() -> No
 
 
 @pytest.mark.asyncio
+async def test_sse_stream_reports_client_disconnect_to_finalized_callback() -> None:
+    finalized_outcomes = []
+    first_chunk_seen = asyncio.Event()
+
+    async def _on_finalized(outcome):
+        finalized_outcomes.append(outcome)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithSingleEventThenPending(
+            first_event=_artifact_event(
+                artifact_id="task-client-disconnect:stream",
+                text="partial text",
+                block_type="text",
+            )
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_finalized=_on_finalized,
+    )
+
+    async def _consume_stream() -> None:
+        async for _ in response.body_iterator:
+            first_chunk_seen.set()
+
+    consume_task = asyncio.create_task(_consume_stream())
+    await asyncio.wait_for(first_chunk_seen.wait(), timeout=1.0)
+    consume_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await consume_task
+
+    assert len(finalized_outcomes) == 1
+    finalized = finalized_outcomes[0]
+    assert finalized.success is False
+    assert finalized.finish_reason == StreamFinishReason.CLIENT_DISCONNECT
+    assert finalized.final_text == "partial text"
+    assert finalized.error_code is None
+    assert finalized.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_finalized_callback_failure_is_isolated(caplog):
+    async def _on_finalized(_outcome):
+        raise RuntimeError("persist failed")
+
+    with caplog.at_level(logging.WARNING):
+        result = await a2a_invoke_service.consume_stream(
+            gateway=_GatewayWithEvents(
+                [
+                    _artifact_event(
+                        artifact_id="task-finalized:stream",
+                        text="ok",
+                        block_type="text",
+                    ),
+                    {"kind": "status-update", "final": True},
+                ]
+            ),
+            resolved=object(),
+            query="hello",
+            context_id=None,
+            metadata=None,
+            validate_message=lambda _: [],
+            logger=logging.getLogger(__name__),
+            log_extra={},
+            on_finalized=_on_finalized,
+        )
+
+    assert result.success is True
+    assert result.final_text == "ok"
+    assert any(
+        "A2A consume stream finalized callback failed" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
 async def test_send_ws_error_ignores_closed_socket_runtime_error() -> None:
     websocket = _ClosedWebSocket()
     await a2a_invoke_service.send_ws_error(
@@ -735,7 +824,14 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
     monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithDelayedEvents(
-            [{"content": "late-event"}, {"kind": "status-update", "final": True}],
+            [
+                _artifact_event(
+                    artifact_id="task-heartbeat:stream",
+                    text="late-event",
+                    block_type="text",
+                ),
+                {"kind": "status-update", "final": True},
+            ],
             delay_seconds=0.05,
         ),
         resolved=object(),
@@ -748,8 +844,117 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
         idle_timeout_seconds=0.02,
         total_timeout_seconds=0.2,
     )
-    assert result["success"] is True
-    assert result["content"] == "late-event"
+    assert result.success is True
+    assert result.finish_reason == StreamFinishReason.SUCCESS
+    assert result.final_text == "late-event"
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_reports_total_timeout_with_partial_content(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    monotonic_values = [0.0, 0.0, 0.01, 0.06, 0.06, 0.06, 0.06, 0.06]
+    monotonic_index = {"value": 0}
+
+    def _fake_monotonic() -> float:
+        index = monotonic_index["value"]
+        monotonic_index["value"] = min(index + 1, len(monotonic_values) - 1)
+        return monotonic_values[index]
+
+    wait_for_calls = {"value": 0}
+
+    async def _fake_wait_for(awaitable, timeout):  # noqa: ARG001
+        wait_for_calls["value"] += 1
+        if wait_for_calls["value"] == 1:
+            return await awaitable
+        timeout_task = asyncio.create_task(awaitable)
+        timeout_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await timeout_task
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.time.monotonic", _fake_monotonic
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.asyncio.wait_for", _fake_wait_for
+    )
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithSingleEventThenPending(
+            first_event={
+                "kind": "artifact-update",
+                "artifact": {
+                    "parts": [{"kind": "text", "text": "partial result"}],
+                    "metadata": {"opencode": {"block_type": "text"}},
+                },
+            },
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        total_timeout_seconds=0.05,
+        idle_timeout_seconds=1.0,
+    )
+    assert result.success is False
+    assert result.finish_reason == StreamFinishReason.TIMEOUT_TOTAL
+    assert result.error_code == "timeout"
+    assert result.final_text == "partial result"
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_reports_idle_timeout_with_partial_content(monkeypatch):
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.0)
+    monotonic_values = [0.0, 0.0, 0.01, 0.03, 0.04, 0.05, 0.06, 0.06, 0.06]
+    monotonic_index = {"value": 0}
+
+    def _fake_monotonic() -> float:
+        index = monotonic_index["value"]
+        monotonic_index["value"] = min(index + 1, len(monotonic_values) - 1)
+        return monotonic_values[index]
+
+    wait_for_calls = {"value": 0}
+
+    async def _fake_wait_for(awaitable, timeout):  # noqa: ARG001
+        wait_for_calls["value"] += 1
+        if wait_for_calls["value"] == 1:
+            return await awaitable
+        timeout_task = asyncio.create_task(awaitable)
+        timeout_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await timeout_task
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.time.monotonic", _fake_monotonic
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_invoke_service.asyncio.wait_for", _fake_wait_for
+    )
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithSingleEventThenPending(
+            first_event=_artifact_event(
+                artifact_id="task-idle-timeout:stream",
+                text="partial text",
+                block_type="text",
+            )
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        total_timeout_seconds=1.0,
+        idle_timeout_seconds=0.05,
+    )
+    assert result.success is False
+    assert result.finish_reason == StreamFinishReason.TIMEOUT_IDLE
+    assert result.error_code == "timeout"
+    assert result.final_text == "partial text"
 
 
 def test_extract_binding_hints_from_serialized_event():
@@ -894,10 +1099,14 @@ def test_extract_readable_content_parses_json_string_content():
 def test_extract_stream_identity_hints_from_serialized_event():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
-            "event_id": "evt-1",
             "seq": 9,
             "artifact": {
-                "message_id": "msg-1",
+                "metadata": {
+                    "opencode": {
+                        "message_id": "msg-1",
+                        "event_id": "evt-1",
+                    }
+                },
             },
         }
     )
@@ -912,16 +1121,24 @@ def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
     class _RawPayload:
         def model_dump(self, **kwargs):  # noqa: ARG002
             return {
-                "event_id": "evt-from-raw",
                 "seq": 12,
-                "message_id": "msg-from-raw",
+                "metadata": {
+                    "opencode": {
+                        "event_id": "evt-from-raw",
+                        "message_id": "msg-from-raw",
+                    }
+                },
             }
 
     hints = a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
         {
-            "event_id": "evt-from-result",
             "seq": 2,
-            "message_id": "msg-from-result",
+            "metadata": {
+                "opencode": {
+                    "event_id": "evt-from-result",
+                    "message_id": "msg-from-result",
+                }
+            },
             "raw": _RawPayload(),
         }
     )
@@ -932,17 +1149,99 @@ def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
     }
 
 
-def test_extract_stream_identity_hints_from_status_message_message_id():
+def test_extract_stream_identity_hints_from_status_metadata_message_id():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_invoke_result(
         {
             "status": {
-                "message": {
-                    "messageId": "msg-from-status-message",
+                "metadata": {
+                    "opencode": {
+                        "message_id": "msg-from-status-message",
+                    }
                 }
             }
         }
     )
     assert hints["upstream_message_id"] == "msg-from-status-message"
+
+
+def test_extract_stream_chunk_reads_nested_opencode_event_and_message_ids():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"kind": "text", "text": "hello"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "event_id": "evt-nested",
+                        "message_id": "msg-nested",
+                        "source": "stream",
+                    }
+                },
+            },
+        }
+    )
+
+    assert chunk is not None
+    assert chunk["event_id"] == "evt-nested"
+    assert chunk["message_id"] == "msg-nested"
+    assert chunk["block_type"] == "text"
+    assert chunk["content"] == "hello"
+    assert chunk["append"] is True
+    assert chunk["is_finished"] is False
+    assert chunk["source"] == "stream"
+
+
+def test_extract_stream_chunk_consumes_optional_seq_append_and_last_chunk():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "seq": 8,
+            "append": False,
+            "lastChunk": True,
+            "artifact": {
+                "parts": [{"kind": "text", "text": "done"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "event_id": "evt-opt",
+                        "message_id": "msg-opt",
+                    }
+                },
+            },
+        }
+    )
+
+    assert chunk is not None
+    assert chunk["seq"] == 8
+    assert chunk["append"] is False
+    assert chunk["is_finished"] is True
+
+
+def test_extract_stream_chunk_requires_opencode_identity_metadata():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"kind": "text", "text": "hello"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "event_id": "evt-nested",
+                    }
+                },
+            },
+        }
+    )
+
+    assert chunk is None
+
+
+def test_extract_stream_chunk_ignores_non_artifact_payloads():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {"content": "legacy-content"}
+    )
+    assert chunk is None
 
 
 def test_extract_usage_hints_from_serialized_event():

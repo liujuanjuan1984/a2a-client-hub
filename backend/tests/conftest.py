@@ -45,7 +45,6 @@ if "DATABASE_URL" not in os.environ:
 default_test_secret_key = base64.urlsafe_b64encode(b"0" * 32).decode("utf-8")
 os.environ.setdefault("USER_LLM_TOKEN_ENCRYPTION_KEY", default_test_secret_key)
 os.environ.setdefault("HUB_A2A_TOKEN_ENCRYPTION_KEY", default_test_secret_key)
-os.environ.setdefault("JWT_SECRET_KEY", default_test_secret_key)
 os.environ.setdefault("WS_TICKET_SECRET_KEY", default_test_secret_key)
 
 # Ensure JWT RS256 configuration is available for tests.
@@ -101,6 +100,7 @@ for module_path in [
     "app.db.models.a2a_schedule_task",
     "app.db.models.a2a_schedule_execution",
     "app.db.models.agent_message",
+    "app.db.models.agent_message_block",
     "app.db.models.user",
     "app.db.models.invitation",
     "app.db.models.ws_ticket",

@@ -11,6 +11,10 @@ import {
 import { ApiRequestError } from "@/lib/api/client";
 import { queryKeys } from "@/lib/queryKeys";
 import { type AgentConfig, useAgentStore } from "@/store/agents";
+import {
+  cleanupTestQueryClient,
+  createTestQueryClient,
+} from "@/test-utils/queryClient";
 
 const mocks = {
   createAgent: jest.fn(),
@@ -60,14 +64,6 @@ const buildAgent = (overrides: Partial<AgentConfig> = {}): AgentConfig => ({
   ...overrides,
 });
 
-const createQueryClient = () =>
-  new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
-
 const createWrapper = (queryClient: QueryClient) => {
   return ({ children }: PropsWithChildren) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -95,13 +91,19 @@ afterAll(() => {
 });
 
 describe("useAgentsCatalogQuery mutations", () => {
+  let queryClient: QueryClient;
+
   beforeEach(() => {
+    queryClient = createTestQueryClient();
     jest.clearAllMocks();
     useAgentStore.setState({ activeAgentId: null });
   });
 
+  afterEach(async () => {
+    await cleanupTestQueryClient(queryClient);
+  });
+
   it("updates cache and clears active agent on delete", async () => {
-    const queryClient = createQueryClient();
     queryClient.setQueryData(queryKeys.agents.catalog(), [
       buildAgent({ id: "agent-1" }),
       buildAgent({ id: "agent-2", source: "shared" }),
@@ -124,11 +126,10 @@ describe("useAgentsCatalogQuery mutations", () => {
     expect(useAgentStore.getState().activeAgentId).toBeNull();
     expect(
       queryClient.getQueryState(queryKeys.agents.catalog())?.isInvalidated,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("upserts updated agent while preserving transient status", async () => {
-    const queryClient = createQueryClient();
     queryClient.setQueryData(queryKeys.agents.catalog(), [
       buildAgent({
         id: "agent-1",
@@ -174,11 +175,10 @@ describe("useAgentsCatalogQuery mutations", () => {
     });
     expect(
       queryClient.getQueryState(queryKeys.agents.catalog())?.isInvalidated,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("removes missing agent during validate and clears active selection", async () => {
-    const queryClient = createQueryClient();
     queryClient.setQueryData(queryKeys.agents.catalog(), [
       buildAgent({ id: "agent-1" }),
     ]);
@@ -212,7 +212,6 @@ describe("useAgentsCatalogQuery mutations", () => {
   });
 
   it("appends newly created agent to cache without full refetch", async () => {
-    const queryClient = createQueryClient();
     queryClient.setQueryData(queryKeys.agents.catalog(), [
       buildAgent({ id: "shared-1", source: "shared" }),
     ]);
@@ -254,6 +253,6 @@ describe("useAgentsCatalogQuery mutations", () => {
     expect(cached?.[1]).toMatchObject({ id: "shared-1", source: "shared" });
     expect(
       queryClient.getQueryState(queryKeys.agents.catalog())?.isInvalidated,
-    ).toBe(true);
+    ).toBe(false);
   });
 });

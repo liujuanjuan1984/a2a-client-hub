@@ -4,7 +4,7 @@ This module contains JWT token handling, password hashing, and authentication ut
 """
 
 from datetime import timedelta
-from typing import Optional, Union
+from typing import Optional, Union, cast
 from uuid import UUID, uuid4
 
 import jwt
@@ -17,26 +17,21 @@ from app.utils.timezone_util import utc_now
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Dummy hash for mitigating timing attacks during authentication
+DUMMY_PASSWORD_HASH = "$2b$12$KIXeW.1LzBwvS./Hk.yQ1..E3.eD/.hLwQcE/M1zQ3X.qC0TqYFOW"
+
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
 
 
 def _jwt_signing_key() -> str:
-    algorithm = (settings.jwt_algorithm or "").upper()
-    if algorithm.startswith(("RS", "ES")):
-        if not settings.jwt_private_key_pem:
-            raise RuntimeError("JWT private key is not configured")
-        return settings.jwt_private_key_pem
-    return settings.jwt_secret_key
+    # Key validity is enforced in Settings() during startup.
+    return cast(str, settings.jwt_private_key_pem)
 
 
 def _jwt_verification_key() -> str:
-    algorithm = (settings.jwt_algorithm or "").upper()
-    if algorithm.startswith(("RS", "ES")):
-        if not settings.jwt_public_key_pem:
-            raise RuntimeError("JWT public key is not configured")
-        return settings.jwt_public_key_pem
-    return settings.jwt_secret_key
+    # Key validity is enforced in Settings() during startup.
+    return cast(str, settings.jwt_public_key_pem)
 
 
 def create_jwt_token(

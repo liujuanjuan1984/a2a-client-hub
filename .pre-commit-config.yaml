@@ -1,7 +1,7 @@
 repos:
   # Python code formatting
   - repo: https://github.com/psf/black
-    rev: 23.12.1
+    rev: 26.1.0
     hooks:
       - id: black
         args: [--line-length=88]
@@ -9,7 +9,7 @@ repos:
 
   # Import sorting
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: 8.0.0
     hooks:
       - id: isort
         args: [--profile=black, --line-length=88]
@@ -17,7 +17,7 @@ repos:
 
   # Remove unused imports and variables
   - repo: https://github.com/pycqa/autoflake
-    rev: v2.2.1
+    rev: v2.3.3
     hooks:
       - id: autoflake
         args:
@@ -29,7 +29,7 @@ repos:
 
   # Fast Python linting
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.8
+    rev: v0.15.2
     hooks:
       - id: ruff
         args: [--fix]
@@ -52,7 +52,7 @@ repos:
 
   # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -61,9 +61,38 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
 
-  # Frontend checks (run only when frontend/ files are changed)
+  # Secret scanning
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: ^(frontend/package-lock\.json|backend/uv\.lock)$
+
+  # Shell script static checks
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=error]
+        files: ^(backend/scripts|frontend/scripts|scripts)/.*\.sh$
+
+  # Local checks
   - repo: local
     hooks:
+      - id: backend-mypy-changed
+        name: backend mypy (changed files only)
+        entry: env MYPY_INCLUDE_REGEX='^backend/app/utils/.*\.py$' bash backend/scripts/mypy_changed.sh
+        language: system
+        files: ^backend/.*\.py$
+
+      - id: bash-syntax-check
+        name: bash -n syntax check
+        entry: bash -n
+        language: system
+        files: ^(backend/scripts|frontend/scripts|scripts)/.*\.sh$
+
+      # Frontend checks (run only when frontend/ files are changed)
       - id: frontend-eslint
         name: frontend eslint
         entry: bash -lc 'cd frontend && npm run lint'

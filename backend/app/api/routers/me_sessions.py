@@ -12,9 +12,10 @@ from app.db.transaction import commit_safely
 from app.schemas.session_domain import (
     SessionContinueResponse,
     SessionListResponse,
-    SessionMessagesListResponse,
-    SessionMessagesMeta,
+    SessionMessageBlocksQueryRequest,
+    SessionMessageBlocksQueryResponse,
     SessionMessagesQueryRequest,
+    SessionMessagesQueryResponse,
     SessionQueryRequest,
     SessionViewItem,
 )
@@ -28,11 +29,18 @@ _UPSTREAM_ERRORS = {
     "upstream_error",
     "runtime_invalid",
 }
+_FORBIDDEN_ERRORS = {"session_forbidden"}
 
 
 def _status_code_for_session_error(detail: str) -> int:
     if detail == "session_not_found":
         return 404
+    if detail == "message_not_found":
+        return 404
+    if detail == "block_not_found":
+        return 404
+    if detail in _FORBIDDEN_ERRORS:
+        return 403
     if detail in _UPSTREAM_ERRORS:
         return 502
     return 400
@@ -51,6 +59,7 @@ async def list_unified_sessions(
         page=payload.page,
         size=payload.size,
         source=payload.source,
+        agent_id=payload.agent_id,
     )
     if db_mutated:
         await commit_safely(db)
@@ -62,7 +71,7 @@ async def list_unified_sessions(
 
 @router.post(
     "/{conversation_id}/messages:query",
-    response_model=SessionMessagesListResponse,
+    response_model=SessionMessagesQueryResponse,
 )
 async def list_unified_session_messages(
     *,
@@ -70,14 +79,14 @@ async def list_unified_session_messages(
     payload: SessionMessagesQueryRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
-) -> SessionMessagesListResponse:
+) -> SessionMessagesQueryResponse:
     try:
         items, extra, db_mutated = await session_hub_service.list_messages(
             db,
             user_id=current_user.id,
             conversation_id=conversation_id,
-            page=payload.page,
-            size=payload.size,
+            before=payload.before,
+            limit=payload.limit,
         )
     except ValueError as exc:
         detail = str(exc)
@@ -87,11 +96,41 @@ async def list_unified_session_messages(
         ) from exc
     if db_mutated:
         await commit_safely(db)
-    return SessionMessagesListResponse(
-        items=items,
-        pagination=extra["pagination"],
-        meta=SessionMessagesMeta(**extra["meta"]),
+    return SessionMessagesQueryResponse.model_validate(
+        {
+            "items": items,
+            "pageInfo": extra["pageInfo"],
+        }
     )
+
+
+@router.post(
+    "/{conversation_id}/blocks:query",
+    response_model=SessionMessageBlocksQueryResponse,
+)
+async def list_unified_session_message_blocks(
+    *,
+    conversation_id: str,
+    payload: SessionMessageBlocksQueryRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> SessionMessageBlocksQueryResponse:
+    try:
+        items, db_mutated = await session_hub_service.list_message_blocks(
+            db,
+            user_id=current_user.id,
+            conversation_id=conversation_id,
+            block_ids=payload.block_ids,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        raise HTTPException(
+            status_code=_status_code_for_session_error(detail),
+            detail=detail,
+        ) from exc
+    if db_mutated:
+        await commit_safely(db)
+    return SessionMessageBlocksQueryResponse.model_validate({"items": items})
 
 
 @router.post("/{conversation_id}:continue", response_model=SessionContinueResponse)

@@ -13,11 +13,21 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: "#05070a",
-        surface: "#0f1218",
-        primary: "#5c6afb",
-        accent: "#ffb347",
-        muted: "#6b7280",
+        background: "#0B0E14",
+        surface: "#171B24",
+        primary: "#FACC15",
+        accent: "#FFFFFF",
+        muted: "#64748B",
+        "neo-yellow": "#FACC15",
+        "neo-green": "#34D399",
+        "neo-bg": "#0B0E14",
+        "neo-text": "#FFFFFF",
+      },
+      borderWidth: {
+        neo: "1px",
+      },
+      boxShadow: {
+        neo: "0px 4px 12px rgba(0,0,0,0.5)",
       },
     },
   },

@@ -10,6 +10,7 @@ from uuid import uuid4
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from sqlalchemy import and_, func, select, text
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -39,6 +40,17 @@ _dispatch_workers_started = False
 _dispatch_workers_lock = asyncio.Lock()
 _dispatch_queue: asyncio.Queue[ClaimedA2AScheduleTask] = asyncio.Queue()
 _dispatch_worker_tasks: set[asyncio.Task[None]] = set()
+_NON_SQLA_DB_CONNECTIVITY_ERRORS = (ConnectionError, OSError)
+
+
+def _is_db_connectivity_issue(exc: Exception) -> bool:
+    if isinstance(exc, _NON_SQLA_DB_CONNECTIVITY_ERRORS):
+        return True
+    if isinstance(exc, (OperationalError, InterfaceError)):
+        return True
+    if isinstance(exc, DBAPIError):
+        return bool(getattr(exc, "connection_invalidated", False))
+    return False
 
 
 def _execution_metadata(
@@ -57,12 +69,20 @@ def _execution_metadata(
 
 async def _ensure_task_session(*, db, task: A2AScheduleTask) -> ConversationThread:
     now = utc_now()
-    
+
     # Check conversation_policy
-    if task.conversation_policy == A2AScheduleTask.POLICY_REUSE and task.conversation_id:
-        stmt = select(ConversationThread).where(ConversationThread.id == task.conversation_id)
+    if (
+        task.conversation_policy == A2AScheduleTask.POLICY_REUSE
+        and task.conversation_id
+    ):
+        stmt = select(ConversationThread).where(
+            ConversationThread.id == task.conversation_id
+        )
         existing_thread = await db.scalar(stmt)
-        if existing_thread and existing_thread.status != ConversationThread.STATUS_ARCHIVED:
+        if (
+            existing_thread
+            and existing_thread.status != ConversationThread.STATUS_ARCHIVED
+        ):
             existing_thread.last_active_at = now
             return existing_thread
 
@@ -90,26 +110,35 @@ async def _refresh_ops_metrics() -> None:
             A2AScheduleTask.current_run_id.is_not(None),
         )
     )
-    async with AsyncSessionLocal() as db:
-        running_count = int((await db.scalar(running_stmt)) or 0)
-        ops_metrics.set_schedule_running_task_count(running_count)
-        try:
-            idle_in_tx_count = int(
-                (
-                    await db.scalar(
-                        text(
-                            "SELECT count(*) FROM pg_stat_activity "
-                            "WHERE datname = current_database() "
-                            "AND state = 'idle in transaction'"
+    try:
+        async with AsyncSessionLocal() as db:
+            running_count = int((await db.scalar(running_stmt)) or 0)
+            ops_metrics.set_schedule_running_task_count(running_count)
+            try:
+                idle_in_tx_count = int(
+                    (
+                        await db.scalar(
+                            text(
+                                "SELECT count(*) FROM pg_stat_activity "
+                                "WHERE datname = current_database() "
+                                "AND state = 'idle in transaction'"
+                            )
                         )
                     )
+                    or 0
                 )
-                or 0
-            )
-            ops_metrics.set_db_idle_in_tx_count(idle_in_tx_count)
-        except Exception:
-            # pg_stat_activity may be unavailable depending on DB permissions.
-            pass
+                ops_metrics.set_db_idle_in_tx_count(idle_in_tx_count)
+            except Exception:
+                # pg_stat_activity may be unavailable depending on DB permissions.
+                pass
+    except Exception as exc:
+        if not _is_db_connectivity_issue(exc):
+            raise
+        logger.warning(
+            "Skip schedule ops metrics refresh due to database connectivity issue.",
+            exc_info=exc,
+            extra={"phase": "metrics"},
+        )
 
 
 async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
@@ -413,11 +442,21 @@ async def _ensure_schedule_workers_started() -> None:
 async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
     # Recover stale "running" tasks first so the UI doesn't get stuck forever if a
     # worker crashes after claiming a task but before persisting the execution.
-    async with AsyncSessionLocal() as db:
-        recovered = await a2a_schedule_service.recover_stale_running_tasks(
-            db,
-            timeout_seconds=int(settings.a2a_schedule_run_lease_seconds),
+    try:
+        async with AsyncSessionLocal() as db:
+            recovered = await a2a_schedule_service.recover_stale_running_tasks(
+                db,
+                timeout_seconds=int(settings.a2a_schedule_run_lease_seconds),
+            )
+    except Exception as exc:
+        if not _is_db_connectivity_issue(exc):
+            raise
+        logger.warning(
+            "Skip A2A schedule dispatch: database connectivity issue during stale-task recovery.",
+            exc_info=exc,
+            extra={"phase": "recovery"},
         )
+        return
     if recovered:
         logger.warning(
             "Recovered %d stale scheduled A2A task(s).",
@@ -429,8 +468,18 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
 
     enqueued = 0
     while enqueued < max(batch_size, 1):
-        async with AsyncSessionLocal() as db:
-            claim = await a2a_schedule_service.claim_next_due_task(db)
+        try:
+            async with AsyncSessionLocal() as db:
+                claim = await a2a_schedule_service.claim_next_due_task(db)
+        except Exception as exc:
+            if not _is_db_connectivity_issue(exc):
+                raise
+            logger.warning(
+                "Skip A2A schedule dispatch: database connectivity issue while claiming due tasks.",
+                exc_info=exc,
+                extra={"phase": "claim"},
+            )
+            return
 
         if claim is None:
             break

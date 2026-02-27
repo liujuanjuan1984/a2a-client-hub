@@ -7,6 +7,9 @@ variable management.
 from typing import Any
 from urllib.parse import urlparse
 
+from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from dotenv import load_dotenv
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
@@ -151,11 +154,6 @@ class Settings(BaseSettings):
         default=True,
         alias="REQUIRE_INVITATION_FOR_REGISTRATION",
         description="Require a valid invitation code for new registrations after the first user",
-    )
-    jwt_secret_key: str = Field(
-        ...,
-        alias="JWT_SECRET_KEY",
-        description="Legacy compatibility secret; JWT signing uses asymmetric PEM keys",
     )
     jwt_algorithm: str = Field(
         default="RS256",
@@ -325,6 +323,58 @@ class Settings(BaseSettings):
             host = host[1:-1]
         return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost")
 
+    @staticmethod
+    def _load_jwt_private_key(private_key_pem: str) -> Any:
+        try:
+            return serialization.load_pem_private_key(
+                private_key_pem.encode("utf-8"),
+                password=None,
+            )
+        except (TypeError, ValueError, UnsupportedAlgorithm) as exc:
+            raise ValueError(
+                "JWT_PRIVATE_KEY_PEM must be a valid unencrypted PEM private key"
+            ) from exc
+
+    @staticmethod
+    def _load_jwt_public_key(public_key_pem: str) -> Any:
+        try:
+            return serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+        except (TypeError, ValueError, UnsupportedAlgorithm) as exc:
+            raise ValueError(
+                "JWT_PUBLIC_KEY_PEM must be a valid PEM public key"
+            ) from exc
+
+    @classmethod
+    def _validate_jwt_key_material(
+        cls,
+        *,
+        algorithm: str,
+        private_key_pem: str,
+        public_key_pem: str,
+    ) -> None:
+        private_key = cls._load_jwt_private_key(private_key_pem)
+        public_key = cls._load_jwt_public_key(public_key_pem)
+
+        if algorithm.startswith("RS"):
+            if not isinstance(private_key, rsa.RSAPrivateKey) or not isinstance(
+                public_key, rsa.RSAPublicKey
+            ):
+                raise ValueError(
+                    "JWT_ALGORITHM with RS* requires RSA private/public key PEM values"
+                )
+        elif algorithm.startswith("ES"):
+            if not isinstance(
+                private_key, ec.EllipticCurvePrivateKey
+            ) or not isinstance(public_key, ec.EllipticCurvePublicKey):
+                raise ValueError(
+                    "JWT_ALGORITHM with ES* requires EC private/public key PEM values"
+                )
+
+        if private_key.public_key().public_numbers() != public_key.public_numbers():
+            raise ValueError(
+                "JWT_PRIVATE_KEY_PEM and JWT_PUBLIC_KEY_PEM must be a matching key pair"
+            )
+
     @model_validator(mode="after")
     def _validate_jwt_config(self) -> "Settings":
         if self.schema_name not in {
@@ -349,6 +399,11 @@ class Settings(BaseSettings):
                 "JWT_PRIVATE_KEY_PEM and JWT_PUBLIC_KEY_PEM are required for "
                 f"JWT_ALGORITHM={self.jwt_algorithm}"
             )
+        self._validate_jwt_key_material(
+            algorithm=algorithm,
+            private_key_pem=self.jwt_private_key_pem,
+            public_key_pem=self.jwt_public_key_pem,
+        )
 
         if self.jwt_access_token_ttl_seconds <= 0:
             raise ValueError("JWT_ACCESS_TOKEN_TTL_SECONDS must be positive")
@@ -551,11 +606,6 @@ class Settings(BaseSettings):
         alias="OPENCODE_SESSIONS_REFRESH_CONCURRENCY",
         description="Maximum concurrent upstream refreshes when updating cached OpenCode session listings.",
     )
-    opencode_stream_metadata_max_chars: int = Field(
-        default=12000,
-        alias="OPENCODE_STREAM_METADATA_MAX_CHARS",
-        description="Maximum characters persisted per streamed message block content.",
-    )
 
     model_config = ConfigDict(
         env_file=".env",
@@ -615,17 +665,6 @@ class Settings(BaseSettings):
             raise ValueError("OPENCODE_SESSIONS_REFRESH_CONCURRENCY must be positive")
         if value > 20:
             raise ValueError("OPENCODE_SESSIONS_REFRESH_CONCURRENCY must not exceed 20")
-        return value
-
-    @field_validator("opencode_stream_metadata_max_chars")
-    @classmethod
-    def validate_opencode_stream_metadata_max_chars(cls, value: int) -> int:
-        if value <= 0:
-            raise ValueError("OPENCODE_STREAM_METADATA_MAX_CHARS must be positive")
-        if value > 1_000_000:
-            raise ValueError(
-                "OPENCODE_STREAM_METADATA_MAX_CHARS must not exceed 1000000"
-            )
         return value
 
     @field_validator("a2a_stream_heartbeat_interval")
