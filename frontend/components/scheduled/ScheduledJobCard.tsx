@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Switch, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
+import { ExpandToggle } from "@/components/ui/ExpandToggle";
 import {
   type IntervalTimePoint,
   type ScheduledJob,
@@ -199,14 +200,10 @@ export function ScheduledJobCard({
             iconLeft="create-outline"
             onPress={onEdit}
           />
-          <Button
+          <ExpandToggle
             label={promptExpanded ? "Less" : "Info"}
-            size="xs"
-            variant={promptExpanded ? "primary" : "secondary"}
-            iconLeft={
-              promptExpanded ? "chevron-up" : "information-circle-outline"
-            }
-            onPress={() => setPromptExpanded(!promptExpanded)}
+            expanded={promptExpanded}
+            onToggle={() => setPromptExpanded(!promptExpanded)}
           />
           <Button
             label={executionsOpen ? "Hide" : "History"}

@@ -9,6 +9,8 @@ import {
   View,
 } from "react-native";
 
+import { ExpandToggle } from "../ui/ExpandToggle";
+
 import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
 import { COLLAPSED_TEXT_LINES, shouldCollapseByLength } from "@/lib/chat-utils";
 import { toast } from "@/lib/toast";
@@ -135,33 +137,12 @@ export function ChatMessageItem({
   const plainTextExpanded = expandedTextByBlockId[message.id] ?? false;
   const plainShouldCollapse =
     hasPlainContent && shouldCollapseByLength(message.content);
-  const plainTopToggleAccessibilityLabel = plainTextExpanded
-    ? "Collapse full text"
-    : "Expand full text";
-  const plainTopToggleLabel = plainTextExpanded ? "Show less" : "Read more";
   const canRetry =
     isLastMessage &&
     message.role === "agent" &&
     sessionStreamState &&
     ["error", "recoverable"].includes(sessionStreamState);
   const userCopyButtonPositionClass = "right-0";
-  const renderBottomCollapseAction = (testId: string, onPress: () => void) => {
-    return (
-      <View className="mt-2 items-end">
-        <Pressable
-          className="rounded-lg bg-black/20 px-2.5 py-1"
-          accessibilityRole="button"
-          accessibilityLabel="Collapse full text"
-          testID={testId}
-          onPress={onPress}
-        >
-          <Text className="text-[11px] font-medium text-slate-500">
-            Show less
-          </Text>
-        </Pressable>
-      </View>
-    );
-  };
 
   return (
     <View
@@ -210,24 +191,13 @@ export function ChatMessageItem({
                       blockIndex > 0 ? "mt-3" : ""
                     } rounded-xl bg-black/40 p-3`}
                   >
-                    <Pressable
-                      onPress={() => {
+                    <ExpandToggle
+                      expanded={expanded}
+                      onToggle={() => {
                         handleToggle().catch(() => undefined);
                       }}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        expanded
-                          ? "Hide reasoning details"
-                          : "Show reasoning details"
-                      }
-                    >
-                      <View className="flex-row items-center gap-1.5">
-                        <View className="h-1 w-1 rounded-full bg-slate-600" />
-                        <Text className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                          {expanded ? "Hide Reasoning" : "Show Reasoning"}
-                        </Text>
-                      </View>
-                    </Pressable>
+                      type="Reasoning"
+                    />
                     {expanded ? (
                       <View>
                         <Text
@@ -236,10 +206,13 @@ export function ChatMessageItem({
                         >
                           {blockText}
                         </Text>
-                        {renderBottomCollapseAction(
-                          `chat-message-${blockId}-collapse-bottom`,
-                          () => toggleReasoning(blockId),
-                        )}
+                        <View className="mt-2 items-end">
+                          <ExpandToggle
+                            expanded
+                            onToggle={() => toggleReasoning(blockId)}
+                            testID={`chat-message-${blockId}-collapse-bottom`}
+                          />
+                        </View>
                       </View>
                     ) : null}
                   </View>
@@ -269,30 +242,13 @@ export function ChatMessageItem({
                       blockIndex > 0 ? "mt-3" : ""
                     } rounded-xl bg-black/40 p-3`}
                   >
-                    <Pressable
-                      onPress={() => {
+                    <ExpandToggle
+                      expanded={expanded}
+                      onToggle={() => {
                         handleToggle().catch(() => undefined);
                       }}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        expanded
-                          ? "Hide tool call details"
-                          : "Show tool call details"
-                      }
-                    >
-                      <View className="flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-1.5">
-                          <Ionicons
-                            name="construct"
-                            size={10}
-                            color="#64748B"
-                          />
-                          <Text className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                            {expanded ? "Hide Tool Call" : "Show Tool Call"}
-                          </Text>
-                        </View>
-                      </View>
-                    </Pressable>
+                      type="Tool Call"
+                    />
 
                     {expanded ? (
                       <View>
@@ -302,10 +258,13 @@ export function ChatMessageItem({
                         >
                           {blockText}
                         </Text>
-                        {renderBottomCollapseAction(
-                          `chat-message-${blockId}-collapse-bottom`,
-                          () => toggleToolCall(blockId),
-                        )}
+                        <View className="mt-2 items-end">
+                          <ExpandToggle
+                            expanded
+                            onToggle={() => toggleToolCall(blockId)}
+                            testID={`chat-message-${blockId}-collapse-bottom`}
+                          />
+                        </View>
                       </View>
                     ) : null}
                   </View>
@@ -317,12 +276,6 @@ export function ChatMessageItem({
                 }
                 const blockExpanded = expandedTextByBlockId[blockId] ?? false;
                 const shouldCollapse = shouldCollapseByLength(blockText);
-                const topToggleAccessibilityLabel = blockExpanded
-                  ? "Collapse full text"
-                  : "Expand full text";
-                const topToggleLabel = blockExpanded
-                  ? "Show less"
-                  : "Read more";
 
                 return (
                   <View key={blockId}>
@@ -340,24 +293,23 @@ export function ChatMessageItem({
                       {blockText}
                     </Text>
                     {shouldCollapse ? (
-                      <Pressable
-                        className="mt-2 rounded-lg bg-black/20 px-2.5 py-1"
-                        accessibilityRole="button"
-                        accessibilityLabel={topToggleAccessibilityLabel}
-                        testID={`chat-message-${blockId}-expand`}
-                        onPress={() => toggleTextExpansion(blockId)}
-                      >
-                        <Text className="text-[11px] font-medium text-slate-500">
-                          {topToggleLabel}
-                        </Text>
-                      </Pressable>
+                      <View className="mt-2">
+                        <ExpandToggle
+                          expanded={blockExpanded}
+                          onToggle={() => toggleTextExpansion(blockId)}
+                          testID={`chat-message-${blockId}-expand`}
+                        />
+                      </View>
                     ) : null}
-                    {shouldCollapse && blockExpanded
-                      ? renderBottomCollapseAction(
-                          `chat-message-${blockId}-collapse-bottom`,
-                          () => toggleTextExpansion(blockId),
-                        )
-                      : null}
+                    {shouldCollapse && blockExpanded ? (
+                      <View className="mt-2 items-end">
+                        <ExpandToggle
+                          expanded
+                          onToggle={() => toggleTextExpansion(blockId)}
+                          testID={`chat-message-${blockId}-collapse-bottom`}
+                        />
+                      </View>
+                    ) : null}
                   </View>
                 );
               }
@@ -404,24 +356,23 @@ export function ChatMessageItem({
                 </View>
               )}
               {plainShouldCollapse ? (
-                <Pressable
-                  className="mt-2 rounded-lg bg-black/20 px-2.5 py-1"
-                  accessibilityRole="button"
-                  accessibilityLabel={plainTopToggleAccessibilityLabel}
-                  testID={`chat-message-${message.id}-expand`}
-                  onPress={() => toggleTextExpansion(message.id)}
-                >
-                  <Text className="text-[11px] font-medium text-slate-500">
-                    {plainTopToggleLabel}
-                  </Text>
-                </Pressable>
+                <View className="mt-2">
+                  <ExpandToggle
+                    expanded={plainTextExpanded}
+                    onToggle={() => toggleTextExpansion(message.id)}
+                    testID={`chat-message-${message.id}-expand`}
+                  />
+                </View>
               ) : null}
-              {plainShouldCollapse && plainTextExpanded
-                ? renderBottomCollapseAction(
-                    `chat-message-${message.id}-collapse-bottom`,
-                    () => toggleTextExpansion(message.id),
-                  )
-                : null}
+              {plainShouldCollapse && plainTextExpanded ? (
+                <View className="mt-2 items-end">
+                  <ExpandToggle
+                    expanded
+                    onToggle={() => toggleTextExpansion(message.id)}
+                    testID={`chat-message-${message.id}-collapse-bottom`}
+                  />
+                </View>
+              ) : null}
             </View>
           )}
           {message.status === "streaming" ? (
