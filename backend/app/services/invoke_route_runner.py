@@ -104,6 +104,14 @@ def _normalize_query_for_invoke_guard(query: str) -> str:
     return " ".join(query.split())
 
 
+def _is_interrupt_requested(payload: A2AAgentInvokeRequest) -> bool:
+    metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
+    extensions = metadata.get("extensions")
+    if not isinstance(extensions, dict):
+        return False
+    return extensions.get("interrupt") is True
+
+
 def _build_invoke_guard_key(
     *,
     user_id: UUID,
@@ -226,6 +234,23 @@ async def _register_inflight_invoke(
         conversation_id=state.local_session_id,
         gateway=gateway,
         resolved=resolved,
+    )
+
+
+async def _preempt_previous_invoke_if_requested(
+    *,
+    state: _InvokeState,
+    payload: A2AAgentInvokeRequest,
+    user_id: UUID,
+) -> None:
+    if state.local_session_id is None:
+        return
+    if not _is_interrupt_requested(payload):
+        return
+    await session_hub_service.preempt_inflight_invoke(
+        user_id=user_id,
+        conversation_id=state.local_session_id,
+        reason="invoke_interrupt",
     )
 
 
@@ -894,6 +919,11 @@ async def run_http_invoke(
         agent_source=agent_source,
         payload=payload,
     )
+    await _preempt_previous_invoke_if_requested(
+        state=state,
+        payload=payload,
+        user_id=user_id,
+    )
     await _register_inflight_invoke(
         state=state,
         user_id=user_id,
@@ -996,6 +1026,11 @@ async def run_background_invoke(
         agent_source=agent_source,
         payload=payload,
     )
+    await _preempt_previous_invoke_if_requested(
+        state=state,
+        payload=payload,
+        user_id=user_id,
+    )
     await _register_inflight_invoke(
         state=state,
         user_id=user_id,
@@ -1069,6 +1104,11 @@ async def run_ws_invoke(
         agent_id=agent_id,
         agent_source=agent_source,
         payload=payload,
+    )
+    await _preempt_previous_invoke_if_requested(
+        state=state,
+        payload=payload,
+        user_id=user_id,
     )
     await _register_inflight_invoke(
         state=state,

@@ -246,6 +246,9 @@ export const useChatStore = create<ChatState>()(
         const trimmed = content.trim();
         if (!trimmed) return;
 
+        const previousSession = get().sessions[conversationId];
+        const shouldInterruptPrevious =
+          previousSession?.streamState === "streaming";
         get().cancelMessage(conversationId);
 
         const userMessage = {
@@ -292,6 +295,7 @@ export const useChatStore = create<ChatState>()(
         const payload = buildInvokePayload(trimmed, session, conversationId, {
           userMessageId: userMessage.id,
           agentMessageId: agentMessage.id,
+          interrupt: shouldInterruptPrevious,
         });
 
         await executeChatRuntime(
@@ -319,6 +323,7 @@ export const useChatStore = create<ChatState>()(
           return;
         }
 
+        const shouldInterruptPrevious = session?.streamState === "streaming";
         get().cancelMessage(conversationId);
 
         const existingAgentMessage = messages.find(
@@ -366,6 +371,7 @@ export const useChatStore = create<ChatState>()(
           {
             userMessageId,
             agentMessageId,
+            interrupt: shouldInterruptPrevious,
           },
         );
         await executeChatRuntime(

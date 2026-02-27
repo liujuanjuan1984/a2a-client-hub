@@ -203,6 +203,61 @@ async def test_run_http_invoke_route_stream_maps_value_error_to_http_exception(
 
 
 @pytest.mark.asyncio
+async def test_run_http_invoke_route_stream_maps_interrupt_failure_to_http_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoke_route_runner._invoke_inflight_keys.clear()
+
+    async def fake_run_http_invoke_with_session_recovery(**kwargs):  # noqa: ARG001
+        raise ValueError("invoke_interrupt_failed")
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "run_http_invoke_with_session_recovery",
+        fake_run_http_invoke_with_session_recovery,
+    )
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/a2a", name="Demo Agent")
+    )
+
+    async def runtime_builder():
+        return runtime
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "run long task",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await invoke_route_runner.run_http_invoke_route(
+            db=None,
+            user_id=uuid4(),
+            agent_id=uuid4(),
+            agent_source="shared",
+            payload=payload,
+            stream=True,
+            gateway=object(),
+            runtime_builder=runtime_builder,
+            runtime_not_found_errors=(RuntimeError,),
+            runtime_not_found_status_code=404,
+            runtime_validation_errors=(ValueError,),
+            runtime_validation_status_code=400,
+            validate_message=lambda _: [],
+            logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+            invoke_log_message="test invoke",
+            invoke_log_extra_builder=lambda request, runtime: {},  # noqa: ARG001
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "invoke_interrupt_failed"
+    assert invoke_route_runner._invoke_inflight_keys == {}
+
+
+@pytest.mark.asyncio
 async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.MonkeyPatch):
     captured: dict[str, object] = {}
 
@@ -448,6 +503,89 @@ def test_normalize_optional_message_id_validates_uuid_inputs() -> None:
     )  # noqa: SLF001
     with pytest.raises(ValueError, match="invalid_message_id"):
         invoke_route_runner._normalize_optional_message_id("not-a-uuid")  # noqa: SLF001
+
+
+def test_is_interrupt_requested_from_metadata_extensions() -> None:
+    payload_interrupt = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {"extensions": {"interrupt": True}},
+        }
+    )
+    payload_normal = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {"extensions": {"interrupt": False}},
+        }
+    )
+
+    assert (
+        invoke_route_runner._is_interrupt_requested(payload_interrupt) is True
+    )  # noqa: SLF001
+    assert (
+        invoke_route_runner._is_interrupt_requested(payload_normal) is False
+    )  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_preempt_previous_invoke_only_when_interrupt_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        user_message_id=None,
+    )
+    called: list[str] = []
+
+    async def fake_preempt_inflight_invoke(
+        *,
+        user_id,  # noqa: ANN001, ARG001
+        conversation_id,  # noqa: ANN001, ARG001
+        reason,  # noqa: ANN001
+    ) -> bool:
+        called.append(str(reason))
+        return True
+
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "preempt_inflight_invoke",
+        fake_preempt_inflight_invoke,
+    )
+
+    payload_normal = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "q1",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+    await invoke_route_runner._preempt_previous_invoke_if_requested(  # noqa: SLF001
+        state=state,
+        payload=payload_normal,
+        user_id=uuid4(),
+    )
+    assert called == []
+
+    payload_interrupt = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "q2",
+            "conversationId": str(uuid4()),
+            "metadata": {"extensions": {"interrupt": True}},
+        }
+    )
+    await invoke_route_runner._preempt_previous_invoke_if_requested(  # noqa: SLF001
+        state=state,
+        payload=payload_interrupt,
+        user_id=uuid4(),
+    )
+    assert called == ["invoke_interrupt"]
 
 
 @pytest.mark.asyncio

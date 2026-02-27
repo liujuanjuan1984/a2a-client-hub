@@ -50,6 +50,11 @@ def test_status_code_and_http_error_mapping_normalizes_inputs() -> None:
         ws_error_code_for_invoke_session_error("message_id_conflict")
         == "message_id_conflict"
     )
+    assert status_code_for_invoke_session_error("invoke_interrupt_failed") == 409
+    assert (
+        ws_error_code_for_invoke_session_error("invoke_interrupt_failed")
+        == "invoke_interrupt_failed"
+    )
     assert (
         ws_error_code_for_invoke_session_error("invalid_message_id")
         == "invalid_message_id"

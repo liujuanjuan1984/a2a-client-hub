@@ -60,6 +60,8 @@ class _InflightInvokeEntry:
 
 _inflight_invokes_lock = asyncio.Lock()
 _inflight_invokes: dict[tuple[str, str], _InflightInvokeEntry] = {}
+_INFLIGHT_TASK_BIND_WAIT_SECONDS = 0.8
+_INFLIGHT_TASK_BIND_POLL_SECONDS = 0.05
 
 
 class SessionHubService:
@@ -496,6 +498,78 @@ class SessionHubService:
                 gateway=current.gateway,
                 resolved=current.resolved,
             )
+
+    async def _wait_for_inflight_task_id(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        token: str,
+    ) -> _InflightInvokeEntry | None:
+        deadline = asyncio.get_running_loop().time() + _INFLIGHT_TASK_BIND_WAIT_SECONDS
+        while True:
+            snapshot = await self._get_inflight_invoke_snapshot(
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
+            if snapshot is None:
+                return None
+            if snapshot.token != token:
+                return snapshot
+            if snapshot.task_id:
+                return snapshot
+
+            now = asyncio.get_running_loop().time()
+            if now >= deadline:
+                return snapshot
+            await asyncio.sleep(_INFLIGHT_TASK_BIND_POLL_SECONDS)
+
+    async def preempt_inflight_invoke(
+        self,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        reason: str,
+    ) -> bool:
+        snapshot = await self._get_inflight_invoke_snapshot(
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+        if snapshot is None:
+            return False
+
+        snapshot = await self._wait_for_inflight_task_id(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            token=snapshot.token,
+        )
+        if snapshot is None:
+            return False
+
+        if (
+            not snapshot.task_id
+            or snapshot.gateway is None
+            or snapshot.resolved is None
+        ):
+            raise ValueError("invoke_interrupt_failed")
+
+        cancel_result = await snapshot.gateway.cancel_task(
+            resolved=snapshot.resolved,
+            task_id=snapshot.task_id,
+            metadata={"source": reason},
+        )
+        success = bool(cancel_result.get("success"))
+        error_code = normalize_non_empty_text(
+            str(cancel_result.get("error_code") or "")
+        )
+        if success or error_code in {"task_not_found", "task_not_cancelable"}:
+            await self.unregister_inflight_invoke(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                token=snapshot.token,
+            )
+            return True
+        raise ValueError("invoke_interrupt_failed")
 
     async def cancel_session(
         self,
