@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Any, Dict, Literal, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, case, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,16 +60,18 @@ class SessionHubService:
         source: Optional[SessionSource],
         agent_id: Optional[UUID],
     ) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
-        page_items = await self._list_local_sessions(
+        offset = (page - 1) * size if page > 0 else 0
+        limit = size if size > 0 else None
+
+        page_items, total = await self._list_local_sessions(
             db,
             user_id=user_id,
             source=source,
             agent_id=agent_id,
+            limit=limit,
+            offset=offset,
         )
-        total = len(page_items)
         pages = (total + size - 1) // size if size else 0
-        offset = (page - 1) * size
-        page_items = page_items[offset : offset + size]
 
         pagination = {
             "page": page,
@@ -86,26 +88,47 @@ class SessionHubService:
         user_id: UUID,
         source: Optional[SessionSource],
         agent_id: Optional[UUID],
-    ) -> list[dict[str, Any]]:
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        filters = [
+            ConversationThread.user_id == user_id,
+            ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+            ConversationThread.source.in_(
+                [
+                    ConversationThread.SOURCE_MANUAL,
+                    ConversationThread.SOURCE_SCHEDULED,
+                ]
+            ),
+        ]
+        if source:
+            # SessionSource values ("manual", "scheduled") match ConversationThread constants
+            filters.append(ConversationThread.source == source)
+        if agent_id:
+            filters.append(ConversationThread.agent_id == agent_id)
+
+        # Count total
+        count_stmt = (
+            select(func.count())
+            .select_from(ConversationThread)
+            .where(and_(*filters))
+        )
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        # Query threads
         stmt = (
             select(ConversationThread)
-            .where(
-                and_(
-                    ConversationThread.user_id == user_id,
-                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
-                    ConversationThread.source.in_(
-                        [
-                            ConversationThread.SOURCE_MANUAL,
-                            ConversationThread.SOURCE_SCHEDULED,
-                        ]
-                    ),
-                )
-            )
+            .where(and_(*filters))
             .order_by(
                 ConversationThread.last_active_at.desc(),
                 ConversationThread.created_at.desc(),
             )
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        if offset is not None:
+            stmt = stmt.offset(offset)
+
         threads = list((await db.execute(stmt)).scalars().all())
         items: list[dict[str, Any]] = []
 
@@ -114,10 +137,6 @@ class SessionHubService:
                 thread_source=thread.source,
                 fallback_source=None,
             )
-            if source and source != resolved_source:
-                continue
-            if agent_id and thread.agent_id != agent_id:
-                continue
             title_fallback = (
                 "Scheduled Session"
                 if resolved_source == "scheduled"
@@ -144,7 +163,7 @@ class SessionHubService:
                 }
             )
 
-        return items
+        return items, total
 
     async def list_messages(
         self,
