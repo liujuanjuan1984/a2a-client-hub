@@ -21,6 +21,23 @@ from tests.utils import create_user
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
+async def _list_message_items(
+    async_db_session,
+    *,
+    user_id,
+    conversation_id: str,
+    limit: int = 50,
+):
+    items, _, _ = await session_hub_service.list_messages(
+        async_db_session,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        before=None,
+        limit=limit,
+    )
+    return items
+
+
 async def test_record_local_invoke_messages_updates_manual_placeholder_title(
     async_db_session,
 ):
@@ -274,33 +291,28 @@ async def test_record_local_invoke_messages_is_idempotent_with_key(
     assert messages[0].invoke_idempotency_key == "run:abc:scheduled"
     assert messages[-1].sender == "agent"
     assert messages[-1].invoke_idempotency_key == "run:abc:scheduled"
-    block_items, _, _ = await session_hub_service.query_message_blocks(
+    message_items = await _list_message_items(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
-        message_ids=[
-            str(first_refs["user_message_id"]),
-            str(first_refs["agent_message_id"]),
-        ],
-        mode="full",
     )
-    assert len(block_items) == 2
-    user_blocks = next(
+    assert len(message_items) == 2
+    user_item = next(
         item
-        for item in block_items
-        if item["messageId"] == str(first_refs["user_message_id"])
+        for item in message_items
+        if item["id"] == str(first_refs["user_message_id"])
     )
-    agent_blocks = next(
+    agent_item = next(
         item
-        for item in block_items
-        if item["messageId"] == str(first_refs["agent_message_id"])
+        for item in message_items
+        if item["id"] == str(first_refs["agent_message_id"])
     )
-    assert user_blocks["role"] == "user"
-    assert user_blocks["blockCount"] == 1
-    assert user_blocks["blocks"][0]["content"] == "hello"
-    assert agent_blocks["role"] == "agent"
-    assert agent_blocks["blockCount"] == 1
-    assert agent_blocks["blocks"][0]["content"] == "partial-updated"
+    assert user_item["role"] == "user"
+    assert len(user_item["blocks"]) == 1
+    assert user_item["blocks"][0]["content"] == "hello"
+    assert agent_item["role"] == "agent"
+    assert len(agent_item["blocks"]) == 1
+    assert agent_item["blocks"][0]["content"] == "partial-updated"
 
 
 async def test_record_local_invoke_messages_normalizes_overlong_idempotency_key(
@@ -361,31 +373,26 @@ async def test_record_local_invoke_messages_normalizes_overlong_idempotency_key(
     assert first_refs["agent_message_id"] == second_refs["agent_message_id"]
     assert messages[0].invoke_idempotency_key == expected_key
     assert messages[-1].invoke_idempotency_key == expected_key
-    block_items, _, _ = await session_hub_service.query_message_blocks(
+    message_items = await _list_message_items(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
-        message_ids=[
-            str(first_refs["user_message_id"]),
-            str(first_refs["agent_message_id"]),
-        ],
-        mode="full",
     )
-    assert len(block_items) == 2
-    user_blocks = next(
+    assert len(message_items) == 2
+    user_item = next(
         item
-        for item in block_items
-        if item["messageId"] == str(first_refs["user_message_id"])
+        for item in message_items
+        if item["id"] == str(first_refs["user_message_id"])
     )
-    agent_blocks = next(
+    agent_item = next(
         item
-        for item in block_items
-        if item["messageId"] == str(first_refs["agent_message_id"])
+        for item in message_items
+        if item["id"] == str(first_refs["agent_message_id"])
     )
-    assert user_blocks["blockCount"] == 1
-    assert user_blocks["blocks"][0]["content"] == "hello"
-    assert agent_blocks["blockCount"] == 1
-    assert agent_blocks["blocks"][0]["content"] == "partial-updated"
+    assert len(user_item["blocks"]) == 1
+    assert user_item["blocks"][0]["content"] == "hello"
+    assert len(agent_item["blocks"]) == 1
+    assert agent_item["blocks"][0]["content"] == "partial-updated"
 
 
 async def test_record_local_invoke_messages_uses_requested_message_ids(
@@ -586,19 +593,19 @@ async def test_record_local_invoke_messages_rejects_idempotency_query_conflict(
             idempotency_key="same-key",
         )
 
-    block_items, _, _ = await session_hub_service.query_message_blocks(
+    message_items = await _list_message_items(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
-        message_ids=[str(refs["user_message_id"])],
-        mode="full",
     )
-    assert len(block_items) == 1
-    assert block_items[0]["blockCount"] == 1
-    assert block_items[0]["blocks"][0]["content"] == "first-query"
+    user_item = next(
+        item for item in message_items if item["id"] == str(refs["user_message_id"])
+    )
+    assert len(user_item["blocks"]) == 1
+    assert user_item["blocks"][0]["content"] == "first-query"
 
 
-async def test_list_messages_returns_header_only_without_content_field(
+async def test_list_messages_returns_blocks_and_before_cursor(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -612,33 +619,74 @@ async def test_list_messages_returns_header_only_without_content_field(
     async_db_session.add(thread)
     await async_db_session.flush()
 
-    await session_hub_service.record_local_invoke_messages(
-        async_db_session,
-        session=thread,
-        source="manual",
-        user_id=user.id,
-        agent_id=uuid4(),
-        agent_source="personal",
-        query="hello",
-        response_content="should-not-be-read-from-header",
-        success=True,
-        context_id="ctx-1",
-    )
+    for index in range(3):
+        await session_hub_service.record_local_invoke_messages(
+            async_db_session,
+            session=thread,
+            source="manual",
+            user_id=user.id,
+            agent_id=uuid4(),
+            agent_source="personal",
+            query=f"hello-{index}",
+            response_content=f"world-{index}",
+            success=True,
+            context_id="ctx-1",
+            idempotency_key=f"timeline-{index}",
+        )
     await async_db_session.flush()
 
-    items, _, _ = await session_hub_service.list_messages(
+    first_items, first_extra, _ = await session_hub_service.list_messages(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
-        page=1,
-        size=20,
+        before=None,
+        limit=2,
     )
-    agent_items = [item for item in items if item.get("role") == "agent"]
-    assert len(agent_items) == 1
-    assert "content" not in agent_items[0]
+    assert len(first_items) == 2
+    assert first_extra["pageInfo"]["hasMoreBefore"] is True
+    first_cursor = first_extra["pageInfo"]["nextBefore"]
+    assert isinstance(first_cursor, str)
+    assert first_cursor
+    assert all("blocks" in item for item in first_items)
+    assert all(item["status"] == "done" for item in first_items)
+
+    second_items, second_extra, _ = await session_hub_service.list_messages(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+        before=first_cursor,
+        limit=2,
+    )
+    assert len(second_items) == 2
+    assert second_extra["pageInfo"]["nextBefore"] != first_cursor
+    assert {item["id"] for item in second_items}.isdisjoint(
+        {item["id"] for item in first_items}
+    )
 
 
-async def test_query_message_blocks_overwrite_snapshot_without_text_duplication(
+async def test_list_messages_rejects_invalid_cursor(async_db_session):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    with pytest.raises(ValueError, match="invalid_before_cursor"):
+        await session_hub_service.list_messages(
+            async_db_session,
+            user_id=user.id,
+            conversation_id=str(thread.id),
+            before="not-a-valid-cursor",
+            limit=8,
+        )
+
+
+async def test_list_messages_overwrite_snapshot_without_text_duplication(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -693,39 +741,17 @@ async def test_query_message_blocks_overwrite_snapshot_without_text_duplication(
     )
     await async_db_session.flush()
 
-    items, _, _ = await session_hub_service.list_messages(
+    message_items = await _list_message_items(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
-        page=1,
-        size=20,
     )
-    agent_items = [item for item in items if item.get("role") == "agent"]
+    agent_items = [item for item in message_items if item.get("role") == "agent"]
     assert len(agent_items) == 1
     agent_item = agent_items[0]
     assert agent_item["id"] == str(agent_message_id)
-    assert "content" not in agent_item
-    metadata = agent_item["metadata"]
-    assert isinstance(metadata, dict)
-    assert "message_blocks" not in metadata
-    assert metadata.get("block_count") == 1
-
-    block_items, meta, _ = await session_hub_service.query_message_blocks(
-        async_db_session,
-        user_id=user.id,
-        conversation_id=str(thread.id),
-        message_ids=[str(agent_message_id)],
-        mode="full",
-    )
-    assert meta["conversationId"] == str(thread.id)
-    assert meta["mode"] == "full"
-    assert len(block_items) == 1
-    assert block_items[0]["messageId"] == str(agent_message_id)
-    assert block_items[0]["role"] == "agent"
-    assert block_items[0]["blockCount"] == 1
-    assert block_items[0]["hasBlocks"] is True
     text_blocks = [
-        block for block in block_items[0]["blocks"] if block.get("type") == "text"
+        block for block in agent_item["blocks"] if block.get("type") == "text"
     ]
     assert len(text_blocks) == 1
     assert text_blocks[0]["content"] == "final content"
@@ -810,40 +836,21 @@ async def test_list_messages_overwrite_preserves_block_boundaries(
     )
     await async_db_session.flush()
 
-    items, _, _ = await session_hub_service.list_messages(
+    message_items = await _list_message_items(
         async_db_session,
         user_id=user.id,
         conversation_id=str(thread.id),
-        page=1,
-        size=20,
     )
-    agent_items = [item for item in items if item.get("role") == "agent"]
+    agent_items = [item for item in message_items if item.get("role") == "agent"]
     assert len(agent_items) == 1
     agent_item = agent_items[0]
     assert agent_item["id"] == str(agent_message_id)
-    metadata = agent_item["metadata"]
-    assert isinstance(metadata, dict)
-    assert "message_blocks" not in metadata
-    assert metadata.get("block_count") == 2
-
-    block_items, meta, _ = await session_hub_service.query_message_blocks(
-        async_db_session,
-        user_id=user.id,
-        conversation_id=str(thread.id),
-        message_ids=[str(agent_message_id)],
-        mode="full",
-    )
-    assert meta["mode"] == "full"
-    assert len(block_items) == 1
-    assert block_items[0]["blockCount"] == 2
-    assert block_items[0]["hasBlocks"] is True
     text_blocks = [
-        block for block in block_items[0]["blocks"] if block.get("type") == "text"
+        block for block in agent_item["blocks"] if block.get("type") == "text"
     ]
     assert len(text_blocks) == 2
     assert text_blocks[0]["content"] == "first final"
     assert text_blocks[1]["content"] == "second final"
-    assert "content" not in agent_item
 
 
 async def test_append_agent_message_block_update_unique_conflict_does_not_rollback_session(

@@ -17,10 +17,7 @@ import {
   isAuthFailureError,
 } from "@/lib/api/client";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
-import {
-  listSessionMessagesPage,
-  type SessionMessageItem,
-} from "@/lib/api/sessions";
+import { listSessionMessagesPage } from "@/lib/api/sessions";
 import { mergeExternalSessionRef, type AgentSession } from "@/lib/chat-utils";
 import {
   addConversationMessage,
@@ -361,63 +358,34 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
 
   const backfillHistoryAfterSequenceGap = async () => {
     const recovered = new Map<string, ChatMessage>();
-    const size = 100;
-    const maxPages = 20;
+    const limit = 50;
+    const maxPages = 6;
+    let before: string | null = null;
 
-    const collectPage = (items: SessionMessageItem[]) => {
+    const collectPage = (
+      items: Parameters<typeof mapSessionMessagesToChatMessages>[0],
+    ) => {
       const mapped = mapSessionMessagesToChatMessages(items);
       mapped.forEach((message) => {
         recovered.set(message.id, message);
       });
     };
 
-    const firstPage = await listSessionMessagesPage(conversationId, {
-      page: 1,
-      size,
-    });
-    const pagination =
-      firstPage.pagination && typeof firstPage.pagination === "object"
-        ? (firstPage.pagination as Record<string, unknown>)
-        : null;
-    const totalPages =
-      pagination && typeof pagination.pages === "number"
-        ? pagination.pages
-        : null;
-
-    if (typeof totalPages === "number" && totalPages > 1) {
-      const tailPageWindow = 3;
-      const startPage = Math.max(1, totalPages - tailPageWindow + 1);
-      for (let page = startPage; page <= totalPages; page += 1) {
-        if (page === 1) {
-          collectPage(firstPage.items);
-          continue;
-        }
-        const response = await listSessionMessagesPage(conversationId, {
-          page,
-          size,
-        });
-        collectPage(response.items);
+    for (let requestCount = 0; requestCount < maxPages; requestCount += 1) {
+      const response = await listSessionMessagesPage(conversationId, {
+        before,
+        limit,
+      });
+      collectPage(response.items);
+      const nextBefore =
+        typeof response.pageInfo.nextBefore === "string" &&
+        response.pageInfo.nextBefore.trim().length > 0
+          ? response.pageInfo.nextBefore.trim()
+          : null;
+      if (!response.pageInfo.hasMoreBefore || !nextBefore) {
+        break;
       }
-    } else {
-      collectPage(firstPage.items);
-      let nextPage =
-        typeof firstPage.nextPage === "number" ? firstPage.nextPage : undefined;
-      let requestCount = 1;
-
-      while (
-        typeof nextPage === "number" &&
-        requestCount < maxPages &&
-        nextPage > 1
-      ) {
-        const response = await listSessionMessagesPage(conversationId, {
-          page: nextPage,
-          size,
-        });
-        collectPage(response.items);
-        nextPage =
-          typeof response.nextPage === "number" ? response.nextPage : undefined;
-        requestCount += 1;
-      }
+      before = nextBefore;
     }
 
     if (recovered.size > 0) {

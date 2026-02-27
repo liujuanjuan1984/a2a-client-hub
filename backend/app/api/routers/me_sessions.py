@@ -12,12 +12,10 @@ from app.db.transaction import commit_safely
 from app.schemas.session_domain import (
     SessionContinueResponse,
     SessionListResponse,
-    SessionMessageBlockDetailResponse,
     SessionMessageBlocksQueryRequest,
     SessionMessageBlocksQueryResponse,
-    SessionMessagesListResponse,
-    SessionMessagesMeta,
     SessionMessagesQueryRequest,
+    SessionMessagesQueryResponse,
     SessionQueryRequest,
     SessionViewItem,
 )
@@ -73,7 +71,7 @@ async def list_unified_sessions(
 
 @router.post(
     "/{conversation_id}/messages:query",
-    response_model=SessionMessagesListResponse,
+    response_model=SessionMessagesQueryResponse,
 )
 async def list_unified_session_messages(
     *,
@@ -81,14 +79,14 @@ async def list_unified_session_messages(
     payload: SessionMessagesQueryRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
-) -> SessionMessagesListResponse:
+) -> SessionMessagesQueryResponse:
     try:
         items, extra, db_mutated = await session_hub_service.list_messages(
             db,
             user_id=current_user.id,
             conversation_id=conversation_id,
-            page=payload.page,
-            size=payload.size,
+            before=payload.before,
+            limit=payload.limit,
         )
     except ValueError as exc:
         detail = str(exc)
@@ -98,18 +96,19 @@ async def list_unified_session_messages(
         ) from exc
     if db_mutated:
         await commit_safely(db)
-    return SessionMessagesListResponse(
-        items=items,
-        pagination=extra["pagination"],
-        meta=SessionMessagesMeta(**extra["meta"]),
+    return SessionMessagesQueryResponse.model_validate(
+        {
+            "items": items,
+            "pageInfo": extra["pageInfo"],
+        }
     )
 
 
 @router.post(
-    "/{conversation_id}/messages/blocks:query",
+    "/{conversation_id}/blocks:query",
     response_model=SessionMessageBlocksQueryResponse,
 )
-async def query_unified_message_blocks(
+async def list_unified_session_message_blocks(
     *,
     conversation_id: str,
     payload: SessionMessageBlocksQueryRequest,
@@ -117,12 +116,11 @@ async def query_unified_message_blocks(
     current_user: User = Depends(get_current_user),
 ) -> SessionMessageBlocksQueryResponse:
     try:
-        items, meta, db_mutated = await session_hub_service.query_message_blocks(
+        items, db_mutated = await session_hub_service.list_message_blocks(
             db,
             user_id=current_user.id,
             conversation_id=conversation_id,
-            message_ids=payload.message_ids,
-            mode=payload.mode,
+            block_ids=payload.block_ids,
         )
     except ValueError as exc:
         detail = str(exc)
@@ -132,40 +130,7 @@ async def query_unified_message_blocks(
         ) from exc
     if db_mutated:
         await commit_safely(db)
-    return SessionMessageBlocksQueryResponse.model_validate(
-        {"items": items, "meta": meta}
-    )
-
-
-@router.post(
-    "/{conversation_id}/messages/{message_id}/blocks/{block_seq}:query",
-    response_model=SessionMessageBlockDetailResponse,
-)
-async def query_unified_message_block_detail(
-    *,
-    conversation_id: str,
-    message_id: str,
-    block_seq: int,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_current_user),
-) -> SessionMessageBlockDetailResponse:
-    try:
-        payload, db_mutated = await session_hub_service.query_message_block_detail(
-            db,
-            user_id=current_user.id,
-            conversation_id=conversation_id,
-            message_id=message_id,
-            block_seq=block_seq,
-        )
-    except ValueError as exc:
-        detail = str(exc)
-        raise HTTPException(
-            status_code=_status_code_for_session_error(detail),
-            detail=detail,
-        ) from exc
-    if db_mutated:
-        await commit_safely(db)
-    return SessionMessageBlockDetailResponse.model_validate(payload)
+    return SessionMessageBlocksQueryResponse.model_validate({"items": items})
 
 
 @router.post("/{conversation_id}:continue", response_model=SessionContinueResponse)

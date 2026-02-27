@@ -105,8 +105,9 @@ Notes:
 - SessionPicker titles are rendered from backend `title` directly (no local
   history-title derivation).
 
-History loading is unified via
-`POST /me/conversations/{conversation_id}/messages:query`.
+Chat timeline loading is unified via
+`POST /me/conversations/{conversation_id}/messages:query`
+(`limit` + `before` cursor for backward pagination from latest window).
 To avoid transport contention, chat history auto-refetch is paused while a
 message is actively streaming.
 
@@ -114,9 +115,14 @@ Message id contract:
 
 - `messages:query` returns canonical local UUIDs in `item.id`.
 - Frontend store/cache keys must use `item.id` only.
-- Do not rely on alias ids from metadata.
+- Non-text block details (`reasoning`/`tool_call`) are fetched on demand via
+  `POST /me/conversations/{conversation_id}/blocks:query`.
+- `blocks:query` detail items include `messageId` and must match the target
+  message before cache patching.
 - Stream events must use snake_case contract fields: `message_id`, `event_id`, `seq`.
 - Invoke payloads should carry both `userMessageId` and `agentMessageId` (UUID).
+- Message status semantics are preserved from history payloads (`streaming`,
+  `done`, `error`, `interrupted`).
 
 ## Block-based Streaming
 

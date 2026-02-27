@@ -42,6 +42,7 @@ describe("ScheduledJobCard visuals", () => {
     executionsLoading: false,
     onToggleEnabled: jest.fn(),
     onEdit: jest.fn(),
+    onDelete: jest.fn(),
     onMarkFailed: jest.fn(),
     onToggleExecutions: jest.fn(),
   };
@@ -135,7 +136,7 @@ describe("ScheduledJobCard visuals", () => {
     expect(JSON.stringify(tree)).not.toContain("Stop");
   });
 
-  it("toggles prompt expansion with Info and Less", () => {
+  it("toggles prompt expansion with Show/Hide Prompt labels", () => {
     const job = {
       id: "6",
       name: "Job",
@@ -153,16 +154,16 @@ describe("ScheduledJobCard visuals", () => {
 
     // Prompt should be hidden by default
     expect(queryByText(job.prompt)).toBeNull();
-    expect(getByText("Info")).toBeTruthy();
+    expect(getByText("Show Prompt")).toBeTruthy();
 
-    // Click Info to expand
-    fireEvent.press(getByText("Info"));
+    // Click Show Prompt to expand
+    fireEvent.press(getByText("Show Prompt"));
 
     expect(getByText(job.prompt)).toBeTruthy();
-    expect(getByText("Less")).toBeTruthy();
+    expect(getByText("Hide Prompt")).toBeTruthy();
 
-    // Click Less to collapse
-    fireEvent.press(getByText("Less"));
+    // Click Hide Prompt to collapse
+    fireEvent.press(getByText("Hide Prompt"));
     expect(queryByText(job.prompt)).toBeNull();
   });
 
@@ -187,5 +188,43 @@ describe("ScheduledJobCard visuals", () => {
     );
 
     expect(getByText(/Every 15 min/)).toBeTruthy();
+  });
+});
+
+jest.mock("@/lib/confirm", () => ({
+  confirmAction: jest.fn(() => Promise.resolve(true)),
+}));
+
+describe("ScheduledJobCard interactions", () => {
+  const defaultProps = {
+    agentName: "Agent One",
+    executions: [],
+    executionsOpen: false,
+    executionsLoading: false,
+    onToggleEnabled: jest.fn(),
+    onEdit: jest.fn(),
+    onDelete: jest.fn(),
+    onMarkFailed: jest.fn(),
+    onToggleExecutions: jest.fn(),
+  };
+
+  it("calls onDelete when Delete button is pressed and confirmed", async () => {
+    const job = {
+      id: "8",
+      name: "Job",
+      enabled: true,
+      last_run_status: "success" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const { getByText } = render(
+      <ScheduledJobCard {...defaultProps} job={job as any} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(getByText("Delete"));
+    });
+
+    expect(defaultProps.onDelete).toHaveBeenCalled();
   });
 });
