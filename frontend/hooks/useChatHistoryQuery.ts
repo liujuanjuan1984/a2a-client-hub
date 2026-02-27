@@ -57,8 +57,15 @@ export function useSessionHistoryQuery(options: {
       cursorByPageRef.current = new Map<number, string | null>([[1, null]]);
       return;
     }
-    cursorByPageRef.current = resolveMessageCursorMap(conversationId);
-    cursorByPageRef.current.set(1, null);
+    const map = resolveMessageCursorMap(conversationId);
+    // 关键修复：重入会话时，丢弃所有后续页面的旧 cursor 缓存，强制重新获取
+    Array.from(map.keys()).forEach((key) => {
+      if (key > 1) {
+        map.delete(key);
+      }
+    });
+    map.set(1, null);
+    cursorByPageRef.current = map;
   }, [conversationId]);
 
   const fetchPage = useCallback(

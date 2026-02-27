@@ -4,6 +4,7 @@ import { ScheduledJobsScreen } from "@/screens/ScheduledJobsScreen";
 
 const mockToggleJobStatus = jest.fn();
 const mockMarkJobFailed = jest.fn();
+const mockRemoveJob = jest.fn();
 const mockLoadFirstPage = jest.fn();
 const mockLoadMore = jest.fn();
 let mockJobs: any[] = [];
@@ -12,6 +13,7 @@ jest.mock("@/hooks/useScheduledJobs", () => ({
   useScheduledJobs: () => ({
     markJobFailed: mockMarkJobFailed,
     toggleJobStatus: mockToggleJobStatus,
+    removeJob: mockRemoveJob,
   }),
 }));
 

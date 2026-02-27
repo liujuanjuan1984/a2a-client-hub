@@ -55,8 +55,8 @@ export function ChatComposer({
       <View className="mb-2 flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
           <Pressable
-            className={`h-9 w-9 items-center justify-center rounded-xl ${
-              showShortcutManager ? "bg-primary" : "bg-gray-800"
+            className={`h-9 w-14 items-center justify-center rounded-xl ${
+              showShortcutManager ? "bg-primary" : "bg-slate-800/40"
             }`}
             onPress={onOpenShortcutManager}
             accessibilityRole="button"
@@ -69,9 +69,23 @@ export function ChatComposer({
             />
           </Pressable>
 
+          {input.length > 0 && (
+            <Pressable
+              className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
+              onPress={() => {
+                onInputChange("");
+                inputRef.current?.focus();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Clear input"
+            >
+              <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+            </Pressable>
+          )}
+
           {showScrollToBottom && (
             <Pressable
-              className="h-9 w-9 items-center justify-center rounded-xl bg-gray-800"
+              className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
               onPress={onScrollToBottom}
               accessibilityRole="button"
               accessibilityLabel="Scroll to bottom"
@@ -82,24 +96,10 @@ export function ChatComposer({
         </View>
 
         <View className="flex-row items-center gap-3">
-          {input.length > 0 && (
-            <Pressable
-              className="h-9 px-2 items-center justify-center"
-              onPress={() => {
-                onInputChange("");
-                inputRef.current?.focus();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Clear input"
-            >
-              <Text className="text-xs font-medium text-gray-400">CLEAR</Text>
-            </Pressable>
-          )}
-
           {input.trim().length > 0 && (
             <Pressable
-              className={`h-9 w-9 items-center justify-center rounded-xl ${
-                pendingInterrupt ? "bg-gray-800 opacity-40" : "bg-primary"
+              className={`h-9 w-14 items-center justify-center rounded-xl ${
+                pendingInterrupt ? "bg-slate-800/30 opacity-40" : "bg-primary"
               }`}
               testID="chat-send-button"
               onPress={onSubmit}

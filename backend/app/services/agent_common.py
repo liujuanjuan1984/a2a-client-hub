@@ -5,9 +5,17 @@ from __future__ import annotations
 import ipaddress
 from typing import Any, Optional, Type
 from urllib.parse import urlparse
+from uuid import UUID
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
+from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.utils.auth_headers import resolve_stored_auth_fields
+
+ALLOWED_AUTH_TYPES = {"none", "bearer"}
+ALLOWED_AVAILABILITY_POLICIES = {"public", "allowlist"}
 
 
 def normalize_required_text(
@@ -81,6 +89,63 @@ def encrypt_bearer_token(
         raise validation_error_cls(str(exc)) from exc
 
 
+async def get_agent_credential(
+    db: AsyncSession,
+    *,
+    agent_id: UUID,
+) -> Optional[A2AAgentCredential]:
+    """Fetch credential for an agent."""
+    stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
+    return await db.scalar(stmt)
+
+
+async def delete_agent_credentials(
+    db: AsyncSession,
+    *,
+    agent_id: UUID,
+) -> None:
+    """Hard-delete all credentials for an agent."""
+    await db.execute(
+        delete(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
+    )
+
+
+async def upsert_agent_credential(
+    db: AsyncSession,
+    *,
+    vault: Any,
+    agent_id: UUID,
+    user_id: UUID,
+    token: Optional[str],
+    validation_error_cls: Type[Exception],
+) -> str:
+    """Validate, encrypt, and store agent credential."""
+    encrypted_value, last4 = encrypt_bearer_token(
+        vault=vault,
+        token=token,
+        validation_error_cls=validation_error_cls,
+    )
+
+    credential = await get_agent_credential(db, agent_id=agent_id)
+    if credential is None:
+        # Purge legacy rows (if any) to satisfy unique constraint
+        await delete_agent_credentials(db, agent_id=agent_id)
+        credential = A2AAgentCredential(
+            agent_id=agent_id,
+            created_by_user_id=user_id,
+            encrypted_token=encrypted_value,
+            token_last4=last4,
+            encryption_version=1,
+        )
+        db.add(credential)
+    else:
+        credential.encrypted_token = encrypted_value
+        credential.token_last4 = last4
+        credential.created_by_user_id = user_id
+
+    return last4
+
+
 class AgentValidationMixin:
     """Shared validation helpers for agent service classes."""
 
@@ -152,9 +217,14 @@ class AgentValidationMixin:
 
 
 __all__ = [
+    "ALLOWED_AUTH_TYPES",
+    "ALLOWED_AVAILABILITY_POLICIES",
     "AgentValidationMixin",
+    "delete_agent_credentials",
     "encrypt_bearer_token",
+    "get_agent_credential",
     "normalize_auth_type",
     "normalize_required_text",
     "resolve_agent_auth_fields",
+    "upsert_agent_credential",
 ]

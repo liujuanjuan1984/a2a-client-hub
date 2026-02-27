@@ -22,7 +22,7 @@ import { useSessionStore } from "@/store/session";
 export function ScheduledJobsScreen() {
   const router = useRouter();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
-  const { markJobFailed, toggleJobStatus } = useScheduledJobs();
+  const { markJobFailed, toggleJobStatus, removeJob } = useScheduledJobs();
   const userTimeZone = useSessionStore((state) => state.user?.timezone);
   const scheduleTimeZone = userTimeZone?.trim() || resolveUserTimeZone();
 
@@ -175,6 +175,19 @@ export function ScheduledJobsScreen() {
                 onEdit={() => {
                   blurActiveElement();
                   router.push(buildScheduledJobEditHref(job.id));
+                }}
+                onDelete={async () => {
+                  try {
+                    await removeJob(job);
+                    toast.success(
+                      "Job deleted",
+                      "The scheduled task has been removed.",
+                    );
+                  } catch (error) {
+                    const message =
+                      error instanceof Error ? error.message : "Delete failed.";
+                    toast.error("Delete failed", message);
+                  }
                 }}
                 onMarkFailed={async () => {
                   try {

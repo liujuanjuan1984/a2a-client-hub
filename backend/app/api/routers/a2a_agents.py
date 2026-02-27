@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_async_db, get_current_user, get_ws_ticket_user_me
 from app.api.routers.card_url_validation import normalize_card_url
 from app.api.routing import StrictAPIRouter
-from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.integrations.a2a_client import get_a2a_service
@@ -43,6 +42,7 @@ from app.services.a2a_agents import (
     A2AAgentValidationError,
     a2a_agent_service,
 )
+from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.a2a_runtime import (
     A2ARuntimeNotFoundError,
     A2ARuntimeValidationError,
@@ -53,7 +53,7 @@ from app.services.invoke_route_runner import (
     run_issue_ws_ticket_route,
     run_ws_invoke_route,
 )
-from app.utils.auth_headers import build_auth_header_pair
+from app.utils.auth_headers import build_proxy_auth_headers
 from app.utils.logging_redaction import redact_url_for_logging
 
 router = StrictAPIRouter(prefix="/me/a2a/agents", tags=["a2a"])
@@ -82,25 +82,21 @@ def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
 def _normalize_card_url(value: Any) -> str:
     return normalize_card_url(
         str(value),
-        allowed_hosts=settings.a2a_proxy_allowed_hosts,
+        allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
     )
 
 
 def _build_proxy_headers(payload: A2AAgentCardProxyRequest) -> dict[str, str]:
-    headers = dict(payload.extra_headers or {})
-    if payload.auth_type == "bearer":
-        token = (payload.token or "").strip()
-        if not token:
-            raise HTTPException(status_code=400, detail="Bearer token is required")
-        header_name, header_value = build_auth_header_pair(
+    try:
+        return build_proxy_auth_headers(
+            auth_type=payload.auth_type,
+            token=payload.token,
             auth_header=payload.auth_header,
             auth_scheme=payload.auth_scheme,
-            token=token,
+            extra_headers=payload.extra_headers,
         )
-        headers[header_name] = header_value
-    elif payload.auth_type != "none":
-        raise HTTPException(status_code=400, detail="Unsupported auth_type")
-    return headers
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("", response_model=A2AAgentListResponse)

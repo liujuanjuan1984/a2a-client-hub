@@ -201,4 +201,57 @@ describe("useChatHistoryQuery", () => {
     );
     expect(secondResult.nextPage).toBeUndefined();
   });
+
+  it("clears subsequent page cursors when conversation id changes or re-enters", async () => {
+    let fetchPage: ((page: number) => Promise<{ nextPage?: number }>) | null =
+      null;
+    mockedUsePaginatedList.mockImplementation((options: any) => {
+      fetchPage = options.fetchPage;
+      return createPaginatedResult([]);
+    });
+    mockedListSessionMessagesPage.mockResolvedValue({
+      items: [],
+      pageInfo: { hasMoreBefore: true, nextBefore: "cursor-next" },
+    });
+
+    const { rerender } = renderHook(
+      ({ conversationId }) =>
+        useSessionHistoryQuery({
+          conversationId,
+          enabled: true,
+        }),
+      {
+        initialProps: { conversationId: "conversation-reset-test" },
+      },
+    );
+
+    if (!fetchPage) throw new Error("fetchPage is unavailable");
+    const runFetchPage = fetchPage as unknown as (page: number) => Promise<{
+      nextPage?: number;
+    }>;
+
+    // Load page 1 -> next cursor stored for page 2
+    await runFetchPage(1);
+
+    // Verify page 2 would use the cursor
+    await runFetchPage(2);
+    expect(mockedListSessionMessagesPage).toHaveBeenLastCalledWith(
+      "conversation-reset-test",
+      { before: "cursor-next", limit: 8 },
+    );
+
+    // Change conversationId to clear the current ref's connection or reset it
+    rerender({ conversationId: "conversation-other" });
+    // Change back to original
+    rerender({ conversationId: "conversation-reset-test" });
+
+    mockedListSessionMessagesPage.mockClear();
+
+    // Now page 2 should NOT use the old cursor because it was cleared in useEffect
+    await runFetchPage(2);
+    expect(mockedListSessionMessagesPage).toHaveBeenLastCalledWith(
+      "conversation-reset-test",
+      { before: null, limit: 8 },
+    );
+  });
 });
