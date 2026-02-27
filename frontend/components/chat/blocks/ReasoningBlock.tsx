@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
+import { ExpandToggle } from "@/components/ui/ExpandToggle";
 import { type MessageBlock } from "@/lib/api/chat-utils";
 
 interface ReasoningBlockProps {
@@ -42,45 +43,18 @@ export function ReasoningBlock({
     toggleReasoning();
   };
 
-  const renderBottomCollapseAction = () => {
-    return (
-      <View className="mt-2 items-end">
-        <Pressable
-          className="rounded-lg bg-black/20 px-2.5 py-1"
-          accessibilityRole="button"
-          accessibilityLabel="Collapse full text"
-          testID={`chat-message-${blockId}-collapse-bottom`}
-          onPress={toggleReasoning}
-        >
-          <Text className="text-[11px] font-medium text-slate-500">
-            Show less
-          </Text>
-        </Pressable>
-      </View>
-    );
-  };
-
   return (
     <View
       key={blockId}
       className={`${!isFirst ? "mt-3" : ""} rounded-xl bg-black/40 p-3`}
     >
-      <Pressable
-        onPress={() => {
+      <ExpandToggle
+        expanded={expanded}
+        onToggle={() => {
           handleToggle().catch(() => undefined);
         }}
-        accessibilityRole="button"
-        accessibilityLabel={
-          expanded ? "Hide reasoning details" : "Show reasoning details"
-        }
-      >
-        <View className="flex-row items-center gap-1.5">
-          <View className="h-1 w-1 rounded-full bg-slate-600" />
-          <Text className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-            {expanded ? "Hide Reasoning" : "Show Reasoning"}
-          </Text>
-        </View>
-      </Pressable>
+        type="Reasoning"
+      />
       {expanded && blockHasContent ? (
         <View>
           <Text
@@ -89,7 +63,13 @@ export function ReasoningBlock({
           >
             {blockText}
           </Text>
-          {renderBottomCollapseAction()}
+          <View className="mt-2 items-end">
+            <ExpandToggle
+              expanded
+              onToggle={toggleReasoning}
+              testID={`chat-message-${blockId}-collapse-bottom`}
+            />
+          </View>
         </View>
       ) : null}
     </View>
