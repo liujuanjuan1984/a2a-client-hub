@@ -10,9 +10,11 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.locking import is_postgres_lock_not_available_error
 from app.db.models.ws_ticket import WsTicket
 from app.db.transaction import commit_safely
 from app.utils.timezone_util import utc_now
@@ -36,6 +38,10 @@ class WsTicketUsedError(WsTicketError):
 
 class WsTicketScopeError(WsTicketError):
     """Raised when a WS ticket does not match the expected scope."""
+
+
+class WsTicketConflictError(WsTicketError):
+    """Raised when a WS ticket row is locked by another transaction."""
 
 
 @dataclass(frozen=True)
@@ -108,9 +114,18 @@ class WsTicketService:
         now = utc_now()
 
         stmt = (
-            select(WsTicket).where(WsTicket.token_hash == token_hash).with_for_update()
+            select(WsTicket)
+            .where(WsTicket.token_hash == token_hash)
+            .with_for_update(nowait=True)
         )
-        ticket = await db.scalar(stmt)
+        try:
+            ticket = await db.scalar(stmt)
+        except DBAPIError as exc:
+            if is_postgres_lock_not_available_error(exc):
+                raise WsTicketConflictError(
+                    "Ticket is being consumed by another request"
+                ) from exc
+            raise
         if ticket is None:
             raise WsTicketNotFoundError("Invalid or expired ticket")
         if ticket.used_at is not None:
@@ -197,6 +212,7 @@ ws_ticket_service = WsTicketService()
 
 __all__ = [
     "WsTicketError",
+    "WsTicketConflictError",
     "WsTicketExpiredError",
     "WsTicketIssueResult",
     "WsTicketNotFoundError",

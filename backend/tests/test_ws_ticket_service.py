@@ -3,9 +3,11 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 
 from app.db.models.ws_ticket import WsTicket
 from app.services.ws_ticket_service import (
+    WsTicketConflictError,
     WsTicketExpiredError,
     WsTicketUsedError,
     ws_ticket_service,
@@ -55,6 +57,38 @@ async def test_consume_ticket_used(async_db_session):
     )
 
     with pytest.raises(WsTicketUsedError):
+        await ws_ticket_service.consume_ticket(
+            async_db_session,
+            token=issued.token,
+            scope_type="test_scope",
+            scope_id=scope_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_consume_ticket_returns_conflict_when_row_locked(
+    async_db_session,
+    monkeypatch,
+):
+    user = await create_user(async_db_session)
+    scope_id = uuid4()
+    issued = await ws_ticket_service.issue_ticket(
+        async_db_session, user_id=user.id, scope_type="test_scope", scope_id=scope_id
+    )
+
+    class _LockNotAvailableError(Exception):
+        sqlstate = "55P03"
+
+    async def _raise_lock_not_available(*_args, **_kwargs):
+        raise DBAPIError(
+            statement="SELECT ... FOR UPDATE NOWAIT",
+            params={},
+            orig=_LockNotAvailableError(),
+        )
+
+    monkeypatch.setattr(async_db_session, "scalar", _raise_lock_not_available)
+
+    with pytest.raises(WsTicketConflictError):
         await ws_ticket_service.consume_ticket(
             async_db_session,
             token=issued.token,

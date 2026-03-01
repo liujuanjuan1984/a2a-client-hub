@@ -757,6 +757,77 @@ async def test_execute_claimed_task_skips_stale_run_id(
     assert executions == []
 
 
+async def test_execute_claimed_task_does_not_override_execution_on_finalize_mismatch(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="finalize-mismatch",
+    )
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    task_id = task.id
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        _mock_runtime_builder(),
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.get_a2a_service",
+        lambda: SimpleNamespace(gateway=SimpleNamespace()),
+    )
+
+    async def _fake_run_background_invoke(**_kwargs):
+        return {
+            "success": True,
+            "response_content": "should-not-persist-success",
+            "message_refs": {},
+        }
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.run_background_invoke",
+        _fake_run_background_invoke,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.finalize_task_run",
+        AsyncMock(return_value=False),
+    )
+
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
+        )
+        executions = list(
+            (
+                await check_db.scalars(
+                    select(A2AScheduleExecution).where(
+                        A2AScheduleExecution.task_id == task_id
+                    )
+                )
+            ).all()
+        )
+
+    assert refreshed_task is not None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_RUNNING
+    assert refreshed_task.current_run_id == run_id
+    assert len(executions) == 1
+    assert executions[0].status == A2AScheduleExecution.STATUS_RUNNING
+    assert executions[0].finished_at is None
+
+
 async def test_recover_stale_running_task_finalizes_matching_run(
     async_db_session,
     async_session_maker,
@@ -1125,6 +1196,51 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_db_connection_refused
     assert ensure_workers_mock.await_count == 0
     assert refresh_metrics_mock.await_count == 0
     assert "database connectivity issue during stale-task recovery." in caplog.text
+
+
+async def test_dispatch_due_a2a_schedules_skips_when_leader_lock_not_acquired(
+    async_db_session,  # noqa: ARG001
+    monkeypatch,
+) -> None:
+    ensure_workers_mock = AsyncMock()
+    refresh_metrics_mock = AsyncMock()
+    recover_mock = AsyncMock(return_value=0)
+    claim_mock = AsyncMock(return_value=None)
+
+    class _NoLeaderLockContext:
+        async def __aenter__(self):
+            return False
+
+        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+            return False
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._try_hold_dispatch_leader_lock",
+        lambda: _NoLeaderLockContext(),
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        ensure_workers_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        refresh_metrics_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        recover_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_due_task",
+        claim_mock,
+    )
+
+    await dispatch_due_a2a_schedules(batch_size=1)
+
+    assert recover_mock.await_count == 0
+    assert claim_mock.await_count == 0
+    assert ensure_workers_mock.await_count == 0
+    assert refresh_metrics_mock.await_count == 0
 
 
 async def test_dispatch_due_a2a_schedules_skips_cycle_when_claim_db_connection_refused(

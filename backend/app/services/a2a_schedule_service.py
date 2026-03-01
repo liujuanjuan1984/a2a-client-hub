@@ -10,10 +10,12 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.config import settings
+from app.db.locking import is_postgres_lock_not_available_error
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
@@ -323,10 +325,17 @@ class A2AScheduleService:
                     A2AScheduleTask.deleted_at.is_(None),
                 )
             )
-            .with_for_update()
+            .with_for_update(nowait=True)
             .limit(1)
         )
-        task = await db.scalar(stmt)
+        try:
+            task = await db.scalar(stmt)
+        except DBAPIError as exc:
+            if is_postgres_lock_not_available_error(exc):
+                raise A2AScheduleConflictError(
+                    "Task is currently locked by another operation; retry shortly."
+                ) from exc
+            raise
         if task is None:
             raise A2AScheduleNotFoundError("Schedule task not found")
 
@@ -352,10 +361,17 @@ class A2AScheduleService:
                     A2AScheduleExecution.run_id == run_id,
                 )
             )
-            .with_for_update()
+            .with_for_update(nowait=True)
             .limit(1)
         )
-        execution = await db.scalar(exec_stmt)
+        try:
+            execution = await db.scalar(exec_stmt)
+        except DBAPIError as exc:
+            if is_postgres_lock_not_available_error(exc):
+                raise A2AScheduleConflictError(
+                    "Task execution is currently locked by another operation; retry shortly."
+                ) from exc
+            raise
         if execution is None:
             execution = A2AScheduleExecution(
                 user_id=task.user_id,
