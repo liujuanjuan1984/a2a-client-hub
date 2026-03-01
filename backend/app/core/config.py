@@ -545,7 +545,7 @@ class Settings(BaseSettings):
         description="Number of in-process workers consuming claimed scheduled tasks.",
     )
     a2a_schedule_task_invoke_timeout: float = Field(
-        default=3600.0,
+        default=7200.0,
         alias="A2A_SCHEDULE_TASK_INVOKE_TIMEOUT",
         description="Maximum total timeout in seconds for a single scheduled A2A stream execution.",
     )
@@ -560,7 +560,7 @@ class Settings(BaseSettings):
         description="Timeout in seconds before a running scheduled task is considered stale by recovery.",
     )
     a2a_schedule_run_lease_seconds: int = Field(
-        default=2400,
+        default=5400,
         alias="A2A_SCHEDULE_RUN_LEASE_SECONDS",
         description="Lease timeout in seconds for one scheduled run before recovery finalization.",
     )
