@@ -197,3 +197,16 @@ def test_rejects_schedule_invoke_timeout_not_greater_than_heartbeat_interval(
         ),
     ):
         Settings()
+
+
+def test_rejects_schedule_heartbeat_interval_too_small(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS", "5")
+
+    with pytest.raises(
+        ValueError,
+        match="A2A schedule heartbeat interval must be at least 15 seconds",
+    ):
+        Settings()

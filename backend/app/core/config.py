@@ -709,8 +709,10 @@ class Settings(BaseSettings):
     def validate_a2a_schedule_run_heartbeat_interval_seconds(
         cls, value: float
     ) -> float:
-        if value <= 0:
-            raise ValueError("A2A schedule heartbeat interval must be positive")
+        if value < 15:
+            raise ValueError(
+                "A2A schedule heartbeat interval must be at least 15 seconds"
+            )
         if value > 3600:
             raise ValueError("A2A schedule heartbeat interval must not exceed 3600")
         return value

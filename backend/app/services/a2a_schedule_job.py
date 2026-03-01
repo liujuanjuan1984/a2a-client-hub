@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import math
+import time
 from datetime import timedelta
 from uuid import uuid4
 
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
-from sqlalchemy import and_, func, select, text
+from sqlalchemy import and_, func, select, text, update
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
 from app.core.config import settings
@@ -42,6 +43,7 @@ _dispatch_workers_lock = asyncio.Lock()
 _dispatch_queue: asyncio.Queue[ClaimedA2AScheduleTask] = asyncio.Queue()
 _dispatch_worker_tasks: set[asyncio.Task[None]] = set()
 _NON_SQLA_DB_CONNECTIVITY_ERRORS = (ConnectionError, OSError)
+_HEARTBEAT_WARNING_COOLDOWN_SECONDS = 60.0
 
 
 def _is_db_connectivity_issue(exc: Exception) -> bool:
@@ -95,23 +97,22 @@ def _derive_recovery_timeouts() -> tuple[int, int]:
 async def _touch_schedule_run_heartbeat(*, claim: ClaimedA2AScheduleTask) -> bool:
     observed_at = utc_now()
     async with AsyncSessionLocal() as db:
-        task = await db.scalar(
-            select(A2AScheduleTask).where(
+        stmt = (
+            update(A2AScheduleTask)
+            .where(
                 and_(
                     A2AScheduleTask.id == claim.task_id,
                     A2AScheduleTask.user_id == claim.user_id,
                     A2AScheduleTask.deleted_at.is_(None),
+                    A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
+                    A2AScheduleTask.current_run_id == claim.run_id,
                 )
             )
+            .values(last_heartbeat_at=observed_at)
         )
-        if task is None:
+        result = await db.execute(stmt)
+        if int(result.rowcount or 0) <= 0:
             return False
-        if (
-            task.last_run_status != A2AScheduleTask.STATUS_RUNNING
-            or task.current_run_id != claim.run_id
-        ):
-            return False
-        task.last_heartbeat_at = observed_at
         await commit_safely(db)
     return True
 
@@ -122,6 +123,8 @@ async def _schedule_run_heartbeat_loop(
     stop_event: asyncio.Event,
 ) -> None:
     interval = max(float(settings.a2a_schedule_run_heartbeat_interval_seconds), 0.1)
+    last_connectivity_warning_at: float | None = None
+    last_unknown_warning_at: float | None = None
     while not stop_event.is_set():
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
@@ -132,9 +135,33 @@ async def _schedule_run_heartbeat_loop(
         try:
             still_running = await _touch_schedule_run_heartbeat(claim=claim)
         except Exception as exc:
+            now_monotonic = time.monotonic()
             if _is_db_connectivity_issue(exc):
+                if (
+                    last_connectivity_warning_at is None
+                    or now_monotonic - last_connectivity_warning_at
+                    >= _HEARTBEAT_WARNING_COOLDOWN_SECONDS
+                ):
+                    logger.warning(
+                        "Skip schedule heartbeat update due to database connectivity issue.",
+                        exc_info=exc,
+                        extra={
+                            "schedule_task_id": str(claim.task_id),
+                            "run_id": str(claim.run_id),
+                            "phase": "heartbeat",
+                        },
+                    )
+                    last_connectivity_warning_at = now_monotonic
+                continue
+            if (
+                last_unknown_warning_at is None
+                or now_monotonic - last_unknown_warning_at
+                >= _HEARTBEAT_WARNING_COOLDOWN_SECONDS
+            ):
                 logger.warning(
-                    "Skip schedule heartbeat update due to database connectivity issue.",
+                    "Schedule heartbeat update failed task=%s run_id=%s",
+                    claim.task_id,
+                    claim.run_id,
                     exc_info=exc,
                     extra={
                         "schedule_task_id": str(claim.task_id),
@@ -142,18 +169,7 @@ async def _schedule_run_heartbeat_loop(
                         "phase": "heartbeat",
                     },
                 )
-                continue
-            logger.warning(
-                "Schedule heartbeat update failed task=%s run_id=%s",
-                claim.task_id,
-                claim.run_id,
-                exc_info=exc,
-                extra={
-                    "schedule_task_id": str(claim.task_id),
-                    "run_id": str(claim.run_id),
-                    "phase": "heartbeat",
-                },
-            )
+                last_unknown_warning_at = now_monotonic
             continue
 
         if not still_running:
