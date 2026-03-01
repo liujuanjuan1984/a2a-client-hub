@@ -67,6 +67,74 @@ def _execution_metadata(
     }
 
 
+async def _touch_schedule_run_heartbeat(*, claim: ClaimedA2AScheduleTask) -> bool:
+    observed_at = utc_now()
+    async with AsyncSessionLocal() as db:
+        task = await db.scalar(
+            select(A2AScheduleTask).where(
+                and_(
+                    A2AScheduleTask.id == claim.task_id,
+                    A2AScheduleTask.user_id == claim.user_id,
+                    A2AScheduleTask.deleted_at.is_(None),
+                )
+            )
+        )
+        if task is None:
+            return False
+        if (
+            task.last_run_status != A2AScheduleTask.STATUS_RUNNING
+            or task.current_run_id != claim.run_id
+        ):
+            return False
+        task.last_heartbeat_at = observed_at
+        await commit_safely(db)
+    return True
+
+
+async def _schedule_run_heartbeat_loop(
+    *,
+    claim: ClaimedA2AScheduleTask,
+    stop_event: asyncio.Event,
+) -> None:
+    interval = max(float(settings.a2a_schedule_run_heartbeat_interval_seconds), 0.1)
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+        try:
+            still_running = await _touch_schedule_run_heartbeat(claim=claim)
+        except Exception as exc:
+            if _is_db_connectivity_issue(exc):
+                logger.warning(
+                    "Skip schedule heartbeat update due to database connectivity issue.",
+                    exc_info=exc,
+                    extra={
+                        "schedule_task_id": str(claim.task_id),
+                        "run_id": str(claim.run_id),
+                        "phase": "heartbeat",
+                    },
+                )
+                continue
+            logger.warning(
+                "Schedule heartbeat update failed task=%s run_id=%s",
+                claim.task_id,
+                claim.run_id,
+                exc_info=exc,
+                extra={
+                    "schedule_task_id": str(claim.task_id),
+                    "run_id": str(claim.run_id),
+                    "phase": "heartbeat",
+                },
+            )
+            continue
+
+        if not still_running:
+            return
+
+
 async def _ensure_task_session(
     *, db, task: A2AScheduleTask
 ) -> tuple[ConversationThread, bool]:
@@ -204,6 +272,9 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             .with_for_update(skip_locked=True)
         )
 
+        heartbeat_stop_event = asyncio.Event()
+        heartbeat_task: asyncio.Task[None] | None = None
+
         try:
             thread = None
             if execution is None:
@@ -232,32 +303,44 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
             execution.conversation_id = thread.id
             await commit_safely(db)
+            heartbeat_task = asyncio.create_task(
+                _schedule_run_heartbeat_loop(
+                    claim=claim,
+                    stop_event=heartbeat_stop_event,
+                )
+            )
             invoke_payload = A2AAgentInvokeRequest(
                 query=task.prompt,
                 conversationId=str(thread.id),
                 metadata=metadata,
             )
-            invoke_result = await run_background_invoke(
-                db=db,
-                gateway=get_a2a_service().gateway,
-                runtime=runtime,
-                user_id=task.user_id,
-                agent_id=task.agent_id,
-                agent_source="personal",
-                payload=invoke_payload,
-                validate_message=lambda _payload: [],
-                logger=logger,
-                log_extra={
-                    "schedule_task_id": str(task.id),
-                    "schedule_execution_id": str(execution.id),
-                    "run_id": str(claim.run_id),
-                    "phase": "invoke",
-                    "agent_id": str(task.agent_id),
-                    "user_id": str(task.user_id),
-                },
-                total_timeout_seconds=settings.a2a_schedule_task_invoke_timeout,
-                idle_timeout_seconds=settings.a2a_schedule_task_stream_idle_timeout,
-            )
+            try:
+                invoke_result = await run_background_invoke(
+                    db=db,
+                    gateway=get_a2a_service().gateway,
+                    runtime=runtime,
+                    user_id=task.user_id,
+                    agent_id=task.agent_id,
+                    agent_source="personal",
+                    payload=invoke_payload,
+                    validate_message=lambda _payload: [],
+                    logger=logger,
+                    log_extra={
+                        "schedule_task_id": str(task.id),
+                        "schedule_execution_id": str(execution.id),
+                        "run_id": str(claim.run_id),
+                        "phase": "invoke",
+                        "agent_id": str(task.agent_id),
+                        "user_id": str(task.user_id),
+                    },
+                    total_timeout_seconds=settings.a2a_schedule_task_invoke_timeout,
+                    idle_timeout_seconds=settings.a2a_schedule_task_stream_idle_timeout,
+                )
+            finally:
+                heartbeat_stop_event.set()
+                if heartbeat_task is not None:
+                    with contextlib.suppress(Exception):
+                        await heartbeat_task
             success = bool(invoke_result.get("success"))
             response_content = str(invoke_result.get("response_content") or "")
             message_refs = invoke_result.get("message_refs") or {}
@@ -450,7 +533,8 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
         async with AsyncSessionLocal() as db:
             recovered = await a2a_schedule_service.recover_stale_running_tasks(
                 db,
-                timeout_seconds=int(settings.a2a_schedule_run_lease_seconds),
+                timeout_seconds=int(settings.a2a_schedule_recovery_timeout_seconds),
+                hard_timeout_seconds=int(settings.a2a_schedule_run_lease_seconds),
             )
     except Exception as exc:
         if not _is_db_connectivity_issue(exc):

@@ -8,7 +8,7 @@ from datetime import datetime, time, timedelta, timezone
 from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -381,6 +381,7 @@ class A2AScheduleService:
         task.last_run_at = now_utc
         task.current_run_id = None
         task.running_started_at = None
+        task.last_heartbeat_at = None
         task.consecutive_failures = (task.consecutive_failures or 0) + 1
         if task.consecutive_failures >= threshold:
             task.enabled = False
@@ -555,6 +556,7 @@ class A2AScheduleService:
         selected_task.last_run_status = A2AScheduleTask.STATUS_RUNNING
         selected_task.current_run_id = run_id
         selected_task.running_started_at = now_utc
+        selected_task.last_heartbeat_at = now_utc
         await commit_safely(db)
 
         return ClaimedA2AScheduleTask(
@@ -576,13 +578,32 @@ class A2AScheduleService:
         *,
         now: Optional[datetime] = None,
         timeout_seconds: int = 600,
+        hard_timeout_seconds: int | None = None,
     ) -> int:
         """Recover stale running tasks by run_id and close them deterministically."""
 
         now_utc = ensure_utc(now or utc_now())
         timeout_seconds = max(int(timeout_seconds or 0), 1)
         cutoff = now_utc - timedelta(seconds=timeout_seconds)
+        hard_timeout = (
+            max(int(hard_timeout_seconds or 0), 1) if hard_timeout_seconds else None
+        )
+        hard_cutoff = (
+            now_utc - timedelta(seconds=hard_timeout)
+            if hard_timeout is not None
+            else None
+        )
         failure_threshold = max(int(settings.a2a_schedule_task_failure_threshold), 1)
+
+        stale_predicates = [
+            func.coalesce(
+                A2AScheduleTask.last_heartbeat_at,
+                A2AScheduleTask.running_started_at,
+            )
+            <= cutoff
+        ]
+        if hard_cutoff is not None:
+            stale_predicates.append(A2AScheduleTask.running_started_at <= hard_cutoff)
 
         stmt = (
             select(A2AScheduleTask)
@@ -592,7 +613,7 @@ class A2AScheduleService:
                     A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
                     A2AScheduleTask.current_run_id.is_not(None),
                     A2AScheduleTask.running_started_at.is_not(None),
-                    A2AScheduleTask.running_started_at <= cutoff,
+                    or_(*stale_predicates),
                 )
             )
             .order_by(
@@ -665,6 +686,7 @@ class A2AScheduleService:
             task.last_run_at = now_utc
             task.current_run_id = None
             task.running_started_at = None
+            task.last_heartbeat_at = None
             if final_task_status == A2AScheduleTask.STATUS_SUCCESS:
                 task.consecutive_failures = 0
             else:
@@ -719,6 +741,7 @@ class A2AScheduleService:
         task.last_run_at = ensure_utc(finished_at)
         task.current_run_id = None
         task.running_started_at = None
+        task.last_heartbeat_at = None
         if conversation_id is not None:
             task.conversation_id = conversation_id
 

@@ -141,6 +141,11 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         nullable=True,
         comment="Timestamp when the current running execution was claimed",
     )
+    last_heartbeat_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Most recent heartbeat timestamp for the current running execution",
+    )
 
 
 __all__ = ["A2AScheduleTask"]
