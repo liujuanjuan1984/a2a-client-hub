@@ -67,7 +67,9 @@ def _execution_metadata(
     }
 
 
-async def _ensure_task_session(*, db, task: A2AScheduleTask) -> ConversationThread:
+async def _ensure_task_session(
+    *, db, task: A2AScheduleTask
+) -> tuple[ConversationThread, bool]:
     now = utc_now()
 
     # Check conversation_policy
@@ -84,7 +86,7 @@ async def _ensure_task_session(*, db, task: A2AScheduleTask) -> ConversationThre
             and existing_thread.status != ConversationThread.STATUS_ARCHIVED
         ):
             existing_thread.last_active_at = now
-            return existing_thread
+            return existing_thread, False
 
     thread = ConversationThread(
         id=uuid4(),
@@ -99,7 +101,7 @@ async def _ensure_task_session(*, db, task: A2AScheduleTask) -> ConversationThre
     db.add(thread)
     await db.flush()
     task.conversation_id = thread.id
-    return thread
+    return thread, True
 
 
 async def _refresh_ops_metrics() -> None:
@@ -224,7 +226,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
             if not bool(getattr(runtime.agent, "enabled", True)):
                 raise RuntimeError("Target A2A agent is disabled")
-            thread = await _ensure_task_session(
+            thread, is_new = await _ensure_task_session(
                 db=db,
                 task=task,
             )
@@ -262,9 +264,10 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
 
             if not success and not message_refs.get("user_message_id"):
                 execution.conversation_id = None
-                await db.delete(thread)
-                if task.conversation_id == thread.id:
-                    task.conversation_id = None
+                if is_new:
+                    await db.delete(thread)
+                    if task.conversation_id == thread.id:
+                        task.conversation_id = None
             else:
                 execution.conversation_id = (
                     message_refs.get("conversation_id")
@@ -328,9 +331,10 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
         except Exception as exc:  # pragma: no cover - defensive path
             if thread and execution:
                 execution.conversation_id = None
-                if task.conversation_id == thread.id:
-                    task.conversation_id = None
-                await db.delete(thread)
+                if is_new:
+                    if task.conversation_id == thread.id:
+                        task.conversation_id = None
+                    await db.delete(thread)
 
             finished_at = utc_now()
             if execution is None:
