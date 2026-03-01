@@ -17,6 +17,7 @@ from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
+from app.db.transaction import commit_safely as real_commit_safely
 from app.services.a2a_schedule_job import (
     _execute_claimed_task,
     _refresh_ops_metrics,
@@ -945,6 +946,7 @@ async def test_recover_stale_running_task_backfills_missing_execution(
         agent_id=agent.id,
         next_run_at=now,
     )
+    task_id = task.id
     run_id = uuid4()
     stale_started_at = now - timedelta(minutes=30)
     task.last_run_status = A2AScheduleTask.STATUS_RUNNING
@@ -962,13 +964,13 @@ async def test_recover_stale_running_task_backfills_missing_execution(
 
     async with async_session_maker() as check_db:
         refreshed_task = await check_db.scalar(
-            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
         )
         executions = list(
             (
                 await check_db.scalars(
                     select(A2AScheduleExecution).where(
-                        A2AScheduleExecution.task_id == task.id,
+                        A2AScheduleExecution.task_id == task_id,
                         A2AScheduleExecution.run_id == run_id,
                     )
                 )
@@ -1000,6 +1002,7 @@ async def test_recover_stale_sequential_task_reschedules_next_run(
         agent_id=agent.id,
         next_run_at=now,
     )
+    task_id = task.id
     run_id = uuid4()
     stale_started_at = now - timedelta(minutes=30)
     task.cycle_type = A2AScheduleTask.CYCLE_SEQUENTIAL
@@ -1029,7 +1032,7 @@ async def test_recover_stale_sequential_task_reschedules_next_run(
 
     async with async_session_maker() as check_db:
         refreshed_task = await check_db.scalar(
-            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
         )
 
     assert refreshed_task is not None
@@ -1038,6 +1041,58 @@ async def test_recover_stale_sequential_task_reschedules_next_run(
     assert refreshed_task.running_started_at is None
     assert refreshed_task.next_run_at is not None
     assert refreshed_task.next_run_at >= now + timedelta(minutes=59)
+
+
+async def test_recover_stale_running_tasks_commits_per_recovered_task(
+    async_db_session,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    now = utc_now()
+    stale_started_at = now - timedelta(minutes=30)
+
+    for suffix in ("recover-commit-a", "recover-commit-b"):
+        agent = await _create_agent(async_db_session, user_id=user.id, suffix=suffix)
+        task = await _create_schedule_task(
+            async_db_session,
+            user_id=user.id,
+            agent_id=agent.id,
+            next_run_at=now,
+        )
+        run_id = uuid4()
+        task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+        task.current_run_id = run_id
+        task.running_started_at = stale_started_at
+        execution = A2AScheduleExecution(
+            user_id=user.id,
+            task_id=task.id,
+            run_id=run_id,
+            scheduled_for=stale_started_at,
+            started_at=stale_started_at,
+            status=A2AScheduleExecution.STATUS_RUNNING,
+        )
+        async_db_session.add(execution)
+    await async_db_session.commit()
+
+    commit_call_count = 0
+
+    async def _counting_commit(db):
+        nonlocal commit_call_count
+        commit_call_count += 1
+        await real_commit_safely(db)
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_service.commit_safely",
+        _counting_commit,
+    )
+
+    recovered = await a2a_schedule_service.recover_stale_running_tasks(
+        async_db_session,
+        now=now,
+        timeout_seconds=60,
+    )
+    assert recovered == 2
+    assert commit_call_count >= recovered
 
 
 async def test_dispatch_due_a2a_schedules_skips_cycle_when_db_connection_refused(

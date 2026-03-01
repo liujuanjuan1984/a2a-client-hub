@@ -9,7 +9,9 @@ from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.config import settings
 from app.db.models.a2a_agent import A2AAgent
@@ -491,6 +493,24 @@ class A2AScheduleService:
 
         concurrency_limit = max(int(settings.a2a_schedule_agent_concurrency_limit), 1)
 
+        running_task = aliased(A2AScheduleTask)
+        running_count_for_agent = (
+            select(func.count(A2AScheduleExecution.id))
+            .join(
+                running_task,
+                running_task.id == A2AScheduleExecution.task_id,
+            )
+            .where(
+                and_(
+                    running_task.agent_id == A2AScheduleTask.agent_id,
+                    running_task.deleted_at.is_(None),
+                    A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
+                )
+            )
+            .correlate(A2AScheduleTask)
+            .scalar_subquery()
+        )
+
         stmt = (
             select(A2AScheduleTask)
             .where(
@@ -499,27 +519,14 @@ class A2AScheduleService:
                     A2AScheduleTask.enabled.is_(True),
                     A2AScheduleTask.next_run_at.is_not(None),
                     A2AScheduleTask.next_run_at <= now_utc,
+                    running_count_for_agent < concurrency_limit,
                 )
             )
             .order_by(A2AScheduleTask.next_run_at.asc(), A2AScheduleTask.id.asc())
-            .limit(max(concurrency_limit * 3, 10))
+            .limit(1)
             .with_for_update(skip_locked=True)
         )
-        candidates = list((await db.scalars(stmt)).all())
-        if not candidates:
-            return None
-
-        selected_task: Optional[A2AScheduleTask] = None
-        for task in candidates:
-            running_count = await self._running_execution_count_for_agent(
-                db,
-                agent_id=task.agent_id,
-            )
-            if running_count >= concurrency_limit:
-                continue
-            selected_task = task
-            break
-
+        selected_task = await db.scalar(stmt)
         if selected_task is None:
             return None
 
@@ -605,33 +612,33 @@ class A2AScheduleService:
         if hard_cutoff is not None:
             stale_predicates.append(A2AScheduleTask.running_started_at <= hard_cutoff)
 
-        stmt = (
-            select(A2AScheduleTask)
-            .where(
-                and_(
-                    A2AScheduleTask.deleted_at.is_(None),
-                    A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
-                    A2AScheduleTask.current_run_id.is_not(None),
-                    A2AScheduleTask.running_started_at.is_not(None),
-                    or_(*stale_predicates),
-                )
-            )
-            .order_by(
-                A2AScheduleTask.running_started_at.asc(),
-                A2AScheduleTask.id.asc(),
-            )
-            .with_for_update(skip_locked=True)
-        )
-        rows = await db.execute(stmt)
-        tasks = list(rows.scalars().all())
-        if not tasks:
-            return 0
-
         error_message = "Execution marked as failed by recovery: stale running task exceeded timeout"
-
         recovered_count = 0
-        for task in tasks:
+        while True:
+            stmt = (
+                select(A2AScheduleTask)
+                .where(
+                    and_(
+                        A2AScheduleTask.deleted_at.is_(None),
+                        A2AScheduleTask.last_run_status
+                        == A2AScheduleTask.STATUS_RUNNING,
+                        A2AScheduleTask.current_run_id.is_not(None),
+                        A2AScheduleTask.running_started_at.is_not(None),
+                        or_(*stale_predicates),
+                    )
+                )
+                .order_by(
+                    A2AScheduleTask.running_started_at.asc(),
+                    A2AScheduleTask.id.asc(),
+                )
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
+            task = await db.scalar(stmt)
+            if task is None:
+                break
             if task.current_run_id is None:
+                await commit_safely(db)
                 continue
             run_id = task.current_run_id
             exec_stmt = (
@@ -642,7 +649,6 @@ class A2AScheduleService:
                     A2AScheduleExecution.run_id == run_id,
                 )
                 .limit(1)
-                .with_for_update(skip_locked=True)
             )
             execution = await db.scalar(exec_stmt)
             final_task_status = A2AScheduleTask.STATUS_FAILED
@@ -661,18 +667,23 @@ class A2AScheduleService:
             elif execution is None:
                 # No running execution row exists (e.g., crash before execution creation).
                 started_at = ensure_utc(task.running_started_at or now_utc)
-                recovered = A2AScheduleExecution(
-                    user_id=task.user_id,
-                    task_id=task.id,
-                    run_id=run_id,
-                    scheduled_for=started_at,
-                    started_at=started_at,
-                    finished_at=now_utc,
-                    status=A2AScheduleExecution.STATUS_FAILED,
-                    error_message=error_message,
-                    conversation_id=task.conversation_id,
+                await db.execute(
+                    insert(A2AScheduleExecution)
+                    .values(
+                        user_id=task.user_id,
+                        task_id=task.id,
+                        run_id=run_id,
+                        scheduled_for=started_at,
+                        started_at=started_at,
+                        finished_at=now_utc,
+                        status=A2AScheduleExecution.STATUS_FAILED,
+                        error_message=error_message,
+                        conversation_id=task.conversation_id,
+                    )
+                    .on_conflict_do_nothing(
+                        index_elements=["task_id", "run_id"],
+                    )
                 )
-                db.add(recovered)
             elif execution.status == A2AScheduleExecution.STATUS_SUCCESS:
                 final_task_status = A2AScheduleTask.STATUS_SUCCESS
                 if execution.finished_at is not None:
@@ -703,7 +714,7 @@ class A2AScheduleService:
                     task.next_run_at = None
             recovered_count += 1
 
-        await commit_safely(db)
+            await commit_safely(db)
         return recovered_count
 
     async def finalize_task_run(
