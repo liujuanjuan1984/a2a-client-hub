@@ -788,8 +788,6 @@ async def test_recover_stale_running_task_finalizes_matching_run(
     async_db_session.add(execution)
     await async_db_session.commit()
     execution_id = execution.id
-    execution_id = execution.id
-    execution_id = execution.id
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
         async_db_session,
@@ -1142,14 +1140,14 @@ async def test_dispatch_due_a2a_schedules_passes_heartbeat_and_hard_timeout(
 
     monkeypatch.setattr(
         settings,
-        "a2a_schedule_recovery_timeout_seconds",
-        123,
+        "a2a_schedule_task_invoke_timeout",
+        200.0,
         raising=False,
     )
     monkeypatch.setattr(
         settings,
-        "a2a_schedule_run_lease_seconds",
-        456,
+        "a2a_schedule_run_heartbeat_interval_seconds",
+        10.0,
         raising=False,
     )
     monkeypatch.setattr(
@@ -1173,8 +1171,8 @@ async def test_dispatch_due_a2a_schedules_passes_heartbeat_and_hard_timeout(
 
     assert recover_mock.await_count == 1
     call_kwargs = recover_mock.await_args.kwargs
-    assert call_kwargs["timeout_seconds"] == 123
-    assert call_kwargs["hard_timeout_seconds"] == 456
+    assert call_kwargs["timeout_seconds"] == 30
+    assert call_kwargs["hard_timeout_seconds"] == 200
     assert ensure_workers_mock.await_count == 1
     assert refresh_metrics_mock.await_count == 1
 

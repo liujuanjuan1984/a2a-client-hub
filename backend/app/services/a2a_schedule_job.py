@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 from datetime import timedelta
 from uuid import uuid4
 
@@ -65,6 +66,30 @@ def _execution_metadata(
         "run_id": run_id,
         "agent_id": str(task.agent_id),
     }
+
+
+def _derive_recovery_timeouts() -> tuple[int, int]:
+    """Derive heartbeat stale and hard timeout from invoke timeout.
+
+    Keep a single source of truth for run lifetime (`invoke_timeout`) to avoid
+    configuration drift. Heartbeat stale timeout is internally derived from
+    heartbeat interval and clamped by invoke timeout.
+    """
+
+    invoke_timeout_seconds = max(
+        int(math.ceil(float(settings.a2a_schedule_task_invoke_timeout))),
+        1,
+    )
+    heartbeat_interval_seconds = max(
+        float(settings.a2a_schedule_run_heartbeat_interval_seconds),
+        0.1,
+    )
+    heartbeat_stale_seconds = max(
+        int(math.ceil(heartbeat_interval_seconds * 3)),
+        30,
+    )
+    heartbeat_stale_seconds = min(heartbeat_stale_seconds, invoke_timeout_seconds)
+    return heartbeat_stale_seconds, invoke_timeout_seconds
 
 
 async def _touch_schedule_run_heartbeat(*, claim: ClaimedA2AScheduleTask) -> bool:
@@ -530,11 +555,12 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
     # Recover stale "running" tasks first so the UI doesn't get stuck forever if a
     # worker crashes after claiming a task but before persisting the execution.
     try:
+        heartbeat_timeout_seconds, hard_timeout_seconds = _derive_recovery_timeouts()
         async with AsyncSessionLocal() as db:
             recovered = await a2a_schedule_service.recover_stale_running_tasks(
                 db,
-                timeout_seconds=int(settings.a2a_schedule_recovery_timeout_seconds),
-                hard_timeout_seconds=int(settings.a2a_schedule_run_lease_seconds),
+                timeout_seconds=heartbeat_timeout_seconds,
+                hard_timeout_seconds=hard_timeout_seconds,
             )
     except Exception as exc:
         if not _is_db_connectivity_issue(exc):

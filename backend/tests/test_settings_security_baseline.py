@@ -182,35 +182,18 @@ def test_invalid_app_env_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings()
 
 
-def test_rejects_schedule_recovery_timeout_not_greater_than_heartbeat_interval(
+def test_rejects_schedule_invoke_timeout_not_greater_than_heartbeat_interval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_base_env(monkeypatch)
-    monkeypatch.setenv("A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS", "30")
+    monkeypatch.setenv("A2A_SCHEDULE_TASK_INVOKE_TIMEOUT", "30")
     monkeypatch.setenv("A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS", "30")
 
     with pytest.raises(
         ValueError,
         match=(
-            "A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS must be greater than "
+            "A2A_SCHEDULE_TASK_INVOKE_TIMEOUT must be greater than "
             "A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS"
-        ),
-    ):
-        Settings()
-
-
-def test_rejects_schedule_run_lease_smaller_than_recovery_timeout(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _set_base_env(monkeypatch)
-    monkeypatch.setenv("A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS", "120")
-    monkeypatch.setenv("A2A_SCHEDULE_RUN_LEASE_SECONDS", "60")
-
-    with pytest.raises(
-        ValueError,
-        match=(
-            "A2A_SCHEDULE_RUN_LEASE_SECONDS must be greater than or equal to "
-            "A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS"
         ),
     ):
         Settings()
