@@ -179,6 +179,8 @@ async def test_claim_next_due_task_sequential_holds_next_run_until_finalize(
         agent_id=agent.id,
         next_run_at=now,
     )
+    task.id
+    task.id
     task.cycle_type = A2AScheduleTask.CYCLE_SEQUENTIAL
     task.time_point = {"minutes": 15}
     await async_db_session.commit()
@@ -786,6 +788,8 @@ async def test_recover_stale_running_task_finalizes_matching_run(
     async_db_session.add(execution)
     await async_db_session.commit()
     execution_id = execution.id
+    execution_id = execution.id
+    execution_id = execution.id
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
         async_db_session,
@@ -886,6 +890,7 @@ async def test_recover_stale_running_task_hard_timeout_wins_over_recent_heartbea
         agent_id=agent.id,
         next_run_at=now,
     )
+    task_id = task.id
     run_id = uuid4()
     stale_started_at = now - timedelta(minutes=30)
     task.last_run_status = A2AScheduleTask.STATUS_RUNNING
@@ -902,6 +907,7 @@ async def test_recover_stale_running_task_hard_timeout_wins_over_recent_heartbea
     )
     async_db_session.add(execution)
     await async_db_session.commit()
+    execution_id = execution.id
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
         async_db_session,
@@ -914,10 +920,10 @@ async def test_recover_stale_running_task_hard_timeout_wins_over_recent_heartbea
 
     async with async_session_maker() as check_db:
         refreshed_task = await check_db.scalar(
-            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
         )
         refreshed_execution = await check_db.scalar(
-            select(A2AScheduleExecution).where(A2AScheduleExecution.id == execution.id)
+            select(A2AScheduleExecution).where(A2AScheduleExecution.id == execution_id)
         )
 
     assert refreshed_task is not None
