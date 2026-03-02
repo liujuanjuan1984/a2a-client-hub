@@ -8,7 +8,6 @@ interface TextBlockProps {
   content?: string;
   fallbackBlockId: string;
   isAgent: boolean;
-  onLayoutChangeStart?: () => void;
   isFirst?: boolean;
 }
 
@@ -17,7 +16,6 @@ export function TextBlock({
   content,
   fallbackBlockId,
   isAgent,
-  onLayoutChangeStart,
   isFirst,
 }: TextBlockProps) {
   const blockText = (block?.content ?? content ?? "").trim();

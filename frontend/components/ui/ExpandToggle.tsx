@@ -80,7 +80,7 @@ export function ExpandToggle({
     <Pressable
       onPress={onToggle}
       className={`flex-row items-center self-start ${
-        isMini ? "opacity-70" : "rounded-lg px-2 py-1 active:bg-white/10"
+        isMini ? "" : "rounded-lg px-2 py-1 active:bg-white/10"
       }`}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || displayLabel}
