@@ -47,13 +47,6 @@ export const isSameMessageList = (
   });
 };
 
-export const COLLAPSED_TEXT_LINES = 10;
-export const COLLAPSED_TEXT_CHAR_LIMIT = 300;
-
-export const shouldCollapseByLength = (value: string) => {
-  return value.length > COLLAPSED_TEXT_CHAR_LIMIT;
-};
-
 export type ExternalSessionRef = {
   provider?: string | null;
   externalSessionId?: string | null;

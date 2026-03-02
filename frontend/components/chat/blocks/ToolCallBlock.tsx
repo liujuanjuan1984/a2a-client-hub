@@ -48,14 +48,16 @@ export function ToolCallBlock({
       key={blockId}
       className={`${!isFirst ? "mt-3" : ""} rounded-xl bg-black/40 p-3`}
     >
-      <ExpandToggle
-        expanded={expanded}
-        onToggle={() => {
-          handleToggle().catch(() => undefined);
-        }}
-        type="Tool Call"
-        showChevron={false}
-      />
+      {!(expanded && blockHasContent) ? (
+        <ExpandToggle
+          expanded={expanded}
+          onToggle={() => {
+            handleToggle().catch(() => undefined);
+          }}
+          type="Tool Call"
+          showChevron={false}
+        />
+      ) : null}
 
       {expanded && blockHasContent ? (
         <View>
@@ -65,12 +67,13 @@ export function ToolCallBlock({
           >
             {blockText}
           </Text>
-          <View className="mt-2 items-end">
+          <View className="mt-1 items-end">
             <ExpandToggle
               expanded
               onToggle={toggleToolCall}
               testID={`chat-message-${blockId}-collapse-bottom`}
-              showChevron={false}
+              variant="mini"
+              showChevron
             />
           </View>
         </View>
