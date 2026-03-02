@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import calendar
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
-from typing import Any, Dict, Optional
+from functools import wraps
+from typing import Any, Dict, Optional, TypeVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select
@@ -17,8 +19,9 @@ from sqlalchemy.orm import aliased
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.locking import (
-    is_postgres_lock_not_available_error,
     set_postgres_local_timeouts,
+    to_retryable_db_lock_error,
+    to_retryable_db_query_timeout_error,
 )
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
@@ -50,6 +53,55 @@ class A2AScheduleQuotaError(A2AScheduleError):
 
 class A2AScheduleConflictError(A2AScheduleError):
     """Raised when a schedule task operation is in conflict with its current state."""
+
+
+class A2AScheduleServiceBusyError(A2AScheduleError):
+    """Raised when a schedule operation times out due to transient DB pressure."""
+
+
+_ScheduleResultT = TypeVar("_ScheduleResultT")
+
+
+def _map_retryable_db_errors(
+    operation: str,
+) -> Callable[
+    [Callable[..., Awaitable[_ScheduleResultT]]],
+    Callable[..., Awaitable[_ScheduleResultT]],
+]:
+    def decorator(
+        fn: Callable[..., Awaitable[_ScheduleResultT]],
+    ) -> Callable[..., Awaitable[_ScheduleResultT]]:
+        @wraps(fn)
+        async def wrapper(
+            self: "A2AScheduleService",
+            *args: Any,
+            **kwargs: Any,
+        ) -> _ScheduleResultT:
+            try:
+                return await fn(self, *args, **kwargs)
+            except DBAPIError as exc:
+                retryable_lock_error = to_retryable_db_lock_error(
+                    exc,
+                    lock_message=(
+                        f"{operation} is currently locked by another operation; retry shortly."
+                    ),
+                )
+                if retryable_lock_error is not None:
+                    raise A2AScheduleConflictError(str(retryable_lock_error)) from exc
+
+                retryable_timeout_error = to_retryable_db_query_timeout_error(
+                    exc,
+                    timeout_message=f"{operation} timed out; service busy, retry shortly.",
+                )
+                if retryable_timeout_error is not None:
+                    raise A2AScheduleServiceBusyError(
+                        str(retryable_timeout_error)
+                    ) from exc
+                raise
+
+        return wrapper
+
+    return decorator
 
 
 @dataclass(frozen=True)
@@ -95,6 +147,7 @@ class A2AScheduleService:
             statement_timeout_ms=self._default_write_statement_timeout_ms,
         )
 
+    @_map_retryable_db_errors("Schedule task list")
     async def list_tasks(
         self,
         db: AsyncSession,
@@ -124,6 +177,7 @@ class A2AScheduleService:
         total = int(await db.scalar(count_stmt) or 0)
         return items, total
 
+    @_map_retryable_db_errors("Schedule task read")
     async def get_task(
         self,
         db: AsyncSession,
@@ -133,6 +187,7 @@ class A2AScheduleService:
     ) -> A2AScheduleTask:
         return await self._get_task(db, user_id=user_id, task_id=task_id)
 
+    @_map_retryable_db_errors("Schedule task creation")
     async def create_task(
         self,
         db: AsyncSession,
@@ -191,6 +246,7 @@ class A2AScheduleService:
         await db.refresh(task)
         return task
 
+    @_map_retryable_db_errors("Schedule task update")
     async def update_task(
         self,
         db: AsyncSession,
@@ -272,6 +328,7 @@ class A2AScheduleService:
         await db.refresh(task)
         return task
 
+    @_map_retryable_db_errors("Schedule task toggle")
     async def set_enabled(
         self,
         db: AsyncSession,
@@ -306,6 +363,7 @@ class A2AScheduleService:
         await db.refresh(task)
         return task
 
+    @_map_retryable_db_errors("Schedule task deletion")
     async def delete_task(
         self,
         db: AsyncSession,
@@ -320,6 +378,7 @@ class A2AScheduleService:
         task.next_run_at = None
         await commit_safely(db)
 
+    @_map_retryable_db_errors("Schedule task manual fail")
     async def mark_task_failed_manually(
         self,
         db: AsyncSession,
@@ -351,10 +410,14 @@ class A2AScheduleService:
         try:
             task = await db.scalar(stmt)
         except DBAPIError as exc:
-            if is_postgres_lock_not_available_error(exc):
-                raise A2AScheduleConflictError(
+            retryable_error = to_retryable_db_lock_error(
+                exc,
+                lock_message=(
                     "Task is currently locked by another operation; retry shortly."
-                ) from exc
+                ),
+            )
+            if retryable_error is not None:
+                raise A2AScheduleConflictError(str(retryable_error)) from exc
             raise
         if task is None:
             raise A2AScheduleNotFoundError("Schedule task not found")
@@ -387,10 +450,14 @@ class A2AScheduleService:
         try:
             execution = await db.scalar(exec_stmt)
         except DBAPIError as exc:
-            if is_postgres_lock_not_available_error(exc):
-                raise A2AScheduleConflictError(
+            retryable_error = to_retryable_db_lock_error(
+                exc,
+                lock_message=(
                     "Task execution is currently locked by another operation; retry shortly."
-                ) from exc
+                ),
+            )
+            if retryable_error is not None:
+                raise A2AScheduleConflictError(str(retryable_error)) from exc
             raise
         if execution is None:
             execution = A2AScheduleExecution(
@@ -436,6 +503,7 @@ class A2AScheduleService:
         await db.refresh(task)
         return task
 
+    @_map_retryable_db_errors("Schedule execution list")
     async def list_executions(
         self,
         db: AsyncSession,
@@ -805,10 +873,14 @@ class A2AScheduleService:
         try:
             task = await db.scalar(stmt)
         except DBAPIError as exc:
-            if is_postgres_lock_not_available_error(exc):
-                raise A2AScheduleConflictError(
+            retryable_error = to_retryable_db_lock_error(
+                exc,
+                lock_message=(
                     "Task is currently locked by another operation; retry shortly."
-                ) from exc
+                ),
+            )
+            if retryable_error is not None:
+                raise A2AScheduleConflictError(str(retryable_error)) from exc
             raise
         if task is None:
             return False
@@ -1478,9 +1550,11 @@ a2a_schedule_service = A2AScheduleService()
 __all__ = [
     "A2A_MANUAL_SOURCE",
     "A2A_SCHEDULE_SOURCE",
+    "A2AScheduleConflictError",
     "A2AScheduleError",
     "A2AScheduleNotFoundError",
     "A2AScheduleQuotaError",
+    "A2AScheduleServiceBusyError",
     "A2AScheduleService",
     "A2AScheduleValidationError",
     "ClaimedA2AScheduleTask",

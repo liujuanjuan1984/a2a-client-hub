@@ -12,13 +12,13 @@ from uuid import UUID
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
-from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.error_codes import status_code_for_invoke_error_code
+from app.api.retry_after import db_busy_retry_after_headers
 from app.db.locking import (
-    is_postgres_lock_not_available_error,
-    is_postgres_statement_timeout_error,
+    RetryableDbLockError,
+    RetryableDbQueryTimeoutError,
 )
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
@@ -1526,15 +1526,17 @@ async def run_issue_ws_ticket_route(
             scope_type=scope_type,
             scope_id=scope_id,
         )
-    except DBAPIError as exc:
-        if is_postgres_lock_not_available_error(
-            exc
-        ) or is_postgres_statement_timeout_error(exc):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="WS ticket issuance is currently locked by another operation; retry shortly.",
-            ) from exc
-        raise
+    except RetryableDbLockError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except RetryableDbQueryTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+            headers=db_busy_retry_after_headers(),
+        ) from exc
     return WsTicketResponse(
         token=issued.token,
         expires_at=issued.expires_at,

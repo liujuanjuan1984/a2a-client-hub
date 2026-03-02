@@ -7,15 +7,11 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, HTTPException, Query, Response, status
-from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
+from app.api.retry_after import db_busy_retry_after_headers
 from app.api.routing import StrictAPIRouter
-from app.db.locking import (
-    is_postgres_lock_not_available_error,
-    is_postgres_statement_timeout_error,
-)
 from app.db.models.user import User
 from app.schemas.a2a_schedule import (
     A2AScheduleExecutionListResponse,
@@ -31,6 +27,7 @@ from app.services.a2a_schedule_service import (
     A2AScheduleConflictError,
     A2AScheduleNotFoundError,
     A2AScheduleQuotaError,
+    A2AScheduleServiceBusyError,
     A2AScheduleValidationError,
     a2a_schedule_service,
 )
@@ -76,6 +73,12 @@ _SCHEDULE_ERROR_STATUS_MAP = {
 async def _call_schedule(coro: Awaitable[object]):
     try:
         return await coro
+    except A2AScheduleServiceBusyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+            headers=db_busy_retry_after_headers(),
+        ) from exc
     except (
         A2AScheduleQuotaError,
         A2AScheduleConflictError,
@@ -86,15 +89,6 @@ async def _call_schedule(coro: Awaitable[object]):
             if isinstance(exc, error_type):
                 raise HTTPException(status_code=status_code, detail=str(exc)) from exc
         raise exc
-    except DBAPIError as exc:
-        if is_postgres_lock_not_available_error(
-            exc
-        ) or is_postgres_statement_timeout_error(exc):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Schedule task is currently locked by another operation; retry shortly.",
-            ) from exc
-        raise
 
 
 def _build_task_response(
@@ -197,11 +191,13 @@ async def list_schedule_tasks(
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskListResponse:
     schedule_timezone = _resolve_schedule_timezone(user_timezone=current_user.timezone)
-    items, total = await a2a_schedule_service.list_tasks(
-        db,
-        user_id=current_user.id,
-        page=page,
-        size=size,
+    items, total = await _call_schedule(
+        a2a_schedule_service.list_tasks(
+            db,
+            user_id=current_user.id,
+            page=page,
+            size=size,
+        )
     )
     return A2AScheduleTaskListResponse(
         items=[

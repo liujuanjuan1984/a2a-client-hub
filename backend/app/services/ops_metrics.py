@@ -25,7 +25,9 @@ class _OpsMetricsStore:
         self._schedule_recovery_lock_skipped_tasks: int = 0
         self._schedule_leader_lock_contentions: int = 0
         self._schedule_leader_lock_release_failures: int = 0
+        self._schedule_db_query_timeouts: int = 0
         self._ws_ticket_lock_conflicts: int = 0
+        self._ws_ticket_query_timeouts: int = 0
         self._schedule_finalize_latency = _LatencyStats()
 
     def set_db_idle_in_tx_count(self, value: int) -> None:
@@ -75,9 +77,17 @@ class _OpsMetricsStore:
         with self._lock:
             self._schedule_leader_lock_release_failures += max(int(value), 0)
 
+    def increment_schedule_db_query_timeouts(self, value: int = 1) -> None:
+        with self._lock:
+            self._schedule_db_query_timeouts += max(int(value), 0)
+
     def increment_ws_ticket_lock_conflicts(self, value: int = 1) -> None:
         with self._lock:
             self._ws_ticket_lock_conflicts += max(int(value), 0)
+
+    def increment_ws_ticket_query_timeouts(self, value: int = 1) -> None:
+        with self._lock:
+            self._ws_ticket_query_timeouts += max(int(value), 0)
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -91,7 +101,9 @@ class _OpsMetricsStore:
                 "schedule_recovery_lock_skipped_tasks": self._schedule_recovery_lock_skipped_tasks,
                 "schedule_leader_lock_contentions": self._schedule_leader_lock_contentions,
                 "schedule_leader_lock_release_failures": self._schedule_leader_lock_release_failures,
+                "schedule_db_query_timeouts": self._schedule_db_query_timeouts,
                 "ws_ticket_lock_conflicts": self._ws_ticket_lock_conflicts,
+                "ws_ticket_query_timeouts": self._ws_ticket_query_timeouts,
                 "schedule_run_finalize_latency": {
                     "count": latency.count,
                     "avg_ms": round(avg_ms, 3),

@@ -1333,7 +1333,7 @@ async def test_dispatch_due_a2a_schedules_continues_when_recovery_hits_lock_cont
     assert claim_mock.await_count == 1
     assert refresh_metrics_mock.await_count == 1
     assert (
-        "Skip stale-task recovery this cycle due to lock contention/statement timeout"
+        "Skip stale-task recovery this cycle due to lock contention; continue dispatch."
         in caplog.text
     )
 
@@ -1556,7 +1556,7 @@ async def test_dispatch_due_a2a_schedules_stops_claim_loop_when_claim_hits_state
     assert ensure_workers_mock.await_count == 1
     assert refresh_metrics_mock.await_count == 1
     assert (
-        "Stop claiming due tasks this cycle due to lock contention/statement timeout."
+        "Stop claiming due tasks this cycle due to database statement timeout."
         in caplog.text
     )
 

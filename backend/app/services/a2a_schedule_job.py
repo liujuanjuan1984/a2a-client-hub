@@ -17,8 +17,8 @@ from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.locking import (
-    is_postgres_lock_not_available_error,
-    is_postgres_statement_timeout_error,
+    is_retryable_db_lock_failure,
+    is_retryable_db_query_timeout,
     set_postgres_local_timeouts,
 )
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
@@ -65,12 +65,12 @@ def _is_db_connectivity_issue(exc: Exception) -> bool:
     return False
 
 
-def _is_db_lock_contention_or_timeout_issue(exc: Exception) -> bool:
-    if not isinstance(exc, DBAPIError):
-        return False
-    return is_postgres_lock_not_available_error(
-        exc
-    ) or is_postgres_statement_timeout_error(exc)
+def _is_db_lock_contention_issue(exc: Exception) -> bool:
+    return is_retryable_db_lock_failure(exc)
+
+
+def _is_db_query_timeout_issue(exc: Exception) -> bool:
+    return is_retryable_db_query_timeout(exc)
 
 
 def _execution_metadata(
@@ -728,11 +728,19 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
                     hard_timeout_seconds=hard_timeout_seconds,
                 )
         except Exception as exc:
-            if _is_db_lock_contention_or_timeout_issue(exc):
+            if _is_db_lock_contention_issue(exc):
                 logger.warning(
-                    "Skip stale-task recovery this cycle due to lock contention/statement timeout; continue dispatch.",
+                    "Skip stale-task recovery this cycle due to lock contention; continue dispatch.",
                     exc_info=exc,
                     extra={"phase": "recovery", "lock_contention": True},
+                )
+                recovered = 0
+            elif _is_db_query_timeout_issue(exc):
+                ops_metrics.increment_schedule_db_query_timeouts()
+                logger.warning(
+                    "Skip stale-task recovery this cycle due to database statement timeout; continue dispatch.",
+                    exc_info=exc,
+                    extra={"phase": "recovery", "db_query_timeout": True},
                 )
                 recovered = 0
             elif _is_db_connectivity_issue(exc):
@@ -759,11 +767,19 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
                 async with AsyncSessionLocal() as db:
                     claim = await a2a_schedule_service.claim_next_due_task(db)
             except Exception as exc:
-                if _is_db_lock_contention_or_timeout_issue(exc):
+                if _is_db_lock_contention_issue(exc):
                     logger.warning(
-                        "Stop claiming due tasks this cycle due to lock contention/statement timeout.",
+                        "Stop claiming due tasks this cycle due to lock contention.",
                         exc_info=exc,
                         extra={"phase": "claim", "lock_contention": True},
+                    )
+                    break
+                if _is_db_query_timeout_issue(exc):
+                    ops_metrics.increment_schedule_db_query_timeouts()
+                    logger.warning(
+                        "Stop claiming due tasks this cycle due to database statement timeout.",
+                        exc_info=exc,
+                        extra={"phase": "claim", "db_query_timeout": True},
                     )
                     break
                 if _is_db_connectivity_issue(exc):

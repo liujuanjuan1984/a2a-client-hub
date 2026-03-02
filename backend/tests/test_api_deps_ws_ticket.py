@@ -6,12 +6,16 @@ from uuid import uuid4
 
 import pytest
 from fastapi import WebSocketException, status
-from sqlalchemy.exc import DBAPIError
 
 from app.api.deps import get_ws_ticket_user
+from app.api.retry_after import DB_BUSY_RETRY_AFTER_SECONDS
 from app.core.config import settings
+from app.db.locking import (
+    DbLockFailureKind,
+    RetryableDbLockError,
+    RetryableDbQueryTimeoutError,
+)
 from app.services.ws_ticket_service import (
-    WsTicketConflictError,
     WsTicketNotFoundError,
     ws_ticket_service,
 )
@@ -29,7 +33,10 @@ async def test_get_ws_ticket_user_returns_try_again_later_on_ticket_conflict(
     monkeypatch,
 ) -> None:
     async def _raise_conflict(*_args, **_kwargs):
-        raise WsTicketConflictError("Ticket is being consumed by another request")
+        raise RetryableDbLockError(
+            "Ticket is being consumed by another request",
+            kind=DbLockFailureKind.LOCK_NOT_AVAILABLE,
+        )
 
     monkeypatch.setattr(settings, "ws_require_origin", False, raising=False)
     monkeypatch.setattr(ws_ticket_service, "consume_ticket", _raise_conflict)
@@ -43,7 +50,10 @@ async def test_get_ws_ticket_user_returns_try_again_later_on_ticket_conflict(
         )
 
     assert exc_info.value.code == status.WS_1013_TRY_AGAIN_LATER
-    assert exc_info.value.reason == "Ticket is being consumed by another request"
+    assert exc_info.value.reason == (
+        "Ticket is being consumed by another request"
+        f" Retry in {DB_BUSY_RETRY_AFTER_SECONDS} seconds."
+    )
 
 
 @pytest.mark.asyncio
@@ -72,14 +82,9 @@ async def test_get_ws_ticket_user_keeps_policy_violation_for_invalid_ticket(
 async def test_get_ws_ticket_user_returns_try_again_later_on_db_statement_timeout(
     monkeypatch,
 ) -> None:
-    class _StatementTimeoutError(Exception):
-        sqlstate = "57014"
-
     async def _raise_statement_timeout(*_args, **_kwargs):
-        raise DBAPIError(
-            statement="SELECT ... FOR UPDATE NOWAIT",
-            params={},
-            orig=_StatementTimeoutError("canceling statement due to statement timeout"),
+        raise RetryableDbQueryTimeoutError(
+            "Ticket verification timed out; service busy, retry shortly.",
         )
 
     monkeypatch.setattr(settings, "ws_require_origin", False, raising=False)
@@ -94,4 +99,7 @@ async def test_get_ws_ticket_user_returns_try_again_later_on_db_statement_timeou
         )
 
     assert exc_info.value.code == status.WS_1013_TRY_AGAIN_LATER
-    assert exc_info.value.reason == "Ticket verification timed out; retry shortly"
+    assert exc_info.value.reason == (
+        "Ticket verification timed out; service busy, retry shortly."
+        f" Retry in {DB_BUSY_RETRY_AFTER_SECONDS} seconds."
+    )
