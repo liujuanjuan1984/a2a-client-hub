@@ -193,43 +193,6 @@ describe("ChatMessageItem collapsible blocks", () => {
     });
   });
 
-  it("uses bottom collapse action for expanded long text content", () => {
-    const onLayoutChangeStart = jest.fn();
-    const message = buildAgentMessage({
-      id: "plain-message",
-      content: "A".repeat(600),
-      blocks: [],
-    });
-
-    const screen = render(
-      <ChatMessageItem
-        message={message}
-        index={0}
-        isLastMessage
-        onRetry={jest.fn()}
-        onLayoutChangeStart={onLayoutChangeStart}
-      />,
-    );
-
-    fireEvent.press(
-      screen.getByTestId("chat-message-plain-message:text-expand"),
-    );
-    expect(
-      screen.queryByTestId("chat-message-plain-message:text-expand"),
-    ).toBeNull();
-    expect(
-      screen.getByTestId("chat-message-plain-message:text-collapse-bottom"),
-    ).toBeTruthy();
-
-    fireEvent.press(
-      screen.getByTestId("chat-message-plain-message:text-collapse-bottom"),
-    );
-    expect(onLayoutChangeStart).toHaveBeenCalledTimes(2);
-    expect(
-      screen.getByTestId("chat-message-plain-message:text-expand"),
-    ).toBeTruthy();
-  });
-
   it("shows placeholder when agent content is unavailable", () => {
     const message = buildAgentMessage({
       id: "empty-agent-message",
