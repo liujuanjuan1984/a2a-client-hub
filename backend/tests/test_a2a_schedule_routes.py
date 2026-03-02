@@ -61,7 +61,7 @@ async def test_call_schedule_maps_db_statement_timeout_to_http_409() -> None:
         raise DBAPIError(
             statement="UPDATE ...",
             params={},
-            orig=_StatementTimeoutError(),
+            orig=_StatementTimeoutError("canceling statement due to statement timeout"),
         )
 
     with pytest.raises(HTTPException) as exc_info:

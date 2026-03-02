@@ -40,13 +40,14 @@ def is_postgres_lock_not_available_error(exc: Exception) -> bool:
 
 
 def is_postgres_statement_timeout_error(exc: Exception) -> bool:
-    sqlstate = _extract_sqlstate(exc)
-    if sqlstate == _PG_SQLSTATE_QUERY_CANCELED:
-        return True
-
     if not isinstance(exc, DBAPIError):
         return False
+
     message = str(getattr(exc, "orig", exc)).lower()
+    sqlstate = _extract_sqlstate(exc)
+    if sqlstate == _PG_SQLSTATE_QUERY_CANCELED:
+        return "statement timeout" in message
+
     return "statement timeout" in message
 
 

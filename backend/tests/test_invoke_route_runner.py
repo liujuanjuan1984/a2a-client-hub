@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy.exc import DBAPIError
 
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.services import invoke_route_runner
@@ -27,6 +28,45 @@ class _NoopWebSocket:
 
     async def send_text(self, payload: str) -> None:
         self.sent.append(payload)
+
+
+@pytest.mark.asyncio
+async def test_run_issue_ws_ticket_route_maps_lock_contention_to_http_409(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _LockNotAvailableError(Exception):
+        sqlstate = "55P03"
+
+    async def _raise_lock_contention(*_args, **_kwargs):
+        raise DBAPIError(
+            statement="INSERT ...",
+            params={},
+            orig=_LockNotAvailableError("lock not available"),
+        )
+
+    async def _allow_access() -> None:
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner.ws_ticket_service,
+        "issue_ticket",
+        _raise_lock_contention,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await invoke_route_runner.run_issue_ws_ticket_route(
+            db=object(),
+            user_id=uuid4(),
+            scope_type="me_a2a_agent",
+            scope_id=uuid4(),
+            ensure_access=_allow_access,
+            not_found_errors=(ValueError,),
+            not_found_status_code=404,
+            not_found_detail="not found",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "retry shortly" in str(exc_info.value.detail)
 
 
 @pytest.mark.asyncio

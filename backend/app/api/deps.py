@@ -10,11 +10,16 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, WebSocket, WebSocketException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger, set_user_context
 from app.core.security import verify_access_token
+from app.db.locking import (
+    is_postgres_lock_not_available_error,
+    is_postgres_statement_timeout_error,
+)
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.handlers import auth as auth_handler
@@ -176,6 +181,28 @@ async def get_ws_ticket_user(
             code=status.WS_1013_TRY_AGAIN_LATER,
             reason="Ticket is being consumed by another request",
         ) from exc
+    except DBAPIError as exc:
+        if is_postgres_lock_not_available_error(
+            exc
+        ) or is_postgres_statement_timeout_error(exc):
+            ops_metrics.increment_ws_ticket_lock_conflicts()
+            logger.warning(
+                "WS ticket consume deferred due to DB lock contention/statement timeout for scope_type=%s scope_id=%s",
+                scope_type,
+                scope_id,
+                exc_info=exc,
+                extra={
+                    "phase": "ws_ticket_auth",
+                    "scope_type": scope_type,
+                    "scope_id": str(scope_id),
+                    "ws_ticket_conflict": True,
+                },
+            )
+            raise WebSocketException(
+                code=status.WS_1013_TRY_AGAIN_LATER,
+                reason="Ticket verification timed out; retry shortly",
+            ) from exc
+        raise
     except WsTicketError as exc:
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION, reason=str(exc)

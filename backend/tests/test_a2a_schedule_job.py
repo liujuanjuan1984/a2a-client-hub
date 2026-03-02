@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 
 from app.core.config import settings
 from app.db.models.a2a_agent import A2AAgent
@@ -1289,6 +1290,54 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_db_connection_refused
     assert "database connectivity issue during stale-task recovery." in caplog.text
 
 
+async def test_dispatch_due_a2a_schedules_continues_when_recovery_hits_lock_contention(
+    async_db_session,  # noqa: ARG001
+    monkeypatch,
+    caplog,
+) -> None:
+    ensure_workers_mock = AsyncMock()
+    refresh_metrics_mock = AsyncMock()
+    claim_mock = AsyncMock(return_value=None)
+
+    class _LockNotAvailableError(Exception):
+        sqlstate = "55P03"
+
+    async def _raise_lock_contention(*_args, **_kwargs):
+        raise DBAPIError(
+            statement="SELECT ... FOR UPDATE SKIP LOCKED",
+            params={},
+            orig=_LockNotAvailableError("could not obtain lock on row"),
+        )
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        ensure_workers_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        refresh_metrics_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        _raise_lock_contention,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_due_task",
+        claim_mock,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await dispatch_due_a2a_schedules(batch_size=1)
+
+    assert ensure_workers_mock.await_count == 1
+    assert claim_mock.await_count == 1
+    assert refresh_metrics_mock.await_count == 1
+    assert (
+        "Skip stale-task recovery this cycle due to lock contention/statement timeout"
+        in caplog.text
+    )
+
+
 async def test_dispatch_due_a2a_schedules_skips_when_leader_lock_not_acquired(
     async_db_session,  # noqa: ARG001
     monkeypatch,
@@ -1461,6 +1510,55 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_claim_db_connection_r
     assert ensure_workers_mock.await_count == 1
     assert refresh_metrics_mock.await_count == 0
     assert "database connectivity issue while claiming due tasks." in caplog.text
+
+
+async def test_dispatch_due_a2a_schedules_stops_claim_loop_when_claim_hits_statement_timeout(
+    async_db_session,  # noqa: ARG001
+    monkeypatch,
+    caplog,
+) -> None:
+    ensure_workers_mock = AsyncMock()
+    refresh_metrics_mock = AsyncMock()
+
+    async def _recover_ok(*_args, **_kwargs):
+        return 0
+
+    class _StatementTimeoutError(Exception):
+        sqlstate = "57014"
+
+    async def _claim_timeout(*_args, **_kwargs):
+        raise DBAPIError(
+            statement="SET LOCAL statement_timeout = '5000ms'",
+            params={},
+            orig=_StatementTimeoutError("canceling statement due to statement timeout"),
+        )
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        ensure_workers_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        refresh_metrics_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        _recover_ok,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_due_task",
+        _claim_timeout,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await dispatch_due_a2a_schedules(batch_size=2)
+
+    assert ensure_workers_mock.await_count == 1
+    assert refresh_metrics_mock.await_count == 1
+    assert (
+        "Stop claiming due tasks this cycle due to lock contention/statement timeout."
+        in caplog.text
+    )
 
 
 async def test_dispatch_due_a2a_schedules_reraises_non_connectivity_errors(
