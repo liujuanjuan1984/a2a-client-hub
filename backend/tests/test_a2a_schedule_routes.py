@@ -4,7 +4,9 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 
 from app.api.routers import a2a_schedules
 from app.db.models.a2a_agent import A2AAgent
@@ -30,6 +32,44 @@ async def _create_agent(async_db_session, *, user_id, suffix: str) -> A2AAgent:
     await async_db_session.commit()
     await async_db_session.refresh(agent)
     return agent
+
+
+async def test_call_schedule_maps_db_lock_conflict_to_http_409() -> None:
+    class _LockNotAvailableError(Exception):
+        sqlstate = "55P03"
+
+    async def _raise_lock_conflict():
+        raise DBAPIError(
+            statement="SELECT ... FOR UPDATE NOWAIT",
+            params={},
+            orig=_LockNotAvailableError(),
+        )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await a2a_schedules._call_schedule(_raise_lock_conflict())
+
+    error = exc_info.value
+    assert error.status_code == 409
+    assert "retry shortly" in str(error.detail)
+
+
+async def test_call_schedule_maps_db_statement_timeout_to_http_409() -> None:
+    class _StatementTimeoutError(Exception):
+        sqlstate = "57014"
+
+    async def _raise_statement_timeout():
+        raise DBAPIError(
+            statement="UPDATE ...",
+            params={},
+            orig=_StatementTimeoutError(),
+        )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await a2a_schedules._call_schedule(_raise_statement_timeout())
+
+    error = exc_info.value
+    assert error.status_code == 409
+    assert "retry shortly" in str(error.detail)
 
 
 async def test_schedule_routes_crud_and_toggle(

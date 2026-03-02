@@ -631,7 +631,6 @@ class A2AScheduleService:
     ) -> int:
         """Recover stale running tasks by run_id and close them deterministically."""
 
-        await self._apply_default_write_timeouts(db)
         now_utc = ensure_utc(now or utc_now())
         timeout_seconds = max(int(timeout_seconds or 0), 1)
         cutoff = now_utc - timedelta(seconds=timeout_seconds)
@@ -658,6 +657,8 @@ class A2AScheduleService:
         error_message = "Execution marked as failed by recovery: stale running task exceeded timeout"
         recovered_count = 0
         while True:
+            # SET LOCAL timeouts are transaction-scoped; re-apply after each commit.
+            await self._apply_default_write_timeouts(db)
             stale_where = and_(
                 A2AScheduleTask.deleted_at.is_(None),
                 A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,

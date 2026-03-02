@@ -1226,15 +1226,24 @@ async def test_recover_stale_running_tasks_commits_per_recovered_task(
     await async_db_session.commit()
 
     commit_call_count = 0
+    timeout_apply_call_count = 0
 
     async def _counting_commit(db):
         nonlocal commit_call_count
         commit_call_count += 1
         await real_commit_safely(db)
 
+    async def _counting_set_timeouts(*_args, **_kwargs):
+        nonlocal timeout_apply_call_count
+        timeout_apply_call_count += 1
+
     monkeypatch.setattr(
         "app.services.a2a_schedule_service.commit_safely",
         _counting_commit,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_service.set_postgres_local_timeouts",
+        _counting_set_timeouts,
     )
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
@@ -1244,6 +1253,8 @@ async def test_recover_stale_running_tasks_commits_per_recovered_task(
     )
     assert recovered == 2
     assert commit_call_count >= recovered
+    # Two recovered tasks plus one terminating loop iteration (no row found).
+    assert timeout_apply_call_count >= recovered + 1
 
 
 async def test_dispatch_due_a2a_schedules_skips_cycle_when_db_connection_refused(

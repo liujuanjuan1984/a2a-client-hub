@@ -7,10 +7,15 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, HTTPException, Query, Response, status
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
 from app.api.routing import StrictAPIRouter
+from app.db.locking import (
+    is_postgres_lock_not_available_error,
+    is_postgres_statement_timeout_error,
+)
 from app.db.models.user import User
 from app.schemas.a2a_schedule import (
     A2AScheduleExecutionListResponse,
@@ -81,6 +86,15 @@ async def _call_schedule(coro: Awaitable[object]):
             if isinstance(exc, error_type):
                 raise HTTPException(status_code=status_code, detail=str(exc)) from exc
         raise exc
+    except DBAPIError as exc:
+        if is_postgres_lock_not_available_error(
+            exc
+        ) or is_postgres_statement_timeout_error(exc):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Schedule task is currently locked by another operation; retry shortly.",
+            ) from exc
+        raise
 
 
 def _build_task_response(
