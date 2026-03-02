@@ -15,7 +15,12 @@ _LOCK_NOT_AVAILABLE_MARKERS = (
     "lock not available",
     "canceling statement due to lock timeout",
 )
-_STATEMENT_TIMEOUT_MARKERS = ("canceling statement due to statement timeout",)
+_STATEMENT_TIMEOUT_MARKERS = (
+    "canceling statement due to statement timeout",
+    "statement timeout",
+    "query timeout",
+    "query timed out",
+)
 
 
 class DbLockFailureKind(str, Enum):
@@ -34,17 +39,45 @@ class RetryableDbQueryTimeoutError(RuntimeError):
     """Domain error for query timeout that can be retried later."""
 
 
+def _extract_sqlstate_value(error_obj: object | None) -> str | None:
+    if error_obj is None:
+        return None
+
+    for key in ("sqlstate", "pgcode"):
+        value = getattr(error_obj, key, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    diag = getattr(error_obj, "diag", None)
+    for key in ("sqlstate", "pgcode"):
+        value = getattr(diag, key, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return None
+
+
 def _extract_sqlstate(exc: Exception) -> str | None:
     if not isinstance(exc, DBAPIError):
         return None
     original = getattr(exc, "orig", None)
     if original is None:
         return None
-    for key in ("sqlstate", "pgcode"):
-        value = getattr(original, key, None)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+
+    for candidate in (
+        original,
+        getattr(original, "__cause__", None),
+        getattr(original, "__context__", None),
+    ):
+        value = _extract_sqlstate_value(candidate)
+        if value is not None:
+            return value
+
     return None
+
+
+def _looks_like_statement_timeout(message: str) -> bool:
+    return any(marker in message for marker in _STATEMENT_TIMEOUT_MARKERS)
 
 
 def is_postgres_lock_not_available_error(exc: Exception) -> bool:
@@ -65,10 +98,13 @@ def is_postgres_statement_timeout_error(exc: Exception) -> bool:
     message = str(getattr(exc, "orig", exc)).lower()
     sqlstate = _extract_sqlstate(exc)
     if sqlstate == _PG_SQLSTATE_QUERY_CANCELED:
-        return any(marker in message for marker in _STATEMENT_TIMEOUT_MARKERS)
+        return _looks_like_statement_timeout(message)
 
-    # Fallback for proxies/drivers that omit sqlstate but preserve PostgreSQL text.
-    return any(marker in message for marker in _STATEMENT_TIMEOUT_MARKERS)
+    if sqlstate:
+        return False
+
+    # Fallback for proxies/drivers that omit sqlstate but keep timeout keywords.
+    return _looks_like_statement_timeout(message)
 
 
 def classify_postgres_lock_failure(exc: Exception) -> DbLockFailureKind | None:

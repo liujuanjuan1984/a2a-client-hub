@@ -60,11 +60,37 @@ def test_query_timeout_detection_requires_sqlstate_and_timeout_marker() -> None:
     generic_timeout_without_sqlstate_exc = _build_dbapi_error(
         message="statement timeout exceeded",
     )
+    unrelated_timeout_without_sqlstate_exc = _build_dbapi_error(
+        message="timeout while waiting for connection",
+    )
 
     assert is_retryable_db_query_timeout(timeout_exc) is True
     assert is_retryable_db_query_timeout(canceled_non_timeout_exc) is False
     assert is_retryable_db_query_timeout(timeout_text_without_sqlstate_exc) is True
-    assert is_retryable_db_query_timeout(generic_timeout_without_sqlstate_exc) is False
+    assert is_retryable_db_query_timeout(generic_timeout_without_sqlstate_exc) is True
+    assert (
+        is_retryable_db_query_timeout(unrelated_timeout_without_sqlstate_exc) is False
+    )
+
+
+def test_query_timeout_detection_accepts_sqlstate_from_nested_diag() -> None:
+    class _Diag:
+        sqlstate = "57014"
+
+    class _NestedError(Exception):
+        diag = _Diag()
+
+    class _WrappedError(Exception):
+        def __init__(self) -> None:
+            super().__init__("statement timeout exceeded")
+            self.__cause__ = _NestedError("nested")
+
+    exc = DBAPIError(
+        statement="SELECT 1",
+        params={},
+        orig=_WrappedError(),
+    )
+    assert is_retryable_db_query_timeout(exc) is True
 
 
 def test_to_retryable_db_lock_error_maps_only_lock_contention() -> None:
