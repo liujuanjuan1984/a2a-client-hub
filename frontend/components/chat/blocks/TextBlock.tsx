@@ -24,7 +24,7 @@ export function TextBlock({
 }: TextBlockProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const blockText = block?.content ?? content ?? "";
+  const blockText = (block?.content ?? content ?? "").trim();
   const blockId = block?.id ?? fallbackBlockId;
 
   const toggleTextExpansion = useCallback(() => {
@@ -32,7 +32,7 @@ export function TextBlock({
     setExpanded((prev) => !prev);
   }, [onLayoutChangeStart]);
 
-  if (!blockText.trim()) {
+  if (!blockText) {
     return null;
   }
 
@@ -52,10 +52,10 @@ export function TextBlock({
       >
         {blockText}
       </Text>
-      {shouldCollapse ? (
+      {shouldCollapse && !expanded ? (
         <View className="mt-2">
           <ExpandToggle
-            expanded={expanded}
+            expanded={false}
             onToggle={toggleTextExpansion}
             testID={`chat-message-${blockId}-expand`}
             showChevron={false}

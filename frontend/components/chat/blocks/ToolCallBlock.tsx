@@ -48,14 +48,16 @@ export function ToolCallBlock({
       key={blockId}
       className={`${!isFirst ? "mt-3" : ""} rounded-xl bg-black/40 p-3`}
     >
-      <ExpandToggle
-        expanded={expanded}
-        onToggle={() => {
-          handleToggle().catch(() => undefined);
-        }}
-        type="Tool Call"
-        showChevron={false}
-      />
+      {!(expanded && blockHasContent) ? (
+        <ExpandToggle
+          expanded={expanded}
+          onToggle={() => {
+            handleToggle().catch(() => undefined);
+          }}
+          type="Tool Call"
+          showChevron={false}
+        />
+      ) : null}
 
       {expanded && blockHasContent ? (
         <View>

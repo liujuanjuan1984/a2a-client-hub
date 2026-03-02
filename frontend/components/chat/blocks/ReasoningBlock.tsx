@@ -48,14 +48,16 @@ export function ReasoningBlock({
       key={blockId}
       className={`${!isFirst ? "mt-3" : ""} rounded-xl bg-black/40 p-3`}
     >
-      <ExpandToggle
-        expanded={expanded}
-        onToggle={() => {
-          handleToggle().catch(() => undefined);
-        }}
-        type="Reasoning"
-        showChevron={false}
-      />
+      {!(expanded && blockHasContent) ? (
+        <ExpandToggle
+          expanded={expanded}
+          onToggle={() => {
+            handleToggle().catch(() => undefined);
+          }}
+          type="Reasoning"
+          showChevron={false}
+        />
+      ) : null}
       {expanded && blockHasContent ? (
         <View>
           <Text

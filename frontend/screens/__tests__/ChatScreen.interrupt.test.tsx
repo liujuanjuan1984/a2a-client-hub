@@ -512,11 +512,9 @@ describe("ChatScreen interrupt handling", () => {
     });
 
     expect(containsText(root, "Show less")).toBe(true);
-    const collapseButton = findPressableByTestId(
-      root,
-      "chat-message-message-1:text-expand",
-    );
-    expect(collapseButton).toBeDefined();
+    expect(() =>
+      findPressableByTestId(root, "chat-message-message-1:text-expand"),
+    ).toThrow();
     const bottomCollapseButton = findPressableByTestId(
       root,
       "chat-message-message-1:text-collapse-bottom",

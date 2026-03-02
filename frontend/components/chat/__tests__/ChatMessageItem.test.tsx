@@ -69,6 +69,7 @@ describe("ChatMessageItem collapsible blocks", () => {
     );
 
     fireEvent.press(screen.getByText("Show Reasoning"));
+    expect(screen.queryByText("Show Reasoning")).toBeNull();
     expect(
       screen.getByTestId("chat-message-reasoning-1-collapse-bottom"),
     ).toBeTruthy();
@@ -106,6 +107,7 @@ describe("ChatMessageItem collapsible blocks", () => {
     );
 
     fireEvent.press(screen.getByText("Show Tool Call"));
+    expect(screen.queryByText("Show Tool Call")).toBeNull();
     expect(
       screen.getByTestId("chat-message-tool-1-collapse-bottom"),
     ).toBeTruthy();
@@ -213,9 +215,8 @@ describe("ChatMessageItem collapsible blocks", () => {
       screen.getByTestId("chat-message-plain-message:text-expand"),
     );
     expect(
-      screen.getByTestId("chat-message-plain-message:text-expand").props
-        .accessibilityLabel,
-    ).toBe("Show less");
+      screen.queryByTestId("chat-message-plain-message:text-expand"),
+    ).toBeNull();
     expect(
       screen.getByTestId("chat-message-plain-message:text-collapse-bottom"),
     ).toBeTruthy();
