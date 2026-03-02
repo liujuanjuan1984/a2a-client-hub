@@ -407,18 +407,7 @@ class A2AScheduleService:
             .with_for_update(nowait=True)
             .limit(1)
         )
-        try:
-            task = await db.scalar(stmt)
-        except DBAPIError as exc:
-            retryable_error = to_retryable_db_lock_error(
-                exc,
-                lock_message=(
-                    "Task is currently locked by another operation; retry shortly."
-                ),
-            )
-            if retryable_error is not None:
-                raise A2AScheduleConflictError(str(retryable_error)) from exc
-            raise
+        task = await db.scalar(stmt)
         if task is None:
             raise A2AScheduleNotFoundError("Schedule task not found")
 
@@ -447,18 +436,7 @@ class A2AScheduleService:
             .with_for_update(nowait=True)
             .limit(1)
         )
-        try:
-            execution = await db.scalar(exec_stmt)
-        except DBAPIError as exc:
-            retryable_error = to_retryable_db_lock_error(
-                exc,
-                lock_message=(
-                    "Task execution is currently locked by another operation; retry shortly."
-                ),
-            )
-            if retryable_error is not None:
-                raise A2AScheduleConflictError(str(retryable_error)) from exc
-            raise
+        execution = await db.scalar(exec_stmt)
         if execution is None:
             execution = A2AScheduleExecution(
                 user_id=task.user_id,
@@ -843,6 +821,7 @@ class A2AScheduleService:
             await commit_safely(db)
         return recovered_count
 
+    @_map_retryable_db_errors("Schedule task finalize")
     async def finalize_task_run(
         self,
         db: AsyncSession,
@@ -870,18 +849,7 @@ class A2AScheduleService:
             .with_for_update(nowait=True)
             .limit(1)
         )
-        try:
-            task = await db.scalar(stmt)
-        except DBAPIError as exc:
-            retryable_error = to_retryable_db_lock_error(
-                exc,
-                lock_message=(
-                    "Task is currently locked by another operation; retry shortly."
-                ),
-            )
-            if retryable_error is not None:
-                raise A2AScheduleConflictError(str(retryable_error)) from exc
-            raise
+        task = await db.scalar(stmt)
         if task is None:
             return False
 

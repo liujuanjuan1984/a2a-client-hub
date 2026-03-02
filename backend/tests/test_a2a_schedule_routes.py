@@ -67,6 +67,32 @@ async def test_call_schedule_maps_db_statement_timeout_to_http_503() -> None:
     assert error.headers == {"Retry-After": str(DB_BUSY_RETRY_AFTER_SECONDS)}
 
 
+async def test_schedule_list_route_returns_503_and_retry_after_when_service_busy(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+
+    async def _raise_service_busy(*_args, **_kwargs):
+        raise A2AScheduleServiceBusyError(
+            "Schedule task list timed out; service busy, retry shortly.",
+        )
+
+    monkeypatch.setattr(a2a_schedule_service, "list_tasks", _raise_service_busy)
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        response = await client.get("/me/a2a/schedules", params={"page": 1, "size": 20})
+
+    assert response.status_code == 503
+    assert "service busy" in response.json()["detail"]
+    assert response.headers.get("Retry-After") == str(DB_BUSY_RETRY_AFTER_SECONDS)
+
+
 async def test_schedule_routes_crud_and_toggle(
     async_db_session,
     async_session_maker,

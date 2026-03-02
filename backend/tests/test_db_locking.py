@@ -57,10 +57,14 @@ def test_query_timeout_detection_requires_sqlstate_and_timeout_marker() -> None:
     timeout_text_without_sqlstate_exc = _build_dbapi_error(
         message="canceling statement due to statement timeout",
     )
+    generic_timeout_without_sqlstate_exc = _build_dbapi_error(
+        message="statement timeout exceeded",
+    )
 
     assert is_retryable_db_query_timeout(timeout_exc) is True
     assert is_retryable_db_query_timeout(canceled_non_timeout_exc) is False
-    assert is_retryable_db_query_timeout(timeout_text_without_sqlstate_exc) is False
+    assert is_retryable_db_query_timeout(timeout_text_without_sqlstate_exc) is True
+    assert is_retryable_db_query_timeout(generic_timeout_without_sqlstate_exc) is False
 
 
 def test_to_retryable_db_lock_error_maps_only_lock_contention() -> None:

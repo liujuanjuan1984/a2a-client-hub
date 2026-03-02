@@ -15,6 +15,7 @@ _LOCK_NOT_AVAILABLE_MARKERS = (
     "lock not available",
     "canceling statement due to lock timeout",
 )
+_STATEMENT_TIMEOUT_MARKERS = ("canceling statement due to statement timeout",)
 
 
 class DbLockFailureKind(str, Enum):
@@ -61,12 +62,13 @@ def is_postgres_statement_timeout_error(exc: Exception) -> bool:
     if not isinstance(exc, DBAPIError):
         return False
 
-    sqlstate = _extract_sqlstate(exc)
-    if sqlstate != _PG_SQLSTATE_QUERY_CANCELED:
-        return False
-
     message = str(getattr(exc, "orig", exc)).lower()
-    return "statement timeout" in message
+    sqlstate = _extract_sqlstate(exc)
+    if sqlstate == _PG_SQLSTATE_QUERY_CANCELED:
+        return any(marker in message for marker in _STATEMENT_TIMEOUT_MARKERS)
+
+    # Fallback for proxies/drivers that omit sqlstate but preserve PostgreSQL text.
+    return any(marker in message for marker in _STATEMENT_TIMEOUT_MARKERS)
 
 
 def classify_postgres_lock_failure(exc: Exception) -> DbLockFailureKind | None:
