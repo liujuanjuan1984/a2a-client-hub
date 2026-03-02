@@ -64,14 +64,14 @@ async def set_postgres_local_timeouts(
         return
 
     if lock_timeout_ms is not None and int(lock_timeout_ms) > 0:
+        lock_timeout_value = f"{int(lock_timeout_ms)}ms"
         await db.execute(
-            text("SET LOCAL lock_timeout = :lock_timeout"),
-            {"lock_timeout": f"{int(lock_timeout_ms)}ms"},
+            text(f"SET LOCAL lock_timeout = '{lock_timeout_value}'"),
         )
     if statement_timeout_ms is not None and int(statement_timeout_ms) > 0:
+        statement_timeout_value = f"{int(statement_timeout_ms)}ms"
         await db.execute(
-            text("SET LOCAL statement_timeout = :statement_timeout"),
-            {"statement_timeout": f"{int(statement_timeout_ms)}ms"},
+            text(f"SET LOCAL statement_timeout = '{statement_timeout_value}'"),
         )
 
 

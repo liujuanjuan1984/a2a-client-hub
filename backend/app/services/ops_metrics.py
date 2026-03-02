@@ -21,6 +21,11 @@ class _OpsMetricsStore:
         self._db_idle_in_tx_count: int = 0
         self._db_pool_checked_out: int = 0
         self._schedule_running_task_count: int = 0
+        self._schedule_finalize_lock_conflicts: int = 0
+        self._schedule_recovery_lock_skipped_tasks: int = 0
+        self._schedule_leader_lock_contentions: int = 0
+        self._schedule_leader_lock_release_failures: int = 0
+        self._ws_ticket_lock_conflicts: int = 0
         self._schedule_finalize_latency = _LatencyStats()
 
     def set_db_idle_in_tx_count(self, value: int) -> None:
@@ -54,6 +59,26 @@ class _OpsMetricsStore:
             if latency_ms > stats.max_ms:
                 stats.max_ms = float(latency_ms)
 
+    def increment_schedule_finalize_lock_conflicts(self, value: int = 1) -> None:
+        with self._lock:
+            self._schedule_finalize_lock_conflicts += max(int(value), 0)
+
+    def increment_schedule_recovery_lock_skipped_tasks(self, value: int = 1) -> None:
+        with self._lock:
+            self._schedule_recovery_lock_skipped_tasks += max(int(value), 0)
+
+    def increment_schedule_leader_lock_contentions(self, value: int = 1) -> None:
+        with self._lock:
+            self._schedule_leader_lock_contentions += max(int(value), 0)
+
+    def increment_schedule_leader_lock_release_failures(self, value: int = 1) -> None:
+        with self._lock:
+            self._schedule_leader_lock_release_failures += max(int(value), 0)
+
+    def increment_ws_ticket_lock_conflicts(self, value: int = 1) -> None:
+        with self._lock:
+            self._ws_ticket_lock_conflicts += max(int(value), 0)
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             latency = self._schedule_finalize_latency
@@ -62,6 +87,11 @@ class _OpsMetricsStore:
                 "db_idle_in_tx_count": self._db_idle_in_tx_count,
                 "db_pool_checked_out": self._db_pool_checked_out,
                 "schedule_running_task_count": self._schedule_running_task_count,
+                "schedule_finalize_lock_conflicts": self._schedule_finalize_lock_conflicts,
+                "schedule_recovery_lock_skipped_tasks": self._schedule_recovery_lock_skipped_tasks,
+                "schedule_leader_lock_contentions": self._schedule_leader_lock_contentions,
+                "schedule_leader_lock_release_failures": self._schedule_leader_lock_release_failures,
+                "ws_ticket_lock_conflicts": self._ws_ticket_lock_conflicts,
                 "schedule_run_finalize_latency": {
                     "count": latency.count,
                     "avg_ms": round(avg_ms, 3),

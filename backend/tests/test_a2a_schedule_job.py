@@ -21,9 +21,11 @@ from app.db.transaction import commit_safely as real_commit_safely
 from app.services.a2a_schedule_job import (
     _execute_claimed_task,
     _refresh_ops_metrics,
+    _try_hold_dispatch_leader_lock,
     dispatch_due_a2a_schedules,
 )
 from app.services.a2a_schedule_service import (
+    A2AScheduleConflictError,
     ClaimedA2AScheduleTask,
     a2a_schedule_service,
 )
@@ -828,6 +830,84 @@ async def test_execute_claimed_task_does_not_override_execution_on_finalize_mism
     assert executions[0].finished_at is None
 
 
+async def test_execute_claimed_task_defers_on_finalize_lock_conflict(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+    caplog,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="finalize-lock-conflict",
+    )
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    task_id = task.id
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        _mock_runtime_builder(),
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.get_a2a_service",
+        lambda: SimpleNamespace(gateway=SimpleNamespace()),
+    )
+
+    async def _fake_run_background_invoke(**_kwargs):
+        return {
+            "success": True,
+            "response_content": "should-not-persist-success",
+            "message_refs": {},
+        }
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.run_background_invoke",
+        _fake_run_background_invoke,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.finalize_task_run",
+        AsyncMock(
+            side_effect=A2AScheduleConflictError(
+                "Task is currently locked by another operation; retry shortly."
+            )
+        ),
+    )
+
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
+        )
+        executions = list(
+            (
+                await check_db.scalars(
+                    select(A2AScheduleExecution).where(
+                        A2AScheduleExecution.task_id == task_id
+                    )
+                )
+            ).all()
+        )
+
+    assert "finalize deferred due to lock contention" in caplog.text
+    assert refreshed_task is not None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_RUNNING
+    assert refreshed_task.current_run_id == run_id
+    assert len(executions) == 1
+    assert executions[0].status == A2AScheduleExecution.STATUS_RUNNING
+    assert executions[0].finished_at is None
+
+
 async def test_recover_stale_running_task_finalizes_matching_run(
     async_db_session,
     async_session_maker,
@@ -1241,6 +1321,96 @@ async def test_dispatch_due_a2a_schedules_skips_when_leader_lock_not_acquired(
     assert claim_mock.await_count == 0
     assert ensure_workers_mock.await_count == 0
     assert refresh_metrics_mock.await_count == 0
+
+
+async def test_try_hold_dispatch_leader_lock_rolls_back_open_transaction(
+    monkeypatch,
+) -> None:
+    class _FakeConn:
+        def __init__(self) -> None:
+            self.scalar_calls = 0
+            self.rollback_calls = 0
+            self.invalidate_calls = 0
+            self.dialect = SimpleNamespace(name="postgresql")
+
+        async def scalar(self, *_args, **_kwargs):
+            self.scalar_calls += 1
+            return True
+
+        async def rollback(self):
+            self.rollback_calls += 1
+
+        async def invalidate(self, *_args, **_kwargs):
+            self.invalidate_calls += 1
+
+    fake_conn = _FakeConn()
+
+    class _FakeConnContext:
+        async def __aenter__(self):
+            return fake_conn
+
+        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+            return False
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.async_engine",
+        SimpleNamespace(connect=lambda: _FakeConnContext()),
+    )
+
+    async with _try_hold_dispatch_leader_lock() as has_leader_lock:
+        assert has_leader_lock is True
+
+    assert fake_conn.scalar_calls == 2
+    assert fake_conn.rollback_calls >= 2
+    assert fake_conn.invalidate_calls == 0
+
+
+async def test_try_hold_dispatch_leader_lock_invalidates_connection_on_unlock_failure(
+    monkeypatch,
+    caplog,
+) -> None:
+    class _FakeConn:
+        def __init__(self) -> None:
+            self.scalar_calls = 0
+            self.rollback_calls = 0
+            self.invalidate_calls = 0
+            self.dialect = SimpleNamespace(name="postgresql")
+
+        async def scalar(self, *_args, **_kwargs):
+            self.scalar_calls += 1
+            if self.scalar_calls == 1:
+                return True
+            return False
+
+        async def rollback(self):
+            self.rollback_calls += 1
+
+        async def invalidate(self, *_args, **_kwargs):
+            self.invalidate_calls += 1
+
+    fake_conn = _FakeConn()
+
+    class _FakeConnContext:
+        async def __aenter__(self):
+            return fake_conn
+
+        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+            return False
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.async_engine",
+        SimpleNamespace(connect=lambda: _FakeConnContext()),
+    )
+
+    with caplog.at_level(logging.ERROR, logger="app.services.a2a_schedule_job"):
+        async with _try_hold_dispatch_leader_lock() as has_leader_lock:
+            assert has_leader_lock is True
+
+    assert fake_conn.invalidate_calls == 1
+    assert (
+        "Failed to release A2A schedule advisory leader lock because lock was no longer held."
+        in caplog.text
+    )
 
 
 async def test_dispatch_due_a2a_schedules_skips_cycle_when_claim_db_connection_refused(

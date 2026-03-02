@@ -14,7 +14,10 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.db.locking import is_postgres_lock_not_available_error
+from app.db.locking import (
+    is_postgres_lock_not_available_error,
+    set_postgres_local_timeouts,
+)
 from app.db.models.ws_ticket import WsTicket
 from app.db.transaction import commit_safely
 from app.utils.timezone_util import utc_now
@@ -54,6 +57,9 @@ class WsTicketIssueResult:
 class WsTicketService:
     """Issue and consume short-lived, one-time WS tickets."""
 
+    _default_write_lock_timeout_ms = 500
+    _default_write_statement_timeout_ms = 5000
+
     def __init__(self) -> None:
         self._secret_key = settings.ws_ticket_secret_key
 
@@ -79,6 +85,11 @@ class WsTicketService:
         scope_type: str,
         scope_id: UUID,
     ) -> WsTicketIssueResult:
+        await set_postgres_local_timeouts(
+            db,
+            lock_timeout_ms=self._default_write_lock_timeout_ms,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
         now = utc_now()
         expires_in = settings.ws_ticket_ttl_seconds
         expires_at = now + timedelta(seconds=expires_in)
@@ -110,6 +121,11 @@ class WsTicketService:
         scope_type: str,
         scope_id: UUID,
     ) -> WsTicket:
+        await set_postgres_local_timeouts(
+            db,
+            lock_timeout_ms=self._default_write_lock_timeout_ms,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
         token_hash = self._hash_token(token)
         now = utc_now()
 
@@ -153,6 +169,11 @@ class WsTicketService:
         """
         from sqlalchemy import delete, or_
 
+        await set_postgres_local_timeouts(
+            db,
+            lock_timeout_ms=self._default_write_lock_timeout_ms,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
         now = utc_now()
         retention_days = max(settings.ws_ticket_retention_days, 0)
         retention_cutoff = now - timedelta(days=retention_days)

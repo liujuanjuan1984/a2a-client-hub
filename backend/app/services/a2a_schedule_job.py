@@ -20,13 +20,14 @@ from app.db.locking import set_postgres_local_timeouts
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, async_engine
 from app.db.transaction import commit_safely, rollback_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services.a2a_runtime import a2a_runtime_builder
 from app.services.a2a_schedule_service import (
     A2A_SCHEDULE_SOURCE,
+    A2AScheduleConflictError,
     ClaimedA2AScheduleTask,
     a2a_schedule_service,
 )
@@ -297,15 +298,30 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             return
         if not task.enabled:
             if task.last_run_status == A2AScheduleTask.STATUS_RUNNING:
-                await a2a_schedule_service.finalize_task_run(
-                    db,
-                    task_id=task.id,
-                    user_id=task.user_id,
-                    run_id=claim.run_id,
-                    final_status=A2AScheduleTask.STATUS_IDLE,
-                    finished_at=utc_now(),
-                    conversation_id=task.conversation_id,
-                )
+                try:
+                    await a2a_schedule_service.finalize_task_run(
+                        db,
+                        task_id=task.id,
+                        user_id=task.user_id,
+                        run_id=claim.run_id,
+                        final_status=A2AScheduleTask.STATUS_IDLE,
+                        finished_at=utc_now(),
+                        conversation_id=task.conversation_id,
+                    )
+                except A2AScheduleConflictError:
+                    ops_metrics.increment_schedule_finalize_lock_conflicts()
+                    logger.warning(
+                        "Skip idle finalize due to lock contention task=%s run_id=%s",
+                        task.id,
+                        claim.run_id,
+                        extra={
+                            "schedule_task_id": str(task.id),
+                            "run_id": str(claim.run_id),
+                            "phase": "finalize",
+                            "finalize_conflict": True,
+                        },
+                    )
+                    return
                 await commit_safely(db)
             return
 
@@ -414,15 +430,31 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 if success
                 else A2AScheduleTask.STATUS_FAILED
             )
-            finalized = await a2a_schedule_service.finalize_task_run(
-                db,
-                task_id=task.id,
-                user_id=task.user_id,
-                run_id=claim.run_id,
-                final_status=final_status,
-                finished_at=finished_at,
-                conversation_id=resolved_conversation_id,
-            )
+            try:
+                finalized = await a2a_schedule_service.finalize_task_run(
+                    db,
+                    task_id=task.id,
+                    user_id=task.user_id,
+                    run_id=claim.run_id,
+                    final_status=final_status,
+                    finished_at=finished_at,
+                    conversation_id=resolved_conversation_id,
+                )
+            except A2AScheduleConflictError:
+                ops_metrics.increment_schedule_finalize_lock_conflicts()
+                logger.warning(
+                    "Schedule run finalize deferred due to lock contention task=%s run_id=%s",
+                    task.id,
+                    claim.run_id,
+                    extra={
+                        "schedule_task_id": str(task.id),
+                        "schedule_execution_id": str(execution.id),
+                        "run_id": str(claim.run_id),
+                        "phase": "finalize",
+                        "finalize_conflict": True,
+                    },
+                )
+                return
             if not finalized:
                 logger.warning(
                     "Schedule run finalize skipped due to run mismatch task=%s run_id=%s",
@@ -471,19 +503,34 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
 
         except Exception as exc:  # pragma: no cover - defensive path
             finished_at = utc_now()
-            finalized = await a2a_schedule_service.finalize_task_run(
-                db,
-                task_id=task.id,
-                user_id=task.user_id,
-                run_id=claim.run_id,
-                final_status=A2AScheduleTask.STATUS_FAILED,
-                finished_at=finished_at,
-                conversation_id=(
-                    execution.conversation_id
-                    if execution is not None
-                    else task.conversation_id
-                ),
-            )
+            try:
+                finalized = await a2a_schedule_service.finalize_task_run(
+                    db,
+                    task_id=task.id,
+                    user_id=task.user_id,
+                    run_id=claim.run_id,
+                    final_status=A2AScheduleTask.STATUS_FAILED,
+                    finished_at=finished_at,
+                    conversation_id=(
+                        execution.conversation_id
+                        if execution is not None
+                        else task.conversation_id
+                    ),
+                )
+            except A2AScheduleConflictError:
+                ops_metrics.increment_schedule_finalize_lock_conflicts()
+                logger.warning(
+                    "Schedule run failure finalize deferred due to lock contention task=%s run_id=%s",
+                    task.id,
+                    claim.run_id,
+                    extra={
+                        "schedule_task_id": str(task.id),
+                        "run_id": str(claim.run_id),
+                        "phase": "finalize",
+                        "finalize_conflict": True,
+                    },
+                )
+                return
             if not finalized:
                 logger.warning(
                     "Schedule run failure finalize skipped due to run mismatch task=%s run_id=%s",
@@ -550,31 +597,51 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
 
 @contextlib.asynccontextmanager
 async def _try_hold_dispatch_leader_lock():
-    async with AsyncSessionLocal() as lock_db:
-        bind = lock_db.get_bind()
-        dialect_name = getattr(getattr(bind, "dialect", None), "name", None)
+    async with async_engine.connect() as lock_conn:
+        dialect_name = getattr(getattr(lock_conn, "dialect", None), "name", None)
         if dialect_name != "postgresql":
             yield True
             return
 
         acquired = bool(
-            await lock_db.scalar(
+            await lock_conn.scalar(
                 text("SELECT pg_try_advisory_lock(:lock_key)"),
                 {"lock_key": _SCHEDULE_DISPATCH_ADVISORY_LOCK_KEY},
             )
         )
+        with contextlib.suppress(Exception):
+            await lock_conn.rollback()
         if not acquired:
+            ops_metrics.increment_schedule_leader_lock_contentions()
             yield False
             return
 
+        unlocked = False
         try:
             yield True
         finally:
-            with contextlib.suppress(Exception):
-                await lock_db.execute(
-                    text("SELECT pg_advisory_unlock(:lock_key)"),
-                    {"lock_key": _SCHEDULE_DISPATCH_ADVISORY_LOCK_KEY},
+            try:
+                unlocked = bool(
+                    await lock_conn.scalar(
+                        text("SELECT pg_advisory_unlock(:lock_key)"),
+                        {"lock_key": _SCHEDULE_DISPATCH_ADVISORY_LOCK_KEY},
+                    )
                 )
+                if not unlocked:
+                    logger.error(
+                        "Failed to release A2A schedule advisory leader lock because lock was no longer held."
+                    )
+            except Exception as exc:
+                logger.error(
+                    "Failed to release A2A schedule advisory leader lock due to unexpected DB error.",
+                    exc_info=exc,
+                )
+            if not unlocked:
+                ops_metrics.increment_schedule_leader_lock_release_failures()
+                with contextlib.suppress(Exception):
+                    await lock_conn.invalidate()
+            with contextlib.suppress(Exception):
+                await lock_conn.rollback()
 
 
 async def _schedule_worker_loop(worker_index: int) -> None:

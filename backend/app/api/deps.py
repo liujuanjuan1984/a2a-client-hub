@@ -13,17 +13,23 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.logging import set_user_context
+from app.core.logging import get_logger, set_user_context
 from app.core.security import verify_access_token
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.handlers import auth as auth_handler
-from app.services.ws_ticket_service import WsTicketError, ws_ticket_service
+from app.services.ops_metrics import ops_metrics
+from app.services.ws_ticket_service import (
+    WsTicketConflictError,
+    WsTicketError,
+    ws_ticket_service,
+)
 
 # Security scheme for OpenAPI documentation
 security = HTTPBearer()
 
 _WS_TICKET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+logger = get_logger(__name__)
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
@@ -153,6 +159,23 @@ async def get_ws_ticket_user(
             scope_type=scope_type,
             scope_id=scope_id,
         )
+    except WsTicketConflictError as exc:
+        ops_metrics.increment_ws_ticket_lock_conflicts()
+        logger.warning(
+            "WS ticket consume conflict for scope_type=%s scope_id=%s",
+            scope_type,
+            scope_id,
+            extra={
+                "phase": "ws_ticket_auth",
+                "scope_type": scope_type,
+                "scope_id": str(scope_id),
+                "ws_ticket_conflict": True,
+            },
+        )
+        raise WebSocketException(
+            code=status.WS_1013_TRY_AGAIN_LATER,
+            reason="Ticket is being consumed by another request",
+        ) from exc
     except WsTicketError as exc:
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION, reason=str(exc)
