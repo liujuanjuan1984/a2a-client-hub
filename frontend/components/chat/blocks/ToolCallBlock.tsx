@@ -67,12 +67,13 @@ export function ToolCallBlock({
           >
             {blockText}
           </Text>
-          <View className="mt-2 items-end">
+          <View className="mt-1 items-end">
             <ExpandToggle
               expanded
               onToggle={toggleToolCall}
               testID={`chat-message-${blockId}-collapse-bottom`}
-              showChevron={false}
+              variant="mini"
+              showChevron
             />
           </View>
         </View>
