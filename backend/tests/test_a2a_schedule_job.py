@@ -22,6 +22,7 @@ from app.db.transaction import commit_safely as real_commit_safely
 from app.services.a2a_schedule_job import (
     _execute_claimed_task,
     _refresh_ops_metrics,
+    _schedule_run_heartbeat_loop,
     _try_hold_dispatch_leader_lock,
     dispatch_due_a2a_schedules,
 )
@@ -31,6 +32,7 @@ from app.services.a2a_schedule_service import (
     ClaimedA2AScheduleTask,
     a2a_schedule_service,
 )
+from app.services.ops_metrics import ops_metrics
 from app.utils.timezone_util import utc_now
 from tests.utils import create_user
 
@@ -355,6 +357,134 @@ async def test_finalize_task_run_soft_deletes_when_delete_was_requested(
     assert task.current_run_id is None
     assert task.running_started_at is None
     assert task.last_heartbeat_at is None
+
+
+async def test_delete_task_returns_conflict_when_row_locked(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="delete-lock")
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+
+    async with async_session_maker() as lock_db:
+        await lock_db.scalar(
+            select(A2AScheduleTask)
+            .where(A2AScheduleTask.id == task.id)
+            .with_for_update(nowait=True)
+            .limit(1)
+        )
+        async with async_session_maker() as actor_db:
+            with pytest.raises(A2AScheduleConflictError):
+                await a2a_schedule_service.delete_task(
+                    actor_db,
+                    user_id=user.id,
+                    task_id=task.id,
+                )
+        await lock_db.rollback()
+
+
+async def test_schedule_run_heartbeat_loop_classifies_lock_contention(
+    monkeypatch,
+    caplog,
+) -> None:
+    claim = ClaimedA2AScheduleTask(
+        task_id=uuid4(),
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        conversation_id=None,
+        name="heartbeat-lock",
+        prompt="hello",
+        cycle_type=A2AScheduleTask.CYCLE_DAILY,
+        time_point={"time": "09:00"},
+        scheduled_for=utc_now(),
+        run_id=uuid4(),
+    )
+    stop_event = asyncio.Event()
+
+    class _LockNotAvailableError(Exception):
+        sqlstate = "55P03"
+
+    async def _raise_lock_contention(*_args, **_kwargs):
+        stop_event.set()
+        raise DBAPIError(
+            statement="UPDATE ... FOR UPDATE",
+            params={},
+            orig=_LockNotAvailableError("could not obtain lock on row"),
+        )
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._touch_schedule_run_heartbeat",
+        _raise_lock_contention,
+    )
+    monkeypatch.setattr(
+        settings,
+        "a2a_schedule_run_heartbeat_interval_seconds",
+        0.1,
+        raising=False,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await _schedule_run_heartbeat_loop(claim=claim, stop_event=stop_event)
+
+    assert "lock contention" in caplog.text
+    assert "Schedule heartbeat update failed" not in caplog.text
+
+
+async def test_schedule_run_heartbeat_loop_classifies_statement_timeout(
+    monkeypatch,
+    caplog,
+) -> None:
+    before = ops_metrics.snapshot().get("schedule_db_query_timeouts", 0)
+    claim = ClaimedA2AScheduleTask(
+        task_id=uuid4(),
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        conversation_id=None,
+        name="heartbeat-timeout",
+        prompt="hello",
+        cycle_type=A2AScheduleTask.CYCLE_DAILY,
+        time_point={"time": "09:00"},
+        scheduled_for=utc_now(),
+        run_id=uuid4(),
+    )
+    stop_event = asyncio.Event()
+
+    class _StatementTimeoutError(Exception):
+        sqlstate = "57014"
+
+    async def _raise_statement_timeout(*_args, **_kwargs):
+        stop_event.set()
+        raise DBAPIError(
+            statement="UPDATE ...",
+            params={},
+            orig=_StatementTimeoutError("canceling statement due to statement timeout"),
+        )
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._touch_schedule_run_heartbeat",
+        _raise_statement_timeout,
+    )
+    monkeypatch.setattr(
+        settings,
+        "a2a_schedule_run_heartbeat_interval_seconds",
+        0.1,
+        raising=False,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+        await _schedule_run_heartbeat_loop(claim=claim, stop_event=stop_event)
+
+    after = ops_metrics.snapshot().get("schedule_db_query_timeouts", 0)
+    assert "database statement timeout" in caplog.text
+    assert "Schedule heartbeat update failed" not in caplog.text
+    assert int(after) >= int(before) + 1
 
 
 async def test_execute_claimed_task_resets_consecutive_failures_on_success(

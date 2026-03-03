@@ -158,6 +158,39 @@ class A2AScheduleService:
             statement_timeout_ms=self._default_write_statement_timeout_ms,
         )
 
+    async def _apply_skip_locked_write_timeouts(self, db: AsyncSession) -> None:
+        """Apply only statement timeout for SKIP LOCKED lock paths."""
+
+        await set_postgres_local_timeouts(
+            db,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
+
+    async def _get_task_for_update(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        task_id: UUID,
+    ) -> A2AScheduleTask:
+        stmt = (
+            select(A2AScheduleTask)
+            .where(
+                and_(
+                    A2AScheduleTask.id == task_id,
+                    A2AScheduleTask.user_id == user_id,
+                    A2AScheduleTask.deleted_at.is_(None),
+                    A2AScheduleTask.delete_requested_at.is_(None),
+                )
+            )
+            .with_for_update(nowait=True)
+            .limit(1)
+        )
+        task = await db.scalar(stmt)
+        if task is None:
+            raise A2AScheduleNotFoundError("Schedule task not found")
+        return task
+
     @_map_retryable_db_errors("Schedule task list")
     async def list_tasks(
         self,
@@ -276,7 +309,7 @@ class A2AScheduleService:
         enabled: Optional[bool] = None,
     ) -> A2AScheduleTask:
         await self._apply_default_write_timeouts(db)
-        task = await self._get_task(db, user_id=user_id, task_id=task_id)
+        task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
         timezone_value = self._normalize_timezone_str(timezone_str)
 
         if task.last_run_status == A2AScheduleTask.STATUS_RUNNING:
@@ -353,7 +386,7 @@ class A2AScheduleService:
         timezone_str: str,
     ) -> A2AScheduleTask:
         await self._apply_default_write_timeouts(db)
-        task = await self._get_task(db, user_id=user_id, task_id=task_id)
+        task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
         if enabled and not task.enabled:
             await self._ensure_active_quota(
                 db, user_id=user_id, is_superuser=is_superuser
@@ -385,7 +418,7 @@ class A2AScheduleService:
         task_id: UUID,
     ) -> None:
         await self._apply_default_write_timeouts(db)
-        task = await self._get_task(db, user_id=user_id, task_id=task_id)
+        task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
         if (
             task.last_run_status == A2AScheduleTask.STATUS_RUNNING
             and task.current_run_id is not None
@@ -576,7 +609,7 @@ class A2AScheduleService:
         *,
         now: Optional[datetime] = None,
     ) -> Optional[ClaimedA2AScheduleTask]:
-        await self._apply_default_write_timeouts(db)
+        await self._apply_skip_locked_write_timeouts(db)
         now_utc = ensure_utc(now or utc_now())
 
         global_concurrency_limit = max(
@@ -726,7 +759,7 @@ class A2AScheduleService:
         recovered_count = 0
         while True:
             # SET LOCAL timeouts are transaction-scoped; re-apply after each commit.
-            await self._apply_default_write_timeouts(db)
+            await self._apply_skip_locked_write_timeouts(db)
             stale_where = and_(
                 A2AScheduleTask.deleted_at.is_(None),
                 A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,

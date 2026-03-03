@@ -146,6 +146,8 @@ async def _schedule_run_heartbeat_loop(
 ) -> None:
     interval = max(float(settings.a2a_schedule_run_heartbeat_interval_seconds), 0.1)
     last_connectivity_warning_at: float | None = None
+    last_lock_contention_warning_at: float | None = None
+    last_query_timeout_warning_at: float | None = None
     last_unknown_warning_at: float | None = None
     while not stop_event.is_set():
         try:
@@ -174,6 +176,43 @@ async def _schedule_run_heartbeat_loop(
                         },
                     )
                     last_connectivity_warning_at = now_monotonic
+                continue
+            if _is_db_lock_contention_issue(exc):
+                if (
+                    last_lock_contention_warning_at is None
+                    or now_monotonic - last_lock_contention_warning_at
+                    >= _HEARTBEAT_WARNING_COOLDOWN_SECONDS
+                ):
+                    logger.warning(
+                        "Skip schedule heartbeat update due to lock contention.",
+                        exc_info=exc,
+                        extra={
+                            "schedule_task_id": str(claim.task_id),
+                            "run_id": str(claim.run_id),
+                            "phase": "heartbeat",
+                            "lock_contention": True,
+                        },
+                    )
+                    last_lock_contention_warning_at = now_monotonic
+                continue
+            if _is_db_query_timeout_issue(exc):
+                ops_metrics.increment_schedule_db_query_timeouts()
+                if (
+                    last_query_timeout_warning_at is None
+                    or now_monotonic - last_query_timeout_warning_at
+                    >= _HEARTBEAT_WARNING_COOLDOWN_SECONDS
+                ):
+                    logger.warning(
+                        "Skip schedule heartbeat update due to database statement timeout.",
+                        exc_info=exc,
+                        extra={
+                            "schedule_task_id": str(claim.task_id),
+                            "run_id": str(claim.run_id),
+                            "phase": "heartbeat",
+                            "db_query_timeout": True,
+                        },
+                    )
+                    last_query_timeout_warning_at = now_monotonic
                 continue
             if (
                 last_unknown_warning_at is None
