@@ -166,6 +166,21 @@ class A2AScheduleService:
             statement_timeout_ms=self._default_write_statement_timeout_ms,
         )
 
+    async def _lock_user_row_for_quota(
+        self, db: AsyncSession, *, user_id: UUID
+    ) -> None:
+        """Serialize per-user quota-changing operations with a user-row lock."""
+
+        stmt = (
+            select(User.id)
+            .where(User.id == user_id)
+            .with_for_update(nowait=True)
+            .limit(1)
+        )
+        found_user_id = await db.scalar(stmt)
+        if found_user_id is None:
+            raise A2AScheduleValidationError("Current user does not exist")
+
     async def _get_task_for_update(
         self,
         db: AsyncSession,
@@ -248,9 +263,10 @@ class A2AScheduleService:
         time_point: Dict[str, Any],
         enabled: bool,
     ) -> A2AScheduleTask:
-        await self._apply_default_write_timeouts(db)
+        await self._apply_nowait_write_timeouts(db)
         await self._ensure_agent_owned(db, user_id=user_id, agent_id=agent_id)
         if enabled:
+            await self._lock_user_row_for_quota(db, user_id=user_id)
             await self._ensure_active_quota(
                 db, user_id=user_id, is_superuser=is_superuser
             )
@@ -308,7 +324,8 @@ class A2AScheduleService:
         time_point: Optional[Dict[str, Any]] = None,
         enabled: Optional[bool] = None,
     ) -> A2AScheduleTask:
-        await self._apply_default_write_timeouts(db)
+        await self._apply_nowait_write_timeouts(db)
+        await self._lock_user_row_for_quota(db, user_id=user_id)
         task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
         timezone_value = self._normalize_timezone_str(timezone_str)
 
@@ -385,7 +402,8 @@ class A2AScheduleService:
         is_superuser: bool,
         timezone_str: str,
     ) -> A2AScheduleTask:
-        await self._apply_default_write_timeouts(db)
+        await self._apply_nowait_write_timeouts(db)
+        await self._lock_user_row_for_quota(db, user_id=user_id)
         task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
         if enabled and not task.enabled:
             await self._ensure_active_quota(
@@ -417,7 +435,7 @@ class A2AScheduleService:
         user_id: UUID,
         task_id: UUID,
     ) -> None:
-        await self._apply_default_write_timeouts(db)
+        await self._apply_nowait_write_timeouts(db)
         task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
         if (
             task.last_run_status == A2AScheduleTask.STATUS_RUNNING

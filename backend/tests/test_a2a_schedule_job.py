@@ -18,6 +18,7 @@ from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
+from app.db.models.user import User
 from app.db.transaction import commit_safely as real_commit_safely
 from app.services.a2a_schedule_job import (
     _execute_claimed_task,
@@ -386,6 +387,76 @@ async def test_delete_task_returns_conflict_when_row_locked(
                     actor_db,
                     user_id=user.id,
                     task_id=task.id,
+                )
+        await lock_db.rollback()
+
+
+async def test_set_enabled_returns_conflict_when_user_row_locked(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="set-enabled-user-lock"
+    )
+    now = utc_now()
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        enabled=False,
+        next_run_at=now,
+    )
+
+    async with async_session_maker() as lock_db:
+        await lock_db.scalar(
+            select(User.id)
+            .where(User.id == user.id)
+            .with_for_update(nowait=True)
+            .limit(1)
+        )
+        async with async_session_maker() as actor_db:
+            with pytest.raises(A2AScheduleConflictError):
+                await a2a_schedule_service.set_enabled(
+                    actor_db,
+                    user_id=user.id,
+                    task_id=task.id,
+                    enabled=True,
+                    is_superuser=False,
+                    timezone_str="UTC",
+                )
+        await lock_db.rollback()
+
+
+async def test_create_task_returns_conflict_when_user_row_locked(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="create-user-lock"
+    )
+
+    async with async_session_maker() as lock_db:
+        await lock_db.scalar(
+            select(User.id)
+            .where(User.id == user.id)
+            .with_for_update(nowait=True)
+            .limit(1)
+        )
+        async with async_session_maker() as actor_db:
+            with pytest.raises(A2AScheduleConflictError):
+                await a2a_schedule_service.create_task(
+                    actor_db,
+                    user_id=user.id,
+                    is_superuser=False,
+                    timezone_str="UTC",
+                    name="quota-lock-create",
+                    agent_id=agent.id,
+                    prompt="hello",
+                    cycle_type=A2AScheduleTask.CYCLE_DAILY,
+                    time_point={"time": "09:00"},
+                    enabled=True,
                 )
         await lock_db.rollback()
 
