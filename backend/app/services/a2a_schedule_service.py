@@ -162,6 +162,7 @@ class A2AScheduleService:
             .where(
                 A2AScheduleTask.user_id == user_id,
                 A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.delete_requested_at.is_(None),
             )
             .order_by(A2AScheduleTask.created_at.desc())
             .offset(offset)
@@ -173,6 +174,7 @@ class A2AScheduleService:
         count_stmt = select(func.count(A2AScheduleTask.id)).where(
             A2AScheduleTask.user_id == user_id,
             A2AScheduleTask.deleted_at.is_(None),
+            A2AScheduleTask.delete_requested_at.is_(None),
         )
         total = int(await db.scalar(count_stmt) or 0)
         return items, total
@@ -373,9 +375,19 @@ class A2AScheduleService:
     ) -> None:
         await self._apply_default_write_timeouts(db)
         task = await self._get_task(db, user_id=user_id, task_id=task_id)
-        task.soft_delete()
-        task.enabled = False
-        task.next_run_at = None
+        if (
+            task.last_run_status == A2AScheduleTask.STATUS_RUNNING
+            and task.current_run_id is not None
+        ):
+            # Keep the row alive until the current run reaches a terminal status.
+            task.delete_requested_at = utc_now()
+            task.enabled = False
+            task.next_run_at = None
+        else:
+            task.soft_delete()
+            task.enabled = False
+            task.next_run_at = None
+            task.delete_requested_at = None
         await commit_safely(db)
 
     @_map_retryable_db_errors("Schedule task manual fail")
@@ -402,6 +414,7 @@ class A2AScheduleService:
                     A2AScheduleTask.id == task_id,
                     A2AScheduleTask.user_id == user_id,
                     A2AScheduleTask.deleted_at.is_(None),
+                    A2AScheduleTask.delete_requested_at.is_(None),
                 )
             )
             .with_for_update(nowait=True)
@@ -523,18 +536,12 @@ class A2AScheduleService:
         *,
         agent_id: UUID,
     ) -> int:
-        stmt = (
-            select(func.count(A2AScheduleExecution.id))
-            .join(
-                A2AScheduleTask,
-                A2AScheduleTask.id == A2AScheduleExecution.task_id,
-            )
-            .where(
-                and_(
-                    A2AScheduleTask.agent_id == agent_id,
-                    A2AScheduleTask.deleted_at.is_(None),
-                    A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
-                )
+        stmt = select(func.count(A2AScheduleTask.id)).where(
+            and_(
+                A2AScheduleTask.agent_id == agent_id,
+                A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
+                A2AScheduleTask.current_run_id.is_not(None),
             )
         )
         return int((await db.scalar(stmt)) or 0)
@@ -543,17 +550,11 @@ class A2AScheduleService:
         self,
         db: AsyncSession,
     ) -> int:
-        stmt = (
-            select(func.count(A2AScheduleExecution.id))
-            .join(
-                A2AScheduleTask,
-                A2AScheduleTask.id == A2AScheduleExecution.task_id,
-            )
-            .where(
-                and_(
-                    A2AScheduleTask.deleted_at.is_(None),
-                    A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
-                )
+        stmt = select(func.count(A2AScheduleTask.id)).where(
+            and_(
+                A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
+                A2AScheduleTask.current_run_id.is_not(None),
             )
         )
         return int((await db.scalar(stmt)) or 0)
@@ -578,16 +579,13 @@ class A2AScheduleService:
 
         running_task = aliased(A2AScheduleTask)
         running_count_for_agent = (
-            select(func.count(A2AScheduleExecution.id))
-            .join(
-                running_task,
-                running_task.id == A2AScheduleExecution.task_id,
-            )
+            select(func.count(running_task.id))
             .where(
                 and_(
                     running_task.agent_id == A2AScheduleTask.agent_id,
                     running_task.deleted_at.is_(None),
-                    A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
+                    running_task.last_run_status == A2AScheduleTask.STATUS_RUNNING,
+                    running_task.current_run_id.is_not(None),
                 )
             )
             .correlate(A2AScheduleTask)
@@ -615,9 +613,11 @@ class A2AScheduleService:
             .where(
                 and_(
                     A2AScheduleTask.deleted_at.is_(None),
+                    A2AScheduleTask.delete_requested_at.is_(None),
                     A2AScheduleTask.enabled.is_(True),
                     A2AScheduleTask.next_run_at.is_not(None),
                     A2AScheduleTask.next_run_at <= now_utc,
+                    A2AScheduleTask.current_run_id.is_(None),
                     running_count_for_agent < concurrency_limit,
                 )
             )
@@ -652,6 +652,17 @@ class A2AScheduleService:
         selected_task.current_run_id = run_id
         selected_task.running_started_at = now_utc
         selected_task.last_heartbeat_at = now_utc
+        db.add(
+            A2AScheduleExecution(
+                user_id=selected_task.user_id,
+                task_id=selected_task.id,
+                run_id=run_id,
+                scheduled_for=scheduled_for,
+                started_at=now_utc,
+                status=A2AScheduleExecution.STATUS_RUNNING,
+                conversation_id=selected_task.conversation_id,
+            )
+        )
         await commit_safely(db)
 
         return ClaimedA2AScheduleTask(
@@ -816,6 +827,11 @@ class A2AScheduleService:
                     )
                 else:
                     task.next_run_at = None
+            if task.delete_requested_at is not None:
+                task.soft_delete()
+                task.enabled = False
+                task.next_run_at = None
+                task.delete_requested_at = None
             recovered_count += 1
 
             await commit_safely(db)
@@ -842,7 +858,6 @@ class A2AScheduleService:
                 and_(
                     A2AScheduleTask.id == task_id,
                     A2AScheduleTask.user_id == user_id,
-                    A2AScheduleTask.deleted_at.is_(None),
                     A2AScheduleTask.current_run_id == run_id,
                 )
             )
@@ -873,7 +888,12 @@ class A2AScheduleService:
             pass
         else:
             raise A2AScheduleValidationError("Unsupported final status for task run")
-        if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+        if task.delete_requested_at is not None:
+            task.soft_delete()
+            task.enabled = False
+            task.next_run_at = None
+            task.delete_requested_at = None
+        elif task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
             if task.enabled:
                 task.next_run_at = self._compute_sequential_next_run_at(
                     time_point=dict(task.time_point or {}),
@@ -896,6 +916,7 @@ class A2AScheduleService:
                 A2AScheduleTask.id == task_id,
                 A2AScheduleTask.user_id == user_id,
                 A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.delete_requested_at.is_(None),
             )
         )
         task = await db.scalar(stmt)
@@ -946,6 +967,7 @@ class A2AScheduleService:
                 A2AScheduleTask.user_id == user_id,
                 A2AScheduleTask.enabled.is_(True),
                 A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.delete_requested_at.is_(None),
             )
         )
         active_count = int((await db.scalar(stmt)) or 0)

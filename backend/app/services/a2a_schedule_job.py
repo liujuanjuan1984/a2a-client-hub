@@ -442,6 +442,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 if success
                 else A2AScheduleTask.STATUS_FAILED
             )
+            finalized = False
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
@@ -479,9 +480,8 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         "phase": "finalize",
                     },
                 )
-                return
 
-            if should_cleanup_ephemeral_thread and thread is not None:
+            if finalized and should_cleanup_ephemeral_thread and thread is not None:
                 await db.delete(thread)
                 if task.conversation_id == thread.id:
                     task.conversation_id = None
@@ -515,6 +515,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
 
         except Exception as exc:  # pragma: no cover - defensive path
             finished_at = utc_now()
+            finalized = False
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
@@ -554,7 +555,6 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         "phase": "finalize",
                     },
                 )
-                return
 
             if execution is None:
                 execution = A2AScheduleExecution(
