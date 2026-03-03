@@ -21,6 +21,12 @@ _STATEMENT_TIMEOUT_MARKERS = (
     "query timeout",
     "query timed out",
 )
+_NON_STATEMENT_TIMEOUT_MARKERS = (
+    "timeout while waiting for connection",
+    "waiting for connection",
+    "connection timeout",
+    "pool timeout",
+)
 
 
 class DbLockFailureKind(str, Enum):
@@ -77,6 +83,8 @@ def _extract_sqlstate(exc: Exception) -> str | None:
 
 
 def _looks_like_statement_timeout(message: str) -> bool:
+    if any(marker in message for marker in _NON_STATEMENT_TIMEOUT_MARKERS):
+        return False
     return any(marker in message for marker in _STATEMENT_TIMEOUT_MARKERS)
 
 

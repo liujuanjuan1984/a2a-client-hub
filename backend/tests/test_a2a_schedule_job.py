@@ -1066,8 +1066,8 @@ async def test_execute_claimed_task_defers_on_finalize_lock_conflict(
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_RUNNING
     assert refreshed_task.current_run_id == run_id
     assert len(executions) == 1
-    assert executions[0].status == A2AScheduleExecution.STATUS_RUNNING
-    assert executions[0].finished_at is None
+    assert executions[0].status == A2AScheduleExecution.STATUS_SUCCESS
+    assert executions[0].finished_at is not None
 
 
 async def test_recover_stale_running_task_finalizes_matching_run(

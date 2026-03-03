@@ -63,6 +63,9 @@ def test_query_timeout_detection_requires_sqlstate_and_timeout_marker() -> None:
     unrelated_timeout_without_sqlstate_exc = _build_dbapi_error(
         message="timeout while waiting for connection",
     )
+    query_timeout_with_connection_context = _build_dbapi_error(
+        message="query timeout while waiting for connection",
+    )
 
     assert is_retryable_db_query_timeout(timeout_exc) is True
     assert is_retryable_db_query_timeout(canceled_non_timeout_exc) is False
@@ -71,6 +74,7 @@ def test_query_timeout_detection_requires_sqlstate_and_timeout_marker() -> None:
     assert (
         is_retryable_db_query_timeout(unrelated_timeout_without_sqlstate_exc) is False
     )
+    assert is_retryable_db_query_timeout(query_timeout_with_connection_context) is False
 
 
 def test_query_timeout_detection_accepts_sqlstate_from_nested_diag() -> None:

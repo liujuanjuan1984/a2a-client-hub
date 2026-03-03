@@ -443,6 +443,8 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 else A2AScheduleTask.STATUS_FAILED
             )
             finalized = False
+            finalize_conflicted = False
+            execution_id = execution.id
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
@@ -467,19 +469,50 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         "finalize_conflict": True,
                     },
                 )
-                return
-            if not finalized:
-                logger.warning(
-                    "Schedule run finalize skipped due to run mismatch task=%s run_id=%s",
-                    task.id,
-                    claim.run_id,
-                    extra={
-                        "schedule_task_id": str(task.id),
-                        "schedule_execution_id": str(execution.id),
-                        "run_id": str(claim.run_id),
-                        "phase": "finalize",
-                    },
+                finalize_conflicted = True
+                await rollback_safely(db)
+                execution = await db.scalar(
+                    select(A2AScheduleExecution)
+                    .where(A2AScheduleExecution.id == execution_id)
+                    .limit(1)
                 )
+                if execution is None:
+                    execution = await db.scalar(
+                        select(A2AScheduleExecution)
+                        .where(
+                            and_(
+                                A2AScheduleExecution.task_id == task.id,
+                                A2AScheduleExecution.user_id == task.user_id,
+                                A2AScheduleExecution.run_id == claim.run_id,
+                            )
+                        )
+                        .limit(1)
+                    )
+                if execution is None:
+                    execution = A2AScheduleExecution(
+                        user_id=task.user_id,
+                        task_id=task.id,
+                        run_id=claim.run_id,
+                        scheduled_for=claim.scheduled_for,
+                        started_at=finished_at,
+                        status=A2AScheduleExecution.STATUS_RUNNING,
+                        conversation_id=task.conversation_id,
+                    )
+                    db.add(execution)
+                    await db.flush()
+            if not finalized:
+                if not finalize_conflicted:
+                    logger.warning(
+                        "Schedule run finalize skipped due to run mismatch task=%s run_id=%s",
+                        task.id,
+                        claim.run_id,
+                        extra={
+                            "schedule_task_id": str(task.id),
+                            "schedule_execution_id": str(execution.id),
+                            "run_id": str(claim.run_id),
+                            "phase": "finalize",
+                        },
+                    )
 
             if finalized and should_cleanup_ephemeral_thread and thread is not None:
                 await db.delete(thread)
@@ -516,6 +549,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
         except Exception as exc:  # pragma: no cover - defensive path
             finished_at = utc_now()
             finalized = False
+            finalize_conflicted = False
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
@@ -543,18 +577,31 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         "finalize_conflict": True,
                     },
                 )
-                return
-            if not finalized:
-                logger.warning(
-                    "Schedule run failure finalize skipped due to run mismatch task=%s run_id=%s",
-                    task.id,
-                    claim.run_id,
-                    extra={
-                        "schedule_task_id": str(task.id),
-                        "run_id": str(claim.run_id),
-                        "phase": "finalize",
-                    },
+                finalize_conflicted = True
+                await rollback_safely(db)
+                execution = await db.scalar(
+                    select(A2AScheduleExecution)
+                    .where(
+                        and_(
+                            A2AScheduleExecution.task_id == task.id,
+                            A2AScheduleExecution.user_id == task.user_id,
+                            A2AScheduleExecution.run_id == claim.run_id,
+                        )
+                    )
+                    .limit(1)
                 )
+            if not finalized:
+                if not finalize_conflicted:
+                    logger.warning(
+                        "Schedule run failure finalize skipped due to run mismatch task=%s run_id=%s",
+                        task.id,
+                        claim.run_id,
+                        extra={
+                            "schedule_task_id": str(task.id),
+                            "run_id": str(claim.run_id),
+                            "phase": "finalize",
+                        },
+                    )
 
             if execution is None:
                 execution = A2AScheduleExecution(

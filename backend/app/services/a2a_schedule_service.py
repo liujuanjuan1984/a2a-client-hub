@@ -147,6 +147,17 @@ class A2AScheduleService:
             statement_timeout_ms=self._default_write_statement_timeout_ms,
         )
 
+    async def _apply_nowait_write_timeouts(self, db: AsyncSession) -> None:
+        """Apply only statement timeout for NOWAIT lock paths.
+
+        NOWAIT does not wait for row locks, so lock_timeout is redundant there.
+        """
+
+        await set_postgres_local_timeouts(
+            db,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
+
     @_map_retryable_db_errors("Schedule task list")
     async def list_tasks(
         self,
@@ -401,7 +412,7 @@ class A2AScheduleService:
         reason: Optional[str] = None,
         marked_at: Optional[datetime] = None,
     ) -> A2AScheduleTask:
-        await self._apply_default_write_timeouts(db)
+        await self._apply_nowait_write_timeouts(db)
         now_utc = ensure_utc(marked_at or utc_now())
         manual_error_message = self._build_manual_failure_reason(
             reason=reason,
@@ -851,7 +862,7 @@ class A2AScheduleService:
     ) -> bool:
         """Finalize one claimed run only if current_run_id still matches run_id."""
 
-        await self._apply_default_write_timeouts(db)
+        await self._apply_nowait_write_timeouts(db)
         stmt = (
             select(A2AScheduleTask)
             .where(

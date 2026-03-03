@@ -74,6 +74,21 @@ class WsTicketService:
         token = secrets.token_urlsafe(candidate_length)
         return token[:candidate_length]
 
+    async def _apply_default_write_timeouts(self, db: AsyncSession) -> None:
+        await set_postgres_local_timeouts(
+            db,
+            lock_timeout_ms=self._default_write_lock_timeout_ms,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
+
+    async def _apply_nowait_write_timeouts(self, db: AsyncSession) -> None:
+        """Apply only statement timeout for NOWAIT row-lock workflows."""
+
+        await set_postgres_local_timeouts(
+            db,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
+
     async def issue_ticket(
         self,
         db: AsyncSession,
@@ -82,11 +97,7 @@ class WsTicketService:
         scope_type: str,
         scope_id: UUID,
     ) -> WsTicketIssueResult:
-        await set_postgres_local_timeouts(
-            db,
-            lock_timeout_ms=self._default_write_lock_timeout_ms,
-            statement_timeout_ms=self._default_write_statement_timeout_ms,
-        )
+        await self._apply_default_write_timeouts(db)
         now = utc_now()
         expires_in = settings.ws_ticket_ttl_seconds
         expires_at = now + timedelta(seconds=expires_in)
@@ -135,11 +146,7 @@ class WsTicketService:
         scope_type: str,
         scope_id: UUID,
     ) -> WsTicket:
-        await set_postgres_local_timeouts(
-            db,
-            lock_timeout_ms=self._default_write_lock_timeout_ms,
-            statement_timeout_ms=self._default_write_statement_timeout_ms,
-        )
+        await self._apply_nowait_write_timeouts(db)
         token_hash = self._hash_token(token)
         now = utc_now()
 
@@ -208,11 +215,7 @@ class WsTicketService:
         """
         from sqlalchemy import delete, or_
 
-        await set_postgres_local_timeouts(
-            db,
-            lock_timeout_ms=self._default_write_lock_timeout_ms,
-            statement_timeout_ms=self._default_write_statement_timeout_ms,
-        )
+        await self._apply_default_write_timeouts(db)
         now = utc_now()
         retention_days = max(settings.ws_ticket_retention_days, 0)
         retention_cutoff = now - timedelta(days=retention_days)
