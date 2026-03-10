@@ -31,7 +31,7 @@ from app.services.a2a_schedule_service import (
     a2a_schedule_service,
 )
 from app.utils.pagination import build_pagination_meta
-from app.utils.timezone_util import TimezoneNotFoundError, _validate_timezone
+from app.utils.timezone_util import TimezoneNotFoundError, validate_user_timezone
 
 router = StrictAPIRouter(prefix="/me/a2a/schedules", tags=["a2a-schedules"])
 
