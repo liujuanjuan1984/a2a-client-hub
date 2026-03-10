@@ -268,7 +268,7 @@ class ChatConnectionService {
         let connectTimer: ReturnType<typeof setTimeout> | null = null;
         let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
-        const ws = new WebSocketCtor(wsUrl, [ticket.token]);
+        const ws = new WebSocketCtor(wsUrl, ["a2a-invoke-v1", ticket.token]);
         this.wsConnections.set(conversationId, ws);
 
         const cleanup = () => {
