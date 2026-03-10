@@ -10,9 +10,15 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.locking import (
+    set_postgres_local_timeouts,
+    to_retryable_db_lock_error,
+    to_retryable_db_query_timeout_error,
+)
 from app.db.models.ws_ticket import WsTicket
 from app.db.transaction import commit_safely
 from app.utils.timezone_util import utc_now
@@ -48,6 +54,9 @@ class WsTicketIssueResult:
 class WsTicketService:
     """Issue and consume short-lived, one-time WS tickets."""
 
+    _default_write_lock_timeout_ms = 500
+    _default_write_statement_timeout_ms = 5000
+
     def __init__(self) -> None:
         self._secret_key = settings.ws_ticket_secret_key
 
@@ -65,6 +74,21 @@ class WsTicketService:
         token = secrets.token_urlsafe(candidate_length)
         return token[:candidate_length]
 
+    async def _apply_default_write_timeouts(self, db: AsyncSession) -> None:
+        await set_postgres_local_timeouts(
+            db,
+            lock_timeout_ms=self._default_write_lock_timeout_ms,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
+
+    async def _apply_nowait_write_timeouts(self, db: AsyncSession) -> None:
+        """Apply only statement timeout for NOWAIT row-lock workflows."""
+
+        await set_postgres_local_timeouts(
+            db,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
+
     async def issue_ticket(
         self,
         db: AsyncSession,
@@ -73,6 +97,7 @@ class WsTicketService:
         scope_type: str,
         scope_id: UUID,
     ) -> WsTicketIssueResult:
+        await self._apply_default_write_timeouts(db)
         now = utc_now()
         expires_in = settings.ws_ticket_ttl_seconds
         expires_at = now + timedelta(seconds=expires_in)
@@ -88,7 +113,24 @@ class WsTicketService:
             expires_at=expires_at,
         )
         db.add(ticket)
-        await commit_safely(db)
+        try:
+            await commit_safely(db)
+        except DBAPIError as exc:
+            retryable_lock_error = to_retryable_db_lock_error(
+                exc,
+                lock_message=(
+                    "WS ticket issuance is currently locked by another operation; retry shortly."
+                ),
+            )
+            if retryable_lock_error is not None:
+                raise retryable_lock_error from exc
+            retryable_timeout_error = to_retryable_db_query_timeout_error(
+                exc,
+                timeout_message="WS ticket issuance timed out; service busy, retry shortly.",
+            )
+            if retryable_timeout_error is not None:
+                raise retryable_timeout_error from exc
+            raise
 
         return WsTicketIssueResult(
             token=token,
@@ -104,13 +146,31 @@ class WsTicketService:
         scope_type: str,
         scope_id: UUID,
     ) -> WsTicket:
+        await self._apply_nowait_write_timeouts(db)
         token_hash = self._hash_token(token)
         now = utc_now()
 
         stmt = (
-            select(WsTicket).where(WsTicket.token_hash == token_hash).with_for_update()
+            select(WsTicket)
+            .where(WsTicket.token_hash == token_hash)
+            .with_for_update(nowait=True)
         )
-        ticket = await db.scalar(stmt)
+        try:
+            ticket = await db.scalar(stmt)
+        except DBAPIError as exc:
+            retryable_lock_error = to_retryable_db_lock_error(
+                exc,
+                lock_message="Ticket is being consumed by another request",
+            )
+            if retryable_lock_error is not None:
+                raise retryable_lock_error from exc
+            retryable_timeout_error = to_retryable_db_query_timeout_error(
+                exc,
+                timeout_message="Ticket verification timed out; service busy, retry shortly.",
+            )
+            if retryable_timeout_error is not None:
+                raise retryable_timeout_error from exc
+            raise
         if ticket is None:
             raise WsTicketNotFoundError("Invalid or expired ticket")
         if ticket.used_at is not None:
@@ -124,7 +184,24 @@ class WsTicketService:
             raise WsTicketScopeError("Ticket scope mismatch")
 
         ticket.used_at = now
-        await commit_safely(db)
+        try:
+            await commit_safely(db)
+        except DBAPIError as exc:
+            retryable_lock_error = to_retryable_db_lock_error(
+                exc,
+                lock_message=(
+                    "Ticket is being consumed by another request; retry shortly."
+                ),
+            )
+            if retryable_lock_error is not None:
+                raise retryable_lock_error from exc
+            retryable_timeout_error = to_retryable_db_query_timeout_error(
+                exc,
+                timeout_message="Ticket consume timed out; service busy, retry shortly.",
+            )
+            if retryable_timeout_error is not None:
+                raise retryable_timeout_error from exc
+            raise
         return ticket
 
     async def cleanup_tickets(self, db: AsyncSession) -> int:
@@ -138,6 +215,7 @@ class WsTicketService:
         """
         from sqlalchemy import delete, or_
 
+        await self._apply_default_write_timeouts(db)
         now = utc_now()
         retention_days = max(settings.ws_ticket_retention_days, 0)
         retention_cutoff = now - timedelta(days=retention_days)

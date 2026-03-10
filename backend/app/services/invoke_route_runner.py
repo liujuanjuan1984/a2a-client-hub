@@ -15,6 +15,11 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.error_codes import status_code_for_invoke_error_code
+from app.api.retry_after import db_busy_retry_after_headers
+from app.db.locking import (
+    RetryableDbLockError,
+    RetryableDbQueryTimeoutError,
+)
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
@@ -1514,12 +1519,24 @@ async def run_issue_ws_ticket_route(
         )
         raise HTTPException(status_code=not_found_status_code, detail=detail) from exc
 
-    issued = await ws_ticket_service.issue_ticket(
-        db,
-        user_id=user_id,
-        scope_type=scope_type,
-        scope_id=scope_id,
-    )
+    try:
+        issued = await ws_ticket_service.issue_ticket(
+            db,
+            user_id=user_id,
+            scope_type=scope_type,
+            scope_id=scope_id,
+        )
+    except RetryableDbLockError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except RetryableDbQueryTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+            headers=db_busy_retry_after_headers(),
+        ) from exc
     return WsTicketResponse(
         token=issued.token,
         expires_at=issued.expires_at,

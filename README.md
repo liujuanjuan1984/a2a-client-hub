@@ -104,14 +104,17 @@ Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your backend.
 
 以下参数建议在生产环境显式配置，用于避免长事务与调度悬挂：
 
-- `A2A_SCHEDULE_RUN_LEASE_SECONDS`
-  - 调度运行 lease 超时（恢复扫描依据），建议 900~3600 秒。
 - `A2A_SCHEDULE_TASK_INVOKE_TIMEOUT`
-  - 单次调度 invoke 的总超时（与 lease 解耦），建议大于常见任务耗时上界。
+  - 单次调度 invoke 的总超时（唯一运行超时基准），建议大于常见任务耗时上界。
+- `A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS`
+  - 调度执行期间的心跳更新间隔，建议 15~60 秒，且应小于 invoke timeout。
+  - 心跳写入会使用短 `lock_timeout/statement_timeout`，在锁竞争时快速失败并等待下次心跳重试，避免长时间阻塞。
 - `A2A_SCHEDULE_TASK_STREAM_IDLE_TIMEOUT`
   - 上游流空闲超时，建议 30~120 秒。
 - PostgreSQL `idle_in_transaction_session_timeout`
   - 建议在数据库层设置（例如 60s~300s）作为兜底保护，防止异常路径长时间 `idle in transaction`。
+- 调度分发器跨进程互斥
+  - 通过 PostgreSQL advisory lock 保证同一时刻仅一个进程执行分发循环，减少多实例并发扫描/抢锁带来的额外竞争。
 
 可在 `/health` 的 `a2a.ops_metrics` 里观察：
 

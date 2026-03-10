@@ -12,18 +12,28 @@ from fastapi import Depends, HTTPException, WebSocket, WebSocketException, statu
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.retry_after import append_retry_after_hint
 from app.core.config import settings
-from app.core.logging import set_user_context
+from app.core.logging import get_logger, set_user_context
 from app.core.security import verify_access_token
+from app.db.locking import (
+    RetryableDbLockError,
+    RetryableDbQueryTimeoutError,
+)
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.handlers import auth as auth_handler
-from app.services.ws_ticket_service import WsTicketError, ws_ticket_service
+from app.services.ops_metrics import ops_metrics
+from app.services.ws_ticket_service import (
+    WsTicketError,
+    ws_ticket_service,
+)
 
 # Security scheme for OpenAPI documentation
 security = HTTPBearer()
 
 _WS_TICKET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+logger = get_logger(__name__)
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
@@ -153,6 +163,44 @@ async def get_ws_ticket_user(
             scope_type=scope_type,
             scope_id=scope_id,
         )
+    except RetryableDbLockError as exc:
+        ops_metrics.increment_ws_ticket_lock_conflicts()
+        logger.warning(
+            "WS ticket consume deferred due to DB lock contention for scope_type=%s scope_id=%s kind=%s",
+            scope_type,
+            scope_id,
+            exc.kind.value,
+            exc_info=exc,
+            extra={
+                "phase": "ws_ticket_auth",
+                "scope_type": scope_type,
+                "scope_id": str(scope_id),
+                "ws_ticket_conflict": True,
+                "db_lock_failure_kind": exc.kind.value,
+            },
+        )
+        raise WebSocketException(
+            code=status.WS_1013_TRY_AGAIN_LATER,
+            reason=append_retry_after_hint(str(exc)),
+        ) from exc
+    except RetryableDbQueryTimeoutError as exc:
+        ops_metrics.increment_ws_ticket_query_timeouts()
+        logger.warning(
+            "WS ticket consume deferred due to DB query timeout for scope_type=%s scope_id=%s",
+            scope_type,
+            scope_id,
+            exc_info=exc,
+            extra={
+                "phase": "ws_ticket_auth",
+                "scope_type": scope_type,
+                "scope_id": str(scope_id),
+                "ws_ticket_query_timeout": True,
+            },
+        )
+        raise WebSocketException(
+            code=status.WS_1013_TRY_AGAIN_LATER,
+            reason=append_retry_after_hint(str(exc)),
+        ) from exc
     except WsTicketError as exc:
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION, reason=str(exc)
