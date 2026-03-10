@@ -151,44 +151,40 @@ class ShortcutService:
     ) -> tuple[list[ShortcutResponse], int]:
         del user
         defaults = _default_shortcuts()
+
+        # Build base filter for custom shortcuts
+        base_filter = [
+            ShortcutModel.user_id == user_id,
+            ShortcutModel.is_default.is_(False),
+        ]
         if agent_id is not None:
-            defaults = []
+            # If agent_id is provided, show both general shortcuts and agent-specific ones
+            base_filter.append(
+                (ShortcutModel.agent_id == agent_id) | (ShortcutModel.agent_id.is_(None))
+            )
 
         # Count custom shortcuts
-        count_query = (
-            select(func.count(ShortcutModel.id))
-            .where(ShortcutModel.user_id == user_id)
-            .where(ShortcutModel.is_default.is_(False))
-        )
-        if agent_id is not None:
-            count_query = count_query.where(ShortcutModel.agent_id == agent_id)
-        else:
-            count_query = count_query.where(ShortcutModel.agent_id.is_(None))
-
+        count_query = select(func.count(ShortcutModel.id)).where(*base_filter)
         total_customs = (await db.execute(count_query)).scalar() or 0
         total_all = len(defaults) + total_customs
 
         # Fetch custom shortcuts
         query = (
             select(ShortcutModel)
-            .where(ShortcutModel.user_id == user_id)
-            .where(ShortcutModel.is_default.is_(False))
+            .where(*base_filter)
             .order_by(ShortcutModel.sort_order.asc(), ShortcutModel.created_at.asc())
         )
-        if agent_id is not None:
-            query = query.where(ShortcutModel.agent_id == agent_id)
-        else:
-            query = query.where(ShortcutModel.agent_id.is_(None))
 
-        # Handle global offset/limit across combined list
-        # If we have defaults and they fit in the requested window, add them
-        # (Defaults are always at the start)
+        # Handle global offset/limit across combined list (Defaults first)
         start_index = (page - 1) * size
         end_index = start_index + size
 
-        # Simple approach: fetch enough customs to fill the window after defaults
+        # 1. Slice defaults if they are within the window
+        visible_defaults = defaults[start_index:end_index]
+
+        # 2. Fetch customs if the window extends beyond defaults
         custom_offset = max(0, start_index - len(defaults))
-        custom_limit = size - max(0, len(defaults) - start_index)
+        custom_limit = size - len(visible_defaults)
 
         if custom_limit > 0:
             query = query.offset(custom_offset).limit(custom_limit)
@@ -197,9 +193,8 @@ class ShortcutService:
         else:
             customs = []
 
-        # Slice defaults if they are within the window
-        visible_defaults = defaults[start_index:end_index]
         return [*visible_defaults, *customs], total_all
+
 
     async def create_shortcut(
         self,
