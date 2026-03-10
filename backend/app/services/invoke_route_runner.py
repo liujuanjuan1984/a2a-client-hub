@@ -1514,6 +1514,12 @@ async def run_http_invoke_route(
                         yield chunk
                 finally:
                     await _release_invoke_guard(guard_key)
+                    # When returning a StreamingResponse, we must close the db session
+                    # manually after the stream has completely finished, because the
+                    # surrounding context manager in the route handler will close it
+                    # immediately upon returning the StreamingResponse object.
+                    if db is not None:
+                        await db.close()
 
             response.body_iterator = guarded_iterator()
             return response
@@ -1546,6 +1552,21 @@ async def run_http_invoke_route(
                 },
                 max_recovery_attempts=_SESSION_NOT_FOUND_RETRY_LIMIT,
             )
+
+            if isinstance(response, StreamingResponse):
+                original_iterator = response.body_iterator
+
+                async def guarded_iterator_no_inflight():
+                    try:
+                        async for chunk in original_iterator:
+                            yield chunk
+                    finally:
+                        if db is not None:
+                            await db.close()
+
+                response.body_iterator = guarded_iterator_no_inflight()
+                return response
+
             if response.success:
                 return response
             return JSONResponse(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -53,7 +52,7 @@ def test_parse_ws_protocol_selection_accepts_only_allowlisted_subprotocol() -> N
 
 
 @pytest.mark.asyncio
-async def test_get_ws_ticket_user_does_not_echo_ticket_as_selected_subprotocol(
+async def test_get_ws_ticket_user_echoes_valid_subprotocol(
     monkeypatch,
 ) -> None:
     ticket = "a" * settings.ws_ticket_length
@@ -70,16 +69,15 @@ async def test_get_ws_ticket_user_does_not_echo_ticket_as_selected_subprotocol(
     monkeypatch.setattr(ws_ticket_service, "consume_ticket", _consume_ticket)
     monkeypatch.setattr(api_deps.auth_handler, "get_active_user", _get_active_user)
 
-    websocket = _build_websocket(ticket=ticket)
+    websocket = _build_websocket(ticket=f"a2a-invoke-v1, {ticket}")
     user = await get_ws_ticket_user(
         websocket=websocket,
         scope_type="me_a2a_agent",
         scope_id=uuid4(),
-        db=MagicMock(),
     )
 
     assert user is active_user
-    assert getattr(websocket.state, "selected_subprotocol", None) is None
+    assert getattr(websocket.state, "selected_subprotocol", None) == "a2a-invoke-v1"
 
 
 @pytest.mark.asyncio
@@ -100,7 +98,6 @@ async def test_get_ws_ticket_user_returns_try_again_later_on_ticket_conflict(
             websocket=_build_websocket(ticket="a" * settings.ws_ticket_length),
             scope_type="me_a2a_agent",
             scope_id=uuid4(),
-            db=MagicMock(),
         )
 
     assert exc_info.value.code == status.WS_1013_TRY_AGAIN_LATER
@@ -125,7 +122,6 @@ async def test_get_ws_ticket_user_keeps_policy_violation_for_invalid_ticket(
             websocket=_build_websocket(ticket="a" * settings.ws_ticket_length),
             scope_type="me_a2a_agent",
             scope_id=uuid4(),
-            db=MagicMock(),
         )
 
     assert exc_info.value.code == status.WS_1008_POLICY_VIOLATION
@@ -149,7 +145,6 @@ async def test_get_ws_ticket_user_returns_try_again_later_on_db_statement_timeou
             websocket=_build_websocket(ticket="a" * settings.ws_ticket_length),
             scope_type="me_a2a_agent",
             scope_id=uuid4(),
-            db=MagicMock(),
         )
 
     assert exc_info.value.code == status.WS_1013_TRY_AGAIN_LATER

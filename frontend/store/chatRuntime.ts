@@ -749,11 +749,15 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   };
 
   try {
-    if (await tryWebSocketTransport()) {
-      return;
+    if (chatConnectionService.isWsHealthy()) {
+      if (await tryWebSocketTransport()) {
+        return;
+      }
     }
-    if (await trySseTransport()) {
-      return;
+    if (chatConnectionService.isSseHealthy()) {
+      if (await trySseTransport()) {
+        return;
+      }
     }
   } catch (error) {
     flushChunkBuffer();
