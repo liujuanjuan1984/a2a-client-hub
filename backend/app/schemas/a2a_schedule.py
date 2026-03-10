@@ -74,10 +74,6 @@ class A2AScheduleTaskResponse(A2AScheduleTaskBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-class A2AScheduleTaskPagination(Pagination):
-    """Pagination metadata for schedule task listings."""
-
-
 class A2AScheduleTaskListMeta(BaseModel):
     """Additional list metadata for schedule task listings."""
 
@@ -86,7 +82,7 @@ class A2AScheduleTaskListResponse(
     ListResponse[A2AScheduleTaskResponse, A2AScheduleTaskListMeta]
 ):
     items: List[A2AScheduleTaskResponse]
-    pagination: A2AScheduleTaskPagination
+    pagination: Pagination
     meta: A2AScheduleTaskListMeta
 
 
@@ -107,10 +103,6 @@ class A2AScheduleExecutionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class A2AScheduleExecutionPagination(Pagination):
-    """Pagination metadata for execution listings."""
-
-
 class A2AScheduleExecutionListMeta(BaseModel):
     task_id: UUID
 
@@ -119,7 +111,7 @@ class A2AScheduleExecutionListResponse(
     ListResponse[A2AScheduleExecutionResponse, A2AScheduleExecutionListMeta]
 ):
     items: List[A2AScheduleExecutionResponse]
-    pagination: A2AScheduleExecutionPagination
+    pagination: Pagination
     meta: A2AScheduleExecutionListMeta
 
 
@@ -140,13 +132,11 @@ __all__ = [
     "A2AScheduleCycleType",
     "A2AScheduleExecutionListMeta",
     "A2AScheduleExecutionListResponse",
-    "A2AScheduleExecutionPagination",
     "A2AScheduleExecutionResponse",
     "A2AScheduleManualFailRequest",
     "A2AScheduleTaskCreate",
     "A2AScheduleTaskListMeta",
     "A2AScheduleTaskListResponse",
-    "A2AScheduleTaskPagination",
     "A2AScheduleTaskResponse",
     "A2AScheduleTaskUpdate",
     "A2AScheduleToggleResponse",
