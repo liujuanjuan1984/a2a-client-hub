@@ -31,9 +31,20 @@ from app.services.a2a_schedule_service import (
     a2a_schedule_service,
 )
 from app.utils.pagination import build_pagination_meta
-from app.utils.timezone_util import validate_user_timezone
+from app.utils.timezone_util import TimezoneNotFoundError, _validate_timezone
 
 router = StrictAPIRouter(prefix="/me/a2a/schedules", tags=["a2a-schedules"])
+
+
+def _validate_timezone(
+    user_timezone: str | None, requested_timezone: str | None = None
+) -> str:
+    try:
+        return _validate_timezone(
+            user_timezone=user_timezone, requested_timezone=requested_timezone
+        )
+    except (ValueError, TimezoneNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 _SCHEDULE_ERROR_STATUS_MAP = {
@@ -105,7 +116,7 @@ async def _set_schedule_task_enabled(
     db: AsyncSession,
     current_user: User,
 ) -> A2AScheduleToggleResponse:
-    schedule_timezone = validate_user_timezone(user_timezone=current_user.timezone)
+    schedule_timezone = _validate_timezone(user_timezone=current_user.timezone)
     task = await _call_schedule(
         a2a_schedule_service.set_enabled(
             db,
@@ -136,7 +147,7 @@ async def create_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = validate_user_timezone(
+    schedule_timezone = _validate_timezone(
         user_timezone=current_user.timezone,
         requested_timezone=payload.schedule_timezone,
     )
@@ -164,7 +175,7 @@ async def list_schedule_tasks(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskListResponse:
-    schedule_timezone = validate_user_timezone(user_timezone=current_user.timezone)
+    schedule_timezone = _validate_timezone(user_timezone=current_user.timezone)
     items, total = await _call_schedule(
         a2a_schedule_service.list_tasks(
             db,
@@ -189,7 +200,7 @@ async def get_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = validate_user_timezone(user_timezone=current_user.timezone)
+    schedule_timezone = _validate_timezone(user_timezone=current_user.timezone)
     task = await _call_schedule(
         a2a_schedule_service.get_task(
             db,
@@ -207,7 +218,7 @@ async def patch_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = validate_user_timezone(
+    schedule_timezone = _validate_timezone(
         user_timezone=current_user.timezone,
         requested_timezone=payload.schedule_timezone,
     )
@@ -283,7 +294,7 @@ async def mark_schedule_task_failed(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = validate_user_timezone(user_timezone=current_user.timezone)
+    schedule_timezone = _validate_timezone(user_timezone=current_user.timezone)
     task = await _call_schedule(
         a2a_schedule_service.mark_task_failed_manually(
             db,
