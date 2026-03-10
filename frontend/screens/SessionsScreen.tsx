@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { useMemo, useCallback } from "react";
+import { RefreshControl, FlatList, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
@@ -50,6 +50,60 @@ export function SessionsScreen() {
     });
   };
 
+  const renderSessionItem = useCallback(
+    ({ item }: { item: SessionListItem }) => {
+      const agent = resolveSessionAgentPresentation(item, agentLookup);
+      const timeline = getSessionTimelineText(item);
+      return (
+        <View
+          key={item.conversationId}
+          className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
+        >
+          <View className="px-4 py-4 pb-3.5">
+            <View className="flex-row items-center justify-between mb-1.5">
+              <Text
+                className="text-[10px] font-semibold uppercase tracking-widest text-neo-green"
+                numberOfLines={1}
+              >
+                {agent.name}
+              </Text>
+              <Text className="text-[10px] font-bold text-slate-700 uppercase">
+                {item.source}
+              </Text>
+            </View>
+            <Text
+              className="text-[13px] font-semibold text-white/90"
+              numberOfLines={2}
+            >
+              {item.title}
+            </Text>
+          </View>
+
+          <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
+            <View className="flex-1">
+              <Text className="text-[10px] font-medium text-slate-500">
+                {timeline.timelineRangeText}
+              </Text>
+            </View>
+            <View className="flex-row items-center">
+              <Button
+                label="Open"
+                size="sm"
+                variant="primary"
+                iconRight="chevron-forward"
+                disabled={!item.agent_id}
+                onPress={() => handleContinueSession(item)}
+                accessibilityRole="button"
+                accessibilityLabel="Open session"
+              />
+            </View>
+          </View>
+        </View>
+      );
+    },
+    [agentLookup, handleContinueSession],
+  );
+
   return (
     <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
       <PageHeader
@@ -57,97 +111,56 @@ export function SessionsScreen() {
         subtitle="Browse sessions across all agents."
       />
 
-      <ScrollView
-        style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
-        contentContainerStyle={{ paddingBottom: 18 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={refresh}
-            tintColor="#FFFFFF"
-            colors={["#FFFFFF"]}
-          />
-        }
-      >
-        {loading ? (
-          <View className="mt-8 items-center">
-            <Text className="text-sm text-gray-400">Loading sessions...</Text>
-          </View>
-        ) : sortedItems.length === 0 ? (
-          <View className="mt-8 rounded-2xl bg-surface p-6">
-            <Text className="text-base font-bold text-white">No sessions</Text>
-            <Text className="mt-2 text-sm text-gray-400">
-              No sessions found.
-            </Text>
-          </View>
-        ) : (
-          <>
-            {sortedItems.map((item) => {
-              const title = item.title;
-              const agent = resolveSessionAgentPresentation(item, agentLookup);
-              const timeline = getSessionTimelineText(item);
-              return (
-                <View
-                  key={item.conversationId}
-                  className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
-                >
-                  <View className="px-4 py-4 pb-3.5">
-                    <View className="flex-row items-center justify-between mb-1.5">
-                      <Text
-                        className="text-[10px] font-semibold uppercase tracking-widest text-neo-green"
-                        numberOfLines={1}
-                      >
-                        {agent.name}
-                      </Text>
-                      <Text className="text-[10px] font-bold text-slate-700 uppercase">
-                        {item.source}
-                      </Text>
-                    </View>
-                    <Text
-                      className="text-[13px] font-semibold text-white/90"
-                      numberOfLines={2}
-                    >
-                      {title}
-                    </Text>
-                  </View>
-
-                  <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
-                    <View className="flex-1">
-                      <Text className="text-[10px] font-medium text-slate-500">
-                        {timeline.timelineRangeText}
-                      </Text>
-                    </View>
-                    <View className="flex-row items-center">
-                      {/* Async Continue is intentionally hidden for now. See #381. */}
-                      <Button
-                        label="Open"
-                        size="sm"
-                        variant="primary"
-                        iconRight="chevron-forward"
-                        disabled={!item.agent_id}
-                        onPress={() => handleContinueSession(item)}
-                        accessibilityRole="button"
-                        accessibilityLabel="Open session"
-                      />
-                    </View>
-                  </View>
-                </View>
-              );
-            })}
-
-            {hasMore ? (
-              <Button
-                className="mt-2 self-center"
-                label={loadingMore ? "Loading..." : "Load more"}
-                size="sm"
-                variant="secondary"
-                loading={loadingMore}
-                onPress={() => loadMore()}
-              />
-            ) : null}
-          </>
-        )}
-      </ScrollView>
+      {loading && items.length === 0 ? (
+        <View className="mt-8 items-center">
+          <Text className="text-sm text-gray-400">Loading sessions...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={sortedItems}
+          renderItem={renderSessionItem}
+          keyExtractor={(item) => item.conversationId}
+          style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
+          contentContainerStyle={{ paddingBottom: 18 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={refresh}
+              tintColor="#FFFFFF"
+              colors={["#FFFFFF"]}
+            />
+          }
+          ListEmptyComponent={
+            <View className="mt-8 rounded-2xl bg-surface p-6">
+              <Text className="text-base font-bold text-white">
+                No sessions
+              </Text>
+              <Text className="mt-2 text-sm text-gray-400">
+                No sessions found.
+              </Text>
+            </View>
+          }
+          onEndReached={() => {
+            if (hasMore && !loadingMore) {
+              loadMore();
+            }
+          }}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            hasMore ? (
+              <View className="py-4 items-center">
+                <Button
+                  label={loadingMore ? "Loading..." : "Load more"}
+                  size="sm"
+                  variant="secondary"
+                  loading={loadingMore}
+                  onPress={() => loadMore()}
+                />
+              </View>
+            ) : null
+          }
+        />
+      )}
     </ScreenContainer>
   );
 }

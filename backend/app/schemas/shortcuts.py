@@ -86,20 +86,15 @@ class ShortcutListMeta(BaseModel):
     """Additional list metadata for shortcuts endpoint."""
 
 
-class ShortcutListPagination(Pagination):
-    """Pagination metadata for shortcut lists."""
-
-
 class ShortcutListResponse(ListResponse[ShortcutResponse, ShortcutListMeta]):
     items: List[ShortcutResponse]
-    pagination: ShortcutListPagination
+    pagination: Pagination
     meta: ShortcutListMeta
 
 
 __all__ = [
     "ShortcutCreateRequest",
     "ShortcutListMeta",
-    "ShortcutListPagination",
     "ShortcutListResponse",
     "ShortcutResponse",
     "ShortcutUpdateRequest",

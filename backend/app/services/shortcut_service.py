@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.shortcut import Shortcut as ShortcutModel
@@ -145,27 +145,61 @@ class ShortcutService:
         db: AsyncSession,
         user_id: UUID,
         agent_id: UUID | None = None,
+        page: int = 1,
+        size: int = 50,
         user: User | None = None,
-    ) -> list[ShortcutResponse]:
+    ) -> tuple[list[ShortcutResponse], int]:
         del user
+        defaults = _default_shortcuts()
+        if agent_id is not None:
+            defaults = []
+
+        # Count custom shortcuts
+        count_query = (
+            select(func.count(ShortcutModel.id))
+            .where(ShortcutModel.user_id == user_id)
+            .where(ShortcutModel.is_default.is_(False))
+        )
+        if agent_id is not None:
+            count_query = count_query.where(ShortcutModel.agent_id == agent_id)
+        else:
+            count_query = count_query.where(ShortcutModel.agent_id.is_(None))
+
+        total_customs = (await db.execute(count_query)).scalar() or 0
+        total_all = len(defaults) + total_customs
+
+        # Fetch custom shortcuts
         query = (
             select(ShortcutModel)
             .where(ShortcutModel.user_id == user_id)
             .where(ShortcutModel.is_default.is_(False))
             .order_by(ShortcutModel.sort_order.asc(), ShortcutModel.created_at.asc())
         )
-
         if agent_id is not None:
-            # If an agent_id is provided, fetch both general shortcuts and specific shortcuts for this agent.
-            query = query.where(
-                (ShortcutModel.agent_id == agent_id)
-                | (ShortcutModel.agent_id.is_(None))
-            )
+            query = query.where(ShortcutModel.agent_id == agent_id)
+        else:
+            query = query.where(ShortcutModel.agent_id.is_(None))
 
-        rows = (await db.execute(query)).scalars().all()
+        # Handle global offset/limit across combined list
+        # If we have defaults and they fit in the requested window, add them
+        # (Defaults are always at the start)
+        start_index = (page - 1) * size
+        end_index = start_index + size
 
-        customs = [_shortcut_to_payload(row) for row in rows]
-        return [*_default_shortcuts(), *customs]
+        # Simple approach: fetch enough customs to fill the window after defaults
+        custom_offset = max(0, start_index - len(defaults))
+        custom_limit = size - max(0, len(defaults) - start_index)
+
+        if custom_limit > 0:
+            query = query.offset(custom_offset).limit(custom_limit)
+            rows = (await db.execute(query)).scalars().all()
+            customs = [_shortcut_to_payload(row) for row in rows]
+        else:
+            customs = []
+
+        # Slice defaults if they are within the window
+        visible_defaults = defaults[start_index:end_index]
+        return [*visible_defaults, *customs], total_all
 
     async def create_shortcut(
         self,

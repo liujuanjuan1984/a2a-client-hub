@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { useMemo, useState, useCallback } from "react";
+import { RefreshControl, FlatList, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
@@ -85,6 +85,84 @@ export function ScheduledJobsScreen() {
     );
   };
 
+  const renderJobItem = useCallback(
+    ({ item: job }: { item: any }) => {
+      const executionsOpen = expandedExecutionsTaskId === job.id;
+      return (
+        <ScheduledJobCard
+          key={job.id}
+          job={job}
+          timeZone={job.schedule_timezone || scheduleTimeZone}
+          agentName={
+            agentOptions.find((agent) => agent.id === job.agent_id)?.name ??
+            job.agent_id
+          }
+          executions={executionsOpen ? executionsQuery.items : []}
+          executionsOpen={executionsOpen}
+          executionsLoading={executionsOpen ? executionsQuery.loading : false}
+          executionsHasMore={executionsOpen ? executionsQuery.hasMore : false}
+          executionsLoadingMore={
+            executionsOpen ? executionsQuery.loadingMore : false
+          }
+          onToggleEnabled={async () => {
+            try {
+              await toggleJobStatus(job);
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : "Update failed.";
+              toast.error("Update failed", message);
+            }
+          }}
+          onEdit={() => {
+            blurActiveElement();
+            router.push(buildScheduledJobEditHref(job.id));
+          }}
+          onDelete={async () => {
+            try {
+              await removeJob(job);
+              toast.success(
+                "Job deleted",
+                "The scheduled task has been removed.",
+              );
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : "Delete failed.";
+              toast.error("Delete failed", message);
+            }
+          }}
+          onMarkFailed={async () => {
+            try {
+              await markJobFailed(job);
+              toast.success("Job updated", "Marked running task as failed.");
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : "Update failed.";
+              toast.error("Update failed", message);
+            }
+          }}
+          onToggleExecutions={() => toggleExecutionsPanel(job.id)}
+          onLoadMoreExecutions={
+            executionsOpen
+              ? async () => {
+                  await executionsQuery.loadMore();
+                }
+              : undefined
+          }
+        />
+      );
+    },
+    [
+      expandedExecutionsTaskId,
+      scheduleTimeZone,
+      agentOptions,
+      executionsQuery,
+      toggleJobStatus,
+      router,
+      removeJob,
+      markJobFailed,
+    ],
+  );
+
   return (
     <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
       <PageHeader
@@ -105,17 +183,10 @@ export function ScheduledJobsScreen() {
         }
       />
 
-      {hasTimeZoneMismatch && (
-        <View className="mx-6 mb-2 flex-row items-center gap-2 rounded-xl bg-orange-500/10 p-3">
-          <Ionicons name="alert-circle-outline" size={14} color="#FB923C" />
-          <Text className="text-[11px] font-medium text-orange-400">
-            Note: Displaying times in {scheduleTimeZone} (Local: {localTimeZone}
-            )
-          </Text>
-        </View>
-      )}
-
-      <ScrollView
+      <FlatList
+        data={sortedJobs}
+        renderItem={renderJobItem}
+        keyExtractor={(item) => item.id}
         style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
         contentContainerStyle={{ paddingBottom: 18 }}
         refreshControl={
@@ -126,119 +197,66 @@ export function ScheduledJobsScreen() {
             colors={["#FFFFFF"]}
           />
         }
-      >
-        {loading ? (
-          <View className="mt-8 items-center">
-            <Text className="text-sm text-gray-400">Loading jobs...</Text>
-          </View>
-        ) : sortedJobs.length === 0 ? (
-          <View className="mt-8 rounded-2xl bg-surface p-8 items-center shadow-sm">
-            <View className="h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 mb-4">
-              <Ionicons name="time-outline" size={32} color="#FACC15" />
+        ListHeaderComponent={
+          hasTimeZoneMismatch ? (
+            <View className="mb-4 flex-row items-center gap-2 rounded-xl bg-orange-500/10 p-3 mx-1">
+              <Ionicons name="alert-circle-outline" size={14} color="#FB923C" />
+              <Text className="text-[11px] font-medium text-orange-400">
+                Note: Displaying times in {scheduleTimeZone} (Local:{" "}
+                {localTimeZone})
+              </Text>
             </View>
-            <Text className="text-base font-bold text-white">
-              No scheduled jobs
-            </Text>
-            <Text className="mt-2 text-center text-[11px] font-medium text-slate-400">
-              Create your first recurring task to automate prompts.
-            </Text>
-            <Button
-              className="mt-6"
-              label="Create a job"
-              size="sm"
-              iconRight="chevron-forward"
-              onPress={() => {
-                blurActiveElement();
-                router.push(scheduledJobNewHref);
-              }}
-            />
-          </View>
-        ) : (
-          sortedJobs.map((job) => {
-            const executionsOpen = expandedExecutionsTaskId === job.id;
-            return (
-              <ScheduledJobCard
-                key={job.id}
-                job={job}
-                timeZone={job.schedule_timezone || scheduleTimeZone}
-                agentName={
-                  agentOptions.find((agent) => agent.id === job.agent_id)
-                    ?.name ?? job.agent_id
-                }
-                executions={executionsOpen ? executionsQuery.items : []}
-                executionsOpen={executionsOpen}
-                executionsLoading={
-                  executionsOpen ? executionsQuery.loading : false
-                }
-                executionsHasMore={
-                  executionsOpen ? executionsQuery.hasMore : false
-                }
-                executionsLoadingMore={
-                  executionsOpen ? executionsQuery.loadingMore : false
-                }
-                onToggleEnabled={async () => {
-                  try {
-                    await toggleJobStatus(job);
-                  } catch (error) {
-                    const message =
-                      error instanceof Error ? error.message : "Update failed.";
-                    toast.error("Update failed", message);
-                  }
-                }}
-                onEdit={() => {
+          ) : null
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View className="mt-8 items-center">
+              <Text className="text-sm text-gray-400">Loading jobs...</Text>
+            </View>
+          ) : (
+            <View className="mt-8 rounded-2xl bg-surface p-8 items-center shadow-sm">
+              <View className="h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 mb-4">
+                <Ionicons name="time-outline" size={32} color="#FACC15" />
+              </View>
+              <Text className="text-base font-bold text-white">
+                No scheduled jobs
+              </Text>
+              <Text className="mt-2 text-center text-[11px] font-medium text-slate-400">
+                Create your first recurring task to automate prompts.
+              </Text>
+              <Button
+                className="mt-6"
+                label="Create a job"
+                size="sm"
+                iconRight="chevron-forward"
+                onPress={() => {
                   blurActiveElement();
-                  router.push(buildScheduledJobEditHref(job.id));
+                  router.push(scheduledJobNewHref);
                 }}
-                onDelete={async () => {
-                  try {
-                    await removeJob(job);
-                    toast.success(
-                      "Job deleted",
-                      "The scheduled task has been removed.",
-                    );
-                  } catch (error) {
-                    const message =
-                      error instanceof Error ? error.message : "Delete failed.";
-                    toast.error("Delete failed", message);
-                  }
-                }}
-                onMarkFailed={async () => {
-                  try {
-                    await markJobFailed(job);
-                    toast.success(
-                      "Job updated",
-                      "Marked running task as failed.",
-                    );
-                  } catch (error) {
-                    const message =
-                      error instanceof Error ? error.message : "Update failed.";
-                    toast.error("Update failed", message);
-                  }
-                }}
-                onToggleExecutions={() => toggleExecutionsPanel(job.id)}
-                onLoadMoreExecutions={
-                  executionsOpen
-                    ? async () => {
-                        await executionsQuery.loadMore();
-                      }
-                    : undefined
-                }
               />
-            );
-          })
-        )}
-
-        {hasMore ? (
-          <Button
-            className="mt-2 self-center"
-            label={loadingMore ? "Loading..." : "Load more"}
-            size="sm"
-            variant="secondary"
-            loading={loadingMore}
-            onPress={() => loadMore()}
-          />
-        ) : null}
-      </ScrollView>
+            </View>
+          )
+        }
+        onEndReached={() => {
+          if (hasMore && !loadingMore) {
+            loadMore();
+          }
+        }}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          hasMore ? (
+            <View className="py-4 items-center">
+              <Button
+                label={loadingMore ? "Loading..." : "Load more"}
+                size="sm"
+                variant="secondary"
+                loading={loadingMore}
+                onPress={() => loadMore()}
+              />
+            </View>
+          ) : null
+        }
+      />
     </ScreenContainer>
   );
 }

@@ -59,6 +59,19 @@ class StreamOutcome:
     terminal_event_seen: bool
 
 
+@dataclass(frozen=True)
+class PayloadAnalysis:
+    """Unified container for extracted payload metadata."""
+
+    usage: dict[str, Any]
+    upstream_message_id: str | None = None
+    upstream_event_id: str | None = None
+    upstream_event_seq: int | None = None
+    upstream_task_id: str | None = None
+    context_id: str | None = None
+    binding_metadata: dict[str, Any] = None
+
+
 StreamFinalizedCallbackFn = Callable[[StreamOutcome], Any]
 
 
@@ -163,6 +176,132 @@ class A2AInvokeService:
             )
 
     @classmethod
+    def analyze_payload(cls, payload: dict[str, Any]) -> PayloadAnalysis:
+        """Analyze a payload to extract all relevant metadata in a single pass."""
+        root = as_dict(payload)
+
+        # 1. Identity & Sequence hints (Candidates for identity)
+        artifact = as_dict(root.get("artifact"))
+        artifact_metadata = as_dict(artifact.get("metadata"))
+        artifact_opencode = as_dict(artifact_metadata.get("opencode"))
+
+        message = as_dict(root.get("message"))
+        message_metadata = as_dict(message.get("metadata"))
+        message_opencode = as_dict(message_metadata.get("opencode"))
+
+        status = as_dict(root.get("status"))
+        status_metadata = as_dict(status.get("metadata"))
+        status_opencode = as_dict(status_metadata.get("opencode"))
+
+        task = as_dict(root.get("task"))
+        task_status = as_dict(task.get("status"))
+        task_status_metadata = as_dict(task_status.get("metadata"))
+        task_status_opencode = as_dict(task_status_metadata.get("opencode"))
+
+        result = as_dict(root.get("result"))
+        result_status = as_dict(result.get("status"))
+        result_status_metadata = as_dict(result_status.get("metadata"))
+        result_status_opencode = as_dict(result_status_metadata.get("opencode"))
+
+        root_metadata = as_dict(root.get("metadata"))
+        root_opencode = as_dict(root_metadata.get("opencode"))
+
+        # Identity extraction
+        msg_id = None
+        evt_id = None
+        for cand in (
+            artifact_opencode,
+            root_opencode,
+            status_opencode,
+            message_opencode,
+            task_status_opencode,
+            result_status_opencode,
+        ):
+            if msg_id is None:
+                msg_id = cls._pick_non_empty_str(cand, ("message_id",))
+            if evt_id is None:
+                evt_id = cls._pick_non_empty_str(cand, ("event_id",))
+
+        # Task ID extraction
+        t_id = cls._pick_non_empty_str(root, ("task_id", "taskId"))
+        if t_id is None:
+            for cand in (
+                task,
+                as_dict(result.get("task")),
+                as_dict(status.get("task")),
+                root_opencode,
+            ):
+                t_id = cls._pick_non_empty_str(cand, ("task_id", "taskId", "id"))
+                if t_id:
+                    break
+
+        # Sequence extraction
+        seq = cls._pick_int(root, ("seq",))
+        if seq is None:
+            for cand in (
+                root_metadata,
+                root_opencode,
+                artifact,
+                artifact_metadata,
+                artifact_opencode,
+            ):
+                seq = cls._pick_int(cand, ("seq",))
+                if seq is not None:
+                    break
+
+        # 2. Usage hints
+        usage: dict[str, Any] = {}
+        for cand in (root, artifact, message, status, task, result):
+            cand_usage = cls._extract_usage_from_candidate(cand)
+            if cand_usage:
+                usage.update(cand_usage)
+
+        # 3. Binding hints
+        context_id = None
+        provider = None
+        ext_session_id = None
+        binding_meta: dict[str, Any] = {}
+
+        for cand in (root, message, result):
+            if context_id is None:
+                context_id = extract_context_id(cand)
+
+            c_meta = cls._extract_metadata_dict(cand)
+            if c_meta:
+                binding_meta.update(c_meta)
+
+            if provider is None or ext_session_id is None:
+                c_prov, c_ext = extract_provider_and_external_session_id(cand)
+                if provider is None:
+                    provider = c_prov
+                if ext_session_id is None:
+                    ext_session_id = c_ext
+
+        if context_id is None:
+            context_id = extract_context_id(binding_meta)
+        if provider is None or ext_session_id is None:
+            m_prov, m_ext = extract_provider_and_external_session_id(binding_meta)
+            if provider is None:
+                provider = m_prov
+            if ext_session_id is None:
+                ext_session_id = m_ext
+
+        if provider:
+            binding_meta["provider"] = provider
+        if ext_session_id:
+            binding_meta["externalSessionId"] = ext_session_id
+
+        return PayloadAnalysis(
+            usage=usage,
+            upstream_message_id=msg_id,
+            upstream_event_id=evt_id,
+            upstream_event_seq=seq,
+            upstream_task_id=t_id,
+            context_id=context_id,
+            binding_metadata=binding_meta,
+        )
+
+    @classmethod
     def _extract_metadata_dict(cls, payload: dict[str, Any]) -> dict[str, Any]:
         resolved: dict[str, Any] = {}
         for key in ("metadata", "bindingMetadata", "binding_metadata"):
@@ -192,32 +331,6 @@ class A2AInvokeService:
                 return int(value)
             if isinstance(value, str) and value.strip().lstrip("-").isdigit():
                 return int(value.strip())
-        return None
-
-    @classmethod
-    def _extract_event_sequence(cls, payload: dict[str, Any]) -> int | None:
-        direct_sequence = cls._pick_int(payload, ("seq",))
-        if direct_sequence is not None:
-            return direct_sequence
-
-        metadata = as_dict(payload.get("metadata"))
-        artifact = as_dict(payload.get("artifact"))
-
-        candidates = (
-            metadata,
-            as_dict(metadata.get("opencode")),
-            as_dict(artifact),
-            as_dict(artifact.get("metadata")),
-            as_dict(as_dict(artifact.get("metadata")).get("opencode")),
-            as_dict(metadata.get("a2a")),
-        )
-        for candidate in candidates:
-            if not candidate:
-                continue
-            candidate_sequence = cls._pick_int(candidate, ("seq",))
-            if candidate_sequence is not None:
-                return candidate_sequence
-
         return None
 
     @staticmethod
@@ -275,173 +388,34 @@ class A2AInvokeService:
         return normalized
 
     @classmethod
-    def _extract_usage_hints_from_payload(
-        cls, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        root = as_dict(payload)
-        artifact = as_dict(root.get("artifact"))
-        message = as_dict(root.get("message"))
-        status = as_dict(root.get("status"))
-        status_message = as_dict(status.get("message"))
-        task = as_dict(root.get("task"))
-        task_status = as_dict(task.get("status"))
-        task_status_message = as_dict(task_status.get("message"))
-        result = as_dict(root.get("result"))
-        result_status = as_dict(result.get("status"))
-        result_status_message = as_dict(result_status.get("message"))
-
-        usage: dict[str, Any] = {}
-        for candidate in (
-            root,
-            artifact,
-            message,
-            status,
-            status_message,
-            task,
-            task_status,
-            task_status_message,
-            result,
-            result_status,
-            result_status_message,
-        ):
-            candidate_usage = cls._extract_usage_from_candidate(candidate)
-            if candidate_usage:
-                for k, v in candidate_usage.items():
-                    if v is not None:
-                        usage[k] = v
-        return usage
-
-    @classmethod
-    def _extract_stream_identity_hints_from_payload(
-        cls, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        root = as_dict(payload)
-        artifact = as_dict(root.get("artifact"))
-        artifact_metadata = as_dict(artifact.get("metadata"))
-        artifact_opencode_metadata = as_dict(artifact_metadata.get("opencode"))
-        root_metadata = as_dict(root.get("metadata"))
-        root_opencode_metadata = as_dict(root_metadata.get("opencode"))
-        status = as_dict(root.get("status"))
-        status_metadata = as_dict(status.get("metadata"))
-        status_opencode_metadata = as_dict(status_metadata.get("opencode"))
-        task = as_dict(root.get("task"))
-        task_status = as_dict(task.get("status"))
-        task_status_metadata = as_dict(task_status.get("metadata"))
-        task_status_opencode_metadata = as_dict(task_status_metadata.get("opencode"))
-        result = as_dict(root.get("result"))
-        result_status = as_dict(result.get("status"))
-        result_status_metadata = as_dict(result_status.get("metadata"))
-        result_status_opencode_metadata = as_dict(
-            result_status_metadata.get("opencode")
-        )
-        result_task = as_dict(result.get("task"))
-        status_task = as_dict(status.get("task"))
-
-        message_id = None
-        event_id = None
-        for candidate in (
-            artifact_opencode_metadata,
-            root_opencode_metadata,
-            status_opencode_metadata,
-            task_status_opencode_metadata,
-            result_status_opencode_metadata,
-        ):
-            if message_id is None:
-                message_id = cls._pick_non_empty_str(candidate, ("message_id",))
-            if event_id is None:
-                event_id = cls._pick_non_empty_str(candidate, ("event_id",))
-
-        event_seq = cls._pick_int(root, ("seq",))
-        task_id = cls._pick_non_empty_str(root, ("task_id", "taskId"))
-        for candidate in (
-            task,
-            result_task,
-            status_task,
-            root_opencode_metadata,
-            status_opencode_metadata,
-            task_status_opencode_metadata,
-            result_status_opencode_metadata,
-        ):
-            if task_id is not None:
-                break
-            task_id = cls._pick_non_empty_str(candidate, ("task_id", "taskId", "id"))
-
-        hints: dict[str, Any] = {}
-        if message_id:
-            hints["upstream_message_id"] = message_id
-        if event_id:
-            hints["upstream_event_id"] = event_id
-        if event_seq is not None:
-            hints["upstream_event_seq"] = event_seq
-        if task_id:
-            hints["upstream_task_id"] = task_id
-        return hints
-
-    @classmethod
-    def _extract_binding_hints_from_payload(
-        cls, payload: dict[str, Any]
-    ) -> tuple[str | None, dict[str, Any]]:
-        root = as_dict(payload)
-        message = as_dict(root.get("message"))
-        result = as_dict(root.get("result"))
-
-        context_id: str | None = None
-        provider: str | None = None
-        external_session_id: str | None = None
-        resolved_metadata: dict[str, Any] = {}
-
-        for candidate in (root, message, result):
-            if context_id is None:
-                context_id = extract_context_id(candidate)
-            candidate_metadata = cls._extract_metadata_dict(candidate)
-            if candidate_metadata:
-                resolved_metadata.update(candidate_metadata)
-            if provider is None or external_session_id is None:
-                (
-                    candidate_provider,
-                    candidate_external_session_id,
-                ) = extract_provider_and_external_session_id(candidate)
-                if provider is None:
-                    provider = candidate_provider
-                if external_session_id is None:
-                    external_session_id = candidate_external_session_id
-
-        if context_id is None:
-            context_id = extract_context_id(resolved_metadata)
-        if provider is None or external_session_id is None:
-            (
-                metadata_provider,
-                metadata_external_session_id,
-            ) = extract_provider_and_external_session_id(resolved_metadata)
-            if provider is None:
-                provider = metadata_provider
-            if external_session_id is None:
-                external_session_id = metadata_external_session_id
-
-        if provider:
-            resolved_metadata["provider"] = provider
-        if external_session_id:
-            resolved_metadata["externalSessionId"] = external_session_id
-
-        return context_id, resolved_metadata
-
-    @classmethod
     def extract_binding_hints_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> tuple[str | None, dict[str, Any]]:
-        return cls._extract_binding_hints_from_payload(payload)
+        analysis = cls.analyze_payload(payload)
+        return analysis.context_id, analysis.binding_metadata
 
     @classmethod
     def extract_stream_identity_hints_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        return cls._extract_stream_identity_hints_from_payload(payload)
+        analysis = cls.analyze_payload(payload)
+        hints: dict[str, Any] = {}
+        if analysis.upstream_message_id:
+            hints["upstream_message_id"] = analysis.upstream_message_id
+        if analysis.upstream_event_id:
+            hints["upstream_event_id"] = analysis.upstream_event_id
+        if analysis.upstream_event_seq is not None:
+            hints["upstream_event_seq"] = analysis.upstream_event_seq
+        if analysis.upstream_task_id:
+            hints["upstream_task_id"] = analysis.upstream_task_id
+        return hints
 
     @classmethod
     def extract_usage_hints_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        return cls._extract_usage_hints_from_payload(payload)
+        analysis = cls.analyze_payload(payload)
+        return analysis.usage
 
     @classmethod
     def extract_stream_chunk_from_serialized_event(
@@ -517,38 +491,59 @@ class A2AInvokeService:
     def extract_binding_hints_from_invoke_result(
         cls, result: dict[str, Any]
     ) -> tuple[str | None, dict[str, Any]]:
-        context_id, metadata = cls._extract_binding_hints_from_payload(result)
+        analysis = cls.analyze_payload(result)
+        context_id = analysis.context_id
+        metadata = analysis.binding_metadata
+
         raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
         if raw_payload:
-            raw_context_id, raw_metadata = cls._extract_binding_hints_from_payload(
-                raw_payload
-            )
-            if raw_context_id:
-                context_id = raw_context_id
-            if raw_metadata:
-                metadata.update(raw_metadata)
+            raw_analysis = cls.analyze_payload(raw_payload)
+            if raw_analysis.context_id:
+                context_id = raw_analysis.context_id
+            if raw_analysis.binding_metadata:
+                metadata.update(raw_analysis.binding_metadata)
         return context_id, metadata
 
     @classmethod
     def extract_stream_identity_hints_from_invoke_result(
         cls, result: dict[str, Any]
     ) -> dict[str, Any]:
-        hints = cls._extract_stream_identity_hints_from_payload(result)
+        analysis = cls.analyze_payload(result)
+        hints: dict[str, Any] = {}
+        if analysis.upstream_message_id:
+            hints["upstream_message_id"] = analysis.upstream_message_id
+        if analysis.upstream_event_id:
+            hints["upstream_event_id"] = analysis.upstream_event_id
+        if analysis.upstream_event_seq is not None:
+            hints["upstream_event_seq"] = analysis.upstream_event_seq
+        if analysis.upstream_task_id:
+            hints["upstream_task_id"] = analysis.upstream_task_id
+
         raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
         if raw_payload:
-            hints.update(cls._extract_stream_identity_hints_from_payload(raw_payload))
+            raw_analysis = cls.analyze_payload(raw_payload)
+            if raw_analysis.upstream_message_id:
+                hints["upstream_message_id"] = raw_analysis.upstream_message_id
+            if raw_analysis.upstream_event_id:
+                hints["upstream_event_id"] = raw_analysis.upstream_event_id
+            if raw_analysis.upstream_event_seq is not None:
+                hints["upstream_event_seq"] = raw_analysis.upstream_event_seq
+            if raw_analysis.upstream_task_id:
+                hints["upstream_task_id"] = raw_analysis.upstream_task_id
         return hints
 
     @classmethod
     def extract_usage_hints_from_invoke_result(
         cls, result: dict[str, Any]
     ) -> dict[str, Any]:
-        usage_hints = cls._extract_usage_hints_from_payload(result)
+        analysis = cls.analyze_payload(result)
+        usage_hints = analysis.usage
+
         raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
         if raw_payload:
-            raw_usage_hints = cls._extract_usage_hints_from_payload(raw_payload)
-            if raw_usage_hints:
-                usage_hints = raw_usage_hints
+            raw_analysis = cls.analyze_payload(raw_payload)
+            if raw_analysis.usage:
+                usage_hints = raw_analysis.usage
         return usage_hints
 
     @staticmethod
@@ -990,7 +985,9 @@ class A2AInvokeService:
                     )
                 )
                 for cached_sequence, cached_event in cached_events:
-                    parsed_sequence = self._extract_event_sequence(cached_event)
+                    parsed_sequence = self.analyze_payload(
+                        cached_event
+                    ).upstream_event_seq
                     if parsed_sequence is not None:
                         seq_counter = max(seq_counter, parsed_sequence)
                     else:
@@ -1033,7 +1030,9 @@ class A2AInvokeService:
                         )
                         continue
 
-                    parsed_sequence = self._extract_event_sequence(serialized)
+                    parsed_sequence = self.analyze_payload(
+                        serialized
+                    ).upstream_event_seq
                     event_sequence = (
                         parsed_sequence
                         if parsed_sequence is not None
@@ -1182,7 +1181,7 @@ class A2AInvokeService:
                 cache_key, resume_from_sequence
             )
             for cached_sequence, cached_event in cached_events:
-                parsed_sequence = self._extract_event_sequence(cached_event)
+                parsed_sequence = self.analyze_payload(cached_event).upstream_event_seq
                 if parsed_sequence is not None:
                     seq_counter = max(seq_counter, parsed_sequence)
                 else:
@@ -1227,7 +1226,7 @@ class A2AInvokeService:
                     )
                     continue
 
-                parsed_sequence = self._extract_event_sequence(serialized)
+                parsed_sequence = self.analyze_payload(serialized).upstream_event_seq
                 event_sequence = (
                     parsed_sequence if parsed_sequence is not None else seq_counter + 1
                 )

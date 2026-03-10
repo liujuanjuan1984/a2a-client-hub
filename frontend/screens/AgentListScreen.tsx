@@ -1,5 +1,6 @@
 import { useRouter } from "expo-router";
-import { RefreshControl, ScrollView, Text, View } from "react-native";
+import { useCallback } from "react";
+import { RefreshControl, FlatList, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
@@ -47,6 +48,64 @@ export function AgentListScreen() {
     router.push(buildChatRoute(agentId, conversationId));
   };
 
+  const renderAgentItem = useCallback(
+    ({ item: agent }: { item: any }) => (
+      <View
+        key={agent.id}
+        className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
+      >
+        <View className="px-4 py-4">
+          <View className="flex-row items-center justify-between">
+            <Text
+              className="text-[13px] font-semibold text-white flex-1 pr-4"
+              numberOfLines={1}
+            >
+              {agent.name}
+            </Text>
+            <Text
+              className={`text-[10px] font-bold uppercase tracking-widest ${
+                agent.source === "shared" ? "text-neo-green" : "text-slate-500"
+              }`}
+            >
+              {agent.source === "shared" ? "SHARED" : "PERSONAL"}
+            </Text>
+          </View>
+        </View>
+
+        <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
+          <View className="flex-row items-center gap-2">
+            <Button
+              label={agent.source === "personal" ? "Edit" : "Details"}
+              size="sm"
+              variant="secondary"
+              iconLeft={
+                agent.source === "personal"
+                  ? "create-outline"
+                  : "information-outline"
+              }
+              onPress={() => {
+                blurActiveElement();
+                router.push(`/agents/${agent.id}`);
+              }}
+            />
+          </View>
+
+          <Button
+            label="Chat"
+            size="sm"
+            variant="primary"
+            iconRight="chevron-forward"
+            onPress={() => handleChat(agent.id)}
+            accessibilityRole="button"
+            accessibilityLabel="Open chat"
+            accessibilityHint={`Open chat with ${agent.name}`}
+          />
+        </View>
+      </View>
+    ),
+    [handleChat, router],
+  );
+
   return (
     <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
       <PageHeader
@@ -79,7 +138,10 @@ export function AgentListScreen() {
         }
       />
 
-      <ScrollView
+      <FlatList
+        data={agents}
+        renderItem={renderAgentItem}
+        keyExtractor={(item) => item.id}
         style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
         contentContainerStyle={{ paddingBottom: 18 }}
         refreshControl={
@@ -90,8 +152,7 @@ export function AgentListScreen() {
             colors={["#FFFFFF"]}
           />
         }
-      >
-        {agents.length === 0 ? (
+        ListEmptyComponent={
           <View className="rounded-2xl bg-surface p-8 items-center">
             <View className="h-16 w-16 items-center justify-center rounded-2xl bg-primary mb-4">
               <Text className="text-[11px] font-bold text-black">A2A</Text>
@@ -111,65 +172,8 @@ export function AgentListScreen() {
               }}
             />
           </View>
-        ) : (
-          agents.map((agent) => (
-            <View
-              key={agent.id}
-              className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
-            >
-              <View className="px-4 py-4">
-                <View className="flex-row items-center justify-between">
-                  <Text
-                    className="text-[13px] font-semibold text-white flex-1 pr-4"
-                    numberOfLines={1}
-                  >
-                    {agent.name}
-                  </Text>
-                  <Text
-                    className={`text-[10px] font-bold uppercase tracking-widest ${
-                      agent.source === "shared"
-                        ? "text-neo-green"
-                        : "text-slate-500"
-                    }`}
-                  >
-                    {agent.source === "shared" ? "SHARED" : "PERSONAL"}
-                  </Text>
-                </View>
-              </View>
-
-              <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
-                <View className="flex-row items-center gap-2">
-                  <Button
-                    label={agent.source === "personal" ? "Edit" : "Details"}
-                    size="sm"
-                    variant="secondary"
-                    iconLeft={
-                      agent.source === "personal"
-                        ? "create-outline"
-                        : "information-outline"
-                    }
-                    onPress={() => {
-                      blurActiveElement();
-                      router.push(`/agents/${agent.id}`);
-                    }}
-                  />
-                </View>
-
-                <Button
-                  label="Chat"
-                  size="sm"
-                  variant="primary"
-                  iconRight="chevron-forward"
-                  onPress={() => handleChat(agent.id)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open chat"
-                  accessibilityHint={`Open chat with ${agent.name}`}
-                />
-              </View>
-            </View>
-          ))
-        )}
-      </ScrollView>
+        }
+      />
     </ScreenContainer>
   );
 }
