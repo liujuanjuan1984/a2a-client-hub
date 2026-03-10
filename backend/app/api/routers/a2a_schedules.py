@@ -40,7 +40,7 @@ def _validate_timezone(
     user_timezone: str | None, requested_timezone: str | None = None
 ) -> str:
     try:
-        return _validate_timezone(
+        return validate_user_timezone(
             user_timezone=user_timezone, requested_timezone=requested_timezone
         )
     except (ValueError, TimezoneNotFoundError) as exc:
