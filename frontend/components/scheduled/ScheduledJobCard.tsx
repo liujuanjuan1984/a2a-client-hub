@@ -20,7 +20,7 @@ const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
   failed: "text-red-400",
 };
 
-const getCardTone = (job: ScheduledJob) => {
+const getCardTone = (job: ScheduledJob, isReallyRunning: boolean) => {
   if (!job.enabled) {
     return {
       container: "opacity-80",
@@ -32,7 +32,7 @@ const getCardTone = (job: ScheduledJob) => {
       switchTrack: { false: "#1E293B", true: "#334155" },
     };
   }
-  if (job.last_run_status === "running") {
+  if (isReallyRunning) {
     return {
       container: "border-2 border-primary/40",
       title: "text-primary",
@@ -88,7 +88,10 @@ export function ScheduledJobCard({
   onLoadMoreExecutions,
 }: ScheduledJobCardProps) {
   const router = useRouter();
-  const tone = getCardTone(job);
+  const isReallyRunning =
+    job.last_run_status === "running" ||
+    executions.some((e) => e.status === "running");
+  const tone = getCardTone(job, isReallyRunning);
   const intervalTimePoint =
     job.cycle_type === "interval" &&
     typeof (job.time_point as IntervalTimePoint)?.minutes === "number"
@@ -98,7 +101,7 @@ export function ScheduledJobCard({
   const [markingFailed, setMarkingFailed] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
-  const canMarkFailed = job.last_run_status === "running";
+  const canMarkFailed = isReallyRunning;
 
   const openExecutionSession = (execution: ScheduledJobExecution) => {
     if (!execution.conversation_id) return;

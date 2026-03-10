@@ -24,7 +24,10 @@ export function ScheduledJobsScreen() {
   const { data: agents = [] } = useAgentsCatalogQuery(true);
   const { markJobFailed, toggleJobStatus, removeJob } = useScheduledJobs();
   const userTimeZone = useSessionStore((state) => state.user?.timezone);
-  const scheduleTimeZone = userTimeZone?.trim() || resolveUserTimeZone();
+  const localTimeZone = resolveUserTimeZone();
+  const scheduleTimeZone = userTimeZone?.trim() || localTimeZone;
+  const hasTimeZoneMismatch =
+    userTimeZone?.trim() && userTimeZone?.trim() !== localTimeZone;
 
   const [expandedExecutionsTaskId, setExpandedExecutionsTaskId] = useState<
     string | null
@@ -101,6 +104,16 @@ export function ScheduledJobsScreen() {
           </View>
         }
       />
+
+      {hasTimeZoneMismatch && (
+        <View className="mx-6 mb-2 flex-row items-center gap-2 rounded-xl bg-orange-500/10 p-3">
+          <Ionicons name="alert-circle-outline" size={14} color="#FB923C" />
+          <Text className="text-[11px] font-medium text-orange-400">
+            Note: Displaying times in {scheduleTimeZone} (Local: {localTimeZone}
+            )
+          </Text>
+        </View>
+      )}
 
       <ScrollView
         style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}

@@ -727,6 +727,8 @@ class A2AScheduleService:
         )
         await commit_safely(db)
 
+        logger.info(f"Task {selected_task.id} claimed, run_id: {run_id}")
+
         return ClaimedA2AScheduleTask(
             task_id=selected_task.id,
             user_id=selected_task.user_id,
@@ -963,6 +965,11 @@ class A2AScheduleService:
                 )
             else:
                 task.next_run_at = None
+
+        logger.info(
+            f"Task {task_id} finalized (run_id: {run_id}) "
+            f"with status: {final_status}, conv: {conversation_id}"
+        )
 
         return True
 
