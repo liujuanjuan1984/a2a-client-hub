@@ -160,7 +160,8 @@ class ShortcutService:
         if agent_id is not None:
             # If agent_id is provided, show both general shortcuts and agent-specific ones
             base_filter.append(
-                (ShortcutModel.agent_id == agent_id) | (ShortcutModel.agent_id.is_(None))
+                (ShortcutModel.agent_id == agent_id)
+                | (ShortcutModel.agent_id.is_(None))
             )
 
         # Count custom shortcuts
@@ -194,7 +195,6 @@ class ShortcutService:
             customs = []
 
         return [*visible_defaults, *customs], total_all
-
 
     async def create_shortcut(
         self,

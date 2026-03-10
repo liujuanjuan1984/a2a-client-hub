@@ -122,6 +122,11 @@ class ConversationThread(Base, TimestampMixin, UserOwnedMixin):
         back_populates="conversation",
         foreign_keys="AgentMessage.conversation_id",
     )
+    bindings = relationship(
+        "ConversationBinding",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+    )
 
     @staticmethod
     def normalize_title(value: str | None) -> str:
