@@ -15,9 +15,16 @@ interface ExpandToggleProps {
   accessibilityLabel?: string;
   testID?: string;
   showChevron?: boolean;
+  variant?: "default" | "mini";
 }
 
-function ExpandToggleChevron({ expanded }: { expanded: boolean }) {
+function ExpandToggleChevron({
+  expanded,
+  mini,
+}: {
+  expanded: boolean;
+  mini?: boolean;
+}) {
   const rotation = useSharedValue(expanded ? 180 : 0);
 
   useEffect(() => {
@@ -34,8 +41,12 @@ function ExpandToggleChevron({ expanded }: { expanded: boolean }) {
   });
 
   return (
-    <Animated.View style={[{ marginLeft: 4 }, animatedStyle]}>
-      <Ionicons name="chevron-down" size={14} color="#94a3b8" />
+    <Animated.View style={[{ marginLeft: mini ? 2 : 4 }, animatedStyle]}>
+      <Ionicons
+        name="chevron-down"
+        size={mini ? 10 : 14}
+        color={mini ? "#64748b" : "#94a3b8"}
+      />
     </Animated.View>
   );
 }
@@ -51,7 +62,9 @@ export function ExpandToggle({
   accessibilityLabel,
   testID,
   showChevron = true,
+  variant = "default",
 }: ExpandToggleProps) {
+  const isMini = variant === "mini";
   // Standard labels per issue requirements:
   // 1. Technical/Logic block: Show [Type] / Hide [Type]
   // 2. Normal text: Show more / Show less
@@ -66,15 +79,23 @@ export function ExpandToggle({
   return (
     <Pressable
       onPress={onToggle}
-      className="flex-row items-center self-start rounded-lg px-2 py-1 active:bg-white/10"
+      className={`flex-row items-center self-start ${
+        isMini ? "" : "rounded-lg px-2 py-1 active:bg-white/10"
+      }`}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || displayLabel}
       testID={testID}
     >
-      <Text className="text-[11px] font-medium tracking-wide text-slate-400">
+      <Text
+        className={`${
+          isMini ? "text-[10px] text-slate-500" : "text-[11px] text-slate-400"
+        } font-medium tracking-wide`}
+      >
         {displayLabel}
       </Text>
-      {showChevron ? <ExpandToggleChevron expanded={expanded} /> : null}
+      {showChevron ? (
+        <ExpandToggleChevron expanded={expanded} mini={isMini} />
+      ) : null}
     </Pressable>
   );
 }

@@ -48,14 +48,16 @@ export function ReasoningBlock({
       key={blockId}
       className={`${!isFirst ? "mt-3" : ""} rounded-xl bg-black/40 p-3`}
     >
-      <ExpandToggle
-        expanded={expanded}
-        onToggle={() => {
-          handleToggle().catch(() => undefined);
-        }}
-        type="Reasoning"
-        showChevron={false}
-      />
+      {!(expanded && blockHasContent) ? (
+        <ExpandToggle
+          expanded={expanded}
+          onToggle={() => {
+            handleToggle().catch(() => undefined);
+          }}
+          type="Reasoning"
+          showChevron={false}
+        />
+      ) : null}
       {expanded && blockHasContent ? (
         <View>
           <Text
@@ -64,12 +66,13 @@ export function ReasoningBlock({
           >
             {blockText}
           </Text>
-          <View className="mt-2 items-end">
+          <View className="mt-1 items-end">
             <ExpandToggle
               expanded
               onToggle={toggleReasoning}
               testID={`chat-message-${blockId}-collapse-bottom`}
-              showChevron={false}
+              variant="mini"
+              showChevron
             />
           </View>
         </View>

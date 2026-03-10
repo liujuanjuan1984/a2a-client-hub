@@ -154,7 +154,6 @@ export function ChatMessageItem({
                       block={block}
                       fallbackBlockId={blockId}
                       isAgent={message.role === "agent"}
-                      onLayoutChangeStart={onLayoutChangeStart}
                       isFirst={isFirst}
                     />
                   );
@@ -176,7 +175,6 @@ export function ChatMessageItem({
                   content={message.content}
                   fallbackBlockId={message.id}
                   isAgent={message.role === "agent"}
-                  onLayoutChangeStart={onLayoutChangeStart}
                   isFirst
                 />
               ) : (

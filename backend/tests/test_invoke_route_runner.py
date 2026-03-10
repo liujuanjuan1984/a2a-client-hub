@@ -10,6 +10,12 @@ import pytest
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.api.retry_after import DB_BUSY_RETRY_AFTER_SECONDS
+from app.db.locking import (
+    DbLockFailureKind,
+    RetryableDbLockError,
+    RetryableDbQueryTimeoutError,
+)
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.services import invoke_route_runner
 from app.services.a2a_invoke_service import StreamFinishReason, StreamOutcome
@@ -27,6 +33,76 @@ class _NoopWebSocket:
 
     async def send_text(self, payload: str) -> None:
         self.sent.append(payload)
+
+
+@pytest.mark.asyncio
+async def test_run_issue_ws_ticket_route_maps_lock_contention_to_http_409(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _raise_lock_contention(*_args, **_kwargs):
+        raise RetryableDbLockError(
+            "WS ticket issuance is currently locked by another operation; retry shortly.",
+            kind=DbLockFailureKind.LOCK_NOT_AVAILABLE,
+        )
+
+    async def _allow_access() -> None:
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner.ws_ticket_service,
+        "issue_ticket",
+        _raise_lock_contention,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await invoke_route_runner.run_issue_ws_ticket_route(
+            db=object(),
+            user_id=uuid4(),
+            scope_type="me_a2a_agent",
+            scope_id=uuid4(),
+            ensure_access=_allow_access,
+            not_found_errors=(ValueError,),
+            not_found_status_code=404,
+            not_found_detail="not found",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "retry shortly" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_run_issue_ws_ticket_route_maps_query_timeout_to_http_503(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _raise_query_timeout(*_args, **_kwargs):
+        raise RetryableDbQueryTimeoutError(
+            "WS ticket issuance timed out; service busy, retry shortly."
+        )
+
+    async def _allow_access() -> None:
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner.ws_ticket_service,
+        "issue_ticket",
+        _raise_query_timeout,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await invoke_route_runner.run_issue_ws_ticket_route(
+            db=object(),
+            user_id=uuid4(),
+            scope_type="me_a2a_agent",
+            scope_id=uuid4(),
+            ensure_access=_allow_access,
+            not_found_errors=(ValueError,),
+            not_found_status_code=404,
+            not_found_detail="not found",
+        )
+
+    assert exc_info.value.status_code == 503
+    assert "service busy" in str(exc_info.value.detail)
+    assert exc_info.value.headers == {"Retry-After": str(DB_BUSY_RETRY_AFTER_SECONDS)}
 
 
 @pytest.mark.asyncio

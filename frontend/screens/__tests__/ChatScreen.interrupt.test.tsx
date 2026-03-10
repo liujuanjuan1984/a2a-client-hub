@@ -1,4 +1,3 @@
-import { FlatList } from "react-native";
 import {
   act,
   create,
@@ -289,28 +288,6 @@ const renderChatScreen = (conversationId: string) => {
   return tree;
 };
 
-const findPressableByTestId = (root: ReactTestInstance, testID: string) => {
-  const candidate = root
-    .findAll((node) => node.props?.testID === testID)
-    .find(
-      (node) =>
-        typeof node.props?.onPress === "function" ||
-        typeof node.props?.onToggle === "function",
-    );
-  if (!candidate) {
-    throw new Error(`Cannot find pressable node for testID: ${testID}`);
-  }
-  return candidate;
-};
-
-const pressNode = (node: ReactTestInstance) => {
-  const handler = node.props.onPress ?? node.props.onToggle;
-  if (typeof handler !== "function") {
-    throw new Error("Node does not expose onPress/onToggle handler");
-  }
-  handler();
-};
-
 describe("ChatScreen interrupt handling", () => {
   const conversationId = "conversation-1";
 
@@ -485,105 +462,6 @@ describe("ChatScreen interrupt handling", () => {
     act(() => {
       tree.unmount();
     });
-  });
-
-  it("uses explicit expand/collapse for long plain text messages", async () => {
-    mockSessionHistoryState.messages = [
-      {
-        id: "message-1",
-        role: "agent",
-        content: "A".repeat(5000),
-        createdAt: "2026-02-16T00:00:00.000Z",
-      },
-    ];
-
-    const tree = renderChatScreen(conversationId);
-    const root = tree.root;
-    const expandButton = findPressableByTestId(
-      root,
-      "chat-message-message-1:text-expand",
-    );
-
-    expect(expandButton).toBeDefined();
-    expect(containsText(root, "Show more")).toBe(true);
-
-    act(() => {
-      pressNode(expandButton);
-    });
-
-    expect(containsText(root, "Show less")).toBe(true);
-    const collapseButton = findPressableByTestId(
-      root,
-      "chat-message-message-1:text-expand",
-    );
-    expect(collapseButton).toBeDefined();
-    const bottomCollapseButton = findPressableByTestId(
-      root,
-      "chat-message-message-1:text-collapse-bottom",
-    );
-    expect(bottomCollapseButton).toBeDefined();
-    act(() => {
-      tree.unmount();
-    });
-  });
-
-  it("keeps viewport anchored when content grows after expanding a block", () => {
-    const flatListProto = FlatList.prototype as {
-      scrollToOffset?: (params: { offset: number; animated: boolean }) => void;
-    };
-    const originalScrollToOffset = flatListProto.scrollToOffset;
-    const scrollToOffsetSpy = jest.fn();
-    flatListProto.scrollToOffset = scrollToOffsetSpy;
-
-    try {
-      mockSessionHistoryState.messages = [
-        {
-          id: "message-anchor",
-          role: "agent",
-          content: "A".repeat(5000),
-          createdAt: "2026-02-16T00:00:00.000Z",
-        },
-      ];
-
-      const tree = renderChatScreen(conversationId);
-      const root = tree.root;
-      const list = root.findByType(FlatList);
-
-      act(() => {
-        list.props.onScroll({
-          nativeEvent: {
-            contentOffset: { y: 120 },
-            layoutMeasurement: { height: 600 },
-            contentSize: { height: 1000 },
-          },
-        });
-        list.props.onContentSizeChange(0, 1000);
-      });
-
-      act(() => {
-        pressNode(
-          findPressableByTestId(
-            root,
-            "chat-message-message-anchor:text-expand",
-          ),
-        );
-      });
-
-      act(() => {
-        list.props.onContentSizeChange(0, 1120);
-      });
-
-      expect(scrollToOffsetSpy).toHaveBeenCalledWith({
-        offset: 240,
-        animated: false,
-      });
-
-      act(() => {
-        tree.unmount();
-      });
-    } finally {
-      flatListProto.scrollToOffset = originalScrollToOffset;
-    }
   });
 
   it("creates shortcut through modal with separate title and prompt", async () => {
