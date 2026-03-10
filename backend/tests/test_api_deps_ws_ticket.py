@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from fastapi import WebSocketException, status
 
+from app.api import deps as api_deps
 from app.api.deps import get_ws_ticket_user
 from app.api.retry_after import DB_BUSY_RETRY_AFTER_SECONDS
 from app.core.config import settings
@@ -26,6 +27,59 @@ def _build_websocket(*, ticket: str) -> SimpleNamespace:
         headers={"sec-websocket-protocol": ticket},
         state=SimpleNamespace(),
     )
+
+
+def test_parse_ws_protocol_selection_extracts_ticket_without_subprotocol() -> None:
+    ticket = "a" * settings.ws_ticket_length
+
+    selection = api_deps._parse_ws_protocol_selection(
+        subprotocol_header=ticket,
+    )
+
+    assert selection.ticket == ticket
+    assert selection.accepted_subprotocol is None
+
+
+def test_parse_ws_protocol_selection_accepts_only_allowlisted_subprotocol() -> None:
+    ticket = "a" * settings.ws_ticket_length
+
+    selection = api_deps._parse_ws_protocol_selection(
+        subprotocol_header=f"chat.v2, {ticket}, ignored.v1",
+        allowed_subprotocols=("chat.v2",),
+    )
+
+    assert selection.ticket == ticket
+    assert selection.accepted_subprotocol == "chat.v2"
+
+
+@pytest.mark.asyncio
+async def test_get_ws_ticket_user_does_not_echo_ticket_as_selected_subprotocol(
+    monkeypatch,
+) -> None:
+    ticket = "a" * settings.ws_ticket_length
+    consumed = SimpleNamespace(user_id=uuid4())
+    active_user = SimpleNamespace(id=consumed.user_id)
+
+    async def _consume_ticket(*_args, **_kwargs):
+        return consumed
+
+    async def _get_active_user(*_args, **_kwargs):
+        return active_user
+
+    monkeypatch.setattr(settings, "ws_require_origin", False, raising=False)
+    monkeypatch.setattr(ws_ticket_service, "consume_ticket", _consume_ticket)
+    monkeypatch.setattr(api_deps.auth_handler, "get_active_user", _get_active_user)
+
+    websocket = _build_websocket(ticket=ticket)
+    user = await get_ws_ticket_user(
+        websocket=websocket,
+        scope_type="me_a2a_agent",
+        scope_id=uuid4(),
+        db=MagicMock(),
+    )
+
+    assert user is active_user
+    assert getattr(websocket.state, "selected_subprotocol", None) is None
 
 
 @pytest.mark.asyncio

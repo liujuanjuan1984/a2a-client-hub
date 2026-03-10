@@ -1456,21 +1456,24 @@ class SessionHubService:
         is_finished: bool,
         event_id: str | None = None,
         source: str | None = None,
+        agent_message: AgentMessage | None = None,
     ) -> AgentMessageBlock | None:
         if seq <= 0:
             return None
         normalized_content = str(content or "")
         if not normalized_content:
             return None
-        message = await db.scalar(
-            select(AgentMessage).where(
-                and_(
-                    AgentMessage.id == agent_message_id,
-                    AgentMessage.user_id == user_id,
-                    AgentMessage.sender == "agent",
+        message = agent_message
+        if message is None:
+            message = await db.scalar(
+                select(AgentMessage).where(
+                    and_(
+                        AgentMessage.id == agent_message_id,
+                        AgentMessage.user_id == user_id,
+                        AgentMessage.sender == "agent",
+                    )
                 )
             )
-        )
         if message is None:
             return None
 
@@ -1624,6 +1627,50 @@ class SessionHubService:
         message.message_metadata = message_metadata
         await db.flush()
         return persisted_block
+
+    async def append_agent_message_block_updates(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent_message_id: UUID,
+        updates: list[dict[str, Any]],
+        agent_message: AgentMessage | None = None,
+    ) -> list[AgentMessageBlock]:
+        if not updates:
+            return []
+        message = agent_message
+        if message is None:
+            message = await db.scalar(
+                select(AgentMessage).where(
+                    and_(
+                        AgentMessage.id == agent_message_id,
+                        AgentMessage.user_id == user_id,
+                        AgentMessage.sender == "agent",
+                    )
+                )
+            )
+        if message is None:
+            return []
+
+        persisted_blocks: list[AgentMessageBlock] = []
+        for update in updates:
+            persisted = await self.append_agent_message_block_update(
+                db,
+                user_id=user_id,
+                agent_message_id=agent_message_id,
+                seq=update["seq"],
+                block_type=update["block_type"],
+                content=update["content"],
+                append=update.get("append", True),
+                is_finished=update.get("is_finished", False),
+                event_id=update.get("event_id"),
+                source=update.get("source"),
+                agent_message=message,
+            )
+            if persisted:
+                persisted_blocks.append(persisted)
+        return persisted_blocks
 
     async def has_agent_message_blocks(
         self,
