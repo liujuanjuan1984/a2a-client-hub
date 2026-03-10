@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Awaitable
 from uuid import UUID
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,35 +30,21 @@ from app.services.a2a_schedule_service import (
     A2AScheduleValidationError,
     a2a_schedule_service,
 )
-from app.utils.timezone_util import resolve_timezone
+from app.utils.pagination import build_pagination_meta
+from app.utils.timezone_util import TimezoneNotFoundError, validate_user_timezone
 
 router = StrictAPIRouter(prefix="/me/a2a/schedules", tags=["a2a-schedules"])
 
 
-def _resolve_schedule_timezone(
-    *,
-    user_timezone: str | None,
-    requested_timezone: str | None = None,
+def _validate_timezone(
+    user_timezone: str | None, requested_timezone: str | None = None
 ) -> str:
-    user_value = (user_timezone or "").strip() or "UTC"
-    user_key = resolve_timezone(user_value, default="UTC").key
-    requested_value = (
-        (requested_timezone or "").strip() if requested_timezone is not None else None
-    )
-    if requested_value:
-        try:
-            requested_key = ZoneInfo(requested_value).key
-        except ZoneInfoNotFoundError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail="schedule_timezone must be a valid IANA timezone",
-            ) from exc
-        if requested_key != user_key:
-            raise HTTPException(
-                status_code=400,
-                detail="schedule_timezone must match current user's timezone",
-            )
-    return user_key
+    try:
+        return validate_user_timezone(
+            user_timezone=user_timezone, requested_timezone=requested_timezone
+        )
+    except (ValueError, TimezoneNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 _SCHEDULE_ERROR_STATUS_MAP = {
@@ -131,7 +116,7 @@ async def _set_schedule_task_enabled(
     db: AsyncSession,
     current_user: User,
 ) -> A2AScheduleToggleResponse:
-    schedule_timezone = _resolve_schedule_timezone(user_timezone=current_user.timezone)
+    schedule_timezone = _validate_timezone(user_timezone=current_user.timezone)
     task = await _call_schedule(
         a2a_schedule_service.set_enabled(
             db,
@@ -162,7 +147,7 @@ async def create_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = _resolve_schedule_timezone(
+    schedule_timezone = _validate_timezone(
         user_timezone=current_user.timezone,
         requested_timezone=payload.schedule_timezone,
     )
@@ -190,7 +175,7 @@ async def list_schedule_tasks(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskListResponse:
-    schedule_timezone = _resolve_schedule_timezone(user_timezone=current_user.timezone)
+    schedule_timezone = _validate_timezone(user_timezone=current_user.timezone)
     items, total = await _call_schedule(
         a2a_schedule_service.list_tasks(
             db,
@@ -204,12 +189,7 @@ async def list_schedule_tasks(
             _build_task_response(item, schedule_timezone=schedule_timezone)
             for item in items
         ],
-        pagination={
-            "page": page,
-            "size": size,
-            "total": total,
-            "pages": (total + size - 1) // size if size else 0,
-        },
+        pagination=build_pagination_meta(total=total, page=page, size=size),
         meta={},
     )
 
@@ -220,7 +200,7 @@ async def get_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = _resolve_schedule_timezone(user_timezone=current_user.timezone)
+    schedule_timezone = _validate_timezone(user_timezone=current_user.timezone)
     task = await _call_schedule(
         a2a_schedule_service.get_task(
             db,
@@ -238,7 +218,7 @@ async def patch_schedule_task(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = _resolve_schedule_timezone(
+    schedule_timezone = _validate_timezone(
         user_timezone=current_user.timezone,
         requested_timezone=payload.schedule_timezone,
     )
@@ -314,7 +294,7 @@ async def mark_schedule_task_failed(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AScheduleTaskResponse:
-    schedule_timezone = _resolve_schedule_timezone(user_timezone=current_user.timezone)
+    schedule_timezone = _validate_timezone(user_timezone=current_user.timezone)
     task = await _call_schedule(
         a2a_schedule_service.mark_task_failed_manually(
             db,
@@ -346,11 +326,6 @@ async def list_schedule_executions(
     )
     return A2AScheduleExecutionListResponse(
         items=[A2AScheduleExecutionResponse.model_validate(item) for item in items],
-        pagination={
-            "page": page,
-            "size": size,
-            "total": total,
-            "pages": (total + size - 1) // size if size else 0,
-        },
+        pagination=build_pagination_meta(total=total, page=page, size=size),
         meta={"task_id": task_id},
     )

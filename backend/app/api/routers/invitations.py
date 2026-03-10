@@ -20,6 +20,7 @@ from app.schemas.invitations import (
     InvitationWithCreatorListResponse,
     InvitationWithCreatorResponse,
 )
+from app.utils.pagination import build_pagination_meta, compute_offset
 
 router = StrictAPIRouter(prefix="/invitations", tags=["invitations"])
 
@@ -78,7 +79,7 @@ async def list_my_invitations(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ) -> InvitationListResponse:
-    offset = (page - 1) * size
+    offset = compute_offset(page=page, size=size)
     invitations, total = await invitation_handler.list_created_invitations_with_total(
         db,
         creator_user_id=current_user.id,
@@ -88,15 +89,9 @@ async def list_my_invitations(
     items = [
         InvitationResponse.model_validate(invitation) for invitation in invitations
     ]
-    pages = (total + size - 1) // size if size else 0
     return InvitationListResponse(
         items=items,
-        pagination={
-            "page": page,
-            "size": size,
-            "total": total,
-            "pages": pages,
-        },
+        pagination=build_pagination_meta(total=total, page=page, size=size),
         meta={
             "scope": "created",
             "creator_user_id": current_user.id,
@@ -111,7 +106,7 @@ async def list_invitations_for_me(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db),
 ) -> InvitationWithCreatorListResponse:
-    offset = (page - 1) * size
+    offset = compute_offset(page=page, size=size)
     (
         invitations,
         total,
@@ -124,15 +119,9 @@ async def list_invitations_for_me(
     items = [
         _serialize_invitation_with_creator(invitation) for invitation in invitations
     ]
-    pages = (total + size - 1) // size if size else 0
     return InvitationWithCreatorListResponse(
         items=items,
-        pagination={
-            "page": page,
-            "size": size,
-            "total": total,
-            "pages": pages,
-        },
+        pagination=build_pagination_meta(total=total, page=page, size=size),
         meta={
             "scope": "invited",
             "target_email": current_user.email,

@@ -14,7 +14,6 @@ from app.db.models.user import User
 from app.schemas.shortcuts import (
     ShortcutCreateRequest,
     ShortcutListMeta,
-    ShortcutListPagination,
     ShortcutListResponse,
     ShortcutResponse,
     ShortcutUpdateRequest,
@@ -25,18 +24,10 @@ from app.services.shortcut_service import (
     ShortcutValidationError,
     shortcuts_service,
 )
+from app.utils.pagination import build_pagination_meta
 
 router = StrictAPIRouter(prefix="/me/shortcuts", tags=["shortcuts"])
 logger = get_logger(__name__)
-
-
-def _shortcuts_list_pagination(total: int) -> ShortcutListPagination:
-    return ShortcutListPagination(
-        page=1,
-        size=total,
-        total=total,
-        pages=1,
-    )
 
 
 def _list_shortcuts_error(
@@ -68,14 +59,18 @@ async def list_shortcuts(
     agent_id: UUID | None = Query(
         None, description="Optional agent ID to filter shortcuts"
     ),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> ShortcutListResponse:
     try:
-        items = await shortcuts_service.list_shortcuts(
+        items, total = await shortcuts_service.list_shortcuts(
             db=db,
             user_id=current_user.id,
             agent_id=agent_id,
+            page=page,
+            size=size,
         )
     except Exception as exc:
         raise _list_shortcuts_error(
@@ -83,10 +78,9 @@ async def list_shortcuts(
             action="list",
             user_id=current_user.id,
         ) from exc
-    total = len(items)
     return ShortcutListResponse(
         items=[ShortcutResponse.model_validate(item) for item in items],
-        pagination=_shortcuts_list_pagination(total),
+        pagination=build_pagination_meta(total=total, page=page, size=size),
         meta=ShortcutListMeta(),
     )
 

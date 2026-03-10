@@ -50,10 +50,6 @@ class InvitationWithCreatorResponse(InvitationResponse):
     creator_name: Optional[str] = None
 
 
-class InvitationPagination(Pagination):
-    """Pagination metadata for invitation lists."""
-
-
 class InvitationListMeta(BaseModel):
     """Additional list metadata for invitations."""
 
@@ -72,7 +68,7 @@ class InvitationListResponse(ListResponse[InvitationResponse, InvitationListMeta
     """Paginated invitation response."""
 
     items: List[InvitationResponse]
-    pagination: InvitationPagination
+    pagination: Pagination
     meta: InvitationListMeta
 
 
@@ -82,7 +78,7 @@ class InvitationWithCreatorListResponse(
     """Paginated invitation response including creator info."""
 
     items: List[InvitationWithCreatorResponse]
-    pagination: InvitationPagination
+    pagination: Pagination
     meta: InvitationListMeta
 
 

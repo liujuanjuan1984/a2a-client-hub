@@ -131,6 +131,29 @@ def get_next_day_window(timezone_str: str, reference: LocalDateInput) -> DayWind
     return _build_day_window(tz, timezone_str, local_date)
 
 
+def validate_user_timezone(
+    *,
+    user_timezone: str | None,
+    requested_timezone: str | None = None,
+) -> str:
+    """Validate that requested timezone is valid and matches user's preference."""
+    user_value = (user_timezone or "").strip() or "UTC"
+    user_key = resolve_timezone(user_value, default="UTC").key
+
+    if requested_timezone is not None:
+        requested_value = requested_timezone.strip()
+        if requested_value:
+            try:
+                requested_key = ZoneInfo(requested_value).key
+            except ZoneInfoNotFoundError as exc:
+                raise TimezoneNotFoundError(
+                    "schedule_timezone must be a valid IANA timezone"
+                ) from exc
+            if requested_key != user_key:
+                raise ValueError("schedule_timezone must match current user's timezone")
+    return user_key
+
+
 __all__ = [
     "DayWindow",
     "TimezoneNotFoundError",
@@ -142,4 +165,5 @@ __all__ = [
     "utc_now",
     "utc_now_iso",
     "utc_today",
+    "validate_user_timezone",
 ]
