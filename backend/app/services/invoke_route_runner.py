@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID
 
@@ -20,7 +20,6 @@ from app.db.locking import (
     RetryableDbLockError,
     RetryableDbQueryTimeoutError,
 )
-from app.db.models.agent_message import AgentMessage
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
@@ -76,9 +75,6 @@ class _InvokeState:
     upstream_task_id: str | None = None
     next_event_seq: int = 1
     persisted_block_count: int = 0
-    agent_message: AgentMessage | None = None
-    chunk_buffer: list[dict[str, Any]] = field(default_factory=list)
-    current_block_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -565,52 +561,6 @@ async def _ensure_local_message_headers(
                 state.agent_message_id = str(resolved_agent_message_id)
 
 
-async def _flush_stream_buffer(
-    *,
-    state: _InvokeState,
-    user_id: UUID,
-) -> None:
-    if not state.chunk_buffer:
-        return
-
-    agent_message_id = (
-        _coerce_uuid(state.message_refs.get("agent_message_id"))
-        if isinstance(state.message_refs, dict)
-        else None
-    )
-    if agent_message_id is None:
-        return
-
-    async with AsyncSessionLocal() as persist_db:
-        if not hasattr(persist_db, "scalar"):
-            return
-
-        from sqlalchemy import and_, select
-
-        agent_message = await persist_db.scalar(
-            select(AgentMessage).where(
-                and_(
-                    AgentMessage.id == agent_message_id,
-                    AgentMessage.user_id == user_id,
-                    AgentMessage.sender == "agent",
-                )
-            )
-        )
-        if agent_message is None:
-            return
-
-        await session_hub_service.append_agent_message_block_updates(
-            persist_db,
-            user_id=user_id,
-            agent_message_id=agent_message_id,
-            updates=state.chunk_buffer,
-            agent_message=agent_message,
-        )
-        await commit_safely(persist_db)
-        state.persisted_block_count += len(state.chunk_buffer)
-        state.chunk_buffer = []
-
-
 async def _persist_stream_block_update(
     *,
     state: _InvokeState,
@@ -659,37 +609,32 @@ async def _persist_stream_block_update(
         seq=resolved_seq,
     )
 
-    block_type = str(stream_block.get("block_type") or "text")
-    is_finished = bool(stream_block.get("is_finished", False))
-
-    # Flush buffer if block type changed
-    if state.current_block_type is not None and state.current_block_type != block_type:
-        await _flush_stream_buffer(state=state, user_id=user_id)
-
-    state.current_block_type = block_type
-    state.chunk_buffer.append(
-        {
-            "seq": resolved_seq,
-            "block_type": block_type,
-            "content": str(stream_block.get("content") or ""),
-            "append": bool(stream_block.get("append", True)),
-            "is_finished": is_finished,
-            "event_id": (
+    async with AsyncSessionLocal() as persist_db:
+        if not hasattr(persist_db, "scalar"):
+            return
+        persisted_block = await session_hub_service.append_agent_message_block_update(
+            persist_db,
+            user_id=user_id,
+            agent_message_id=agent_message_id,
+            seq=resolved_seq,
+            block_type=str(stream_block.get("block_type") or "text"),
+            content=str(stream_block.get("content") or ""),
+            append=bool(stream_block.get("append", True)),
+            is_finished=bool(stream_block.get("is_finished", False)),
+            event_id=(
                 str(stream_block.get("event_id"))
                 if isinstance(stream_block.get("event_id"), str)
                 else None
             ),
-            "source": (
+            source=(
                 str(stream_block.get("source"))
                 if isinstance(stream_block.get("source"), str)
                 else None
             ),
-        }
-    )
-
-    # Flush if finished or buffer too large (e.g. 20 chunks as suggested in issue)
-    if is_finished or len(state.chunk_buffer) >= 20:
-        await _flush_stream_buffer(state=state, user_id=user_id)
+        )
+        if persisted_block is not None:
+            await commit_safely(persist_db)
+            state.persisted_block_count += 1
 
 
 async def _persist_local_outcome(
@@ -839,7 +784,6 @@ def _build_consume_stream_callbacks(
 
     async def on_finalized(outcome: StreamOutcome) -> None:
         try:
-            await _flush_stream_buffer(state=state, user_id=user_id)
             await _persist_local_outcome(
                 state=state,
                 outcome=outcome,
@@ -1313,7 +1257,10 @@ async def run_ws_invoke_route(
     unexpected_log_message: str,
 ) -> None:
     selected_subprotocol = getattr(websocket.state, "selected_subprotocol", None)
-    await websocket.accept(subprotocol=selected_subprotocol)
+    if selected_subprotocol:
+        await websocket.accept(subprotocol=selected_subprotocol)
+    else:
+        await websocket.accept()
 
     try:
         data = await websocket.receive_json()

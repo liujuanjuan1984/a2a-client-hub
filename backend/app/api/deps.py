@@ -5,6 +5,7 @@ Supports JWT-based user authentication.
 """
 
 import re
+from dataclasses import dataclass
 from typing import AsyncGenerator
 from uuid import UUID
 
@@ -34,6 +35,12 @@ security = HTTPBearer()
 
 _WS_TICKET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class WsProtocolSelection:
+    ticket: str | None
+    accepted_subprotocol: str | None
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
@@ -110,6 +117,39 @@ def _is_ws_origin_allowed(origin: str | None) -> bool:
     return False
 
 
+def _parse_ws_protocol_selection(
+    *,
+    subprotocol_header: str | None,
+    allowed_subprotocols: tuple[str, ...] = (),
+) -> WsProtocolSelection:
+    if not subprotocol_header:
+        return WsProtocolSelection(ticket=None, accepted_subprotocol=None)
+
+    expected_len = settings.ws_ticket_length
+    allowed = {item.strip() for item in allowed_subprotocols if item.strip()}
+    ticket: str | None = None
+    accepted_subprotocol: str | None = None
+
+    for raw_value in subprotocol_header.split(","):
+        candidate = raw_value.strip()
+        if not candidate:
+            continue
+        if (
+            ticket is None
+            and len(candidate) == expected_len
+            and _WS_TICKET_RE.match(candidate)
+        ):
+            ticket = candidate
+            continue
+        if accepted_subprotocol is None and candidate in allowed:
+            accepted_subprotocol = candidate
+
+    return WsProtocolSelection(
+        ticket=ticket,
+        accepted_subprotocol=accepted_subprotocol,
+    )
+
+
 async def get_ws_ticket_user(
     *,
     websocket: WebSocket,
@@ -138,18 +178,12 @@ async def get_ws_ticket_user(
             code=status.WS_1008_POLICY_VIOLATION, reason="Origin not allowed"
         )
 
-    # We extract the ticket from the Sec-WebSocket-Protocol header to avoid
-    # leaking it in URL query parameters.
-    ticket = None
-    subprotocols = websocket.headers.get("sec-websocket-protocol")
-    if subprotocols:
-        expected_len = settings.ws_ticket_length
-        for proto in subprotocols.split(","):
-            candidate = proto.strip()
-            # Tickets are generated with a fixed length and base64url-ish charset.
-            if len(candidate) == expected_len and _WS_TICKET_RE.match(candidate):
-                ticket = candidate
-                break
+    # Extract the auth ticket from Sec-WebSocket-Protocol without treating it as
+    # a negotiated application subprotocol.
+    protocol_selection = _parse_ws_protocol_selection(
+        subprotocol_header=websocket.headers.get("sec-websocket-protocol")
+    )
+    ticket = protocol_selection.ticket
 
     if not ticket:
         raise WebSocketException(
@@ -211,7 +245,7 @@ async def get_ws_ticket_user(
             db,
             user_id=consumed.user_id,
         )
-        websocket.state.selected_subprotocol = ticket
+        websocket.state.selected_subprotocol = protocol_selection.accepted_subprotocol
         set_user_context(str(user.id))
         return user
     except auth_handler.UserNotFoundError as exc:
