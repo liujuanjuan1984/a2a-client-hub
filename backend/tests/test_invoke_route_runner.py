@@ -767,9 +767,9 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
         async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
             return None
 
-    async def fake_append_agent_message_block_update(_db, **kwargs):  # noqa: ANN001
+    async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
         captured.update(kwargs)
-        return object()
+        return [object()]
 
     async def fake_commit_safely(_db):  # noqa: ANN001
         return None
@@ -781,8 +781,8 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "append_agent_message_block_update",
-        fake_append_agent_message_block_update,
+        "append_agent_message_block_updates",
+        fake_append_agent_message_block_updates,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
@@ -830,11 +830,15 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
         stream_enabled=True,
     )
 
-    assert captured["seq"] == 9
-    assert captured["append"] is False
-    assert captured["is_finished"] is True
+    updates = captured["updates"]
+    assert isinstance(updates, list)
+    assert len(updates) == 1
+    assert updates[0]["seq"] == 9
+    assert updates[0]["append"] is False
+    assert updates[0]["is_finished"] is True
     assert state.next_event_seq == 10
     assert state.persisted_block_count == 1
+    assert state.chunk_buffer == []
     assert event_payload["message_id"] == str(state.message_refs["agent_message_id"])
     assert event_payload["event_id"] == "evt-opt"
     assert event_payload["seq"] == 9
@@ -847,6 +851,237 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     )
     assert event_payload["artifact"]["metadata"]["opencode"]["event_id"] == "evt-opt"
     assert event_payload["artifact"]["metadata"]["opencode"]["seq"] == 9
+
+
+@pytest.mark.asyncio
+async def test_persist_stream_block_update_flushes_when_block_type_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flushed_batches: list[list[dict[str, object]]] = []
+
+    class _DummySession:
+        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+            return object()
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> _DummySession:
+            return _DummySession()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+    async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
+        updates = kwargs.get("updates") or []
+        flushed_batches.append(list(updates))
+        return [object() for _ in updates]
+
+    async def fake_commit_safely(_db):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "append_agent_message_block_updates",
+        fake_append_agent_message_block_updates,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        message_refs={
+            "user_message_id": str(uuid4()),
+            "agent_message_id": str(uuid4()),
+        },
+        next_event_seq=1,
+        persisted_block_count=0,
+    )
+
+    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
+        state=state,
+        event_payload={
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"kind": "text", "text": "alpha"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "message_id": "msg-alpha",
+                        "event_id": "evt-alpha",
+                    }
+                },
+            },
+        },
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        transport="http_json",
+        stream_enabled=True,
+    )
+    assert flushed_batches == []
+    assert len(state.chunk_buffer) == 1
+
+    await invoke_route_runner._persist_stream_block_update(  # noqa: SLF001
+        state=state,
+        event_payload={
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"kind": "text", "text": "beta"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "reasoning",
+                        "message_id": "msg-beta",
+                        "event_id": "evt-beta",
+                    }
+                },
+            },
+        },
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        transport="http_json",
+        stream_enabled=True,
+    )
+
+    assert len(flushed_batches) == 1
+    assert flushed_batches[0][0]["block_type"] == "text"
+    assert len(state.chunk_buffer) == 1
+    assert state.chunk_buffer[0]["block_type"] == "reasoning"
+    assert state.persisted_block_count == 1
+
+
+@pytest.mark.asyncio
+async def test_on_finalized_flushes_remaining_stream_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_flushes: list[list[dict[str, object]]] = []
+    captured_outcome: dict[str, object] = {}
+
+    class _DummySession:
+        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+            return object()
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> _DummySession:
+            return _DummySession()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+    async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
+        updates = kwargs.get("updates") or []
+        captured_flushes.append(list(updates))
+        return [object() for _ in updates]
+
+    async def fake_has_agent_message_blocks(_db, **_kwargs) -> bool:  # noqa: ANN001
+        return True
+
+    async def fake_record_local_invoke_messages(
+        _db, **kwargs  # noqa: ANN001
+    ) -> dict[str, object]:
+        captured_outcome.update(kwargs)
+        return {
+            "conversation_id": kwargs["local_session_id"],
+            "user_message_id": uuid4(),
+            "agent_message_id": uuid4(),
+        }
+
+    async def fake_commit_safely(_db):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "append_agent_message_block_updates",
+        fake_append_agent_message_block_updates,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "has_agent_message_blocks",
+        fake_has_agent_message_blocks,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_local_invoke_messages_by_local_session_id",
+        fake_record_local_invoke_messages,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    state = invoke_route_runner._InvokeState(
+        local_session_id=uuid4(),
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        message_refs={
+            "conversation_id": uuid4(),
+            "user_message_id": uuid4(),
+            "agent_message_id": uuid4(),
+        },
+        next_event_seq=5,
+        persisted_block_count=0,
+    )
+
+    on_event, on_finalized = invoke_route_runner._build_consume_stream_callbacks(
+        state=state,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        transport="http_sse",
+        stream_enabled=True,
+    )
+
+    await on_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"kind": "text", "text": "partial"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "message_id": "msg-partial",
+                        "event_id": "evt-partial",
+                    }
+                },
+            },
+        }
+    )
+    assert len(state.chunk_buffer) == 1
+
+    await on_finalized(
+        StreamOutcome(
+            success=True,
+            finish_reason=StreamFinishReason.SUCCESS,
+            final_text="partial",
+            error_message=None,
+            error_code=None,
+            elapsed_seconds=1.0,
+            idle_seconds=0.1,
+            terminal_event_seen=True,
+        )
+    )
+
+    assert len(captured_flushes) == 1
+    assert captured_flushes[0][0]["content"] == "partial"
+    assert state.chunk_buffer == []
+    assert state.persisted_block_count == 1
+    assert captured_outcome["response_content"] == "partial"
 
 
 @pytest.mark.asyncio
