@@ -150,10 +150,26 @@ class ChatConnectionService {
   private readonly abortControllers = new Map<string, AbortController>();
   private readonly wsConnections = new Map<string, WsConnection>();
 
+  private wsConsecutiveFailures = 0;
+  private sseConsecutiveFailures = 0;
+  private readonly FAILURE_THRESHOLD = 2;
+
   getPreferredTransport() {
-    if (supportsWebSocket) return "ws";
-    if (supportsStreaming) return "http_sse";
+    if (this.isWsHealthy()) return "ws";
+    if (this.isSseHealthy()) return "http_sse";
     return "http_json";
+  }
+
+  isWsHealthy() {
+    return (
+      supportsWebSocket && this.wsConsecutiveFailures < this.FAILURE_THRESHOLD
+    );
+  }
+
+  isSseHealthy() {
+    return (
+      supportsStreaming && this.sseConsecutiveFailures < this.FAILURE_THRESHOLD
+    );
   }
 
   async cancelSession(
@@ -318,6 +334,7 @@ class ChatConnectionService {
         ws.onmessage = (event) => {
           if (settled) return;
           resetIdleTimer();
+          this.wsConsecutiveFailures = 0;
           resolveWsText(event.data)
             .then((text) => {
               if (!text || settled) return;
@@ -384,6 +401,7 @@ class ChatConnectionService {
       if (isAuthFailureError(error) || isAuthorizationFailureError(error)) {
         throw error;
       }
+      this.wsConsecutiveFailures++;
       logFallback("WS", error instanceof Error ? error.message : String(error));
       return false;
     }
@@ -409,6 +427,7 @@ class ChatConnectionService {
         buildInvokeUrl(agentId, true, source),
         {
           onData: (data) => {
+            this.sseConsecutiveFailures = 0;
             hasReceivedData = true;
             return callbacks.onData(data);
           },
@@ -438,6 +457,7 @@ class ChatConnectionService {
       if (isAuthFailureError(error) || isAuthorizationFailureError(error)) {
         throw error;
       }
+      this.sseConsecutiveFailures++;
       logFallback(
         "SSE",
         error instanceof Error ? error.message : String(error),
