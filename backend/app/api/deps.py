@@ -181,7 +181,8 @@ async def get_ws_ticket_user(
     # Extract the auth ticket from Sec-WebSocket-Protocol without treating it as
     # a negotiated application subprotocol.
     protocol_selection = _parse_ws_protocol_selection(
-        subprotocol_header=websocket.headers.get("sec-websocket-protocol")
+        subprotocol_header=websocket.headers.get("sec-websocket-protocol"),
+        allowed_subprotocols=("a2a-invoke-v1",),
     )
     ticket = protocol_selection.ticket
 

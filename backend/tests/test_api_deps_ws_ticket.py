@@ -52,7 +52,7 @@ def test_parse_ws_protocol_selection_accepts_only_allowlisted_subprotocol() -> N
 
 
 @pytest.mark.asyncio
-async def test_get_ws_ticket_user_does_not_echo_ticket_as_selected_subprotocol(
+async def test_get_ws_ticket_user_echoes_valid_subprotocol(
     monkeypatch,
 ) -> None:
     ticket = "a" * settings.ws_ticket_length
@@ -69,7 +69,7 @@ async def test_get_ws_ticket_user_does_not_echo_ticket_as_selected_subprotocol(
     monkeypatch.setattr(ws_ticket_service, "consume_ticket", _consume_ticket)
     monkeypatch.setattr(api_deps.auth_handler, "get_active_user", _get_active_user)
 
-    websocket = _build_websocket(ticket=ticket)
+    websocket = _build_websocket(ticket=f"a2a-invoke-v1, {ticket}")
     user = await get_ws_ticket_user(
         websocket=websocket,
         scope_type="me_a2a_agent",
@@ -77,7 +77,7 @@ async def test_get_ws_ticket_user_does_not_echo_ticket_as_selected_subprotocol(
     )
 
     assert user is active_user
-    assert getattr(websocket.state, "selected_subprotocol", None) is None
+    assert getattr(websocket.state, "selected_subprotocol", None) == "a2a-invoke-v1"
 
 
 @pytest.mark.asyncio
