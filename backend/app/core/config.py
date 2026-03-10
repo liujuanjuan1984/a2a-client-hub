@@ -478,6 +478,15 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"Production security baseline checks failed: {joined_errors}"
                 )
+
+        if (
+            self.a2a_schedule_task_invoke_timeout
+            <= self.a2a_schedule_run_heartbeat_interval_seconds
+        ):
+            raise ValueError(
+                "A2A_SCHEDULE_TASK_INVOKE_TIMEOUT must be greater than "
+                "A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS"
+            )
         return self
 
     # Logging settings
@@ -545,7 +554,7 @@ class Settings(BaseSettings):
         description="Number of in-process workers consuming claimed scheduled tasks.",
     )
     a2a_schedule_task_invoke_timeout: float = Field(
-        default=3600.0,
+        default=7200.0,
         alias="A2A_SCHEDULE_TASK_INVOKE_TIMEOUT",
         description="Maximum total timeout in seconds for a single scheduled A2A stream execution.",
     )
@@ -554,15 +563,10 @@ class Settings(BaseSettings):
         alias="A2A_SCHEDULE_TASK_STREAM_IDLE_TIMEOUT",
         description="Idle timeout in seconds for scheduled A2A stream execution (no upstream chunk received).",
     )
-    a2a_schedule_recovery_timeout_seconds: int = Field(
-        default=2400,
-        alias="A2A_SCHEDULE_RECOVERY_TIMEOUT_SECONDS",
-        description="Timeout in seconds before a running scheduled task is considered stale by recovery.",
-    )
-    a2a_schedule_run_lease_seconds: int = Field(
-        default=2400,
-        alias="A2A_SCHEDULE_RUN_LEASE_SECONDS",
-        description="Lease timeout in seconds for one scheduled run before recovery finalization.",
+    a2a_schedule_run_heartbeat_interval_seconds: float = Field(
+        default=30.0,
+        alias="A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS",
+        description="Seconds between scheduled run heartbeat updates while a run is executing.",
     )
     a2a_schedule_task_failure_threshold: int = Field(
         default=3,
@@ -700,17 +704,17 @@ class Settings(BaseSettings):
             raise ValueError("Scheduled A2A timeout values must not exceed 86400")
         return value
 
-    @field_validator(
-        "a2a_schedule_recovery_timeout_seconds", "a2a_schedule_run_lease_seconds"
-    )
+    @field_validator("a2a_schedule_run_heartbeat_interval_seconds")
     @classmethod
-    def validate_a2a_schedule_recovery_timeout_seconds(cls, value: int) -> int:
-        if value <= 0:
-            raise ValueError("A2A schedule recovery timeout values must be positive")
-        if value > 604_800:
+    def validate_a2a_schedule_run_heartbeat_interval_seconds(
+        cls, value: float
+    ) -> float:
+        if value < 15:
             raise ValueError(
-                "A2A schedule recovery timeout values must not exceed 604800"
+                "A2A schedule heartbeat interval must be at least 15 seconds"
             )
+        if value > 3600:
+            raise ValueError("A2A schedule heartbeat interval must not exceed 3600")
         return value
 
 

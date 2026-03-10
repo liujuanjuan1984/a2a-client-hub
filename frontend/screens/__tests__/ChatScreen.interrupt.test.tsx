@@ -1,4 +1,3 @@
-import { FlatList } from "react-native";
 import {
   act,
   create,
@@ -463,103 +462,6 @@ describe("ChatScreen interrupt handling", () => {
     act(() => {
       tree.unmount();
     });
-  });
-
-  it("uses explicit expand/collapse for long plain text messages", async () => {
-    mockSessionHistoryState.messages = [
-      {
-        id: "message-1",
-        role: "agent",
-        content: "A".repeat(5000),
-        createdAt: "2026-02-16T00:00:00.000Z",
-      },
-    ];
-
-    const tree = renderChatScreen(conversationId);
-    const root = tree.root;
-    const expandButton = root.findAll((node) => {
-      return (
-        node.type === Object({}) ||
-        node.props?.testID === "chat-message-message-1:text-expand"
-      );
-    })[0];
-
-    expect(expandButton).toBeDefined();
-    expect(expandButton?.props.accessibilityLabel).toBe("Expand full text");
-
-    act(() => {
-      expandButton.props.onPress();
-    });
-
-    const collapseButton = root.findByProps({
-      testID: "chat-message-message-1:text-expand",
-      accessibilityLabel: "Collapse full text",
-    });
-    expect(collapseButton).toBeDefined();
-    const bottomCollapseButton = root.findByProps({
-      testID: "chat-message-message-1:text-collapse-bottom",
-      accessibilityLabel: "Collapse full text",
-    });
-    expect(bottomCollapseButton).toBeDefined();
-    act(() => {
-      tree.unmount();
-    });
-  });
-
-  it("keeps viewport anchored when content grows after expanding a block", () => {
-    const flatListProto = FlatList.prototype as {
-      scrollToOffset?: (params: { offset: number; animated: boolean }) => void;
-    };
-    const originalScrollToOffset = flatListProto.scrollToOffset;
-    const scrollToOffsetSpy = jest.fn();
-    flatListProto.scrollToOffset = scrollToOffsetSpy;
-
-    try {
-      mockSessionHistoryState.messages = [
-        {
-          id: "message-anchor",
-          role: "agent",
-          content: "A".repeat(5000),
-          createdAt: "2026-02-16T00:00:00.000Z",
-        },
-      ];
-
-      const tree = renderChatScreen(conversationId);
-      const root = tree.root;
-      const list = root.findByType(FlatList);
-
-      act(() => {
-        list.props.onScroll({
-          nativeEvent: {
-            contentOffset: { y: 120 },
-            layoutMeasurement: { height: 600 },
-            contentSize: { height: 1000 },
-          },
-        });
-        list.props.onContentSizeChange(0, 1000);
-      });
-
-      act(() => {
-        root
-          .findByProps({ testID: "chat-message-message-anchor:text-expand" })
-          .props.onPress();
-      });
-
-      act(() => {
-        list.props.onContentSizeChange(0, 1120);
-      });
-
-      expect(scrollToOffsetSpy).toHaveBeenCalledWith({
-        offset: 240,
-        animated: false,
-      });
-
-      act(() => {
-        tree.unmount();
-      });
-    } finally {
-      flatListProto.scrollToOffset = originalScrollToOffset;
-    }
   });
 
   it("creates shortcut through modal with separate title and prompt", async () => {

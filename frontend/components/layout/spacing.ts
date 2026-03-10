@@ -1,6 +1,6 @@
-export const PAGE_TOP_OFFSET = 8;
+export const PAGE_TOP_OFFSET = 0;
 export const AUTH_PAGE_TOP_OFFSET = 32;
-export const PAGE_HEADER_CONTENT_GAP = 8;
-export const PAGE_HEADER_TITLE_LINE_HEIGHT = 30;
-export const PAGE_HEADER_SUBTITLE_GAP = 2;
-export const PAGE_HEADER_SUBTITLE_LINE_HEIGHT = 20;
+export const PAGE_HEADER_CONTENT_GAP = 4;
+export const PAGE_HEADER_TITLE_LINE_HEIGHT = 26;
+export const PAGE_HEADER_SUBTITLE_GAP = 1;
+export const PAGE_HEADER_SUBTITLE_LINE_HEIGHT = 16;

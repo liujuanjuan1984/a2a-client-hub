@@ -64,5 +64,6 @@ export const queryKeys = {
     hubAgentAllowlist: (id: string) =>
       ["admin", "hub-agents", id, "allowlist"] as const,
     invitations: () => ["admin", "invitations"] as const,
+    proxyAllowlist: () => ["admin", "proxy-allowlist"] as const,
   },
 };

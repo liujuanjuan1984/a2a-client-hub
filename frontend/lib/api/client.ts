@@ -475,7 +475,12 @@ export async function apiRequest<Response, Body = unknown>(
         })
         .join("; ");
     } else if (errorBody && typeof errorBody === "object") {
-      errorMessage = JSON.stringify(errorBody);
+      const messageField =
+        "message" in errorBody &&
+        typeof (errorBody as { message?: unknown }).message === "string"
+          ? (errorBody as { message: string }).message.trim()
+          : "";
+      errorMessage = messageField || JSON.stringify(errorBody);
     } else {
       errorMessage = `Request failed (${response.status})`;
     }

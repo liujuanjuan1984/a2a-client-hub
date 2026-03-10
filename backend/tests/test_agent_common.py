@@ -1,12 +1,18 @@
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
+
 import pytest
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
 from app.services.agent_common import (
     AgentValidationMixin,
+    delete_agent_credentials,
     encrypt_bearer_token,
+    get_agent_credential,
     normalize_auth_type,
     normalize_required_text,
     resolve_agent_auth_fields,
+    upsert_agent_credential,
 )
 
 
@@ -158,3 +164,74 @@ def test_agent_validation_mixin_resolves_auth_fields():
         "X-Auth",
         "Token",
     )
+
+
+@pytest.mark.asyncio
+async def test_get_agent_credential_calls_scalar():
+    db = AsyncMock()
+    agent_id = uuid4()
+    await get_agent_credential(db, agent_id=agent_id)
+    assert db.scalar.called
+
+
+@pytest.mark.asyncio
+async def test_delete_agent_credentials_calls_execute():
+    db = AsyncMock()
+    agent_id = uuid4()
+    await delete_agent_credentials(db, agent_id=agent_id)
+    assert db.execute.called
+
+
+@pytest.mark.asyncio
+async def test_upsert_agent_credential_updates_existing():
+    db = AsyncMock()
+    vault = _Vault(is_configured=True)
+    agent_id = uuid4()
+    user_id = uuid4()
+    token = "token1234"
+
+    existing_credential = AsyncMock()
+    db.scalar.return_value = existing_credential
+
+    last4 = await upsert_agent_credential(
+        db,
+        vault=vault,
+        agent_id=agent_id,
+        user_id=user_id,
+        token=token,
+        validation_error_cls=_ValidationError,
+    )
+
+    assert last4 == "1234"
+    assert existing_credential.encrypted_token == "enc:token1234"
+    assert existing_credential.token_last4 == "1234"
+    assert existing_credential.created_by_user_id == user_id
+
+
+@pytest.mark.asyncio
+async def test_upsert_agent_credential_creates_new():
+    db = AsyncMock()
+    db.add = MagicMock()
+    vault = _Vault(is_configured=True)
+    agent_id = uuid4()
+    user_id = uuid4()
+    token = "token1234"
+
+    db.scalar.return_value = None
+
+    # We don't patch A2AAgentCredential to avoid breaking SQLAlchemy select()
+    last4 = await upsert_agent_credential(
+        db,
+        vault=vault,
+        agent_id=agent_id,
+        user_id=user_id,
+        token=token,
+        validation_error_cls=_ValidationError,
+    )
+
+    assert last4 == "1234"
+    assert db.add.called
+    new_credential = db.add.call_args[0][0]
+    assert new_credential.agent_id == agent_id
+    assert new_credential.created_by_user_id == user_id
+    assert new_credential.encrypted_token == "enc:token1234"

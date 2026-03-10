@@ -154,6 +154,30 @@ describe("api client auth refresh flow", () => {
     expect(useSessionStore.getState().token).toBe("old-token");
   });
 
+  it("uses detail.message when backend error payload is an object", async () => {
+    const { client, useSessionStore } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(404, {
+        detail: {
+          message: "session_not_found",
+        },
+      }),
+    );
+
+    useSessionStore.setState({
+      token: "token",
+      authStatus: "authenticated",
+    });
+
+    await expect(
+      client.apiRequest<{ ok: boolean }>("/me/echo"),
+    ).rejects.toMatchObject({
+      status: 404,
+      message: "session_not_found",
+    });
+  });
+
   it("shares one refresh request across 20 concurrent callers", async () => {
     const { client, useSessionStore } = loadModules();
     const fetchMock = global.fetch as jest.Mock;

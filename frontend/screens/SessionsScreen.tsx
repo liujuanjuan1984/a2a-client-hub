@@ -1,31 +1,22 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
-import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
 import { useContinueSession } from "@/hooks/useContinueSession";
 import { useSessionsDirectoryQuery } from "@/hooks/useSessionsDirectoryQuery";
-import {
-  A2AExtensionCallError,
-  promptOpencodeSessionAsync,
-} from "@/lib/api/a2aExtensions";
 import { type SessionListItem } from "@/lib/api/sessions";
 import {
   getSessionTimelineText,
   resolveSessionAgentPresentation,
 } from "@/lib/sessionDirectoryPresentation";
-import { toast } from "@/lib/toast";
 
 export function SessionsScreen() {
   const { continueSession } = useContinueSession();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
-  const [promptingConversationId, setPromptingConversationId] = useState<
-    string | null
-  >(null);
 
   const {
     items,
@@ -59,83 +50,8 @@ export function SessionsScreen() {
     });
   };
 
-  const resolvePromptSource = (
-    item: SessionListItem,
-  ): "personal" | "shared" | null => {
-    if (item.agent_source === "personal" || item.agent_source === "shared") {
-      return item.agent_source;
-    }
-    if (!item.agent_id) {
-      return null;
-    }
-    const fallbackSource = agentLookup.get(item.agent_id)?.source;
-    if (fallbackSource === "personal" || fallbackSource === "shared") {
-      return fallbackSource;
-    }
-    return null;
-  };
-
-  const canPromptAsync = (item: SessionListItem) =>
-    item.external_provider === "opencode" &&
-    typeof item.external_session_id === "string" &&
-    item.external_session_id.trim().length > 0 &&
-    typeof item.agent_id === "string" &&
-    item.agent_id.trim().length > 0 &&
-    resolvePromptSource(item) !== null;
-
-  const handlePromptAsync = async (item: SessionListItem) => {
-    if (!canPromptAsync(item)) {
-      return;
-    }
-    const sessionId = item.external_session_id!.trim();
-    const agentId = item.agent_id!.trim();
-    const source = resolvePromptSource(item);
-    if (!source) {
-      return;
-    }
-    setPromptingConversationId(item.conversationId);
-    try {
-      await promptOpencodeSessionAsync({
-        source,
-        agentId,
-        sessionId,
-        request: {
-          parts: [
-            {
-              type: "text",
-              text: "Continue from the latest context and summarize next steps.",
-            },
-          ],
-          noReply: true,
-        },
-      });
-      toast.success(
-        "Async continue started",
-        "The upstream session accepted prompt_async.",
-      );
-      await refresh();
-    } catch (error) {
-      const message =
-        error instanceof A2AExtensionCallError
-          ? error.errorCode === "session_forbidden"
-            ? "You do not have permission to continue this external session."
-            : error.message
-          : error instanceof Error
-            ? error.message
-            : "Failed to trigger async continue.";
-      toast.error("Async continue failed", message);
-    } finally {
-      setPromptingConversationId(null);
-    }
-  };
-
-  // Logic Reserve for future integration
-  if (false as boolean) {
-    console.log(handlePromptAsync, promptingConversationId);
-  }
-
   return (
-    <ScreenContainer>
+    <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
       <PageHeader
         title="Sessions"
         subtitle="Browse sessions across all agents."
@@ -143,7 +59,7 @@ export function SessionsScreen() {
 
       <ScrollView
         style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 18 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -170,60 +86,48 @@ export function SessionsScreen() {
               const title = item.title;
               const agent = resolveSessionAgentPresentation(item, agentLookup);
               const timeline = getSessionTimelineText(item);
-              const canAsyncPrompt = canPromptAsync(item);
-              const isPrompting =
-                promptingConversationId === item.conversationId;
               return (
                 <View
                   key={item.conversationId}
                   className="mb-4 rounded-2xl bg-surface overflow-hidden shadow-sm"
                 >
-                  <View className="p-5 pb-4">
+                  <View className="px-4 py-4 pb-3.5">
                     <View className="flex-row items-center justify-between mb-1.5">
                       <Text
-                        className="text-[11px] font-semibold uppercase tracking-widest text-neo-green"
+                        className="text-[10px] font-semibold uppercase tracking-widest text-neo-green"
                         numberOfLines={1}
                       >
                         {agent.name}
                       </Text>
-                      <Text className="text-[9px] font-bold text-slate-700 uppercase">
+                      <Text className="text-[10px] font-bold text-slate-700 uppercase">
                         {item.source}
                       </Text>
                     </View>
                     <Text
-                      className="text-base font-medium text-white/90"
+                      className="text-[13px] font-semibold text-white/90"
                       numberOfLines={2}
                     >
                       {title}
                     </Text>
                   </View>
 
-                  <View className="flex-row items-center justify-between gap-3 bg-black/30 px-5 py-2">
+                  <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
                     <View className="flex-1">
-                      <Text className="text-[11px] font-medium text-slate-500">
+                      <Text className="text-[10px] font-medium text-slate-500">
                         {timeline.timelineRangeText}
                       </Text>
                     </View>
                     <View className="flex-row items-center">
-                      {canAsyncPrompt ? (
-                        <Button
-                          label="Async Continue"
-                          size="xs"
-                          variant="secondary"
-                          loading={isPrompting}
-                          disabled={isPrompting}
-                          onPress={() => handlePromptAsync(item)}
-                          className="mr-2"
-                        />
-                      ) : null}
-                      <IconButton
-                        size="xs"
+                      {/* Async Continue is intentionally hidden for now. See #381. */}
+                      <Button
+                        label="Open"
+                        size="sm"
                         variant="primary"
-                        icon="chevron-forward"
-                        accessibilityLabel="Continue session"
+                        iconRight="chevron-forward"
                         disabled={!item.agent_id}
                         onPress={() => handleContinueSession(item)}
-                        className="rounded-full w-7 h-7"
+                        accessibilityRole="button"
+                        accessibilityLabel="Open session"
                       />
                     </View>
                   </View>

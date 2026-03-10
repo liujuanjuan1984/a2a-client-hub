@@ -1164,6 +1164,26 @@ def test_extract_stream_identity_hints_from_status_metadata_message_id():
     assert hints["upstream_message_id"] == "msg-from-status-message"
 
 
+def test_extract_stream_identity_hints_includes_upstream_task_id():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "task": {
+                "id": "task-abc",
+            },
+            "status": {
+                "metadata": {
+                    "opencode": {
+                        "message_id": "msg-1",
+                        "event_id": "evt-1",
+                    }
+                }
+            },
+        }
+    )
+
+    assert hints["upstream_task_id"] == "task-abc"
+
+
 def test_extract_stream_chunk_reads_nested_opencode_event_and_message_ids():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {

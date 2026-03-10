@@ -59,6 +59,27 @@ class A2AService:
             timeout=timeout_override,
         )
 
+    async def cancel_task(
+        self,
+        *,
+        resolved: ResolvedAgent,
+        task_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        logger.info(
+            "Cancelling task via A2A service",
+            extra={
+                "agent_name": resolved.name,
+                "agent_url": redact_url_for_logging(resolved.url),
+                "task_id": task_id,
+            },
+        )
+        return await self.gateway.cancel_task(
+            resolved=resolved,
+            task_id=task_id,
+            metadata=metadata,
+        )
+
 
 _service_instance: Optional[A2AService] = None
 

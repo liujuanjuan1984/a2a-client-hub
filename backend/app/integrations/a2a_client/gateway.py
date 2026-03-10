@@ -251,6 +251,167 @@ class A2AGateway:
         ):
             yield payload
 
+    async def cancel_task(
+        self,
+        *,
+        resolved: "ResolvedAgent",
+        task_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        normalized_task_id = task_id.strip() if isinstance(task_id, str) else ""
+        if not normalized_task_id:
+            return {
+                "success": False,
+                "agent_name": resolved.name,
+                "agent_url": resolved.url,
+                "task_id": normalized_task_id,
+                "error": "Task id is required.",
+                "error_code": "invalid_task_id",
+            }
+
+        client = await self._get_client(resolved)
+        start_time = time.monotonic()
+        logger.info(
+            "A2A task cancel",
+            extra={
+                "agent_name": resolved.name,
+                "agent_url": redact_url_for_logging(resolved.url),
+                "task_id": normalized_task_id,
+            },
+        )
+        try:
+            result = await client.cancel_task(
+                normalized_task_id,
+                metadata=metadata,
+            )
+        except A2AClientResetRequiredError as exc:
+            await self._invalidate_client(resolved)
+            elapsed = time.monotonic() - start_time
+            logger.error(
+                "A2A task cancel requires client reset",
+                extra={
+                    "agent_name": resolved.name,
+                    "elapsed_seconds": round(elapsed, 3),
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                },
+            )
+            a2a_metrics.record_call(
+                resolved.name,
+                success=False,
+                error_code="client_reset",
+            )
+            return {
+                "success": False,
+                "agent_name": resolved.name,
+                "agent_url": resolved.url,
+                "task_id": normalized_task_id,
+                "error": str(exc),
+                "error_code": "client_reset",
+            }
+        except A2AOutboundNotAllowedError as exc:
+            elapsed = time.monotonic() - start_time
+            logger.error(
+                "A2A task cancel blocked by allowlist",
+                extra={
+                    "agent_name": resolved.name,
+                    "elapsed_seconds": round(elapsed, 3),
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                },
+            )
+            a2a_metrics.record_call(
+                resolved.name,
+                success=False,
+                error_code="outbound_not_allowed",
+            )
+            return {
+                "success": False,
+                "agent_name": resolved.name,
+                "agent_url": resolved.url,
+                "task_id": normalized_task_id,
+                "error": "Outbound A2A URL is not allowed",
+                "error_code": "outbound_not_allowed",
+            }
+        except A2AAgentUnavailableError as exc:
+            elapsed = time.monotonic() - start_time
+            logger.error(
+                "A2A task cancel unavailable",
+                extra={
+                    "agent_name": resolved.name,
+                    "elapsed_seconds": round(elapsed, 3),
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                },
+            )
+            a2a_metrics.record_call(
+                resolved.name,
+                success=False,
+                error_code="agent_unavailable",
+            )
+            return {
+                "success": False,
+                "agent_name": resolved.name,
+                "agent_url": resolved.url,
+                "task_id": normalized_task_id,
+                "error": str(exc),
+                "error_code": "agent_unavailable",
+            }
+        except Exception as exc:  # noqa: BLE001
+            elapsed = time.monotonic() - start_time
+            logger.error(
+                "A2A task cancel failed unexpectedly",
+                exc_info=True,
+                extra={
+                    "agent_name": resolved.name,
+                    "elapsed_seconds": round(elapsed, 3),
+                    "task_id": normalized_task_id,
+                },
+            )
+            a2a_metrics.record_call(
+                resolved.name,
+                success=False,
+                error_code="upstream_error",
+            )
+            return {
+                "success": False,
+                "agent_name": resolved.name,
+                "agent_url": resolved.url,
+                "task_id": normalized_task_id,
+                "error": str(exc),
+                "error_code": "upstream_error",
+            }
+
+        elapsed = time.monotonic() - start_time
+        success = bool(result.get("success"))
+        error_code = (
+            None if success else str(result.get("error_code") or "upstream_error")
+        )
+        a2a_metrics.record_call(
+            resolved.name,
+            success=success,
+            error_code=error_code,
+        )
+        logger.info(
+            "A2A task cancel finished",
+            extra={
+                "agent_name": resolved.name,
+                "success": success,
+                "elapsed_seconds": round(elapsed, 3),
+                "task_id": normalized_task_id,
+                "error_code": error_code,
+            },
+        )
+        return {
+            "success": success,
+            "agent_name": resolved.name,
+            "agent_url": resolved.url,
+            "task_id": normalized_task_id,
+            "error": result.get("error"),
+            "error_code": error_code,
+            "task": result.get("task"),
+        }
+
     async def _watch_pending_invoke(
         self,
         *,

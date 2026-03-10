@@ -420,63 +420,79 @@ export const extractStreamBlockUpdate = (
 export const applyStreamBlockUpdate = (
   current: MessageBlock[] | undefined,
   update: StreamBlockUpdate,
-) => {
-  const blocks = [...(current ?? [])];
+): MessageBlock[] => {
   const now = new Date().toISOString();
   const overwrite = update.source === "final_snapshot" || !update.append;
+  const blocks = current ?? [];
   const lastBlock = blocks[blocks.length - 1];
+
+  // Optimization: In-place update if we are appending to the same block type and it's not finished
+  if (
+    !overwrite &&
+    lastBlock &&
+    lastBlock.type === update.blockType &&
+    !lastBlock.isFinished
+  ) {
+    lastBlock.content += update.delta;
+    lastBlock.isFinished = update.done;
+    lastBlock.updatedAt = now;
+    return blocks;
+  }
+
+  // Fallback: Create new array for type switches, new blocks, or overwrites
+  const nextBlocks = [...blocks];
+  const lastNextBlock = nextBlocks[nextBlocks.length - 1];
 
   if (overwrite) {
     if (
-      lastBlock &&
-      lastBlock.type === update.blockType &&
-      lastBlock.isFinished === false
+      lastNextBlock &&
+      lastNextBlock.type === update.blockType &&
+      !lastNextBlock.isFinished
     ) {
-      lastBlock.content = update.delta;
-      lastBlock.isFinished = update.done;
-      lastBlock.updatedAt = now;
-      return blocks;
+      nextBlocks[nextBlocks.length - 1] = {
+        ...lastNextBlock,
+        content: update.delta,
+        isFinished: update.done,
+        updatedAt: now,
+      };
+      return nextBlocks;
     }
-    if (lastBlock && lastBlock.isFinished === false) {
-      lastBlock.isFinished = true;
-      lastBlock.updatedAt = now;
+    if (lastNextBlock && !lastNextBlock.isFinished) {
+      nextBlocks[nextBlocks.length - 1] = {
+        ...lastNextBlock,
+        isFinished: true,
+        updatedAt: now,
+      };
     }
-    blocks.push({
-      id: `${update.messageId}:${blocks.length + 1}`,
+    nextBlocks.push({
+      id: `${update.messageId}:${nextBlocks.length + 1}`,
       type: update.blockType,
       content: update.delta,
       isFinished: update.done,
       createdAt: now,
       updatedAt: now,
     });
-    return blocks;
+    return nextBlocks;
   }
 
-  if (
-    lastBlock &&
-    lastBlock.type === update.blockType &&
-    lastBlock.isFinished === false
-  ) {
-    lastBlock.content = `${lastBlock.content}${update.delta}`;
-    lastBlock.isFinished = update.done;
-    lastBlock.updatedAt = now;
-    return blocks;
+  // Type mismatch or new block needed
+  if (lastNextBlock && !lastNextBlock.isFinished) {
+    nextBlocks[nextBlocks.length - 1] = {
+      ...lastNextBlock,
+      isFinished: true,
+      updatedAt: now,
+    };
   }
 
-  if (lastBlock && lastBlock.isFinished === false) {
-    lastBlock.isFinished = true;
-    lastBlock.updatedAt = now;
-  }
-
-  blocks.push({
-    id: `${update.messageId}:${blocks.length + 1}`,
+  nextBlocks.push({
+    id: `${update.messageId}:${nextBlocks.length + 1}`,
     type: update.blockType,
     content: update.delta,
     isFinished: update.done,
     createdAt: now,
     updatedAt: now,
   });
-  return blocks;
+  return nextBlocks;
 };
 
 export const projectPrimaryTextContent = (

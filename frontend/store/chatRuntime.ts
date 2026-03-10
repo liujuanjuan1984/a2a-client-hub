@@ -396,6 +396,36 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     }
   };
 
+  const chunkBufferByMessageId = new Map<string, StreamBlockUpdate[]>();
+  let bufferTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const flushChunkBuffer = () => {
+    if (bufferTimeout) {
+      clearTimeout(bufferTimeout);
+      bufferTimeout = null;
+    }
+
+    chunkBufferByMessageId.forEach((chunks, targetMessageId) => {
+      if (chunks.length === 0) return;
+      updateConversationMessageWithUpdater(
+        conversationId,
+        targetMessageId,
+        (message) => {
+          let nextBlocks = message.blocks?.map((block) => ({ ...block }));
+          for (const chunk of chunks) {
+            nextBlocks = applyStreamBlockUpdate(nextBlocks, chunk);
+          }
+          return {
+            content: projectPrimaryTextContent(nextBlocks),
+            blocks: nextBlocks,
+            status: "streaming",
+          };
+        },
+      );
+    });
+    chunkBufferByMessageId.clear();
+  };
+
   const appendStreamChunk = (chunk: StreamBlockUpdate) => {
     const resolveChunkMessageId = () => {
       const mapped = streamMessageIdMap.get(chunk.messageId);
@@ -419,6 +449,8 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         (message) => message.id === placeholderId,
       );
       if (hasActivePlaceholder) {
+        // Before rekeying, ensure we flush any pending chunks for the placeholder
+        flushChunkBuffer();
         rekeyConversationMessage(
           conversationId,
           placeholderId,
@@ -441,18 +473,13 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     };
 
     const targetMessageId = resolveChunkMessageId();
-    updateConversationMessageWithUpdater(
-      conversationId,
-      targetMessageId,
-      (message) => {
-        const nextBlocks = applyStreamBlockUpdate(message.blocks, chunk);
-        return {
-          content: projectPrimaryTextContent(nextBlocks),
-          blocks: nextBlocks,
-          status: "streaming",
-        };
-      },
-    );
+    const chunks = chunkBufferByMessageId.get(targetMessageId) ?? [];
+    chunks.push(chunk);
+    chunkBufferByMessageId.set(targetMessageId, chunks);
+
+    if (!bufferTimeout) {
+      bufferTimeout = setTimeout(flushChunkBuffer, 16);
+    }
   };
 
   const queueIncomingChunk = (chunk: StreamBlockUpdate) => {
@@ -559,6 +586,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       return;
     }
     terminalHandled = true;
+    flushChunkBuffer();
     patchSession({
       streamState: "recoverable",
       lastStreamError: errorText,
@@ -581,6 +609,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       return;
     }
     terminalHandled = true;
+    flushChunkBuffer();
     closeStreamingMessages();
     markSessionIdle();
 
@@ -727,6 +756,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       return;
     }
   } catch (error) {
+    flushChunkBuffer();
     if (!isAuthFailureError(error) && !isAuthorizationFailureError(error)) {
       throw error;
     }

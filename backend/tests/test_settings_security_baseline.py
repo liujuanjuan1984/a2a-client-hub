@@ -180,3 +180,33 @@ def test_invalid_app_env_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ValueError, match="APP_ENV must be one of"):
         Settings()
+
+
+def test_rejects_schedule_invoke_timeout_not_greater_than_heartbeat_interval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("A2A_SCHEDULE_TASK_INVOKE_TIMEOUT", "30")
+    monkeypatch.setenv("A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS", "30")
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "A2A_SCHEDULE_TASK_INVOKE_TIMEOUT must be greater than "
+            "A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS"
+        ),
+    ):
+        Settings()
+
+
+def test_rejects_schedule_heartbeat_interval_too_small(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS", "5")
+
+    with pytest.raises(
+        ValueError,
+        match="A2A schedule heartbeat interval must be at least 15 seconds",
+    ):
+        Settings()

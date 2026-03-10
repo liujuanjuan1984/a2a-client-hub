@@ -22,7 +22,7 @@ import { useSessionStore } from "@/store/session";
 export function ScheduledJobsScreen() {
   const router = useRouter();
   const { data: agents = [] } = useAgentsCatalogQuery(true);
-  const { markJobFailed, toggleJobStatus } = useScheduledJobs();
+  const { markJobFailed, toggleJobStatus, removeJob } = useScheduledJobs();
   const userTimeZone = useSessionStore((state) => state.user?.timezone);
   const localTimeZone = resolveUserTimeZone();
   const scheduleTimeZone = userTimeZone?.trim() || localTimeZone;
@@ -86,7 +86,7 @@ export function ScheduledJobsScreen() {
   };
 
   return (
-    <ScreenContainer>
+    <ScreenContainer className="flex-1 bg-background px-5 sm:px-6">
       <PageHeader
         title="Scheduled Jobs"
         subtitle="Configure recurring prompts and inspect execution history."
@@ -117,7 +117,7 @@ export function ScheduledJobsScreen() {
 
       <ScrollView
         style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 18 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -188,6 +188,19 @@ export function ScheduledJobsScreen() {
                 onEdit={() => {
                   blurActiveElement();
                   router.push(buildScheduledJobEditHref(job.id));
+                }}
+                onDelete={async () => {
+                  try {
+                    await removeJob(job);
+                    toast.success(
+                      "Job deleted",
+                      "The scheduled task has been removed.",
+                    );
+                  } catch (error) {
+                    const message =
+                      error instanceof Error ? error.message : "Delete failed.";
+                    toast.error("Delete failed", message);
+                  }
                 }}
                 onMarkFailed={async () => {
                   try {

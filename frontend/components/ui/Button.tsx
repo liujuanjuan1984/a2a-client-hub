@@ -27,9 +27,9 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants = {
-    neo: "bg-yellow-500/75 active:bg-yellow-500/90",
-    primary: "bg-yellow-500/75 active:bg-yellow-500/90",
-    secondary: "bg-slate-800/35 border border-white/20 active:bg-slate-800/80",
+    neo: "bg-yellow-400/85 active:bg-yellow-300/90",
+    primary: "bg-yellow-400/85 active:bg-yellow-300/90",
+    secondary: "bg-slate-700/55 active:bg-slate-600/65",
     outline: "border border-white/10 active:bg-white/5",
     ghost: "active:bg-white/5",
     danger: "bg-red-500/10 border border-red-500/20 active:bg-red-500/20",
@@ -44,7 +44,7 @@ export function Button({
 
   const textSizes = {
     xs: "text-[11px]",
-    sm: "text-[11px]",
+    sm: "text-[12px]",
     md: "text-sm",
     lg: "text-base",
   };
@@ -61,7 +61,7 @@ export function Button({
   const iconColors = {
     neo: "#000000cc",
     primary: "#000000cc",
-    secondary: "#64748b",
+    secondary: "#cbd5e1",
     outline: "#64748b",
     ghost: "#475569",
     danger: "#f87171cc",

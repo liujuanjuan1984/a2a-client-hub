@@ -20,14 +20,26 @@ from a2a.client import (
     ClientFactory,
     Consumer,
 )
-from a2a.types import AgentCard, Message, Part, Role, TextPart, TransportProtocol
+from a2a.client.errors import (
+    A2AClientHTTPError,
+    A2AClientJSONRPCError,
+    A2AClientTimeoutError,
+)
+from a2a.types import (
+    AgentCard,
+    Message,
+    Part,
+    Role,
+    TaskIdParams,
+    TextPart,
+    TransportProtocol,
+)
 from a2a.utils.constants import (
     AGENT_CARD_WELL_KNOWN_PATH,
     EXTENDED_AGENT_CARD_PATH,
     PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
 
-from app.core.config import settings
 from app.core.http_client import get_global_http_client
 from app.core.logging import get_logger
 from app.integrations.a2a_client.controls import summarize_query
@@ -36,6 +48,7 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
     A2AOutboundNotAllowedError,
 )
+from app.services.a2a_proxy_service import a2a_proxy_service
 from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
@@ -237,6 +250,134 @@ class A2AClient:
         async for payload in client.send_message(message):
             yield payload
 
+    async def cancel_task(
+        self,
+        task_id: str,
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Cancel one upstream A2A task by task id."""
+
+        normalized_task_id = task_id.strip() if isinstance(task_id, str) else ""
+        if not normalized_task_id:
+            return {
+                "success": False,
+                "agent_url": self.agent_url,
+                "task_id": normalized_task_id,
+                "error": "Task id is required.",
+                "error_code": "invalid_task_id",
+            }
+
+        logger.info(
+            "Cancelling A2A task %s",
+            redact_url_for_logging(self.agent_url),
+            extra={
+                "task_id": normalized_task_id,
+            },
+        )
+
+        try:
+            client = await self._get_client(streaming=False)
+            task = await client.cancel_task(
+                TaskIdParams(
+                    id=normalized_task_id,
+                    metadata=(metadata or None),
+                )
+            )
+            return {
+                "success": True,
+                "agent_url": self.agent_url,
+                "task_id": normalized_task_id,
+                "task": task,
+            }
+        except A2AClientTimeoutError as exc:
+            logger.warning(
+                "A2A task cancellation timed out",
+                extra={
+                    "agent_url": redact_url_for_logging(self.agent_url),
+                    "task_id": normalized_task_id,
+                },
+            )
+            return {
+                "success": False,
+                "agent_url": self.agent_url,
+                "task_id": normalized_task_id,
+                "error": str(exc),
+                "error_code": "timeout",
+            }
+        except A2AClientHTTPError as exc:
+            if exc.status_code == 404:
+                error_code = "task_not_found"
+            elif exc.status_code in {409, 422}:
+                error_code = "task_not_cancelable"
+            elif exc.status_code in {408, 504}:
+                error_code = "timeout"
+            else:
+                error_code = "upstream_http_error"
+            logger.warning(
+                "A2A task cancellation received HTTP error",
+                extra={
+                    "agent_url": redact_url_for_logging(self.agent_url),
+                    "task_id": normalized_task_id,
+                    "status_code": exc.status_code,
+                    "error_code": error_code,
+                },
+            )
+            return {
+                "success": False,
+                "agent_url": self.agent_url,
+                "task_id": normalized_task_id,
+                "error": exc.message,
+                "error_code": error_code,
+            }
+        except A2AClientJSONRPCError as exc:
+            raw_code = getattr(exc.error, "code", None)
+            if raw_code == -32001:
+                error_code = "task_not_found"
+            elif raw_code == -32002:
+                error_code = "task_not_cancelable"
+            else:
+                error_code = "upstream_error"
+            logger.warning(
+                "A2A task cancellation received JSON-RPC error",
+                extra={
+                    "agent_url": redact_url_for_logging(self.agent_url),
+                    "task_id": normalized_task_id,
+                    "rpc_code": raw_code,
+                    "error_code": error_code,
+                },
+            )
+            return {
+                "success": False,
+                "agent_url": self.agent_url,
+                "task_id": normalized_task_id,
+                "error": str(exc),
+                "error_code": error_code,
+            }
+        except Exception as exc:  # noqa: BLE001
+            http_error = _unwrap_httpx_error(exc)
+            if http_error and _should_reset_http_error(http_error):
+                logger.warning(
+                    "Detected unrecoverable HTTP error during task cancel, scheduling reset",
+                    extra={
+                        "agent_url": redact_url_for_logging(self.agent_url),
+                        "task_id": normalized_task_id,
+                        "error_type": type(http_error).__name__,
+                    },
+                )
+                raise A2AClientResetRequiredError(str(http_error)) from exc
+            logger.exception(
+                "A2A task cancellation to %s failed",
+                redact_url_for_logging(self.agent_url),
+            )
+            return {
+                "success": False,
+                "agent_url": self.agent_url,
+                "task_id": normalized_task_id,
+                "error": str(exc),
+                "error_code": "upstream_error",
+            }
+
     async def get_agent_card(self) -> AgentCard:
         """Fetch (and cache) the agent card."""
 
@@ -246,7 +387,7 @@ class A2AClient:
         try:
             validate_outbound_http_url(
                 self.agent_url,
-                allowed_hosts=settings.a2a_proxy_allowed_hosts,
+                allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
                 purpose="Agent card URL",
             )
         except OutboundURLNotAllowedError as exc:
@@ -304,7 +445,7 @@ class A2AClient:
         try:
             validate_outbound_http_url(
                 getattr(card, "url", "") or "",
-                allowed_hosts=settings.a2a_proxy_allowed_hosts,
+                allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
                 purpose="Agent URL",
             )
             for iface in getattr(card, "additional_interfaces", None) or []:
@@ -313,7 +454,7 @@ class A2AClient:
                     continue
                 validate_outbound_http_url(
                     url,
-                    allowed_hosts=settings.a2a_proxy_allowed_hosts,
+                    allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
                     purpose="Agent interface URL",
                 )
         except OutboundURLNotAllowedError as exc:

@@ -3,26 +3,36 @@
 from __future__ import annotations
 
 import calendar
-import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
-from typing import Any, Dict, Optional
+from functools import wraps
+from typing import Any, Dict, Optional, TypeVar
 from uuid import UUID, uuid4
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.config import settings
+from app.core.logging import get_logger
+from app.db.locking import (
+    set_postgres_local_timeouts,
+    to_retryable_db_lock_error,
+    to_retryable_db_query_timeout_error,
+)
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
+from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.handlers import auth as auth_handler
+from app.services.ops_metrics import ops_metrics
 from app.utils.timezone_util import ensure_utc, resolve_timezone, utc_now
 
 _MANUAL_FAILURE_MESSAGE = "Stopped by user as failed"
-
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class A2AScheduleError(RuntimeError):
@@ -45,6 +55,55 @@ class A2AScheduleConflictError(A2AScheduleError):
     """Raised when a schedule task operation is in conflict with its current state."""
 
 
+class A2AScheduleServiceBusyError(A2AScheduleError):
+    """Raised when a schedule operation times out due to transient DB pressure."""
+
+
+_ScheduleResultT = TypeVar("_ScheduleResultT")
+
+
+def _map_retryable_db_errors(
+    operation: str,
+) -> Callable[
+    [Callable[..., Awaitable[_ScheduleResultT]]],
+    Callable[..., Awaitable[_ScheduleResultT]],
+]:
+    def decorator(
+        fn: Callable[..., Awaitable[_ScheduleResultT]],
+    ) -> Callable[..., Awaitable[_ScheduleResultT]]:
+        @wraps(fn)
+        async def wrapper(
+            self: "A2AScheduleService",
+            *args: Any,
+            **kwargs: Any,
+        ) -> _ScheduleResultT:
+            try:
+                return await fn(self, *args, **kwargs)
+            except DBAPIError as exc:
+                retryable_lock_error = to_retryable_db_lock_error(
+                    exc,
+                    lock_message=(
+                        f"{operation} is currently locked by another operation; retry shortly."
+                    ),
+                )
+                if retryable_lock_error is not None:
+                    raise A2AScheduleConflictError(str(retryable_lock_error)) from exc
+
+                retryable_timeout_error = to_retryable_db_query_timeout_error(
+                    exc,
+                    timeout_message=f"{operation} timed out; service busy, retry shortly.",
+                )
+                if retryable_timeout_error is not None:
+                    raise A2AScheduleServiceBusyError(
+                        str(retryable_timeout_error)
+                    ) from exc
+                raise
+
+        return wrapper
+
+    return decorator
+
+
 @dataclass(frozen=True)
 class ClaimedA2AScheduleTask:
     """Snapshot describing a due task claimed by the scheduler."""
@@ -64,17 +123,90 @@ class ClaimedA2AScheduleTask:
 class A2AScheduleService:
     """CRUD, validation, and dispatch helpers for A2A schedules."""
 
+    _schedule_minutes_min = 5
+    _schedule_minutes_max = 24 * 60
+    _default_write_lock_timeout_ms = 500
+    _default_write_statement_timeout_ms = 5000
+
     _allowed_cycle_types = {
         A2AScheduleTask.CYCLE_DAILY,
         A2AScheduleTask.CYCLE_WEEKLY,
         A2AScheduleTask.CYCLE_MONTHLY,
         A2AScheduleTask.CYCLE_INTERVAL,
+        A2AScheduleTask.CYCLE_SEQUENTIAL,
     }
 
     @staticmethod
     def _normalize_timezone_str(timezone_str: str | None) -> str:
         return (timezone_str or "UTC").strip() or "UTC"
 
+    async def _apply_default_write_timeouts(self, db: AsyncSession) -> None:
+        await set_postgres_local_timeouts(
+            db,
+            lock_timeout_ms=self._default_write_lock_timeout_ms,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
+
+    async def _apply_nowait_write_timeouts(self, db: AsyncSession) -> None:
+        """Apply only statement timeout for NOWAIT lock paths.
+
+        NOWAIT does not wait for row locks, so lock_timeout is redundant there.
+        """
+
+        await set_postgres_local_timeouts(
+            db,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
+
+    async def _apply_skip_locked_write_timeouts(self, db: AsyncSession) -> None:
+        """Apply only statement timeout for SKIP LOCKED lock paths."""
+
+        await set_postgres_local_timeouts(
+            db,
+            statement_timeout_ms=self._default_write_statement_timeout_ms,
+        )
+
+    async def _lock_user_row_for_quota(
+        self, db: AsyncSession, *, user_id: UUID
+    ) -> None:
+        """Serialize per-user quota-changing operations with a user-row lock."""
+
+        stmt = (
+            select(User.id)
+            .where(User.id == user_id)
+            .with_for_update(nowait=True)
+            .limit(1)
+        )
+        found_user_id = await db.scalar(stmt)
+        if found_user_id is None:
+            raise A2AScheduleValidationError("Current user does not exist")
+
+    async def _get_task_for_update(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        task_id: UUID,
+    ) -> A2AScheduleTask:
+        stmt = (
+            select(A2AScheduleTask)
+            .where(
+                and_(
+                    A2AScheduleTask.id == task_id,
+                    A2AScheduleTask.user_id == user_id,
+                    A2AScheduleTask.deleted_at.is_(None),
+                    A2AScheduleTask.delete_requested_at.is_(None),
+                )
+            )
+            .with_for_update(nowait=True)
+            .limit(1)
+        )
+        task = await db.scalar(stmt)
+        if task is None:
+            raise A2AScheduleNotFoundError("Schedule task not found")
+        return task
+
+    @_map_retryable_db_errors("Schedule task list")
     async def list_tasks(
         self,
         db: AsyncSession,
@@ -89,6 +221,7 @@ class A2AScheduleService:
             .where(
                 A2AScheduleTask.user_id == user_id,
                 A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.delete_requested_at.is_(None),
             )
             .order_by(A2AScheduleTask.created_at.desc())
             .offset(offset)
@@ -100,10 +233,12 @@ class A2AScheduleService:
         count_stmt = select(func.count(A2AScheduleTask.id)).where(
             A2AScheduleTask.user_id == user_id,
             A2AScheduleTask.deleted_at.is_(None),
+            A2AScheduleTask.delete_requested_at.is_(None),
         )
         total = int(await db.scalar(count_stmt) or 0)
         return items, total
 
+    @_map_retryable_db_errors("Schedule task read")
     async def get_task(
         self,
         db: AsyncSession,
@@ -113,6 +248,7 @@ class A2AScheduleService:
     ) -> A2AScheduleTask:
         return await self._get_task(db, user_id=user_id, task_id=task_id)
 
+    @_map_retryable_db_errors("Schedule task creation")
     async def create_task(
         self,
         db: AsyncSession,
@@ -127,8 +263,10 @@ class A2AScheduleService:
         time_point: Dict[str, Any],
         enabled: bool,
     ) -> A2AScheduleTask:
+        await self._apply_nowait_write_timeouts(db)
         await self._ensure_agent_owned(db, user_id=user_id, agent_id=agent_id)
         if enabled:
+            await self._lock_user_row_for_quota(db, user_id=user_id)
             await self._ensure_active_quota(
                 db, user_id=user_id, is_superuser=is_superuser
             )
@@ -170,6 +308,7 @@ class A2AScheduleService:
         await db.refresh(task)
         return task
 
+    @_map_retryable_db_errors("Schedule task update")
     async def update_task(
         self,
         db: AsyncSession,
@@ -185,7 +324,9 @@ class A2AScheduleService:
         time_point: Optional[Dict[str, Any]] = None,
         enabled: Optional[bool] = None,
     ) -> A2AScheduleTask:
-        task = await self._get_task(db, user_id=user_id, task_id=task_id)
+        await self._apply_nowait_write_timeouts(db)
+        await self._lock_user_row_for_quota(db, user_id=user_id)
+        task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
         timezone_value = self._normalize_timezone_str(timezone_str)
 
         if task.last_run_status == A2AScheduleTask.STATUS_RUNNING:
@@ -250,6 +391,7 @@ class A2AScheduleService:
         await db.refresh(task)
         return task
 
+    @_map_retryable_db_errors("Schedule task toggle")
     async def set_enabled(
         self,
         db: AsyncSession,
@@ -260,7 +402,9 @@ class A2AScheduleService:
         is_superuser: bool,
         timezone_str: str,
     ) -> A2AScheduleTask:
-        task = await self._get_task(db, user_id=user_id, task_id=task_id)
+        await self._apply_nowait_write_timeouts(db)
+        await self._lock_user_row_for_quota(db, user_id=user_id)
+        task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
         if enabled and not task.enabled:
             await self._ensure_active_quota(
                 db, user_id=user_id, is_superuser=is_superuser
@@ -283,6 +427,7 @@ class A2AScheduleService:
         await db.refresh(task)
         return task
 
+    @_map_retryable_db_errors("Schedule task deletion")
     async def delete_task(
         self,
         db: AsyncSession,
@@ -290,12 +435,24 @@ class A2AScheduleService:
         user_id: UUID,
         task_id: UUID,
     ) -> None:
-        task = await self._get_task(db, user_id=user_id, task_id=task_id)
-        task.soft_delete()
-        task.enabled = False
-        task.next_run_at = None
+        await self._apply_nowait_write_timeouts(db)
+        task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
+        if (
+            task.last_run_status == A2AScheduleTask.STATUS_RUNNING
+            and task.current_run_id is not None
+        ):
+            # Keep the row alive until the current run reaches a terminal status.
+            task.delete_requested_at = utc_now()
+            task.enabled = False
+            task.next_run_at = None
+        else:
+            task.soft_delete()
+            task.enabled = False
+            task.next_run_at = None
+            task.delete_requested_at = None
         await commit_safely(db)
 
+    @_map_retryable_db_errors("Schedule task manual fail")
     async def mark_task_failed_manually(
         self,
         db: AsyncSession,
@@ -306,6 +463,7 @@ class A2AScheduleService:
         reason: Optional[str] = None,
         marked_at: Optional[datetime] = None,
     ) -> A2AScheduleTask:
+        await self._apply_nowait_write_timeouts(db)
         now_utc = ensure_utc(marked_at or utc_now())
         manual_error_message = self._build_manual_failure_reason(
             reason=reason,
@@ -318,9 +476,10 @@ class A2AScheduleService:
                     A2AScheduleTask.id == task_id,
                     A2AScheduleTask.user_id == user_id,
                     A2AScheduleTask.deleted_at.is_(None),
+                    A2AScheduleTask.delete_requested_at.is_(None),
                 )
             )
-            .with_for_update()
+            .with_for_update(nowait=True)
             .limit(1)
         )
         task = await db.scalar(stmt)
@@ -349,7 +508,7 @@ class A2AScheduleService:
                     A2AScheduleExecution.run_id == run_id,
                 )
             )
-            .with_for_update()
+            .with_for_update(nowait=True)
             .limit(1)
         )
         execution = await db.scalar(exec_stmt)
@@ -380,14 +539,24 @@ class A2AScheduleService:
         task.last_run_at = now_utc
         task.current_run_id = None
         task.running_started_at = None
+        task.last_heartbeat_at = None
         task.consecutive_failures = (task.consecutive_failures or 0) + 1
         if task.consecutive_failures >= threshold:
             task.enabled = False
+        if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            if task.enabled:
+                task.next_run_at = self._compute_sequential_next_run_at(
+                    time_point=dict(task.time_point or {}),
+                    after_utc=now_utc,
+                )
+            else:
+                task.next_run_at = None
 
         await commit_safely(db)
         await db.refresh(task)
         return task
 
+    @_map_retryable_db_errors("Schedule execution list")
     async def list_executions(
         self,
         db: AsyncSession,
@@ -429,18 +598,12 @@ class A2AScheduleService:
         *,
         agent_id: UUID,
     ) -> int:
-        stmt = (
-            select(func.count(A2AScheduleExecution.id))
-            .join(
-                A2AScheduleTask,
-                A2AScheduleTask.id == A2AScheduleExecution.task_id,
-            )
-            .where(
-                and_(
-                    A2AScheduleTask.agent_id == agent_id,
-                    A2AScheduleTask.deleted_at.is_(None),
-                    A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
-                )
+        stmt = select(func.count(A2AScheduleTask.id)).where(
+            and_(
+                A2AScheduleTask.agent_id == agent_id,
+                A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
+                A2AScheduleTask.current_run_id.is_not(None),
             )
         )
         return int((await db.scalar(stmt)) or 0)
@@ -449,17 +612,11 @@ class A2AScheduleService:
         self,
         db: AsyncSession,
     ) -> int:
-        stmt = (
-            select(func.count(A2AScheduleExecution.id))
-            .join(
-                A2AScheduleTask,
-                A2AScheduleTask.id == A2AScheduleExecution.task_id,
-            )
-            .where(
-                and_(
-                    A2AScheduleTask.deleted_at.is_(None),
-                    A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
-                )
+        stmt = select(func.count(A2AScheduleTask.id)).where(
+            and_(
+                A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
+                A2AScheduleTask.current_run_id.is_not(None),
             )
         )
         return int((await db.scalar(stmt)) or 0)
@@ -470,6 +627,7 @@ class A2AScheduleService:
         *,
         now: Optional[datetime] = None,
     ) -> Optional[ClaimedA2AScheduleTask]:
+        await self._apply_skip_locked_write_timeouts(db)
         now_utc = ensure_utc(now or utc_now())
 
         global_concurrency_limit = max(
@@ -481,67 +639,92 @@ class A2AScheduleService:
 
         concurrency_limit = max(int(settings.a2a_schedule_agent_concurrency_limit), 1)
 
+        running_task = aliased(A2AScheduleTask)
+        running_count_for_agent = (
+            select(func.count(running_task.id))
+            .where(
+                and_(
+                    running_task.agent_id == A2AScheduleTask.agent_id,
+                    running_task.deleted_at.is_(None),
+                    running_task.last_run_status == A2AScheduleTask.STATUS_RUNNING,
+                    running_task.current_run_id.is_not(None),
+                )
+            )
+            .correlate(A2AScheduleTask)
+            .scalar_subquery()
+        )
+
+        user_timezone_subquery = (
+            select(User.timezone)
+            .where(User.id == A2AScheduleTask.user_id)
+            .limit(1)
+            .scalar_subquery()
+        )
+        user_is_superuser_subquery = (
+            select(User.is_superuser)
+            .where(User.id == A2AScheduleTask.user_id)
+            .limit(1)
+            .scalar_subquery()
+        )
         stmt = (
-            select(A2AScheduleTask)
+            select(
+                A2AScheduleTask,
+                user_timezone_subquery.label("user_timezone"),
+                user_is_superuser_subquery.label("user_is_superuser"),
+            )
             .where(
                 and_(
                     A2AScheduleTask.deleted_at.is_(None),
+                    A2AScheduleTask.delete_requested_at.is_(None),
                     A2AScheduleTask.enabled.is_(True),
                     A2AScheduleTask.next_run_at.is_not(None),
                     A2AScheduleTask.next_run_at <= now_utc,
+                    A2AScheduleTask.current_run_id.is_(None),
+                    running_count_for_agent < concurrency_limit,
                 )
             )
             .order_by(A2AScheduleTask.next_run_at.asc(), A2AScheduleTask.id.asc())
-            .limit(max(concurrency_limit * 3, 10))
+            .limit(1)
             .with_for_update(skip_locked=True)
         )
-        candidates = list((await db.scalars(stmt)).all())
-        if not candidates:
+        selected_row = (await db.execute(stmt)).first()
+        if selected_row is None:
             return None
-
-        selected_task: Optional[A2AScheduleTask] = None
-        for task in candidates:
-            running_count = await self._running_execution_count_for_agent(
-                db,
-                agent_id=task.agent_id,
-            )
-            if running_count >= concurrency_limit:
-                continue
-            selected_task = task
-            break
-
-        if selected_task is None:
-            return None
-
-        timezone_value = await auth_handler.get_user_timezone(
-            db,
-            user_id=selected_task.user_id,
-            default="UTC",
-        )
-
-        from app.db.models.user import User
-
-        is_superuser = (
-            await db.scalar(
-                select(User.is_superuser).where(User.id == selected_task.user_id)
-            )
-        ) or False
+        selected_task = selected_row[0]
+        timezone_value = self._normalize_timezone_str(selected_row[1])
+        is_superuser = bool(selected_row[2])
 
         scheduled_for = ensure_utc(selected_task.next_run_at or now_utc)
-        next_run_at = self.compute_next_run_at(
-            cycle_type=selected_task.cycle_type,
-            time_point=dict(selected_task.time_point or {}),
-            timezone_str=timezone_value,
-            after_utc=scheduled_for,
-            not_before_utc=now_utc,
-            is_superuser=is_superuser,
-        )
+        if selected_task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            # Sequential tasks are re-scheduled only after the current run completes.
+            next_run_at = None
+        else:
+            next_run_at = self.compute_next_run_at(
+                cycle_type=selected_task.cycle_type,
+                time_point=dict(selected_task.time_point or {}),
+                timezone_str=timezone_value,
+                after_utc=scheduled_for,
+                not_before_utc=now_utc,
+                is_superuser=is_superuser,
+            )
 
         run_id = uuid4()
         selected_task.next_run_at = next_run_at
         selected_task.last_run_status = A2AScheduleTask.STATUS_RUNNING
         selected_task.current_run_id = run_id
         selected_task.running_started_at = now_utc
+        selected_task.last_heartbeat_at = now_utc
+        db.add(
+            A2AScheduleExecution(
+                user_id=selected_task.user_id,
+                task_id=selected_task.id,
+                run_id=run_id,
+                scheduled_for=scheduled_for,
+                started_at=now_utc,
+                status=A2AScheduleExecution.STATUS_RUNNING,
+                conversation_id=selected_task.conversation_id,
+            )
+        )
         await commit_safely(db)
 
         logger.info(f"Task {selected_task.id} claimed, run_id: {run_id}")
@@ -565,41 +748,76 @@ class A2AScheduleService:
         *,
         now: Optional[datetime] = None,
         timeout_seconds: int = 600,
+        hard_timeout_seconds: int | None = None,
     ) -> int:
         """Recover stale running tasks by run_id and close them deterministically."""
 
         now_utc = ensure_utc(now or utc_now())
         timeout_seconds = max(int(timeout_seconds or 0), 1)
         cutoff = now_utc - timedelta(seconds=timeout_seconds)
+        hard_timeout = (
+            max(int(hard_timeout_seconds or 0), 1) if hard_timeout_seconds else None
+        )
+        hard_cutoff = (
+            now_utc - timedelta(seconds=hard_timeout)
+            if hard_timeout is not None
+            else None
+        )
         failure_threshold = max(int(settings.a2a_schedule_task_failure_threshold), 1)
 
-        stmt = (
-            select(A2AScheduleTask)
-            .where(
-                and_(
-                    A2AScheduleTask.deleted_at.is_(None),
-                    A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
-                    A2AScheduleTask.current_run_id.is_not(None),
-                    A2AScheduleTask.running_started_at.is_not(None),
-                    A2AScheduleTask.running_started_at <= cutoff,
-                )
+        stale_predicates = [
+            func.coalesce(
+                A2AScheduleTask.last_heartbeat_at,
+                A2AScheduleTask.running_started_at,
             )
-            .order_by(
-                A2AScheduleTask.running_started_at.asc(),
-                A2AScheduleTask.id.asc(),
-            )
-            .with_for_update(skip_locked=True)
-        )
-        rows = await db.execute(stmt)
-        tasks = list(rows.scalars().all())
-        if not tasks:
-            return 0
+            <= cutoff
+        ]
+        if hard_cutoff is not None:
+            stale_predicates.append(A2AScheduleTask.running_started_at <= hard_cutoff)
 
         error_message = "Execution marked as failed by recovery: stale running task exceeded timeout"
-
         recovered_count = 0
-        for task in tasks:
+        while True:
+            # SET LOCAL timeouts are transaction-scoped; re-apply after each commit.
+            await self._apply_skip_locked_write_timeouts(db)
+            stale_where = and_(
+                A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
+                A2AScheduleTask.current_run_id.is_not(None),
+                A2AScheduleTask.running_started_at.is_not(None),
+                or_(*stale_predicates),
+            )
+            stmt = (
+                select(A2AScheduleTask)
+                .where(stale_where)
+                .order_by(
+                    A2AScheduleTask.running_started_at.asc(),
+                    A2AScheduleTask.id.asc(),
+                )
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
+            task = await db.scalar(stmt)
+            if task is None:
+                stale_count_stmt = select(func.count(A2AScheduleTask.id)).where(
+                    stale_where
+                )
+                stale_remaining = int(await db.scalar(stale_count_stmt) or 0)
+                if stale_remaining > 0:
+                    ops_metrics.increment_schedule_recovery_lock_skipped_tasks(
+                        stale_remaining
+                    )
+                    logger.warning(
+                        "Skipped recovery for %d stale schedule task(s) due to row lock contention; retry next cycle.",
+                        stale_remaining,
+                        extra={
+                            "phase": "recovery",
+                            "stale_task_count": stale_remaining,
+                        },
+                    )
+                break
             if task.current_run_id is None:
+                await commit_safely(db)
                 continue
             run_id = task.current_run_id
             exec_stmt = (
@@ -610,10 +828,10 @@ class A2AScheduleService:
                     A2AScheduleExecution.run_id == run_id,
                 )
                 .limit(1)
-                .with_for_update(skip_locked=True)
             )
             execution = await db.scalar(exec_stmt)
             final_task_status = A2AScheduleTask.STATUS_FAILED
+            sequential_after_utc = now_utc
 
             if (
                 execution is not None
@@ -628,38 +846,62 @@ class A2AScheduleService:
             elif execution is None:
                 # No running execution row exists (e.g., crash before execution creation).
                 started_at = ensure_utc(task.running_started_at or now_utc)
-                recovered = A2AScheduleExecution(
-                    user_id=task.user_id,
-                    task_id=task.id,
-                    run_id=run_id,
-                    scheduled_for=started_at,
-                    started_at=started_at,
-                    finished_at=now_utc,
-                    status=A2AScheduleExecution.STATUS_FAILED,
-                    error_message=error_message,
-                    conversation_id=task.conversation_id,
+                await db.execute(
+                    insert(A2AScheduleExecution)
+                    .values(
+                        user_id=task.user_id,
+                        task_id=task.id,
+                        run_id=run_id,
+                        scheduled_for=started_at,
+                        started_at=started_at,
+                        finished_at=now_utc,
+                        status=A2AScheduleExecution.STATUS_FAILED,
+                        error_message=error_message,
+                        conversation_id=task.conversation_id,
+                    )
+                    .on_conflict_do_nothing(
+                        index_elements=["task_id", "run_id"],
+                    )
                 )
-                db.add(recovered)
             elif execution.status == A2AScheduleExecution.STATUS_SUCCESS:
                 final_task_status = A2AScheduleTask.STATUS_SUCCESS
+                if execution.finished_at is not None:
+                    sequential_after_utc = ensure_utc(execution.finished_at)
             elif execution.status == A2AScheduleExecution.STATUS_FAILED:
                 final_task_status = A2AScheduleTask.STATUS_FAILED
+                if execution.finished_at is not None:
+                    sequential_after_utc = ensure_utc(execution.finished_at)
 
             task.last_run_status = final_task_status
             task.last_run_at = now_utc
             task.current_run_id = None
             task.running_started_at = None
+            task.last_heartbeat_at = None
             if final_task_status == A2AScheduleTask.STATUS_SUCCESS:
                 task.consecutive_failures = 0
             else:
                 task.consecutive_failures = (task.consecutive_failures or 0) + 1
                 if task.consecutive_failures >= failure_threshold:
                     task.enabled = False
+            if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+                if task.enabled:
+                    task.next_run_at = self._compute_sequential_next_run_at(
+                        time_point=dict(task.time_point or {}),
+                        after_utc=sequential_after_utc,
+                    )
+                else:
+                    task.next_run_at = None
+            if task.delete_requested_at is not None:
+                task.soft_delete()
+                task.enabled = False
+                task.next_run_at = None
+                task.delete_requested_at = None
             recovered_count += 1
 
-        await commit_safely(db)
+            await commit_safely(db)
         return recovered_count
 
+    @_map_retryable_db_errors("Schedule task finalize")
     async def finalize_task_run(
         self,
         db: AsyncSession,
@@ -673,17 +915,17 @@ class A2AScheduleService:
     ) -> bool:
         """Finalize one claimed run only if current_run_id still matches run_id."""
 
+        await self._apply_nowait_write_timeouts(db)
         stmt = (
             select(A2AScheduleTask)
             .where(
                 and_(
                     A2AScheduleTask.id == task_id,
                     A2AScheduleTask.user_id == user_id,
-                    A2AScheduleTask.deleted_at.is_(None),
                     A2AScheduleTask.current_run_id == run_id,
                 )
             )
-            .with_for_update(skip_locked=True)
+            .with_for_update(nowait=True)
             .limit(1)
         )
         task = await db.scalar(stmt)
@@ -695,6 +937,7 @@ class A2AScheduleService:
         task.last_run_at = ensure_utc(finished_at)
         task.current_run_id = None
         task.running_started_at = None
+        task.last_heartbeat_at = None
         if conversation_id is not None:
             task.conversation_id = conversation_id
 
@@ -709,6 +952,19 @@ class A2AScheduleService:
             pass
         else:
             raise A2AScheduleValidationError("Unsupported final status for task run")
+        if task.delete_requested_at is not None:
+            task.soft_delete()
+            task.enabled = False
+            task.next_run_at = None
+            task.delete_requested_at = None
+        elif task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            if task.enabled:
+                task.next_run_at = self._compute_sequential_next_run_at(
+                    time_point=dict(task.time_point or {}),
+                    after_utc=task.last_run_at or ensure_utc(finished_at),
+                )
+            else:
+                task.next_run_at = None
 
         logger.info(
             f"Task {task_id} finalized (run_id: {run_id}) "
@@ -729,6 +985,7 @@ class A2AScheduleService:
                 A2AScheduleTask.id == task_id,
                 A2AScheduleTask.user_id == user_id,
                 A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.delete_requested_at.is_(None),
             )
         )
         task = await db.scalar(stmt)
@@ -779,6 +1036,7 @@ class A2AScheduleService:
                 A2AScheduleTask.user_id == user_id,
                 A2AScheduleTask.enabled.is_(True),
                 A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.delete_requested_at.is_(None),
             )
         )
         active_count = int((await db.scalar(stmt)) or 0)
@@ -816,7 +1074,7 @@ class A2AScheduleService:
         normalized = (value or "").strip().lower()
         if normalized not in self._allowed_cycle_types:
             raise A2AScheduleValidationError(
-                "cycle_type must be one of daily, weekly, monthly, interval"
+                "cycle_type must be one of daily, weekly, monthly, interval, sequential"
             )
         return normalized
 
@@ -833,8 +1091,9 @@ class A2AScheduleService:
 
         if cycle_type == A2AScheduleTask.CYCLE_INTERVAL:
             minutes_raw = time_point.get("minutes", time_point.get("interval_minutes"))
-            minutes = self._normalize_interval_minutes(
-                minutes_raw, is_superuser=is_superuser
+            minutes = self._normalize_schedule_minutes(
+                minutes_raw,
+                cycle_type="interval",
             )
             interval_start_at_local = self._normalize_interval_start_at_local(
                 time_point.get("start_at_local")
@@ -847,6 +1106,19 @@ class A2AScheduleService:
                     timezone_str=timezone_str,
                 )
             return normalized
+        if cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            minutes_raw = time_point.get("minutes", time_point.get("interval_minutes"))
+            minutes = self._normalize_schedule_minutes(
+                minutes_raw,
+                cycle_type="sequential",
+            )
+            if time_point.get("start_at_local") not in (None, "") or time_point.get(
+                "start_at_utc"
+            ) not in (None, ""):
+                raise A2AScheduleValidationError(
+                    "sequential does not support start_at_local/start_at_utc; use minutes only"
+                )
+            return {"minutes": minutes}
 
         hh, mm = self._parse_hhmm(time_point.get("time"))
         normalized: Dict[str, Any] = {"time": f"{hh:02d}:{mm:02d}"}
@@ -876,41 +1148,24 @@ class A2AScheduleService:
 
         raise A2AScheduleValidationError("Unsupported cycle_type")
 
-    @staticmethod
-    def _ceil_to_multiple(value: int, base: int) -> int:
-        if base <= 0:
-            return value
-        return ((value + base - 1) // base) * base
-
-    def _normalize_interval_minutes(
-        self, value: Any, *, is_superuser: bool = False
+    def _normalize_schedule_minutes(
+        self,
+        value: Any,
+        *,
+        cycle_type: str,
     ) -> int:
         minutes = self._coerce_int(value)
         if minutes is None:
-            raise A2AScheduleValidationError("interval time_point requires minutes")
-
-        min_interval = (
-            1 if is_superuser else max(settings.a2a_schedule_min_interval_minutes, 1)
-        )
-
-        # Soft normalization:
-        # - round up to the next multiple of 5 if not superuser
-        # - clamp to [min_interval, 1440]
-        if minutes < min_interval:
             raise A2AScheduleValidationError(
-                f"interval minutes cannot be less than {min_interval}"
+                f"{cycle_type} time_point requires minutes"
             )
+        return max(self._schedule_minutes_min, min(self._schedule_minutes_max, minutes))
 
-        minutes = min(minutes, 24 * 60)
-
-        if not is_superuser:
-            normalized = self._ceil_to_multiple(minutes, 5)
-        else:
-            normalized = minutes
-
-        if normalized > 24 * 60:
-            normalized = 24 * 60
-        return normalized
+    def _sanitize_schedule_minutes_for_read(self, value: Any) -> int:
+        minutes = self._coerce_int(value)
+        if minutes is None:
+            return self._schedule_minutes_min
+        return max(self._schedule_minutes_min, min(self._schedule_minutes_max, minutes))
 
     @staticmethod
     def _format_local_minute_iso(dt: datetime) -> str:
@@ -984,13 +1239,20 @@ class A2AScheduleService:
         timezone_str: str,
     ) -> Dict[str, Any]:
         payload = dict(time_point or {})
+        if cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            minutes = self._sanitize_schedule_minutes_for_read(
+                payload.get("minutes", payload.get("interval_minutes"))
+            )
+            return {"minutes": minutes}
         if cycle_type != A2AScheduleTask.CYCLE_INTERVAL:
             return payload
 
         timezone_value = self._normalize_timezone_str(timezone_str)
-        normalized: Dict[str, Any] = {}
-        if "minutes" in payload:
-            normalized["minutes"] = payload["minutes"]
+        normalized: Dict[str, Any] = {
+            "minutes": self._sanitize_schedule_minutes_for_read(
+                payload.get("minutes", payload.get("interval_minutes"))
+            )
+        }
 
         start_at_local = payload.get("start_at_local")
         if isinstance(start_at_local, str) and start_at_local.strip():
@@ -1054,6 +1316,19 @@ class A2AScheduleService:
             dt = dt.replace(tzinfo=timezone.utc)
 
         return ensure_utc(dt)
+
+    def _compute_sequential_next_run_at(
+        self,
+        *,
+        time_point: Dict[str, Any] | None,
+        after_utc: datetime,
+    ) -> datetime:
+        minutes = self._sanitize_schedule_minutes_for_read(
+            (time_point or {}).get(
+                "minutes", (time_point or {}).get("interval_minutes")
+            )
+        )
+        return ensure_utc(after_utc) + timedelta(minutes=minutes)
 
     @staticmethod
     def _next_interval_candidate(
@@ -1180,9 +1455,9 @@ class A2AScheduleService:
         is_superuser: bool = False,
     ) -> datetime:
         if cycle_type == A2AScheduleTask.CYCLE_INTERVAL:
-            minutes = self._normalize_interval_minutes(
+            minutes = self._normalize_schedule_minutes(
                 time_point.get("minutes", time_point.get("interval_minutes")),
-                is_superuser=is_superuser,
+                cycle_type="interval",
             )
             return after_local + timedelta(minutes=minutes)
 
@@ -1275,13 +1550,21 @@ class A2AScheduleService:
             is_superuser=is_superuser,
             timezone_str=timezone_value,
         )
+        if normalized_cycle == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            after = ensure_utc(after_utc)
+            guard = ensure_utc(not_before_utc or after_utc)
+            baseline = after if after >= guard else guard
+            return self._compute_sequential_next_run_at(
+                time_point=normalized_point,
+                after_utc=baseline,
+            )
 
         if normalized_cycle == A2AScheduleTask.CYCLE_INTERVAL:
-            minutes = self._normalize_interval_minutes(
+            minutes = self._normalize_schedule_minutes(
                 normalized_point.get(
                     "minutes", normalized_point.get("interval_minutes")
                 ),
-                is_superuser=is_superuser,
+                cycle_type="interval",
             )
             interval = timedelta(minutes=minutes)
             after = ensure_utc(after_utc)
@@ -1326,9 +1609,11 @@ a2a_schedule_service = A2AScheduleService()
 __all__ = [
     "A2A_MANUAL_SOURCE",
     "A2A_SCHEDULE_SOURCE",
+    "A2AScheduleConflictError",
     "A2AScheduleError",
     "A2AScheduleNotFoundError",
     "A2AScheduleQuotaError",
+    "A2AScheduleServiceBusyError",
     "A2AScheduleService",
     "A2AScheduleValidationError",
     "ClaimedA2AScheduleTask",

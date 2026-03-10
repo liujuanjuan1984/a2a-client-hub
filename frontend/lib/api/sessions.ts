@@ -51,6 +51,13 @@ export type SessionContinueBinding = {
   metadata?: Record<string, unknown> | null;
 };
 
+export type SessionCancelResult = {
+  conversationId: string;
+  taskId?: string | null;
+  cancelled: boolean;
+  status: "accepted" | "pending" | "no_inflight" | "already_terminal";
+};
+
 export const listSessionsPage = async (options?: {
   page?: number;
   size?: number;
@@ -188,3 +195,13 @@ export const continueSession = async (
         : null,
   };
 };
+
+export const cancelSession = async (
+  conversationId: string,
+): Promise<SessionCancelResult> =>
+  apiRequest<SessionCancelResult>(
+    `/me/conversations/${encodeURIComponent(conversationId)}/cancel`,
+    {
+      method: "POST",
+    },
+  );

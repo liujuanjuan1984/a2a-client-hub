@@ -11,6 +11,7 @@ def status_code_for_invoke_session_error(detail: str) -> int:
         return 404
     if normalized in {
         "invoke_inflight",
+        "invoke_interrupt_failed",
         "idempotency_conflict",
         "message_id_conflict",
     }:
@@ -35,6 +36,8 @@ def ws_error_code_for_invoke_session_error(detail: str) -> str:
         return "session_not_found"
     if normalized == "invoke_inflight":
         return "invoke_inflight"
+    if normalized == "invoke_interrupt_failed":
+        return "invoke_interrupt_failed"
     if normalized == "idempotency_conflict":
         return "idempotency_conflict"
     if normalized == "message_id_conflict":

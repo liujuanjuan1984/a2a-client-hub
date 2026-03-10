@@ -3,10 +3,6 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { SessionsScreen } from "@/screens/SessionsScreen";
 
 const mockContinueSession = jest.fn();
-const mockPromptOpencodeSessionAsync = jest.fn();
-const mockToastSuccess = jest.fn();
-const mockToastError = jest.fn();
-const mockRefresh = jest.fn();
 const mockLoadMore = jest.fn();
 
 const sessionsItems = [
@@ -76,69 +72,25 @@ jest.mock("@/hooks/useSessionsDirectoryQuery", () => ({
     loading: false,
     refreshing: false,
     loadingMore: false,
-    refresh: (...args: unknown[]) => mockRefresh(...args),
+    refresh: jest.fn(),
     loadMore: (...args: unknown[]) => mockLoadMore(...args),
   }),
 }));
 
-jest.mock("@/lib/api/a2aExtensions", () => ({
-  A2AExtensionCallError: class extends Error {
-    errorCode: string | null = null;
-    upstreamError: Record<string, unknown> | null = null;
-  },
-  promptOpencodeSessionAsync: (...args: unknown[]) =>
-    mockPromptOpencodeSessionAsync(...args),
-}));
-
-jest.mock("@/lib/toast", () => ({
-  toast: {
-    success: (...args: unknown[]) => mockToastSuccess(...args),
-    error: (...args: unknown[]) => mockToastError(...args),
-  },
-}));
-
-describe("SessionsScreen prompt_async trigger", () => {
+describe("SessionsScreen Async Continue visibility", () => {
   beforeEach(() => {
     mockContinueSession.mockReset();
-    mockPromptOpencodeSessionAsync.mockReset().mockResolvedValue({
-      ok: true,
-      sessionId: "ses-op-1",
-    });
-    mockToastSuccess.mockReset();
-    mockToastError.mockReset();
-    mockRefresh.mockReset().mockResolvedValue(undefined);
     mockLoadMore.mockReset();
   });
 
-  it("triggers opencode prompt_async from sessions list", async () => {
+  it("does not render async continue entry in sessions cards", async () => {
     let tree!: ReactTestRenderer;
     await act(async () => {
       tree = create(<SessionsScreen />);
     });
 
-    const asyncButton = tree.root.findByProps({ label: "Async Continue" });
-    await act(async () => {
-      await asyncButton.props.onPress();
-    });
-
-    expect(mockPromptOpencodeSessionAsync).toHaveBeenCalledWith({
-      source: "shared",
-      agentId: "agent-1",
-      sessionId: "ses-op-1",
-      request: {
-        parts: [
-          {
-            type: "text",
-            text: "Continue from the latest context and summarize next steps.",
-          },
-        ],
-        noReply: true,
-      },
-    });
-    expect(mockToastSuccess).toHaveBeenCalledWith(
-      "Async continue started",
-      "The upstream session accepted prompt_async.",
+    expect(tree.root.findAllByProps({ label: "Async Continue" })).toHaveLength(
+      0,
     );
-    expect(mockRefresh).toHaveBeenCalledTimes(1);
   });
 });

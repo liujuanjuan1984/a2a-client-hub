@@ -7,7 +7,12 @@ import {
 const DEFAULT_PAGE_SIZE = 50;
 type PageOptions = { page?: number; size?: number };
 
-export type ScheduleCycleType = "daily" | "weekly" | "monthly" | "interval";
+export type ScheduleCycleType =
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "interval"
+  | "sequential";
 
 export type DailyTimePoint = { time: string };
 export type WeeklyTimePoint = { weekday: number; time: string };
@@ -17,11 +22,15 @@ export type IntervalTimePoint = {
   start_at_local?: string;
   start_at_utc?: string;
 };
+export type SequentialTimePoint = {
+  minutes: number;
+};
 export type ScheduleTimePoint =
   | DailyTimePoint
   | WeeklyTimePoint
   | MonthlyTimePoint
-  | IntervalTimePoint;
+  | IntervalTimePoint
+  | SequentialTimePoint;
 
 export type ScheduledJob = {
   id: string;
@@ -146,6 +155,11 @@ export const markScheduledJobFailed = (
       body: payload,
     },
   );
+
+export const deleteScheduledJob = (jobId: string) =>
+  apiRequest<void>(`/me/a2a/schedules/${jobId}`, {
+    method: "DELETE",
+  });
 
 export const listScheduledJobExecutionsPage = async (
   taskId: string,

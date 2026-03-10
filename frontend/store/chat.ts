@@ -24,6 +24,19 @@ import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
 import { executeChatRuntime } from "@/store/chatRuntime";
 
+const requestSessionCancel = (conversationId: string) => {
+  chatConnectionService
+    .cancelSession(conversationId)
+    .then((result) => {
+      if (result?.status === "pending") {
+        console.info("Server accepted pending cancellation for conversation", {
+          conversationId,
+        });
+      }
+    })
+    .catch(() => undefined);
+};
+
 type ChatState = {
   sessions: Record<string, AgentSession>;
   ensureSession: (
@@ -236,12 +249,15 @@ export const useChatStore = create<ChatState>()(
         );
       },
       cancelMessage: (conversationId) => {
-        chatConnectionService.cancelSession(conversationId);
+        requestSessionCancel(conversationId);
       },
       sendMessage: async (conversationId, agentId, content, agentSource) => {
         const trimmed = content.trim();
         if (!trimmed) return;
 
+        const previousSession = get().sessions[conversationId];
+        const shouldInterruptPrevious =
+          previousSession?.streamState === "streaming";
         get().cancelMessage(conversationId);
 
         const userMessage = {
@@ -288,6 +304,7 @@ export const useChatStore = create<ChatState>()(
         const payload = buildInvokePayload(trimmed, session, conversationId, {
           userMessageId: userMessage.id,
           agentMessageId: agentMessage.id,
+          interrupt: shouldInterruptPrevious,
         });
 
         await executeChatRuntime(
@@ -315,6 +332,7 @@ export const useChatStore = create<ChatState>()(
           return;
         }
 
+        const shouldInterruptPrevious = session?.streamState === "streaming";
         get().cancelMessage(conversationId);
 
         const existingAgentMessage = messages.find(
@@ -362,6 +380,7 @@ export const useChatStore = create<ChatState>()(
           {
             userMessageId,
             agentMessageId,
+            interrupt: shouldInterruptPrevious,
           },
         );
         await executeChatRuntime(
@@ -393,11 +412,11 @@ export const useChatStore = create<ChatState>()(
           }
 
           cleanupPlan.expiredConversationIds.forEach((conversationId) => {
-            chatConnectionService.cancelSession(conversationId);
+            requestSessionCancel(conversationId);
             removeConversationMessages(conversationId);
           });
           cleanupPlan.trimmedConversationIds.forEach((conversationId) => {
-            chatConnectionService.cancelSession(conversationId);
+            requestSessionCancel(conversationId);
             removeConversationMessages(conversationId);
           });
 

@@ -74,6 +74,7 @@ export function ScheduledJobForm({
     { value: "weekly", label: "Weekly" },
     { value: "monthly", label: "Monthly" },
     { value: "interval", label: "Interval" },
+    { value: "sequential", label: "Sequential" },
   ];
   const weekdayOptions: { value: number; label: string }[] = [
     { value: 1, label: "Mon" },
@@ -109,6 +110,12 @@ export function ScheduledJobForm({
       return {
         minutes: typeof minutes === "number" ? minutes : 10,
         start_at_local: resolvedStartAt,
+      };
+    }
+    if (nextCycle === "sequential") {
+      const minutes = (current as { minutes?: unknown })?.minutes;
+      return {
+        minutes: typeof minutes === "number" ? minutes : 10,
       };
     }
     const time = (current as { time?: unknown })?.time;
@@ -272,9 +279,13 @@ export function ScheduledJobForm({
         </>
       ) : null}
 
-      {form.cycle_type === "interval" ? (
+      {form.cycle_type === "interval" || form.cycle_type === "sequential" ? (
         <>
-          {renderLabel("Interval minutes (5..1440)")}
+          {renderLabel(
+            form.cycle_type === "sequential"
+              ? "Wait minutes after completion (5..1440)"
+              : "Interval minutes (5..1440)",
+          )}
           <TextInput
             className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
             value={String((form.time_point as any)?.minutes ?? "")}
@@ -286,43 +297,55 @@ export function ScheduledJobForm({
               if (!Number.isFinite(parsed)) {
                 return;
               }
+              const intervalStartAt = (form.time_point as any)?.start_at_local;
+              const nextTimePoint: Record<string, unknown> = {
+                minutes: parsed,
+              };
+              if (
+                form.cycle_type === "interval" &&
+                typeof intervalStartAt === "string" &&
+                intervalStartAt.trim()
+              ) {
+                nextTimePoint.start_at_local = intervalStartAt;
+              }
               onChange({
-                time_point: {
-                  ...(form.time_point as any),
-                  minutes: parsed,
-                },
+                time_point: nextTimePoint as any,
               });
             }}
             placeholder="10"
             placeholderTextColor="#64748B"
             keyboardType="number-pad"
           />
-          {renderLabel("Start datetime (local) (optional)")}
-          <TextInput
-            className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
-            value={startAtInputValue}
-            onChangeText={(value) => {
-              isEditingStartAtRef.current = true;
-              setStartAtInputValue(value);
-              const next = {
-                ...(form.time_point as any),
-              };
-              if (value.trim()) {
-                next.start_at_local = value.trim();
-              } else {
-                delete next.start_at_local;
-              }
-              onChange({
-                time_point: next,
-              });
-            }}
-            onBlur={() => {
-              isEditingStartAtRef.current = false;
-            }}
-            placeholder="2026-02-23T14:30"
-            placeholderTextColor="#64748B"
-            keyboardType="default"
-          />
+          {form.cycle_type === "interval" ? (
+            <>
+              {renderLabel("Start datetime (local) (optional)")}
+              <TextInput
+                className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
+                value={startAtInputValue}
+                onChangeText={(value) => {
+                  isEditingStartAtRef.current = true;
+                  setStartAtInputValue(value);
+                  const next = {
+                    ...(form.time_point as any),
+                  };
+                  if (value.trim()) {
+                    next.start_at_local = value.trim();
+                  } else {
+                    delete next.start_at_local;
+                  }
+                  onChange({
+                    time_point: next,
+                  });
+                }}
+                onBlur={() => {
+                  isEditingStartAtRef.current = false;
+                }}
+                placeholder="2026-02-23T14:30"
+                placeholderTextColor="#64748B"
+                keyboardType="default"
+              />
+            </>
+          ) : null}
         </>
       ) : (
         <>

@@ -47,13 +47,6 @@ export const isSameMessageList = (
   });
 };
 
-export const COLLAPSED_TEXT_LINES = 10;
-export const COLLAPSED_TEXT_CHAR_LIMIT = 300;
-
-export const shouldCollapseByLength = (value: string) => {
-  return value.length > COLLAPSED_TEXT_CHAR_LIMIT;
-};
-
 export type ExternalSessionRef = {
   provider?: string | null;
   externalSessionId?: string | null;
@@ -121,6 +114,7 @@ export const buildInvokePayload = (
     userMessageId?: string;
     agentMessageId?: string;
     resumeFromSequence?: number;
+    interrupt?: boolean;
   },
 ): A2AAgentInvokeRequest => {
   const payload: A2AAgentInvokeRequest = { query, conversationId };
@@ -167,6 +161,22 @@ export const buildInvokePayload = (
   }
   if (Object.keys(metadata).length > 0) {
     payload.metadata = metadata;
+  }
+  if (options?.interrupt) {
+    const resolvedMetadata: Record<string, unknown> = {
+      ...((payload.metadata as Record<string, unknown> | undefined) ?? {}),
+    };
+    const currentExtensions =
+      typeof resolvedMetadata.extensions === "object" &&
+      resolvedMetadata.extensions !== null &&
+      !Array.isArray(resolvedMetadata.extensions)
+        ? { ...(resolvedMetadata.extensions as Record<string, unknown>) }
+        : {};
+    resolvedMetadata.extensions = {
+      ...currentExtensions,
+      interrupt: true,
+    };
+    payload.metadata = resolvedMetadata;
   }
   return payload;
 };

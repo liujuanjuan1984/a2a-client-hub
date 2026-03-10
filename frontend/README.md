@@ -26,6 +26,13 @@ Server state and client state are intentionally separated:
 - Zustand stores are reserved for local UI state and live interaction state (e.g. stream progress, local drafts).
 - On logout/session invalidation, clear both query cache and persisted client stores to avoid cross-account residue.
 
+## Local Persistence Resilience
+
+- Auth token remains memory-only and is recovered via refresh-cookie flow; it is not persisted in local storage.
+- Native MMKV persistence uses isolated instances by key family to reduce interference between high-volume and regular stores.
+- Persisted data is treated as disposable cache: invalid payloads are dropped instead of recovered.
+- High-volume chat payloads use bounded persistence strategy (compaction on web quota pressure).
+
 ## Routing Conventions
 
 This project uses Expo Router (React Navigation). The main app area uses `Tabs` (Agents/Sessions/Jobs) as the global navigation.

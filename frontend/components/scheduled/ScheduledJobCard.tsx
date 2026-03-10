@@ -65,6 +65,7 @@ type ScheduledJobCardProps = {
   executionsLoadingMore?: boolean;
   onToggleEnabled: () => void | Promise<void>;
   onEdit: () => void;
+  onDelete?: () => void | Promise<void>;
   onMarkFailed?: () => void | Promise<void>;
   onToggleExecutions: () => void;
   onLoadMoreExecutions?: () => void;
@@ -81,6 +82,7 @@ export function ScheduledJobCard({
   executionsLoadingMore,
   onToggleEnabled,
   onEdit,
+  onDelete,
   onMarkFailed,
   onToggleExecutions,
   onLoadMoreExecutions,
@@ -97,6 +99,7 @@ export function ScheduledJobCard({
       : null;
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [markingFailed, setMarkingFailed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const canMarkFailed = isReallyRunning;
 
@@ -134,17 +137,35 @@ export function ScheduledJobCard({
     }
   };
 
+  const handleDelete = async () => {
+    if (!onDelete || deleting) return;
+    const confirmed = await confirmAction({
+      title: "Delete scheduled job?",
+      message: "This action cannot be undone.",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <View
       className={`mb-4 rounded-2xl overflow-hidden bg-surface shadow-sm ${tone.container}`}
     >
-      <View className="p-5">
+      <View className="px-4 py-4">
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-[11px] font-semibold uppercase tracking-widest text-neo-green">
+          <Text className="text-[10px] font-semibold uppercase tracking-widest text-neo-green">
             {agentName}
           </Text>
           <View className="bg-black/20 rounded px-1.5 py-0.5">
-            <Text className={`text-[9px] font-bold ${tone.text}`}>
+            <Text className={`text-[10px] font-bold ${tone.text}`}>
               {tone.statusText}
             </Text>
           </View>
@@ -152,7 +173,7 @@ export function ScheduledJobCard({
 
         <View className="flex-row items-start justify-between">
           <View className="flex-1 pr-3">
-            <Text className={`text-sm font-bold ${tone.title}`}>
+            <Text className={`text-[13px] font-semibold ${tone.title}`}>
               {job.name}
             </Text>
             <Text className={`mt-1.5 text-[11px] font-normal ${tone.text}`}>
@@ -186,29 +207,29 @@ export function ScheduledJobCard({
 
         {promptExpanded && (
           <View className="mt-4 pt-4 border-t border-white/5">
-            <Text className={`text-sm leading-6 ${tone.prompt}`}>
+            <Text className={`text-[11px] leading-5 ${tone.prompt}`}>
               {job.prompt}
             </Text>
           </View>
         )}
       </View>
 
-      <View className="flex-row items-center justify-between gap-3 bg-black/30 px-5 py-3">
+      <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
         <View className="flex-row items-center gap-2">
+          {!canMarkFailed ? (
+            <Button
+              label="Edit"
+              size="xs"
+              variant="secondary"
+              iconLeft="create-outline"
+              onPress={onEdit}
+            />
+          ) : null}
           <Button
-            label="Edit"
+            label={promptExpanded ? "Less" : "More"}
             size="xs"
             variant="secondary"
-            iconLeft="create-outline"
-            onPress={onEdit}
-          />
-          <Button
-            label={promptExpanded ? "Less" : "Info"}
-            size="xs"
-            variant={promptExpanded ? "primary" : "secondary"}
-            iconLeft={
-              promptExpanded ? "chevron-up" : "information-circle-outline"
-            }
+            iconLeft={promptExpanded ? "chevron-up" : "chevron-down"}
             onPress={() => setPromptExpanded(!promptExpanded)}
           />
           <Button
@@ -220,21 +241,35 @@ export function ScheduledJobCard({
           />
         </View>
 
-        {canMarkFailed ? (
-          <Button
-            label="Stop"
-            size="xs"
-            variant="danger"
-            className="bg-red-500/40"
-            loading={markingFailed}
-            disabled={!onMarkFailed}
-            onPress={handleMarkFailed}
-          />
-        ) : null}
+        <View className="flex-row items-center gap-2">
+          {canMarkFailed ? (
+            <Button
+              label="Stop"
+              size="xs"
+              variant="danger"
+              className="bg-red-500/40"
+              loading={markingFailed}
+              disabled={!onMarkFailed}
+              onPress={handleMarkFailed}
+            />
+          ) : null}
+          {!canMarkFailed ? (
+            <Button
+              label="Delete"
+              size="xs"
+              variant="danger"
+              className="bg-red-500/40"
+              iconLeft="trash-outline"
+              loading={deleting}
+              disabled={!onDelete}
+              onPress={handleDelete}
+            />
+          ) : null}
+        </View>
       </View>
 
       {executionsOpen ? (
-        <View className="bg-black/10 px-5 pb-5 pt-1">
+        <View className="bg-black/10 px-4 pb-4 pt-1">
           <View className="rounded-xl bg-black/20 p-4">
             {executionsLoading ? (
               <Text className="text-[11px] font-medium text-slate-500">

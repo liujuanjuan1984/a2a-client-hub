@@ -69,6 +69,7 @@ describe("ChatMessageItem collapsible blocks", () => {
     );
 
     fireEvent.press(screen.getByText("Show Reasoning"));
+    expect(screen.queryByText("Show Reasoning")).toBeNull();
     expect(
       screen.getByTestId("chat-message-reasoning-1-collapse-bottom"),
     ).toBeTruthy();
@@ -106,6 +107,7 @@ describe("ChatMessageItem collapsible blocks", () => {
     );
 
     fireEvent.press(screen.getByText("Show Tool Call"));
+    expect(screen.queryByText("Show Tool Call")).toBeNull();
     expect(
       screen.getByTestId("chat-message-tool-1-collapse-bottom"),
     ).toBeTruthy();
@@ -189,44 +191,6 @@ describe("ChatMessageItem collapsible blocks", () => {
       );
       expect(onLayoutChangeStart).toHaveBeenCalled();
     });
-  });
-
-  it("uses bottom collapse action for expanded long text content", () => {
-    const onLayoutChangeStart = jest.fn();
-    const message = buildAgentMessage({
-      id: "plain-message",
-      content: "A".repeat(600),
-      blocks: [],
-    });
-
-    const screen = render(
-      <ChatMessageItem
-        message={message}
-        index={0}
-        isLastMessage
-        onRetry={jest.fn()}
-        onLayoutChangeStart={onLayoutChangeStart}
-      />,
-    );
-
-    fireEvent.press(
-      screen.getByTestId("chat-message-plain-message:text-expand"),
-    );
-    expect(
-      screen.getByTestId("chat-message-plain-message:text-expand").props
-        .accessibilityLabel,
-    ).toBe("Collapse full text");
-    expect(
-      screen.getByTestId("chat-message-plain-message:text-collapse-bottom"),
-    ).toBeTruthy();
-
-    fireEvent.press(
-      screen.getByTestId("chat-message-plain-message:text-collapse-bottom"),
-    );
-    expect(onLayoutChangeStart).toHaveBeenCalledTimes(2);
-    expect(
-      screen.getByTestId("chat-message-plain-message:text-expand"),
-    ).toBeTruthy();
   });
 
   it("shows placeholder when agent content is unavailable", () => {

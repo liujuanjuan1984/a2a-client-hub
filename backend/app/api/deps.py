@@ -5,6 +5,7 @@ Supports JWT-based user authentication.
 """
 
 import re
+from dataclasses import dataclass
 from typing import AsyncGenerator
 from uuid import UUID
 
@@ -12,18 +13,34 @@ from fastapi import Depends, HTTPException, WebSocket, WebSocketException, statu
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.retry_after import append_retry_after_hint
 from app.core.config import settings
-from app.core.logging import set_user_context
+from app.core.logging import get_logger, set_user_context
 from app.core.security import verify_access_token
+from app.db.locking import (
+    RetryableDbLockError,
+    RetryableDbQueryTimeoutError,
+)
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.handlers import auth as auth_handler
-from app.services.ws_ticket_service import WsTicketError, ws_ticket_service
+from app.services.ops_metrics import ops_metrics
+from app.services.ws_ticket_service import (
+    WsTicketError,
+    ws_ticket_service,
+)
 
 # Security scheme for OpenAPI documentation
 security = HTTPBearer()
 
 _WS_TICKET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class WsProtocolSelection:
+    ticket: str | None
+    accepted_subprotocol: str | None
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
@@ -100,6 +117,39 @@ def _is_ws_origin_allowed(origin: str | None) -> bool:
     return False
 
 
+def _parse_ws_protocol_selection(
+    *,
+    subprotocol_header: str | None,
+    allowed_subprotocols: tuple[str, ...] = (),
+) -> WsProtocolSelection:
+    if not subprotocol_header:
+        return WsProtocolSelection(ticket=None, accepted_subprotocol=None)
+
+    expected_len = settings.ws_ticket_length
+    allowed = {item.strip() for item in allowed_subprotocols if item.strip()}
+    ticket: str | None = None
+    accepted_subprotocol: str | None = None
+
+    for raw_value in subprotocol_header.split(","):
+        candidate = raw_value.strip()
+        if not candidate:
+            continue
+        if (
+            ticket is None
+            and len(candidate) == expected_len
+            and _WS_TICKET_RE.match(candidate)
+        ):
+            ticket = candidate
+            continue
+        if accepted_subprotocol is None and candidate in allowed:
+            accepted_subprotocol = candidate
+
+    return WsProtocolSelection(
+        ticket=ticket,
+        accepted_subprotocol=accepted_subprotocol,
+    )
+
+
 async def get_ws_ticket_user(
     *,
     websocket: WebSocket,
@@ -128,18 +178,12 @@ async def get_ws_ticket_user(
             code=status.WS_1008_POLICY_VIOLATION, reason="Origin not allowed"
         )
 
-    # We extract the ticket from the Sec-WebSocket-Protocol header to avoid
-    # leaking it in URL query parameters.
-    ticket = None
-    subprotocols = websocket.headers.get("sec-websocket-protocol")
-    if subprotocols:
-        expected_len = settings.ws_ticket_length
-        for proto in subprotocols.split(","):
-            candidate = proto.strip()
-            # Tickets are generated with a fixed length and base64url-ish charset.
-            if len(candidate) == expected_len and _WS_TICKET_RE.match(candidate):
-                ticket = candidate
-                break
+    # Extract the auth ticket from Sec-WebSocket-Protocol without treating it as
+    # a negotiated application subprotocol.
+    protocol_selection = _parse_ws_protocol_selection(
+        subprotocol_header=websocket.headers.get("sec-websocket-protocol")
+    )
+    ticket = protocol_selection.ticket
 
     if not ticket:
         raise WebSocketException(
@@ -153,6 +197,44 @@ async def get_ws_ticket_user(
             scope_type=scope_type,
             scope_id=scope_id,
         )
+    except RetryableDbLockError as exc:
+        ops_metrics.increment_ws_ticket_lock_conflicts()
+        logger.warning(
+            "WS ticket consume deferred due to DB lock contention for scope_type=%s scope_id=%s kind=%s",
+            scope_type,
+            scope_id,
+            exc.kind.value,
+            exc_info=exc,
+            extra={
+                "phase": "ws_ticket_auth",
+                "scope_type": scope_type,
+                "scope_id": str(scope_id),
+                "ws_ticket_conflict": True,
+                "db_lock_failure_kind": exc.kind.value,
+            },
+        )
+        raise WebSocketException(
+            code=status.WS_1013_TRY_AGAIN_LATER,
+            reason=append_retry_after_hint(str(exc)),
+        ) from exc
+    except RetryableDbQueryTimeoutError as exc:
+        ops_metrics.increment_ws_ticket_query_timeouts()
+        logger.warning(
+            "WS ticket consume deferred due to DB query timeout for scope_type=%s scope_id=%s",
+            scope_type,
+            scope_id,
+            exc_info=exc,
+            extra={
+                "phase": "ws_ticket_auth",
+                "scope_type": scope_type,
+                "scope_id": str(scope_id),
+                "ws_ticket_query_timeout": True,
+            },
+        )
+        raise WebSocketException(
+            code=status.WS_1013_TRY_AGAIN_LATER,
+            reason=append_retry_after_hint(str(exc)),
+        ) from exc
     except WsTicketError as exc:
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION, reason=str(exc)
@@ -163,7 +245,7 @@ async def get_ws_ticket_user(
             db,
             user_id=consumed.user_id,
         )
-        websocket.state.selected_subprotocol = ticket
+        websocket.state.selected_subprotocol = protocol_selection.accepted_subprotocol
         set_user_context(str(user.id))
         return user
     except auth_handler.UserNotFoundError as exc:

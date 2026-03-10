@@ -5,10 +5,15 @@ import {
   type A2AAgentInvokeRequest,
 } from "@/lib/api/a2aAgents";
 import {
+  ApiRequestError,
   isAuthorizationFailureError,
   isAuthFailureError,
 } from "@/lib/api/client";
 import { getHubInvokeWsTicket } from "@/lib/api/hubA2aAgentsUser";
+import {
+  type SessionCancelResult,
+  cancelSession as cancelSessionApi,
+} from "@/lib/api/sessions";
 import { fetchSSE } from "@/lib/api/sse";
 import { ENV } from "@/lib/config";
 import type { AgentSource } from "@/store/agents";
@@ -128,6 +133,19 @@ const resolveWsText = async (data: unknown): Promise<string | null> => {
   return null;
 };
 
+const isSessionNotFoundCancellationError = (error: unknown): boolean => {
+  if (!(error instanceof ApiRequestError)) {
+    return false;
+  }
+  if (error.errorCode === "session_not_found") {
+    return true;
+  }
+  if (error.status !== 404) {
+    return false;
+  }
+  return error.message.includes("session_not_found");
+};
+
 class ChatConnectionService {
   private readonly abortControllers = new Map<string, AbortController>();
   private readonly wsConnections = new Map<string, WsConnection>();
@@ -138,7 +156,9 @@ class ChatConnectionService {
     return "http_json";
   }
 
-  cancelSession(conversationId: string) {
+  async cancelSession(
+    conversationId: string,
+  ): Promise<SessionCancelResult | null> {
     const controller = this.abortControllers.get(conversationId);
     if (controller) {
       controller.abort();
@@ -154,6 +174,32 @@ class ChatConnectionService {
         // Ignore close errors.
       }
       this.wsConnections.delete(conversationId);
+    }
+
+    const normalizedConversationId = conversationId.trim();
+    if (!normalizedConversationId) {
+      return null;
+    }
+
+    try {
+      return await cancelSessionApi(normalizedConversationId);
+    } catch (error) {
+      if (isAuthFailureError(error) || isAuthorizationFailureError(error)) {
+        return null;
+      }
+      if (isSessionNotFoundCancellationError(error)) {
+        return {
+          conversationId: normalizedConversationId,
+          taskId: null,
+          cancelled: false,
+          status: "no_inflight",
+        };
+      }
+      console.warn("Failed to request server-side task cancellation", {
+        conversationId: normalizedConversationId,
+        error,
+      });
+      return null;
     }
   }
 

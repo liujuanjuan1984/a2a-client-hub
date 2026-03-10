@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import {
+  deleteScheduledJob,
   disableScheduledJob,
   enableScheduledJob,
   markScheduledJobFailed,
@@ -31,6 +32,16 @@ export function useScheduledJobs() {
     [queryClient],
   );
 
+  const removeJob = useCallback(
+    async (job: ScheduledJob) => {
+      await deleteScheduledJob(job.id);
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.schedules.listRoot(),
+      });
+    },
+    [queryClient],
+  );
+
   const markJobFailed = useCallback(
     async (job: ScheduledJob, reason?: string) => {
       await markScheduledJobFailed(job.id, { reason });
@@ -49,5 +60,6 @@ export function useScheduledJobs() {
   return {
     markJobFailed,
     toggleJobStatus,
+    removeJob,
   };
 }
