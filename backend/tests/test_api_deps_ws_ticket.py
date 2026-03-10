@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -75,7 +74,6 @@ async def test_get_ws_ticket_user_does_not_echo_ticket_as_selected_subprotocol(
         websocket=websocket,
         scope_type="me_a2a_agent",
         scope_id=uuid4(),
-        db=MagicMock(),
     )
 
     assert user is active_user
@@ -100,7 +98,6 @@ async def test_get_ws_ticket_user_returns_try_again_later_on_ticket_conflict(
             websocket=_build_websocket(ticket="a" * settings.ws_ticket_length),
             scope_type="me_a2a_agent",
             scope_id=uuid4(),
-            db=MagicMock(),
         )
 
     assert exc_info.value.code == status.WS_1013_TRY_AGAIN_LATER
@@ -125,7 +122,6 @@ async def test_get_ws_ticket_user_keeps_policy_violation_for_invalid_ticket(
             websocket=_build_websocket(ticket="a" * settings.ws_ticket_length),
             scope_type="me_a2a_agent",
             scope_id=uuid4(),
-            db=MagicMock(),
         )
 
     assert exc_info.value.code == status.WS_1008_POLICY_VIOLATION
@@ -149,7 +145,6 @@ async def test_get_ws_ticket_user_returns_try_again_later_on_db_statement_timeou
             websocket=_build_websocket(ticket="a" * settings.ws_ticket_length),
             scope_type="me_a2a_agent",
             scope_id=uuid4(),
-            db=MagicMock(),
         )
 
     assert exc_info.value.code == status.WS_1013_TRY_AGAIN_LATER

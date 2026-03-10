@@ -46,12 +46,14 @@ class WsProtocolSelection:
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """Async database session dependency for FastAPI routes/services."""
 
-    async with AsyncSessionLocal() as session:
+    session = AsyncSessionLocal()
+    try:
         yield session
+    finally:
+        await session.close()
 
 
 async def get_current_user(
-    db: AsyncSession = Depends(get_async_db),
     token: HTTPAuthorizationCredentials = Depends(security),
 ) -> User:
     """
@@ -60,7 +62,6 @@ async def get_current_user(
     This dependency validates JWT token and returns the authenticated user.
 
     Args:
-        db: Database session
         token: JWT token from Authorization header
 
     Returns:
@@ -83,12 +84,13 @@ async def get_current_user(
         )
 
     try:
-        user = await auth_handler.get_active_user(
-            db,
-            user_id=user_uuid,
-        )
-        set_user_context(str(user.id))
-        return user
+        async with AsyncSessionLocal() as db:
+            user = await auth_handler.get_active_user(
+                db,
+                user_id=user_uuid,
+            )
+            set_user_context(str(user.id))
+            return user
     except auth_handler.UserNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -155,7 +157,6 @@ async def get_ws_ticket_user(
     websocket: WebSocket,
     scope_type: str,
     scope_id: UUID,
-    db: AsyncSession = Depends(get_async_db),
 ) -> User:
     """
     Get current authenticated user for WebSocket connections via WS ticket.
@@ -164,7 +165,6 @@ async def get_ws_ticket_user(
         websocket: WebSocket connection
         scope_type: Scope type for ticket validation
         scope_id: Scope identifier (e.g., agent_id)
-        db: Database session
 
     Returns:
         Current user instance
@@ -191,12 +191,22 @@ async def get_ws_ticket_user(
         )
 
     try:
-        consumed = await ws_ticket_service.consume_ticket(
-            db,
-            token=ticket,
-            scope_type=scope_type,
-            scope_id=scope_id,
-        )
+        async with AsyncSessionLocal() as db:
+            consumed = await ws_ticket_service.consume_ticket(
+                db,
+                token=ticket,
+                scope_type=scope_type,
+                scope_id=scope_id,
+            )
+            user = await auth_handler.get_active_user(
+                db,
+                user_id=consumed.user_id,
+            )
+            websocket.state.selected_subprotocol = (
+                protocol_selection.accepted_subprotocol
+            )
+            set_user_context(str(user.id))
+            return user
     except RetryableDbLockError as exc:
         ops_metrics.increment_ws_ticket_lock_conflicts()
         logger.warning(
@@ -239,15 +249,6 @@ async def get_ws_ticket_user(
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION, reason=str(exc)
         ) from exc
-
-    try:
-        user = await auth_handler.get_active_user(
-            db,
-            user_id=consumed.user_id,
-        )
-        websocket.state.selected_subprotocol = protocol_selection.accepted_subprotocol
-        set_user_context(str(user.id))
-        return user
     except auth_handler.UserNotFoundError as exc:
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION,
@@ -259,13 +260,11 @@ async def get_ws_ticket_user_me(
     *,
     websocket: WebSocket,
     agent_id: UUID,
-    db: AsyncSession = Depends(get_async_db),
 ) -> User:
     return await get_ws_ticket_user(
         websocket=websocket,
         scope_type="me_a2a_agent",
         scope_id=agent_id,
-        db=db,
     )
 
 
@@ -273,13 +272,11 @@ async def get_ws_ticket_user_hub(
     *,
     websocket: WebSocket,
     agent_id: UUID,
-    db: AsyncSession = Depends(get_async_db),
 ) -> User:
     return await get_ws_ticket_user(
         websocket=websocket,
         scope_type="hub_a2a_agent",
         scope_id=agent_id,
-        db=db,
     )
 
 
