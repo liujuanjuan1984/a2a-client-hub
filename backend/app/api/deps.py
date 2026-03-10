@@ -46,8 +46,13 @@ class WsProtocolSelection:
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """Async database session dependency for FastAPI routes/services."""
 
-    async with AsyncSessionLocal() as session:
+    session = AsyncSessionLocal()
+    try:
         yield session
+        await session.close()
+    except Exception:
+        await session.close()
+        raise
 
 
 async def get_current_user(
