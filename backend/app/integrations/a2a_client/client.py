@@ -443,9 +443,11 @@ class A2AClient:
 
         # Validate downstream card-declared endpoints before caching. This prevents the
         # SDK transport negotiation from selecting a disallowed interface later.
-        selected_target = self._resolve_negotiated_transport_target(card)
-        if selected_target is None:
-            supported = ", ".join(self._supported_transport_labels())
+        selected_transport, selected_url, supported_labels = (
+            self._resolve_negotiated_transport_target(card)
+        )
+        if not selected_transport or not selected_url:
+            supported = ", ".join(supported_labels)
             raise A2AAgentUnavailableError(
                 f"A2A agent '{redact_url_for_logging(self.agent_url)}' has no "
                 f"compatible transports (client supports: {supported})"
@@ -453,7 +455,6 @@ class A2AClient:
 
         # Validate only the negotiated transport target so non-selected interface URLs
         # (for unsupported protocols like GRPC) do not block HTTP-capable agents.
-        selected_transport, selected_url = selected_target
         try:
             validate_outbound_http_url(
                 selected_url,
@@ -471,58 +472,51 @@ class A2AClient:
         )
         return card
 
-    @staticmethod
-    def _normalize_transport_label(value: TransportProtocol | str | None) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, TransportProtocol):
-            return value.value.strip().upper()
-        return str(value).strip().upper()
-
-    def _supported_transport_labels(self) -> list[str]:
-        labels = [
-            self._normalize_transport_label(value)
-            for value in (self._supported_transports or [TransportProtocol.jsonrpc])
-        ]
-        normalized = [label for label in labels if label]
-        if normalized:
-            return normalized
-        return [TransportProtocol.jsonrpc.value]
-
     def _resolve_negotiated_transport_target(
         self, card: AgentCard
-    ) -> tuple[str, str] | None:
+    ) -> tuple[str | None, str | None, list[str]]:
+        def _as_transport_label(value: TransportProtocol | str | None) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, TransportProtocol):
+                return value.value.strip().upper()
+            return str(value).strip().upper()
+
+        supported_labels: list[str] = []
+        for value in self._supported_transports or [TransportProtocol.jsonrpc]:
+            label = _as_transport_label(value)
+            if label:
+                supported_labels.append(label)
+        if not supported_labels:
+            supported_labels = [TransportProtocol.jsonrpc.value]
+
         preferred_transport = (
             getattr(card, "preferred_transport", None) or TransportProtocol.jsonrpc
         )
         preferred_url = (getattr(card, "url", "") or "").strip()
 
         server_set: dict[str, str] = {}
-        preferred_label = self._normalize_transport_label(preferred_transport)
+        preferred_label = _as_transport_label(preferred_transport)
         if preferred_label and preferred_url:
             server_set[preferred_label] = preferred_url
 
         for iface in getattr(card, "additional_interfaces", None) or []:
-            transport = self._normalize_transport_label(
-                getattr(iface, "transport", None)
-            )
+            transport = _as_transport_label(getattr(iface, "transport", None))
             interface_url = (getattr(iface, "url", "") or "").strip()
             if transport and interface_url:
                 server_set[transport] = interface_url
 
-        client_set = self._supported_transport_labels()
-
         if self._use_client_preference:
-            for transport in client_set:
+            for transport in supported_labels:
                 url = server_set.get(transport)
                 if url:
-                    return transport, url
-            return None
+                    return transport, url, supported_labels
+            return None, None, supported_labels
 
         for transport, url in server_set.items():
-            if transport in client_set:
-                return transport, url
-        return None
+            if transport in supported_labels:
+                return transport, url, supported_labels
+        return None, None, supported_labels
 
     async def close(self) -> None:
         """Dispose cached transport wrappers.
