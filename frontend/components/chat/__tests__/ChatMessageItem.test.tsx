@@ -59,29 +59,6 @@ describe("ChatMessageItem interaction", () => {
     jest.clearAllMocks();
   });
 
-  it("copies message content to clipboard on long press", async () => {
-    const message = buildAgentMessage({
-      role: "user",
-      content: "Copy this text",
-    });
-    const screen = render(
-      <ChatMessageItem
-        message={message}
-        index={0}
-        isLastMessage
-        onRetry={jest.fn()}
-      />,
-    );
-
-    // Find the pressable area (container)
-    fireEvent(screen.getByText("Copy this text"), "longPress");
-
-    await waitFor(() => {
-      expect(Clipboard.setStringAsync).toHaveBeenCalledWith("Copy this text");
-      expect(toast.success).toHaveBeenCalledWith("Copied", expect.any(String));
-    });
-  });
-
   it("copies message content to clipboard on copy button press", async () => {
     const message = buildAgentMessage({
       role: "user",

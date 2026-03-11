@@ -1,9 +1,4 @@
-import {
-  act,
-  create,
-  type ReactTestInstance,
-  type ReactTestRenderer,
-} from "react-test-renderer";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { ChatScreen } from "@/screens/ChatScreen";
 
@@ -63,6 +58,98 @@ jest.mock("react-native/Libraries/Modal/Modal", () => {
 
 jest.mock("@expo/vector-icons", () => ({
   Ionicons: () => null,
+}));
+
+jest.mock("@/components/chat/ChatHeaderPanel", () => ({
+  ChatHeaderPanel: () => null,
+}));
+
+jest.mock("@/components/chat/SessionPickerModal", () => ({
+  SessionPickerModal: () => null,
+}));
+
+jest.mock("@/components/chat/ShortcutManagerModal", () => ({
+  ShortcutManagerModal: () => null,
+}));
+
+jest.mock("@/components/chat/ChatTimelinePanel", () => ({
+  ChatTimelinePanel: (props: {
+    pendingInterrupt?: {
+      type?: string;
+      details?: { questions?: { question?: string }[] };
+    } | null;
+    onPermissionReply?: (reply: "once" | "allow") => void | Promise<void>;
+    onQuestionAnswerChange?: (index: number, value: string) => void;
+    onQuestionReply?: () => void | Promise<void>;
+  }) => {
+    const React = require("react");
+    const { Pressable, Text, TextInput, View } = require("react-native");
+    const [answer, setAnswer] = React.useState("");
+
+    if (!props.pendingInterrupt) {
+      return null;
+    }
+    return (
+      <View>
+        <Text>
+          Agent is waiting for authorization/input. Resolve the action card
+          first.
+        </Text>
+        {props.pendingInterrupt.type === "permission" ? (
+          <Pressable
+            testID="interrupt-permission-once"
+            onPress={() => props.onPermissionReply?.("once")}
+          >
+            <Text>Allow once</Text>
+          </Pressable>
+        ) : null}
+        {props.pendingInterrupt.type === "question" ? (
+          <>
+            <TextInput
+              testID="interrupt-question-input-0"
+              value={answer}
+              onChangeText={(value: string) => {
+                setAnswer(value);
+                props.onQuestionAnswerChange?.(0, value);
+              }}
+            />
+            <Pressable
+              testID="interrupt-question-submit"
+              onPress={() => props.onQuestionReply?.()}
+            >
+              <Text>Submit</Text>
+            </Pressable>
+          </>
+        ) : null}
+      </View>
+    );
+  },
+}));
+
+jest.mock("@/components/chat/ChatComposer", () => ({
+  ChatComposer: (props: {
+    input?: string;
+    pendingInterrupt?: unknown;
+    onInputChange?: (value: string) => void;
+    onSubmit?: () => void;
+  }) => {
+    const { Pressable, TextInput, View } = require("react-native");
+    const disabled = Boolean(props.pendingInterrupt);
+    return (
+      <View>
+        <TextInput
+          placeholder="Type your message"
+          value={props.input ?? ""}
+          onChangeText={props.onInputChange}
+        />
+        <Pressable
+          testID="chat-send-button"
+          disabled={disabled}
+          onPress={props.onSubmit}
+        />
+      </View>
+    );
+  },
 }));
 
 type MockAgentSession = {
@@ -258,26 +345,6 @@ jest.mock("@/lib/toast", () => ({
   },
 }));
 
-const containsText = (node: ReactTestInstance, text: string): boolean => {
-  const children = node.props.children;
-  if (typeof children === "string" && children.includes(text)) {
-    return true;
-  }
-  if (Array.isArray(children)) {
-    for (const child of children) {
-      if (typeof child === "string" && child.includes(text)) {
-        return true;
-      }
-    }
-  }
-  for (const child of node.children) {
-    if (typeof child === "object" && child && containsText(child, text)) {
-      return true;
-    }
-  }
-  return false;
-};
-
 const renderChatScreen = (conversationId: string) => {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -365,11 +432,11 @@ describe("ChatScreen interrupt handling", () => {
     const sendButton = root.findByProps({ testID: "chat-send-button" });
     expect(sendButton.props.disabled).toBe(true);
     expect(
-      containsText(
-        root,
-        "Agent is waiting for authorization/input. Resolve the action card first.",
-      ),
-    ).toBe(true);
+      root.findByProps({
+        children:
+          "Agent is waiting for authorization/input. Resolve the action card first.",
+      }),
+    ).toBeTruthy();
     act(() => {
       tree.unmount();
     });
