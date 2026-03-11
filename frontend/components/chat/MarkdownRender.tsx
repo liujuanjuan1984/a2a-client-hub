@@ -11,6 +11,8 @@ interface MarkdownRenderProps {
   isAgent?: boolean;
 }
 
+const NON_ASCII_INLINE_CODE_RE = /[^\x00-\x7F]/;
+
 export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
   const handleCopyCode = useCallback(async (code: string) => {
     try {
@@ -65,7 +67,9 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
       code_inline: {
         fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
         color: "#F87171", // keep clear inline-code emphasis without a box
-        fontWeight: "600",
+      },
+      code_inline_fallback: {
+        ...(Platform.OS === "android" ? { fontFamily: "sans-serif" } : {}),
       },
       code_block: {
         backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -139,6 +143,21 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
           </View>
           <Text style={styles.code_block}>{content.trim()}</Text>
         </View>
+      );
+    },
+    code_inline: (node, children, parent, styles) => {
+      const inlineCode = String(node.content ?? "");
+      const hasNonAsciiGlyph = NON_ASCII_INLINE_CODE_RE.test(inlineCode);
+      return (
+        <Text
+          key={node.key}
+          style={[
+            styles.code_inline,
+            hasNonAsciiGlyph ? styles.code_inline_fallback : null,
+          ]}
+        >
+          {inlineCode}
+        </Text>
       );
     },
   };
