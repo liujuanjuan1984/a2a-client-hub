@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -152,3 +153,35 @@ async def test_get_ws_ticket_user_returns_try_again_later_on_db_statement_timeou
         "Ticket verification timed out; service busy, retry shortly."
         f" Retry in {DB_BUSY_RETRY_AFTER_SECONDS} seconds."
     )
+
+
+@pytest.mark.asyncio
+async def test_get_async_db_closes_session_even_if_dependency_cleanup_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    close_started = asyncio.Event()
+    close_released = asyncio.Event()
+    close_finished = asyncio.Event()
+
+    class _FakeSession:
+        async def close(self) -> None:
+            close_started.set()
+            await close_released.wait()
+            close_finished.set()
+
+    session = _FakeSession()
+    monkeypatch.setattr(api_deps, "AsyncSessionLocal", lambda: session)
+
+    dependency = api_deps.get_async_db()
+    yielded = await dependency.__anext__()
+
+    assert yielded is session
+
+    close_task = asyncio.create_task(dependency.aclose())
+    await asyncio.wait_for(close_started.wait(), timeout=1.0)
+    close_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await close_task
+
+    close_released.set()
+    await asyncio.wait_for(close_finished.wait(), timeout=1.0)

@@ -224,6 +224,87 @@ async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
 
 
 @pytest.mark.asyncio
+async def test_run_http_invoke_route_stream_closes_db_even_if_stream_consumer_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoke_route_runner._invoke_inflight_keys.clear()
+    stream_started = asyncio.Event()
+    close_started = asyncio.Event()
+    close_released = asyncio.Event()
+    close_finished = asyncio.Event()
+
+    class _FakeDbSession:
+        async def close(self) -> None:
+            close_started.set()
+            await close_released.wait()
+            close_finished.set()
+
+    async def fake_run_http_invoke_with_session_recovery(**kwargs):  # noqa: ARG001
+        async def iterator():
+            stream_started.set()
+            yield "data: {}\n\n"
+            await asyncio.Future()
+
+        return StreamingResponse(iterator(), media_type="text/event-stream")
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "run_http_invoke_with_session_recovery",
+        fake_run_http_invoke_with_session_recovery,
+    )
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/a2a", name="Demo Agent")
+    )
+
+    async def runtime_builder():
+        return runtime
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "cancel cleanup test",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+    db = _FakeDbSession()
+
+    response = await invoke_route_runner.run_http_invoke_route(
+        db=db,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=True,
+        gateway=object(),
+        runtime_builder=runtime_builder,
+        runtime_not_found_errors=(RuntimeError,),
+        runtime_not_found_status_code=404,
+        runtime_validation_errors=(ValueError,),
+        runtime_validation_status_code=400,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        invoke_log_message="test invoke",
+        invoke_log_extra_builder=lambda request, runtime: {},  # noqa: ARG001
+    )
+
+    assert isinstance(response, StreamingResponse)
+
+    first_chunk = await response.body_iterator.__anext__()
+    assert first_chunk == "data: {}\n\n"
+    await asyncio.wait_for(stream_started.wait(), timeout=1.0)
+
+    consume_task = asyncio.create_task(response.body_iterator.aclose())
+    await asyncio.wait_for(close_started.wait(), timeout=1.0)
+    consume_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await consume_task
+
+    close_released.set()
+    await asyncio.wait_for(close_finished.wait(), timeout=1.0)
+
+
+@pytest.mark.asyncio
 async def test_run_http_invoke_route_stream_maps_value_error_to_http_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

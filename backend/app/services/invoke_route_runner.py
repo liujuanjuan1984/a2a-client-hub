@@ -1519,7 +1519,7 @@ async def run_http_invoke_route(
                     # surrounding context manager in the route handler will close it
                     # immediately upon returning the StreamingResponse object.
                     if db is not None:
-                        await db.close()
+                        await asyncio.shield(db.close())
 
             response.body_iterator = guarded_iterator()
             return response
@@ -1562,7 +1562,7 @@ async def run_http_invoke_route(
                             yield chunk
                     finally:
                         if db is not None:
-                            await db.close()
+                            await asyncio.shield(db.close())
 
                 response.body_iterator = guarded_iterator_no_inflight()
                 return response
