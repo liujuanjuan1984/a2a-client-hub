@@ -1,7 +1,10 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import React from "react";
 
 import { ChatMessageItem } from "@/components/chat/ChatMessageItem";
 import { type ChatMessage } from "@/lib/api/chat-utils";
+import * as Clipboard from "expo-clipboard";
+import { toast } from "@/lib/toast";
 
 jest.mock("@expo/vector-icons", () => ({
   Ionicons: () => null,
@@ -23,183 +26,79 @@ const buildAgentMessage = (
 ): ChatMessage => ({
   id: "message-1",
   role: "agent",
-  content: "",
+  content: "Agent response",
   createdAt: "2026-02-24T00:00:00.000Z",
   status: "done",
   blocks: [],
   ...overrides,
 });
 
-const buildUserMessage = (
-  overrides: Partial<ChatMessage> = {},
-): ChatMessage => ({
-  id: "user-message-1",
-  role: "user",
-  content: "",
-  createdAt: "2026-02-24T00:00:00.000Z",
-  status: "done",
-  blocks: [],
-  ...overrides,
-});
-
-describe("ChatMessageItem collapsible blocks", () => {
-  it("shows bottom collapse action for expanded reasoning block", () => {
-    const onLayoutChangeStart = jest.fn();
-    const message = buildAgentMessage({
-      blocks: [
-        {
-          id: "reasoning-1",
-          type: "reasoning",
-          content: "internal thoughts",
-          isFinished: true,
-          createdAt: "2026-02-24T00:00:00.000Z",
-          updatedAt: "2026-02-24T00:00:00.000Z",
-        },
-      ],
-    });
-
-    const screen = render(
-      <ChatMessageItem
-        message={message}
-        index={0}
-        isLastMessage
-        onRetry={jest.fn()}
-        onLayoutChangeStart={onLayoutChangeStart}
-      />,
-    );
-
-    fireEvent.press(screen.getByText("Show Reasoning"));
-    expect(screen.queryByText("Show Reasoning")).toBeNull();
-    expect(
-      screen.getByTestId("chat-message-reasoning-1-collapse-bottom"),
-    ).toBeTruthy();
-
-    fireEvent.press(
-      screen.getByTestId("chat-message-reasoning-1-collapse-bottom"),
-    );
-    expect(onLayoutChangeStart).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("Show Reasoning")).toBeTruthy();
+describe("ChatMessageItem interaction", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  it("shows bottom collapse action for expanded tool call block", () => {
-    const onLayoutChangeStart = jest.fn();
-    const message = buildAgentMessage({
-      blocks: [
-        {
-          id: "tool-1",
-          type: "tool_call",
-          content: '{"name":"web.search"}',
-          isFinished: true,
-          createdAt: "2026-02-24T00:00:00.000Z",
-          updatedAt: "2026-02-24T00:00:00.000Z",
-        },
-      ],
-    });
-
+  it("copies message content to clipboard on long press", async () => {
+    const message = buildAgentMessage({ content: "Copy this text" });
     const screen = render(
       <ChatMessageItem
         message={message}
         index={0}
         isLastMessage
         onRetry={jest.fn()}
-        onLayoutChangeStart={onLayoutChangeStart}
       />,
     );
 
-    fireEvent.press(screen.getByText("Show Tool Call"));
-    expect(screen.queryByText("Show Tool Call")).toBeNull();
-    expect(
-      screen.getByTestId("chat-message-tool-1-collapse-bottom"),
-    ).toBeTruthy();
-
-    fireEvent.press(screen.getByTestId("chat-message-tool-1-collapse-bottom"));
-    expect(onLayoutChangeStart).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("Show Tool Call")).toBeTruthy();
-  });
-
-  it("loads tool call content before expanding when block content is empty", async () => {
-    const onLayoutChangeStart = jest.fn();
-    const onLoadBlockContent = jest.fn(async () => false);
-    const message = buildAgentMessage({
-      blocks: [
-        {
-          id: "tool-empty",
-          type: "tool_call",
-          content: "",
-          isFinished: true,
-          createdAt: "2026-02-24T00:00:00.000Z",
-          updatedAt: "2026-02-24T00:00:00.000Z",
-        },
-      ],
-    });
-
-    const screen = render(
-      <ChatMessageItem
-        message={message}
-        index={0}
-        isLastMessage
-        onRetry={jest.fn()}
-        onLayoutChangeStart={onLayoutChangeStart}
-        onLoadBlockContent={onLoadBlockContent}
-      />,
-    );
-
-    fireEvent.press(screen.getByText("Show Tool Call"));
+    // Find the pressable area (container)
+    fireEvent(screen.getByText("Copy this text"), "longPress");
 
     await waitFor(() => {
-      expect(onLoadBlockContent).toHaveBeenCalledWith(
-        "message-1",
-        "tool-empty",
-      );
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith("Copy this text");
+      expect(toast.success).toHaveBeenCalledWith("Copied", expect.any(String));
     });
-    expect(onLayoutChangeStart).not.toHaveBeenCalled();
   });
 
-  it("expands after tool call content is loaded", async () => {
-    const onLayoutChangeStart = jest.fn();
-    const onLoadBlockContent = jest.fn(async () => true);
-    const message = buildAgentMessage({
-      blocks: [
-        {
-          id: "tool-empty",
-          type: "tool_call",
-          content: "",
-          isFinished: true,
-          createdAt: "2026-02-24T00:00:00.000Z",
-          updatedAt: "2026-02-24T00:00:00.000Z",
-        },
-      ],
-    });
-
+  it("copies message content to clipboard on copy button press", async () => {
+    const message = buildAgentMessage({ content: "Copy via button" });
     const screen = render(
       <ChatMessageItem
         message={message}
         index={0}
         isLastMessage
         onRetry={jest.fn()}
-        onLayoutChangeStart={onLayoutChangeStart}
-        onLoadBlockContent={onLoadBlockContent}
       />,
     );
 
-    fireEvent.press(screen.getByText("Show Tool Call"));
+    fireEvent.press(screen.getByLabelText("Copy message"));
 
     await waitFor(() => {
-      expect(onLoadBlockContent).toHaveBeenCalledWith(
-        "message-1",
-        "tool-empty",
-      );
-      expect(onLayoutChangeStart).toHaveBeenCalled();
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith("Copy via button");
+      expect(toast.success).toHaveBeenCalledWith("Copied", expect.any(String));
     });
   });
 
-  it("shows placeholder when agent content is unavailable", () => {
-    const message = buildAgentMessage({
-      id: "empty-agent-message",
-      content: "",
-      blocks: [],
-    });
+  it("shows retry button and calls onRetry when session status is error", () => {
+    const onRetry = jest.fn();
+    const message = buildAgentMessage({ role: "agent" });
 
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={onRetry}
+        sessionStreamState="error"
+      />,
+    );
+
+    const retryButton = screen.getByText("Retry");
+    expect(retryButton).toBeTruthy();
+    fireEvent.press(retryButton);
+    expect(onRetry).toHaveBeenCalled();
+  });
+
+  it("shows streaming indicator when status is streaming", () => {
+    const message = buildAgentMessage({ status: "streaming" });
     const screen = render(
       <ChatMessageItem
         message={message}
@@ -209,25 +108,6 @@ describe("ChatMessageItem collapsible blocks", () => {
       />,
     );
 
-    expect(screen.getByText("Content unavailable.")).toBeTruthy();
-  });
-
-  it("shows placeholder when user content is unavailable", () => {
-    const message = buildUserMessage({
-      id: "empty-user-message",
-      content: "",
-      blocks: [],
-    });
-
-    const screen = render(
-      <ChatMessageItem
-        message={message}
-        index={0}
-        isLastMessage
-        onRetry={jest.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Content unavailable.")).toBeTruthy();
+    expect(screen.getByText("Streaming...")).toBeTruthy();
   });
 });

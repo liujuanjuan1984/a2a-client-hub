@@ -9,12 +9,9 @@ import {
   View,
 } from "react-native";
 
-import { GenericBlock } from "./blocks/GenericBlock";
-import { ReasoningBlock } from "./blocks/ReasoningBlock";
-import { TextBlock } from "./blocks/TextBlock";
-import { ToolCallBlock } from "./blocks/ToolCallBlock";
+import { MessageBlock, MessageContentFallback } from "./MessageBlock";
 
-import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
+import { type ChatMessage, type MessageBlock as MessageBlockType } from "@/lib/api/chat-utils";
 import { toast } from "@/lib/toast";
 
 export function ChatMessageItem({
@@ -34,7 +31,7 @@ export function ChatMessageItem({
   onRetry: () => void;
 }) {
   const deriveRenderableBlocks = useCallback(
-    (msg: ChatMessage): MessageBlock[] => {
+    (msg: ChatMessage): MessageBlockType[] => {
       const persisted = msg.blocks ?? [];
       if (persisted.length > 0) {
         return persisted;
@@ -118,73 +115,24 @@ export function ChatMessageItem({
           }`}
         >
           {hasBlocks ? (
-            renderableBlocks.map((block, blockIndex) => {
-              const blockId = block.id || `${message.id}:${blockIndex}`;
-              const isFirst = blockIndex === 0;
-
-              switch (block.type) {
-                case "reasoning":
-                  return (
-                    <ReasoningBlock
-                      key={blockId}
-                      block={block}
-                      fallbackBlockId={blockId}
-                      messageId={message.id}
-                      onLayoutChangeStart={onLayoutChangeStart}
-                      onLoadBlockContent={onLoadBlockContent}
-                      isFirst={isFirst}
-                    />
-                  );
-                case "tool_call":
-                  return (
-                    <ToolCallBlock
-                      key={blockId}
-                      block={block}
-                      fallbackBlockId={blockId}
-                      messageId={message.id}
-                      onLayoutChangeStart={onLayoutChangeStart}
-                      onLoadBlockContent={onLoadBlockContent}
-                      isFirst={isFirst}
-                    />
-                  );
-                case "text":
-                  return (
-                    <TextBlock
-                      key={blockId}
-                      block={block}
-                      fallbackBlockId={blockId}
-                      isAgent={message.role === "agent"}
-                      isFirst={isFirst}
-                    />
-                  );
-                default:
-                  return (
-                    <GenericBlock
-                      key={blockId}
-                      block={block}
-                      fallbackBlockId={blockId}
-                      isFirst={isFirst}
-                    />
-                  );
-              }
-            })
+            renderableBlocks.map((block, blockIndex) => (
+              <MessageBlock
+                key={block.id || `${message.id}:${blockIndex}`}
+                block={block}
+                messageId={message.id}
+                blockIndex={blockIndex}
+                role={message.role}
+                onLayoutChangeStart={onLayoutChangeStart}
+                onLoadBlockContent={onLoadBlockContent}
+              />
+            ))
           ) : (
-            <View>
-              {hasPlainContent ? (
-                <TextBlock
-                  content={message.content}
-                  fallbackBlockId={message.id}
-                  isAgent={message.role === "agent"}
-                  isFirst
-                />
-              ) : (
-                <View className="rounded-lg bg-black/20 px-3 py-2">
-                  <Text className="text-[11px] font-medium text-slate-400">
-                    Content unavailable.
-                  </Text>
-                </View>
-              )}
-            </View>
+            <MessageContentFallback
+              hasPlainContent={hasPlainContent}
+              content={message.content}
+              messageId={message.id}
+              role={message.role}
+            />
           )}
           {message.status === "streaming" ? (
             <View className="mt-2 flex-row items-center gap-2">
