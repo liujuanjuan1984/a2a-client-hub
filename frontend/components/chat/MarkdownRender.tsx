@@ -63,6 +63,11 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
         fontSize: 16,
       },
       code_inline: {
+        backgroundColor: "transparent",
+        borderRadius: 0,
+        borderWidth: 0,
+        paddingHorizontal: 0,
+        paddingVertical: 0,
         fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
         color: "#F87171", // red-400 for visibility
       },
