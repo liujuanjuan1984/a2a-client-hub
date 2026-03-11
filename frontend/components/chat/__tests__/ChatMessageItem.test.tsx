@@ -10,6 +10,27 @@ jest.mock("@expo/vector-icons", () => ({
   Ionicons: () => null,
 }));
 
+jest.mock("@/components/chat/MessageBlock", () => ({
+  MessageBlock: () => {
+    const { Text } = require("react-native");
+    return <Text>Mocked Message Block</Text>;
+  },
+  MessageContentFallback: ({
+    hasPlainContent,
+    content,
+  }: {
+    hasPlainContent: boolean;
+    content: string;
+  }) => {
+    const { Text } = require("react-native");
+    return hasPlainContent ? (
+      <Text>{content}</Text>
+    ) : (
+      <Text>Content unavailable.</Text>
+    );
+  },
+}));
+
 jest.mock("expo-clipboard", () => ({
   setStringAsync: jest.fn(),
 }));
@@ -39,7 +60,10 @@ describe("ChatMessageItem interaction", () => {
   });
 
   it("copies message content to clipboard on long press", async () => {
-    const message = buildAgentMessage({ content: "Copy this text" });
+    const message = buildAgentMessage({
+      role: "user",
+      content: "Copy this text",
+    });
     const screen = render(
       <ChatMessageItem
         message={message}
@@ -59,7 +83,10 @@ describe("ChatMessageItem interaction", () => {
   });
 
   it("copies message content to clipboard on copy button press", async () => {
-    const message = buildAgentMessage({ content: "Copy via button" });
+    const message = buildAgentMessage({
+      role: "user",
+      content: "Copy via button",
+    });
     const screen = render(
       <ChatMessageItem
         message={message}
