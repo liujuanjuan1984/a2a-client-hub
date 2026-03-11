@@ -64,6 +64,8 @@ type ApiRequestOptions<Body> = {
   query?: Record<string, string | number | undefined | null>;
 };
 
+type JsonRecord = Record<string, unknown>;
+
 const buildUrl = (
   path: string,
   query?: ApiRequestOptions<unknown>["query"],
@@ -369,129 +371,181 @@ export const handleAuthExpiredOnce = (options?: {
   }
 };
 
-export async function apiRequest<Response, Body = unknown>(
+const shouldAttemptAuthRefresh = (
   path: string,
-  options: ApiRequestOptions<Body> = {},
-): Promise<Response> {
-  const { method = "GET", body, headers = {}, tokenOverride, query } = options;
-  const sessionSnapshot = useSessionStore.getState();
-  let token = tokenOverride ?? sessionSnapshot.token;
-  const requestAuthVersion = sessionSnapshot.authVersion;
-  const url = buildUrl(path, query);
-  const shouldAttemptRefresh =
-    !tokenOverride && !("Authorization" in headers) && !isAuthPath(path);
+  tokenOverride: string | undefined,
+  headers: Record<string, string>,
+): boolean =>
+  !tokenOverride && !("Authorization" in headers) && !isAuthPath(path);
 
-  const execute = async (accessToken: string | null) => {
-    return await fetch(url, {
-      method,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        ...headers,
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+const executeJsonRequest = async (
+  url: string,
+  method: HttpMethod,
+  body: unknown,
+  headers: Record<string, string>,
+  accessToken: string | null,
+): Promise<Response> => {
+  return await fetch(url, {
+    method,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...headers,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+};
+
+const parseApiErrorDetails = async (
+  response: Response,
+): Promise<{
+  message: string;
+  errorCode: string | null;
+  upstreamError: JsonRecord | null;
+}> => {
+  let details: ApiErrorResponse | undefined;
+  try {
+    details = await response.json();
+  } catch {
+    // Ignore invalid JSON
+  }
+
+  const errorBody = details?.detail || details?.message || details?.error;
+  const detailsRecord =
+    details && typeof details === "object" && !Array.isArray(details)
+      ? (details as JsonRecord)
+      : undefined;
+  const detailRecord =
+    details?.detail &&
+    typeof details.detail === "object" &&
+    !Array.isArray(details.detail)
+      ? (details.detail as JsonRecord)
+      : undefined;
+  const errorCode =
+    typeof detailsRecord?.error_code === "string"
+      ? detailsRecord.error_code
+      : typeof detailRecord?.error_code === "string"
+        ? detailRecord.error_code
+        : null;
+  const upstreamError =
+    detailRecord?.upstream_error &&
+    typeof detailRecord.upstream_error === "object" &&
+    !Array.isArray(detailRecord.upstream_error)
+      ? (detailRecord.upstream_error as JsonRecord)
+      : detailsRecord?.upstream_error &&
+          typeof detailsRecord.upstream_error === "object" &&
+          !Array.isArray(detailsRecord.upstream_error)
+        ? (detailsRecord.upstream_error as JsonRecord)
+        : null;
+  let message: string;
+
+  if (typeof errorBody === "string") {
+    message = errorBody;
+  } else if (Array.isArray(errorBody)) {
+    message = errorBody
+      .map((err) => {
+        const msg = err.msg || err.message || "Unknown error";
+        const loc = err.loc?.join(".") ?? "";
+        return loc ? `${loc}: ${msg}` : msg;
+      })
+      .join("; ");
+  } else if (errorBody && typeof errorBody === "object") {
+    const messageField =
+      "message" in errorBody &&
+      typeof (errorBody as { message?: unknown }).message === "string"
+        ? (errorBody as { message: string }).message.trim()
+        : "";
+    message = messageField || JSON.stringify(errorBody);
+  } else {
+    message = `Request failed (${response.status})`;
+  }
+
+  if (errorCode) {
+    message = `${message} [${errorCode}]`;
+  }
+
+  return {
+    message,
+    errorCode,
+    upstreamError,
   };
+};
 
-  if (shouldAttemptRefresh) {
+const executeRequestWithAuthRecovery = async (
+  path: string,
+  url: string,
+  method: HttpMethod,
+  body: unknown,
+  headers: Record<string, string>,
+  tokenOverride: string | undefined,
+): Promise<Response> => {
+  const sessionSnapshot = useSessionStore.getState();
+  const requestAuthVersion = sessionSnapshot.authVersion;
+  let token = tokenOverride ?? sessionSnapshot.token;
+  const canAutoRefresh = shouldAttemptAuthRefresh(path, tokenOverride, headers);
+
+  if (canAutoRefresh) {
     token = await ensureFreshAccessToken({
       expectedAuthVersion: requestAuthVersion,
     });
   }
 
-  let response = await execute(token);
-
-  if (isUnauthorizedStatusCode(response.status) && shouldAttemptRefresh) {
-    const refreshed = await refreshAccessToken({
-      force: true,
-      expectedAuthVersion: requestAuthVersion,
-    });
-    if (refreshed) {
-      applyRefreshedToken(refreshed, {
-        expectedAuthVersion: requestAuthVersion,
-      });
-      response = await execute(refreshed.accessToken);
-
-      if (isUnauthorizedStatusCode(response.status)) {
-        handleAuthExpiredOnce({
-          expectedAuthVersion: requestAuthVersion,
-        });
-        throw new AuthExpiredError();
-      }
-    } else {
-      handleAuthExpiredOnce({
-        expectedAuthVersion: requestAuthVersion,
-      });
-      throw new AuthExpiredError();
-    }
+  let response = await executeJsonRequest(url, method, body, headers, token);
+  if (!isUnauthorizedStatusCode(response.status) || !canAutoRefresh) {
+    return response;
   }
 
+  const refreshed = await refreshAccessToken({
+    force: true,
+    expectedAuthVersion: requestAuthVersion,
+  });
+  if (!refreshed) {
+    handleAuthExpiredOnce({
+      expectedAuthVersion: requestAuthVersion,
+    });
+    throw new AuthExpiredError();
+  }
+
+  applyRefreshedToken(refreshed, {
+    expectedAuthVersion: requestAuthVersion,
+  });
+  response = await executeJsonRequest(
+    url,
+    method,
+    body,
+    headers,
+    refreshed.accessToken,
+  );
+  if (isUnauthorizedStatusCode(response.status)) {
+    handleAuthExpiredOnce({
+      expectedAuthVersion: requestAuthVersion,
+    });
+    throw new AuthExpiredError();
+  }
+  return response;
+};
+
+export async function apiRequest<Response, Body = unknown>(
+  path: string,
+  options: ApiRequestOptions<Body> = {},
+): Promise<Response> {
+  const { method = "GET", body, headers = {}, tokenOverride, query } = options;
+  const url = buildUrl(path, query);
+  const response = await executeRequestWithAuthRecovery(
+    path,
+    url,
+    method,
+    body,
+    headers,
+    tokenOverride,
+  );
+
   if (!response.ok) {
-    let details: ApiErrorResponse | undefined;
-    try {
-      details = await response.json();
-    } catch {
-      // Ignore invalid JSON
-    }
-
-    const errorBody = details?.detail || details?.message || details?.error;
-    const detailsRecord =
-      details && typeof details === "object" && !Array.isArray(details)
-        ? (details as Record<string, unknown>)
-        : undefined;
-    const detailRecord =
-      details?.detail &&
-      typeof details.detail === "object" &&
-      !Array.isArray(details.detail)
-        ? (details.detail as Record<string, unknown>)
-        : undefined;
-    const errorCode =
-      typeof detailsRecord?.error_code === "string"
-        ? detailsRecord.error_code
-        : typeof detailRecord?.error_code === "string"
-          ? detailRecord.error_code
-          : null;
-    const upstreamError =
-      detailRecord?.upstream_error &&
-      typeof detailRecord.upstream_error === "object" &&
-      !Array.isArray(detailRecord.upstream_error)
-        ? (detailRecord.upstream_error as Record<string, unknown>)
-        : detailsRecord?.upstream_error &&
-            typeof detailsRecord.upstream_error === "object" &&
-            !Array.isArray(detailsRecord.upstream_error)
-          ? (detailsRecord.upstream_error as Record<string, unknown>)
-          : null;
-    let errorMessage: string;
-
-    if (typeof errorBody === "string") {
-      errorMessage = errorBody;
-    } else if (Array.isArray(errorBody)) {
-      errorMessage = errorBody
-        .map((err) => {
-          const msg = err.msg || err.message || "Unknown error";
-          const loc = err.loc?.join(".") ?? "";
-          return loc ? `${loc}: ${msg}` : msg;
-        })
-        .join("; ");
-    } else if (errorBody && typeof errorBody === "object") {
-      const messageField =
-        "message" in errorBody &&
-        typeof (errorBody as { message?: unknown }).message === "string"
-          ? (errorBody as { message: string }).message.trim()
-          : "";
-      errorMessage = messageField || JSON.stringify(errorBody);
-    } else {
-      errorMessage = `Request failed (${response.status})`;
-    }
-
-    if (errorCode) {
-      errorMessage = `${errorMessage} [${errorCode}]`;
-    }
-
-    throw new ApiRequestError(errorMessage, response.status, {
-      errorCode,
-      upstreamError,
+    const parsed = await parseApiErrorDetails(response);
+    throw new ApiRequestError(parsed.message, response.status, {
+      errorCode: parsed.errorCode,
+      upstreamError: parsed.upstreamError,
     });
   }
 

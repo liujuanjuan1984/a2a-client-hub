@@ -154,6 +154,60 @@ describe("api client auth refresh flow", () => {
     expect(useSessionStore.getState().token).toBe("old-token");
   });
 
+  it("does not trigger refresh flow for auth endpoints", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(401, { detail: "login_failed" }),
+    );
+
+    useSessionStore.setState({
+      token: "old-token",
+      authStatus: "authenticated",
+    });
+
+    await expect(
+      client.apiRequest<
+        { ok: boolean },
+        { username: string; password: string }
+      >("/auth/login", {
+        method: "POST",
+        body: { username: "u", password: "p" },
+      }),
+    ).rejects.toMatchObject({
+      status: 401,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(resetAuthBoundState).not.toHaveBeenCalled();
+  });
+
+  it("skips refresh flow when Authorization header is explicitly provided", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(401, { detail: "expired" }),
+    );
+
+    useSessionStore.setState({
+      token: "store-token",
+      authStatus: "authenticated",
+    });
+
+    await expect(
+      client.apiRequest<{ ok: boolean }>("/me/echo", {
+        headers: {
+          Authorization: "Bearer override-token",
+        },
+      }),
+    ).rejects.toMatchObject({
+      status: 401,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(resetAuthBoundState).not.toHaveBeenCalled();
+  });
+
   it("uses detail.message when backend error payload is an object", async () => {
     const { client, useSessionStore } = loadModules();
     const fetchMock = global.fetch as jest.Mock;
