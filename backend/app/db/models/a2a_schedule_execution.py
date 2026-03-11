@@ -28,6 +28,11 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
             "task_id",
             "created_at",
         ),
+        Index(
+            "ix_a2a_schedule_executions_queue_poll",
+            "status",
+            "scheduled_for",
+        ),
         UniqueConstraint(
             "task_id",
             "run_id",
@@ -36,6 +41,7 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
         {"schema": SCHEMA_NAME},
     )
 
+    STATUS_PENDING: ClassVar[str] = "pending"
     STATUS_RUNNING: ClassVar[str] = "running"
     STATUS_SUCCESS: ClassVar[str] = "success"
     STATUS_FAILED: ClassVar[str] = "failed"
