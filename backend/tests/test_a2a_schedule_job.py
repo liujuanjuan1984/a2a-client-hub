@@ -125,7 +125,7 @@ def _mock_gateway_stream(*, events, first_event_delay: float = 0.0):
     return SimpleNamespace(stream=_stream)
 
 
-async def test_claim_next_due_task_obeys_agent_concurrency_limit(
+async def test_claim_next_pending_execution_obeys_agent_concurrency_limit(
     async_db_session,
     monkeypatch,
 ) -> None:
@@ -176,12 +176,13 @@ async def test_claim_next_due_task_obeys_agent_concurrency_limit(
         raising=False,
     )
 
-    claim = await a2a_schedule_service.claim_next_due_task(async_db_session, now=now)
+    await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
     assert claim is not None
     assert claim.task_id == task_b.id
 
 
-async def test_claim_next_due_task_obeys_global_concurrency_limit(
+async def test_claim_next_pending_execution_obeys_global_concurrency_limit(
     async_db_session,
     monkeypatch,
 ) -> None:
@@ -225,11 +226,12 @@ async def test_claim_next_due_task_obeys_global_concurrency_limit(
         raising=False,
     )
 
-    claim = await a2a_schedule_service.claim_next_due_task(async_db_session, now=now)
+    await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
     assert claim is None
 
 
-async def test_claim_next_due_task_creates_running_execution_immediately(
+async def test_claim_next_pending_execution_creates_running_execution_immediately(
     async_db_session,
 ) -> None:
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -242,7 +244,8 @@ async def test_claim_next_due_task_creates_running_execution_immediately(
         next_run_at=now,
     )
 
-    claim = await a2a_schedule_service.claim_next_due_task(async_db_session, now=now)
+    await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
     assert claim is not None
     assert claim.task_id == task.id
 
@@ -258,7 +261,7 @@ async def test_claim_next_due_task_creates_running_execution_immediately(
     assert execution.scheduled_for == claim.scheduled_for
 
 
-async def test_claim_next_due_task_sequential_holds_next_run_until_finalize(
+async def test_claim_next_pending_execution_sequential_holds_next_run_until_finalize(
     async_db_session,
 ) -> None:
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -274,7 +277,8 @@ async def test_claim_next_due_task_sequential_holds_next_run_until_finalize(
     task.time_point = {"minutes": 15}
     await async_db_session.commit()
 
-    claim = await a2a_schedule_service.claim_next_due_task(async_db_session, now=now)
+    await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
     assert claim is not None
     assert claim.task_id == task.id
     await async_db_session.refresh(task)
@@ -1749,7 +1753,7 @@ async def test_dispatch_due_a2a_schedules_continues_when_recovery_hits_lock_cont
         _raise_lock_contention,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_due_task",
+        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_pending_execution",
         claim_mock,
     )
 
@@ -1798,7 +1802,7 @@ async def test_dispatch_due_a2a_schedules_skips_when_leader_lock_not_acquired(
         recover_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_due_task",
+        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_pending_execution",
         claim_mock,
     )
 
@@ -1927,7 +1931,7 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_claim_db_connection_r
         _recover_ok,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_due_task",
+        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_pending_execution",
         _claim_raises,
     )
 
@@ -1973,7 +1977,7 @@ async def test_dispatch_due_a2a_schedules_stops_claim_loop_when_claim_hits_state
         _recover_ok,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_due_task",
+        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_pending_execution",
         _claim_timeout,
     )
 
@@ -2038,7 +2042,7 @@ async def test_dispatch_due_a2a_schedules_passes_heartbeat_and_hard_timeout(
         recover_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_due_task",
+        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_pending_execution",
         claim_mock,
     )
 
