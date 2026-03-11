@@ -173,17 +173,22 @@ class A2AScheduleService:
     async def _lock_user_row_for_quota(
         self, db: AsyncSession, *, user_id: UUID
     ) -> None:
-        """Serialize per-user quota-changing operations with a user-row lock."""
-
-        stmt = (
-            select(User.id)
-            .where(User.id == user_id)
-            .with_for_update(nowait=True)
-            .limit(1)
-        )
-        found_user_id = await db.scalar(stmt)
-        if found_user_id is None:
-            raise A2AScheduleValidationError("Current user does not exist")
+        """Serialize per-user quota-changing operations using Postgres advisory locks."""
+        import hashlib
+        from sqlalchemy import text
+        
+        lock_key_str = f"a2a_schedule_quota_{user_id.hex}"
+        # Convert first 8 bytes of hash to signed 64-bit int
+        hash_digest = hashlib.md5(lock_key_str.encode()).digest()
+        lock_id = int.from_bytes(hash_digest[:8], byteorder="big", signed=True)
+        
+        stmt = text("SELECT pg_try_advisory_xact_lock(:lock_id)")
+        lock_acquired = await db.scalar(stmt, {"lock_id": lock_id})
+        
+        if not lock_acquired:
+            raise A2AScheduleConflictError(
+                "Unable to acquire advisory lock for schedule quota check. Please try again."
+            )
 
     async def _get_task_for_update(
         self,
