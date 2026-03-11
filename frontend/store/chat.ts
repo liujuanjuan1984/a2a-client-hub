@@ -24,17 +24,53 @@ import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
 import { executeChatRuntime } from "@/store/chatRuntime";
 
+const CANCEL_REQUEST_DEBOUNCE_MS = 500;
+const CANCEL_REQUEST_HISTORY_TTL_MS = CANCEL_REQUEST_DEBOUNCE_MS * 4;
+const recentCancelRequestAt = new Map<string, number>();
+const pendingCancelRequests = new Map<string, Promise<void>>();
+
+const pruneRecentCancelRequestAt = (now: number) => {
+  recentCancelRequestAt.forEach((requestedAt, conversationId) => {
+    if (now - requestedAt > CANCEL_REQUEST_HISTORY_TTL_MS) {
+      recentCancelRequestAt.delete(conversationId);
+    }
+  });
+};
+
 const requestSessionCancel = (conversationId: string) => {
-  chatConnectionService
-    .cancelSession(conversationId)
+  const normalizedConversationId = conversationId.trim();
+  if (!normalizedConversationId) {
+    return;
+  }
+  if (pendingCancelRequests.has(normalizedConversationId)) {
+    return;
+  }
+  const now = Date.now();
+  pruneRecentCancelRequestAt(now);
+  const previousRequestedAt = recentCancelRequestAt.get(
+    normalizedConversationId,
+  );
+  if (
+    typeof previousRequestedAt === "number" &&
+    now - previousRequestedAt < CANCEL_REQUEST_DEBOUNCE_MS
+  ) {
+    return;
+  }
+  recentCancelRequestAt.set(normalizedConversationId, now);
+  const cancelPromise = chatConnectionService
+    .cancelSession(normalizedConversationId)
     .then((result) => {
       if (result?.status === "pending") {
         console.info("Server accepted pending cancellation for conversation", {
-          conversationId,
+          conversationId: normalizedConversationId,
         });
       }
     })
-    .catch(() => undefined);
+    .catch(() => undefined)
+    .finally(() => {
+      pendingCancelRequests.delete(normalizedConversationId);
+    });
+  pendingCancelRequests.set(normalizedConversationId, cancelPromise);
 };
 
 type ChatState = {
@@ -249,7 +285,46 @@ export const useChatStore = create<ChatState>()(
         );
       },
       cancelMessage: (conversationId) => {
-        requestSessionCancel(conversationId);
+        const normalizedConversationId = conversationId.trim();
+        const current =
+          get().sessions[normalizedConversationId] ??
+          get().sessions[conversationId];
+        const shouldCancelByState =
+          current?.streamState === "streaming" ||
+          current?.streamState === "recoverable";
+        const shouldCancelByConnection =
+          chatConnectionService.hasActiveConnection(normalizedConversationId);
+
+        if (shouldCancelByState || shouldCancelByConnection) {
+          requestSessionCancel(normalizedConversationId);
+        }
+        set((state) => {
+          const targetConversationId = state.sessions[normalizedConversationId]
+            ? normalizedConversationId
+            : conversationId;
+          const targetSession = state.sessions[targetConversationId];
+          if (!targetSession) {
+            return state;
+          }
+          if (
+            targetSession.streamState === "idle" &&
+            targetSession.pendingInterrupt == null &&
+            targetSession.lastStreamError == null
+          ) {
+            return state;
+          }
+          return {
+            sessions: {
+              ...state.sessions,
+              [targetConversationId]: {
+                ...targetSession,
+                streamState: "idle",
+                pendingInterrupt: null,
+                lastStreamError: null,
+              },
+            },
+          };
+        });
       },
       sendMessage: async (conversationId, agentId, content, agentSource) => {
         const trimmed = content.trim();
@@ -433,6 +508,8 @@ export const useChatStore = create<ChatState>()(
       clearAll: () => {
         chatConnectionService.clearAll();
         clearAllConversationMessages();
+        recentCancelRequestAt.clear();
+        pendingCancelRequests.clear();
         set({ sessions: {} });
       },
     }),

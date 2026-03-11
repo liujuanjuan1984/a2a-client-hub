@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.retry_after import DB_BUSY_RETRY_AFTER_SECONDS
@@ -33,6 +33,36 @@ class _NoopWebSocket:
 
     async def send_text(self, payload: str) -> None:
         self.sent.append(payload)
+
+
+class _CancelableCloseWebSocket:
+    def __init__(
+        self,
+        *,
+        receive_payload: object | None = None,
+        receive_exc: Exception | None = None,
+    ) -> None:
+        self.state = SimpleNamespace(selected_subprotocol=None)
+        self._receive_payload = receive_payload if receive_payload is not None else {}
+        self._receive_exc = receive_exc
+        self.close_started = asyncio.Event()
+        self.close_released = asyncio.Event()
+        self.close_finished = asyncio.Event()
+        self.close_codes: list[int | None] = []
+
+    async def accept(self, subprotocol: str | None = None) -> None:  # noqa: ARG002
+        return None
+
+    async def receive_json(self) -> object:
+        if self._receive_exc is not None:
+            raise self._receive_exc
+        return self._receive_payload
+
+    async def close(self, code: int | None = None) -> None:
+        self.close_codes.append(code)
+        self.close_started.set()
+        await self.close_released.wait()
+        self.close_finished.set()
 
 
 @pytest.mark.asyncio
@@ -221,6 +251,87 @@ async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
     release.set()
     await asyncio.wait_for(consume_task, timeout=1.0)
     assert invoke_route_runner._invoke_inflight_keys == {}
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_route_stream_closes_db_even_if_stream_consumer_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invoke_route_runner._invoke_inflight_keys.clear()
+    stream_started = asyncio.Event()
+    close_started = asyncio.Event()
+    close_released = asyncio.Event()
+    close_finished = asyncio.Event()
+
+    class _FakeDbSession:
+        async def close(self) -> None:
+            close_started.set()
+            await close_released.wait()
+            close_finished.set()
+
+    async def fake_run_http_invoke_with_session_recovery(**kwargs):  # noqa: ARG001
+        async def iterator():
+            stream_started.set()
+            yield "data: {}\n\n"
+            await asyncio.Future()
+
+        return StreamingResponse(iterator(), media_type="text/event-stream")
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "run_http_invoke_with_session_recovery",
+        fake_run_http_invoke_with_session_recovery,
+    )
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/a2a", name="Demo Agent")
+    )
+
+    async def runtime_builder():
+        return runtime
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "cancel cleanup test",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+    db = _FakeDbSession()
+
+    response = await invoke_route_runner.run_http_invoke_route(
+        db=db,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=True,
+        gateway=object(),
+        runtime_builder=runtime_builder,
+        runtime_not_found_errors=(RuntimeError,),
+        runtime_not_found_status_code=404,
+        runtime_validation_errors=(ValueError,),
+        runtime_validation_status_code=400,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        invoke_log_message="test invoke",
+        invoke_log_extra_builder=lambda request, runtime: {},  # noqa: ARG001
+    )
+
+    assert isinstance(response, StreamingResponse)
+
+    first_chunk = await response.body_iterator.__anext__()
+    assert first_chunk == "data: {}\n\n"
+    await asyncio.wait_for(stream_started.wait(), timeout=1.0)
+
+    consume_task = asyncio.create_task(response.body_iterator.aclose())
+    await asyncio.wait_for(close_started.wait(), timeout=1.0)
+    consume_task.cancel()
+
+    close_released.set()
+    with pytest.raises(asyncio.CancelledError):
+        await consume_task
+    assert close_finished.is_set() is True
 
 
 @pytest.mark.asyncio
@@ -1864,6 +1975,97 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
         error_events[0]["data"]["error_code"] == "session_not_found_recovery_exhausted"
     )
     assert sent[-1] == {"event": "stream_end", "data": {}}
+
+
+@pytest.mark.asyncio
+async def test_run_ws_invoke_route_invalid_payload_close_is_cancellation_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    websocket = _CancelableCloseWebSocket(receive_payload={})
+
+    async def _noop_send_ws_error(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service,
+        "send_ws_error",
+        _noop_send_ws_error,
+    )
+
+    task = asyncio.create_task(
+        invoke_route_runner.run_ws_invoke_route(
+            websocket=websocket,
+            db=object(),
+            user_id=uuid4(),
+            agent_id=uuid4(),
+            agent_source="shared",
+            gateway=object(),
+            runtime_builder=lambda: asyncio.sleep(0),
+            runtime_not_found_errors=(RuntimeError,),
+            runtime_not_found_message="runtime not found",
+            runtime_not_found_code="runtime_not_found",
+            runtime_validation_errors=(ValueError,),
+            validate_message=lambda _: [],
+            logger=SimpleNamespace(
+                info=lambda *args, **kwargs: None,
+                error=lambda *args, **kwargs: None,
+            ),
+            invoke_log_message="test invoke ws route",
+            invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+            unexpected_log_message="unexpected",
+        )
+    )
+    await asyncio.wait_for(websocket.close_started.wait(), timeout=1.0)
+    task.cancel()
+    websocket.close_released.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=1.0)
+    assert websocket.close_finished.is_set() is True
+    assert websocket.close_codes[0] == 1003
+
+
+@pytest.mark.asyncio
+async def test_run_ws_invoke_route_finally_close_suppresses_secondary_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    websocket = _CancelableCloseWebSocket(receive_exc=WebSocketDisconnect())
+
+    info_log = SimpleNamespace(calls=0)
+
+    def _info(*_args, **_kwargs) -> None:
+        info_log.calls += 1
+
+    task = asyncio.create_task(
+        invoke_route_runner.run_ws_invoke_route(
+            websocket=websocket,
+            db=object(),
+            user_id=uuid4(),
+            agent_id=uuid4(),
+            agent_source="shared",
+            gateway=object(),
+            runtime_builder=lambda: asyncio.sleep(0),
+            runtime_not_found_errors=(RuntimeError,),
+            runtime_not_found_message="runtime not found",
+            runtime_not_found_code="runtime_not_found",
+            runtime_validation_errors=(ValueError,),
+            validate_message=lambda _: [],
+            logger=SimpleNamespace(
+                info=_info,
+                error=lambda *args, **kwargs: None,
+            ),
+            invoke_log_message="test invoke ws route",
+            invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+            unexpected_log_message="unexpected",
+        )
+    )
+    await asyncio.wait_for(websocket.close_started.wait(), timeout=1.0)
+    task.cancel()
+    websocket.close_released.set()
+
+    await asyncio.wait_for(task, timeout=1.0)
+    assert websocket.close_finished.is_set() is True
+    assert info_log.calls >= 1
 
 
 @pytest.mark.parametrize(

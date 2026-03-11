@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.models.invitation import Invitation, InvitationStatus
 from app.db.models.user import User
-from app.db.transaction import commit_safely
+from app.db.transaction import commit_safely, rollback_safely
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +160,7 @@ async def create_invitation(
     try:
         await commit_safely(db)
     except IntegrityError as exc:
-        await db.rollback()
+        await rollback_safely(db)
         raise InvitationConflictError(
             "Invitation already exists for this email"
         ) from exc

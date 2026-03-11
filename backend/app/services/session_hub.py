@@ -26,6 +26,7 @@ from app.core.logging import get_logger
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
+from app.db.transaction import rollback_safely
 from app.handlers import agent_message as agent_message_handler
 from app.handlers import agent_message_block as agent_message_block_handler
 from app.services.conversation_identity import conversation_identity_service
@@ -688,7 +689,15 @@ class SessionHubService:
             conversation_id=resolved_conversation_id,
         )
         if target is None:
-            raise ValueError("session_not_found")
+            return (
+                {
+                    "conversationId": str(resolved_conversation_id),
+                    "taskId": None,
+                    "cancelled": False,
+                    "status": "no_inflight",
+                },
+                False,
+            )
 
         snapshots = await self._list_inflight_invoke_snapshots(
             user_id=user_id,
@@ -877,7 +886,7 @@ class SessionHubService:
             try:
                 await db.flush()
             except IntegrityError as exc:
-                await db.rollback()
+                await rollback_safely(db)
                 raise ValueError("invalid_conversation_id") from exc
 
         local_source: SessionSource
