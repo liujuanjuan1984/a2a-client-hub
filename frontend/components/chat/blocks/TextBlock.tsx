@@ -1,5 +1,7 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+
+import { MarkdownRender } from "../MarkdownRender";
 
 import { type MessageBlock } from "@/lib/api/chat-utils";
 
@@ -26,17 +28,8 @@ export function TextBlock({
   }
 
   return (
-    <View key={blockId}>
-      <Text
-        selectable
-        className={`${
-          !isFirst ? "mt-3" : ""
-        } break-all text-sm leading-6 font-normal ${
-          isAgent ? "text-slate-200" : "text-white"
-        }`}
-      >
-        {blockText}
-      </Text>
+    <View key={blockId} className={!isFirst ? "mt-3" : ""}>
+      <MarkdownRender content={blockText} isAgent={isAgent} />
     </View>
   );
 }
