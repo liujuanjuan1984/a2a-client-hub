@@ -63,20 +63,20 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
         fontSize: 16,
       },
       code_inline: {
-        backgroundColor: "rgba(0, 0, 0, 0.3)",
+        backgroundColor: "rgba(0, 0, 0, 0.2)",
         borderRadius: 4,
         borderWidth: 0,
         paddingHorizontal: 4,
         paddingVertical: 2,
         fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-        color: "#34D399", // emerald-400 for techy style
+        color: "rgba(52, 211, 153, 0.8)", // emerald-400 at 80% opacity
       },
       strong: {
-        color: "#FBBF24", // amber-400 for strong contrast
+        color: "rgba(251, 191, 36, 0.8)", // amber-400 at 80% opacity
         fontWeight: "bold",
       },
       em: {
-        color: "#A78BFA", // violet-400 for italic text
+        color: "rgba(167, 139, 250, 0.8)", // violet-400 at 80% opacity
         fontStyle: "italic",
       },
       code_block: {
@@ -96,7 +96,7 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
         color: "#F1F5F9",
       },
       link: {
-        color: "#38BDF8", // sky-400
+        color: "rgba(56, 189, 248, 0.8)", // sky-400 at 80% opacity
         textDecorationLine: "underline",
       },
       bullet_list: {
