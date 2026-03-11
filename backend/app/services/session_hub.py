@@ -971,21 +971,18 @@ class SessionHubService:
         if provider_from_invoke and external_session_id:
             invoke_title = _derive_session_title_from_invoke_metadata(invoke_metadata)
             bind_title = invoke_title if invoke_title else session.title
-            bind_result = (
-                await conversation_identity_service.bind_external_session_with_state(
-                    db,
-                    user_id=user_id,
-                    conversation_id=conversation_id,
-                    source=source,
-                    provider=provider_from_invoke,
-                    external_session_id=external_session_id,
-                    agent_id=agent_id,
-                    agent_source=agent_source,
-                    context_id=context_id if isinstance(context_id, str) else None,
-                    title=bind_title or "Session",
-                )
+            conversation_id = await conversation_identity_service.bind_external_session(
+                db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                source=source,
+                provider=provider_from_invoke,
+                external_session_id=external_session_id,
+                agent_id=agent_id,
+                agent_source=agent_source,
+                context_id=context_id if isinstance(context_id, str) else None,
+                title=bind_title or "Session",
             )
-            conversation_id = bind_result.conversation_id
         else:
             normalized_provider = normalize_provider(provider_from_invoke)
             normalized_context_id = normalize_non_empty_text(context_id)
@@ -1799,18 +1796,11 @@ class SessionHubService:
         user_id: UUID,
         conversation_id: UUID,
     ) -> ResolvedConversationTarget | None:
-        # First try via binding
-        canonical_id = (
-            await conversation_identity_service.find_conversation_id_by_binding(
-                db, user_id=user_id, local_session_id=conversation_id
-            )
-        )
-        resolved_id = canonical_id or conversation_id
-
+        local_session_id = conversation_id
         local_session = await self._get_local_session_by_id(
             db,
             user_id=user_id,
-            local_session_id=resolved_id,
+            local_session_id=local_session_id,
         )
         if local_session is None:
             return None
