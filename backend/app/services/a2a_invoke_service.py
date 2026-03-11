@@ -352,6 +352,24 @@ class A2AInvokeService:
         return None
 
     @classmethod
+    def _extract_stream_sequence_from_serialized_event(
+        cls, payload: dict[str, Any]
+    ) -> int | None:
+        root = as_dict(payload)
+        return cls._pick_int(root, ("seq",))
+
+    @classmethod
+    def _extract_stream_task_id_from_serialized_event(
+        cls, payload: dict[str, Any]
+    ) -> str | None:
+        root = as_dict(payload)
+        task = as_dict(root.get("task"))
+        task_id = cls._pick_non_empty_str(root, ("task_id",))
+        if task_id is not None:
+            return task_id
+        return cls._pick_non_empty_str(task, ("id", "task_id"))
+
+    @classmethod
     def _extract_usage_from_candidate(cls, payload: dict[str, Any]) -> dict[str, Any]:
         if not payload:
             return {}
@@ -404,10 +422,12 @@ class A2AInvokeService:
             hints["upstream_message_id"] = analysis.upstream_message_id
         if analysis.upstream_event_id:
             hints["upstream_event_id"] = analysis.upstream_event_id
-        if analysis.upstream_event_seq is not None:
-            hints["upstream_event_seq"] = analysis.upstream_event_seq
-        if analysis.upstream_task_id:
-            hints["upstream_task_id"] = analysis.upstream_task_id
+        seq = cls._extract_stream_sequence_from_serialized_event(payload)
+        if seq is not None:
+            hints["upstream_event_seq"] = seq
+        task_id = cls._extract_stream_task_id_from_serialized_event(payload)
+        if task_id:
+            hints["upstream_task_id"] = task_id
         return hints
 
     @classmethod
@@ -947,9 +967,11 @@ class A2AInvokeService:
                     )
                 )
                 for cached_sequence, cached_event in cached_events:
-                    parsed_sequence = self.analyze_payload(
-                        cached_event
-                    ).upstream_event_seq
+                    parsed_sequence = (
+                        self._extract_stream_sequence_from_serialized_event(
+                            cached_event
+                        )
+                    )
                     if parsed_sequence is not None:
                         seq_counter = max(seq_counter, parsed_sequence)
                     else:
@@ -992,9 +1014,9 @@ class A2AInvokeService:
                         )
                         continue
 
-                    parsed_sequence = self.analyze_payload(
-                        serialized
-                    ).upstream_event_seq
+                    parsed_sequence = (
+                        self._extract_stream_sequence_from_serialized_event(serialized)
+                    )
                     event_sequence = (
                         parsed_sequence
                         if parsed_sequence is not None
@@ -1143,7 +1165,9 @@ class A2AInvokeService:
                 cache_key, resume_from_sequence
             )
             for cached_sequence, cached_event in cached_events:
-                parsed_sequence = self.analyze_payload(cached_event).upstream_event_seq
+                parsed_sequence = self._extract_stream_sequence_from_serialized_event(
+                    cached_event
+                )
                 if parsed_sequence is not None:
                     seq_counter = max(seq_counter, parsed_sequence)
                 else:
@@ -1188,7 +1212,9 @@ class A2AInvokeService:
                     )
                     continue
 
-                parsed_sequence = self.analyze_payload(serialized).upstream_event_seq
+                parsed_sequence = self._extract_stream_sequence_from_serialized_event(
+                    serialized
+                )
                 event_sequence = (
                     parsed_sequence if parsed_sequence is not None else seq_counter + 1
                 )

@@ -1167,6 +1167,26 @@ def test_extract_stream_identity_hints_from_serialized_event():
     }
 
 
+def test_extract_stream_identity_hints_reads_seq_only_from_top_level_field():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "artifact": {
+                "metadata": {
+                    "opencode": {
+                        "message_id": "msg-1",
+                        "event_id": "evt-1",
+                        "seq": 99,
+                    }
+                },
+            }
+        }
+    )
+    assert hints == {
+        "upstream_message_id": "msg-1",
+        "upstream_event_id": "evt-1",
+    }
+
+
 def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
     class _RawPayload:
         def model_dump(self, **kwargs):  # noqa: ARG002
@@ -1232,6 +1252,23 @@ def test_extract_stream_identity_hints_includes_upstream_task_id():
     )
 
     assert hints["upstream_task_id"] == "task-abc"
+
+
+def test_extract_stream_identity_hints_ignores_nested_status_task_fallback():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "status": {"task": {"id": "task-from-status"}},
+            "artifact": {
+                "metadata": {
+                    "opencode": {
+                        "message_id": "msg-1",
+                        "event_id": "evt-1",
+                    }
+                }
+            },
+        }
+    )
+    assert "upstream_task_id" not in hints
 
 
 def test_extract_stream_chunk_reads_nested_opencode_event_and_message_ids():
