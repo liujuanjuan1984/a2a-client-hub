@@ -172,6 +172,17 @@ class ChatConnectionService {
     );
   }
 
+  hasActiveConnection(conversationId: string): boolean {
+    const normalizedConversationId = conversationId.trim();
+    if (!normalizedConversationId) {
+      return false;
+    }
+    return (
+      this.wsConnections.has(normalizedConversationId) ||
+      this.abortControllers.has(normalizedConversationId)
+    );
+  }
+
   async cancelSession(
     conversationId: string,
   ): Promise<SessionCancelResult | null> {

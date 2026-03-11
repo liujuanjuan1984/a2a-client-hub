@@ -13,6 +13,7 @@ jest.mock("@/lib/storage/mmkv", () => ({
 jest.mock("@/services/chatConnectionService", () => ({
   chatConnectionService: {
     cancelSession: jest.fn(async () => {}),
+    hasActiveConnection: jest.fn(() => false),
     getPreferredTransport: jest.fn(() => "http_json"),
     clearAll: jest.fn(),
   },
@@ -30,6 +31,7 @@ const {
 }: {
   chatConnectionService: {
     cancelSession: jest.Mock;
+    hasActiveConnection: jest.Mock;
   };
 } = require("@/services/chatConnectionService");
 
@@ -186,5 +188,58 @@ describe("chat store idempotency semantics", () => {
     expect(session?.lastStreamError).toBeNull();
     expect(session?.pendingInterrupt).toBeNull();
     expect(chatConnectionService.cancelSession).toHaveBeenCalledWith("conv-4");
+  });
+
+  it("cancelMessage skips server cancel when session is idle and no active connection", () => {
+    useChatStore.getState().ensureSession("conv-5", "agent-1");
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-5": {
+          ...state.sessions["conv-5"],
+          streamState: "idle",
+        },
+      },
+    }));
+
+    useChatStore.getState().cancelMessage("conv-5");
+
+    expect(chatConnectionService.cancelSession).not.toHaveBeenCalled();
+  });
+
+  it("cancelMessage requests server cancel when idle session has active connection", () => {
+    useChatStore.getState().ensureSession("conv-6", "agent-1");
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-6": {
+          ...state.sessions["conv-6"],
+          streamState: "idle",
+        },
+      },
+    }));
+    chatConnectionService.hasActiveConnection.mockReturnValueOnce(true);
+
+    useChatStore.getState().cancelMessage("conv-6");
+
+    expect(chatConnectionService.cancelSession).toHaveBeenCalledWith("conv-6");
+  });
+
+  it("cancelMessage coalesces duplicate server cancel requests in short window", () => {
+    useChatStore.getState().ensureSession("conv-7", "agent-1");
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-7": {
+          ...state.sessions["conv-7"],
+          streamState: "recoverable",
+        },
+      },
+    }));
+
+    useChatStore.getState().cancelMessage("conv-7");
+    useChatStore.getState().cancelMessage("conv-7");
+
+    expect(chatConnectionService.cancelSession).toHaveBeenCalledTimes(1);
   });
 });
