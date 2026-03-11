@@ -57,40 +57,47 @@ async def _run_startup_step(
         raise
 
 
+async def _shutdown_runtime_components() -> None:
+    await shutdown_a2a_extensions_service()
+    await shutdown_a2a_service()
+    shutdown_scheduler()
+    await close_global_http_client()
+
+
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
-    init_global_http_client()
-    start_scheduler()
-    ensure_a2a_schedule_job()
-    ensure_ws_ticket_cleanup_job()
-
-    await _run_startup_step(
-        name="a2a_service_init",
-        step=get_a2a_service,
-    )
-
-    await _run_startup_step(
-        name="a2a_extensions_service_init",
-        step=get_a2a_extensions_service,
-    )
-
-    async def _refresh_proxy_cache() -> None:
-        # Initialise A2A proxy allowlist cache.
-        async with AsyncSessionLocal() as db:
-            await a2a_proxy_service.refresh_cache(db)
-
-    await _run_startup_step(
-        name="a2a_proxy_allowlist_cache_init",
-        step=_refresh_proxy_cache,
-    )
-
     try:
+        init_global_http_client()
+        start_scheduler()
+        ensure_a2a_schedule_job()
+        ensure_ws_ticket_cleanup_job()
+
+        await _run_startup_step(
+            name="a2a_service_init",
+            step=get_a2a_service,
+        )
+
+        await _run_startup_step(
+            name="a2a_extensions_service_init",
+            step=get_a2a_extensions_service,
+        )
+
+        async def _refresh_proxy_cache() -> None:
+            # Initialise A2A proxy allowlist cache.
+            async with AsyncSessionLocal() as db:
+                await a2a_proxy_service.refresh_cache(db)
+
+        await _run_startup_step(
+            name="a2a_proxy_allowlist_cache_init",
+            step=_refresh_proxy_cache,
+        )
+
         yield
-    finally:
-        await shutdown_a2a_extensions_service()
-        await shutdown_a2a_service()
-        shutdown_scheduler()
-        await close_global_http_client()
+    except Exception:
+        await _shutdown_runtime_components()
+        raise
+    else:
+        await _shutdown_runtime_components()
 
 
 # Create FastAPI application instance
