@@ -11,7 +11,10 @@ import {
 
 import { MessageBlock, MessageContentFallback } from "./MessageBlock";
 
-import { type ChatMessage, type MessageBlock as MessageBlockType } from "@/lib/api/chat-utils";
+import {
+  type ChatMessage,
+  type MessageBlock as MessageBlockType,
+} from "@/lib/api/chat-utils";
 import { toast } from "@/lib/toast";
 
 export function ChatMessageItem({

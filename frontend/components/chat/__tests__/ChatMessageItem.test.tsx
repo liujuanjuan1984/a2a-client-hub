@@ -1,9 +1,9 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import * as Clipboard from "expo-clipboard";
 import React from "react";
 
 import { ChatMessageItem } from "@/components/chat/ChatMessageItem";
 import { type ChatMessage } from "@/lib/api/chat-utils";
-import * as Clipboard from "expo-clipboard";
 import { toast } from "@/lib/toast";
 
 jest.mock("@expo/vector-icons", () => ({

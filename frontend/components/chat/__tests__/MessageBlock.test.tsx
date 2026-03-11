@@ -2,11 +2,11 @@ import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import React from "react";
 
 import { MessageBlock, MessageContentFallback } from "../MessageBlock";
+
 import { type MessageBlock as MessageBlockType } from "@/lib/api/chat-utils";
 
 describe("MessageBlock and MessageContentFallback", () => {
   const onLayoutChangeStart = jest.fn();
-  const onLoadBlockContent = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -100,7 +100,44 @@ describe("MessageBlock and MessageContentFallback", () => {
     fireEvent.press(screen.getByText("Show Tool Call"));
 
     await waitFor(() => {
-      expect(onLoadBlockContentMock).toHaveBeenCalledWith("msg-1", "tool-empty");
+      expect(onLoadBlockContentMock).toHaveBeenCalledWith(
+        "msg-1",
+        "tool-empty",
+      );
+    });
+  });
+
+  it("expands tool call block after content load succeeds", async () => {
+    const onLoadBlockContentMock = jest.fn(async () => true);
+    const block: MessageBlockType = {
+      id: "tool-expand-after-load",
+      type: "tool_call",
+      content: "",
+      isFinished: true,
+      createdAt: "2026-02-24T00:00:00.000Z",
+      updatedAt: "2026-02-24T00:00:00.000Z",
+    };
+
+    const screen = render(
+      <MessageBlock
+        block={block}
+        messageId="msg-1"
+        blockIndex={0}
+        role="agent"
+        onLayoutChangeStart={onLayoutChangeStart}
+        onLoadBlockContent={onLoadBlockContentMock}
+      />,
+    );
+
+    fireEvent.press(screen.getByText("Show Tool Call"));
+
+    await waitFor(() => {
+      expect(onLoadBlockContentMock).toHaveBeenCalledWith(
+        "msg-1",
+        "tool-expand-after-load",
+      );
+      expect(onLayoutChangeStart).toHaveBeenCalled();
+      expect(screen.getByLabelText("Hide Tool Call")).toBeTruthy();
     });
   });
 
@@ -120,7 +157,7 @@ describe("MessageBlock and MessageContentFallback", () => {
   it("renders plain content using TextBlock", () => {
     const screen = render(
       <MessageContentFallback
-        hasPlainContent={true}
+        hasPlainContent
         content="Hello world"
         messageId="msg-1"
         role="user"
