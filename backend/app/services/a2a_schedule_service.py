@@ -135,6 +135,10 @@ class A2AScheduleService:
         A2AScheduleTask.CYCLE_INTERVAL,
         A2AScheduleTask.CYCLE_SEQUENTIAL,
     }
+    _allowed_conversation_policies = {
+        A2AScheduleTask.POLICY_NEW,
+        A2AScheduleTask.POLICY_REUSE,
+    }
 
     @staticmethod
     def _normalize_timezone_str(timezone_str: str | None) -> str:
@@ -262,6 +266,7 @@ class A2AScheduleService:
         cycle_type: str,
         time_point: Dict[str, Any],
         enabled: bool,
+        conversation_policy: str = A2AScheduleTask.POLICY_NEW,
     ) -> A2AScheduleTask:
         await self._apply_nowait_write_timeouts(db)
         await self._ensure_agent_owned(db, user_id=user_id, agent_id=agent_id)
@@ -274,6 +279,9 @@ class A2AScheduleService:
         normalized_name = self._normalize_name(name)
         normalized_prompt = self._normalize_prompt(prompt)
         normalized_cycle = self._normalize_cycle_type(cycle_type)
+        normalized_conversation_policy = self._normalize_conversation_policy(
+            conversation_policy
+        )
         timezone_value = self._normalize_timezone_str(timezone_str)
         normalized_point = self._normalize_time_point(
             cycle_type=normalized_cycle,
@@ -299,6 +307,7 @@ class A2AScheduleService:
             prompt=normalized_prompt,
             cycle_type=normalized_cycle,
             time_point=normalized_point,
+            conversation_policy=normalized_conversation_policy,
             enabled=enabled,
             next_run_at=next_run_at,
             last_run_status=A2AScheduleTask.STATUS_IDLE,
@@ -323,6 +332,7 @@ class A2AScheduleService:
         cycle_type: Optional[str] = None,
         time_point: Optional[Dict[str, Any]] = None,
         enabled: Optional[bool] = None,
+        conversation_policy: Optional[str] = None,
     ) -> A2AScheduleTask:
         await self._apply_nowait_write_timeouts(db)
         await self._lock_user_row_for_quota(db, user_id=user_id)
@@ -371,6 +381,11 @@ class A2AScheduleService:
 
         if enabled is not None:
             task.enabled = enabled
+
+        if conversation_policy is not None:
+            task.conversation_policy = self._normalize_conversation_policy(
+                conversation_policy
+            )
 
         should_recompute = False
         if task.enabled and (schedule_changed or enabled is True):
@@ -1075,6 +1090,14 @@ class A2AScheduleService:
         if normalized not in self._allowed_cycle_types:
             raise A2AScheduleValidationError(
                 "cycle_type must be one of daily, weekly, monthly, interval, sequential"
+            )
+        return normalized
+
+    def _normalize_conversation_policy(self, value: str) -> str:
+        normalized = (value or "").strip().lower()
+        if normalized not in self._allowed_conversation_policies:
+            raise A2AScheduleValidationError(
+                "conversation_policy must be one of new_each_run, reuse_single"
             )
         return normalized
 
