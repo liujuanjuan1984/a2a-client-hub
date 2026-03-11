@@ -47,7 +47,6 @@ _A2A_SCHEDULE_JOB_ID = "a2a-schedule-dispatch-minute"
 _A2A_SCHEDULE_WORKER_PREFIX = "a2a-schedule-worker"
 _dispatch_workers_started = False
 _dispatch_workers_lock = asyncio.Lock()
-_dispatch_queue: asyncio.Queue[ClaimedA2AScheduleTask] = asyncio.Queue()
 _dispatch_worker_tasks: set[asyncio.Task[None]] = set()
 _NON_SQLA_DB_CONNECTIVITY_ERRORS = (ConnectionError, OSError)
 _HEARTBEAT_WARNING_COOLDOWN_SECONDS = 60.0
@@ -396,17 +395,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             thread = None
             is_new = False
             if execution is None:
-                started_at = utc_now()
-                execution = A2AScheduleExecution(
-                    user_id=task.user_id,
-                    task_id=task.id,
-                    run_id=claim.run_id,
-                    scheduled_for=claim.scheduled_for,
-                    started_at=started_at,
-                    status=A2AScheduleExecution.STATUS_RUNNING,
-                )
-                db.add(execution)
-                await db.flush()
+                raise RuntimeError("Execution not found after claim")
             metadata = _execution_metadata(task, str(execution.id), str(claim.run_id))
             runtime = await a2a_runtime_builder.build(
                 db,
@@ -529,17 +518,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         .limit(1)
                     )
                 if execution is None:
-                    execution = A2AScheduleExecution(
-                        user_id=task.user_id,
-                        task_id=task.id,
-                        run_id=claim.run_id,
-                        scheduled_for=claim.scheduled_for,
-                        started_at=finished_at,
-                        status=A2AScheduleExecution.STATUS_RUNNING,
-                        conversation_id=task.conversation_id,
-                    )
-                    db.add(execution)
-                    await db.flush()
+                    raise RuntimeError("Execution not found during conflict resolution")
             if not finalized:
                 if not finalize_conflicted:
                     logger.warning(
@@ -644,17 +623,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     )
 
             if execution is None:
-                execution = A2AScheduleExecution(
-                    user_id=task.user_id,
-                    task_id=task.id,
-                    run_id=claim.run_id,
-                    scheduled_for=claim.scheduled_for,
-                    started_at=finished_at,
-                    status=A2AScheduleExecution.STATUS_RUNNING,
-                    conversation_id=task.conversation_id,
-                )
-                db.add(execution)
-                await db.flush()
+                    raise RuntimeError("Execution not found during conflict resolution")
 
             execution.status = A2AScheduleExecution.STATUS_FAILED
             execution.finished_at = finished_at
@@ -745,20 +714,26 @@ async def _schedule_worker_loop(worker_index: int) -> None:
     worker_name = f"{_A2A_SCHEDULE_WORKER_PREFIX}-{worker_index}"
     logger.info("Started scheduled task worker %s", worker_name)
     while True:
-        claim = await _dispatch_queue.get()
         try:
+            async with AsyncSessionLocal() as db:
+                claim = await a2a_schedule_service.claim_next_pending_execution(db)
+
+            if claim is None:
+                # No tasks pending, sleep briefly
+                await asyncio.sleep(1.0)
+                continue
+
             await _execute_claimed_task(claim=claim)
+        except asyncio.CancelledError:
+            break
         except Exception as exc:  # pragma: no cover - defensive safety
             logger.error(
-                "Unhandled exception in scheduled worker %s task=%s err=%s",
+                "Unhandled exception in scheduled worker %s err=%s",
                 worker_name,
-                claim.task_id,
                 exc,
                 exc_info=exc,
             )
-        finally:
-            _dispatch_queue.task_done()
-
+            await asyncio.sleep(1.0)
 
 def _prune_finished_worker_tasks() -> None:
     finished = {task for task in _dispatch_worker_tasks if task.done()}
@@ -846,47 +821,39 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
 
         await _ensure_schedule_workers_started()
 
-        enqueued = 0
-        while enqueued < max(batch_size, 1):
-            try:
-                async with AsyncSessionLocal() as db:
-                    claim = await a2a_schedule_service.claim_next_due_task(db)
-            except Exception as exc:
-                if _is_db_lock_contention_issue(exc):
-                    logger.warning(
-                        "Stop claiming due tasks this cycle due to lock contention.",
-                        exc_info=exc,
-                        extra={"phase": "claim", "lock_contention": True},
-                    )
-                    break
-                if _is_db_query_timeout_issue(exc):
-                    ops_metrics.increment_schedule_db_query_timeouts()
-                    logger.warning(
-                        "Stop claiming due tasks this cycle due to database statement timeout.",
-                        exc_info=exc,
-                        extra={"phase": "claim", "db_query_timeout": True},
-                    )
-                    break
-                if _is_db_connectivity_issue(exc):
-                    logger.warning(
-                        "Skip A2A schedule dispatch: database connectivity issue while claiming due tasks.",
-                        exc_info=exc,
-                        extra={"phase": "claim"},
-                    )
-                    return
+        try:
+            async with AsyncSessionLocal() as db:
+                enqueued = await a2a_schedule_service.enqueue_due_tasks(db, batch_size=batch_size)
+        except Exception as exc:
+            if _is_db_lock_contention_issue(exc):
+                logger.warning(
+                    "Stop enqueuing due tasks this cycle due to lock contention.",
+                    exc_info=exc,
+                    extra={"phase": "enqueue", "lock_contention": True},
+                )
+                enqueued = 0
+            elif _is_db_query_timeout_issue(exc):
+                ops_metrics.increment_schedule_db_query_timeouts()
+                logger.warning(
+                    "Stop enqueuing due tasks this cycle due to database statement timeout.",
+                    exc_info=exc,
+                    extra={"phase": "enqueue", "db_query_timeout": True},
+                )
+                enqueued = 0
+            elif _is_db_connectivity_issue(exc):
+                logger.warning(
+                    "Skip A2A schedule dispatch: database connectivity issue while enqueuing due tasks.",
+                    exc_info=exc,
+                    extra={"phase": "enqueue"},
+                )
+                return
+            else:
                 raise
-
-            if claim is None:
-                break
-
-            _dispatch_queue.put_nowait(claim)
-            enqueued += 1
 
         if enqueued:
             logger.info(
-                "Enqueued %d scheduled A2A task(s). queue_size=%d",
+                "Enqueued %d scheduled A2A task(s).",
                 enqueued,
-                _dispatch_queue.qsize(),
             )
         await _refresh_ops_metrics()
 
