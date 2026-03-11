@@ -1,8 +1,9 @@
 """FastAPI entry point for a2a-client-hub."""
 
 import importlib
+import inspect
 from contextlib import asynccontextmanager
-from typing import Any, Dict
+from typing import Any, Awaitable, Callable, Dict
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, status
@@ -16,6 +17,7 @@ from app.api.error_handlers import (
     unhandled_exception_handler,
     validation_exception_handler,
 )
+from app.api.routers import ROUTER_MODULES
 from app.core.config import settings
 from app.core.http_client import close_global_http_client, init_global_http_client
 from app.core.logging import get_logger, setup_logging
@@ -40,23 +42,75 @@ logger = get_logger(__name__)
 
 
 # Lifecycle management for the FastAPI application.
+async def _run_startup_step(
+    app: FastAPI,
+    *,
+    name: str,
+    step: Callable[[], Any | Awaitable[Any]],
+    critical: bool,
+) -> None:
+    try:
+        result = step()
+        if inspect.isawaitable(result):
+            await result
+        logger.info("Startup step completed: %s", name)
+    except Exception:
+        if critical:
+            logger.exception("Critical startup step failed: %s", name)
+            raise
+        failures = getattr(app.state, "startup_failures", None)
+        if failures is None:
+            failures = []
+            app.state.startup_failures = failures
+        failures.append(name)
+        app.state.startup_degraded = True
+        logger.exception(
+            "Startup step failed; continuing in degraded mode: %s",
+            name,
+        )
+
+
 @asynccontextmanager
-async def app_lifespan(_: FastAPI):
+async def app_lifespan(app: FastAPI):
+    app.state.startup_degraded = False
+    app.state.startup_failures = []
+
     init_global_http_client()
     start_scheduler()
     ensure_a2a_schedule_job()
     ensure_ws_ticket_cleanup_job()
 
-    get_a2a_service()
-    logger.info("A2A service initialised during startup")
+    await _run_startup_step(
+        app,
+        name="a2a_service_init",
+        step=get_a2a_service,
+        critical=False,
+    )
 
-    get_a2a_extensions_service()
-    logger.info("A2A extensions service initialised during startup")
+    await _run_startup_step(
+        app,
+        name="a2a_extensions_service_init",
+        step=get_a2a_extensions_service,
+        critical=False,
+    )
 
-    # Initialise A2A proxy allowlist cache
-    async with AsyncSessionLocal() as db:
-        await a2a_proxy_service.refresh_cache(db)
-    logger.info("A2A proxy allowlist cache initialised during startup")
+    async def _refresh_proxy_cache() -> None:
+        # Initialise A2A proxy allowlist cache.
+        async with AsyncSessionLocal() as db:
+            await a2a_proxy_service.refresh_cache(db)
+
+    await _run_startup_step(
+        app,
+        name="a2a_proxy_allowlist_cache_init",
+        step=_refresh_proxy_cache,
+        critical=False,
+    )
+
+    if app.state.startup_degraded:
+        logger.warning(
+            "Application started in degraded mode. Failed startup steps: %s",
+            app.state.startup_failures,
+        )
 
     try:
         yield
@@ -100,23 +154,14 @@ app.add_middleware(DebugLoggingMiddleware)
 
 
 def include_all_routers() -> None:
-    router_modules = (
-        "app.api.routers.auth",
-        "app.api.routers.a2a_agents",
-        "app.api.routers.hub_a2a_agents",
-        "app.api.routers.admin_a2a_agents",
-        "app.api.routers.admin_proxy_allowlist",
-        "app.api.routers.a2a_schedules",
-        "app.api.routers.a2a_extensions_opencode",
-        "app.api.routers.hub_a2a_extensions_opencode",
-        "app.api.routers.opencode_session_directory",
-        "app.api.routers.me_sessions",
-        "app.api.routers.invitations",
-        "app.api.routers.shortcuts",
-    )
-    for module_name in router_modules:
+    for module_name in ROUTER_MODULES:
         module = importlib.import_module(module_name)
-        app.include_router(module.router, prefix=settings.api_v1_prefix)
+        router = getattr(module, "router", None)
+        if router is None:
+            raise RuntimeError(
+                f"Router module '{module_name}' does not export 'router'.",
+            )
+        app.include_router(router, prefix=settings.api_v1_prefix)
         logger.info("Successfully included router from: %s", module_name)
 
 
