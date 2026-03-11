@@ -1,18 +1,49 @@
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { render } from "@testing-library/react-native";
 import React from "react";
 
 import { MessageBlock, MessageContentFallback } from "../MessageBlock";
 
 import { type MessageBlock as MessageBlockType } from "@/lib/api/chat-utils";
 
-describe("MessageBlock and MessageContentFallback", () => {
-  const onLayoutChangeStart = jest.fn();
+const mockReasoningBlock = jest.fn((_props: unknown) => null);
+const mockToolCallBlock = jest.fn((_props: unknown) => null);
+const mockTextBlock = jest.fn((_props: unknown) => null);
+const mockGenericBlock = jest.fn((_props: unknown) => null);
 
+jest.mock("../blocks/ReasoningBlock", () => ({
+  ReasoningBlock: (props: unknown) => {
+    mockReasoningBlock(props);
+    return null;
+  },
+}));
+
+jest.mock("../blocks/ToolCallBlock", () => ({
+  ToolCallBlock: (props: unknown) => {
+    mockToolCallBlock(props);
+    return null;
+  },
+}));
+
+jest.mock("../blocks/TextBlock", () => ({
+  TextBlock: (props: unknown) => {
+    mockTextBlock(props);
+    return null;
+  },
+}));
+
+jest.mock("../blocks/GenericBlock", () => ({
+  GenericBlock: (props: unknown) => {
+    mockGenericBlock(props);
+    return null;
+  },
+}));
+
+describe("MessageBlock and MessageContentFallback", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it("renders reasoning block and handles collapse", () => {
+  it("routes reasoning block to ReasoningBlock with expected props", () => {
     const block: MessageBlockType = {
       id: "reasoning-1",
       type: "reasoning",
@@ -22,148 +53,154 @@ describe("MessageBlock and MessageContentFallback", () => {
       updatedAt: "2026-02-24T00:00:00.000Z",
     };
 
-    const screen = render(
+    const onLayoutChangeStart = jest.fn();
+    const onLoadBlockContent = jest.fn(async () => true);
+
+    render(
       <MessageBlock
         block={block}
         messageId="msg-1"
         blockIndex={0}
         role="agent"
         onLayoutChangeStart={onLayoutChangeStart}
+        onLoadBlockContent={onLoadBlockContent}
       />,
     );
 
-    fireEvent.press(screen.getByText("Show Reasoning"));
-    expect(screen.queryByText("Show Reasoning")).toBeNull();
-    expect(
-      screen.getByTestId("chat-message-reasoning-1-collapse-bottom"),
-    ).toBeTruthy();
-
-    fireEvent.press(
-      screen.getByTestId("chat-message-reasoning-1-collapse-bottom"),
+    expect(mockReasoningBlock).toHaveBeenCalledTimes(1);
+    expect(mockReasoningBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        block,
+        fallbackBlockId: "reasoning-1",
+        messageId: "msg-1",
+        onLayoutChangeStart,
+        onLoadBlockContent,
+        isFirst: true,
+      }),
     );
-    expect(onLayoutChangeStart).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("Show Reasoning")).toBeTruthy();
   });
 
-  it("renders tool call block and handles collapse", () => {
+  it("routes tool_call block to ToolCallBlock with generated fallback id", () => {
     const block: MessageBlockType = {
-      id: "tool-1",
+      id: "",
       type: "tool_call",
-      content: '{"name":"web.search"}',
+      content: "{}",
       isFinished: true,
       createdAt: "2026-02-24T00:00:00.000Z",
       updatedAt: "2026-02-24T00:00:00.000Z",
     };
 
-    const screen = render(
+    render(
       <MessageBlock
         block={block}
-        messageId="msg-1"
-        blockIndex={0}
+        messageId="msg-2"
+        blockIndex={3}
         role="agent"
-        onLayoutChangeStart={onLayoutChangeStart}
       />,
     );
 
-    fireEvent.press(screen.getByText("Show Tool Call"));
-    expect(screen.queryByText("Show Tool Call")).toBeNull();
-    expect(
-      screen.getByTestId("chat-message-tool-1-collapse-bottom"),
-    ).toBeTruthy();
-
-    fireEvent.press(screen.getByTestId("chat-message-tool-1-collapse-bottom"));
-    expect(onLayoutChangeStart).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("Show Tool Call")).toBeTruthy();
+    expect(mockToolCallBlock).toHaveBeenCalledTimes(1);
+    expect(mockToolCallBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        block,
+        fallbackBlockId: "msg-2:3",
+        messageId: "msg-2",
+        isFirst: false,
+      }),
+    );
   });
 
-  it("loads tool call content before expanding when empty", async () => {
-    const onLoadBlockContentMock = jest.fn(async () => false);
+  it("routes text block to TextBlock and maps role to isAgent", () => {
     const block: MessageBlockType = {
-      id: "tool-empty",
-      type: "tool_call",
-      content: "",
+      id: "text-1",
+      type: "text",
+      content: "Hello",
       isFinished: true,
       createdAt: "2026-02-24T00:00:00.000Z",
       updatedAt: "2026-02-24T00:00:00.000Z",
     };
 
-    const screen = render(
+    render(
       <MessageBlock
         block={block}
-        messageId="msg-1"
-        blockIndex={0}
-        role="agent"
-        onLoadBlockContent={onLoadBlockContentMock}
+        messageId="msg-3"
+        blockIndex={1}
+        role="user"
       />,
     );
 
-    fireEvent.press(screen.getByText("Show Tool Call"));
-
-    await waitFor(() => {
-      expect(onLoadBlockContentMock).toHaveBeenCalledWith(
-        "msg-1",
-        "tool-empty",
-      );
-    });
+    expect(mockTextBlock).toHaveBeenCalledTimes(1);
+    expect(mockTextBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        block,
+        fallbackBlockId: "text-1",
+        isAgent: false,
+        isFirst: false,
+      }),
+    );
   });
 
-  it("expands tool call block after content load succeeds", async () => {
-    const onLoadBlockContentMock = jest.fn(async () => true);
-    const block: MessageBlockType = {
-      id: "tool-expand-after-load",
-      type: "tool_call",
-      content: "",
+  it("routes unknown block type to GenericBlock", () => {
+    const block = {
+      id: "generic-1",
+      type: "artifact",
+      content: "binary",
       isFinished: true,
       createdAt: "2026-02-24T00:00:00.000Z",
       updatedAt: "2026-02-24T00:00:00.000Z",
-    };
+    } as MessageBlockType;
 
-    const screen = render(
+    render(
       <MessageBlock
         block={block}
-        messageId="msg-1"
+        messageId="msg-4"
         blockIndex={0}
         role="agent"
-        onLayoutChangeStart={onLayoutChangeStart}
-        onLoadBlockContent={onLoadBlockContentMock}
       />,
     );
 
-    fireEvent.press(screen.getByText("Show Tool Call"));
-
-    await waitFor(() => {
-      expect(onLoadBlockContentMock).toHaveBeenCalledWith(
-        "msg-1",
-        "tool-expand-after-load",
-      );
-      expect(onLayoutChangeStart).toHaveBeenCalled();
-      expect(screen.getByLabelText("Hide Tool Call")).toBeTruthy();
-    });
+    expect(mockGenericBlock).toHaveBeenCalledTimes(1);
+    expect(mockGenericBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        block,
+        fallbackBlockId: "generic-1",
+        isFirst: true,
+      }),
+    );
   });
 
-  it("shows placeholder when content is unavailable", () => {
+  it("renders fallback placeholder when plain content is unavailable", () => {
     const screen = render(
       <MessageContentFallback
         hasPlainContent={false}
         content=""
-        messageId="msg-1"
+        messageId="msg-5"
         role="agent"
       />,
     );
 
     expect(screen.getByText("Content unavailable.")).toBeTruthy();
+    expect(mockTextBlock).not.toHaveBeenCalled();
   });
 
-  it("renders plain content using TextBlock", () => {
-    const screen = render(
+  it("renders plain content through TextBlock when content exists", () => {
+    render(
       <MessageContentFallback
         hasPlainContent
         content="Hello world"
-        messageId="msg-1"
-        role="user"
+        messageId="msg-6"
+        role="agent"
       />,
     );
 
-    expect(screen.getByText("Hello world")).toBeTruthy();
+    expect(mockTextBlock).toHaveBeenCalledTimes(1);
+    expect(mockTextBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Hello world",
+        fallbackBlockId: "msg-6",
+        isAgent: true,
+        isFirst: true,
+      }),
+    );
   });
 });
