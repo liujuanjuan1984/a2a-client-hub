@@ -24,7 +24,7 @@ async def await_cancel_safe(awaitable: Awaitable[_ResultT]) -> _ResultT:
 async def await_cancel_safe_suppressed(awaitable: Awaitable[object]) -> None:
     """Finish cleanup and suppress any secondary cleanup failure."""
 
-    with suppress(BaseException):
+    with suppress(Exception, asyncio.CancelledError):
         await await_cancel_safe(awaitable)
 
 
