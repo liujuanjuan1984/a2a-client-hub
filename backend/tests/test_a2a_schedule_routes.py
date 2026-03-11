@@ -174,6 +174,52 @@ async def test_schedule_routes_crud_and_toggle(
         assert after_delete_resp.status_code == 404
 
 
+async def test_schedule_conversation_policy_persists_on_create_and_update(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="policy")
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        create_resp = await client.post(
+            "/me/a2a/schedules",
+            json={
+                "name": "Policy check",
+                "agent_id": str(agent.id),
+                "prompt": "Use policy",
+                "cycle_type": "daily",
+                "time_point": {"time": "08:30"},
+                "enabled": False,
+                "conversation_policy": "reuse_single",
+                "schedule_timezone": user.timezone or "UTC",
+            },
+        )
+        assert create_resp.status_code == 201
+        created = create_resp.json()
+        task_id = created["id"]
+        assert created["conversation_policy"] == "reuse_single"
+
+        get_created_resp = await client.get(f"/me/a2a/schedules/{task_id}")
+        assert get_created_resp.status_code == 200
+        assert get_created_resp.json()["conversation_policy"] == "reuse_single"
+
+        update_resp = await client.patch(
+            f"/me/a2a/schedules/{task_id}",
+            json={"conversation_policy": "new_each_run"},
+        )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["conversation_policy"] == "new_each_run"
+
+        get_updated_resp = await client.get(f"/me/a2a/schedules/{task_id}")
+        assert get_updated_resp.status_code == 200
+        assert get_updated_resp.json()["conversation_policy"] == "new_each_run"
+
+
 async def test_schedule_create_rejects_unowned_agent(
     async_db_session,
     async_session_maker,

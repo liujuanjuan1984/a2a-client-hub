@@ -163,6 +163,7 @@ async def create_schedule_task(
             cycle_type=payload.cycle_type,
             time_point=payload.time_point,
             enabled=payload.enabled,
+            conversation_policy=payload.conversation_policy,
         )
     )
     return _build_task_response(task, schedule_timezone=schedule_timezone)
@@ -235,6 +236,7 @@ async def patch_schedule_task(
             cycle_type=payload.cycle_type,
             time_point=payload.time_point,
             enabled=payload.enabled,
+            conversation_policy=payload.conversation_policy,
         )
     )
 
