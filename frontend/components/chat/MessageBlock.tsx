@@ -6,13 +6,16 @@ import { ReasoningBlock } from "./blocks/ReasoningBlock";
 import { TextBlock } from "./blocks/TextBlock";
 import { ToolCallBlock } from "./blocks/ToolCallBlock";
 
-import { type MessageBlock as MessageBlockType } from "@/lib/api/chat-utils";
+import {
+  type ChatMessage,
+  type MessageBlock as MessageBlockType,
+} from "@/lib/api/chat-utils";
 
 export interface MessageBlockProps {
   block: MessageBlockType;
   messageId: string;
   blockIndex: number;
-  role: "agent" | "user" | string;
+  role: ChatMessage["role"];
   onLayoutChangeStart?: () => void;
   onLoadBlockContent?: (messageId: string, blockId: string) => Promise<boolean>;
 }
@@ -32,7 +35,6 @@ export function MessageBlock({
     case "reasoning":
       return (
         <ReasoningBlock
-          key={blockId}
           block={block}
           fallbackBlockId={blockId}
           messageId={messageId}
@@ -44,7 +46,6 @@ export function MessageBlock({
     case "tool_call":
       return (
         <ToolCallBlock
-          key={blockId}
           block={block}
           fallbackBlockId={blockId}
           messageId={messageId}
@@ -56,7 +57,6 @@ export function MessageBlock({
     case "text":
       return (
         <TextBlock
-          key={blockId}
           block={block}
           fallbackBlockId={blockId}
           isAgent={role === "agent"}
@@ -66,7 +66,6 @@ export function MessageBlock({
     default:
       return (
         <GenericBlock
-          key={blockId}
           block={block}
           fallbackBlockId={blockId}
           isFirst={isFirst}
@@ -84,7 +83,7 @@ export function MessageContentFallback({
   hasPlainContent: boolean;
   content: string;
   messageId: string;
-  role: "agent" | "user" | string;
+  role: ChatMessage["role"];
 }) {
   if (hasPlainContent) {
     return (
