@@ -250,6 +250,30 @@ export const useChatStore = create<ChatState>()(
       },
       cancelMessage: (conversationId) => {
         requestSessionCancel(conversationId);
+        set((state) => {
+          const current = state.sessions[conversationId];
+          if (!current) {
+            return state;
+          }
+          if (
+            current.streamState === "idle" &&
+            current.pendingInterrupt == null &&
+            current.lastStreamError == null
+          ) {
+            return state;
+          }
+          return {
+            sessions: {
+              ...state.sessions,
+              [conversationId]: {
+                ...current,
+                streamState: "idle",
+                pendingInterrupt: null,
+                lastStreamError: null,
+              },
+            },
+          };
+        });
       },
       sendMessage: async (conversationId, agentId, content, agentSource) => {
         const trimmed = content.trim();

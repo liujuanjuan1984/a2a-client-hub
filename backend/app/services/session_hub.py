@@ -689,7 +689,15 @@ class SessionHubService:
             conversation_id=resolved_conversation_id,
         )
         if target is None:
-            raise ValueError("session_not_found")
+            return (
+                {
+                    "conversationId": str(resolved_conversation_id),
+                    "taskId": None,
+                    "cancelled": False,
+                    "status": "no_inflight",
+                },
+                False,
+            )
 
         snapshots = await self._list_inflight_invoke_snapshots(
             user_id=user_id,

@@ -25,6 +25,13 @@ jest.mock("@/store/chatRuntime", () => ({
 const mockedExecuteChatRuntime = executeChatRuntime as jest.MockedFunction<
   typeof executeChatRuntime
 >;
+const {
+  chatConnectionService,
+}: {
+  chatConnectionService: {
+    cancelSession: jest.Mock;
+  };
+} = require("@/services/chatConnectionService");
 
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -149,5 +156,35 @@ describe("chat store idempotency semantics", () => {
         },
       },
     });
+  });
+
+  it("cancelMessage marks streaming session as idle immediately", () => {
+    useChatStore.getState().ensureSession("conv-4", "agent-1");
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-4": {
+          ...state.sessions["conv-4"],
+          streamState: "streaming",
+          lastStreamError: "temporary error",
+          pendingInterrupt: {
+            requestId: "req-1",
+            type: "permission",
+            details: {
+              permission: "tool.exec",
+              patterns: ["*"],
+            },
+          },
+        },
+      },
+    }));
+
+    useChatStore.getState().cancelMessage("conv-4");
+
+    const session = useChatStore.getState().sessions["conv-4"];
+    expect(session?.streamState).toBe("idle");
+    expect(session?.lastStreamError).toBeNull();
+    expect(session?.pendingInterrupt).toBeNull();
+    expect(chatConnectionService.cancelSession).toHaveBeenCalledWith("conv-4");
   });
 });
