@@ -38,6 +38,7 @@ from app.services.a2a_schedule_service import (
 from app.services.invoke_route_runner import run_background_invoke
 from app.services.ops_metrics import ops_metrics
 from app.services.scheduler import get_scheduler
+from app.utils.async_cleanup import await_cancel_safe_suppressed
 from app.utils.timezone_util import utc_now
 
 logger = get_logger(__name__)
@@ -707,8 +708,7 @@ async def _try_hold_dispatch_leader_lock():
                 {"lock_key": _SCHEDULE_DISPATCH_ADVISORY_LOCK_KEY},
             )
         )
-        with contextlib.suppress(Exception):
-            await lock_conn.rollback()
+        await await_cancel_safe_suppressed(lock_conn.rollback())
         if not acquired:
             ops_metrics.increment_schedule_leader_lock_contentions()
             yield False
@@ -738,8 +738,7 @@ async def _try_hold_dispatch_leader_lock():
                 ops_metrics.increment_schedule_leader_lock_release_failures()
                 with contextlib.suppress(Exception):
                     await lock_conn.invalidate()
-            with contextlib.suppress(Exception):
-                await lock_conn.rollback()
+            await await_cancel_safe_suppressed(lock_conn.rollback())
 
 
 async def _schedule_worker_loop(worker_index: int) -> None:

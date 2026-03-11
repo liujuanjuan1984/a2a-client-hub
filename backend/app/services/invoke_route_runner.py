@@ -36,6 +36,7 @@ from app.services.invoke_session_binding import (
 )
 from app.services.session_hub import session_hub_service
 from app.services.ws_ticket_service import ws_ticket_service
+from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import (
     as_dict,
@@ -1328,7 +1329,9 @@ async def run_ws_invoke_route(
                 message="Invalid request payload",
                 error_code="invalid_request",
             )
-            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            await await_cancel_safe(
+                websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            )
             return
 
         if not payload.query.strip():
@@ -1337,7 +1340,9 @@ async def run_ws_invoke_route(
                 message="Query must be a non-empty string",
                 error_code="invalid_query",
             )
-            await websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            await await_cancel_safe(
+                websocket.close(code=status.WS_1003_UNSUPPORTED_DATA)
+            )
             return
 
         try:
@@ -1353,7 +1358,9 @@ async def run_ws_invoke_route(
                 message=message,
                 error_code=runtime_not_found_code,
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await await_cancel_safe(
+                websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            )
             return
         except runtime_validation_errors as exc:
             await a2a_invoke_service.send_ws_error(
@@ -1361,7 +1368,7 @@ async def run_ws_invoke_route(
                 message=str(exc),
                 error_code="runtime_invalid",
             )
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            await await_cancel_safe(websocket.close(code=status.WS_1011_INTERNAL_ERROR))
             return
         await _close_open_transaction(db)
 
@@ -1401,7 +1408,9 @@ async def run_ws_invoke_route(
                 message=str(exc),
                 error_code=ws_error_code_for_invoke_session_error(str(exc)),
             )
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            await await_cancel_safe(
+                websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            )
             return
 
     except WebSocketDisconnect:
@@ -1418,7 +1427,7 @@ async def run_ws_invoke_route(
             pass
     finally:
         try:
-            await websocket.close()
+            await await_cancel_safe_suppressed(websocket.close())
         except Exception:
             pass
 
@@ -1519,7 +1528,7 @@ async def run_http_invoke_route(
                     # surrounding context manager in the route handler will close it
                     # immediately upon returning the StreamingResponse object.
                     if db is not None:
-                        await db.close()
+                        await await_cancel_safe(db.close())
 
             response.body_iterator = guarded_iterator()
             return response
@@ -1562,7 +1571,7 @@ async def run_http_invoke_route(
                             yield chunk
                     finally:
                         if db is not None:
-                            await db.close()
+                            await await_cancel_safe(db.close())
 
                 response.body_iterator = guarded_iterator_no_inflight()
                 return response

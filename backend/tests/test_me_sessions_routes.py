@@ -337,6 +337,28 @@ async def test_me_sessions_cancel_accepts_pending_when_task_id_not_bound(
     assert payload["status"] == "pending"
 
 
+async def test_me_sessions_cancel_returns_no_inflight_when_session_not_found(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    missing_conversation_id = uuid4()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(f"/me/conversations/{missing_conversation_id}/cancel")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["conversationId"] == str(missing_conversation_id)
+    assert payload["taskId"] is None
+    assert payload["cancelled"] is False
+    assert payload["status"] == "no_inflight"
+
+
 async def test_me_sessions_cancel_maps_upstream_error_to_bad_gateway(
     async_db_session,
     async_session_maker,

@@ -6,6 +6,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.utils.async_cleanup import await_cancel_safe
 
 logger = get_logger(__name__)
 
@@ -48,6 +49,6 @@ async def close_global_http_client() -> None:
     """Close the global httpx client and release resources."""
     global _global_http_client
     if _global_http_client is not None and not _global_http_client.is_closed:
-        await _global_http_client.aclose()
+        await await_cancel_safe(_global_http_client.aclose())
         logger.info("Global HTTP client closed")
     _global_http_client = None

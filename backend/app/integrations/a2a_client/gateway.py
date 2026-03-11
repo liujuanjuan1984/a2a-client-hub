@@ -21,6 +21,7 @@ from app.integrations.a2a_client.errors import (
     A2AOutboundNotAllowedError,
 )
 from app.integrations.a2a_client.metrics import a2a_metrics
+from app.utils.async_cleanup import await_cancel_safe
 from app.utils.logging_redaction import (
     redact_headers_for_logging,
     redact_url_for_logging,
@@ -507,7 +508,7 @@ class A2AGateway:
             self._clients.clear()
         for entry in entries:
             try:
-                await entry.client.close()
+                await await_cancel_safe(entry.client.close())
             except Exception:  # pragma: no cover - defensive cleanup
                 logger.debug(
                     "Failed to close A2A client during shutdown", exc_info=True
@@ -568,7 +569,7 @@ class A2AGateway:
                     to_close.append(entry.client)
         for client in to_close:
             try:
-                await client.close()
+                await await_cancel_safe(client.close())
             except Exception:  # pragma: no cover - defensive cleanup
                 logger.debug("Failed to close idle A2A client", exc_info=True)
             else:
@@ -581,7 +582,7 @@ class A2AGateway:
         if not entry:
             return
         try:
-            await entry.client.close()
+            await await_cancel_safe(entry.client.close())
         except Exception:  # pragma: no cover - defensive cleanup
             logger.debug("Failed to close invalidated A2A client", exc_info=True)
         else:

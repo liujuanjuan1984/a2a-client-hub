@@ -49,6 +49,7 @@ from app.integrations.a2a_client.errors import (
     A2AOutboundNotAllowedError,
 )
 from app.services.a2a_proxy_service import a2a_proxy_service
+from app.utils.async_cleanup import await_cancel_safe
 from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
@@ -487,14 +488,14 @@ class A2AClient:
 
         for entry in entries:
             try:
-                await entry.client.close()
+                await await_cancel_safe(entry.client.close())
             except Exception:  # pragma: no cover - defensive cleanup
                 logger.debug("Failed to close A2A client transport", exc_info=True)
         if http_client is None:
             return
 
         try:
-            await http_client.aclose()
+            await await_cancel_safe(http_client.aclose())
         except Exception:  # pragma: no cover - defensive cleanup
             logger.debug(
                 "Failed to close dedicated A2A HTTP client",

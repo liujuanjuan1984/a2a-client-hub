@@ -64,6 +64,23 @@ async def test_cancel_session_returns_no_inflight_when_no_active_task(async_db_s
     assert payload["status"] == "no_inflight"
 
 
+async def test_cancel_session_returns_no_inflight_when_session_not_found(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+
+    payload, db_mutated = await session_hub_service.cancel_session(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(uuid4()),
+    )
+
+    assert db_mutated is False
+    assert payload["taskId"] is None
+    assert payload["cancelled"] is False
+    assert payload["status"] == "no_inflight"
+
+
 async def test_preempt_inflight_invoke_cancels_existing_task(async_db_session):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     thread = ConversationThread(
