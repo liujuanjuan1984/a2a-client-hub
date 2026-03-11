@@ -63,13 +63,21 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
         fontSize: 16,
       },
       code_inline: {
-        backgroundColor: "transparent",
-        borderRadius: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.2)",
+        borderRadius: 4,
         borderWidth: 0,
-        paddingHorizontal: 0,
-        paddingVertical: 0,
+        paddingHorizontal: 4,
+        paddingVertical: 2,
         fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-        color: "#F87171", // red-400 for visibility
+        color: "rgba(52, 211, 153, 0.8)", // emerald-400 at 80% opacity
+      },
+      strong: {
+        color: "rgba(251, 191, 36, 0.8)", // amber-400 at 80% opacity
+        fontWeight: "bold",
+      },
+      em: {
+        color: "rgba(167, 139, 250, 0.8)", // violet-400 at 80% opacity
+        fontStyle: "italic",
       },
       code_block: {
         backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -88,7 +96,7 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
         color: "#F1F5F9",
       },
       link: {
-        color: "#60A5FA", // blue-400
+        color: "rgba(56, 189, 248, 0.8)", // sky-400 at 80% opacity
         textDecorationLine: "underline",
       },
       bullet_list: {
