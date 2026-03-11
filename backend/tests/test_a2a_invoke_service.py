@@ -720,6 +720,62 @@ async def test_ws_breaks_stream_after_terminal_status_update():
 
 
 @pytest.mark.asyncio
+async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
+    websocket = _DummyWebSocket()
+    caplog.set_level(logging.WARNING)
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-ws-1",
+                                "event_id": "evt-legacy-ws-1",
+                            }
+                        },
+                        "content": "legacy-1",
+                    },
+                },
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-ws-2",
+                                "event_id": "evt-legacy-ws-2",
+                            }
+                        },
+                        "content": "legacy-2",
+                    },
+                },
+                {"kind": "status-update", "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING"
+        and record.message == "Dropped non-contract artifact-update event"
+    ]
+    assert len(warning_records) == 1
+    assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
+
+
+@pytest.mark.asyncio
 async def test_ws_error_metadata_callback_receives_session_not_found_code():
     websocket = _DummyWebSocket()
     observed: dict[str, object] = {}
@@ -961,6 +1017,63 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
     assert result.success is True
     assert result.finish_reason == StreamFinishReason.SUCCESS
     assert result.final_text == "late-event"
+
+
+@pytest.mark.asyncio
+async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason(
+    caplog,
+):
+    caplog.set_level(logging.WARNING)
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-consume-1",
+                                "event_id": "evt-legacy-consume-1",
+                            }
+                        },
+                        "content": "legacy-1",
+                    },
+                },
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-consume-2",
+                                "event_id": "evt-legacy-consume-2",
+                            }
+                        },
+                        "content": "legacy-2",
+                    },
+                },
+                {"kind": "status-update", "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    assert result.success is True
+    assert result.final_text == ""
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING"
+        and record.message == "Dropped non-contract artifact-update event"
+    ]
+    assert len(warning_records) == 1
+    assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
 
 
 @pytest.mark.asyncio
