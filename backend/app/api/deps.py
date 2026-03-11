@@ -4,7 +4,6 @@ This module contains dependency injection functions for FastAPI routes.
 Supports JWT-based user authentication.
 """
 
-import asyncio
 import re
 from dataclasses import dataclass
 from typing import AsyncGenerator
@@ -30,6 +29,7 @@ from app.services.ws_ticket_service import (
     WsTicketError,
     ws_ticket_service,
 )
+from app.utils.async_cleanup import await_cancel_safe
 
 # Security scheme for OpenAPI documentation
 security = HTTPBearer()
@@ -51,7 +51,7 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     try:
         yield session
     finally:
-        await asyncio.shield(session.close())
+        await await_cancel_safe(session.close())
 
 
 async def get_current_user(

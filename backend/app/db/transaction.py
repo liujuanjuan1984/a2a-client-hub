@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
+
 
 async def commit_safely(db: AsyncSession) -> None:
     """Commit the session and rollback on failure."""
 
     try:
-        await db.commit()
+        await await_cancel_safe(db.commit())
     except Exception:
         await rollback_safely(db)
         raise
@@ -18,11 +20,7 @@ async def commit_safely(db: AsyncSession) -> None:
 async def rollback_safely(db: AsyncSession) -> None:
     """Rollback the session, swallowing secondary rollback errors."""
 
-    try:
-        await db.rollback()
-    except Exception:
-        # Secondary rollback failures should not shadow the original issue.
-        pass
+    await await_cancel_safe_suppressed(db.rollback())
 
 
 __all__ = [

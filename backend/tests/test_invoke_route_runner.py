@@ -297,11 +297,11 @@ async def test_run_http_invoke_route_stream_closes_db_even_if_stream_consumer_is
     consume_task = asyncio.create_task(response.body_iterator.aclose())
     await asyncio.wait_for(close_started.wait(), timeout=1.0)
     consume_task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await consume_task
 
     close_released.set()
-    await asyncio.wait_for(close_finished.wait(), timeout=1.0)
+    with pytest.raises(asyncio.CancelledError):
+        await consume_task
+    assert close_finished.is_set() is True
 
 
 @pytest.mark.asyncio

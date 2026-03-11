@@ -36,6 +36,7 @@ from app.services.invoke_session_binding import (
 )
 from app.services.session_hub import session_hub_service
 from app.services.ws_ticket_service import ws_ticket_service
+from app.utils.async_cleanup import await_cancel_safe
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import (
     as_dict,
@@ -1519,7 +1520,7 @@ async def run_http_invoke_route(
                     # surrounding context manager in the route handler will close it
                     # immediately upon returning the StreamingResponse object.
                     if db is not None:
-                        await asyncio.shield(db.close())
+                        await await_cancel_safe(db.close())
 
             response.body_iterator = guarded_iterator()
             return response
@@ -1562,7 +1563,7 @@ async def run_http_invoke_route(
                             yield chunk
                     finally:
                         if db is not None:
-                            await asyncio.shield(db.close())
+                            await await_cancel_safe(db.close())
 
                 response.body_iterator = guarded_iterator_no_inflight()
                 return response

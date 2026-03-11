@@ -26,6 +26,7 @@ from app.core.logging import get_logger
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
+from app.db.transaction import rollback_safely
 from app.handlers import agent_message as agent_message_handler
 from app.handlers import agent_message_block as agent_message_block_handler
 from app.services.conversation_identity import conversation_identity_service
@@ -877,7 +878,7 @@ class SessionHubService:
             try:
                 await db.flush()
             except IntegrityError as exc:
-                await db.rollback()
+                await rollback_safely(db)
                 raise ValueError("invalid_conversation_id") from exc
 
         local_source: SessionSource

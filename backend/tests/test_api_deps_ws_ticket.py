@@ -180,8 +180,8 @@ async def test_get_async_db_closes_session_even_if_dependency_cleanup_is_cancell
     close_task = asyncio.create_task(dependency.aclose())
     await asyncio.wait_for(close_started.wait(), timeout=1.0)
     close_task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await close_task
 
     close_released.set()
-    await asyncio.wait_for(close_finished.wait(), timeout=1.0)
+    with pytest.raises(asyncio.CancelledError):
+        await close_task
+    assert close_finished.is_set() is True
