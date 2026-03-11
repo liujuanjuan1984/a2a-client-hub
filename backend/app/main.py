@@ -1,8 +1,9 @@
 """FastAPI entry point for a2a-client-hub."""
 
 import importlib
+import inspect
 from contextlib import asynccontextmanager
-from typing import Any, Dict
+from typing import Any, Awaitable, Callable, Dict
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, status
@@ -16,6 +17,7 @@ from app.api.error_handlers import (
     unhandled_exception_handler,
     validation_exception_handler,
 )
+from app.api.routers import ROUTER_MODULES
 from app.core.config import settings
 from app.core.http_client import close_global_http_client, init_global_http_client
 from app.core.logging import get_logger, setup_logging
@@ -40,31 +42,62 @@ logger = get_logger(__name__)
 
 
 # Lifecycle management for the FastAPI application.
+async def _run_startup_step(
+    *,
+    name: str,
+    step: Callable[[], Any | Awaitable[Any]],
+) -> None:
+    try:
+        result = step()
+        if inspect.isawaitable(result):
+            await result
+        logger.info("Startup step completed: %s", name)
+    except Exception:
+        logger.exception("Startup step failed: %s", name)
+        raise
+
+
+async def _shutdown_runtime_components() -> None:
+    await shutdown_a2a_extensions_service()
+    await shutdown_a2a_service()
+    shutdown_scheduler()
+    await close_global_http_client()
+
+
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
-    init_global_http_client()
-    start_scheduler()
-    ensure_a2a_schedule_job()
-    ensure_ws_ticket_cleanup_job()
-
-    get_a2a_service()
-    logger.info("A2A service initialised during startup")
-
-    get_a2a_extensions_service()
-    logger.info("A2A extensions service initialised during startup")
-
-    # Initialise A2A proxy allowlist cache
-    async with AsyncSessionLocal() as db:
-        await a2a_proxy_service.refresh_cache(db)
-    logger.info("A2A proxy allowlist cache initialised during startup")
-
     try:
+        init_global_http_client()
+        start_scheduler()
+        ensure_a2a_schedule_job()
+        ensure_ws_ticket_cleanup_job()
+
+        await _run_startup_step(
+            name="a2a_service_init",
+            step=get_a2a_service,
+        )
+
+        await _run_startup_step(
+            name="a2a_extensions_service_init",
+            step=get_a2a_extensions_service,
+        )
+
+        async def _refresh_proxy_cache() -> None:
+            # Initialise A2A proxy allowlist cache.
+            async with AsyncSessionLocal() as db:
+                await a2a_proxy_service.refresh_cache(db)
+
+        await _run_startup_step(
+            name="a2a_proxy_allowlist_cache_init",
+            step=_refresh_proxy_cache,
+        )
+
         yield
-    finally:
-        await shutdown_a2a_extensions_service()
-        await shutdown_a2a_service()
-        shutdown_scheduler()
-        await close_global_http_client()
+    except Exception:
+        await _shutdown_runtime_components()
+        raise
+    else:
+        await _shutdown_runtime_components()
 
 
 # Create FastAPI application instance
@@ -100,23 +133,14 @@ app.add_middleware(DebugLoggingMiddleware)
 
 
 def include_all_routers() -> None:
-    router_modules = (
-        "app.api.routers.auth",
-        "app.api.routers.a2a_agents",
-        "app.api.routers.hub_a2a_agents",
-        "app.api.routers.admin_a2a_agents",
-        "app.api.routers.admin_proxy_allowlist",
-        "app.api.routers.a2a_schedules",
-        "app.api.routers.a2a_extensions_opencode",
-        "app.api.routers.hub_a2a_extensions_opencode",
-        "app.api.routers.opencode_session_directory",
-        "app.api.routers.me_sessions",
-        "app.api.routers.invitations",
-        "app.api.routers.shortcuts",
-    )
-    for module_name in router_modules:
+    for module_name in ROUTER_MODULES:
         module = importlib.import_module(module_name)
-        app.include_router(module.router, prefix=settings.api_v1_prefix)
+        router = getattr(module, "router", None)
+        if router is None:
+            raise RuntimeError(
+                f"Router module '{module_name}' does not export 'router'.",
+            )
+        app.include_router(router, prefix=settings.api_v1_prefix)
         logger.info("Successfully included router from: %s", module_name)
 
 
