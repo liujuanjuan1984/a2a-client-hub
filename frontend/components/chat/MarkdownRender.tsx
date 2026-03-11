@@ -72,8 +72,12 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
         color: "#34D399", // emerald-400 for techy style
       },
       strong: {
-        color: "#60A5FA", // blue-400
+        color: "#FBBF24", // amber-400 for strong contrast
         fontWeight: "bold",
+      },
+      em: {
+        color: "#A78BFA", // violet-400 for italic text
+        fontStyle: "italic",
       },
       code_block: {
         backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -92,7 +96,7 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
         color: "#F1F5F9",
       },
       link: {
-        color: "#60A5FA", // blue-400
+        color: "#38BDF8", // sky-400
         textDecorationLine: "underline",
       },
       bullet_list: {
