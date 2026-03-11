@@ -9,7 +9,10 @@ import pytest
 from a2a.client.errors import A2AClientHTTPError
 from a2a.types import Message, Role, TextPart
 
+from app.integrations.a2a_client import client as client_module
 from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
+from app.integrations.a2a_client.errors import A2AAgentUnavailableError
+from app.utils.outbound_url import OutboundURLNotAllowedError
 
 
 @pytest.mark.asyncio
@@ -155,3 +158,121 @@ async def test_cancel_task_rejects_blank_task_id() -> None:
 
     assert result["success"] is False
     assert result["error_code"] == "invalid_task_id"
+
+
+@pytest.mark.asyncio
+async def test_get_agent_card_ignores_non_selected_non_http_interfaces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResolver:
+        base_url = "http://example-agent.internal:24020"
+        agent_card_path = ".well-known/agent-card.json"
+
+        def __init__(self, card_payload: SimpleNamespace) -> None:
+            self._card_payload = card_payload
+
+        async def get_agent_card(self, **_kwargs):
+            return self._card_payload
+
+    card = SimpleNamespace(
+        name="Gateway",
+        preferred_transport="HTTP+JSON",
+        url="http://example-agent.internal:24020/a2a/external_gateway",
+        additional_interfaces=[
+            SimpleNamespace(
+                transport="JSONRPC",
+                url="http://example-agent.internal:24020/a2a/external_gateway/",
+            ),
+            SimpleNamespace(
+                transport="GRPC",
+                url="grpc://example-agent.internal:8090",
+            ),
+        ],
+    )
+    validate_calls: list[str] = []
+
+    def fake_validate_outbound_http_url(
+        url: str,
+        *,
+        allowed_hosts,
+        purpose: str = "outbound HTTP request",
+    ) -> str:
+        validate_calls.append(url)
+        if url.startswith("grpc://"):
+            raise OutboundURLNotAllowedError(
+                f"{purpose}: URL must be http(s)",
+                code="invalid_scheme",
+            )
+        return url
+
+    monkeypatch.setattr(
+        client_module,
+        "validate_outbound_http_url",
+        fake_validate_outbound_http_url,
+    )
+    monkeypatch.setattr(
+        client_module.a2a_proxy_service,
+        "get_effective_allowed_hosts_sync",
+        lambda: ["example-agent.internal:24020", "example-agent.internal:8090"],
+    )
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_http_client = AsyncMock(return_value=Mock())
+    a2a_client._build_card_resolver = Mock(return_value=FakeResolver(card))
+
+    fetched = await a2a_client.get_agent_card()
+
+    assert fetched is card
+    assert all(not value.startswith("grpc://") for value in validate_calls)
+
+
+@pytest.mark.asyncio
+async def test_get_agent_card_raises_when_no_compatible_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResolver:
+        base_url = "http://example-agent.internal:24020"
+        agent_card_path = ".well-known/agent-card.json"
+
+        def __init__(self, card_payload: SimpleNamespace) -> None:
+            self._card_payload = card_payload
+
+        async def get_agent_card(self, **_kwargs):
+            return self._card_payload
+
+    card = SimpleNamespace(
+        name="Grpc only",
+        preferred_transport="GRPC",
+        url="grpc://example-agent.internal:8090",
+        additional_interfaces=[],
+    )
+    validate_calls: list[str] = []
+
+    def fake_validate_outbound_http_url(
+        url: str,
+        *,
+        allowed_hosts,
+        purpose: str = "outbound HTTP request",
+    ) -> str:
+        validate_calls.append(url)
+        return url
+
+    monkeypatch.setattr(
+        client_module,
+        "validate_outbound_http_url",
+        fake_validate_outbound_http_url,
+    )
+    monkeypatch.setattr(
+        client_module.a2a_proxy_service,
+        "get_effective_allowed_hosts_sync",
+        lambda: ["example-agent.internal:24020", "example-agent.internal:8090"],
+    )
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_http_client = AsyncMock(return_value=Mock())
+    a2a_client._build_card_resolver = Mock(return_value=FakeResolver(card))
+
+    with pytest.raises(A2AAgentUnavailableError, match="no compatible transports"):
+        await a2a_client.get_agent_card()
+
+    assert validate_calls == ["http://example-agent.internal:24020"]

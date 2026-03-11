@@ -443,21 +443,23 @@ class A2AClient:
 
         # Validate downstream card-declared endpoints before caching. This prevents the
         # SDK transport negotiation from selecting a disallowed interface later.
+        selected_target = self._resolve_negotiated_transport_target(card)
+        if selected_target is None:
+            supported = ", ".join(self._supported_transport_labels())
+            raise A2AAgentUnavailableError(
+                f"A2A agent '{redact_url_for_logging(self.agent_url)}' has no "
+                f"compatible transports (client supports: {supported})"
+            )
+
+        # Validate only the negotiated transport target so non-selected interface URLs
+        # (for unsupported protocols like GRPC) do not block HTTP-capable agents.
+        selected_transport, selected_url = selected_target
         try:
             validate_outbound_http_url(
-                getattr(card, "url", "") or "",
+                selected_url,
                 allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
-                purpose="Agent URL",
+                purpose=f"Agent interface URL ({selected_transport})",
             )
-            for iface in getattr(card, "additional_interfaces", None) or []:
-                url = (getattr(iface, "url", "") or "").strip()
-                if not url:
-                    continue
-                validate_outbound_http_url(
-                    url,
-                    allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
-                    purpose="Agent interface URL",
-                )
         except OutboundURLNotAllowedError as exc:
             raise A2AOutboundNotAllowedError(str(exc)) from exc
 
@@ -468,6 +470,59 @@ class A2AClient:
             getattr(card, "name", "unknown"),
         )
         return card
+
+    @staticmethod
+    def _normalize_transport_label(value: TransportProtocol | str | None) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, TransportProtocol):
+            return value.value.strip().upper()
+        return str(value).strip().upper()
+
+    def _supported_transport_labels(self) -> list[str]:
+        labels = [
+            self._normalize_transport_label(value)
+            for value in (self._supported_transports or [TransportProtocol.jsonrpc])
+        ]
+        normalized = [label for label in labels if label]
+        if normalized:
+            return normalized
+        return [TransportProtocol.jsonrpc.value]
+
+    def _resolve_negotiated_transport_target(
+        self, card: AgentCard
+    ) -> tuple[str, str] | None:
+        preferred_transport = (
+            getattr(card, "preferred_transport", None) or TransportProtocol.jsonrpc
+        )
+        preferred_url = (getattr(card, "url", "") or "").strip()
+
+        server_set: dict[str, str] = {}
+        preferred_label = self._normalize_transport_label(preferred_transport)
+        if preferred_label and preferred_url:
+            server_set[preferred_label] = preferred_url
+
+        for iface in getattr(card, "additional_interfaces", None) or []:
+            transport = self._normalize_transport_label(
+                getattr(iface, "transport", None)
+            )
+            interface_url = (getattr(iface, "url", "") or "").strip()
+            if transport and interface_url:
+                server_set[transport] = interface_url
+
+        client_set = self._supported_transport_labels()
+
+        if self._use_client_preference:
+            for transport in client_set:
+                url = server_set.get(transport)
+                if url:
+                    return transport, url
+            return None
+
+        for transport, url in server_set.items():
+            if transport in client_set:
+                return transport, url
+        return None
 
     async def close(self) -> None:
         """Dispose cached transport wrappers.
