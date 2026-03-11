@@ -25,8 +25,17 @@ import { type AgentSource } from "@/store/agents";
 import { executeChatRuntime } from "@/store/chatRuntime";
 
 const CANCEL_REQUEST_DEBOUNCE_MS = 500;
+const CANCEL_REQUEST_HISTORY_TTL_MS = CANCEL_REQUEST_DEBOUNCE_MS * 4;
 const recentCancelRequestAt = new Map<string, number>();
 const pendingCancelRequests = new Map<string, Promise<void>>();
+
+const pruneRecentCancelRequestAt = (now: number) => {
+  recentCancelRequestAt.forEach((requestedAt, conversationId) => {
+    if (now - requestedAt > CANCEL_REQUEST_HISTORY_TTL_MS) {
+      recentCancelRequestAt.delete(conversationId);
+    }
+  });
+};
 
 const requestSessionCancel = (conversationId: string) => {
   const normalizedConversationId = conversationId.trim();
@@ -37,6 +46,7 @@ const requestSessionCancel = (conversationId: string) => {
     return;
   }
   const now = Date.now();
+  pruneRecentCancelRequestAt(now);
   const previousRequestedAt = recentCancelRequestAt.get(
     normalizedConversationId,
   );
@@ -498,6 +508,8 @@ export const useChatStore = create<ChatState>()(
       clearAll: () => {
         chatConnectionService.clearAll();
         clearAllConversationMessages();
+        recentCancelRequestAt.clear();
+        pendingCancelRequests.clear();
         set({ sessions: {} });
       },
     }),
