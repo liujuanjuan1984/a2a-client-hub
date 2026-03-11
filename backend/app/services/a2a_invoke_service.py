@@ -833,6 +833,63 @@ class A2AInvokeService:
             return []
         return [str(item) for item in validate_message(payload)]
 
+    @classmethod
+    def _resolve_non_contract_artifact_drop_reason(
+        cls, payload: dict[str, Any]
+    ) -> str | None:
+        if payload.get("kind") != "artifact-update":
+            return None
+        if cls.extract_stream_chunk_from_serialized_event(payload) is not None:
+            return None
+
+        artifact = as_dict(payload.get("artifact"))
+        if not artifact:
+            return "missing_artifact"
+
+        artifact_metadata = as_dict(artifact.get("metadata"))
+        opencode_metadata = as_dict(artifact_metadata.get("opencode"))
+        block_type = cls._StreamTextAccumulator._extract_artifact_type(
+            payload, artifact
+        )
+        if block_type is None:
+            return "missing_or_invalid_block_type"
+        if cls._pick_non_empty_str(opencode_metadata, ("message_id",)) is None:
+            return "missing_message_id"
+        if cls._pick_non_empty_str(opencode_metadata, ("event_id",)) is None:
+            return "missing_event_id"
+        if (
+            cls._StreamTextAccumulator._extract_text_from_parts(artifact.get("parts"))
+            == ""
+        ):
+            return "missing_text_parts"
+        return "invalid_artifact_update_shape"
+
+    @staticmethod
+    def _warn_non_contract_artifact_update_once(
+        *,
+        seen_reasons: set[str],
+        reason: str | None,
+        log_warning: Callable[..., Any] | None,
+        log_info: Callable[..., Any] | None,
+        log_extra: dict[str, Any],
+    ) -> None:
+        if reason is None or reason in seen_reasons:
+            return
+        seen_reasons.add(reason)
+        warning_payload = {**log_extra, "drop_reason": reason}
+        if callable(log_warning):
+            log_warning(
+                "Dropped non-contract artifact-update event",
+                extra=warning_payload,
+            )
+            return
+        if callable(log_info):
+            log_info(
+                "Dropped non-contract artifact-update event",
+                extra=warning_payload,
+            )
+            return
+
     @staticmethod
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
         return payload.get("kind") == "status-update" and payload.get("final") is True
@@ -957,6 +1014,9 @@ class A2AInvokeService:
             terminal_event_seen = False
             final_outcome: StreamOutcome | None = None
             heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+            log_warning = getattr(logger, "warning", None)
+            log_info = getattr(logger, "info", None)
+            non_contract_drop_reasons: set[str] = set()
 
             # Replay cached events if resuming
             seq_counter = 0
@@ -1013,6 +1073,16 @@ class A2AInvokeService:
                             },
                         )
                         continue
+                    non_contract_reason = (
+                        self._resolve_non_contract_artifact_drop_reason(serialized)
+                    )
+                    self._warn_non_contract_artifact_update_once(
+                        seen_reasons=non_contract_drop_reasons,
+                        reason=non_contract_reason,
+                        log_warning=log_warning,
+                        log_info=log_info,
+                        log_extra=log_extra,
+                    )
 
                     parsed_sequence = (
                         self._extract_stream_sequence_from_serialized_event(serialized)
@@ -1157,6 +1227,9 @@ class A2AInvokeService:
         terminal_event_seen = False
         final_outcome: StreamOutcome | None = None
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+        log_warning = getattr(logger, "warning", None)
+        log_info = getattr(logger, "info", None)
+        non_contract_drop_reasons: set[str] = set()
 
         # Replay cached events if resuming
         seq_counter = 0
@@ -1211,6 +1284,16 @@ class A2AInvokeService:
                         },
                     )
                     continue
+                non_contract_reason = self._resolve_non_contract_artifact_drop_reason(
+                    serialized
+                )
+                self._warn_non_contract_artifact_update_once(
+                    seen_reasons=non_contract_drop_reasons,
+                    reason=non_contract_reason,
+                    log_warning=log_warning,
+                    log_info=log_info,
+                    log_extra=log_extra,
+                )
 
                 parsed_sequence = self._extract_stream_sequence_from_serialized_event(
                     serialized
@@ -1341,6 +1424,7 @@ class A2AInvokeService:
         stream_text_accumulator = self._StreamTextAccumulator()
         log_warning = getattr(logger, "warning", None)
         log_info = getattr(logger, "info", None)
+        non_contract_drop_reasons: set[str] = set()
         started_at = time.monotonic()
         last_event_at = started_at
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
@@ -1487,6 +1571,16 @@ class A2AInvokeService:
                             extra=warning_payload,
                         )
                     continue
+                non_contract_reason = self._resolve_non_contract_artifact_drop_reason(
+                    serialized
+                )
+                self._warn_non_contract_artifact_update_once(
+                    seen_reasons=non_contract_drop_reasons,
+                    reason=non_contract_reason,
+                    log_warning=log_warning,
+                    log_info=log_info,
+                    log_extra=log_extra,
+                )
 
                 last_event_at = time.monotonic()
                 await self._call_callback(on_event, serialized)

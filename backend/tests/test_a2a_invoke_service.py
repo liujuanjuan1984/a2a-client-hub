@@ -516,6 +516,68 @@ async def test_sse_drops_invalid_artifact_update_events():
 
 
 @pytest.mark.asyncio
+async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
+    completed: list[str] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    caplog.set_level(logging.WARNING)
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-1",
+                                "event_id": "evt-legacy-1",
+                            }
+                        },
+                        "content": "legacy-1",
+                    },
+                },
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-2",
+                                "event_id": "evt-legacy-2",
+                            }
+                        },
+                        "content": "legacy-2",
+                    },
+                },
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == [""]
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING"
+        and record.message == "Dropped non-contract artifact-update event"
+    ]
+    assert len(warning_records) == 1
+    assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
+
+
+@pytest.mark.asyncio
 async def test_sse_cache_replays_mutated_event_payload_from_on_event():
     from app.services.stream_cache.memory_cache import global_stream_cache
 
