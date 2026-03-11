@@ -777,24 +777,31 @@ class A2AInvokeService:
                 last["is_finished"] = True
             self._push_new_block(block_type, delta, done)
 
-        def consume(self, payload: dict[str, Any]) -> None:
-            stream_block = A2AInvokeService.extract_stream_chunk_from_serialized_event(
-                payload
-            )
-            if not stream_block:
+        def consume(
+            self,
+            payload: dict[str, Any],
+            *,
+            stream_block: dict[str, Any] | None = None,
+        ) -> None:
+            resolved_stream_block = stream_block
+            if resolved_stream_block is None:
+                resolved_stream_block = (
+                    A2AInvokeService.extract_stream_chunk_from_serialized_event(payload)
+                )
+            if not resolved_stream_block:
                 return
-            block_type = stream_block.get("block_type")
-            delta = stream_block.get("content")
+            block_type = resolved_stream_block.get("block_type")
+            delta = resolved_stream_block.get("content")
             if not isinstance(block_type, str) or not isinstance(delta, str):
                 return
             self._apply_block_update(
                 block_type=block_type,
                 delta=delta,
-                append=bool(stream_block.get("append", True)),
-                done=bool(stream_block.get("is_finished", False)),
+                append=bool(resolved_stream_block.get("append", True)),
+                done=bool(resolved_stream_block.get("is_finished", False)),
                 source=(
-                    str(stream_block.get("source"))
-                    if isinstance(stream_block.get("source"), str)
+                    str(resolved_stream_block.get("source"))
+                    if isinstance(resolved_stream_block.get("source"), str)
                     else None
                 ),
             )
@@ -834,17 +841,18 @@ class A2AInvokeService:
         return [str(item) for item in validate_message(payload)]
 
     @classmethod
-    def _resolve_non_contract_artifact_drop_reason(
+    def _analyze_stream_chunk_contract(
         cls, payload: dict[str, Any]
-    ) -> str | None:
+    ) -> tuple[dict[str, Any] | None, str | None]:
         if payload.get("kind") != "artifact-update":
-            return None
-        if cls.extract_stream_chunk_from_serialized_event(payload) is not None:
-            return None
+            return None, None
+        stream_block = cls.extract_stream_chunk_from_serialized_event(payload)
+        if stream_block is not None:
+            return stream_block, None
 
         artifact = as_dict(payload.get("artifact"))
         if not artifact:
-            return "missing_artifact"
+            return None, "missing_artifact"
 
         artifact_metadata = as_dict(artifact.get("metadata"))
         opencode_metadata = as_dict(artifact_metadata.get("opencode"))
@@ -852,17 +860,17 @@ class A2AInvokeService:
             payload, artifact
         )
         if block_type is None:
-            return "missing_or_invalid_block_type"
+            return None, "missing_or_invalid_block_type"
         if cls._pick_non_empty_str(opencode_metadata, ("message_id",)) is None:
-            return "missing_message_id"
+            return None, "missing_message_id"
         if cls._pick_non_empty_str(opencode_metadata, ("event_id",)) is None:
-            return "missing_event_id"
+            return None, "missing_event_id"
         if (
             cls._StreamTextAccumulator._extract_text_from_parts(artifact.get("parts"))
             == ""
         ):
-            return "missing_text_parts"
-        return "invalid_artifact_update_shape"
+            return None, "missing_text_parts"
+        return None, "invalid_artifact_update_shape"
 
     @staticmethod
     def _warn_non_contract_artifact_update_once(
@@ -1073,8 +1081,8 @@ class A2AInvokeService:
                             },
                         )
                         continue
-                    non_contract_reason = (
-                        self._resolve_non_contract_artifact_drop_reason(serialized)
+                    stream_block, non_contract_reason = (
+                        self._analyze_stream_chunk_contract(serialized)
                     )
                     self._warn_non_contract_artifact_update_once(
                         seen_reasons=non_contract_drop_reasons,
@@ -1085,7 +1093,12 @@ class A2AInvokeService:
                     )
 
                     parsed_sequence = (
-                        self._extract_stream_sequence_from_serialized_event(serialized)
+                        stream_block.get("seq")
+                        if isinstance(stream_block, dict)
+                        and isinstance(stream_block.get("seq"), int)
+                        else self._extract_stream_sequence_from_serialized_event(
+                            serialized
+                        )
                     )
                     event_sequence = (
                         parsed_sequence
@@ -1109,7 +1122,9 @@ class A2AInvokeService:
                         await global_stream_cache.append_event(
                             cache_key, serialized, seq_counter
                         )
-                    stream_text_accumulator.consume(serialized)
+                    stream_text_accumulator.consume(
+                        serialized, stream_block=stream_block
+                    )
                     last_event_at = time.monotonic()
                     yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
                     if self._is_terminal_status_event(serialized):
@@ -1284,7 +1299,7 @@ class A2AInvokeService:
                         },
                     )
                     continue
-                non_contract_reason = self._resolve_non_contract_artifact_drop_reason(
+                stream_block, non_contract_reason = self._analyze_stream_chunk_contract(
                     serialized
                 )
                 self._warn_non_contract_artifact_update_once(
@@ -1295,8 +1310,11 @@ class A2AInvokeService:
                     log_extra=log_extra,
                 )
 
-                parsed_sequence = self._extract_stream_sequence_from_serialized_event(
-                    serialized
+                parsed_sequence = (
+                    stream_block.get("seq")
+                    if isinstance(stream_block, dict)
+                    and isinstance(stream_block.get("seq"), int)
+                    else self._extract_stream_sequence_from_serialized_event(serialized)
                 )
                 event_sequence = (
                     parsed_sequence if parsed_sequence is not None else seq_counter + 1
@@ -1315,7 +1333,7 @@ class A2AInvokeService:
                     await global_stream_cache.append_event(
                         cache_key, serialized, seq_counter
                     )
-                stream_text_accumulator.consume(serialized)
+                stream_text_accumulator.consume(serialized, stream_block=stream_block)
                 last_event_at = time.monotonic()
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
                 if self._is_terminal_status_event(serialized):
@@ -1571,7 +1589,7 @@ class A2AInvokeService:
                             extra=warning_payload,
                         )
                     continue
-                non_contract_reason = self._resolve_non_contract_artifact_drop_reason(
+                stream_block, non_contract_reason = self._analyze_stream_chunk_contract(
                     serialized
                 )
                 self._warn_non_contract_artifact_update_once(
@@ -1584,7 +1602,7 @@ class A2AInvokeService:
 
                 last_event_at = time.monotonic()
                 await self._call_callback(on_event, serialized)
-                stream_text_accumulator.consume(serialized)
+                stream_text_accumulator.consume(serialized, stream_block=stream_block)
                 if self._is_terminal_status_event(serialized):
                     terminal_event_seen = True
                     break
