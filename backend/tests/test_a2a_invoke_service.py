@@ -100,14 +100,19 @@ def _artifact_event(
     block_type: str | None = None,
     source: str | None = None,
     append: bool | None = None,
+    message_id: str | None = None,
+    event_id: str | None = None,
 ) -> dict:
     metadata: dict[str, dict[str, str]] = {}
-    if block_type or source:
+    if block_type or source or message_id or event_id:
+        artifact_key = artifact_id.replace(":", "-").replace("/", "-")
         opencode: dict[str, str] = {}
         if block_type:
             opencode["block_type"] = block_type
         if source:
             opencode["source"] = source
+        opencode["message_id"] = message_id or f"msg-{artifact_key}"
+        opencode["event_id"] = event_id or f"evt-{artifact_key}"
         metadata["opencode"] = opencode
 
     payload: dict = {
@@ -378,13 +383,14 @@ async def test_sse_on_complete_supports_block_type():
                 {
                     "kind": "artifact-update",
                     "task_id": "task-block-type",
-                    "message_id": "msg-block-type",
                     "artifact": {
                         "artifact_id": "task-block-type:stream",
                         "parts": [{"kind": "text", "text": "Hello alias"}],
                         "metadata": {
                             "opencode": {
                                 "block_type": "text",
+                                "message_id": "msg-block-type",
+                                "event_id": "evt-block-type-1",
                             }
                         },
                     },
@@ -404,6 +410,46 @@ async def test_sse_on_complete_supports_block_type():
         pass
 
     assert completed == ["Hello alias"]
+
+
+@pytest.mark.asyncio
+async def test_sse_on_complete_ignores_artifact_updates_without_parts():
+    completed: list[str] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-no-parts",
+                                "event_id": "evt-legacy-no-parts",
+                            }
+                        },
+                        "content": "legacy-content-should-be-ignored",
+                    },
+                }
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == [""]
 
 
 @pytest.mark.asyncio
@@ -457,7 +503,13 @@ async def test_sse_drops_invalid_artifact_update_events():
             "artifact": {
                 "artifact_id": "task-valid:stream",
                 "parts": [{"kind": "text", "text": "kept"}],
-                "metadata": {"opencode": {"block_type": "text"}},
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "message_id": "msg-task-valid-stream",
+                        "event_id": "evt-task-valid-stream",
+                    }
+                },
             },
         }
     ]
@@ -880,13 +932,11 @@ async def test_consume_stream_reports_total_timeout_with_partial_content(monkeyp
     )
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithSingleEventThenPending(
-            first_event={
-                "kind": "artifact-update",
-                "artifact": {
-                    "parts": [{"kind": "text", "text": "partial result"}],
-                    "metadata": {"opencode": {"block_type": "text"}},
-                },
-            },
+            first_event=_artifact_event(
+                artifact_id="task-total-timeout:stream",
+                text="partial result",
+                block_type="text",
+            )
         ),
         resolved=object(),
         query="hello",

@@ -700,44 +700,6 @@ class A2AInvokeService:
                 return source.strip().lower()
             return None
 
-        @staticmethod
-        def _resolve_append(payload: dict[str, Any], artifact: dict[str, Any]) -> bool:
-            append = payload.get("append")
-            if isinstance(append, bool):
-                return append
-            artifact_append = artifact.get("append")
-            if isinstance(artifact_append, bool):
-                return artifact_append
-            return True
-
-        @staticmethod
-        def _resolve_done(payload: dict[str, Any], artifact: dict[str, Any]) -> bool:
-            return bool(
-                payload.get("lastChunk") is True
-                or payload.get("last_chunk") is True
-                or artifact.get("lastChunk") is True
-                or artifact.get("last_chunk") is True
-            )
-
-        @staticmethod
-        def _extract_delta(payload: dict[str, Any], artifact: dict[str, Any]) -> str:
-            text = A2AInvokeService._StreamTextAccumulator._extract_text_from_parts(
-                artifact.get("parts")
-            )
-            if text:
-                return text
-            for source in (payload, artifact):
-                delta = source.get("delta")
-                if isinstance(delta, str):
-                    return delta
-                content = source.get("content")
-                if isinstance(content, str):
-                    return content
-                raw_text = source.get("text")
-                if isinstance(raw_text, str):
-                    return raw_text
-            return ""
-
         def _push_new_block(self, block_type: str, delta: str, done: bool) -> None:
             now = self._block_seq
             self._block_seq += 1
@@ -796,26 +758,26 @@ class A2AInvokeService:
             self._push_new_block(block_type, delta, done)
 
         def consume(self, payload: dict[str, Any]) -> None:
-            if payload.get("kind") == "artifact-update":
-                artifact = payload.get("artifact")
-                if isinstance(artifact, dict):
-                    block_type = self._extract_artifact_type(payload, artifact)
-                    if not block_type:
-                        return
-                    delta = self._extract_delta(payload, artifact)
-                    if not delta:
-                        return
-                    append = self._resolve_append(payload, artifact)
-                    done = self._resolve_done(payload, artifact)
-                    source = self._extract_artifact_source(artifact)
-                    self._apply_block_update(
-                        block_type=block_type,
-                        delta=delta,
-                        append=append,
-                        done=done,
-                        source=source,
-                    )
-                    return
+            stream_block = A2AInvokeService.extract_stream_chunk_from_serialized_event(
+                payload
+            )
+            if not stream_block:
+                return
+            block_type = stream_block.get("block_type")
+            delta = stream_block.get("content")
+            if not isinstance(block_type, str) or not isinstance(delta, str):
+                return
+            self._apply_block_update(
+                block_type=block_type,
+                delta=delta,
+                append=bool(stream_block.get("append", True)),
+                done=bool(stream_block.get("is_finished", False)),
+                source=(
+                    str(stream_block.get("source"))
+                    if isinstance(stream_block.get("source"), str)
+                    else None
+                ),
+            )
 
         def result(self) -> str:
             return "".join(
