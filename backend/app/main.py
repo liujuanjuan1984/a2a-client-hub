@@ -43,11 +43,9 @@ logger = get_logger(__name__)
 
 # Lifecycle management for the FastAPI application.
 async def _run_startup_step(
-    app: FastAPI,
     *,
     name: str,
     step: Callable[[], Any | Awaitable[Any]],
-    critical: bool,
 ) -> None:
     try:
         result = step()
@@ -55,43 +53,25 @@ async def _run_startup_step(
             await result
         logger.info("Startup step completed: %s", name)
     except Exception:
-        if critical:
-            logger.exception("Critical startup step failed: %s", name)
-            raise
-        failures = getattr(app.state, "startup_failures", None)
-        if failures is None:
-            failures = []
-            app.state.startup_failures = failures
-        failures.append(name)
-        app.state.startup_degraded = True
-        logger.exception(
-            "Startup step failed; continuing in degraded mode: %s",
-            name,
-        )
+        logger.exception("Startup step failed: %s", name)
+        raise
 
 
 @asynccontextmanager
-async def app_lifespan(app: FastAPI):
-    app.state.startup_degraded = False
-    app.state.startup_failures = []
-
+async def app_lifespan(_: FastAPI):
     init_global_http_client()
     start_scheduler()
     ensure_a2a_schedule_job()
     ensure_ws_ticket_cleanup_job()
 
     await _run_startup_step(
-        app,
         name="a2a_service_init",
         step=get_a2a_service,
-        critical=False,
     )
 
     await _run_startup_step(
-        app,
         name="a2a_extensions_service_init",
         step=get_a2a_extensions_service,
-        critical=False,
     )
 
     async def _refresh_proxy_cache() -> None:
@@ -100,17 +80,9 @@ async def app_lifespan(app: FastAPI):
             await a2a_proxy_service.refresh_cache(db)
 
     await _run_startup_step(
-        app,
         name="a2a_proxy_allowlist_cache_init",
         step=_refresh_proxy_cache,
-        critical=False,
     )
-
-    if app.state.startup_degraded:
-        logger.warning(
-            "Application started in degraded mode. Failed startup steps: %s",
-            app.state.startup_failures,
-        )
 
     try:
         yield
