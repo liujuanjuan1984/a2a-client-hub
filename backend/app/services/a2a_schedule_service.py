@@ -11,7 +11,6 @@ from typing import Any, Dict, Optional, TypeVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -174,6 +173,7 @@ class A2AScheduleService:
     ) -> None:
         """Serialize per-user quota-changing operations using Postgres advisory locks."""
         import hashlib
+
         from sqlalchemy import text
 
         lock_key_str = f"a2a_schedule_quota_{user_id.hex}"
@@ -655,8 +655,11 @@ class A2AScheduleService:
                 and_(
                     A2AScheduleExecution.task_id == A2AScheduleTask.id,
                     A2AScheduleExecution.status.in_(
-                        [A2AScheduleExecution.STATUS_PENDING, A2AScheduleExecution.STATUS_RUNNING]
-                    )
+                        [
+                            A2AScheduleExecution.STATUS_PENDING,
+                            A2AScheduleExecution.STATUS_RUNNING,
+                        ]
+                    ),
                 )
             )
             .limit(1)
@@ -749,6 +752,7 @@ class A2AScheduleService:
         concurrency_limit = max(int(settings.a2a_schedule_agent_concurrency_limit), 1)
 
         from sqlalchemy.orm import aliased
+
         TaskAlias = aliased(A2AScheduleTask)
         ExecAlias = aliased(A2AScheduleExecution)
 
@@ -779,7 +783,9 @@ class A2AScheduleService:
                     ),
                 )
             )
-            .order_by(A2AScheduleExecution.scheduled_for.asc(), A2AScheduleExecution.id.asc())
+            .order_by(
+                A2AScheduleExecution.scheduled_for.asc(), A2AScheduleExecution.id.asc()
+            )
             .limit(1)
             .with_for_update(of=A2AScheduleExecution, skip_locked=True)
         )
@@ -787,12 +793,18 @@ class A2AScheduleService:
         if execution is None:
             return None
 
-        task_stmt = select(A2AScheduleTask).where(A2AScheduleTask.id == execution.task_id).limit(1)
+        task_stmt = (
+            select(A2AScheduleTask)
+            .where(A2AScheduleTask.id == execution.task_id)
+            .limit(1)
+        )
         task = await db.scalar(task_stmt)
         if task is None or task.deleted_at is not None or not task.enabled:
             execution.status = A2AScheduleExecution.STATUS_FAILED
             execution.finished_at = now_utc
-            execution.error_message = "Task disabled or deleted before execution started"
+            execution.error_message = (
+                "Task disabled or deleted before execution started"
+            )
             await commit_safely(db)
             return None
 
@@ -865,7 +877,9 @@ class A2AScheduleService:
             )
             stmt = (
                 select(A2AScheduleExecution)
-                .join(A2AScheduleTask, A2AScheduleTask.id == A2AScheduleExecution.task_id)
+                .join(
+                    A2AScheduleTask, A2AScheduleTask.id == A2AScheduleExecution.task_id
+                )
                 .where(stale_where)
                 .order_by(
                     A2AScheduleTask.running_started_at.asc(),
@@ -878,7 +892,10 @@ class A2AScheduleService:
             if execution is None:
                 stale_count_stmt = (
                     select(func.count(A2AScheduleExecution.id))
-                    .join(A2AScheduleTask, A2AScheduleTask.id == A2AScheduleExecution.task_id)
+                    .join(
+                        A2AScheduleTask,
+                        A2AScheduleTask.id == A2AScheduleExecution.task_id,
+                    )
                     .where(stale_where)
                 )
                 stale_remaining = int(await db.scalar(stale_count_stmt) or 0)

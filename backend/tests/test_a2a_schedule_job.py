@@ -177,7 +177,9 @@ async def test_claim_next_pending_execution_obeys_agent_concurrency_limit(
     )
 
     await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
-    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(
+        async_db_session, now=now
+    )
     assert claim is not None
     assert claim.task_id == task_b.id
 
@@ -227,7 +229,9 @@ async def test_claim_next_pending_execution_obeys_global_concurrency_limit(
     )
 
     await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
-    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(
+        async_db_session, now=now
+    )
     assert claim is None
 
 
@@ -245,7 +249,9 @@ async def test_claim_next_pending_execution_creates_running_execution_immediatel
     )
 
     await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
-    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(
+        async_db_session, now=now
+    )
     assert claim is not None
     assert claim.task_id == task.id
 
@@ -278,7 +284,9 @@ async def test_claim_next_pending_execution_sequential_holds_next_run_until_fina
     await async_db_session.commit()
 
     await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
-    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(
+        async_db_session, now=now
+    )
     assert claim is not None
     assert claim.task_id == task.id
     await async_db_session.refresh(task)
