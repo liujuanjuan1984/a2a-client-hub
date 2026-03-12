@@ -72,19 +72,6 @@ def _validate_status_update(data: dict[str, Any]) -> list[str]:
 
 
 def _validate_artifact_update(data: dict[str, Any]) -> list[str]:
-    def _as_dict(value: Any) -> dict[str, Any]:
-        return value if isinstance(value, dict) else {}
-
-    def _has_non_empty_text(
-        candidates: list[dict[str, Any]], keys: tuple[str, ...]
-    ) -> bool:
-        for candidate in candidates:
-            for key in keys:
-                value = candidate.get(key)
-                if isinstance(value, str) and value.strip():
-                    return True
-        return False
-
     errors: list[str] = []
     if "artifact" not in data:
         errors.append("ArtifactUpdate object missing required field: 'artifact'.")
@@ -94,15 +81,6 @@ def _validate_artifact_update(data: dict[str, Any]) -> list[str]:
         or not data.get("artifact", {}).get("parts")
     ):
         errors.append("Artifact object must have a non-empty 'parts' array.")
-    artifact = _as_dict(data.get("artifact"))
-    artifact_metadata = _as_dict(artifact.get("metadata"))
-    opencode_metadata = _as_dict(artifact_metadata.get("opencode"))
-    candidates = [data, artifact, opencode_metadata]
-
-    if not _has_non_empty_text(candidates, ("message_id",)):
-        errors.append("ArtifactUpdate object missing required field: 'message_id'.")
-    if not _has_non_empty_text(candidates, ("event_id",)):
-        errors.append("ArtifactUpdate object missing required field: 'event_id'.")
     return errors
 
 

@@ -505,6 +505,21 @@ def _rewrite_stream_event_contract(
                     opencode["seq"] = seq
 
 
+def _resolve_stream_event_id(
+    *,
+    stream_block: dict[str, Any],
+    local_message_id: str,
+    seq: int,
+) -> str:
+    raw_event_id = stream_block.get("event_id")
+    normalized_event_id = normalize_non_empty_text(
+        raw_event_id if isinstance(raw_event_id, str) else None
+    )
+    if normalized_event_id:
+        return normalized_event_id
+    return f"{local_message_id}:{seq}"
+
+
 async def _ensure_local_message_headers(
     *,
     state: _InvokeState,
@@ -598,19 +613,21 @@ async def _persist_stream_block_update(
     )
     if agent_message_id is None:
         return
+    local_message_id = str(agent_message_id)
     raw_seq = stream_block.get("seq")
     resolved_seq = raw_seq if isinstance(raw_seq, int) and raw_seq > 0 else None
     if resolved_seq is None:
         resolved_seq = state.next_event_seq
     state.next_event_seq = max(state.next_event_seq, resolved_seq + 1)
+    resolved_event_id = _resolve_stream_event_id(
+        stream_block=stream_block,
+        local_message_id=local_message_id,
+        seq=resolved_seq,
+    )
     _rewrite_stream_event_contract(
         event_payload,
-        local_message_id=str(agent_message_id),
-        event_id=(
-            str(stream_block.get("event_id"))
-            if isinstance(stream_block.get("event_id"), str)
-            else None
-        ),
+        local_message_id=local_message_id,
+        event_id=resolved_event_id,
         seq=resolved_seq,
     )
 
@@ -628,11 +645,7 @@ async def _persist_stream_block_update(
             "content": str(stream_block.get("content") or ""),
             "append": bool(stream_block.get("append", True)),
             "is_finished": is_finished,
-            "event_id": (
-                str(stream_block.get("event_id"))
-                if isinstance(stream_block.get("event_id"), str)
-                else None
-            ),
+            "event_id": resolved_event_id,
             "source": (
                 str(stream_block.get("source"))
                 if isinstance(stream_block.get("source"), str)

@@ -58,7 +58,8 @@ export function useSessionHistoryQuery(options: {
       return;
     }
     const map = resolveMessageCursorMap(conversationId);
-    // 关键修复：重入会话时，丢弃所有后续页面的旧 cursor 缓存，强制重新获取
+    // Key fix: when re-entering a session, drop stale cursors for pages > 1
+    // so subsequent pages are always fetched fresh.
     Array.from(map.keys()).forEach((key) => {
       if (key > 1) {
         map.delete(key);

@@ -126,10 +126,15 @@ class A2AClient:
             self._interceptors.append(StaticHeaderInterceptor(self._default_headers))
 
         self._card_fetch_timeout = card_fetch_timeout
-        self._supported_transports = supported_transports or [
-            TransportProtocol.jsonrpc,
-            TransportProtocol.http_json,
-        ]
+        # Copy caller input to keep transport preference stable after initialization.
+        self._supported_transports = list(
+            supported_transports
+            if supported_transports is not None
+            else [
+                TransportProtocol.jsonrpc,
+                TransportProtocol.http_json,
+            ]
+        )
 
         self._client_lock = asyncio.Lock()
         self._clients: Dict[bool, ClientCacheEntry] = {}
@@ -443,21 +448,29 @@ class A2AClient:
 
         # Validate downstream card-declared endpoints before caching. This prevents the
         # SDK transport negotiation from selecting a disallowed interface later.
+        selected_transport, selected_url, supported_labels = (
+            self._resolve_negotiated_transport_target(card)
+        )
+        if not selected_transport or not selected_url:
+            supported = ", ".join(supported_labels)
+            raise A2AAgentUnavailableError(
+                f"A2A agent '{redact_url_for_logging(self.agent_url)}' has no "
+                f"compatible transports (client supports: {supported})"
+            )
+
+        # Validate only the negotiated transport target so non-selected interface URLs
+        # (for unsupported protocols like GRPC) do not block HTTP-capable agents.
+        selected_transport_label = (
+            selected_transport.value
+            if isinstance(selected_transport, TransportProtocol)
+            else str(selected_transport)
+        )
         try:
             validate_outbound_http_url(
-                getattr(card, "url", "") or "",
+                selected_url,
                 allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
-                purpose="Agent URL",
+                purpose=f"Agent interface URL ({selected_transport_label})",
             )
-            for iface in getattr(card, "additional_interfaces", None) or []:
-                url = (getattr(iface, "url", "") or "").strip()
-                if not url:
-                    continue
-                validate_outbound_http_url(
-                    url,
-                    allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
-                    purpose="Agent interface URL",
-                )
         except OutboundURLNotAllowedError as exc:
             raise A2AOutboundNotAllowedError(str(exc)) from exc
 
@@ -468,6 +481,57 @@ class A2AClient:
             getattr(card, "name", "unknown"),
         )
         return card
+
+    def _resolve_negotiated_transport_target(
+        self, card: AgentCard
+    ) -> tuple[TransportProtocol | str | None, str | None, list[str]]:
+        def _as_display_label(value: TransportProtocol | str | None) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, TransportProtocol):
+                return value.value
+            return str(value).strip()
+
+        client_set: list[TransportProtocol | str] = list(
+            self._supported_transports or [TransportProtocol.jsonrpc]
+        )
+        if not client_set:
+            client_set = [TransportProtocol.jsonrpc]
+
+        supported_labels: list[str] = [
+            label
+            for label in (_as_display_label(value) for value in client_set)
+            if label
+        ]
+        if not supported_labels:
+            supported_labels = [TransportProtocol.jsonrpc.value]
+
+        preferred_transport = (
+            getattr(card, "preferred_transport", None) or TransportProtocol.jsonrpc
+        )
+        preferred_url = getattr(card, "url", "") or ""
+
+        server_set: dict[TransportProtocol | str, str] = {}
+        if preferred_transport and preferred_url:
+            server_set[preferred_transport] = preferred_url
+
+        for iface in getattr(card, "additional_interfaces", None) or []:
+            transport = getattr(iface, "transport", None)
+            interface_url = getattr(iface, "url", "") or ""
+            if transport and interface_url:
+                server_set[transport] = interface_url
+
+        if self._use_client_preference:
+            for transport in client_set:
+                url = server_set.get(transport)
+                if url:
+                    return transport, url, supported_labels
+            return None, None, supported_labels
+
+        for transport, url in server_set.items():
+            if transport in client_set:
+                return transport, url, supported_labels
+        return None, None, supported_labels
 
     async def close(self) -> None:
         """Dispose cached transport wrappers.

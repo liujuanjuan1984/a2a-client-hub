@@ -2,6 +2,18 @@
   "name": "a2a-client-hub",
   "version": "0.1.0",
   "private": true,
+  "description": "Frontend app for a2a-client-hub (Expo + React Native)",
+  "license": "Apache-2.0",
+  "author": "liujuanjuan1984",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/liujuanjuan1984/a2a-client-hub.git",
+    "directory": "frontend"
+  },
+  "bugs": {
+    "url": "https://github.com/liujuanjuan1984/a2a-client-hub/issues"
+  },
+  "homepage": "https://github.com/liujuanjuan1984/a2a-client-hub#readme",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
