@@ -1542,6 +1542,30 @@ def test_extract_stream_identity_hints_includes_nested_status_task_fallback():
     assert hints["upstream_task_id"] == "task-from-status"
 
 
+def test_extract_stream_identity_hints_reads_shared_stream_metadata():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"kind": "text", "text": "noop"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "message_id": "msg-shared-stream",
+                            "event_id": "evt-shared-stream",
+                            "sequence": 12,
+                        }
+                    }
+                },
+            },
+        }
+    )
+
+    assert hints["upstream_message_id"] == "msg-shared-stream"
+    assert hints["upstream_event_id"] == "evt-shared-stream"
+    assert hints["upstream_event_seq"] == 12
+
+
 def test_extract_stream_chunk_reads_canonical_event_and_message_ids():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {

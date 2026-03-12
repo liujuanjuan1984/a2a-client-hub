@@ -220,6 +220,33 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.blockType).toBe("reasoning");
   });
 
+  it("prefers shared.stream metadata for tool_call blocks carried in text parts", () => {
+    const parsed = extractStreamBlockUpdate({
+      kind: "artifact-update",
+      taskId: "task-10",
+      artifact: {
+        artifactId: "task-10:stream",
+        parts: [{ kind: "text", text: '{"tool":"bash","status":"running"}' }],
+        metadata: {
+          shared: {
+            stream: {
+              block_type: "tool_call",
+              source: "tool_part_update",
+              message_id: "msg-shared",
+              event_id: "evt-shared",
+              sequence: 10,
+            },
+          },
+        },
+      },
+    });
+    expect(parsed?.blockType).toBe("tool_call");
+    expect(parsed?.messageId).toBe("msg-shared");
+    expect(parsed?.eventId).toBe("evt-shared");
+    expect(parsed?.seq).toBe(10);
+    expect(parsed?.source).toBe("tool_part_update");
+  });
+
   it("infers text block type when explicit metadata is missing", () => {
     const parsed = extractStreamBlockUpdate({
       kind: "artifact-update",

@@ -347,6 +347,21 @@ const buildFallbackEventId = ({
   return `chunk:${messageId}:${artifactId}`;
 };
 
+const extractSharedStreamMetadata = (
+  artifactMetadata: Record<string, unknown> | null,
+  rootMetadata: Record<string, unknown> | null,
+) => {
+  const resolved: Record<string, unknown> = {};
+  for (const metadata of [rootMetadata, artifactMetadata]) {
+    const shared = asRecord(metadata?.shared);
+    const stream = asRecord(shared?.stream);
+    if (stream) {
+      Object.assign(resolved, stream);
+    }
+  }
+  return Object.keys(resolved).length > 0 ? resolved : null;
+};
+
 export const extractStreamBlockUpdate = (
   data: Record<string, unknown>,
 ): StreamBlockUpdate | null => {
@@ -357,9 +372,11 @@ export const extractStreamBlockUpdate = (
   const artifact = asRecord(data.artifact);
   const rootMetadata = asRecord(data.metadata);
   const metadata = asRecord(artifact?.metadata) ?? rootMetadata;
+  const sharedStream = extractSharedStreamMetadata(metadata, rootMetadata);
   const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
   const textFromParts = extractTextFromParts(parts);
   const rawBlockType =
+    pickString(sharedStream, ["block_type"]) ??
     pickString(metadata, ["block_type"]) ??
     pickString(rootMetadata, ["block_type"]);
   const explicitBlockType = parseBlockType(rawBlockType);
@@ -374,7 +391,8 @@ export const extractStreamBlockUpdate = (
     pickInteger(data, ["seq"]) ??
     pickInteger(artifact ?? null, ["seq"]) ??
     pickInteger(metadata, ["seq"]) ??
-    pickInteger(rootMetadata, ["seq"]);
+    pickInteger(rootMetadata, ["seq"]) ??
+    pickInteger(sharedStream, ["sequence", "seq"]);
 
   const artifactId =
     pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ?? null;
@@ -388,7 +406,8 @@ export const extractStreamBlockUpdate = (
     pickString(data, ["message_id", "messageId"]) ??
     pickString(artifact ?? null, ["message_id", "messageId"]) ??
     pickString(metadata, ["message_id", "messageId"]) ??
-    pickString(rootMetadata, ["message_id", "messageId"]);
+    pickString(rootMetadata, ["message_id", "messageId"]) ??
+    pickString(sharedStream, ["message_id", "messageId"]);
   const resolvedMessageId =
     upstreamMessageId ?? (taskIdHint ? `task:${taskIdHint}` : null);
   const resolvedArtifactId =
@@ -427,7 +446,8 @@ export const extractStreamBlockUpdate = (
     pickString(data, ["event_id", "eventId"]) ??
     pickString(artifact ?? null, ["event_id", "eventId"]) ??
     pickString(metadata, ["event_id", "eventId"]) ??
-    pickString(rootMetadata, ["event_id", "eventId"]);
+    pickString(rootMetadata, ["event_id", "eventId"]) ??
+    pickString(sharedStream, ["event_id", "eventId"]);
   const eventId = upstreamEventId
     ? upstreamEventId
     : buildFallbackEventId({
@@ -442,11 +462,13 @@ export const extractStreamBlockUpdate = (
       : "fallback_chunk";
 
   const source =
+    pickString(sharedStream, ["source"]) ??
     pickString(metadata, ["source"]) ??
     pickString(rootMetadata, ["source"]) ??
     null;
   const role = normalizeRole(
     pickString(data, ["role"]) ??
+      pickString(sharedStream, ["role"]) ??
       pickString(metadata, ["role"]) ??
       pickString(rootMetadata, ["role"]),
   );
