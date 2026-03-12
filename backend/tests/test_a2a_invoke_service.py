@@ -1311,6 +1311,21 @@ def test_extract_stream_chunk_infers_text_block_type_without_opencode_metadata()
     assert chunk["content"] == "hello generic"
 
 
+def test_extract_stream_chunk_rejects_unsupported_explicit_block_type():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "artifact_id": "task-generic:stream",
+                "parts": [{"kind": "text", "text": "hello generic"}],
+                "metadata": {"opencode": {"block_type": "custom_phase"}},
+            },
+        }
+    )
+
+    assert chunk is None
+
+
 def test_extract_stream_chunk_ignores_non_artifact_payloads():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {"content": "legacy-content"}

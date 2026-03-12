@@ -344,10 +344,14 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     activeStreamMessageIds.clear();
   };
 
-  const mergeHistoryMessagesById = (incoming: ChatMessage[]) => {
+  const mergeHistoryMessagesById = (
+    incoming: ChatMessage[],
+    options?: { isActivelyStreaming?: boolean },
+  ) => {
     const current = getConversationMessages(conversationId);
     const session = get().sessions[conversationId];
-    const isActivelyStreaming = session?.streamState === "streaming";
+    const isActivelyStreaming =
+      options?.isActivelyStreaming ?? session?.streamState === "streaming";
     const nextMessages = mergeChatMessagesByCanonicalId({
       current,
       incoming,
@@ -429,7 +433,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         keepEmptyMessages: true,
       });
       if (recovered.length > 0) {
-        mergeHistoryMessagesById(recovered);
+        mergeHistoryMessagesById(recovered, { isActivelyStreaming: false });
         queryClient.invalidateQueries({
           queryKey: queryKeys.history.chat(conversationId),
         });
@@ -708,13 +712,16 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     terminalHandled = true;
     const targetMessageIds = resolveExistingTargetMessageIds();
     flushChunkBuffer();
-    closeStreamingMessages();
-    markSessionIdle();
+    const finalizeCompletion = () => {
+      closeStreamingMessages();
+      markSessionIdle();
+    };
 
     const hasPendingSequenceGap = Array.from(
       pendingChunksByMessageId.values(),
     ).some((pending) => pending.size > 0);
     if (hasPendingSequenceGap) {
+      finalizeCompletion();
       backfillHistoryAfterSequenceGap().catch((error) => {
         const message =
           error instanceof Error
@@ -746,8 +753,13 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         return !hasRenderableAgentContent(message);
       });
     if (needsEmptyRenderRecovery) {
-      backfillHistoryAfterEmptyRender(targetMessageIds);
+      backfillHistoryAfterEmptyRender(targetMessageIds).finally(() => {
+        finalizeCompletion();
+      });
+      return;
     }
+
+    finalizeCompletion();
   };
 
   const tryWebSocketTransport = async () =>
