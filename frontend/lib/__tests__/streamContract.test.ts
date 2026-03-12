@@ -243,6 +243,34 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.messageId).toBe("task:task-9");
   });
 
+  it("accepts text parts that use type/content shape", () => {
+    const parsed = extractStreamBlockUpdate({
+      kind: "artifact-update",
+      taskId: "task-11",
+      artifact: {
+        artifactId: "task-11:stream",
+        parts: [{ type: "text", content: "hello" }],
+      },
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.blockType).toBe("text");
+    expect(parsed?.delta).toBe("hello");
+  });
+
+  it("parses chunk when taskId is missing but messageId exists", () => {
+    const parsed = extractStreamBlockUpdate({
+      kind: "artifact-update",
+      message_id: "msg-only-1",
+      artifact: {
+        artifact_id: "stream-1",
+        parts: [{ kind: "text", text: "hello" }],
+      },
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.messageId).toBe("msg-only-1");
+    expect(parsed?.taskId).toBe("msg-only-1");
+  });
+
   it("ignores unsupported block_type values", () => {
     const parsed = extractStreamBlockUpdate({
       kind: "artifact-update",

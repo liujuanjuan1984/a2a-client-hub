@@ -451,6 +451,8 @@ class A2AInvokeService:
             return None
         artifact_metadata = as_dict(artifact.get("metadata"))
         opencode_metadata = as_dict(artifact_metadata.get("opencode"))
+        root_metadata = as_dict(payload.get("metadata"))
+        root_opencode_metadata = as_dict(root_metadata.get("opencode"))
 
         block_type = cls._StreamTextAccumulator._extract_artifact_type(
             payload, artifact
@@ -460,7 +462,12 @@ class A2AInvokeService:
 
         event_id = None
         message_id = None
-        for candidate in (payload, artifact, opencode_metadata):
+        for candidate in (
+            payload,
+            artifact,
+            opencode_metadata,
+            root_opencode_metadata,
+        ):
             if event_id is None:
                 event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
             if message_id is None:
@@ -477,8 +484,13 @@ class A2AInvokeService:
         append = payload.get("append")
         resolved_append = append if isinstance(append, bool) else True
 
-        seq = cls._pick_int(payload, ("seq",))
-        source = cls._StreamTextAccumulator._extract_artifact_source(artifact)
+        seq = (
+            cls._pick_int(payload, ("seq",))
+            or cls._pick_int(artifact, ("seq",))
+            or cls._pick_int(opencode_metadata, ("seq",))
+            or cls._pick_int(root_opencode_metadata, ("seq",))
+        )
+        source = cls._StreamTextAccumulator._extract_artifact_source(payload, artifact)
         return {
             "event_id": event_id,
             "seq": seq,
@@ -689,25 +701,43 @@ class A2AInvokeService:
             for part in parts:
                 if not isinstance(part, dict):
                     continue
-                kind = str(part.get("kind") or "")
+                raw_kind = part.get("kind") or part.get("type")
+                normalized_kind = (
+                    raw_kind.strip().lower() if isinstance(raw_kind, str) else None
+                )
+                if normalized_kind not in {None, "", "text"}:
+                    continue
                 text = part.get("text")
-                if kind == "text" and isinstance(text, str):
+                if isinstance(text, str):
                     collected.append(text)
+                    continue
+                content = part.get("content")
+                if isinstance(content, str):
+                    collected.append(content)
             return "".join(collected)
 
         @staticmethod
         def _extract_artifact_type(
-            _payload: dict[str, Any], artifact: dict[str, Any]
+            payload: dict[str, Any], artifact: dict[str, Any]
         ) -> str | None:
             metadata = artifact.get("metadata")
             if not isinstance(metadata, dict):
                 metadata = {}
+            root_metadata = payload.get("metadata")
+            if not isinstance(root_metadata, dict):
+                root_metadata = {}
 
             raw = metadata.get("block_type")
             if not isinstance(raw, str) or not raw.strip():
                 opencode = metadata.get("opencode")
                 if isinstance(opencode, dict):
                     raw = opencode.get("block_type")
+            if not isinstance(raw, str) or not raw.strip():
+                raw = root_metadata.get("block_type")
+            if not isinstance(raw, str) or not raw.strip():
+                root_opencode = root_metadata.get("opencode")
+                if isinstance(root_opencode, dict):
+                    raw = root_opencode.get("block_type")
 
             if not isinstance(raw, str) or not raw.strip():
                 if A2AInvokeService._StreamTextAccumulator._extract_text_from_parts(
@@ -722,14 +752,28 @@ class A2AInvokeService:
             return None
 
         @staticmethod
-        def _extract_artifact_source(artifact: dict[str, Any]) -> str | None:
+        def _extract_artifact_source(
+            payload: dict[str, Any], artifact: dict[str, Any]
+        ) -> str | None:
             metadata = artifact.get("metadata")
             if not isinstance(metadata, dict):
-                return None
+                metadata = {}
+            root_metadata = payload.get("metadata")
+            if not isinstance(root_metadata, dict):
+                root_metadata = {}
             opencode = metadata.get("opencode")
-            if not isinstance(opencode, dict):
-                return None
-            source = opencode.get("source")
+            source = opencode.get("source") if isinstance(opencode, dict) else None
+            if not isinstance(source, str) or not source.strip():
+                source = metadata.get("source")
+            if not isinstance(source, str) or not source.strip():
+                root_opencode = root_metadata.get("opencode")
+                source = (
+                    root_opencode.get("source")
+                    if isinstance(root_opencode, dict)
+                    else None
+                )
+            if not isinstance(source, str) or not source.strip():
+                source = root_metadata.get("source")
             if isinstance(source, str) and source.strip():
                 return source.strip().lower()
             return None
