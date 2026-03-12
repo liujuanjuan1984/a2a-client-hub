@@ -8,8 +8,9 @@ version = "1.0.0"
 description = "Backend API for a2a-client-hub (FastAPI + PostgreSQL)"
 readme = "README.md"
 requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
 authors = [
-    {name = "a2a-client team"},
+    {name = "liujuanjuan1984"},
 ]
 keywords = [
     "fastapi",
