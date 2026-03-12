@@ -356,6 +356,16 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     setConversationMessages(conversationId, nextMessages);
   };
 
+  const hasRenderableAgentContent = (message: ChatMessage | undefined) => {
+    if (!message || message.role !== "agent") {
+      return false;
+    }
+    if (message.content.trim().length > 0) {
+      return true;
+    }
+    return Array.isArray(message.blocks) && message.blocks.length > 0;
+  };
+
   const backfillHistoryAfterSequenceGap = async () => {
     const recovered = new Map<string, ChatMessage>();
     const limit = 50;
@@ -393,6 +403,66 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       queryClient.invalidateQueries({
         queryKey: queryKeys.history.chat(conversationId),
       });
+    }
+  };
+
+  const backfillHistoryAfterEmptyRender = async (
+    targetMessageIds: string[],
+  ): Promise<void> => {
+    if (targetMessageIds.length === 0) {
+      return;
+    }
+    warnStreamOnce(
+      `empty-render-recovery:${conversationId}:${targetMessageIds.join(",")}`,
+      "[Chat Stream] no renderable content after stream completion; fetching history fallback",
+      {
+        conversationId,
+        targetMessageIds,
+      },
+    );
+    try {
+      const response = await listSessionMessagesPage(conversationId, {
+        before: null,
+        limit: 20,
+      });
+      const recovered = mapSessionMessagesToChatMessages(response.items, {
+        keepEmptyMessages: true,
+      });
+      if (recovered.length > 0) {
+        mergeHistoryMessagesById(recovered);
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.history.chat(conversationId),
+        });
+      }
+      const mergedMessages = getConversationMessages(conversationId);
+      const stillMissingRenderableContent = targetMessageIds.every((id) => {
+        const message = mergedMessages.find((item) => item.id === id);
+        return !hasRenderableAgentContent(message);
+      });
+      if (stillMissingRenderableContent) {
+        warnStreamOnce(
+          `empty-render-still-missing:${conversationId}:${targetMessageIds.join(",")}`,
+          "[Chat Stream] history fallback completed but renderable content is still unavailable",
+          {
+            conversationId,
+            targetMessageIds,
+          },
+        );
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Empty-render recovery failed.";
+      warnStreamOnce(
+        `empty-render-recovery-failed:${conversationId}:${message}`,
+        "[Chat Stream] empty-render recovery failed",
+        {
+          conversationId,
+          targetMessageIds,
+          message,
+        },
+      );
     }
   };
 
@@ -636,15 +706,15 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       return;
     }
     terminalHandled = true;
+    const targetMessageIds = resolveExistingTargetMessageIds();
     flushChunkBuffer();
     closeStreamingMessages();
     markSessionIdle();
 
-    if (
-      Array.from(pendingChunksByMessageId.values()).some(
-        (pending) => pending.size > 0,
-      )
-    ) {
+    const hasPendingSequenceGap = Array.from(
+      pendingChunksByMessageId.values(),
+    ).some((pending) => pending.size > 0);
+    if (hasPendingSequenceGap) {
       backfillHistoryAfterSequenceGap().catch((error) => {
         const message =
           error instanceof Error
@@ -664,6 +734,19 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           },
         );
       });
+      return;
+    }
+
+    const mergedMessages = getConversationMessages(conversationId);
+    const needsEmptyRenderRecovery =
+      hasObservedStreamEvent &&
+      targetMessageIds.length > 0 &&
+      targetMessageIds.every((id) => {
+        const message = mergedMessages.find((item) => item.id === id);
+        return !hasRenderableAgentContent(message);
+      });
+    if (needsEmptyRenderRecovery) {
+      backfillHistoryAfterEmptyRender(targetMessageIds);
     }
   };
 
