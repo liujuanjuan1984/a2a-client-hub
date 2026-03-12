@@ -49,7 +49,6 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
     )
 
     STATUS_PENDING: ClassVar[str] = "pending"
-    STATUS_PENDING: ClassVar[str] = "pending"
     STATUS_RUNNING: ClassVar[str] = "running"
     STATUS_SUCCESS: ClassVar[str] = "success"
     STATUS_FAILED: ClassVar[str] = "failed"
