@@ -441,8 +441,8 @@ class A2AInvokeService:
     def extract_stream_chunk_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
-        # Strict OpenCode stream contract: only typed artifact-update events with
-        # opencode metadata identity are eligible for chunk persistence.
+        # Accept standard A2A artifact-update payloads first. Upstream identity
+        # fields (message_id/event_id) are treated as optional hints.
         if not isinstance(payload, dict) or payload.get("kind") != "artifact-update":
             return None
 
@@ -458,10 +458,15 @@ class A2AInvokeService:
         if block_type is None:
             return None
 
-        event_id = cls._pick_non_empty_str(opencode_metadata, ("event_id",))
-        message_id = cls._pick_non_empty_str(opencode_metadata, ("message_id",))
-        if not event_id or not message_id:
-            return None
+        event_id = None
+        message_id = None
+        for candidate in (payload, artifact, opencode_metadata):
+            if event_id is None:
+                event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
+            if message_id is None:
+                message_id = cls._pick_non_empty_str(
+                    candidate, ("message_id", "messageId")
+                )
 
         delta = cls._StreamTextAccumulator._extract_text_from_parts(
             artifact.get("parts")

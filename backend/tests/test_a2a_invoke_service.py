@@ -1500,7 +1500,7 @@ def test_extract_stream_chunk_consumes_optional_seq_append_and_last_chunk():
     assert chunk["is_finished"] is True
 
 
-def test_extract_stream_chunk_requires_opencode_identity_metadata():
+def test_extract_stream_chunk_accepts_missing_opencode_identity_metadata():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
             "kind": "artifact-update",
@@ -1516,7 +1516,9 @@ def test_extract_stream_chunk_requires_opencode_identity_metadata():
         }
     )
 
-    assert chunk is None
+    assert chunk is not None
+    assert chunk["event_id"] == "evt-nested"
+    assert chunk["message_id"] is None
 
 
 def test_extract_stream_chunk_ignores_non_artifact_payloads():

@@ -175,25 +175,14 @@ class TestValidateMessage:
         errors = validators.validate_message(data)
         assert "Artifact object must have a non-empty 'parts' array." in errors
 
-    def test_artifact_update_missing_message_id(self):
+    def test_artifact_update_missing_message_id_and_event_id_is_allowed(self):
         data = {
             "kind": "artifact-update",
-            "event_id": "evt-1",
             "seq": 1,
             "artifact": {"parts": [{"text": "result"}]},
         }
         errors = validators.validate_message(data)
-        assert "ArtifactUpdate object missing required field: 'message_id'." in errors
-
-    def test_artifact_update_missing_event_id(self):
-        data = {
-            "kind": "artifact-update",
-            "message_id": "msg-1",
-            "seq": 1,
-            "artifact": {"parts": [{"text": "result"}]},
-        }
-        errors = validators.validate_message(data)
-        assert "ArtifactUpdate object missing required field: 'event_id'." in errors
+        assert not errors
 
     def test_artifact_update_missing_seq_is_allowed(self):
         data = {
