@@ -289,7 +289,7 @@ async def test_sse_invokes_complete_metadata_before_complete():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_ignores_non_typed_events():
+async def test_sse_on_complete_accepts_untyped_text_artifact_events():
     completed: list[str] = []
 
     async def _on_complete(text: str):
@@ -317,7 +317,7 @@ async def test_sse_on_complete_ignores_non_typed_events():
     async for _ in response.body_iterator:
         pass
 
-    assert completed == [""]
+    assert completed == ["foo"]
 
 
 @pytest.mark.asyncio
@@ -404,6 +404,41 @@ async def test_sse_on_complete_supports_block_type():
         pass
 
     assert completed == ["Hello alias"]
+
+
+@pytest.mark.asyncio
+async def test_sse_on_complete_accepts_text_parts_without_block_type():
+    completed: list[str] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "artifact_id": "task-generic:stream",
+                        "parts": [{"kind": "text", "text": "Hello generic"}],
+                        "metadata": {},
+                    },
+                }
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == ["Hello generic"]
 
 
 @pytest.mark.asyncio
@@ -1257,6 +1292,23 @@ def test_extract_stream_chunk_accepts_missing_opencode_identity_metadata():
     assert chunk is not None
     assert chunk["event_id"] == "evt-nested"
     assert chunk["message_id"] is None
+
+
+def test_extract_stream_chunk_infers_text_block_type_without_opencode_metadata():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "taskId": "task-generic",
+            "artifact": {
+                "artifactId": "task-generic:stream",
+                "parts": [{"kind": "text", "text": "hello generic"}],
+            },
+        }
+    )
+
+    assert chunk is not None
+    assert chunk["block_type"] == "text"
+    assert chunk["content"] == "hello generic"
 
 
 def test_extract_stream_chunk_ignores_non_artifact_payloads():

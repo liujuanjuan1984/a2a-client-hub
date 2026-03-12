@@ -686,6 +686,15 @@ class A2AInvokeService:
             opencode = opencode if isinstance(opencode, dict) else {}
             raw = opencode.get("block_type")
             if not isinstance(raw, str) or not raw.strip():
+                # Generic A2A compatibility: when upstream omits private
+                # block typing but provides textual parts, treat it as text.
+                if (
+                    A2AInvokeService._StreamTextAccumulator._extract_text_from_parts(
+                        artifact.get("parts")
+                    )
+                    != ""
+                ):
+                    return "text"
                 return None
             normalized = raw.strip().lower()
             if normalized in {"text", "reasoning", "tool_call"}:
