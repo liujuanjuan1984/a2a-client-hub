@@ -151,7 +151,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   const [saving, setSaving] = useState(false);
   const [loadingJob, setLoadingJob] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [lastRunStatus, setLastRunStatus] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
   const effectiveScheduleTimeZone = form.schedule_timezone || scheduleTimeZone;
 
   const initialSnapshotRef = useRef<Snapshot | null>(null);
@@ -198,7 +198,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           conversation_policy: found.conversation_policy || "new_each_run",
         };
         setForm(next);
-        setLastRunStatus(found.last_run_status ?? null);
+        setIsRunning(Boolean(found.is_running));
         initialSnapshotRef.current = buildSnapshot(next);
       })
       .catch((error) => {
@@ -435,7 +435,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
             editing={editing}
             agentOptions={agentOptions}
             timeZone={effectiveScheduleTimeZone}
-            lastRunStatus={lastRunStatus}
+            isRunning={isRunning}
             onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
             onSubmit={handleSubmit}
             onCancel={handleCancel}

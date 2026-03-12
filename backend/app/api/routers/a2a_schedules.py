@@ -96,6 +96,7 @@ def _build_task_response(
         conversation_id=task.conversation_id,
         conversation_policy=task.conversation_policy,
         enabled=bool(task.enabled),
+        is_running=bool(getattr(task, "is_running", False)),
         next_run_at_utc=task.next_run_at,
         next_run_at_local=a2a_schedule_service.format_local_datetime(
             task.next_run_at,

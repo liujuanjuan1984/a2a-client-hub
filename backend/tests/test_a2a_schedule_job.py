@@ -93,10 +93,6 @@ def _mock_runtime_builder():
 async def _mark_task_claimed(session, *, task: A2AScheduleTask):
     run_id = uuid4()
     started_at = utc_now()
-    task.current_run_id = run_id
-    task.running_started_at = started_at
-    task.last_heartbeat_at = started_at
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
     session.add(
         A2AScheduleExecution(
             user_id=task.user_id,
@@ -104,6 +100,7 @@ async def _mark_task_claimed(session, *, task: A2AScheduleTask):
             run_id=run_id,
             scheduled_for=task.next_run_at or started_at,
             started_at=started_at,
+            last_heartbeat_at=started_at,
             status=A2AScheduleExecution.STATUS_RUNNING,
             conversation_id=task.conversation_id,
         )
@@ -160,10 +157,6 @@ async def test_claim_next_pending_execution_obeys_agent_concurrency_limit(
         next_run_at=now,
     )
     existing_run_id = uuid4()
-    task_a1.current_run_id = existing_run_id
-    task_a1.running_started_at = now - timedelta(minutes=1)
-    task_a1.last_heartbeat_at = now - timedelta(seconds=30)
-    task_a1.last_run_status = A2AScheduleTask.STATUS_RUNNING
     async_db_session.add(
         A2AScheduleExecution(
             user_id=user.id,
@@ -171,6 +164,7 @@ async def test_claim_next_pending_execution_obeys_agent_concurrency_limit(
             run_id=existing_run_id,
             scheduled_for=now - timedelta(minutes=1),
             started_at=now - timedelta(minutes=1),
+            last_heartbeat_at=now - timedelta(seconds=30),
             status=A2AScheduleExecution.STATUS_RUNNING,
         )
     )
@@ -218,10 +212,6 @@ async def test_claim_next_pending_execution_obeys_global_concurrency_limit(
         next_run_at=now,
     )
     running_run_id = uuid4()
-    task_a.current_run_id = running_run_id
-    task_a.running_started_at = now - timedelta(minutes=1)
-    task_a.last_heartbeat_at = now - timedelta(seconds=20)
-    task_a.last_run_status = A2AScheduleTask.STATUS_RUNNING
     async_db_session.add(
         A2AScheduleExecution(
             user_id=user.id,
@@ -229,6 +219,7 @@ async def test_claim_next_pending_execution_obeys_global_concurrency_limit(
             run_id=running_run_id,
             scheduled_for=now - timedelta(minutes=1),
             started_at=now - timedelta(minutes=1),
+            last_heartbeat_at=now - timedelta(seconds=20),
             status=A2AScheduleExecution.STATUS_RUNNING,
         )
     )
@@ -303,8 +294,7 @@ async def test_claim_next_pending_execution_sequential_holds_next_run_until_fina
     assert claim is not None
     assert claim.task_id == task.id
     await async_db_session.refresh(task)
-    assert task.last_run_status == A2AScheduleTask.STATUS_RUNNING
-    assert task.current_run_id is not None
+    assert task.last_run_status == A2AScheduleTask.STATUS_IDLE
     assert task.next_run_at is None
 
 
@@ -335,8 +325,14 @@ async def test_delete_running_task_marks_deferred_delete_and_hides_from_user_que
     assert task.delete_requested_at is not None
     assert task.enabled is False
     assert task.next_run_at is None
-    assert task.current_run_id == run_id
-    assert task.last_run_status == A2AScheduleTask.STATUS_RUNNING
+    execution = await async_db_session.scalar(
+        select(A2AScheduleExecution).where(
+            A2AScheduleExecution.task_id == task.id,
+            A2AScheduleExecution.run_id == run_id,
+        )
+    )
+    assert execution is not None
+    assert execution.status == A2AScheduleExecution.STATUS_RUNNING
 
     with pytest.raises(A2AScheduleNotFoundError):
         await a2a_schedule_service.get_task(
@@ -380,9 +376,6 @@ async def test_finalize_task_run_soft_deletes_when_delete_was_requested(
 
     assert task.deleted_at is not None
     assert task.delete_requested_at is None
-    assert task.current_run_id is None
-    assert task.running_started_at is None
-    assert task.last_heartbeat_at is None
 
 
 async def test_delete_task_returns_conflict_when_row_locked(
@@ -1118,10 +1111,7 @@ async def test_execute_claimed_task_skips_stale_run_id(
         agent_id=agent.id,
         next_run_at=now,
     )
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-    task.current_run_id = uuid4()
-    task.running_started_at = now
-    await async_db_session.commit()
+    task_id = task.id
 
     stale_claim = _build_claim(task, run_id=uuid4())
     await _execute_claimed_task(claim=stale_claim)
@@ -1129,21 +1119,20 @@ async def test_execute_claimed_task_skips_stale_run_id(
 
     async with async_session_maker() as check_db:
         refreshed_task = await check_db.scalar(
-            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
         )
         executions = list(
             (
                 await check_db.scalars(
                     select(A2AScheduleExecution).where(
-                        A2AScheduleExecution.task_id == task.id
+                        A2AScheduleExecution.task_id == task_id
                     )
                 )
             ).all()
         )
 
     assert refreshed_task is not None
-    assert refreshed_task.current_run_id is not None
-    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_RUNNING
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_IDLE
     assert executions == []
 
 
@@ -1211,8 +1200,7 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_mi
         )
 
     assert refreshed_task is not None
-    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_RUNNING
-    assert refreshed_task.current_run_id == run_id
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_IDLE
     assert len(executions) == 1
     assert executions[0].status == A2AScheduleExecution.STATUS_RUNNING
     assert executions[0].finished_at is None
@@ -1289,8 +1277,7 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_lo
 
     assert "finalize deferred due to lock contention" in caplog.text
     assert refreshed_task is not None
-    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_RUNNING
-    assert refreshed_task.current_run_id == run_id
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_IDLE
     assert len(executions) == 1
     assert executions[0].status == A2AScheduleExecution.STATUS_RUNNING
     assert executions[0].finished_at is None
@@ -1312,15 +1299,13 @@ async def test_recover_stale_running_task_finalizes_matching_run(
     task_id = task.id
     run_id = uuid4()
     stale_started_at = now - timedelta(minutes=30)
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-    task.current_run_id = run_id
-    task.running_started_at = stale_started_at
     execution = A2AScheduleExecution(
         user_id=user.id,
         task_id=task.id,
         run_id=run_id,
         scheduled_for=stale_started_at,
         started_at=stale_started_at,
+        last_heartbeat_at=stale_started_at,
         status=A2AScheduleExecution.STATUS_RUNNING,
     )
     async_db_session.add(execution)
@@ -1345,8 +1330,6 @@ async def test_recover_stale_running_task_finalizes_matching_run(
 
     assert refreshed_task is not None
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
-    assert refreshed_task.current_run_id is None
-    assert refreshed_task.running_started_at is None
     assert refreshed_execution is not None
     assert refreshed_execution.status == A2AScheduleExecution.STATUS_FAILED
     assert refreshed_execution.finished_at is not None
@@ -1372,10 +1355,6 @@ async def test_recover_stale_running_task_soft_deletes_when_delete_was_requested
     task_id = task.id
     run_id = uuid4()
     stale_started_at = now - timedelta(minutes=30)
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-    task.current_run_id = run_id
-    task.running_started_at = stale_started_at
-    task.last_heartbeat_at = stale_started_at
     task.delete_requested_at = now - timedelta(minutes=1)
     task.enabled = False
     task.next_run_at = None
@@ -1385,6 +1364,7 @@ async def test_recover_stale_running_task_soft_deletes_when_delete_was_requested
         run_id=run_id,
         scheduled_for=stale_started_at,
         started_at=stale_started_at,
+        last_heartbeat_at=stale_started_at,
         status=A2AScheduleExecution.STATUS_RUNNING,
     )
     async_db_session.add(execution)
@@ -1412,7 +1392,6 @@ async def test_recover_stale_running_task_soft_deletes_when_delete_was_requested
     assert refreshed_task is not None
     assert refreshed_task.deleted_at is not None
     assert refreshed_task.delete_requested_at is None
-    assert refreshed_task.current_run_id is None
     assert refreshed_execution is not None
     assert refreshed_execution.status == A2AScheduleExecution.STATUS_FAILED
 
@@ -1435,16 +1414,13 @@ async def test_recover_stale_running_task_skips_when_heartbeat_recent(
     task_id = task.id
     run_id = uuid4()
     stale_started_at = now - timedelta(minutes=30)
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-    task.current_run_id = run_id
-    task.running_started_at = stale_started_at
-    task.last_heartbeat_at = now - timedelta(seconds=30)
     execution = A2AScheduleExecution(
         user_id=user.id,
         task_id=task.id,
         run_id=run_id,
         scheduled_for=stale_started_at,
         started_at=stale_started_at,
+        last_heartbeat_at=now - timedelta(seconds=30),
         status=A2AScheduleExecution.STATUS_RUNNING,
     )
     async_db_session.add(execution)
@@ -1469,8 +1445,7 @@ async def test_recover_stale_running_task_skips_when_heartbeat_recent(
         )
 
     assert refreshed_task is not None
-    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_RUNNING
-    assert refreshed_task.current_run_id == run_id
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_IDLE
     assert refreshed_execution is not None
     assert refreshed_execution.status == A2AScheduleExecution.STATUS_RUNNING
     assert refreshed_execution.finished_at is None
@@ -1494,16 +1469,13 @@ async def test_recover_stale_running_task_hard_timeout_wins_over_recent_heartbea
     task_id = task.id
     run_id = uuid4()
     stale_started_at = now - timedelta(minutes=30)
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-    task.current_run_id = run_id
-    task.running_started_at = stale_started_at
-    task.last_heartbeat_at = now - timedelta(seconds=10)
     execution = A2AScheduleExecution(
         user_id=user.id,
         task_id=task.id,
         run_id=run_id,
         scheduled_for=stale_started_at,
         started_at=stale_started_at,
+        last_heartbeat_at=now - timedelta(seconds=10),
         status=A2AScheduleExecution.STATUS_RUNNING,
     )
     async_db_session.add(execution)
@@ -1529,13 +1501,12 @@ async def test_recover_stale_running_task_hard_timeout_wins_over_recent_heartbea
 
     assert refreshed_task is not None
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
-    assert refreshed_task.current_run_id is None
     assert refreshed_execution is not None
     assert refreshed_execution.status == A2AScheduleExecution.STATUS_FAILED
     assert refreshed_execution.finished_at is not None
 
 
-async def test_recover_stale_running_task_backfills_missing_execution(
+async def test_recover_stale_running_task_requires_execution_row(
     async_db_session,
     async_session_maker,
 ) -> None:
@@ -1551,42 +1522,22 @@ async def test_recover_stale_running_task_backfills_missing_execution(
         next_run_at=now,
     )
     task_id = task.id
-    run_id = uuid4()
-    stale_started_at = now - timedelta(minutes=30)
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-    task.current_run_id = run_id
-    task.running_started_at = stale_started_at
-    await async_db_session.commit()
 
     recovered = await a2a_schedule_service.recover_stale_running_tasks(
         async_db_session,
         now=now,
         timeout_seconds=60,
     )
-    assert recovered == 1
+    assert recovered == 0
     await async_db_session.rollback()
 
     async with async_session_maker() as check_db:
         refreshed_task = await check_db.scalar(
             select(A2AScheduleTask).where(A2AScheduleTask.id == task_id)
         )
-        executions = list(
-            (
-                await check_db.scalars(
-                    select(A2AScheduleExecution).where(
-                        A2AScheduleExecution.task_id == task_id,
-                        A2AScheduleExecution.run_id == run_id,
-                    )
-                )
-            ).all()
-        )
 
     assert refreshed_task is not None
-    assert refreshed_task.current_run_id is None
-    assert refreshed_task.running_started_at is None
-    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
-    assert len(executions) == 1
-    assert executions[0].status == A2AScheduleExecution.STATUS_FAILED
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_IDLE
 
 
 async def test_recover_stale_sequential_task_reschedules_next_run(
@@ -1611,9 +1562,6 @@ async def test_recover_stale_sequential_task_reschedules_next_run(
     stale_started_at = now - timedelta(minutes=30)
     task.cycle_type = A2AScheduleTask.CYCLE_SEQUENTIAL
     task.time_point = {"minutes": 60}
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-    task.current_run_id = run_id
-    task.running_started_at = stale_started_at
     task.next_run_at = None
     execution = A2AScheduleExecution(
         user_id=user.id,
@@ -1621,6 +1569,7 @@ async def test_recover_stale_sequential_task_reschedules_next_run(
         run_id=run_id,
         scheduled_for=stale_started_at,
         started_at=stale_started_at,
+        last_heartbeat_at=stale_started_at,
         status=A2AScheduleExecution.STATUS_RUNNING,
     )
     async_db_session.add(execution)
@@ -1641,8 +1590,6 @@ async def test_recover_stale_sequential_task_reschedules_next_run(
 
     assert refreshed_task is not None
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
-    assert refreshed_task.current_run_id is None
-    assert refreshed_task.running_started_at is None
     assert refreshed_task.next_run_at is not None
     assert refreshed_task.next_run_at >= now + timedelta(minutes=59)
 
@@ -1664,15 +1611,13 @@ async def test_recover_stale_running_tasks_commits_per_recovered_task(
             next_run_at=now,
         )
         run_id = uuid4()
-        task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-        task.current_run_id = run_id
-        task.running_started_at = stale_started_at
         execution = A2AScheduleExecution(
             user_id=user.id,
             task_id=task.id,
             run_id=run_id,
             scheduled_for=stale_started_at,
             started_at=stale_started_at,
+            last_heartbeat_at=stale_started_at,
             status=A2AScheduleExecution.STATUS_RUNNING,
         )
         async_db_session.add(execution)

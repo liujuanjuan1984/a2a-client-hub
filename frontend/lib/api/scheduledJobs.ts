@@ -43,10 +43,11 @@ export type ScheduledJob = {
   enabled: boolean;
   conversation_policy: "new_each_run" | "reuse_single";
   conversation_id?: string | null;
+  is_running?: boolean;
   next_run_at_utc?: string | null;
   next_run_at_local?: string | null;
   last_run_at?: string | null;
-  last_run_status?: "idle" | "running" | "success" | "failed" | null;
+  last_run_status?: "idle" | "success" | "failed" | null;
   created_at: string;
   updated_at: string;
 };
@@ -54,9 +55,10 @@ export type ScheduledJob = {
 export type ScheduledJobExecution = {
   id: string;
   task_id: string;
-  status: "running" | "success" | "failed";
+  status: "pending" | "running" | "success" | "failed";
   scheduled_for: string;
-  started_at: string;
+  started_at?: string | null;
+  last_heartbeat_at?: string | null;
   finished_at?: string | null;
   error_message?: string | null;
   response_content?: string | null;

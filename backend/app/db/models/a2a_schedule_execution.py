@@ -73,8 +73,13 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
     )
     started_at = Column(
         DateTime(timezone=True),
-        nullable=False,
-        comment="Execution start time",
+        nullable=True,
+        comment="Execution start time; NULL while still pending in the durable queue",
+    )
+    last_heartbeat_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Most recent heartbeat observed while execution is running",
     )
     finished_at = Column(
         DateTime(timezone=True),
@@ -84,9 +89,7 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
     status = Column(
         String(32),
         nullable=False,
-        default=STATUS_RUNNING,
-        server_default=STATUS_RUNNING,
-        comment="Execution status",
+        comment="Execution lifecycle status",
     )
     error_message = Column(
         Text,

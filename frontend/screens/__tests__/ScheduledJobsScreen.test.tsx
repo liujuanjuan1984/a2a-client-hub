@@ -98,7 +98,8 @@ describe("ScheduledJobsScreen sorting", () => {
       {
         id: "2",
         enabled: true,
-        last_run_status: "running",
+        is_running: true,
+        last_run_status: "success",
         next_run_at_utc: "2026-02-23T11:00:00Z",
         schedule_timezone: "UTC",
       },
@@ -119,7 +120,8 @@ describe("ScheduledJobsScreen sorting", () => {
       {
         id: "5",
         enabled: false,
-        last_run_status: "running",
+        is_running: true,
+        last_run_status: "failed",
         next_run_at_utc: "2026-02-23T08:00:00Z",
         schedule_timezone: "UTC",
       },

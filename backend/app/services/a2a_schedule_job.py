@@ -120,14 +120,13 @@ async def _touch_schedule_run_heartbeat(*, claim: ClaimedA2AScheduleTask) -> boo
             statement_timeout_ms=_HEARTBEAT_STATEMENT_TIMEOUT_MS,
         )
         stmt = (
-            update(A2AScheduleTask)
+            update(A2AScheduleExecution)
             .where(
                 and_(
-                    A2AScheduleTask.id == claim.task_id,
-                    A2AScheduleTask.user_id == claim.user_id,
-                    A2AScheduleTask.deleted_at.is_(None),
-                    A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
-                    A2AScheduleTask.current_run_id == claim.run_id,
+                    A2AScheduleExecution.task_id == claim.task_id,
+                    A2AScheduleExecution.user_id == claim.user_id,
+                    A2AScheduleExecution.run_id == claim.run_id,
+                    A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
                 )
             )
             .values(last_heartbeat_at=observed_at)
@@ -328,14 +327,34 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
         )
         task = await db.scalar(stmt)
-        if task is None:
-            return
-        if task.current_run_id != claim.run_id:
+        execution = await db.scalar(
+            select(A2AScheduleExecution)
+            .where(
+                and_(
+                    A2AScheduleExecution.task_id == claim.task_id,
+                    A2AScheduleExecution.user_id == claim.user_id,
+                    A2AScheduleExecution.run_id == claim.run_id,
+                )
+            )
+            .limit(1)
+        )
+        if task is None or execution is None:
             logger.info(
-                "Skip stale schedule claim task=%s run_id=%s current_run_id=%s",
+                "Skip stale schedule claim task=%s run_id=%s because task or execution disappeared",
+                claim.task_id,
+                claim.run_id,
+                extra={
+                    "schedule_task_id": str(claim.task_id),
+                    "run_id": str(claim.run_id),
+                    "phase": "claim",
+                },
+            )
+            return
+        if execution.status != A2AScheduleExecution.STATUS_RUNNING:
+            logger.info(
+                "Skip stale schedule claim task=%s run_id=%s because execution is no longer running",
                 task.id,
                 claim.run_id,
-                task.current_run_id,
                 extra={
                     "schedule_task_id": str(task.id),
                     "run_id": str(claim.run_id),
@@ -344,53 +363,40 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
             return
         if not task.enabled:
-            if task.last_run_status == A2AScheduleTask.STATUS_RUNNING:
-                finished_at = utc_now()
-                failure_message = "Task disabled or deleted before execution started"
-                try:
-                    finalized = await a2a_schedule_service.finalize_task_run(
-                        db,
-                        task_id=task.id,
-                        user_id=task.user_id,
-                        run_id=claim.run_id,
-                        final_status=A2AScheduleTask.STATUS_FAILED,
-                        finished_at=finished_at,
-                        conversation_id=task.conversation_id,
-                        response_content=failure_message,
-                        error_message=failure_message,
-                    )
-                except A2AScheduleConflictError:
-                    ops_metrics.increment_schedule_finalize_lock_conflicts()
-                    logger.warning(
-                        "Skip disabled-task finalize due to lock contention task=%s run_id=%s",
-                        task.id,
-                        claim.run_id,
-                        extra={
-                            "schedule_task_id": str(task.id),
-                            "run_id": str(claim.run_id),
-                            "phase": "finalize",
-                            "finalize_conflict": True,
-                        },
-                    )
-                    await rollback_safely(db)
-                    return
-                if finalized:
-                    await commit_safely(db)
-                else:
-                    await rollback_safely(db)
-            return
-
-        execution = await db.scalar(
-            select(A2AScheduleExecution)
-            .where(
-                and_(
-                    A2AScheduleExecution.task_id == task.id,
-                    A2AScheduleExecution.user_id == task.user_id,
-                    A2AScheduleExecution.run_id == claim.run_id,
+            finished_at = utc_now()
+            failure_message = "Task disabled or deleted before execution started"
+            try:
+                finalized = await a2a_schedule_service.finalize_task_run(
+                    db,
+                    task_id=task.id,
+                    user_id=task.user_id,
+                    run_id=claim.run_id,
+                    final_status=A2AScheduleTask.STATUS_FAILED,
+                    finished_at=finished_at,
+                    conversation_id=task.conversation_id,
+                    response_content=failure_message,
+                    error_message=failure_message,
                 )
-            )
-            .limit(1)
-        )
+            except A2AScheduleConflictError:
+                ops_metrics.increment_schedule_finalize_lock_conflicts()
+                logger.warning(
+                    "Skip disabled-task finalize due to lock contention task=%s run_id=%s",
+                    task.id,
+                    claim.run_id,
+                    extra={
+                        "schedule_task_id": str(task.id),
+                        "run_id": str(claim.run_id),
+                        "phase": "finalize",
+                        "finalize_conflict": True,
+                    },
+                )
+                await rollback_safely(db)
+                return
+            if finalized:
+                await commit_safely(db)
+            else:
+                await rollback_safely(db)
+            return
 
         heartbeat_stop_event = asyncio.Event()
         heartbeat_task: asyncio.Task[None] | None = None

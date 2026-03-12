@@ -11,7 +11,6 @@ from typing import Any, Dict, Optional, TypeVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -215,6 +214,70 @@ class A2AScheduleService:
             raise A2AScheduleNotFoundError("Schedule task not found")
         return task
 
+    async def _get_running_execution(
+        self,
+        db: AsyncSession,
+        *,
+        task_id: UUID,
+        user_id: UUID,
+        for_update: bool = False,
+    ) -> A2AScheduleExecution | None:
+        stmt = (
+            select(A2AScheduleExecution)
+            .where(
+                and_(
+                    A2AScheduleExecution.task_id == task_id,
+                    A2AScheduleExecution.user_id == user_id,
+                    A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
+                )
+            )
+            .order_by(A2AScheduleExecution.id.asc())
+            .limit(1)
+        )
+        if for_update:
+            stmt = stmt.with_for_update(nowait=True)
+        return await db.scalar(stmt)
+
+    async def _set_task_running_projection(
+        self,
+        db: AsyncSession,
+        *,
+        task: A2AScheduleTask,
+    ) -> A2AScheduleTask:
+        running_execution = await self._get_running_execution(
+            db,
+            task_id=task.id,
+            user_id=task.user_id,
+        )
+        setattr(task, "is_running", running_execution is not None)
+        return task
+
+    async def _set_tasks_running_projection(
+        self,
+        db: AsyncSession,
+        *,
+        tasks: list[A2AScheduleTask],
+    ) -> None:
+        if not tasks:
+            return
+
+        task_ids = [task.id for task in tasks]
+        running_task_ids = set(
+            (
+                await db.scalars(
+                    select(A2AScheduleExecution.task_id)
+                    .where(
+                        A2AScheduleExecution.task_id.in_(task_ids),
+                        A2AScheduleExecution.status
+                        == A2AScheduleExecution.STATUS_RUNNING,
+                    )
+                    .distinct()
+                )
+            ).all()
+        )
+        for task in tasks:
+            setattr(task, "is_running", task.id in running_task_ids)
+
     @_map_retryable_db_errors("Schedule task list")
     async def list_tasks(
         self,
@@ -238,6 +301,7 @@ class A2AScheduleService:
         )
         rows = await db.execute(stmt)
         items = list(rows.scalars().all())
+        await self._set_tasks_running_projection(db, tasks=items)
 
         count_stmt = select(func.count(A2AScheduleTask.id)).where(
             A2AScheduleTask.user_id == user_id,
@@ -255,7 +319,8 @@ class A2AScheduleService:
         user_id: UUID,
         task_id: UUID,
     ) -> A2AScheduleTask:
-        return await self._get_task(db, user_id=user_id, task_id=task_id)
+        task = await self._get_task(db, user_id=user_id, task_id=task_id)
+        return await self._set_task_running_projection(db, task=task)
 
     @_map_retryable_db_errors("Schedule task creation")
     async def create_task(
@@ -320,6 +385,7 @@ class A2AScheduleService:
         db.add(task)
         await commit_safely(db)
         await db.refresh(task)
+        setattr(task, "is_running", False)
         return task
 
     @_map_retryable_db_errors("Schedule task update")
@@ -344,7 +410,14 @@ class A2AScheduleService:
         task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
         timezone_value = self._normalize_timezone_str(timezone_str)
 
-        if task.last_run_status == A2AScheduleTask.STATUS_RUNNING:
+        if (
+            await self._get_running_execution(
+                db,
+                task_id=task.id,
+                user_id=task.user_id,
+            )
+            is not None
+        ):
             raise A2AScheduleConflictError(
                 "Task is currently running and cannot be edited."
             )
@@ -409,6 +482,7 @@ class A2AScheduleService:
 
         await commit_safely(db)
         await db.refresh(task)
+        setattr(task, "is_running", False)
         return task
 
     @_map_retryable_db_errors("Schedule task toggle")
@@ -445,7 +519,7 @@ class A2AScheduleService:
 
         await commit_safely(db)
         await db.refresh(task)
-        return task
+        return await self._set_task_running_projection(db, task=task)
 
     @_map_retryable_db_errors("Schedule task deletion")
     async def delete_task(
@@ -457,10 +531,12 @@ class A2AScheduleService:
     ) -> None:
         await self._apply_nowait_write_timeouts(db)
         task = await self._get_task_for_update(db, user_id=user_id, task_id=task_id)
-        if (
-            task.last_run_status == A2AScheduleTask.STATUS_RUNNING
-            and task.current_run_id is not None
-        ):
+        running_execution = await self._get_running_execution(
+            db,
+            task_id=task.id,
+            user_id=task.user_id,
+        )
+        if running_execution is not None:
             # Keep the row alive until the current run reaches a terminal status.
             task.delete_requested_at = utc_now()
             task.enabled = False
@@ -506,53 +582,25 @@ class A2AScheduleService:
         if task is None:
             raise A2AScheduleNotFoundError("Schedule task not found")
 
-        if (
-            task.last_run_status == A2AScheduleTask.STATUS_FAILED
-            and task.current_run_id is None
-        ):
-            return task
-
-        if task.last_run_status != A2AScheduleTask.STATUS_RUNNING:
+        execution = await self._get_running_execution(
+            db,
+            task_id=task.id,
+            user_id=task.user_id,
+            for_update=True,
+        )
+        if execution is None:
+            if task.last_run_status == A2AScheduleTask.STATUS_FAILED:
+                return await self._set_task_running_projection(db, task=task)
             raise A2AScheduleValidationError(
                 "Only running tasks can be manually marked as failed"
             )
 
-        run_id = task.current_run_id or uuid4()
-        started_at = ensure_utc(task.running_started_at or now_utc)
-        exec_stmt = (
-            select(A2AScheduleExecution)
-            .where(
-                and_(
-                    A2AScheduleExecution.task_id == task.id,
-                    A2AScheduleExecution.user_id == task.user_id,
-                    A2AScheduleExecution.run_id == run_id,
-                )
-            )
-            .with_for_update(nowait=True)
-            .limit(1)
-        )
-        execution = await db.scalar(exec_stmt)
-        if execution is None:
-            execution = A2AScheduleExecution(
-                user_id=task.user_id,
-                task_id=task.id,
-                run_id=run_id,
-                scheduled_for=started_at,
-                started_at=started_at,
-                finished_at=now_utc,
-                status=A2AScheduleExecution.STATUS_FAILED,
-                error_message=manual_error_message,
-                conversation_id=task.conversation_id,
-            )
-            db.add(execution)
-        else:
-            if execution.status == A2AScheduleExecution.STATUS_RUNNING:
-                execution.status = A2AScheduleExecution.STATUS_FAILED
-            if execution.finished_at is None:
-                execution.finished_at = now_utc
-            execution.error_message = manual_error_message
-            if execution.conversation_id is None:
-                execution.conversation_id = task.conversation_id
+        if execution.finished_at is None:
+            execution.finished_at = now_utc
+        execution.status = A2AScheduleExecution.STATUS_FAILED
+        execution.error_message = manual_error_message
+        if execution.conversation_id is None:
+            execution.conversation_id = task.conversation_id
 
         threshold = max(int(settings.a2a_schedule_task_failure_threshold), 1)
         self._apply_task_terminal_projection(
@@ -564,6 +612,7 @@ class A2AScheduleService:
 
         await commit_safely(db)
         await db.refresh(task)
+        setattr(task, "is_running", False)
         return task
 
     @_map_retryable_db_errors("Schedule execution list")
@@ -614,9 +663,6 @@ class A2AScheduleService:
         finished_at_utc = ensure_utc(finished_at)
         task.last_run_status = final_status
         task.last_run_at = finished_at_utc
-        task.current_run_id = None
-        task.running_started_at = None
-        task.last_heartbeat_at = None
         if conversation_id is not None:
             task.conversation_id = conversation_id
 
@@ -674,12 +720,6 @@ class A2AScheduleService:
             .limit(1)
             .scalar_subquery()
         )
-
-        # Enqueue only due tasks that dont already have a pending or running execution
-        # Wait, that might be complex if we allow multiple queue items.
-        # Since we decoupled, we should just check if current_run_id is None?
-        # No, current_run_id is gone from task conceptually, but let us keep it for backwards compatibility during migration,
-        # actually, let us just rely on an exists subquery.
 
         has_pending_subquery = (
             select(1)
@@ -743,9 +783,6 @@ class A2AScheduleService:
 
             run_id = uuid4()
             selected_task.next_run_at = next_run_at
-            # We DONT mark task as running anymore
-            selected_task.last_run_status = A2AScheduleTask.STATUS_IDLE
-            selected_task.current_run_id = None
 
             db.add(
                 A2AScheduleExecution(
@@ -753,7 +790,8 @@ class A2AScheduleService:
                     task_id=selected_task.id,
                     run_id=run_id,
                     scheduled_for=scheduled_for,
-                    started_at=now_utc,
+                    started_at=None,
+                    last_heartbeat_at=None,
                     status=A2AScheduleExecution.STATUS_PENDING,
                     conversation_id=selected_task.conversation_id,
                 )
@@ -828,9 +866,16 @@ class A2AScheduleService:
         task_stmt = (
             select(A2AScheduleTask)
             .where(A2AScheduleTask.id == execution.task_id)
+            .with_for_update(nowait=True)
             .limit(1)
         )
-        task = await db.scalar(task_stmt)
+        try:
+            task = await db.scalar(task_stmt)
+        except DBAPIError as exc:
+            if to_retryable_db_lock_error(exc) is not None:
+                await db.rollback()
+                return None
+            raise
         if task is None or task.deleted_at is not None or not task.enabled:
             execution.status = A2AScheduleExecution.STATUS_FAILED
             execution.finished_at = now_utc
@@ -842,11 +887,7 @@ class A2AScheduleService:
 
         execution.status = A2AScheduleExecution.STATUS_RUNNING
         execution.started_at = now_utc
-
-        task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-        task.current_run_id = execution.run_id
-        task.running_started_at = now_utc
-        task.last_heartbeat_at = now_utc
+        execution.last_heartbeat_at = now_utc
 
         await commit_safely(db)
 
@@ -888,13 +929,13 @@ class A2AScheduleService:
 
         stale_predicates = [
             func.coalesce(
-                A2AScheduleTask.last_heartbeat_at,
-                A2AScheduleTask.running_started_at,
+                A2AScheduleExecution.last_heartbeat_at,
+                A2AScheduleExecution.started_at,
             )
             <= cutoff
         ]
         if hard_cutoff is not None:
-            stale_predicates.append(A2AScheduleTask.running_started_at <= hard_cutoff)
+            stale_predicates.append(A2AScheduleExecution.started_at <= hard_cutoff)
 
         error_message = "Execution marked as failed by recovery: stale running task exceeded timeout"
         recovered_count = 0
@@ -904,7 +945,6 @@ class A2AScheduleService:
             stale_where = and_(
                 A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
                 A2AScheduleTask.deleted_at.is_(None),
-                A2AScheduleTask.current_run_id == A2AScheduleExecution.run_id,
                 or_(*stale_predicates),
             )
             stmt = (
@@ -914,8 +954,8 @@ class A2AScheduleService:
                 )
                 .where(stale_where)
                 .order_by(
-                    A2AScheduleTask.running_started_at.asc(),
-                    A2AScheduleTask.id.asc(),
+                    A2AScheduleExecution.started_at.asc(),
+                    A2AScheduleExecution.id.asc(),
                 )
                 .limit(1)
                 .with_for_update(of=A2AScheduleExecution, skip_locked=True)
@@ -960,7 +1000,7 @@ class A2AScheduleService:
                     continue
                 raise
 
-            if task is None or task.current_run_id != execution.run_id:
+            if task is None:
                 # Task might have been finalized or deleted by the time we locked it.
                 await commit_safely(db)
                 continue
@@ -980,76 +1020,6 @@ class A2AScheduleService:
             )
             recovered_count += 1
 
-            await commit_safely(db)
-
-        # Compatibility cleanup for legacy orphaned running tasks created before
-        # the durable execution queue was introduced.
-        has_matching_execution_subquery = (
-            select(1)
-            .where(
-                and_(
-                    A2AScheduleExecution.task_id == A2AScheduleTask.id,
-                    A2AScheduleExecution.run_id == A2AScheduleTask.current_run_id,
-                )
-            )
-            .limit(1)
-            .exists()
-        )
-        while True:
-            await self._apply_skip_locked_write_timeouts(db)
-            orphan_where = and_(
-                A2AScheduleTask.deleted_at.is_(None),
-                A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
-                A2AScheduleTask.current_run_id.is_not(None),
-                A2AScheduleTask.running_started_at.is_not(None),
-                or_(*stale_predicates),
-                ~has_matching_execution_subquery,
-            )
-            orphan_stmt = (
-                select(A2AScheduleTask)
-                .where(orphan_where)
-                .order_by(
-                    A2AScheduleTask.running_started_at.asc(),
-                    A2AScheduleTask.id.asc(),
-                )
-                .limit(1)
-                .with_for_update(skip_locked=True)
-            )
-            task = await db.scalar(orphan_stmt)
-            if task is None:
-                break
-
-            run_id = task.current_run_id
-            if run_id is None:
-                await commit_safely(db)
-                continue
-
-            started_at = ensure_utc(task.running_started_at or now_utc)
-            await db.execute(
-                insert(A2AScheduleExecution)
-                .values(
-                    user_id=task.user_id,
-                    task_id=task.id,
-                    run_id=run_id,
-                    scheduled_for=started_at,
-                    started_at=started_at,
-                    finished_at=now_utc,
-                    status=A2AScheduleExecution.STATUS_FAILED,
-                    error_message=error_message,
-                    conversation_id=task.conversation_id,
-                )
-                .on_conflict_do_nothing(
-                    index_elements=["task_id", "run_id"],
-                )
-            )
-            self._apply_task_terminal_projection(
-                task,
-                final_status=A2AScheduleTask.STATUS_FAILED,
-                finished_at=now_utc,
-                failure_threshold=failure_threshold,
-                conversation_id=task.conversation_id,
-            )
-            recovered_count += 1
             await commit_safely(db)
         return recovered_count
 
@@ -1103,7 +1073,7 @@ class A2AScheduleService:
             .limit(1)
         )
         task = await db.scalar(stmt)
-        if task is None or task.current_run_id != run_id:
+        if task is None:
             return False
 
         threshold = max(int(settings.a2a_schedule_task_failure_threshold), 1)

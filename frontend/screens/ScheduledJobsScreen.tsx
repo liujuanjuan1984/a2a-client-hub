@@ -53,8 +53,8 @@ export function ScheduledJobsScreen() {
       if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
 
       if (a.enabled && b.enabled) {
-        const ar = a.last_run_status === "running";
-        const br = b.last_run_status === "running";
+        const ar = Boolean(a.is_running);
+        const br = Boolean(b.is_running);
         if (ar !== br) return ar ? -1 : 1;
 
         const at = a.next_run_at_utc

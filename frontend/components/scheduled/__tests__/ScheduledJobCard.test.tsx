@@ -52,7 +52,8 @@ describe("ScheduledJobCard visuals", () => {
       id: "1",
       name: "Job",
       enabled: true,
-      last_run_status: "running" as const,
+      is_running: true,
+      last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
     };
@@ -107,7 +108,8 @@ describe("ScheduledJobCard visuals", () => {
       id: "4",
       name: "Job",
       enabled: true,
-      last_run_status: "running" as const,
+      is_running: true,
+      last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
     };
