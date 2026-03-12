@@ -3,10 +3,15 @@ from __future__ import annotations
 import pytest
 from a2a.types import AgentCard
 
-from app.integrations.a2a_extensions.errors import A2AExtensionNotSupportedError
-from app.integrations.a2a_extensions.opencode_interrupt_callback import (
-    OPENCODE_INTERRUPT_CALLBACK_URI,
-    resolve_opencode_interrupt_callback,
+from app.integrations.a2a_extensions.errors import (
+    A2AExtensionContractError,
+    A2AExtensionNotSupportedError,
+)
+from app.integrations.a2a_extensions.interrupt_callback import (
+    resolve_interrupt_callback,
+)
+from app.integrations.a2a_extensions.shared_contract import (
+    SHARED_INTERRUPT_CALLBACK_URI,
 )
 
 
@@ -27,20 +32,21 @@ def test_resolve_requires_interrupt_extension_present() -> None:
     payload = _base_card_payload()
     card = AgentCard.model_validate(payload)
     with pytest.raises(A2AExtensionNotSupportedError):
-        resolve_opencode_interrupt_callback(card)
+        resolve_interrupt_callback(card)
 
 
-def test_resolve_extracts_methods_and_business_codes() -> None:
+def test_resolve_extracts_methods_business_codes_and_provider() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_INTERRUPT_CALLBACK_URI,
+            "uri": SHARED_INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
+                "provider": "OpenCode",
                 "methods": {
-                    "reply_permission": "opencode.permission.reply",
-                    "reply_question": "opencode.question.reply",
-                    "reject_question": "opencode.question.reject",
+                    "reply_permission": "shared.permission.reply",
+                    "reply_question": "shared.question.reply",
+                    "reject_question": "shared.question.reject",
                 },
                 "errors": {
                     "business_codes": {
@@ -55,11 +61,12 @@ def test_resolve_extracts_methods_and_business_codes() -> None:
     ]
 
     card = AgentCard.model_validate(payload)
-    resolved = resolve_opencode_interrupt_callback(card)
+    resolved = resolve_interrupt_callback(card)
 
-    assert resolved.methods["reply_permission"] == "opencode.permission.reply"
-    assert resolved.methods["reply_question"] == "opencode.question.reply"
-    assert resolved.methods["reject_question"] == "opencode.question.reject"
+    assert resolved.provider == "opencode"
+    assert resolved.methods["reply_permission"] == "shared.permission.reply"
+    assert resolved.methods["reply_question"] == "shared.question.reply"
+    assert resolved.methods["reject_question"] == "shared.question.reject"
     assert resolved.business_code_map[-32004] == "interrupt_request_not_found"
     assert resolved.jsonrpc.url == "https://api.example.com/jsonrpc"
     assert resolved.jsonrpc.fallback_used is False
@@ -69,20 +76,21 @@ def test_resolve_accepts_missing_interrupt_method_fields() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_INTERRUPT_CALLBACK_URI,
+            "uri": SHARED_INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
+                "provider": "opencode",
                 "methods": {
-                    "reply_permission": "opencode.permission.reply",
-                    "reply_question": "opencode.question.reply",
+                    "reply_permission": "shared.permission.reply",
+                    "reply_question": "shared.question.reply",
                 },
             },
         }
     ]
 
     card = AgentCard.model_validate(payload)
-    resolved = resolve_opencode_interrupt_callback(card)
-    assert resolved.methods.get("reply_permission") == "opencode.permission.reply"
+    resolved = resolve_interrupt_callback(card)
+    assert resolved.methods.get("reply_permission") == "shared.permission.reply"
     assert resolved.methods.get("reject_question") is None
 
 
@@ -90,9 +98,10 @@ def test_resolve_treats_empty_or_blank_interrupt_method_as_missing() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_INTERRUPT_CALLBACK_URI,
+            "uri": SHARED_INTERRUPT_CALLBACK_URI,
             "required": False,
             "params": {
+                "provider": "opencode",
                 "methods": {
                     "reply_permission": "   ",
                     "reply_question": "",
@@ -103,7 +112,26 @@ def test_resolve_treats_empty_or_blank_interrupt_method_as_missing() -> None:
     ]
 
     card = AgentCard.model_validate(payload)
-    resolved = resolve_opencode_interrupt_callback(card)
+    resolved = resolve_interrupt_callback(card)
     assert resolved.methods.get("reply_permission") is None
     assert resolved.methods.get("reply_question") is None
     assert resolved.methods.get("reject_question") is None
+
+
+def test_resolve_rejects_missing_provider() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": SHARED_INTERRUPT_CALLBACK_URI,
+            "required": False,
+            "params": {
+                "methods": {
+                    "reply_permission": "shared.permission.reply",
+                },
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    with pytest.raises(A2AExtensionContractError):
+        resolve_interrupt_callback(card)

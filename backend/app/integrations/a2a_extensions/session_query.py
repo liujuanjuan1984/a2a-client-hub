@@ -1,4 +1,4 @@
-"""OpenCode session query extension resolver and helpers."""
+"""Shared session query extension resolver and helpers."""
 
 from __future__ import annotations
 
@@ -18,13 +18,8 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
-from app.integrations.a2a_extensions.types import (
-    PageSizePagination,
-    ResolvedExtension,
-)
-
-OPENCODE_SESSION_QUERY_URI = "urn:opencode-a2a:opencode-session-query/v1"
-OPENCODE_SESSION_BINDING_URI = "urn:opencode-a2a:opencode-session-binding/v1"
+from app.integrations.a2a_extensions.shared_contract import SHARED_SESSION_QUERY_URI
+from app.integrations.a2a_extensions.types import PageSizePagination, ResolvedExtension
 
 
 def _resolve_pagination_size(
@@ -49,17 +44,6 @@ def _resolve_pagination_size(
     )
 
 
-def _resolve_session_binding_metadata_key(
-    extensions: list[Any],
-) -> Optional[str]:
-    for candidate in extensions:
-        if getattr(candidate, "uri", None) != OPENCODE_SESSION_BINDING_URI:
-            continue
-        params = as_dict(getattr(candidate, "params", None))
-        return require_str(params.get("metadata_key"), field="params.metadata_key")
-    return None
-
-
 def _parse_pagination_params(
     pagination: Dict[str, Any], *, mode: str
 ) -> tuple[tuple[str, ...], bool]:
@@ -70,9 +54,7 @@ def _parse_pagination_params(
             if not isinstance(item, str):
                 continue
             token = item.strip().lower()
-            if not token:
-                continue
-            if token in params:
+            if not token or token in params:
                 continue
             params.append(token)
 
@@ -93,8 +75,8 @@ def _parse_pagination_params(
     return tuple(params), "offset" in params
 
 
-def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
-    """Resolve the OpenCode session query extension from an Agent Card."""
+def resolve_session_query(card: AgentCard) -> ResolvedExtension:
+    """Resolve the shared session query extension from an Agent Card."""
 
     capabilities = getattr(card, "capabilities", None)
     extensions = getattr(capabilities, "extensions", None) if capabilities else None
@@ -103,16 +85,15 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
 
     ext = None
     for candidate in extensions:
-        if getattr(candidate, "uri", None) == OPENCODE_SESSION_QUERY_URI:
+        if getattr(candidate, "uri", None) == SHARED_SESSION_QUERY_URI:
             ext = candidate
             break
     if ext is None:
-        raise A2AExtensionNotSupportedError(
-            "OpenCode session query extension not found"
-        )
+        raise A2AExtensionNotSupportedError("Shared session query extension not found")
 
     required = bool(getattr(ext, "required", False))
     params: Dict[str, Any] = as_dict(getattr(ext, "params", None))
+    provider = require_str(params.get("provider"), field="params.provider").lower()
 
     methods = as_dict(params.get("methods"))
     list_sessions_method = require_str(
@@ -164,16 +145,15 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
     errors = as_dict(params.get("errors"))
     code_to_error = build_business_code_map(errors.get("business_codes"))
 
-    session_binding_metadata_key = _resolve_session_binding_metadata_key(extensions)
-
     result_envelope = params.get("result_envelope")
     envelope_mapping: Optional[Mapping[str, Any]] = None
     if isinstance(result_envelope, dict):
         envelope_mapping = dict(result_envelope)
 
     return ResolvedExtension(
-        uri=OPENCODE_SESSION_QUERY_URI,
+        uri=SHARED_SESSION_QUERY_URI,
         required=required,
+        provider=provider,
         jsonrpc=resolve_jsonrpc_interface(card),
         methods={
             "list_sessions": list_sessions_method,
@@ -188,13 +168,8 @@ def resolve_opencode_session_query(card: AgentCard) -> ResolvedExtension:
             supports_offset=supports_offset,
         ),
         business_code_map=code_to_error,
-        session_binding_metadata_key=session_binding_metadata_key,
         result_envelope=envelope_mapping,
     )
 
 
-__all__ = [
-    "OPENCODE_SESSION_BINDING_URI",
-    "OPENCODE_SESSION_QUERY_URI",
-    "resolve_opencode_session_query",
-]
+__all__ = ["resolve_session_query"]

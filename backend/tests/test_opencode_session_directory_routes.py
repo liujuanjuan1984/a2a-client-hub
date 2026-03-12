@@ -86,7 +86,7 @@ async def test_opencode_sessions_directory_caches_and_sorts(
         def __init__(self) -> None:
             self.calls: List[str] = []
 
-        async def opencode_list_sessions(self, *, runtime, page: int, size: int, query):
+        async def list_sessions(self, *, runtime, page: int, size: int, query):
             url = getattr(getattr(runtime, "resolved", None), "url", "")
             self.calls.append(str(url))
             if "personal" in str(url):
@@ -197,7 +197,7 @@ async def test_opencode_sessions_directory_deduplicates_across_same_upstream(
     )
 
     class FakeExtensionsService:
-        async def opencode_list_sessions(self, *, runtime, page: int, size: int, query):
+        async def list_sessions(self, *, runtime, page: int, size: int, query):
             items = [
                 _task(
                     "ses_dup",
@@ -251,7 +251,7 @@ async def test_opencode_sessions_directory_does_not_treat_context_id_as_session_
     )
 
     class FakeExtensionsService:
-        async def opencode_list_sessions(self, *, runtime, page: int, size: int, query):
+        async def list_sessions(self, *, runtime, page: int, size: int, query):
             items = [
                 {
                     "kind": "task",
@@ -299,7 +299,7 @@ async def test_opencode_sessions_directory_ignores_legacy_external_session_id_al
     )
 
     class FakeExtensionsService:
-        async def opencode_list_sessions(self, *, runtime, page: int, size: int, query):
+        async def list_sessions(self, *, runtime, page: int, size: int, query):
             items = [
                 {
                     "kind": "task",

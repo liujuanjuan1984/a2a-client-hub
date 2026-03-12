@@ -329,12 +329,10 @@ jest.mock("@/lib/api/a2aExtensions", () => ({
     errorCode: string | null = null;
     upstreamError: Record<string, unknown> | null = null;
   },
-  replyOpencodePermissionInterrupt: (...args: unknown[]) =>
+  replyPermissionInterrupt: (...args: unknown[]) =>
     mockReplyPermission(...args),
-  replyOpencodeQuestionInterrupt: (...args: unknown[]) =>
-    mockReplyQuestion(...args),
-  rejectOpencodeQuestionInterrupt: (...args: unknown[]) =>
-    mockRejectQuestion(...args),
+  replyQuestionInterrupt: (...args: unknown[]) => mockReplyQuestion(...args),
+  rejectQuestionInterrupt: (...args: unknown[]) => mockRejectQuestion(...args),
 }));
 
 jest.mock("@/lib/toast", () => ({

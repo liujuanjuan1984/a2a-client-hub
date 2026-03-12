@@ -1,6 +1,6 @@
-"""Shared OpenCode extension routes.
+"""Shared capability routes for session query and interrupt callbacks.
 
-The hub catalog and user-managed agents expose the same OpenCode extension
+The hub catalog and user-managed agents expose the same shared extension
 surface area but require different runtime builders and error semantics.
 This module centralises the route implementations to avoid drift.
 """
@@ -71,7 +71,7 @@ def _summarize_metadata_keys(metadata: Optional[Dict[str, Any]]) -> list[str]:
     return sorted(str(k) for k in metadata.keys())[:20]
 
 
-def create_opencode_extension_router(
+def create_extension_capability_router(
     *,
     prefix: str,
     build_runtime: BuildRuntimeFn,
@@ -167,11 +167,11 @@ def create_opencode_extension_router(
         )
 
     @router.get(
-        "/{agent_id}/extensions/opencode/sessions",
+        "/{agent_id}/extensions/sessions",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def opencode_list_sessions(
+    async def list_external_sessions(
         *,
         agent_id: UUID,
         response: Response,
@@ -190,7 +190,7 @@ def create_opencode_extension_router(
         runtime = await _get_runtime(db, current_user, agent_id)
         query_obj = _parse_query_param(query)
         logger.info(
-            _scope_message("OpenCode sessions list requested"),
+            _scope_message("Shared extension sessions list requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -202,7 +202,7 @@ def create_opencode_extension_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().opencode_list_sessions(
+            get_a2a_extensions_service().list_sessions(
                 runtime=runtime,
                 page=page,
                 size=size,
@@ -211,11 +211,11 @@ def create_opencode_extension_router(
         )
 
     @router.post(
-        "/{agent_id}/extensions/opencode/sessions/{session_id}:continue",
+        "/{agent_id}/extensions/sessions/{session_id}:continue",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def opencode_continue_session(
+    async def continue_external_session(
         *,
         agent_id: UUID,
         session_id: str,
@@ -227,7 +227,7 @@ def create_opencode_extension_router(
 
         runtime = await _get_runtime(db, current_user, agent_id)
         logger.info(
-            _scope_message("OpenCode session continue requested"),
+            _scope_message("Shared extension session continue requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -237,18 +237,18 @@ def create_opencode_extension_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().opencode_continue_session(
+            get_a2a_extensions_service().continue_session(
                 runtime=runtime,
                 session_id=session_id,
             )
         )
 
     @router.post(
-        "/{agent_id}/extensions/opencode/sessions/{session_id}:prompt-async",
+        "/{agent_id}/extensions/sessions/{session_id}:prompt-async",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def opencode_prompt_async(
+    async def prompt_external_session_async(
         *,
         agent_id: UUID,
         session_id: str,
@@ -263,7 +263,7 @@ def create_opencode_extension_router(
         request_keys = sorted(payload.request.keys())[:20]
         metadata_keys = _summarize_metadata_keys(payload.metadata)
         logger.info(
-            _scope_message("OpenCode session prompt_async requested"),
+            _scope_message("Shared extension session prompt_async requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -280,7 +280,7 @@ def create_opencode_extension_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().opencode_prompt_async(
+            get_a2a_extensions_service().prompt_session_async(
                 runtime=runtime,
                 session_id=session_id,
                 request_payload=payload.request,
@@ -289,11 +289,11 @@ def create_opencode_extension_router(
         )
 
     @router.post(
-        "/{agent_id}/extensions/opencode/interrupts/permission:reply",
+        "/{agent_id}/extensions/interrupts/permission:reply",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def opencode_reply_permission_interrupt(
+    async def reply_permission_interrupt(
         *,
         agent_id: UUID,
         payload: A2AExtensionPermissionReplyRequest,
@@ -305,7 +305,7 @@ def create_opencode_extension_router(
 
         runtime = await _get_runtime(db, current_user, agent_id)
         logger.info(
-            _scope_message("OpenCode permission interrupt reply requested"),
+            _scope_message("Shared extension permission interrupt reply requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -316,7 +316,7 @@ def create_opencode_extension_router(
             },
         )
         return await _run_extension_call(
-            get_a2a_extensions_service().opencode_reply_permission(
+            get_a2a_extensions_service().reply_permission_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
                 reply=payload.reply,
@@ -325,11 +325,11 @@ def create_opencode_extension_router(
         )
 
     @router.post(
-        "/{agent_id}/extensions/opencode/interrupts/question:reply",
+        "/{agent_id}/extensions/interrupts/question:reply",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def opencode_reply_question_interrupt(
+    async def reply_question_interrupt(
         *,
         agent_id: UUID,
         payload: A2AExtensionQuestionReplyRequest,
@@ -341,7 +341,7 @@ def create_opencode_extension_router(
 
         runtime = await _get_runtime(db, current_user, agent_id)
         logger.info(
-            _scope_message("OpenCode question interrupt reply requested"),
+            _scope_message("Shared extension question interrupt reply requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -352,7 +352,7 @@ def create_opencode_extension_router(
             },
         )
         return await _run_extension_call(
-            get_a2a_extensions_service().opencode_reply_question(
+            get_a2a_extensions_service().reply_question_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
                 answers=payload.answers,
@@ -361,11 +361,11 @@ def create_opencode_extension_router(
         )
 
     @router.post(
-        "/{agent_id}/extensions/opencode/interrupts/question:reject",
+        "/{agent_id}/extensions/interrupts/question:reject",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def opencode_reject_question_interrupt(
+    async def reject_question_interrupt(
         *,
         agent_id: UUID,
         payload: A2AExtensionQuestionRejectRequest,
@@ -377,7 +377,7 @@ def create_opencode_extension_router(
 
         runtime = await _get_runtime(db, current_user, agent_id)
         logger.info(
-            _scope_message("OpenCode question interrupt reject requested"),
+            _scope_message("Shared extension question interrupt reject requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -387,7 +387,7 @@ def create_opencode_extension_router(
             },
         )
         return await _run_extension_call(
-            get_a2a_extensions_service().opencode_reject_question(
+            get_a2a_extensions_service().reject_question_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
                 metadata=payload.metadata,
@@ -395,11 +395,11 @@ def create_opencode_extension_router(
         )
 
     @router.post(
-        "/{agent_id}/extensions/opencode/sessions:query",
+        "/{agent_id}/extensions/sessions:query",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def opencode_list_sessions_post(
+    async def query_external_sessions(
         *,
         agent_id: UUID,
         payload: A2AExtensionQueryRequest,
@@ -411,7 +411,7 @@ def create_opencode_extension_router(
 
         runtime = await _get_runtime(db, current_user, agent_id)
         logger.info(
-            _scope_message("OpenCode sessions list requested (POST)"),
+            _scope_message("Shared extension sessions list requested (POST)"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -423,7 +423,7 @@ def create_opencode_extension_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().opencode_list_sessions(
+            get_a2a_extensions_service().list_sessions(
                 runtime=runtime,
                 page=payload.page,
                 size=payload.size,
@@ -432,11 +432,11 @@ def create_opencode_extension_router(
         )
 
     @router.get(
-        "/{agent_id}/extensions/opencode/sessions/{session_id}/messages",
+        "/{agent_id}/extensions/sessions/{session_id}/messages",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def opencode_list_session_messages(
+    async def list_external_session_messages(
         *,
         agent_id: UUID,
         session_id: str,
@@ -456,7 +456,7 @@ def create_opencode_extension_router(
         runtime = await _get_runtime(db, current_user, agent_id)
         query_obj = _parse_query_param(query)
         logger.info(
-            _scope_message("OpenCode session messages requested"),
+            _scope_message("Shared extension session messages requested"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -469,7 +469,7 @@ def create_opencode_extension_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().opencode_get_session_messages(
+            get_a2a_extensions_service().get_session_messages(
                 runtime=runtime,
                 session_id=session_id,
                 page=page,
@@ -479,11 +479,11 @@ def create_opencode_extension_router(
         )
 
     @router.post(
-        "/{agent_id}/extensions/opencode/sessions/{session_id}/messages:query",
+        "/{agent_id}/extensions/sessions/{session_id}/messages:query",
         response_model=A2AExtensionResponse,
         status_code=status.HTTP_200_OK,
     )
-    async def opencode_list_session_messages_post(
+    async def query_external_session_messages(
         *,
         agent_id: UUID,
         session_id: str,
@@ -496,7 +496,7 @@ def create_opencode_extension_router(
 
         runtime = await _get_runtime(db, current_user, agent_id)
         logger.info(
-            _scope_message("OpenCode session messages requested (POST)"),
+            _scope_message("Shared extension session messages requested (POST)"),
             extra={
                 "user_id": str(current_user.id),
                 "agent_id": str(agent_id),
@@ -509,7 +509,7 @@ def create_opencode_extension_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().opencode_get_session_messages(
+            get_a2a_extensions_service().get_session_messages(
                 runtime=runtime,
                 session_id=session_id,
                 page=payload.page,
@@ -521,4 +521,4 @@ def create_opencode_extension_router(
     return router
 
 
-__all__ = ["create_opencode_extension_router"]
+__all__ = ["create_extension_capability_router"]

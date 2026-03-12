@@ -78,8 +78,8 @@ Credentials:
 
 ## OpenCode Session Query & Interrupt Callback (A2A Extension)
 
-This backend supports querying OpenCode sessions and message history via an A2A
-Agent Card extension declared by `opencode-a2a-serve`.
+This backend supports querying upstream sessions and message history via a
+shared A2A Agent Card extension contract.
 
 Requirements:
 
@@ -90,26 +90,26 @@ Requirements:
 Endpoints:
 
 - List sessions:
-  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions?page=1&size=20`
-  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions:query`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions:query`
 - Continue a session:
-  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}:continue`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:continue`
 - Trigger async prompt for an existing upstream session:
-  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}:prompt-async`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:prompt-async`
     - body:
-      `{"request":{"parts":[{"type":"text","text":"Continue and summarize next steps."}],"noReply":true},"metadata":{"opencode":{"directory":"/path/inside/workspace"}}}`
+      `{"request":{"parts":[{"type":"text","text":"Continue and summarize next steps."}],"noReply":true},"metadata":{"provider":"opencode","externalSessionId":"ses-123"}}`
 - List messages for a session:
-  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages?page=1&size=50`
-  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/sessions/{session_id}/messages:query`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages?page=1&size=50`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages:query`
 - Reply interrupt callbacks:
-  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts/permission:reply`
     - body: `{ "request_id": "...", "reply": "once|always|reject" }`
-  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reply`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts/question:reply`
     - body: `{ "request_id": "...", "answers": [["A"], ["B"]] }`
-  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reject`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts/question:reject`
     - body: `{ "request_id": "..." }`
   - Optional metadata for all interrupt callbacks:
-    - `{ "metadata": { "opencode": { "directory": "/path/inside/workspace" } } }`
+    - `{ "metadata": { "provider": "opencode", "requestScope": "shared" } }`
 
 Optional query (passthrough):
 

@@ -18,17 +18,14 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
 )
 from app.integrations.a2a_extensions.errors import (
-    A2AExtensionContractError,
     A2AExtensionUpstreamError,
+)
+from app.integrations.a2a_extensions.interrupt_callback import (
+    resolve_interrupt_callback,
 )
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient, JsonRpcResponse
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
-from app.integrations.a2a_extensions.opencode_interrupt_callback import (
-    resolve_opencode_interrupt_callback,
-)
-from app.integrations.a2a_extensions.opencode_session_query import (
-    resolve_opencode_session_query,
-)
+from app.integrations.a2a_extensions.session_query import resolve_session_query
 from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
@@ -268,11 +265,11 @@ class A2AExtensionsService:
             meta.update(meta_extra)
         return meta
 
-    async def _resolve_opencode_extension(
+    async def _resolve_session_extension(
         self, runtime: A2ARuntime
     ) -> tuple[ResolvedExtension, str]:
         card = await self._fetch_card(runtime)
-        ext = resolve_opencode_session_query(card)
+        ext = resolve_session_query(card)
         jsonrpc_url = self._ensure_outbound_allowed(
             ext.jsonrpc.url, purpose="JSON-RPC interface URL"
         )
@@ -362,25 +359,7 @@ class A2AExtensionsService:
             return None
         if not isinstance(metadata, dict):
             raise ValueError("metadata must be an object")
-
-        normalized = dict(metadata)
-        opencode_raw = normalized.get("opencode")
-        if opencode_raw is None:
-            return normalized
-        if not isinstance(opencode_raw, dict):
-            raise ValueError("metadata.opencode must be an object")
-
-        opencode = dict(opencode_raw)
-        if "directory" in opencode:
-            raw_directory = opencode.get("directory")
-            if not isinstance(raw_directory, str) or not raw_directory.strip():
-                raise ValueError(
-                    "metadata.opencode.directory must be a non-empty string"
-                )
-            opencode["directory"] = raw_directory.strip()
-
-        normalized["opencode"] = opencode
-        return normalized
+        return dict(metadata)
 
     @staticmethod
     def _record_extension_metric(
@@ -432,7 +411,7 @@ class A2AExtensionsService:
                 upstream_error={"message": str(exc), "type": type(exc).__name__},
             ) from exc
 
-    async def _invoke_opencode_method(
+    async def _invoke_session_method(
         self,
         *,
         runtime: A2ARuntime,
@@ -497,7 +476,7 @@ class A2AExtensionsService:
             meta=meta,
         )
 
-    async def opencode_list_sessions(
+    async def list_sessions(
         self,
         *,
         runtime: A2ARuntime,
@@ -505,7 +484,7 @@ class A2AExtensionsService:
         size: Optional[int],
         query: Optional[Dict[str, Any]],
     ) -> ExtensionCallResult:
-        ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
+        ext, jsonrpc_url = await self._resolve_session_extension(runtime)
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -542,7 +521,7 @@ class A2AExtensionsService:
         if query is not None:
             params["query"] = query
 
-        return await self._invoke_opencode_method(
+        return await self._invoke_session_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -552,7 +531,7 @@ class A2AExtensionsService:
             size=resolved_size,
         )
 
-    async def opencode_get_session_messages(
+    async def get_session_messages(
         self,
         *,
         runtime: A2ARuntime,
@@ -565,7 +544,7 @@ class A2AExtensionsService:
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
+        ext, jsonrpc_url = await self._resolve_session_extension(runtime)
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -608,7 +587,7 @@ class A2AExtensionsService:
         if query is not None:
             params["query"] = query
 
-        return await self._invoke_opencode_method(
+        return await self._invoke_session_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -619,33 +598,27 @@ class A2AExtensionsService:
             meta_extra={"session_id": resolved_session_id},
         )
 
-    async def opencode_continue_session(
+    async def continue_session(
         self,
         *,
         runtime: A2ARuntime,
         session_id: str,
     ) -> ExtensionCallResult:
-        """Return a stable "continue" binding for an OpenCode session.
+        """Return a stable continue binding for a provider-owned external session.
 
         This endpoint is intentionally conservative:
         - It validates the upstream session exists (best-effort) via the session
           query contract, returning stable error_code values on failure.
-        - It returns `metadata.<metadata_key>` where `metadata_key` is discovered
-          from `urn:opencode-a2a:opencode-session-binding/v1`.
+        - It returns canonical binding metadata understood by the Hub.
         """
 
         resolved_session_id = (session_id or "").strip()
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
-        metadata_key = (ext.session_binding_metadata_key or "").strip()
-        if not metadata_key:
-            raise A2AExtensionContractError(
-                "Extension contract missing/invalid session binding metadata_key"
-            )
+        ext, jsonrpc_url = await self._resolve_session_extension(runtime)
 
-        validation = await self._invoke_opencode_method(
+        validation = await self._invoke_session_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -671,22 +644,24 @@ class A2AExtensionsService:
             {
                 "binding_mode": "contextId+metadata",
                 "validated": True,
-                "session_binding_metadata_key": metadata_key,
+                "provider": ext.provider,
             }
         )
         return ExtensionCallResult(
             success=True,
             result={
                 "contextId": resolved_session_id,
-                "provider": "opencode",
+                "provider": ext.provider,
                 "metadata": {
-                    metadata_key: resolved_session_id,
+                    "provider": ext.provider,
+                    "externalSessionId": resolved_session_id,
+                    "contextId": resolved_session_id,
                 },
             },
             meta=meta,
         )
 
-    async def opencode_prompt_async(
+    async def prompt_session_async(
         self,
         *,
         runtime: A2ARuntime,
@@ -713,8 +688,8 @@ class A2AExtensionsService:
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
 
-        ext, jsonrpc_url = await self._resolve_opencode_extension(runtime)
-        return await self._invoke_opencode_method(
+        ext, jsonrpc_url = await self._resolve_session_extension(runtime)
+        return await self._invoke_session_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -729,17 +704,17 @@ class A2AExtensionsService:
             },
         )
 
-    async def _resolve_opencode_interrupt_extension(
+    async def _resolve_interrupt_extension(
         self, runtime: A2ARuntime
     ) -> tuple[ResolvedInterruptCallbackExtension, str]:
         card = await self._fetch_card(runtime)
-        ext = resolve_opencode_interrupt_callback(card)
+        ext = resolve_interrupt_callback(card)
         jsonrpc_url = self._ensure_outbound_allowed(
             ext.jsonrpc.url, purpose="JSON-RPC interface URL"
         )
         return ext, jsonrpc_url
 
-    async def _invoke_opencode_interrupt_method(
+    async def _invoke_interrupt_method(
         self,
         *,
         runtime: A2ARuntime,
@@ -789,7 +764,7 @@ class A2AExtensionsService:
             meta=meta,
         )
 
-    async def opencode_reply_permission(
+    async def reply_permission_interrupt(
         self,
         *,
         runtime: A2ARuntime,
@@ -805,14 +780,14 @@ class A2AExtensionsService:
             raise ValueError("reply must be one of: once, always, reject")
         normalized_metadata = self._normalize_extension_metadata(metadata)
 
-        ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        ext, jsonrpc_url = await self._resolve_interrupt_extension(runtime)
         params: Dict[str, Any] = {
             "request_id": resolved_request_id,
             "reply": resolved_reply,
         }
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
-        return await self._invoke_opencode_interrupt_method(
+        return await self._invoke_interrupt_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -821,7 +796,7 @@ class A2AExtensionsService:
             meta_extra={"request_id": resolved_request_id},
         )
 
-    async def opencode_reply_question(
+    async def reply_question_interrupt(
         self,
         *,
         runtime: A2ARuntime,
@@ -834,14 +809,14 @@ class A2AExtensionsService:
             raise ValueError("request_id is required")
         normalized_metadata = self._normalize_extension_metadata(metadata)
 
-        ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        ext, jsonrpc_url = await self._resolve_interrupt_extension(runtime)
         params: Dict[str, Any] = {
             "request_id": resolved_request_id,
             "answers": answers,
         }
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
-        return await self._invoke_opencode_interrupt_method(
+        return await self._invoke_interrupt_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -850,7 +825,7 @@ class A2AExtensionsService:
             meta_extra={"request_id": resolved_request_id},
         )
 
-    async def opencode_reject_question(
+    async def reject_question_interrupt(
         self,
         *,
         runtime: A2ARuntime,
@@ -862,11 +837,11 @@ class A2AExtensionsService:
             raise ValueError("request_id is required")
         normalized_metadata = self._normalize_extension_metadata(metadata)
 
-        ext, jsonrpc_url = await self._resolve_opencode_interrupt_extension(runtime)
+        ext, jsonrpc_url = await self._resolve_interrupt_extension(runtime)
         params: Dict[str, Any] = {"request_id": resolved_request_id}
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
-        return await self._invoke_opencode_interrupt_method(
+        return await self._invoke_interrupt_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,

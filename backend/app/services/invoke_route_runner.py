@@ -498,19 +498,6 @@ def _rewrite_stream_event_contract(
             artifact["event_id"] = event_id
         if isinstance(seq, int) and seq > 0:
             artifact["seq"] = seq
-        metadata = artifact.get("metadata")
-        if isinstance(metadata, dict):
-            opencode = metadata.get("opencode")
-            if isinstance(opencode, dict):
-                opencode.pop("messageId", None)
-                opencode.pop("eventId", None)
-                opencode.pop("eventSeq", None)
-                opencode.pop("sequence", None)
-                opencode["message_id"] = local_message_id
-                if event_id:
-                    opencode["event_id"] = event_id
-                if isinstance(seq, int) and seq > 0:
-                    opencode["seq"] = seq
 
 
 def _resolve_stream_event_id(

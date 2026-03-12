@@ -70,10 +70,10 @@ class _FakeExtensionsService:
     def __init__(self) -> None:
         self.calls: list[Dict[str, Any]] = []
 
-    async def opencode_continue_session(self, *, runtime, session_id: str):
+    async def continue_session(self, *, runtime, session_id: str):
         self.calls.append(
             {
-                "fn": "opencode_continue_session",
+                "fn": "continue_session",
                 "runtime": runtime,
                 "session_id": session_id,
             }
@@ -84,16 +84,18 @@ class _FakeExtensionsService:
                 "contextId": session_id,
                 "provider": "opencode",
                 "metadata": {
-                    "opencode_session_id": session_id,
+                    "provider": "opencode",
+                    "externalSessionId": session_id,
+                    "contextId": session_id,
                 },
             },
             meta={},
         )
 
-    async def opencode_list_sessions(self, *, runtime, page: int, size, query):
+    async def list_sessions(self, *, runtime, page: int, size, query):
         self.calls.append(
             {
-                "fn": "opencode_list_sessions",
+                "fn": "list_sessions",
                 "runtime": runtime,
                 "page": page,
                 "size": size,
@@ -115,12 +117,12 @@ class _FakeExtensionsService:
             meta={},
         )
 
-    async def opencode_get_session_messages(
+    async def get_session_messages(
         self, *, runtime, session_id: str, page: int, size, query
     ):
         self.calls.append(
             {
-                "fn": "opencode_get_session_messages",
+                "fn": "get_session_messages",
                 "runtime": runtime,
                 "session_id": session_id,
                 "page": page,
@@ -150,7 +152,7 @@ class _FakeExtensionsService:
             meta={},
         )
 
-    async def opencode_reply_permission(
+    async def reply_permission_interrupt(
         self,
         *,
         runtime,
@@ -160,7 +162,7 @@ class _FakeExtensionsService:
     ):
         self.calls.append(
             {
-                "fn": "opencode_reply_permission",
+                "fn": "reply_permission_interrupt",
                 "runtime": runtime,
                 "request_id": request_id,
                 "reply": reply,
@@ -173,7 +175,7 @@ class _FakeExtensionsService:
             meta={},
         )
 
-    async def opencode_prompt_async(
+    async def prompt_session_async(
         self,
         *,
         runtime,
@@ -183,7 +185,7 @@ class _FakeExtensionsService:
     ):
         self.calls.append(
             {
-                "fn": "opencode_prompt_async",
+                "fn": "prompt_session_async",
                 "runtime": runtime,
                 "session_id": session_id,
                 "request_payload": request_payload,
@@ -196,7 +198,7 @@ class _FakeExtensionsService:
             meta={},
         )
 
-    async def opencode_reply_question(
+    async def reply_question_interrupt(
         self,
         *,
         runtime,
@@ -206,7 +208,7 @@ class _FakeExtensionsService:
     ):
         self.calls.append(
             {
-                "fn": "opencode_reply_question",
+                "fn": "reply_question_interrupt",
                 "runtime": runtime,
                 "request_id": request_id,
                 "answers": answers,
@@ -219,7 +221,7 @@ class _FakeExtensionsService:
             meta={},
         )
 
-    async def opencode_reject_question(
+    async def reject_question_interrupt(
         self,
         *,
         runtime,
@@ -228,7 +230,7 @@ class _FakeExtensionsService:
     ):
         self.calls.append(
             {
-                "fn": "opencode_reject_question",
+                "fn": "reject_question_interrupt",
                 "runtime": runtime,
                 "request_id": request_id,
                 "metadata": metadata,
@@ -247,10 +249,10 @@ class _FakeExtensionsErrorService:
         self.error_code = error_code
         self.message = message
 
-    async def opencode_continue_session(self, *, runtime, session_id: str):
+    async def continue_session(self, *, runtime, session_id: str):
         self.calls.append(
             {
-                "fn": "opencode_continue_session",
+                "fn": "continue_session",
                 "runtime": runtime,
                 "session_id": session_id,
             }
@@ -269,7 +271,7 @@ class _FakePermissionReplyErrorService:
         self.error_code = error_code
         self.message = message
 
-    async def opencode_reply_permission(
+    async def reply_permission_interrupt(
         self,
         *,
         runtime,
@@ -279,7 +281,7 @@ class _FakePermissionReplyErrorService:
     ):
         self.calls.append(
             {
-                "fn": "opencode_reply_permission",
+                "fn": "reply_permission_interrupt",
                 "runtime": runtime,
                 "request_id": request_id,
                 "reply": reply,
@@ -299,22 +301,22 @@ class _FakeExtensionsExceptionService:
         self.calls: list[Dict[str, Any]] = []
         self.error = error
 
-    async def opencode_continue_session(self, *, runtime, session_id: str):
+    async def continue_session(self, *, runtime, session_id: str):
         self.calls.append(
             {
-                "fn": "opencode_continue_session",
+                "fn": "continue_session",
                 "runtime": runtime,
                 "session_id": session_id,
             }
         )
         raise self.error
 
-    async def opencode_reply_question(
+    async def reply_question_interrupt(
         self, *, runtime, request_id: str, answers, metadata=None
     ):
         self.calls.append(
             {
-                "fn": "opencode_reply_question",
+                "fn": "reply_question_interrupt",
                 "runtime": runtime,
                 "request_id": request_id,
                 "answers": answers,
@@ -327,12 +329,12 @@ class _FakeExtensionsExceptionService:
             meta={},
         )
 
-    async def opencode_reject_question(
+    async def reject_question_interrupt(
         self, *, runtime, request_id: str, metadata=None
     ):
         self.calls.append(
             {
-                "fn": "opencode_reject_question",
+                "fn": "reject_question_interrupt",
                 "runtime": runtime,
                 "request_id": request_id,
                 "metadata": metadata,
@@ -341,24 +343,6 @@ class _FakeExtensionsExceptionService:
         return _FakeExtensionResult(
             success=True,
             result={"ok": True, "request_id": request_id},
-            meta={},
-        )
-
-
-class _FakePromptAsyncValidationService:
-    async def opencode_prompt_async(
-        self, *, runtime, session_id: str, request_payload, metadata
-    ):
-        directory = (
-            metadata.get("opencode", {}).get("directory")
-            if isinstance(metadata, dict)
-            else None
-        )
-        if directory is not None and not isinstance(directory, str):
-            raise ValueError("metadata.opencode.directory must be a non-empty string")
-        return _FakeExtensionResult(
-            success=True,
-            result={"ok": True, "session_id": session_id},
             meta={},
         )
 
@@ -518,14 +502,14 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
         continue_resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-1:continue"
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions/sess-1:continue"
         )
         assert continue_resp.status_code == 200
         continue_payload = continue_resp.json()
         assert continue_payload["success"] is True
 
         sessions_resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions:query",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions:query",
             json={"page": 1, "size": 20, "query": {}},
         )
         assert sessions_resp.status_code == 200
@@ -533,7 +517,7 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         assert sessions_payload["success"] is True
 
         messages_resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-1/messages:query",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions/sess-1/messages:query",
             json={"page": 1, "size": 50, "query": {}},
         )
         assert messages_resp.status_code == 200
@@ -541,11 +525,11 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         assert messages_payload["success"] is True
 
         permission_reply_resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/permission:reply",
             json={
                 "request_id": "perm-1",
                 "reply": "once",
-                "metadata": {"opencode": {"directory": "/workspace/project"}},
+                "metadata": {"provider": "opencode", "requestScope": "shared"},
             },
         )
         assert permission_reply_resp.status_code == 200
@@ -555,11 +539,11 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         }
 
         question_reply_resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reply",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/question:reply",
             json={
                 "request_id": "q-1",
                 "answers": [["A"], ["B"]],
-                "metadata": {"opencode": {"directory": "/workspace/project"}},
+                "metadata": {"provider": "opencode", "requestScope": "shared"},
             },
         )
         assert question_reply_resp.status_code == 200
@@ -569,10 +553,10 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         }
 
         question_reject_resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/question:reject",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/question:reject",
             json={
                 "request_id": "q-2",
-                "metadata": {"opencode": {"directory": "/workspace/project"}},
+                "metadata": {"provider": "opencode", "requestScope": "shared"},
             },
         )
         assert question_reject_resp.status_code == 200
@@ -582,13 +566,13 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         }
 
         prompt_async_resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-1:prompt-async",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions/sess-1:prompt-async",
             json={
                 "request": {
                     "parts": [{"type": "text", "text": "Continue and summarize"}],
                     "noReply": True,
                 },
-                "metadata": {"opencode": {"directory": "/workspace/project"}},
+                "metadata": {"provider": "opencode", "externalSessionId": "sess-1"},
             },
         )
         assert prompt_async_resp.status_code == 200
@@ -599,30 +583,34 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
 
     assert len(fake_extensions.calls) == 7
     prompt_calls = [
-        c for c in fake_extensions.calls if c["fn"] == "opencode_prompt_async"
+        c for c in fake_extensions.calls if c["fn"] == "prompt_session_async"
     ]
     assert len(prompt_calls) == 1
     assert prompt_calls[0]["request_payload"]["parts"][0]["text"].startswith("Continue")
     assert prompt_calls[0]["metadata"] == {
-        "opencode": {"directory": "/workspace/project"}
+        "provider": "opencode",
+        "externalSessionId": "sess-1",
     }
     permission_calls = [
-        c for c in fake_extensions.calls if c["fn"] == "opencode_reply_permission"
+        c for c in fake_extensions.calls if c["fn"] == "reply_permission_interrupt"
     ]
     assert permission_calls[0]["metadata"] == {
-        "opencode": {"directory": "/workspace/project"}
+        "provider": "opencode",
+        "requestScope": "shared",
     }
     question_reply_calls = [
-        c for c in fake_extensions.calls if c["fn"] == "opencode_reply_question"
+        c for c in fake_extensions.calls if c["fn"] == "reply_question_interrupt"
     ]
     assert question_reply_calls[0]["metadata"] == {
-        "opencode": {"directory": "/workspace/project"}
+        "provider": "opencode",
+        "requestScope": "shared",
     }
     question_reject_calls = [
-        c for c in fake_extensions.calls if c["fn"] == "opencode_reject_question"
+        c for c in fake_extensions.calls if c["fn"] == "reject_question_interrupt"
     ]
     assert question_reject_calls[0]["metadata"] == {
-        "opencode": {"directory": "/workspace/project"}
+        "provider": "opencode",
+        "requestScope": "shared",
     }
     for call in fake_extensions.calls:
         resolved = call["runtime"].resolved
@@ -657,7 +645,7 @@ async def test_hub_interrupt_reply_rejects_legacy_payload_fields(
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
         resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/permission:reply",
             json={"requestID": "perm-1", "decision": "allow"},
         )
         assert resp.status_code == 422
@@ -697,7 +685,7 @@ async def test_hub_opencode_permission_reply_accepts_supported_reply_values(
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
         resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/permission:reply",
             json={
                 "request_id": "perm-reply-values",
                 "reply": reply,
@@ -711,50 +699,10 @@ async def test_hub_opencode_permission_reply_accepts_supported_reply_values(
     permission_calls = [
         call
         for call in fake_extensions.calls
-        if call["fn"] == "opencode_reply_permission"
+        if call["fn"] == "reply_permission_interrupt"
     ]
     assert len(permission_calls) == 1
     assert permission_calls[0]["reply"] == reply
-
-
-@pytest.mark.asyncio
-async def test_hub_prompt_async_rejects_invalid_directory_type_with_400(
-    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
-
-    agent_id, user = await _create_allowlisted_hub_agent(
-        async_session_maker=async_session_maker,
-        async_db_session=async_db_session,
-        admin_email="admin_prompt_async_validation@example.com",
-        user_email="alice_prompt_async_validation@example.com",
-        token="secret-token-opencode",
-    )
-
-    monkeypatch.setattr(
-        opencode_router_common,
-        "get_a2a_extensions_service",
-        lambda: _FakePromptAsyncValidationService(),
-    )
-
-    async with create_test_client(
-        hub_opencode_router.router,
-        async_session_maker=async_session_maker,
-        current_user=user,
-        base_prefix=settings.api_v1_prefix,
-    ) as user_client:
-        resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-1:prompt-async",
-            json={
-                "request": {"parts": [{"type": "text", "text": "Continue"}]},
-                "metadata": {"opencode": {"directory": 123}},
-            },
-        )
-        assert resp.status_code == 400
-        assert (
-            resp.json()["detail"]
-            == "metadata.opencode.directory must be a non-empty string"
-        )
 
 
 @pytest.mark.parametrize(
@@ -805,7 +753,7 @@ async def test_hub_opencode_session_continue_maps_extension_error_to_http_status
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
         resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-404:continue"
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions/sess-404:continue"
         )
         assert resp.status_code == expected_status
         payload = resp.json()
@@ -861,7 +809,7 @@ async def test_hub_opencode_permission_reply_maps_extension_error_to_http_status
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
         resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/interrupts/permission:reply",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/permission:reply",
             json={
                 "request_id": "perm-404",
                 "reply": reply,
@@ -921,7 +869,7 @@ async def test_hub_opencode_session_continue_contract_or_support_errors_use_4xx(
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
         resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/sessions/sess-500:continue"
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions/sess-500:continue"
         )
         assert resp.status_code == 400
         payload = resp.json()

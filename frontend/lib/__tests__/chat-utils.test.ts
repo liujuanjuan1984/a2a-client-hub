@@ -88,9 +88,7 @@ describe("chat store utils", () => {
       metadata: {
         locale: "zh-CN",
         provider: "opencode",
-        opencode: {
-          session_id: "ses-upstream-1",
-        },
+        externalSessionId: "ses-upstream-1",
       },
     });
   });

@@ -4,10 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
     ExtensionCallResult,
+)
+from app.integrations.a2a_extensions.shared_contract import (
+    SHARED_INTERRUPT_CALLBACK_URI,
+    SHARED_SESSION_QUERY_URI,
 )
 from app.integrations.a2a_extensions.types import (
     JsonRpcInterface,
@@ -17,21 +20,18 @@ from app.integrations.a2a_extensions.types import (
 )
 
 
-def _resolved_extension(
-    *,
-    metadata_key: str | None,
-    supports_offset: bool = False,
-) -> ResolvedExtension:
+def _resolved_extension(*, supports_offset: bool = False) -> ResolvedExtension:
     return ResolvedExtension(
-        uri="urn:opencode-a2a:opencode-session-query/v1",
+        uri=SHARED_SESSION_QUERY_URI,
         required=False,
+        provider="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
         methods={
-            "list_sessions": "opencode.sessions.list",
-            "get_session_messages": "opencode.sessions.messages.list",
-            "prompt_async": "opencode.sessions.prompt_async",
+            "list_sessions": "shared.sessions.list",
+            "get_session_messages": "shared.sessions.messages.list",
+            "prompt_async": "shared.sessions.prompt_async",
         },
         pagination=PageSizePagination(
             mode="limit",
@@ -45,13 +45,29 @@ def _resolved_extension(
             -32005: "upstream_payload_error",
             -32006: "session_forbidden",
         },
-        session_binding_metadata_key=metadata_key,
         result_envelope=None,
     )
 
 
+def _interrupt_extension_fixture() -> ResolvedInterruptCallbackExtension:
+    return ResolvedInterruptCallbackExtension(
+        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        required=False,
+        provider="opencode",
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={
+            "reply_permission": None,
+            "reply_question": None,
+            "reject_question": None,
+        },
+        business_code_map={},
+    )
+
+
 def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
-    ext = _resolved_extension(metadata_key="opencode_session_id")
+    ext = _resolved_extension()
     assert (
         A2AExtensionsService._map_business_error_code(  # noqa: SLF001
             {"code": -32005},
@@ -76,7 +92,7 @@ def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
 
 
 def test_map_business_error_code_prefers_error_data_type() -> None:
-    ext = _resolved_extension(metadata_key="opencode_session_id")
+    ext = _resolved_extension()
     assert (
         A2AExtensionsService._map_business_error_code(  # noqa: SLF001
             {
@@ -90,7 +106,7 @@ def test_map_business_error_code_prefers_error_data_type() -> None:
 
 
 def test_map_business_error_code_maps_jsonrpc_invalid_params() -> None:
-    ext = _resolved_extension(metadata_key="opencode_session_id")
+    ext = _resolved_extension()
     assert (
         A2AExtensionsService._map_business_error_code(  # noqa: SLF001
             {"code": -32602},
@@ -102,12 +118,13 @@ def test_map_business_error_code_maps_jsonrpc_invalid_params() -> None:
 
 def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
     ext = ResolvedInterruptCallbackExtension(
-        uri="urn:opencode-a2a:opencode-interrupt-callback/v1",
+        uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=False,
+        provider="opencode",
         jsonrpc=JsonRpcInterface(
             url="https://example.com/jsonrpc", fallback_used=False
         ),
-        methods={"reply_permission": "opencode.permission.reply"},
+        methods={"reply_permission": "shared.permission.reply"},
         business_code_map={-32004: "interrupt_request_not_found"},
     )
     assert (
@@ -133,11 +150,11 @@ def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
 
 
 @pytest.mark.asyncio
-async def test_continue_session_uses_dynamic_binding_metadata_key(
+async def test_continue_session_returns_canonical_binding_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
-    ext = _resolved_extension(metadata_key="external_session_key", supports_offset=True)
+    ext = _resolved_extension(supports_offset=True)
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
@@ -152,10 +169,10 @@ async def test_continue_session_uses_dynamic_binding_metadata_key(
         assert kwargs["params"]["limit"] == 1
         return ExtensionCallResult(success=True, result={"items": []}, meta={})
 
-    monkeypatch.setattr(service, "_resolve_opencode_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_opencode_method", _fake_invoke)
+    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_invoke_session_method", _fake_invoke)
 
-    result = await service.opencode_continue_session(
+    result = await service.continue_session(
         runtime=runtime,
         session_id="ses_123",
     )
@@ -164,28 +181,14 @@ async def test_continue_session_uses_dynamic_binding_metadata_key(
     assert result.result == {
         "contextId": "ses_123",
         "provider": "opencode",
-        "metadata": {"external_session_key": "ses_123"},
+        "metadata": {
+            "provider": "opencode",
+            "externalSessionId": "ses_123",
+            "contextId": "ses_123",
+        },
     }
-    assert result.meta["session_binding_metadata_key"] == "external_session_key"
-
-
-@pytest.mark.asyncio
-async def test_continue_session_requires_binding_metadata_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    service = A2AExtensionsService()
-    ext = _resolved_extension(metadata_key=None)
-    runtime = SimpleNamespace(
-        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
-    )
-
-    async def _fake_resolve(_runtime):
-        return ext, "https://example.com/jsonrpc"
-
-    monkeypatch.setattr(service, "_resolve_opencode_extension", _fake_resolve)
-
-    with pytest.raises(A2AExtensionContractError):
-        await service.opencode_continue_session(runtime=runtime, session_id="ses_123")
+    assert result.meta["provider"] == "opencode"
+    assert result.meta["validated"] is True
 
 
 @pytest.mark.asyncio
@@ -193,9 +196,7 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
-    ext = _resolved_extension(
-        metadata_key="external_session_key", supports_offset=False
-    )
+    ext = _resolved_extension(supports_offset=False)
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
@@ -206,10 +207,10 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
     async def _never_invoke(**_kwargs):
         raise AssertionError("Upstream call should be short-circuited")
 
-    monkeypatch.setattr(service, "_resolve_opencode_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_opencode_method", _never_invoke)
+    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_invoke_session_method", _never_invoke)
 
-    result = await service.opencode_get_session_messages(
+    result = await service.get_session_messages(
         runtime=runtime,
         session_id="ses_123",
         page=2,
@@ -228,11 +229,11 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
 
 
 @pytest.mark.asyncio
-async def test_prompt_async_forwards_request_and_metadata(
+async def test_prompt_session_async_forwards_request_and_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
-    ext = _resolved_extension(metadata_key="external_session_key", supports_offset=True)
+    ext = _resolved_extension(supports_offset=True)
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
@@ -248,7 +249,8 @@ async def test_prompt_async_forwards_request_and_metadata(
             "noReply": True,
         }
         assert kwargs["params"]["metadata"] == {
-            "opencode": {"directory": "/workspace/project"}
+            "provider": "opencode",
+            "externalSessionId": "ses_123",
         }
         assert kwargs["normalize_envelope"] is False
         return ExtensionCallResult(
@@ -257,17 +259,17 @@ async def test_prompt_async_forwards_request_and_metadata(
             meta={"session_id": "ses_123"},
         )
 
-    monkeypatch.setattr(service, "_resolve_opencode_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_opencode_method", _fake_invoke)
+    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_invoke_session_method", _fake_invoke)
 
-    result = await service.opencode_prompt_async(
+    result = await service.prompt_session_async(
         runtime=runtime,
         session_id="ses_123",
         request_payload={
             "parts": [{"type": "text", "text": "continue"}],
             "noReply": True,
         },
-        metadata={"opencode": {"directory": "/workspace/project"}},
+        metadata={"provider": "opencode", "externalSessionId": "ses_123"},
     )
 
     assert result.success is True
@@ -275,17 +277,18 @@ async def test_prompt_async_forwards_request_and_metadata(
 
 
 @pytest.mark.asyncio
-async def test_prompt_async_returns_method_not_supported_if_missing(
+async def test_prompt_session_async_returns_method_not_supported_if_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
-    ext = _resolved_extension(metadata_key="opencode_session_id")
+    ext = _resolved_extension()
     ext = ResolvedExtension(
         uri=ext.uri,
         required=ext.required,
+        provider=ext.provider,
         jsonrpc=ext.jsonrpc,
         methods={
             "list_sessions": ext.methods["list_sessions"],
@@ -294,7 +297,6 @@ async def test_prompt_async_returns_method_not_supported_if_missing(
         },
         pagination=ext.pagination,
         business_code_map=ext.business_code_map,
-        session_binding_metadata_key=ext.session_binding_metadata_key,
         result_envelope=ext.result_envelope,
     )
 
@@ -304,29 +306,27 @@ async def test_prompt_async_returns_method_not_supported_if_missing(
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(service, "_resolve_opencode_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
     monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
 
-    result = await service.opencode_prompt_async(
+    result = await service.prompt_session_async(
         runtime=runtime,
         session_id="ses_123",
         request_payload={"parts": [{"type": "text", "text": "continue"}]},
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta == {
-        "extension_uri": "urn:opencode-a2a:opencode-session-query/v1"
-    }
+    assert result.meta == {"extension_uri": SHARED_SESSION_QUERY_URI}
 
 
 @pytest.mark.asyncio
-async def test_prompt_async_requires_non_empty_parts() -> None:
+async def test_prompt_session_async_requires_non_empty_parts() -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     with pytest.raises(ValueError):
-        await service.opencode_prompt_async(
+        await service.prompt_session_async(
             runtime=runtime,
             session_id="ses_123",
             request_payload={"parts": []},
@@ -334,34 +334,36 @@ async def test_prompt_async_requires_non_empty_parts() -> None:
 
 
 @pytest.mark.asyncio
-async def test_prompt_async_rejects_invalid_directory_type() -> None:
+async def test_prompt_session_async_rejects_non_object_metadata() -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
-    with pytest.raises(
-        ValueError, match="metadata.opencode.directory must be a non-empty string"
-    ):
-        await service.opencode_prompt_async(
+    with pytest.raises(ValueError, match="metadata must be an object"):
+        await service.prompt_session_async(
             runtime=runtime,
             session_id="ses_123",
             request_payload={"parts": [{"type": "text", "text": "continue"}]},
-            metadata={"opencode": {"directory": 123}},
+            metadata=[],
         )
 
 
 @pytest.mark.asyncio
-async def test_reply_permission_uses_request_id_and_reply_contract(
+async def test_reply_permission_interrupt_uses_request_id_and_reply_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
-    ext = SimpleNamespace(
-        uri="urn:opencode-a2a:opencode-interrupt-callback/v1",
-        jsonrpc=SimpleNamespace(url="https://example.com/jsonrpc", fallback_used=False),
-        methods={"reply_permission": "opencode.permission.reply"},
+    ext = ResolvedInterruptCallbackExtension(
+        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        required=False,
+        provider="opencode",
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={"reply_permission": "shared.permission.reply"},
         business_code_map={-32004: "interrupt_request_not_found"},
     )
 
@@ -377,10 +379,10 @@ async def test_reply_permission_uses_request_id_and_reply_contract(
             meta={"request_id": "perm-1"},
         )
 
-    monkeypatch.setattr(service, "_resolve_opencode_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_opencode_interrupt_method", _fake_invoke)
+    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_invoke_interrupt_method", _fake_invoke)
 
-    result = await service.opencode_reply_permission(
+    result = await service.reply_permission_interrupt(
         runtime=runtime,
         request_id="perm-1",
         reply="once",
@@ -390,13 +392,13 @@ async def test_reply_permission_uses_request_id_and_reply_contract(
 
 
 @pytest.mark.asyncio
-async def test_reply_permission_rejects_invalid_reply_value() -> None:
+async def test_reply_permission_interrupt_rejects_invalid_reply_value() -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
     with pytest.raises(ValueError):
-        await service.opencode_reply_permission(
+        await service.reply_permission_interrupt(
             runtime=runtime,
             request_id="perm-1",
             reply="allow",
@@ -404,17 +406,21 @@ async def test_reply_permission_rejects_invalid_reply_value() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reply_permission_forwards_metadata(
+async def test_reply_permission_interrupt_forwards_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
-    ext = SimpleNamespace(
-        uri="urn:opencode-a2a:opencode-interrupt-callback/v1",
-        jsonrpc=SimpleNamespace(url="https://example.com/jsonrpc", fallback_used=False),
-        methods={"reply_permission": "opencode.permission.reply"},
+    ext = ResolvedInterruptCallbackExtension(
+        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        required=False,
+        provider="opencode",
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={"reply_permission": "shared.permission.reply"},
         business_code_map={-32004: "interrupt_request_not_found"},
     )
 
@@ -426,7 +432,7 @@ async def test_reply_permission_forwards_metadata(
         assert kwargs["params"] == {
             "request_id": "perm-1",
             "reply": "once",
-            "metadata": {"opencode": {"directory": "/workspace/project"}},
+            "metadata": {"provider": "opencode", "requestScope": "shared"},
         }
         return ExtensionCallResult(
             success=True,
@@ -434,47 +440,49 @@ async def test_reply_permission_forwards_metadata(
             meta={"request_id": "perm-1"},
         )
 
-    monkeypatch.setattr(service, "_resolve_opencode_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_opencode_interrupt_method", _fake_invoke)
+    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_invoke_interrupt_method", _fake_invoke)
 
-    result = await service.opencode_reply_permission(
+    result = await service.reply_permission_interrupt(
         runtime=runtime,
         request_id="perm-1",
         reply="once",
-        metadata={"opencode": {"directory": "/workspace/project"}},
+        metadata={"provider": "opencode", "requestScope": "shared"},
     )
     assert result.success is True
 
 
 @pytest.mark.asyncio
-async def test_reply_permission_rejects_invalid_directory_type() -> None:
+async def test_reply_permission_interrupt_rejects_non_object_metadata() -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
-    with pytest.raises(
-        ValueError, match="metadata.opencode.directory must be a non-empty string"
-    ):
-        await service.opencode_reply_permission(
+    with pytest.raises(ValueError, match="metadata must be an object"):
+        await service.reply_permission_interrupt(
             runtime=runtime,
             request_id="perm-1",
             reply="once",
-            metadata={"opencode": {"directory": 123}},
+            metadata=[],
         )
 
 
 @pytest.mark.asyncio
-async def test_reject_question_uses_request_id(
+async def test_reject_question_interrupt_uses_request_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
-    ext = SimpleNamespace(
-        uri="urn:opencode-a2a:opencode-interrupt-callback/v1",
-        jsonrpc=SimpleNamespace(url="https://example.com/jsonrpc", fallback_used=False),
-        methods={"reject_question": "opencode.question.reject"},
+    ext = ResolvedInterruptCallbackExtension(
+        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        required=False,
+        provider="opencode",
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={"reject_question": "shared.question.reject"},
         business_code_map={-32004: "interrupt_request_not_found"},
     )
 
@@ -490,32 +498,16 @@ async def test_reject_question_uses_request_id(
             meta={"request_id": "q-1"},
         )
 
-    monkeypatch.setattr(service, "_resolve_opencode_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_opencode_interrupt_method", _fake_invoke)
+    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_invoke_interrupt_method", _fake_invoke)
 
-    result = await service.opencode_reject_question(runtime=runtime, request_id="q-1")
+    result = await service.reject_question_interrupt(runtime=runtime, request_id="q-1")
     assert result.success is True
     assert result.result == {"ok": True, "request_id": "q-1"}
 
 
-def _interrupt_ext_fixture() -> ResolvedInterruptCallbackExtension:
-    return ResolvedInterruptCallbackExtension(
-        uri="urn:opencode-a2a:opencode-interrupt-callback/v1",
-        required=False,
-        jsonrpc=JsonRpcInterface(
-            url="https://example.com/jsonrpc", fallback_used=False
-        ),
-        methods={
-            "reply_permission": None,
-            "reply_question": None,
-            "reject_question": None,
-        },
-        business_code_map={},
-    )
-
-
 @pytest.mark.asyncio
-async def test_reply_permission_returns_method_not_supported_if_missing(
+async def test_reply_permission_interrupt_returns_method_not_supported_if_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
@@ -524,43 +516,42 @@ async def test_reply_permission_returns_method_not_supported_if_missing(
     )
 
     async def _fake_resolve(_runtime):
-        return _interrupt_ext_fixture(), "https://example.com/jsonrpc"
+        return _interrupt_extension_fixture(), "https://example.com/jsonrpc"
 
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(service, "_resolve_opencode_interrupt_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
     monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
 
-    result = await service.opencode_reply_permission(
+    result = await service.reply_permission_interrupt(
         runtime=runtime,
         request_id="perm-1",
         reply="once",
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta == {
-        "extension_uri": "urn:opencode-a2a:opencode-interrupt-callback/v1"
-    }
+    assert result.meta == {"extension_uri": SHARED_INTERRUPT_CALLBACK_URI}
 
 
 @pytest.mark.asyncio
-async def test_reply_question_returns_method_not_supported_if_missing(
+async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
-    ext = _interrupt_ext_fixture()
+    ext = _interrupt_extension_fixture()
     ext = ResolvedInterruptCallbackExtension(
         uri=ext.uri,
         required=ext.required,
+        provider=ext.provider,
         jsonrpc=ext.jsonrpc,
         methods={
-            "reply_permission": "opencode.permission.reply",
+            "reply_permission": "shared.permission.reply",
             "reply_question": None,
-            "reject_question": "opencode.question.reject",
+            "reject_question": "shared.question.reject",
         },
         business_code_map=ext.business_code_map,
     )
@@ -571,17 +562,14 @@ async def test_reply_question_returns_method_not_supported_if_missing(
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(service, "_resolve_opencode_interrupt_extension", _fake_resolve)
+    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
     monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
 
-    result = await service.opencode_reply_question(
+    result = await service.reply_question_interrupt(
         runtime=runtime,
         request_id="q-1",
         answers=[["yes"], ["no"]],
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert (
-        result.meta["extension_uri"]
-        == "urn:opencode-a2a:opencode-interrupt-callback/v1"
-    )
+    assert result.meta["extension_uri"] == SHARED_INTERRUPT_CALLBACK_URI

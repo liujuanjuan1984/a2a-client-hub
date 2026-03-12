@@ -497,17 +497,15 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
                 "artifact": {
                     "parts": [{"kind": "text", "text": "ok"}],
                     "metadata": {
-                        "opencode": {
-                            "block_type": "text",
-                            "message_id": "msg-usage-1",
-                            "event_id": "evt-usage-1",
-                            "usage": {
-                                "input_tokens": 100,
-                                "output_tokens": 20,
-                                "total_tokens": 120,
-                                "cost": 0.01,
-                            },
-                        }
+                        "block_type": "text",
+                        "message_id": "msg-usage-1",
+                        "event_id": "evt-usage-1",
+                        "usage": {
+                            "input_tokens": 100,
+                            "output_tokens": 20,
+                            "total_tokens": 120,
+                            "cost": 0.01,
+                        },
                     },
                 },
             }
@@ -616,11 +614,9 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
             "artifact": {
                 "parts": [{"kind": "text", "text": "partial response"}],
                 "metadata": {
-                    "opencode": {
-                        "block_type": "text",
-                        "message_id": "msg-partial-1",
-                        "event_id": "evt-partial-1",
-                    }
+                    "block_type": "text",
+                    "message_id": "msg-partial-1",
+                    "event_id": "evt-partial-1",
                 },
             },
         }
@@ -926,7 +922,7 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
         "lastChunk": True,
         "artifact": {
             "parts": [{"kind": "text", "text": "stream"}],
-            "metadata": {"opencode": {"block_type": "text"}},
+            "metadata": {"block_type": "text"},
         },
     }
 
@@ -1010,11 +1006,9 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
         "artifact": {
             "parts": [{"kind": "text", "text": "chunk-body"}],
             "metadata": {
-                "opencode": {
-                    "block_type": "text",
-                    "message_id": "msg-opt",
-                    "event_id": "evt-opt",
-                }
+                "block_type": "text",
+                "message_id": "msg-opt",
+                "event_id": "evt-opt",
             },
         },
     }
@@ -1046,11 +1040,11 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     assert "eventId" not in event_payload
     assert "eventSeq" not in event_payload
     assert "sequence" not in event_payload
-    assert event_payload["artifact"]["metadata"]["opencode"]["message_id"] == str(
+    assert event_payload["artifact"]["message_id"] == str(
         state.message_refs["agent_message_id"]
     )
-    assert event_payload["artifact"]["metadata"]["opencode"]["event_id"] == "evt-opt"
-    assert event_payload["artifact"]["metadata"]["opencode"]["seq"] == 9
+    assert event_payload["artifact"]["event_id"] == "evt-opt"
+    assert event_payload["artifact"]["seq"] == 9
 
 
 @pytest.mark.asyncio
@@ -1112,11 +1106,9 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
             "artifact": {
                 "parts": [{"kind": "text", "text": "alpha"}],
                 "metadata": {
-                    "opencode": {
-                        "block_type": "text",
-                        "message_id": "msg-alpha",
-                        "event_id": "evt-alpha",
-                    }
+                    "block_type": "text",
+                    "message_id": "msg-alpha",
+                    "event_id": "evt-alpha",
                 },
             },
         },
@@ -1137,11 +1129,9 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
             "artifact": {
                 "parts": [{"kind": "text", "text": "beta"}],
                 "metadata": {
-                    "opencode": {
-                        "block_type": "reasoning",
-                        "message_id": "msg-beta",
-                        "event_id": "evt-beta",
-                    }
+                    "block_type": "reasoning",
+                    "message_id": "msg-beta",
+                    "event_id": "evt-beta",
                 },
             },
         },
@@ -1219,9 +1209,7 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
         "artifact": {
             "parts": [{"kind": "text", "text": "chunk-body"}],
             "metadata": {
-                "opencode": {
-                    "block_type": "text",
-                }
+                "block_type": "text",
             },
         },
     }
@@ -1342,11 +1330,9 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
             "artifact": {
                 "parts": [{"kind": "text", "text": "partial"}],
                 "metadata": {
-                    "opencode": {
-                        "block_type": "text",
-                        "message_id": "msg-partial",
-                        "event_id": "evt-partial",
-                    }
+                    "block_type": "text",
+                    "message_id": "msg-partial",
+                    "event_id": "evt-partial",
                 },
             },
         }

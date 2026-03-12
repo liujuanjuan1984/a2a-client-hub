@@ -103,17 +103,15 @@ def _artifact_event(
     message_id: str | None = None,
     event_id: str | None = None,
 ) -> dict:
-    metadata: dict[str, dict[str, str]] = {}
+    metadata: dict[str, str] = {}
     if block_type or source or message_id or event_id:
         artifact_key = artifact_id.replace(":", "-").replace("/", "-")
-        opencode: dict[str, str] = {}
         if block_type:
-            opencode["block_type"] = block_type
+            metadata["block_type"] = block_type
         if source:
-            opencode["source"] = source
-        opencode["message_id"] = message_id or f"msg-{artifact_key}"
-        opencode["event_id"] = event_id or f"evt-{artifact_key}"
-        metadata["opencode"] = opencode
+            metadata["source"] = source
+        metadata["message_id"] = message_id or f"msg-{artifact_key}"
+        metadata["event_id"] = event_id or f"evt-{artifact_key}"
 
     payload: dict = {
         "kind": "artifact-update",
@@ -389,11 +387,9 @@ async def test_sse_on_complete_supports_block_type():
                         "artifact_id": "task-block-type:stream",
                         "parts": [{"kind": "text", "text": "Hello alias"}],
                         "metadata": {
-                            "opencode": {
-                                "block_type": "text",
-                                "message_id": "msg-block-type",
-                                "event_id": "evt-block-type-1",
-                            }
+                            "block_type": "text",
+                            "message_id": "msg-block-type",
+                            "event_id": "evt-block-type-1",
                         },
                     },
                 }
@@ -463,11 +459,9 @@ async def test_sse_on_complete_ignores_artifact_updates_without_parts():
                     "kind": "artifact-update",
                     "artifact": {
                         "metadata": {
-                            "opencode": {
-                                "block_type": "text",
-                                "message_id": "msg-legacy-no-parts",
-                                "event_id": "evt-legacy-no-parts",
-                            }
+                            "block_type": "text",
+                            "message_id": "msg-legacy-no-parts",
+                            "event_id": "evt-legacy-no-parts",
                         },
                         "content": "legacy-content-should-be-ignored",
                     },
@@ -544,11 +538,9 @@ async def test_sse_drops_invalid_artifact_update_events():
                 "artifact_id": "task-valid:stream",
                 "parts": [{"kind": "text", "text": "kept"}],
                 "metadata": {
-                    "opencode": {
-                        "block_type": "text",
-                        "message_id": "msg-task-valid-stream",
-                        "event_id": "evt-task-valid-stream",
-                    }
+                    "block_type": "text",
+                    "message_id": "msg-task-valid-stream",
+                    "event_id": "evt-task-valid-stream",
                 },
             },
         }
@@ -570,11 +562,9 @@ async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
                     "kind": "artifact-update",
                     "artifact": {
                         "metadata": {
-                            "opencode": {
-                                "block_type": "text",
-                                "message_id": "msg-legacy-1",
-                                "event_id": "evt-legacy-1",
-                            }
+                            "block_type": "text",
+                            "message_id": "msg-legacy-1",
+                            "event_id": "evt-legacy-1",
                         },
                         "content": "legacy-1",
                     },
@@ -583,11 +573,9 @@ async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
                     "kind": "artifact-update",
                     "artifact": {
                         "metadata": {
-                            "opencode": {
-                                "block_type": "text",
-                                "message_id": "msg-legacy-2",
-                                "event_id": "evt-legacy-2",
-                            }
+                            "block_type": "text",
+                            "message_id": "msg-legacy-2",
+                            "event_id": "evt-legacy-2",
                         },
                         "content": "legacy-2",
                     },
@@ -632,9 +620,7 @@ async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
                     "kind": "artifact-update",
                     "artifact": {
                         "metadata": {
-                            "opencode": {
-                                "block_type": "text",
-                            }
+                            "block_type": "text",
                         },
                         "content": "legacy",
                     },
@@ -676,11 +662,9 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
             "artifact_id": "task-cache:stream:text",
             "parts": [{"kind": "text", "text": "hello"}],
             "metadata": {
-                "opencode": {
-                    "block_type": "text",
-                    "event_id": "evt-cache-1",
-                    "message_id": "msg-upstream-1",
-                }
+                "block_type": "text",
+                "event_id": "evt-cache-1",
+                "message_id": "msg-upstream-1",
             },
         },
     }
@@ -824,7 +808,7 @@ async def test_ws_assigns_fallback_seq_and_event_id_after_on_event_mutation():
                     "artifact": {
                         "artifact_id": "task-ws:stream:text",
                         "parts": [{"kind": "text", "text": "hello"}],
-                        "metadata": {"opencode": {"block_type": "text"}},
+                        "metadata": {"block_type": "text"},
                     },
                 },
                 {"kind": "status-update", "final": True},
@@ -863,11 +847,9 @@ async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
                     "kind": "artifact-update",
                     "artifact": {
                         "metadata": {
-                            "opencode": {
-                                "block_type": "text",
-                                "message_id": "msg-legacy-ws-1",
-                                "event_id": "evt-legacy-ws-1",
-                            }
+                            "block_type": "text",
+                            "message_id": "msg-legacy-ws-1",
+                            "event_id": "evt-legacy-ws-1",
                         },
                         "content": "legacy-1",
                     },
@@ -876,11 +858,9 @@ async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
                     "kind": "artifact-update",
                     "artifact": {
                         "metadata": {
-                            "opencode": {
-                                "block_type": "text",
-                                "message_id": "msg-legacy-ws-2",
-                                "event_id": "evt-legacy-ws-2",
-                            }
+                            "block_type": "text",
+                            "message_id": "msg-legacy-ws-2",
+                            "event_id": "evt-legacy-ws-2",
                         },
                         "content": "legacy-2",
                     },
@@ -1163,11 +1143,9 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
                     "kind": "artifact-update",
                     "artifact": {
                         "metadata": {
-                            "opencode": {
-                                "block_type": "text",
-                                "message_id": "msg-legacy-consume-1",
-                                "event_id": "evt-legacy-consume-1",
-                            }
+                            "block_type": "text",
+                            "message_id": "msg-legacy-consume-1",
+                            "event_id": "evt-legacy-consume-1",
                         },
                         "content": "legacy-1",
                     },
@@ -1176,11 +1154,9 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
                     "kind": "artifact-update",
                     "artifact": {
                         "metadata": {
-                            "opencode": {
-                                "block_type": "text",
-                                "message_id": "msg-legacy-consume-2",
-                                "event_id": "evt-legacy-consume-2",
-                            }
+                            "block_type": "text",
+                            "message_id": "msg-legacy-consume-2",
+                            "event_id": "evt-legacy-consume-2",
                         },
                         "content": "legacy-2",
                     },
@@ -1373,15 +1349,14 @@ def test_extract_binding_hints_ignores_session_id_aliases():
     assert "externalSessionId" not in metadata
 
 
-def test_extract_binding_hints_extracts_nested_opencode_session_id():
+def test_extract_binding_hints_extracts_canonical_external_session_id():
     context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
         {
             "success": True,
             "content": "ok",
             "metadata": {
-                "opencode": {
-                    "session_id": "nested-upstream-session",
-                }
+                "provider": "OpenCode",
+                "externalSessionId": "nested-upstream-session",
             },
         }
     )
@@ -1459,10 +1434,8 @@ def test_extract_stream_identity_hints_from_serialized_event():
             "seq": 9,
             "artifact": {
                 "metadata": {
-                    "opencode": {
-                        "message_id": "msg-1",
-                        "event_id": "evt-1",
-                    }
+                    "message_id": "msg-1",
+                    "event_id": "evt-1",
                 },
             },
         }
@@ -1477,14 +1450,12 @@ def test_extract_stream_identity_hints_from_serialized_event():
 def test_extract_stream_identity_hints_reads_seq_and_task_id_from_analysis():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
-            "metadata": {"opencode": {"taskId": "task-from-root-opencode"}},
+            "metadata": {"taskId": "task-from-root"},
             "artifact": {
                 "metadata": {
-                    "opencode": {
-                        "message_id": "msg-1",
-                        "event_id": "evt-1",
-                        "seq": 99,
-                    }
+                    "message_id": "msg-1",
+                    "event_id": "evt-1",
+                    "seq": 99,
                 },
             },
         }
@@ -1493,7 +1464,7 @@ def test_extract_stream_identity_hints_reads_seq_and_task_id_from_analysis():
         "upstream_message_id": "msg-1",
         "upstream_event_id": "evt-1",
         "upstream_event_seq": 99,
-        "upstream_task_id": "task-from-root-opencode",
+        "upstream_task_id": "task-from-root",
     }
 
 
@@ -1503,10 +1474,8 @@ def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
             return {
                 "seq": 12,
                 "metadata": {
-                    "opencode": {
-                        "event_id": "evt-from-raw",
-                        "message_id": "msg-from-raw",
-                    }
+                    "event_id": "evt-from-raw",
+                    "message_id": "msg-from-raw",
                 },
             }
 
@@ -1514,10 +1483,8 @@ def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
         {
             "seq": 2,
             "metadata": {
-                "opencode": {
-                    "event_id": "evt-from-result",
-                    "message_id": "msg-from-result",
-                }
+                "event_id": "evt-from-result",
+                "message_id": "msg-from-result",
             },
             "raw": _RawPayload(),
         }
@@ -1534,9 +1501,7 @@ def test_extract_stream_identity_hints_from_status_metadata_message_id():
         {
             "status": {
                 "metadata": {
-                    "opencode": {
-                        "message_id": "msg-from-status-message",
-                    }
+                    "message_id": "msg-from-status-message",
                 }
             }
         }
@@ -1552,10 +1517,8 @@ def test_extract_stream_identity_hints_includes_upstream_task_id():
             },
             "status": {
                 "metadata": {
-                    "opencode": {
-                        "message_id": "msg-1",
-                        "event_id": "evt-1",
-                    }
+                    "message_id": "msg-1",
+                    "event_id": "evt-1",
                 }
             },
         }
@@ -1570,10 +1533,8 @@ def test_extract_stream_identity_hints_includes_nested_status_task_fallback():
             "status": {"task": {"id": "task-from-status"}},
             "artifact": {
                 "metadata": {
-                    "opencode": {
-                        "message_id": "msg-1",
-                        "event_id": "evt-1",
-                    }
+                    "message_id": "msg-1",
+                    "event_id": "evt-1",
                 }
             },
         }
@@ -1581,19 +1542,17 @@ def test_extract_stream_identity_hints_includes_nested_status_task_fallback():
     assert hints["upstream_task_id"] == "task-from-status"
 
 
-def test_extract_stream_chunk_reads_nested_opencode_event_and_message_ids():
+def test_extract_stream_chunk_reads_canonical_event_and_message_ids():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
             "kind": "artifact-update",
             "artifact": {
                 "parts": [{"kind": "text", "text": "hello"}],
                 "metadata": {
-                    "opencode": {
-                        "block_type": "text",
-                        "event_id": "evt-nested",
-                        "message_id": "msg-nested",
-                        "source": "stream",
-                    }
+                    "block_type": "text",
+                    "event_id": "evt-nested",
+                    "message_id": "msg-nested",
+                    "source": "stream",
                 },
             },
         }
@@ -1619,11 +1578,9 @@ def test_extract_stream_chunk_consumes_optional_seq_append_and_last_chunk():
             "artifact": {
                 "parts": [{"kind": "text", "text": "done"}],
                 "metadata": {
-                    "opencode": {
-                        "block_type": "text",
-                        "event_id": "evt-opt",
-                        "message_id": "msg-opt",
-                    }
+                    "block_type": "text",
+                    "event_id": "evt-opt",
+                    "message_id": "msg-opt",
                 },
             },
         }
@@ -1643,11 +1600,9 @@ def test_extract_stream_chunk_accepts_artifact_level_last_chunk_alias():
                 "last_chunk": True,
                 "parts": [{"kind": "text", "text": "done"}],
                 "metadata": {
-                    "opencode": {
-                        "block_type": "text",
-                        "event_id": "evt-artifact-last",
-                        "message_id": "msg-artifact-last",
-                    }
+                    "block_type": "text",
+                    "event_id": "evt-artifact-last",
+                    "message_id": "msg-artifact-last",
                 },
             },
         }
@@ -1657,17 +1612,15 @@ def test_extract_stream_chunk_accepts_artifact_level_last_chunk_alias():
     assert chunk["is_finished"] is True
 
 
-def test_extract_stream_chunk_accepts_missing_opencode_identity_metadata():
+def test_extract_stream_chunk_accepts_missing_canonical_identity_metadata():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
             "kind": "artifact-update",
             "artifact": {
                 "parts": [{"kind": "text", "text": "hello"}],
                 "metadata": {
-                    "opencode": {
-                        "block_type": "text",
-                        "event_id": "evt-nested",
-                    }
+                    "block_type": "text",
+                    "event_id": "evt-nested",
                 },
             },
         }
@@ -1685,7 +1638,7 @@ def test_extract_stream_chunk_rejects_unsupported_explicit_block_type():
             "artifact": {
                 "artifact_id": "task-generic:stream",
                 "parts": [{"kind": "text", "text": "hello generic"}],
-                "metadata": {"opencode": {"block_type": "custom_phase"}},
+                "metadata": {"block_type": "custom_phase"},
             },
         }
     )
@@ -1706,16 +1659,14 @@ def test_extract_usage_hints_from_serialized_event():
             "kind": "status-update",
             "final": True,
             "metadata": {
-                "opencode": {
-                    "usage": {
-                        "input_tokens": 120,
-                        "outputTokens": "30",
-                        "total_tokens": 150,
-                        "reasoning_tokens": 12,
-                        "cache_tokens": 6,
-                        "cost": "0.0125",
-                    }
-                }
+                "usage": {
+                    "input_tokens": 120,
+                    "outputTokens": "30",
+                    "total_tokens": 150,
+                    "reasoning_tokens": 12,
+                    "cache_tokens": 6,
+                    "cost": "0.0125",
+                },
             },
         }
     )
@@ -1734,28 +1685,24 @@ def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
         def model_dump(self, **kwargs):  # noqa: ARG002
             return {
                 "metadata": {
-                    "opencode": {
-                        "usage": {
-                            "input_tokens": 66,
-                            "output_tokens": 11,
-                            "total_tokens": 77,
-                            "cost": 0.0077,
-                        }
-                    }
+                    "usage": {
+                        "input_tokens": 66,
+                        "output_tokens": 11,
+                        "total_tokens": 77,
+                        "cost": 0.0077,
+                    },
                 }
             }
 
     usage = a2a_invoke_service.extract_usage_hints_from_invoke_result(
         {
             "metadata": {
-                "opencode": {
-                    "usage": {
-                        "input_tokens": 1,
-                        "output_tokens": 1,
-                        "total_tokens": 2,
-                        "cost": 0.0002,
-                    }
-                }
+                "usage": {
+                    "input_tokens": 1,
+                    "output_tokens": 1,
+                    "total_tokens": 2,
+                    "cost": 0.0002,
+                },
             },
             "raw": _RawPayload(),
         }
