@@ -205,6 +205,7 @@ describe("block-based stream parser and reducer", () => {
       },
     });
     expect(parsed?.blockType).toBe("text");
+    expect(parsed?.eventIdSource).toBe("upstream");
   });
 
   it("ignores unsupported block_type values", () => {
@@ -227,7 +228,7 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed).toBeNull();
   });
 
-  it("ignores chunks without message_id", () => {
+  it("falls back to task-based message id when message_id is missing", () => {
     const payload = buildBlockUpdatePayload({
       blockType: "text",
       delta: "hello",
@@ -236,21 +237,25 @@ describe("block-based stream parser and reducer", () => {
     }) as Record<string, unknown>;
     delete payload.message_id;
     const parsed = extractStreamBlockUpdate(payload);
-    expect(parsed).toBeNull();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.messageId).toBe("task:task-1");
   });
 
-  it("ignores chunks without event_id", () => {
+  it("uses seq-based fallback when event_id is missing", () => {
     const payload = buildBlockUpdatePayload({
       blockType: "text",
       delta: "hello",
       artifactId: "task-1:stream",
+      seq: 7,
     }) as Record<string, unknown>;
     delete payload.event_id;
     const parsed = extractStreamBlockUpdate(payload);
-    expect(parsed).toBeNull();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.eventId).toBe("seq:msg-1:7");
+    expect(parsed?.eventIdSource).toBe("fallback_seq");
   });
 
-  it("ignores chunks using camelCase message/event fields only", () => {
+  it("accepts chunks using camelCase message/event fields", () => {
     const payload = {
       kind: "artifact-update",
       task_id: "task-1",
@@ -267,7 +272,9 @@ describe("block-based stream parser and reducer", () => {
       },
     };
     const parsed = extractStreamBlockUpdate(payload);
-    expect(parsed).toBeNull();
+    expect(parsed).not.toBeNull();
+    expect(parsed?.messageId).toBe("msg-camel");
+    expect(parsed?.eventId).toBe("evt-camel");
   });
 
   it("accepts chunks without seq and marks seq as null", () => {
@@ -280,6 +287,23 @@ describe("block-based stream parser and reducer", () => {
     const parsed = extractStreamBlockUpdate(payload);
     expect(parsed).not.toBeNull();
     expect(parsed?.seq).toBeNull();
+    expect(parsed?.eventId).toBe("evt-1");
+    expect(parsed?.eventIdSource).toBe("upstream");
+  });
+
+  it("uses chunk-based fallback when both seq and event_id are missing", () => {
+    const payload = buildBlockUpdatePayload({
+      blockType: "text",
+      delta: "hello",
+      artifactId: "task-1:stream",
+      seq: undefined,
+    }) as Record<string, unknown>;
+    delete payload.event_id;
+    const parsed = extractStreamBlockUpdate(payload);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.seq).toBeNull();
+    expect(parsed?.eventId).toBe("chunk:msg-1:task-1:stream");
+    expect(parsed?.eventIdSource).toBe("fallback_chunk");
   });
 
   it("finalizes the active block on stream completion", () => {
