@@ -275,12 +275,8 @@ async def _ensure_task_session(
 
 
 async def _refresh_ops_metrics() -> None:
-    running_stmt = select(func.count(A2AScheduleTask.id)).where(
-        and_(
-            A2AScheduleTask.deleted_at.is_(None),
-            A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
-            A2AScheduleTask.current_run_id.is_not(None),
-        )
+    running_stmt = select(func.count(A2AScheduleExecution.id)).where(
+        A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING
     )
     try:
         async with AsyncSessionLocal() as db:
@@ -349,20 +345,24 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             return
         if not task.enabled:
             if task.last_run_status == A2AScheduleTask.STATUS_RUNNING:
+                finished_at = utc_now()
+                failure_message = "Task disabled or deleted before execution started"
                 try:
-                    await a2a_schedule_service.finalize_task_run(
+                    finalized = await a2a_schedule_service.finalize_task_run(
                         db,
                         task_id=task.id,
                         user_id=task.user_id,
                         run_id=claim.run_id,
-                        final_status=A2AScheduleTask.STATUS_IDLE,
-                        finished_at=utc_now(),
+                        final_status=A2AScheduleTask.STATUS_FAILED,
+                        finished_at=finished_at,
                         conversation_id=task.conversation_id,
+                        response_content=failure_message,
+                        error_message=failure_message,
                     )
                 except A2AScheduleConflictError:
                     ops_metrics.increment_schedule_finalize_lock_conflicts()
                     logger.warning(
-                        "Skip idle finalize due to lock contention task=%s run_id=%s",
+                        "Skip disabled-task finalize due to lock contention task=%s run_id=%s",
                         task.id,
                         claim.run_id,
                         extra={
@@ -372,8 +372,12 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                             "finalize_conflict": True,
                         },
                     )
+                    await rollback_safely(db)
                     return
-                await commit_safely(db)
+                if finalized:
+                    await commit_safely(db)
+                else:
+                    await rollback_safely(db)
             return
 
         execution = await db.scalar(
@@ -471,9 +475,15 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 if success
                 else A2AScheduleTask.STATUS_FAILED
             )
-            finalized = False
-            finalize_conflicted = False
-            execution_id = execution.id
+            execution_error_message = (
+                None
+                if success
+                else (
+                    response_content[:2000]
+                    or str(invoke_result.get("error") or "")[:2000]
+                    or None
+                )
+            )
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
@@ -483,6 +493,10 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     final_status=final_status,
                     finished_at=finished_at,
                     conversation_id=resolved_conversation_id,
+                    response_content=response_content,
+                    error_message=execution_error_message,
+                    user_message_id=message_refs.get("user_message_id"),
+                    agent_message_id=message_refs.get("agent_message_id"),
                 )
             except A2AScheduleConflictError:
                 ops_metrics.increment_schedule_finalize_lock_conflicts()
@@ -498,65 +512,29 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         "finalize_conflict": True,
                     },
                 )
-                finalize_conflicted = True
                 await rollback_safely(db)
-                execution = await db.scalar(
-                    select(A2AScheduleExecution)
-                    .where(A2AScheduleExecution.id == execution_id)
-                    .limit(1)
-                )
-                if execution is None:
-                    execution = await db.scalar(
-                        select(A2AScheduleExecution)
-                        .where(
-                            and_(
-                                A2AScheduleExecution.task_id == task.id,
-                                A2AScheduleExecution.user_id == task.user_id,
-                                A2AScheduleExecution.run_id == claim.run_id,
-                            )
-                        )
-                        .limit(1)
-                    )
-                if execution is None:
-                    raise RuntimeError("Execution not found during conflict resolution")
-            if not finalized:
-                if not finalize_conflicted:
-                    logger.warning(
-                        "Schedule run finalize skipped due to run mismatch task=%s run_id=%s",
-                        task.id,
-                        claim.run_id,
-                        extra={
-                            "schedule_task_id": str(task.id),
-                            "schedule_execution_id": str(execution.id),
-                            "run_id": str(claim.run_id),
-                            "phase": "finalize",
-                        },
-                    )
+                return
 
-            if finalized and should_cleanup_ephemeral_thread and thread is not None:
+            if not finalized:
+                logger.warning(
+                    "Schedule run finalize skipped due to run mismatch task=%s run_id=%s",
+                    task.id,
+                    claim.run_id,
+                    extra={
+                        "schedule_task_id": str(task.id),
+                        "run_id": str(claim.run_id),
+                        "phase": "finalize",
+                    },
+                )
+                await rollback_safely(db)
+                return
+
+            if should_cleanup_ephemeral_thread and thread is not None:
+                execution.conversation_id = None
                 await db.delete(thread)
                 if task.conversation_id == thread.id:
                     task.conversation_id = None
 
-            execution.conversation_id = resolved_conversation_id
-            execution.user_message_id = message_refs.get("user_message_id")
-            execution.agent_message_id = message_refs.get("agent_message_id")
-            execution.response_content = response_content
-            execution.finished_at = finished_at
-            execution.status = (
-                A2AScheduleExecution.STATUS_SUCCESS
-                if success
-                else A2AScheduleExecution.STATUS_FAILED
-            )
-            execution.error_message = (
-                None
-                if success
-                else (
-                    response_content[:2000]
-                    or str(invoke_result.get("error") or "")[:2000]
-                    or None
-                )
-            )
             if execution.started_at and execution.finished_at:
                 latency_ms = (
                     execution.finished_at - execution.started_at
@@ -567,8 +545,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
 
         except Exception as exc:  # pragma: no cover - defensive path
             finished_at = utc_now()
-            finalized = False
-            finalize_conflicted = False
+            failure_message = str(exc)[:2000]
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
@@ -578,9 +555,25 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     final_status=A2AScheduleTask.STATUS_FAILED,
                     finished_at=finished_at,
                     conversation_id=(
-                        execution.conversation_id
-                        if execution is not None
-                        else task.conversation_id
+                        None
+                        if thread and is_new
+                        else (
+                            execution.conversation_id
+                            if execution is not None
+                            else task.conversation_id
+                        )
+                    ),
+                    response_content=(
+                        execution.response_content
+                        if execution is not None and execution.response_content
+                        else failure_message
+                    ),
+                    error_message=failure_message,
+                    user_message_id=(
+                        execution.user_message_id if execution is not None else None
+                    ),
+                    agent_message_id=(
+                        execution.agent_message_id if execution is not None else None
                     ),
                 )
             except A2AScheduleConflictError:
@@ -596,46 +589,29 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         "finalize_conflict": True,
                     },
                 )
-                finalize_conflicted = True
                 await rollback_safely(db)
-                execution = await db.scalar(
-                    select(A2AScheduleExecution)
-                    .where(
-                        and_(
-                            A2AScheduleExecution.task_id == task.id,
-                            A2AScheduleExecution.user_id == task.user_id,
-                            A2AScheduleExecution.run_id == claim.run_id,
-                        )
-                    )
-                    .limit(1)
-                )
+                return
+
             if not finalized:
-                if not finalize_conflicted:
-                    logger.warning(
-                        "Schedule run failure finalize skipped due to run mismatch task=%s run_id=%s",
-                        task.id,
-                        claim.run_id,
-                        extra={
-                            "schedule_task_id": str(task.id),
-                            "run_id": str(claim.run_id),
-                            "phase": "finalize",
-                        },
-                    )
+                logger.warning(
+                    "Schedule run failure finalize skipped due to run mismatch task=%s run_id=%s",
+                    task.id,
+                    claim.run_id,
+                    extra={
+                        "schedule_task_id": str(task.id),
+                        "run_id": str(claim.run_id),
+                        "phase": "finalize",
+                    },
+                )
+                await rollback_safely(db)
+                return
 
-            if execution is None:
-                    raise RuntimeError("Execution not found during conflict resolution")
-
-            execution.status = A2AScheduleExecution.STATUS_FAILED
-            execution.finished_at = finished_at
-            execution.error_message = str(exc)[:2000]
-            if not execution.response_content:
-                execution.response_content = execution.error_message
-            if thread and is_new:
+            if thread and is_new and execution is not None:
                 execution.conversation_id = None
                 if task.conversation_id == thread.id:
                     task.conversation_id = None
                 await db.delete(thread)
-            if execution.started_at:
+            if execution is not None and execution.started_at:
                 latency_ms = (finished_at - execution.started_at).total_seconds() * 1000
                 ops_metrics.observe_schedule_run_finalize_latency(latency_ms)
             try:
@@ -648,15 +624,16 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     commit_error,
                     exc_info=commit_error,
                 )
+            execution_id = str(execution.id) if execution is not None else "unknown"
             logger.error(
                 "Scheduled A2A execution failed task=%s execution=%s err=%s",
                 task.id,
-                execution.id,
+                execution_id,
                 exc,
                 exc_info=exc,
                 extra={
                     "schedule_task_id": str(task.id),
-                    "schedule_execution_id": str(execution.id),
+                    "schedule_execution_id": execution_id,
                     "run_id": str(claim.run_id),
                     "phase": "finalize",
                 },
@@ -734,6 +711,7 @@ async def _schedule_worker_loop(worker_index: int) -> None:
                 exc_info=exc,
             )
             await asyncio.sleep(1.0)
+
 
 def _prune_finished_worker_tasks() -> None:
     finished = {task for task in _dispatch_worker_tasks if task.done()}
@@ -823,7 +801,9 @@ async def dispatch_due_a2a_schedules(*, batch_size: int = 20) -> None:
 
         try:
             async with AsyncSessionLocal() as db:
-                enqueued = await a2a_schedule_service.enqueue_due_tasks(db, batch_size=batch_size)
+                enqueued = await a2a_schedule_service.enqueue_due_tasks(
+                    db, batch_size=batch_size
+                )
         except Exception as exc:
             if _is_db_lock_contention_issue(exc):
                 logger.warning(

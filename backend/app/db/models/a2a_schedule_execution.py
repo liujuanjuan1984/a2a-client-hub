@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -33,6 +34,12 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
             "status",
             "scheduled_for",
         ),
+        Index(
+            "uq_a2a_schedule_executions_active_task",
+            "task_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
         UniqueConstraint(
             "task_id",
             "run_id",
@@ -41,6 +48,7 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
         {"schema": SCHEMA_NAME},
     )
 
+    STATUS_PENDING: ClassVar[str] = "pending"
     STATUS_PENDING: ClassVar[str] = "pending"
     STATUS_RUNNING: ClassVar[str] = "running"
     STATUS_SUCCESS: ClassVar[str] = "success"

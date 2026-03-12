@@ -174,6 +174,7 @@ class A2AScheduleService:
     ) -> None:
         """Serialize per-user quota-changing operations using Postgres advisory locks."""
         import hashlib
+
         from sqlalchemy import text
 
         lock_key_str = f"a2a_schedule_quota_{user_id.hex}"
@@ -554,22 +555,12 @@ class A2AScheduleService:
                 execution.conversation_id = task.conversation_id
 
         threshold = max(int(settings.a2a_schedule_task_failure_threshold), 1)
-        task.last_run_status = A2AScheduleTask.STATUS_FAILED
-        task.last_run_at = now_utc
-        task.current_run_id = None
-        task.running_started_at = None
-        task.last_heartbeat_at = None
-        task.consecutive_failures = (task.consecutive_failures or 0) + 1
-        if task.consecutive_failures >= threshold:
-            task.enabled = False
-        if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
-            if task.enabled:
-                task.next_run_at = self._compute_sequential_next_run_at(
-                    time_point=dict(task.time_point or {}),
-                    after_utc=now_utc,
-                )
-            else:
-                task.next_run_at = None
+        self._apply_task_terminal_projection(
+            task,
+            final_status=A2AScheduleTask.STATUS_FAILED,
+            finished_at=now_utc,
+            failure_threshold=threshold,
+        )
 
         await commit_safely(db)
         await db.refresh(task)
@@ -610,6 +601,47 @@ class A2AScheduleService:
         )
         total = int(await db.scalar(count_stmt) or 0)
         return items, total
+
+    def _apply_task_terminal_projection(
+        self,
+        task: A2AScheduleTask,
+        *,
+        final_status: str,
+        finished_at: datetime,
+        failure_threshold: int,
+        conversation_id: UUID | None = None,
+    ) -> None:
+        finished_at_utc = ensure_utc(finished_at)
+        task.last_run_status = final_status
+        task.last_run_at = finished_at_utc
+        task.current_run_id = None
+        task.running_started_at = None
+        task.last_heartbeat_at = None
+        if conversation_id is not None:
+            task.conversation_id = conversation_id
+
+        if final_status == A2AScheduleTask.STATUS_SUCCESS:
+            task.consecutive_failures = 0
+        elif final_status == A2AScheduleTask.STATUS_FAILED:
+            task.consecutive_failures = (task.consecutive_failures or 0) + 1
+            if task.consecutive_failures >= failure_threshold:
+                task.enabled = False
+        else:
+            raise A2AScheduleValidationError("Unsupported final status for task run")
+
+        if task.delete_requested_at is not None:
+            task.soft_delete()
+            task.enabled = False
+            task.next_run_at = None
+            task.delete_requested_at = None
+        elif task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            if task.enabled:
+                task.next_run_at = self._compute_sequential_next_run_at(
+                    time_point=dict(task.time_point or {}),
+                    after_utc=finished_at_utc,
+                )
+            else:
+                task.next_run_at = None
 
     async def _global_running_execution_count(
         self,
@@ -655,8 +687,11 @@ class A2AScheduleService:
                 and_(
                     A2AScheduleExecution.task_id == A2AScheduleTask.id,
                     A2AScheduleExecution.status.in_(
-                        [A2AScheduleExecution.STATUS_PENDING, A2AScheduleExecution.STATUS_RUNNING]
-                    )
+                        [
+                            A2AScheduleExecution.STATUS_PENDING,
+                            A2AScheduleExecution.STATUS_RUNNING,
+                        ]
+                    ),
                 )
             )
             .limit(1)
@@ -749,6 +784,7 @@ class A2AScheduleService:
         concurrency_limit = max(int(settings.a2a_schedule_agent_concurrency_limit), 1)
 
         from sqlalchemy.orm import aliased
+
         TaskAlias = aliased(A2AScheduleTask)
         ExecAlias = aliased(A2AScheduleExecution)
 
@@ -779,7 +815,9 @@ class A2AScheduleService:
                     ),
                 )
             )
-            .order_by(A2AScheduleExecution.scheduled_for.asc(), A2AScheduleExecution.id.asc())
+            .order_by(
+                A2AScheduleExecution.scheduled_for.asc(), A2AScheduleExecution.id.asc()
+            )
             .limit(1)
             .with_for_update(of=A2AScheduleExecution, skip_locked=True)
         )
@@ -787,12 +825,18 @@ class A2AScheduleService:
         if execution is None:
             return None
 
-        task_stmt = select(A2AScheduleTask).where(A2AScheduleTask.id == execution.task_id).limit(1)
+        task_stmt = (
+            select(A2AScheduleTask)
+            .where(A2AScheduleTask.id == execution.task_id)
+            .limit(1)
+        )
         task = await db.scalar(task_stmt)
         if task is None or task.deleted_at is not None or not task.enabled:
             execution.status = A2AScheduleExecution.STATUS_FAILED
             execution.finished_at = now_utc
-            execution.error_message = "Task disabled or deleted before execution started"
+            execution.error_message = (
+                "Task disabled or deleted before execution started"
+            )
             await commit_safely(db)
             return None
 
@@ -865,7 +909,9 @@ class A2AScheduleService:
             )
             stmt = (
                 select(A2AScheduleExecution)
-                .join(A2AScheduleTask, A2AScheduleTask.id == A2AScheduleExecution.task_id)
+                .join(
+                    A2AScheduleTask, A2AScheduleTask.id == A2AScheduleExecution.task_id
+                )
                 .where(stale_where)
                 .order_by(
                     A2AScheduleTask.running_started_at.asc(),
@@ -878,7 +924,10 @@ class A2AScheduleService:
             if execution is None:
                 stale_count_stmt = (
                     select(func.count(A2AScheduleExecution.id))
-                    .join(A2AScheduleTask, A2AScheduleTask.id == A2AScheduleExecution.task_id)
+                    .join(
+                        A2AScheduleTask,
+                        A2AScheduleTask.id == A2AScheduleExecution.task_id,
+                    )
                     .where(stale_where)
                 )
                 stale_remaining = int(await db.scalar(stale_count_stmt) or 0)
@@ -916,41 +965,91 @@ class A2AScheduleService:
                 await commit_safely(db)
                 continue
 
-            final_task_status = A2AScheduleTask.STATUS_FAILED
-            sequential_after_utc = now_utc
-
             execution.status = A2AScheduleExecution.STATUS_FAILED
             execution.finished_at = now_utc
             execution.error_message = error_message
             if execution.conversation_id is None:
                 execution.conversation_id = task.conversation_id
 
-            task.last_run_status = final_task_status
-            task.last_run_at = now_utc
-            task.current_run_id = None
-            task.running_started_at = None
-            task.last_heartbeat_at = None
-            if final_task_status == A2AScheduleTask.STATUS_SUCCESS:
-                task.consecutive_failures = 0
-            else:
-                task.consecutive_failures = (task.consecutive_failures or 0) + 1
-                if task.consecutive_failures >= failure_threshold:
-                    task.enabled = False
-            if task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
-                if task.enabled:
-                    task.next_run_at = self._compute_sequential_next_run_at(
-                        time_point=dict(task.time_point or {}),
-                        after_utc=sequential_after_utc,
-                    )
-                else:
-                    task.next_run_at = None
-            if task.delete_requested_at is not None:
-                task.soft_delete()
-                task.enabled = False
-                task.next_run_at = None
-                task.delete_requested_at = None
+            self._apply_task_terminal_projection(
+                task,
+                final_status=A2AScheduleTask.STATUS_FAILED,
+                finished_at=now_utc,
+                failure_threshold=failure_threshold,
+                conversation_id=execution.conversation_id,
+            )
             recovered_count += 1
 
+            await commit_safely(db)
+
+        # Compatibility cleanup for legacy orphaned running tasks created before
+        # the durable execution queue was introduced.
+        has_matching_execution_subquery = (
+            select(1)
+            .where(
+                and_(
+                    A2AScheduleExecution.task_id == A2AScheduleTask.id,
+                    A2AScheduleExecution.run_id == A2AScheduleTask.current_run_id,
+                )
+            )
+            .limit(1)
+            .exists()
+        )
+        while True:
+            await self._apply_skip_locked_write_timeouts(db)
+            orphan_where = and_(
+                A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.last_run_status == A2AScheduleTask.STATUS_RUNNING,
+                A2AScheduleTask.current_run_id.is_not(None),
+                A2AScheduleTask.running_started_at.is_not(None),
+                or_(*stale_predicates),
+                ~has_matching_execution_subquery,
+            )
+            orphan_stmt = (
+                select(A2AScheduleTask)
+                .where(orphan_where)
+                .order_by(
+                    A2AScheduleTask.running_started_at.asc(),
+                    A2AScheduleTask.id.asc(),
+                )
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
+            task = await db.scalar(orphan_stmt)
+            if task is None:
+                break
+
+            run_id = task.current_run_id
+            if run_id is None:
+                await commit_safely(db)
+                continue
+
+            started_at = ensure_utc(task.running_started_at or now_utc)
+            await db.execute(
+                insert(A2AScheduleExecution)
+                .values(
+                    user_id=task.user_id,
+                    task_id=task.id,
+                    run_id=run_id,
+                    scheduled_for=started_at,
+                    started_at=started_at,
+                    finished_at=now_utc,
+                    status=A2AScheduleExecution.STATUS_FAILED,
+                    error_message=error_message,
+                    conversation_id=task.conversation_id,
+                )
+                .on_conflict_do_nothing(
+                    index_elements=["task_id", "run_id"],
+                )
+            )
+            self._apply_task_terminal_projection(
+                task,
+                final_status=A2AScheduleTask.STATUS_FAILED,
+                finished_at=now_utc,
+                failure_threshold=failure_threshold,
+                conversation_id=task.conversation_id,
+            )
+            recovered_count += 1
             await commit_safely(db)
         return recovered_count
 
@@ -965,6 +1064,10 @@ class A2AScheduleService:
         final_status: str,
         finished_at: datetime,
         conversation_id: UUID | None = None,
+        response_content: str | None = None,
+        error_message: str | None = None,
+        user_message_id: UUID | None = None,
+        agent_message_id: UUID | None = None,
     ) -> bool:
         """Finalize one claimed run only if execution is still running."""
 
@@ -986,13 +1089,7 @@ class A2AScheduleService:
         )
         execution = await db.scalar(exec_stmt)
         if execution is None:
-            # Maybe already recovered/failed
             return False
-
-        execution.status = final_status
-        execution.finished_at = ensure_utc(finished_at)
-        if conversation_id is not None:
-            execution.conversation_id = conversation_id
 
         stmt = (
             select(A2AScheduleTask)
@@ -1006,45 +1103,30 @@ class A2AScheduleService:
             .limit(1)
         )
         task = await db.scalar(stmt)
-        if task is None:
+        if task is None or task.current_run_id != run_id:
             return False
 
         threshold = max(int(settings.a2a_schedule_task_failure_threshold), 1)
-
-        if task.current_run_id == run_id:
-            task.last_run_status = final_status
-            task.last_run_at = ensure_utc(finished_at)
-            task.current_run_id = None
-            task.running_started_at = None
-            task.last_heartbeat_at = None
-            if conversation_id is not None:
-                task.conversation_id = conversation_id
-
-        if final_status == A2AScheduleTask.STATUS_SUCCESS:
-            task.consecutive_failures = 0
-        elif final_status == A2AScheduleTask.STATUS_FAILED:
-            task.consecutive_failures = (task.consecutive_failures or 0) + 1
-            if task.consecutive_failures >= threshold:
-                task.enabled = False
-        elif final_status == A2AScheduleTask.STATUS_IDLE:
-            # Disabled tasks can be reset to idle without affecting failure counters.
-            pass
-        else:
+        if final_status not in {
+            A2AScheduleTask.STATUS_SUCCESS,
+            A2AScheduleTask.STATUS_FAILED,
+        }:
             raise A2AScheduleValidationError("Unsupported final status for task run")
 
-        if task.delete_requested_at is not None:
-            task.soft_delete()
-            task.enabled = False
-            task.next_run_at = None
-            task.delete_requested_at = None
-        elif task.cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
-            if task.enabled:
-                task.next_run_at = self._compute_sequential_next_run_at(
-                    time_point=dict(task.time_point or {}),
-                    after_utc=task.last_run_at or ensure_utc(finished_at),
-                )
-            else:
-                task.next_run_at = None
+        execution.status = final_status
+        execution.finished_at = ensure_utc(finished_at)
+        execution.conversation_id = conversation_id
+        execution.response_content = response_content
+        execution.error_message = error_message
+        execution.user_message_id = user_message_id
+        execution.agent_message_id = agent_message_id
+        self._apply_task_terminal_projection(
+            task,
+            final_status=final_status,
+            finished_at=finished_at,
+            failure_threshold=threshold,
+            conversation_id=conversation_id,
+        )
 
         logger.info(
             f"Task {task_id} finalized (run_id: {run_id}) "

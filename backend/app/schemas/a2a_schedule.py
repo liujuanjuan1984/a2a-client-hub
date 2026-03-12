@@ -18,7 +18,7 @@ A2AScheduleCycleType = Literal[
     "sequential",
 ]
 A2AScheduleRunStatus = Literal["idle", "running", "success", "failed"]
-A2AScheduleExecutionStatus = Literal["running", "success", "failed"]
+A2AScheduleExecutionStatus = Literal["pending", "running", "success", "failed"]
 A2AScheduleConversationPolicy = Literal["new_each_run", "reuse_single"]
 
 

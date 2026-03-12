@@ -30,6 +30,7 @@ from app.services.a2a_schedule_job import (
 from app.services.a2a_schedule_service import (
     A2AScheduleConflictError,
     A2AScheduleNotFoundError,
+    A2AScheduleServiceBusyError,
     ClaimedA2AScheduleTask,
     a2a_schedule_service,
 )
@@ -91,10 +92,22 @@ def _mock_runtime_builder():
 
 async def _mark_task_claimed(session, *, task: A2AScheduleTask):
     run_id = uuid4()
+    started_at = utc_now()
     task.current_run_id = run_id
-    task.running_started_at = utc_now()
-    task.last_heartbeat_at = utc_now()
+    task.running_started_at = started_at
+    task.last_heartbeat_at = started_at
     task.last_run_status = A2AScheduleTask.STATUS_RUNNING
+    session.add(
+        A2AScheduleExecution(
+            user_id=task.user_id,
+            task_id=task.id,
+            run_id=run_id,
+            scheduled_for=task.next_run_at or started_at,
+            started_at=started_at,
+            status=A2AScheduleExecution.STATUS_RUNNING,
+            conversation_id=task.conversation_id,
+        )
+    )
     await session.commit()
     await session.refresh(task)
     return run_id
@@ -177,7 +190,9 @@ async def test_claim_next_pending_execution_obeys_agent_concurrency_limit(
     )
 
     await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
-    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(
+        async_db_session, now=now
+    )
     assert claim is not None
     assert claim.task_id == task_b.id
 
@@ -227,7 +242,9 @@ async def test_claim_next_pending_execution_obeys_global_concurrency_limit(
     )
 
     await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
-    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(
+        async_db_session, now=now
+    )
     assert claim is None
 
 
@@ -245,7 +262,9 @@ async def test_claim_next_pending_execution_creates_running_execution_immediatel
     )
 
     await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
-    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(
+        async_db_session, now=now
+    )
     assert claim is not None
     assert claim.task_id == task.id
 
@@ -278,7 +297,9 @@ async def test_claim_next_pending_execution_sequential_holds_next_run_until_fina
     await async_db_session.commit()
 
     await a2a_schedule_service.enqueue_due_tasks(async_db_session, now=now)
-    claim = await a2a_schedule_service.claim_next_pending_execution(async_db_session, now=now)
+    claim = await a2a_schedule_service.claim_next_pending_execution(
+        async_db_session, now=now
+    )
     assert claim is not None
     assert claim.task_id == task.id
     await async_db_session.refresh(task)
@@ -395,7 +416,7 @@ async def test_delete_task_returns_conflict_when_row_locked(
         await lock_db.rollback()
 
 
-async def test_set_enabled_returns_conflict_when_user_row_locked(
+async def test_set_enabled_is_not_blocked_by_user_row_lock(
     async_db_session,
     async_session_maker,
 ) -> None:
@@ -420,19 +441,19 @@ async def test_set_enabled_returns_conflict_when_user_row_locked(
             .limit(1)
         )
         async with async_session_maker() as actor_db:
-            with pytest.raises(A2AScheduleConflictError):
-                await a2a_schedule_service.set_enabled(
-                    actor_db,
-                    user_id=user.id,
-                    task_id=task.id,
-                    enabled=True,
-                    is_superuser=False,
-                    timezone_str="UTC",
-                )
+            updated = await a2a_schedule_service.set_enabled(
+                actor_db,
+                user_id=user.id,
+                task_id=task.id,
+                enabled=True,
+                is_superuser=False,
+                timezone_str="UTC",
+            )
+            assert updated.enabled is True
         await lock_db.rollback()
 
 
-async def test_create_task_returns_conflict_when_user_row_locked(
+async def test_create_task_surfaces_service_busy_when_user_fk_check_is_blocked(
     async_db_session,
     async_session_maker,
 ) -> None:
@@ -449,7 +470,7 @@ async def test_create_task_returns_conflict_when_user_row_locked(
             .limit(1)
         )
         async with async_session_maker() as actor_db:
-            with pytest.raises(A2AScheduleConflictError):
+            with pytest.raises(A2AScheduleServiceBusyError):
                 await a2a_schedule_service.create_task(
                     actor_db,
                     user_id=user.id,
@@ -1126,7 +1147,7 @@ async def test_execute_claimed_task_skips_stale_run_id(
     assert executions == []
 
 
-async def test_execute_claimed_task_persists_execution_on_finalize_mismatch(
+async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_mismatch(
     async_db_session,
     async_session_maker,
     monkeypatch,
@@ -1193,11 +1214,11 @@ async def test_execute_claimed_task_persists_execution_on_finalize_mismatch(
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_RUNNING
     assert refreshed_task.current_run_id == run_id
     assert len(executions) == 1
-    assert executions[0].status == A2AScheduleExecution.STATUS_SUCCESS
-    assert executions[0].finished_at is not None
+    assert executions[0].status == A2AScheduleExecution.STATUS_RUNNING
+    assert executions[0].finished_at is None
 
 
-async def test_execute_claimed_task_defers_on_finalize_lock_conflict(
+async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_lock_conflict(
     async_db_session,
     async_session_maker,
     monkeypatch,
@@ -1271,8 +1292,8 @@ async def test_execute_claimed_task_defers_on_finalize_lock_conflict(
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_RUNNING
     assert refreshed_task.current_run_id == run_id
     assert len(executions) == 1
-    assert executions[0].status == A2AScheduleExecution.STATUS_SUCCESS
-    assert executions[0].finished_at is not None
+    assert executions[0].status == A2AScheduleExecution.STATUS_RUNNING
+    assert executions[0].finished_at is None
 
 
 async def test_recover_stale_running_task_finalizes_matching_run(
@@ -1728,7 +1749,7 @@ async def test_dispatch_due_a2a_schedules_continues_when_recovery_hits_lock_cont
 ) -> None:
     ensure_workers_mock = AsyncMock()
     refresh_metrics_mock = AsyncMock()
-    claim_mock = AsyncMock(return_value=None)
+    enqueue_mock = AsyncMock(return_value=0)
 
     class _LockNotAvailableError(Exception):
         sqlstate = "55P03"
@@ -1753,15 +1774,15 @@ async def test_dispatch_due_a2a_schedules_continues_when_recovery_hits_lock_cont
         _raise_lock_contention,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_pending_execution",
-        claim_mock,
+        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        enqueue_mock,
     )
 
     with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
         await dispatch_due_a2a_schedules(batch_size=1)
 
     assert ensure_workers_mock.await_count == 1
-    assert claim_mock.await_count == 1
+    assert enqueue_mock.await_count == 1
     assert refresh_metrics_mock.await_count == 1
     assert (
         "Skip stale-task recovery this cycle due to lock contention; continue dispatch."
@@ -1776,7 +1797,7 @@ async def test_dispatch_due_a2a_schedules_skips_when_leader_lock_not_acquired(
     ensure_workers_mock = AsyncMock()
     refresh_metrics_mock = AsyncMock()
     recover_mock = AsyncMock(return_value=0)
-    claim_mock = AsyncMock(return_value=None)
+    enqueue_mock = AsyncMock(return_value=0)
 
     class _NoLeaderLockContext:
         async def __aenter__(self):
@@ -1802,14 +1823,14 @@ async def test_dispatch_due_a2a_schedules_skips_when_leader_lock_not_acquired(
         recover_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_pending_execution",
-        claim_mock,
+        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        enqueue_mock,
     )
 
     await dispatch_due_a2a_schedules(batch_size=1)
 
     assert recover_mock.await_count == 0
-    assert claim_mock.await_count == 0
+    assert enqueue_mock.await_count == 0
     assert ensure_workers_mock.await_count == 0
     assert refresh_metrics_mock.await_count == 0
 
@@ -1904,7 +1925,7 @@ async def test_try_hold_dispatch_leader_lock_invalidates_connection_on_unlock_fa
     )
 
 
-async def test_dispatch_due_a2a_schedules_skips_cycle_when_claim_db_connection_refused(
+async def test_dispatch_due_a2a_schedules_skips_cycle_when_enqueue_db_connection_refused(
     async_db_session,  # noqa: ARG001
     monkeypatch,
     caplog,
@@ -1915,7 +1936,7 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_claim_db_connection_r
     async def _recover_ok(*_args, **_kwargs):
         return 0
 
-    async def _claim_raises(*_args, **_kwargs):
+    async def _enqueue_raises(*_args, **_kwargs):
         raise ConnectionRefusedError("db unavailable")
 
     monkeypatch.setattr(
@@ -1931,8 +1952,8 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_claim_db_connection_r
         _recover_ok,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_pending_execution",
-        _claim_raises,
+        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        _enqueue_raises,
     )
 
     with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
@@ -1940,10 +1961,10 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_claim_db_connection_r
 
     assert ensure_workers_mock.await_count == 1
     assert refresh_metrics_mock.await_count == 0
-    assert "database connectivity issue while claiming due tasks." in caplog.text
+    assert "database connectivity issue while enqueuing due tasks." in caplog.text
 
 
-async def test_dispatch_due_a2a_schedules_stops_claim_loop_when_claim_hits_statement_timeout(
+async def test_dispatch_due_a2a_schedules_stops_enqueue_when_enqueue_hits_statement_timeout(
     async_db_session,  # noqa: ARG001
     monkeypatch,
     caplog,
@@ -1957,7 +1978,7 @@ async def test_dispatch_due_a2a_schedules_stops_claim_loop_when_claim_hits_state
     class _StatementTimeoutError(Exception):
         sqlstate = "57014"
 
-    async def _claim_timeout(*_args, **_kwargs):
+    async def _enqueue_timeout(*_args, **_kwargs):
         raise DBAPIError(
             statement="SET LOCAL statement_timeout = '5000ms'",
             params={},
@@ -1977,8 +1998,8 @@ async def test_dispatch_due_a2a_schedules_stops_claim_loop_when_claim_hits_state
         _recover_ok,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_pending_execution",
-        _claim_timeout,
+        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        _enqueue_timeout,
     )
 
     with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
@@ -1987,7 +2008,7 @@ async def test_dispatch_due_a2a_schedules_stops_claim_loop_when_claim_hits_state
     assert ensure_workers_mock.await_count == 1
     assert refresh_metrics_mock.await_count == 1
     assert (
-        "Stop claiming due tasks this cycle due to database statement timeout."
+        "Stop enqueuing due tasks this cycle due to database statement timeout."
         in caplog.text
     )
 
@@ -2015,7 +2036,7 @@ async def test_dispatch_due_a2a_schedules_passes_heartbeat_and_hard_timeout(
     ensure_workers_mock = AsyncMock()
     refresh_metrics_mock = AsyncMock()
     recover_mock = AsyncMock(return_value=0)
-    claim_mock = AsyncMock(return_value=None)
+    enqueue_mock = AsyncMock(return_value=0)
 
     monkeypatch.setattr(
         settings,
@@ -2042,8 +2063,8 @@ async def test_dispatch_due_a2a_schedules_passes_heartbeat_and_hard_timeout(
         recover_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.claim_next_pending_execution",
-        claim_mock,
+        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        enqueue_mock,
     )
 
     await dispatch_due_a2a_schedules(batch_size=1)
