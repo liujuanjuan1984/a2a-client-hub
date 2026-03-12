@@ -132,9 +132,23 @@ const extractTextFromParts = (parts: unknown[]) =>
       if (!part || typeof part !== "object") {
         return null;
       }
-      const typed = part as { kind?: unknown; text?: unknown };
-      if (typed.kind === "text" && typeof typed.text === "string") {
+      const typed = part as {
+        kind?: unknown;
+        type?: unknown;
+        text?: unknown;
+        content?: unknown;
+      };
+      const rawKind = typed.kind ?? typed.type;
+      const normalizedKind =
+        typeof rawKind === "string" ? rawKind.trim().toLowerCase() : null;
+      if (normalizedKind && normalizedKind !== "text") {
+        return null;
+      }
+      if (typeof typed.text === "string") {
         return typed.text;
+      }
+      if (typeof typed.content === "string") {
+        return typed.content;
       }
       return null;
     })
@@ -317,6 +331,16 @@ const inferTaskIdFromArtifactId = (
   return artifactId.slice(0, firstSep);
 };
 
+const inferTaskIdFromMessageId = (messageId: string | null): string | null => {
+  if (!messageId) return null;
+  const normalized = messageId.trim();
+  if (!normalized.startsWith("task:")) {
+    return null;
+  }
+  const taskId = normalized.slice("task:".length).trim();
+  return taskId.length > 0 ? taskId : null;
+};
+
 const buildFallbackEventId = ({
   messageId,
   artifactId,
@@ -340,13 +364,17 @@ export const extractStreamBlockUpdate = (
     return null;
   }
   const artifact = asRecord(data.artifact);
-  const metadata = asRecord(artifact?.metadata);
-  const opencodeMetadata = asRecord(metadata?.opencode);
+  const rootMetadata = asRecord(data.metadata);
+  const metadata = asRecord(artifact?.metadata) ?? rootMetadata;
+  const rootOpencodeMetadata = asRecord(rootMetadata?.opencode);
+  const opencodeMetadata = asRecord(metadata?.opencode) ?? rootOpencodeMetadata;
   const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
   const textFromParts = extractTextFromParts(parts);
   const rawBlockType =
     pickString(metadata, ["block_type"]) ??
-    pickString(opencodeMetadata, ["block_type"]);
+    pickString(opencodeMetadata, ["block_type"]) ??
+    pickString(rootMetadata, ["block_type"]) ??
+    pickString(rootOpencodeMetadata, ["block_type"]);
   const explicitBlockType = parseBlockType(rawBlockType);
   const blockType =
     explicitBlockType ??
@@ -358,24 +386,35 @@ export const extractStreamBlockUpdate = (
   const seq =
     pickInteger(data, ["seq"]) ??
     pickInteger(artifact ?? null, ["seq"]) ??
-    pickInteger(opencodeMetadata, ["seq"]);
+    pickInteger(opencodeMetadata, ["seq"]) ??
+    pickInteger(rootOpencodeMetadata, ["seq"]) ??
+    pickInteger(rootMetadata, ["seq"]);
 
   const artifactId =
     pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ?? null;
-  const taskId =
+  const taskIdHint =
     pickString(data, ["task_id", "taskId"]) ??
     pickString(artifact ?? null, ["task_id", "taskId"]) ??
+    pickString(rootMetadata, ["task_id", "taskId"]) ??
     inferTaskIdFromArtifactId(artifactId);
-  if (!taskId) {
-    return null;
-  }
 
-  const messageId =
+  const upstreamMessageId =
     pickString(data, ["message_id", "messageId"]) ??
     pickString(artifact ?? null, ["message_id", "messageId"]) ??
     pickString(opencodeMetadata, ["message_id", "messageId"]) ??
-    `task:${taskId}`;
-  const resolvedArtifactId = artifactId ?? `${taskId}:${blockType}`;
+    pickString(rootOpencodeMetadata, ["message_id", "messageId"]) ??
+    pickString(rootMetadata, ["message_id", "messageId"]);
+  const resolvedMessageId =
+    upstreamMessageId ?? (taskIdHint ? `task:${taskIdHint}` : null);
+  const resolvedArtifactId =
+    artifactId ?? `${resolvedMessageId ?? "stream"}:${blockType}`;
+  const taskId =
+    taskIdHint ??
+    inferTaskIdFromArtifactId(resolvedArtifactId) ??
+    inferTaskIdFromMessageId(resolvedMessageId) ??
+    resolvedMessageId ??
+    resolvedArtifactId;
+  const messageId = resolvedMessageId ?? `artifact:${resolvedArtifactId}`;
 
   const delta =
     textFromParts ||
@@ -402,7 +441,9 @@ export const extractStreamBlockUpdate = (
   const upstreamEventId =
     pickString(data, ["event_id", "eventId"]) ??
     pickString(artifact ?? null, ["event_id", "eventId"]) ??
-    pickString(opencodeMetadata, ["event_id", "eventId"]);
+    pickString(opencodeMetadata, ["event_id", "eventId"]) ??
+    pickString(rootOpencodeMetadata, ["event_id", "eventId"]) ??
+    pickString(rootMetadata, ["event_id", "eventId"]);
   const eventId = upstreamEventId
     ? upstreamEventId
     : buildFallbackEventId({
@@ -419,6 +460,8 @@ export const extractStreamBlockUpdate = (
   const source =
     pickString(opencodeMetadata, ["source"]) ??
     pickString(metadata, ["source"]) ??
+    pickString(rootOpencodeMetadata, ["source"]) ??
+    pickString(rootMetadata, ["source"]) ??
     null;
   const role = normalizeRole(
     pickString(data, ["role"]) ?? pickString(opencodeMetadata, ["role"]),

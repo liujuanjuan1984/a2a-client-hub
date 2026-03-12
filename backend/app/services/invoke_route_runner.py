@@ -436,6 +436,14 @@ def _coerce_uuid(value: Any) -> UUID | None:
     return None
 
 
+def _resolve_agent_message_id(state: _InvokeState) -> UUID | None:
+    if isinstance(state.message_refs, dict):
+        from_refs = _coerce_uuid(state.message_refs.get("agent_message_id"))
+        if from_refs is not None:
+            return from_refs
+    return _coerce_uuid(state.agent_message_id)
+
+
 def _normalize_optional_message_id(value: str | None) -> str | None:
     if not isinstance(value, str):
         return None
@@ -606,11 +614,7 @@ async def _persist_stream_block_update(
         transport=transport,
         stream_enabled=stream_enabled,
     )
-    agent_message_id = (
-        _coerce_uuid(state.message_refs.get("agent_message_id"))
-        if isinstance(state.message_refs, dict)
-        else None
-    )
+    agent_message_id = _resolve_agent_message_id(state)
     if agent_message_id is None:
         return
     local_message_id = str(agent_message_id)
@@ -666,11 +670,7 @@ async def _flush_stream_buffer(
     if not state.chunk_buffer:
         return
 
-    agent_message_id = (
-        _coerce_uuid(state.message_refs.get("agent_message_id"))
-        if isinstance(state.message_refs, dict)
-        else None
-    )
+    agent_message_id = _resolve_agent_message_id(state)
     if agent_message_id is None:
         return
 
@@ -787,11 +787,7 @@ async def _persist_synthetic_final_block_if_needed(
         return
     if state.local_session_id is None or state.local_source is None:
         return
-    agent_message_id = (
-        _coerce_uuid(state.message_refs.get("agent_message_id"))
-        if isinstance(state.message_refs, dict)
-        else None
-    )
+    agent_message_id = _resolve_agent_message_id(state)
     if agent_message_id is None:
         return
     async with AsyncSessionLocal() as persist_db:

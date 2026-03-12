@@ -359,17 +359,6 @@ class A2AInvokeService:
         return cls._pick_int(root, ("seq",))
 
     @classmethod
-    def _extract_stream_task_id_from_serialized_event(
-        cls, payload: dict[str, Any]
-    ) -> str | None:
-        root = as_dict(payload)
-        task = as_dict(root.get("task"))
-        task_id = cls._pick_non_empty_str(root, ("task_id",))
-        if task_id is not None:
-            return task_id
-        return cls._pick_non_empty_str(task, ("id", "task_id"))
-
-    @classmethod
     def _extract_usage_from_candidate(cls, payload: dict[str, Any]) -> dict[str, Any]:
         if not payload:
             return {}
@@ -422,12 +411,10 @@ class A2AInvokeService:
             hints["upstream_message_id"] = analysis.upstream_message_id
         if analysis.upstream_event_id:
             hints["upstream_event_id"] = analysis.upstream_event_id
-        seq = cls._extract_stream_sequence_from_serialized_event(payload)
-        if seq is not None:
-            hints["upstream_event_seq"] = seq
-        task_id = cls._extract_stream_task_id_from_serialized_event(payload)
-        if task_id:
-            hints["upstream_task_id"] = task_id
+        if analysis.upstream_event_seq is not None:
+            hints["upstream_event_seq"] = analysis.upstream_event_seq
+        if analysis.upstream_task_id:
+            hints["upstream_task_id"] = analysis.upstream_task_id
         return hints
 
     @classmethod
@@ -451,6 +438,8 @@ class A2AInvokeService:
             return None
         artifact_metadata = as_dict(artifact.get("metadata"))
         opencode_metadata = as_dict(artifact_metadata.get("opencode"))
+        root_metadata = as_dict(payload.get("metadata"))
+        root_opencode_metadata = as_dict(root_metadata.get("opencode"))
 
         block_type = cls._StreamTextAccumulator._extract_artifact_type(
             payload, artifact
@@ -460,7 +449,12 @@ class A2AInvokeService:
 
         event_id = None
         message_id = None
-        for candidate in (payload, artifact, opencode_metadata):
+        for candidate in (
+            payload,
+            artifact,
+            opencode_metadata,
+            root_opencode_metadata,
+        ):
             if event_id is None:
                 event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
             if message_id is None:
@@ -476,9 +470,20 @@ class A2AInvokeService:
 
         append = payload.get("append")
         resolved_append = append if isinstance(append, bool) else True
+        resolved_is_finished = (
+            payload.get("lastChunk") is True
+            or payload.get("last_chunk") is True
+            or artifact.get("lastChunk") is True
+            or artifact.get("last_chunk") is True
+        )
 
-        seq = cls._pick_int(payload, ("seq",))
-        source = cls._StreamTextAccumulator._extract_artifact_source(artifact)
+        seq = (
+            cls._pick_int(payload, ("seq",))
+            or cls._pick_int(artifact, ("seq",))
+            or cls._pick_int(opencode_metadata, ("seq",))
+            or cls._pick_int(root_opencode_metadata, ("seq",))
+        )
+        source = cls._StreamTextAccumulator._extract_artifact_source(payload, artifact)
         return {
             "event_id": event_id,
             "seq": seq,
@@ -486,7 +491,7 @@ class A2AInvokeService:
             "block_type": block_type,
             "content": delta,
             "append": resolved_append,
-            "is_finished": payload.get("lastChunk") is True,
+            "is_finished": resolved_is_finished,
             "source": source,
         }
 
@@ -689,25 +694,43 @@ class A2AInvokeService:
             for part in parts:
                 if not isinstance(part, dict):
                     continue
-                kind = str(part.get("kind") or "")
+                raw_kind = part.get("kind") or part.get("type")
+                normalized_kind = (
+                    raw_kind.strip().lower() if isinstance(raw_kind, str) else None
+                )
+                if normalized_kind not in {None, "", "text"}:
+                    continue
                 text = part.get("text")
-                if kind == "text" and isinstance(text, str):
+                if isinstance(text, str):
                     collected.append(text)
+                    continue
+                content = part.get("content")
+                if isinstance(content, str):
+                    collected.append(content)
             return "".join(collected)
 
         @staticmethod
         def _extract_artifact_type(
-            _payload: dict[str, Any], artifact: dict[str, Any]
+            payload: dict[str, Any], artifact: dict[str, Any]
         ) -> str | None:
             metadata = artifact.get("metadata")
             if not isinstance(metadata, dict):
                 metadata = {}
+            root_metadata = payload.get("metadata")
+            if not isinstance(root_metadata, dict):
+                root_metadata = {}
 
             raw = metadata.get("block_type")
             if not isinstance(raw, str) or not raw.strip():
                 opencode = metadata.get("opencode")
                 if isinstance(opencode, dict):
                     raw = opencode.get("block_type")
+            if not isinstance(raw, str) or not raw.strip():
+                raw = root_metadata.get("block_type")
+            if not isinstance(raw, str) or not raw.strip():
+                root_opencode = root_metadata.get("opencode")
+                if isinstance(root_opencode, dict):
+                    raw = root_opencode.get("block_type")
 
             if not isinstance(raw, str) or not raw.strip():
                 if A2AInvokeService._StreamTextAccumulator._extract_text_from_parts(
@@ -722,14 +745,28 @@ class A2AInvokeService:
             return None
 
         @staticmethod
-        def _extract_artifact_source(artifact: dict[str, Any]) -> str | None:
+        def _extract_artifact_source(
+            payload: dict[str, Any], artifact: dict[str, Any]
+        ) -> str | None:
             metadata = artifact.get("metadata")
             if not isinstance(metadata, dict):
-                return None
+                metadata = {}
+            root_metadata = payload.get("metadata")
+            if not isinstance(root_metadata, dict):
+                root_metadata = {}
             opencode = metadata.get("opencode")
-            if not isinstance(opencode, dict):
-                return None
-            source = opencode.get("source")
+            source = opencode.get("source") if isinstance(opencode, dict) else None
+            if not isinstance(source, str) or not source.strip():
+                source = metadata.get("source")
+            if not isinstance(source, str) or not source.strip():
+                root_opencode = root_metadata.get("opencode")
+                source = (
+                    root_opencode.get("source")
+                    if isinstance(root_opencode, dict)
+                    else None
+                )
+            if not isinstance(source, str) or not source.strip():
+                source = root_metadata.get("source")
             if isinstance(source, str) and source.strip():
                 return source.strip().lower()
             return None
@@ -909,6 +946,60 @@ class A2AInvokeService:
     @staticmethod
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
         return payload.get("kind") == "status-update" and payload.get("final") is True
+
+    @classmethod
+    def _ensure_outbound_stream_contract(
+        cls,
+        payload: dict[str, Any],
+        *,
+        event_sequence: int,
+    ) -> None:
+        if payload.get("kind") != "artifact-update":
+            return
+        if cls._pick_int(payload, ("seq",)) is None:
+            payload["seq"] = event_sequence
+
+        artifact = as_dict(payload.get("artifact"))
+        artifact_metadata = as_dict(artifact.get("metadata"))
+        artifact_opencode = as_dict(artifact_metadata.get("opencode"))
+        root_metadata = as_dict(payload.get("metadata"))
+        root_opencode = as_dict(root_metadata.get("opencode"))
+
+        message_id = None
+        for candidate in (
+            payload,
+            artifact,
+            artifact_metadata,
+            artifact_opencode,
+            root_metadata,
+            root_opencode,
+        ):
+            if message_id is None:
+                message_id = cls._pick_non_empty_str(
+                    candidate, ("message_id", "messageId")
+                )
+        if (
+            message_id
+            and cls._pick_non_empty_str(payload, ("message_id", "messageId")) is None
+        ):
+            payload["message_id"] = message_id
+
+        event_id = None
+        for candidate in (
+            payload,
+            artifact,
+            artifact_metadata,
+            artifact_opencode,
+            root_metadata,
+            root_opencode,
+        ):
+            if event_id is None:
+                event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
+        payload["event_id"] = event_id or (
+            f"{message_id}:{event_sequence}"
+            if message_id
+            else f"stream:{event_sequence}"
+        )
 
     @staticmethod
     def _stream_heartbeat_interval_seconds() -> float:
@@ -1126,6 +1217,9 @@ class A2AInvokeService:
                     seq_counter = max(seq_counter, event_sequence)
 
                     await self._call_callback(on_event, serialized)
+                    self._ensure_outbound_stream_contract(
+                        serialized, event_sequence=event_sequence
+                    )
                     if cache_key:
                         await global_stream_cache.append_event(
                             cache_key, serialized, seq_counter
@@ -1337,6 +1431,9 @@ class A2AInvokeService:
                 seq_counter = max(seq_counter, event_sequence)
 
                 await self._call_callback(on_event, serialized)
+                self._ensure_outbound_stream_contract(
+                    serialized, event_sequence=event_sequence
+                )
                 if cache_key:
                     await global_stream_cache.append_event(
                         cache_key, serialized, seq_counter

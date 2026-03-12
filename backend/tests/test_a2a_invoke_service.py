@@ -537,6 +537,9 @@ async def test_sse_drops_invalid_artifact_update_events():
     assert observed_events == [
         {
             "kind": "artifact-update",
+            "seq": 1,
+            "message_id": "msg-task-valid-stream",
+            "event_id": "evt-task-valid-stream",
             "artifact": {
                 "artifact_id": "task-valid:stream",
                 "parts": [{"kind": "text", "text": "kept"}],
@@ -707,9 +710,10 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
         if line.startswith("data: ") and '"kind": "artifact-update"' in line
     ]
     assert artifact_lines
-    assert json.loads(artifact_lines[0].removeprefix("data: "))["message_id"] == (
-        "msg-local-1"
-    )
+    initial_payload = json.loads(artifact_lines[0].removeprefix("data: "))
+    assert initial_payload["message_id"] == "msg-local-1"
+    assert initial_payload["seq"] == 1
+    assert initial_payload["event_id"] == "evt-cache-1"
 
     replay = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents([]),
@@ -733,9 +737,10 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
         if line.startswith("data: ") and '"kind": "artifact-update"' in line
     ]
     assert replay_artifact_lines
-    assert json.loads(replay_artifact_lines[0].removeprefix("data: "))[
-        "message_id"
-    ] == ("msg-local-1")
+    replay_payload = json.loads(replay_artifact_lines[0].removeprefix("data: "))
+    assert replay_payload["message_id"] == "msg-local-1"
+    assert replay_payload["seq"] == 1
+    assert replay_payload["event_id"] == "evt-cache-1"
 
     await global_stream_cache.mark_completed(cache_key)
 
@@ -801,6 +806,49 @@ async def test_ws_breaks_stream_after_terminal_status_update():
     assert not any(
         item.get("content") == "should-not-be-forwarded" for item in payloads
     )
+
+
+@pytest.mark.asyncio
+async def test_ws_assigns_fallback_seq_and_event_id_after_on_event_mutation():
+    websocket = _DummyWebSocket()
+
+    async def _rewrite_message_id(payload: dict[str, object]) -> None:
+        payload["message_id"] = "msg-local-ws-1"
+
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "artifact_id": "task-ws:stream:text",
+                        "parts": [{"kind": "text", "text": "hello"}],
+                        "metadata": {"opencode": {"block_type": "text"}},
+                    },
+                },
+                {"kind": "status-update", "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_event=_rewrite_message_id,
+    )
+
+    payloads = [
+        json.loads(item)
+        for item in websocket.sent
+        if item.startswith("{") and '"kind": "artifact-update"' in item
+    ]
+    assert payloads
+    assert payloads[0]["message_id"] == "msg-local-ws-1"
+    assert payloads[0]["seq"] == 1
+    assert payloads[0]["event_id"] == "msg-local-ws-1:1"
 
 
 @pytest.mark.asyncio
@@ -1426,9 +1474,10 @@ def test_extract_stream_identity_hints_from_serialized_event():
     }
 
 
-def test_extract_stream_identity_hints_reads_seq_only_from_top_level_field():
+def test_extract_stream_identity_hints_reads_seq_and_task_id_from_analysis():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
+            "metadata": {"opencode": {"taskId": "task-from-root-opencode"}},
             "artifact": {
                 "metadata": {
                     "opencode": {
@@ -1437,12 +1486,14 @@ def test_extract_stream_identity_hints_reads_seq_only_from_top_level_field():
                         "seq": 99,
                     }
                 },
-            }
+            },
         }
     )
     assert hints == {
         "upstream_message_id": "msg-1",
         "upstream_event_id": "evt-1",
+        "upstream_event_seq": 99,
+        "upstream_task_id": "task-from-root-opencode",
     }
 
 
@@ -1513,7 +1564,7 @@ def test_extract_stream_identity_hints_includes_upstream_task_id():
     assert hints["upstream_task_id"] == "task-abc"
 
 
-def test_extract_stream_identity_hints_ignores_nested_status_task_fallback():
+def test_extract_stream_identity_hints_includes_nested_status_task_fallback():
     hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
         {
             "status": {"task": {"id": "task-from-status"}},
@@ -1527,7 +1578,7 @@ def test_extract_stream_identity_hints_ignores_nested_status_task_fallback():
             },
         }
     )
-    assert "upstream_task_id" not in hints
+    assert hints["upstream_task_id"] == "task-from-status"
 
 
 def test_extract_stream_chunk_reads_nested_opencode_event_and_message_ids():
@@ -1581,6 +1632,28 @@ def test_extract_stream_chunk_consumes_optional_seq_append_and_last_chunk():
     assert chunk is not None
     assert chunk["seq"] == 8
     assert chunk["append"] is False
+    assert chunk["is_finished"] is True
+
+
+def test_extract_stream_chunk_accepts_artifact_level_last_chunk_alias():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "last_chunk": True,
+                "parts": [{"kind": "text", "text": "done"}],
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "event_id": "evt-artifact-last",
+                        "message_id": "msg-artifact-last",
+                    }
+                },
+            },
+        }
+    )
+
+    assert chunk is not None
     assert chunk["is_finished"] is True
 
 

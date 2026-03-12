@@ -209,4 +209,113 @@ describe("executeChatRuntime empty-content recovery", () => {
     expect(agentMessage?.status).toBe("done");
     expect(agentMessage?.content).toBe("Recovered response");
   });
+
+  it("renders compatible text chunks during stream without empty-content recovery", async () => {
+    const conversationId = "conv-stream-compat-1";
+    const agentId = "agent-compat-1";
+    const userMessageId = "user-msg-compat-1";
+    const agentMessageId = "agent-msg-compat-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T06:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T06:00:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    let renderedDuringStream = false;
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "working" },
+          final: false,
+        });
+        params.callbacks.onData({
+          kind: "artifact-update",
+          taskId: "task-compat-1",
+          append: true,
+          artifact: {
+            artifactId: "stream-compat-1",
+            parts: [{ type: "text", content: "Hello from stream" }],
+          },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        renderedDuringStream = getConversationMessages(conversationId).some(
+          (message) =>
+            message.role === "agent" &&
+            message.status === "streaming" &&
+            message.content.includes("Hello from stream"),
+        );
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(renderedDuringStream).toBe(true);
+    expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
+
+    const messages = getConversationMessages(conversationId);
+    const streamedAgentMessage = messages.find(
+      (message) =>
+        message.role === "agent" &&
+        message.content.includes("Hello from stream"),
+    );
+    expect(streamedAgentMessage?.status).toBe("done");
+  });
 });
