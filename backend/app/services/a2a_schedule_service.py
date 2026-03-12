@@ -611,33 +611,12 @@ class A2AScheduleService:
         total = int(await db.scalar(count_stmt) or 0)
         return items, total
 
-    async def _running_execution_count_for_agent(
-        self,
-        db: AsyncSession,
-        *,
-        agent_id: UUID,
-    ) -> int:
-        stmt = select(func.count(A2AScheduleTask.id)).join(
-            A2AScheduleExecution, A2AScheduleTask.id == A2AScheduleExecution.task_id
-        ).where(
-            and_(
-                A2AScheduleTask.agent_id == agent_id,
-                A2AScheduleTask.deleted_at.is_(None),
-                A2AScheduleExecution.status.in_(
-                    [A2AScheduleExecution.STATUS_PENDING, A2AScheduleExecution.STATUS_RUNNING]
-                )
-            )
-        )
-        return int((await db.scalar(stmt)) or 0)
-
     async def _global_running_execution_count(
         self,
         db: AsyncSession,
     ) -> int:
         stmt = select(func.count(A2AScheduleExecution.id)).where(
-            A2AScheduleExecution.status.in_(
-                [A2AScheduleExecution.STATUS_PENDING, A2AScheduleExecution.STATUS_RUNNING]
-            )
+            A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING
         )
         return int((await db.scalar(stmt)) or 0)
 
