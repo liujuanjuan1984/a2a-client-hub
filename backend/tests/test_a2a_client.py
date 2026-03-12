@@ -11,7 +11,10 @@ from a2a.types import Message, Role, TextPart
 
 from app.integrations.a2a_client import client as client_module
 from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
-from app.integrations.a2a_client.errors import A2AAgentUnavailableError
+from app.integrations.a2a_client.errors import (
+    A2AAgentUnavailableError,
+    A2AOutboundNotAllowedError,
+)
 from app.utils.outbound_url import OutboundURLNotAllowedError
 
 
@@ -340,3 +343,70 @@ async def test_get_agent_card_honors_client_preference_transport_order(
         "http://example-agent.internal:24020",
         "http://example-agent.internal:24020/jsonrpc",
     ]
+
+
+def test_supported_transports_is_copied_on_init() -> None:
+    supported_transports = ["JSONRPC"]
+    a2a_client = A2AClient(
+        "http://example-agent.internal:24020",
+        use_client_preference=True,
+        supported_transports=supported_transports,
+    )
+
+    # External mutation must not change the client's negotiation behavior.
+    supported_transports.insert(0, "HTTP+JSON")
+    card = SimpleNamespace(
+        preferred_transport="HTTP+JSON",
+        url="http://example-agent.internal:24020/http-json",
+        additional_interfaces=[
+            SimpleNamespace(
+                transport="JSONRPC",
+                url="http://example-agent.internal:24020/jsonrpc",
+            )
+        ],
+    )
+
+    selected_transport, selected_url, _ = (
+        a2a_client._resolve_negotiated_transport_target(card)
+    )
+    assert selected_transport == "JSONRPC"
+    assert selected_url == "http://example-agent.internal:24020/jsonrpc"
+
+
+@pytest.mark.asyncio
+async def test_get_agent_card_blocks_selected_interface_not_in_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResolver:
+        base_url = "http://example-agent.internal:24020"
+        agent_card_path = ".well-known/agent-card.json"
+
+        def __init__(self, card_payload: SimpleNamespace) -> None:
+            self._card_payload = card_payload
+
+        async def get_agent_card(self, **_kwargs):
+            return self._card_payload
+
+    card = SimpleNamespace(
+        name="Gateway",
+        preferred_transport="JSONRPC",
+        url="http://blocked-agent.internal:24020/jsonrpc",
+        additional_interfaces=[
+            SimpleNamespace(
+                transport="HTTP+JSON",
+                url="http://example-agent.internal:24020/http-json",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        client_module.a2a_proxy_service,
+        "get_effective_allowed_hosts_sync",
+        lambda: ["example-agent.internal:24020"],
+    )
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_http_client = AsyncMock(return_value=Mock())
+    a2a_client._build_card_resolver = Mock(return_value=FakeResolver(card))
+
+    with pytest.raises(A2AOutboundNotAllowedError):
+        await a2a_client.get_agent_card()

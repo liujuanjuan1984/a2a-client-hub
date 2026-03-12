@@ -126,10 +126,15 @@ class A2AClient:
             self._interceptors.append(StaticHeaderInterceptor(self._default_headers))
 
         self._card_fetch_timeout = card_fetch_timeout
-        self._supported_transports = supported_transports or [
-            TransportProtocol.jsonrpc,
-            TransportProtocol.http_json,
-        ]
+        # Copy caller input to keep transport preference stable after initialization.
+        self._supported_transports = list(
+            supported_transports
+            if supported_transports is not None
+            else [
+                TransportProtocol.jsonrpc,
+                TransportProtocol.http_json,
+            ]
+        )
 
         self._client_lock = asyncio.Lock()
         self._clients: Dict[bool, ClientCacheEntry] = {}
