@@ -305,7 +305,9 @@ async def test_sse_on_complete_ignores_non_typed_events():
             [
                 {
                     "kind": "artifact-update",
-                    "artifact": {"parts": [{"kind": "unsupported_kind", "value": "foo"}]}
+                    "artifact": {
+                        "parts": [{"kind": "unsupported_kind", "value": "foo"}]
+                    },
                 },
                 {"content": "bar"},
             ]

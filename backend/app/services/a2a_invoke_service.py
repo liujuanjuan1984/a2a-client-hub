@@ -702,18 +702,20 @@ class A2AInvokeService:
             metadata = artifact.get("metadata")
             if not isinstance(metadata, dict):
                 metadata = {}
-            
+
             raw = metadata.get("block_type")
             if not isinstance(raw, str) or not raw.strip():
                 opencode = metadata.get("opencode")
                 if isinstance(opencode, dict):
                     raw = opencode.get("block_type")
-                    
+
             if not isinstance(raw, str) or not raw.strip():
-                if A2AInvokeService._StreamTextAccumulator._extract_text_from_parts(artifact.get("parts")):
+                if A2AInvokeService._StreamTextAccumulator._extract_text_from_parts(
+                    artifact.get("parts")
+                ):
                     return "text"
                 return None
-                
+
             normalized = raw.strip().lower()
             if normalized in {"text", "reasoning", "tool_call"}:
                 return normalized
