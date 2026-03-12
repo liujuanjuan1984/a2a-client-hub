@@ -62,3 +62,31 @@ def test_extract_stream_chunk_reads_root_metadata_hints():
     assert chunk["block_type"] == "text"
     assert chunk["message_id"] == "msg-root"
     assert chunk["event_id"] == "evt-root"
+
+
+def test_extract_stream_chunk_prefers_shared_stream_block_type_over_text_part_kind():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "parts": [{"kind": "text", "text": '{"tool":"bash"}'}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "tool_call",
+                            "source": "tool_part_update",
+                            "message_id": "msg-shared",
+                            "event_id": "evt-shared",
+                            "sequence": 7,
+                        }
+                    }
+                },
+            },
+        }
+    )
+    assert chunk is not None
+    assert chunk["block_type"] == "tool_call"
+    assert chunk["message_id"] == "msg-shared"
+    assert chunk["event_id"] == "evt-shared"
+    assert chunk["seq"] == 7
+    assert chunk["source"] == "tool_part_update"

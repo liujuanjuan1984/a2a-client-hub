@@ -194,6 +194,9 @@ class A2AInvokeService:
         result_status = as_dict(result.get("status"))
         result_status_metadata = as_dict(result_status.get("metadata"))
         root_metadata = as_dict(root.get("metadata"))
+        artifact_shared_stream = (
+            cls._StreamTextAccumulator._extract_shared_stream_metadata(root, artifact)
+        )
 
         # Identity extraction
         msg_id = None
@@ -212,6 +215,7 @@ class A2AInvokeService:
             result,
             result_status,
             result_status_metadata,
+            artifact_shared_stream,
             root_metadata,
         ):
             if msg_id is None:
@@ -237,11 +241,12 @@ class A2AInvokeService:
         seq = cls._pick_int(root, ("seq",))
         if seq is None:
             for cand in (
-                root_metadata,
                 artifact,
                 artifact_metadata,
+                root_metadata,
+                artifact_shared_stream,
             ):
-                seq = cls._pick_int(cand, ("seq",))
+                seq = cls._pick_int(cand, ("seq", "sequence"))
                 if seq is not None:
                     break
 
@@ -352,7 +357,14 @@ class A2AInvokeService:
         cls, payload: dict[str, Any]
     ) -> int | None:
         root = as_dict(payload)
-        return cls._pick_int(root, ("seq",))
+        sequence = cls._pick_int(root, ("seq",))
+        if sequence is not None:
+            return sequence
+        artifact = as_dict(root.get("artifact"))
+        shared_stream = cls._StreamTextAccumulator._extract_shared_stream_metadata(
+            root, artifact
+        )
+        return cls._pick_int(shared_stream, ("sequence", "seq"))
 
     @classmethod
     def _extract_usage_from_candidate(cls, payload: dict[str, Any]) -> dict[str, Any]:
@@ -433,6 +445,9 @@ class A2AInvokeService:
             return None
         artifact_metadata = as_dict(artifact.get("metadata"))
         root_metadata = as_dict(payload.get("metadata"))
+        shared_stream = cls._StreamTextAccumulator._extract_shared_stream_metadata(
+            payload, artifact
+        )
 
         block_type = cls._StreamTextAccumulator._extract_artifact_type(
             payload, artifact
@@ -447,6 +462,7 @@ class A2AInvokeService:
             artifact,
             artifact_metadata,
             root_metadata,
+            shared_stream,
         ):
             if event_id is None:
                 event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
@@ -475,6 +491,7 @@ class A2AInvokeService:
             or cls._pick_int(artifact, ("seq",))
             or cls._pick_int(artifact_metadata, ("seq",))
             or cls._pick_int(root_metadata, ("seq",))
+            or cls._pick_int(shared_stream, ("sequence", "seq"))
         )
         source = cls._StreamTextAccumulator._extract_artifact_source(payload, artifact)
         return {
@@ -703,6 +720,20 @@ class A2AInvokeService:
             return "".join(collected)
 
         @staticmethod
+        def _extract_shared_stream_metadata(
+            payload: dict[str, Any], artifact: dict[str, Any]
+        ) -> dict[str, Any]:
+            resolved: dict[str, Any] = {}
+            root_metadata = as_dict(payload.get("metadata"))
+            artifact_metadata = as_dict(artifact.get("metadata"))
+            for metadata in (root_metadata, artifact_metadata):
+                shared = as_dict(metadata.get("shared"))
+                stream = as_dict(shared.get("stream"))
+                if stream:
+                    resolved.update(stream)
+            return resolved
+
+        @staticmethod
         def _extract_artifact_type(
             payload: dict[str, Any], artifact: dict[str, Any]
         ) -> str | None:
@@ -712,8 +743,15 @@ class A2AInvokeService:
             root_metadata = payload.get("metadata")
             if not isinstance(root_metadata, dict):
                 root_metadata = {}
+            shared_stream = (
+                A2AInvokeService._StreamTextAccumulator._extract_shared_stream_metadata(
+                    payload, artifact
+                )
+            )
 
-            raw = metadata.get("block_type")
+            raw = shared_stream.get("block_type")
+            if not isinstance(raw, str) or not raw.strip():
+                raw = metadata.get("block_type")
             if not isinstance(raw, str) or not raw.strip():
                 raw = root_metadata.get("block_type")
 
@@ -739,7 +777,14 @@ class A2AInvokeService:
             root_metadata = payload.get("metadata")
             if not isinstance(root_metadata, dict):
                 root_metadata = {}
-            source = metadata.get("source")
+            shared_stream = (
+                A2AInvokeService._StreamTextAccumulator._extract_shared_stream_metadata(
+                    payload, artifact
+                )
+            )
+            source = shared_stream.get("source")
+            if not isinstance(source, str) or not source.strip():
+                source = metadata.get("source")
             if not isinstance(source, str) or not source.strip():
                 source = root_metadata.get("source")
             if isinstance(source, str) and source.strip():
@@ -937,6 +982,9 @@ class A2AInvokeService:
         artifact = as_dict(payload.get("artifact"))
         artifact_metadata = as_dict(artifact.get("metadata"))
         root_metadata = as_dict(payload.get("metadata"))
+        shared_stream = cls._StreamTextAccumulator._extract_shared_stream_metadata(
+            payload, artifact
+        )
 
         message_id = None
         for candidate in (
@@ -944,6 +992,7 @@ class A2AInvokeService:
             artifact,
             artifact_metadata,
             root_metadata,
+            shared_stream,
         ):
             if message_id is None:
                 message_id = cls._pick_non_empty_str(
@@ -961,6 +1010,7 @@ class A2AInvokeService:
             artifact,
             artifact_metadata,
             root_metadata,
+            shared_stream,
         ):
             if event_id is None:
                 event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
