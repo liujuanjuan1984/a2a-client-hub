@@ -100,23 +100,30 @@ npm run start
 
 Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your backend.
 
-## 生产参数基线（调度与流式）
+## Production Parameter Baseline (Scheduler and Streaming)
 
-以下参数建议在生产环境显式配置，用于避免长事务与调度悬挂：
+Set the following parameters explicitly in production to avoid long
+transactions and stuck scheduler runs:
 
 - `A2A_SCHEDULE_TASK_INVOKE_TIMEOUT`
-  - 单次调度 invoke 的总超时（唯一运行超时基准），建议大于常见任务耗时上界。
+  - Total timeout for a single scheduled invoke (the only run-time upper
+    bound). It should be higher than your common task duration ceiling.
 - `A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS`
-  - 调度执行期间的心跳更新间隔，建议 15~60 秒，且应小于 invoke timeout。
-  - 心跳写入会使用短 `lock_timeout/statement_timeout`，在锁竞争时快速失败并等待下次心跳重试，避免长时间阻塞。
+  - Heartbeat update interval during scheduler execution. Recommended:
+    15-60 seconds, and it must be lower than invoke timeout.
+  - Heartbeat writes use short `lock_timeout/statement_timeout` values so
+    lock contention fails fast and retries on the next heartbeat cycle.
 - `A2A_SCHEDULE_TASK_STREAM_IDLE_TIMEOUT`
-  - 上游流空闲超时，建议 30~120 秒。
+  - Upstream stream idle timeout. Recommended: 30-120 seconds.
 - PostgreSQL `idle_in_transaction_session_timeout`
-  - 建议在数据库层设置（例如 60s~300s）作为兜底保护，防止异常路径长时间 `idle in transaction`。
-- 调度分发器跨进程互斥
-  - 通过 PostgreSQL advisory lock 保证同一时刻仅一个进程执行分发循环，减少多实例并发扫描/抢锁带来的额外竞争。
+  - Set a database-level fallback (for example, 60s-300s) to prevent long
+    `idle in transaction` sessions on exceptional paths.
+- Cross-process mutual exclusion for the scheduler dispatcher
+  - PostgreSQL advisory lock ensures only one process executes the
+    dispatch loop at a time, reducing extra contention from multi-instance
+    concurrent scan-and-claim behavior.
 
-可在 `/health` 的 `a2a.ops_metrics` 里观察：
+You can observe these via `/health` under `a2a.ops_metrics`:
 
 - `db_idle_in_tx_count`
 - `db_pool_checked_out`
