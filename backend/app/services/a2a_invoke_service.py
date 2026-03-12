@@ -359,17 +359,6 @@ class A2AInvokeService:
         return cls._pick_int(root, ("seq",))
 
     @classmethod
-    def _extract_stream_task_id_from_serialized_event(
-        cls, payload: dict[str, Any]
-    ) -> str | None:
-        root = as_dict(payload)
-        task = as_dict(root.get("task"))
-        task_id = cls._pick_non_empty_str(root, ("task_id",))
-        if task_id is not None:
-            return task_id
-        return cls._pick_non_empty_str(task, ("id", "task_id"))
-
-    @classmethod
     def _extract_usage_from_candidate(cls, payload: dict[str, Any]) -> dict[str, Any]:
         if not payload:
             return {}
@@ -422,12 +411,10 @@ class A2AInvokeService:
             hints["upstream_message_id"] = analysis.upstream_message_id
         if analysis.upstream_event_id:
             hints["upstream_event_id"] = analysis.upstream_event_id
-        seq = cls._extract_stream_sequence_from_serialized_event(payload)
-        if seq is not None:
-            hints["upstream_event_seq"] = seq
-        task_id = cls._extract_stream_task_id_from_serialized_event(payload)
-        if task_id:
-            hints["upstream_task_id"] = task_id
+        if analysis.upstream_event_seq is not None:
+            hints["upstream_event_seq"] = analysis.upstream_event_seq
+        if analysis.upstream_task_id:
+            hints["upstream_task_id"] = analysis.upstream_task_id
         return hints
 
     @classmethod
@@ -483,6 +470,12 @@ class A2AInvokeService:
 
         append = payload.get("append")
         resolved_append = append if isinstance(append, bool) else True
+        resolved_is_finished = (
+            payload.get("lastChunk") is True
+            or payload.get("last_chunk") is True
+            or artifact.get("lastChunk") is True
+            or artifact.get("last_chunk") is True
+        )
 
         seq = (
             cls._pick_int(payload, ("seq",))
@@ -498,7 +491,7 @@ class A2AInvokeService:
             "block_type": block_type,
             "content": delta,
             "append": resolved_append,
-            "is_finished": payload.get("lastChunk") is True,
+            "is_finished": resolved_is_finished,
             "source": source,
         }
 
@@ -954,6 +947,60 @@ class A2AInvokeService:
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
         return payload.get("kind") == "status-update" and payload.get("final") is True
 
+    @classmethod
+    def _ensure_outbound_stream_contract(
+        cls,
+        payload: dict[str, Any],
+        *,
+        event_sequence: int,
+    ) -> None:
+        if payload.get("kind") != "artifact-update":
+            return
+        if cls._pick_int(payload, ("seq",)) is None:
+            payload["seq"] = event_sequence
+
+        artifact = as_dict(payload.get("artifact"))
+        artifact_metadata = as_dict(artifact.get("metadata"))
+        artifact_opencode = as_dict(artifact_metadata.get("opencode"))
+        root_metadata = as_dict(payload.get("metadata"))
+        root_opencode = as_dict(root_metadata.get("opencode"))
+
+        message_id = None
+        for candidate in (
+            payload,
+            artifact,
+            artifact_metadata,
+            artifact_opencode,
+            root_metadata,
+            root_opencode,
+        ):
+            if message_id is None:
+                message_id = cls._pick_non_empty_str(
+                    candidate, ("message_id", "messageId")
+                )
+        if (
+            message_id
+            and cls._pick_non_empty_str(payload, ("message_id", "messageId")) is None
+        ):
+            payload["message_id"] = message_id
+
+        event_id = None
+        for candidate in (
+            payload,
+            artifact,
+            artifact_metadata,
+            artifact_opencode,
+            root_metadata,
+            root_opencode,
+        ):
+            if event_id is None:
+                event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
+        payload["event_id"] = event_id or (
+            f"{message_id}:{event_sequence}"
+            if message_id
+            else f"stream:{event_sequence}"
+        )
+
     @staticmethod
     def _stream_heartbeat_interval_seconds() -> float:
         from app.core.config import settings
@@ -1170,6 +1217,9 @@ class A2AInvokeService:
                     seq_counter = max(seq_counter, event_sequence)
 
                     await self._call_callback(on_event, serialized)
+                    self._ensure_outbound_stream_contract(
+                        serialized, event_sequence=event_sequence
+                    )
                     if cache_key:
                         await global_stream_cache.append_event(
                             cache_key, serialized, seq_counter
@@ -1381,6 +1431,9 @@ class A2AInvokeService:
                 seq_counter = max(seq_counter, event_sequence)
 
                 await self._call_callback(on_event, serialized)
+                self._ensure_outbound_stream_contract(
+                    serialized, event_sequence=event_sequence
+                )
                 if cache_key:
                     await global_stream_cache.append_event(
                         cache_key, serialized, seq_counter
