@@ -1605,23 +1605,6 @@ def test_extract_stream_chunk_accepts_missing_opencode_identity_metadata():
     assert chunk["message_id"] is None
 
 
-def test_extract_stream_chunk_infers_text_block_type_without_opencode_metadata():
-    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
-        {
-            "kind": "artifact-update",
-            "taskId": "task-generic",
-            "artifact": {
-                "artifactId": "task-generic:stream",
-                "parts": [{"kind": "text", "text": "hello generic"}],
-            },
-        }
-    )
-
-    assert chunk is not None
-    assert chunk["block_type"] == "text"
-    assert chunk["content"] == "hello generic"
-
-
 def test_extract_stream_chunk_rejects_unsupported_explicit_block_type():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {

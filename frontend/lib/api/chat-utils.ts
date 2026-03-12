@@ -344,7 +344,9 @@ export const extractStreamBlockUpdate = (
   const opencodeMetadata = asRecord(metadata?.opencode);
   const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
   const textFromParts = extractTextFromParts(parts);
-  const rawBlockType = pickString(opencodeMetadata, ["block_type"]);
+  const rawBlockType =
+    pickString(metadata, ["block_type"]) ??
+    pickString(opencodeMetadata, ["block_type"]);
   const explicitBlockType = parseBlockType(rawBlockType);
   const blockType =
     explicitBlockType ??
