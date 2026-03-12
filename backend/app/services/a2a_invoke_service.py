@@ -859,17 +859,11 @@ class A2AInvokeService:
         if not artifact:
             return None, "missing_artifact"
 
-        artifact_metadata = as_dict(artifact.get("metadata"))
-        opencode_metadata = as_dict(artifact_metadata.get("opencode"))
         block_type = cls._StreamTextAccumulator._extract_artifact_type(
             payload, artifact
         )
         if block_type is None:
             return None, "missing_or_invalid_block_type"
-        if cls._pick_non_empty_str(opencode_metadata, ("message_id",)) is None:
-            return None, "missing_message_id"
-        if cls._pick_non_empty_str(opencode_metadata, ("event_id",)) is None:
-            return None, "missing_event_id"
         if (
             cls._StreamTextAccumulator._extract_text_from_parts(artifact.get("parts"))
             == ""
