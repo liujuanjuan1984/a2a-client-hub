@@ -15,6 +15,7 @@ import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
 
 const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
+  pending: "text-amber-300",
   running: "text-blue-400",
   success: "text-emerald-400",
   failed: "text-red-400",
@@ -89,8 +90,7 @@ export function ScheduledJobCard({
 }: ScheduledJobCardProps) {
   const router = useRouter();
   const isReallyRunning =
-    job.last_run_status === "running" ||
-    executions.some((e) => e.status === "running");
+    Boolean(job.is_running) || executions.some((e) => e.status === "running");
   const tone = getCardTone(job, isReallyRunning);
   const intervalTimePoint =
     job.cycle_type === "interval" &&

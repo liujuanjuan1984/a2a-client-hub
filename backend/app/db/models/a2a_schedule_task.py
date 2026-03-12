@@ -37,19 +37,6 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
             "next_run_at",
         ),
         Index(
-            "ix_a2a_schedule_tasks_running_global",
-            "last_run_status",
-            "current_run_id",
-            "deleted_at",
-        ),
-        Index(
-            "ix_a2a_schedule_tasks_running_agent",
-            "agent_id",
-            "last_run_status",
-            "current_run_id",
-            "deleted_at",
-        ),
-        Index(
             "ix_a2a_schedule_tasks_user_id_created_at",
             "user_id",
             "created_at",
@@ -58,7 +45,6 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
     )
 
     STATUS_IDLE: ClassVar[str] = "idle"
-    STATUS_RUNNING: ClassVar[str] = "running"
     STATUS_SUCCESS: ClassVar[str] = "success"
     STATUS_FAILED: ClassVar[str] = "failed"
 
@@ -142,27 +128,12 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         nullable=False,
         default=STATUS_IDLE,
         server_default=STATUS_IDLE,
-        comment="Status of the most recent execution",
-    )
-    current_run_id = Column(
-        UUID(as_uuid=True),
-        nullable=True,
-        comment="Identifier of the currently running execution attempt",
-    )
-    running_started_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="Timestamp when the current running execution was claimed",
+        comment="Terminal status of the most recent completed execution",
     )
     delete_requested_at = Column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp when user requested deletion while run is still in progress",
-    )
-    last_heartbeat_at = Column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="Most recent heartbeat timestamp for the current running execution",
     )
 
 

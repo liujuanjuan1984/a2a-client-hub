@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -28,6 +29,17 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
             "task_id",
             "created_at",
         ),
+        Index(
+            "ix_a2a_schedule_executions_queue_poll",
+            "status",
+            "scheduled_for",
+        ),
+        Index(
+            "uq_a2a_schedule_executions_active_task",
+            "task_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
         UniqueConstraint(
             "task_id",
             "run_id",
@@ -36,6 +48,7 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
         {"schema": SCHEMA_NAME},
     )
 
+    STATUS_PENDING: ClassVar[str] = "pending"
     STATUS_RUNNING: ClassVar[str] = "running"
     STATUS_SUCCESS: ClassVar[str] = "success"
     STATUS_FAILED: ClassVar[str] = "failed"
@@ -60,8 +73,13 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
     )
     started_at = Column(
         DateTime(timezone=True),
-        nullable=False,
-        comment="Execution start time",
+        nullable=True,
+        comment="Execution start time; NULL while still pending in the durable queue",
+    )
+    last_heartbeat_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Most recent heartbeat observed while execution is running",
     )
     finished_at = Column(
         DateTime(timezone=True),
@@ -71,9 +89,7 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
     status = Column(
         String(32),
         nullable=False,
-        default=STATUS_RUNNING,
-        server_default=STATUS_RUNNING,
-        comment="Execution status",
+        comment="Execution lifecycle status",
     )
     error_message = Column(
         Text,

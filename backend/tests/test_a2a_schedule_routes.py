@@ -343,9 +343,6 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
     )
     started_at = utc_now() - timedelta(minutes=3)
     run_id = uuid4()
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-    task.current_run_id = run_id
-    task.running_started_at = started_at
     async_db_session.add(
         A2AScheduleExecution(
             user_id=user.id,
@@ -353,6 +350,7 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
             run_id=run_id,
             scheduled_for=started_at,
             started_at=started_at,
+            last_heartbeat_at=started_at,
             status=A2AScheduleExecution.STATUS_RUNNING,
         )
     )
@@ -372,13 +370,12 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
         payload = resp.json()
         assert payload["id"] == str(task.id)
         assert payload["last_run_status"] == "failed"
+        assert payload["is_running"] is False
         assert payload["last_run_at"] is not None
 
         await async_db_session.refresh(task)
         failures_after_first_call = task.consecutive_failures
         assert task.last_run_status == A2AScheduleTask.STATUS_FAILED
-        assert task.current_run_id is None
-        assert task.running_started_at is None
         assert failures_after_first_call >= 1
 
         execution = await async_db_session.scalar(
@@ -424,9 +421,6 @@ async def test_schedule_mark_failed_sequential_reschedules_next_run(
     )
     started_at = utc_now() - timedelta(minutes=3)
     run_id = uuid4()
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-    task.current_run_id = run_id
-    task.running_started_at = started_at
     task.next_run_at = None
     async_db_session.add(
         A2AScheduleExecution(
@@ -435,6 +429,7 @@ async def test_schedule_mark_failed_sequential_reschedules_next_run(
             run_id=run_id,
             scheduled_for=started_at,
             started_at=started_at,
+            last_heartbeat_at=started_at,
             status=A2AScheduleExecution.STATUS_RUNNING,
         )
     )
@@ -499,7 +494,7 @@ async def test_schedule_mark_failed_rejects_non_running_task(
         )
 
 
-async def test_schedule_mark_failed_backfills_missing_execution(
+async def test_schedule_mark_failed_rejects_missing_execution(
     async_db_session,
     async_session_maker,
 ):
@@ -520,11 +515,6 @@ async def test_schedule_mark_failed_backfills_missing_execution(
         time_point={"time": "09:00"},
         enabled=False,
     )
-    started_at = utc_now() - timedelta(minutes=2)
-    run_id = uuid4()
-    task.last_run_status = A2AScheduleTask.STATUS_RUNNING
-    task.current_run_id = run_id
-    task.running_started_at = started_at
     await async_db_session.commit()
     await async_db_session.refresh(task)
 
@@ -537,17 +527,11 @@ async def test_schedule_mark_failed_backfills_missing_execution(
             f"/me/a2a/schedules/{task.id}/mark-failed",
             json={},
         )
-        assert resp.status_code == 200
-
-        execution = await async_db_session.scalar(
-            select(A2AScheduleExecution).where(
-                A2AScheduleExecution.task_id == task.id,
-                A2AScheduleExecution.run_id == run_id,
-            )
+        assert resp.status_code == 400
+        assert (
+            "Only running tasks can be manually marked as failed"
+            in resp.json()["detail"]
         )
-        assert execution is not None
-        assert execution.status == A2AScheduleExecution.STATUS_FAILED
-        assert execution.error_message == "Stopped by user as failed"
 
 
 async def test_schedule_create_interval_normalizes_minutes(

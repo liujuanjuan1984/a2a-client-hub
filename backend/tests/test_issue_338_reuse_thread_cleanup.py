@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from app.db.models.a2a_agent import A2AAgent
+from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_job import _execute_claimed_task
@@ -82,6 +83,23 @@ def _build_claim(task: A2AScheduleTask):
     )
 
 
+async def _mark_task_claimed(session, *, task: A2AScheduleTask, run_id):
+    started_at = utc_now()
+    session.add(
+        A2AScheduleExecution(
+            user_id=task.user_id,
+            task_id=task.id,
+            run_id=run_id,
+            scheduled_for=task.next_run_at or started_at,
+            started_at=started_at,
+            last_heartbeat_at=started_at,
+            status=A2AScheduleExecution.STATUS_RUNNING,
+            conversation_id=task.conversation_id,
+        )
+    )
+    await session.commit()
+
+
 async def test_execute_claimed_task_retains_history_on_reuse_policy_failure(
     async_db_session,
     async_session_maker,
@@ -135,8 +153,7 @@ async def test_execute_claimed_task_retains_history_on_reuse_policy_failure(
     )
 
     claim = _build_claim(task)
-    task.current_run_id = claim.run_id
-    await async_db_session.commit()
+    await _mark_task_claimed(async_db_session, task=task, run_id=claim.run_id)
 
     await _execute_claimed_task(claim=claim)
     await async_db_session.rollback()
@@ -183,8 +200,7 @@ async def test_execute_claimed_task_cleans_new_thread_on_failure(
     )
 
     claim = _build_claim(task)
-    task.current_run_id = claim.run_id
-    await async_db_session.commit()
+    await _mark_task_claimed(async_db_session, task=task, run_id=claim.run_id)
 
     await _execute_claimed_task(claim=claim)
     await async_db_session.rollback()

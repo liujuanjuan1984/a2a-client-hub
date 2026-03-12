@@ -27,7 +27,7 @@ type ScheduledJobFormProps = {
   onCancel: () => void;
   showTitle?: boolean;
   timeZone?: string;
-  lastRunStatus?: string | null;
+  isRunning?: boolean;
 };
 
 export function ScheduledJobForm({
@@ -40,7 +40,7 @@ export function ScheduledJobForm({
   onCancel,
   showTitle = true,
   timeZone,
-  lastRunStatus,
+  isRunning = false,
 }: ScheduledJobFormProps) {
   const intervalStartAt = (() => {
     const startAt = (form.time_point as { start_at_local?: unknown })
@@ -126,7 +126,7 @@ export function ScheduledJobForm({
     };
   };
 
-  const isCurrentlyRunning = lastRunStatus === "running";
+  const isCurrentlyRunning = Boolean(isRunning);
 
   const renderLabel = (text: string) => (
     <Text className="mt-4 text-[11px] font-medium uppercase tracking-wider text-slate-500">

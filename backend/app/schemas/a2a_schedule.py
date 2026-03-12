@@ -17,8 +17,8 @@ A2AScheduleCycleType = Literal[
     "interval",
     "sequential",
 ]
-A2AScheduleRunStatus = Literal["idle", "running", "success", "failed"]
-A2AScheduleExecutionStatus = Literal["running", "success", "failed"]
+A2AScheduleRunStatus = Literal["idle", "success", "failed"]
+A2AScheduleExecutionStatus = Literal["pending", "running", "success", "failed"]
 A2AScheduleConversationPolicy = Literal["new_each_run", "reuse_single"]
 
 
@@ -63,6 +63,7 @@ class A2AScheduleTaskResponse(A2AScheduleTaskBase):
     conversation_id: Optional[UUID] = None
     conversation_policy: A2AScheduleConversationPolicy
     enabled: bool
+    is_running: bool = False
     next_run_at_utc: Optional[datetime] = None
     next_run_at_local: Optional[str] = None
     last_run_at: Optional[datetime] = None
@@ -91,8 +92,9 @@ class A2AScheduleExecutionResponse(BaseModel):
     task_id: UUID
     status: A2AScheduleExecutionStatus
     scheduled_for: datetime
-    started_at: datetime
+    started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+    last_heartbeat_at: Optional[datetime] = None
     error_message: Optional[str] = None
     response_content: Optional[str] = None
     conversation_id: Optional[UUID] = None
