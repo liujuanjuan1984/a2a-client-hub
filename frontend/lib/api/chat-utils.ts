@@ -342,9 +342,15 @@ export const extractStreamBlockUpdate = (
   const artifact = asRecord(data.artifact);
   const metadata = asRecord(artifact?.metadata);
   const opencodeMetadata = asRecord(metadata?.opencode);
-  const blockType = parseBlockType(
-    pickString(opencodeMetadata, ["block_type"]),
-  );
+  const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
+  const textFromParts = extractTextFromParts(parts);
+  const rawBlockType =
+    pickString(metadata, ["block_type"]) ??
+    pickString(opencodeMetadata, ["block_type"]);
+  const explicitBlockType = parseBlockType(rawBlockType);
+  const blockType =
+    explicitBlockType ??
+    (rawBlockType === null && textFromParts ? "text" : null);
   if (!blockType) {
     return null;
   }
@@ -371,9 +377,8 @@ export const extractStreamBlockUpdate = (
     `task:${taskId}`;
   const resolvedArtifactId = artifactId ?? `${taskId}:${blockType}`;
 
-  const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
   const delta =
-    extractTextFromParts(parts) ||
+    textFromParts ||
     pickRawString(data, ["delta"]) ||
     pickRawString(artifact ?? null, ["delta"]) ||
     pickRawString(data, ["content", "text"]) ||

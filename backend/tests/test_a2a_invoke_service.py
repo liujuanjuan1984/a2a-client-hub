@@ -415,6 +415,41 @@ async def test_sse_on_complete_supports_block_type():
 
 
 @pytest.mark.asyncio
+async def test_sse_on_complete_accepts_text_parts_without_block_type():
+    completed: list[str] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "artifact_id": "task-generic:stream",
+                        "parts": [{"kind": "text", "text": "Hello generic"}],
+                        "metadata": {},
+                    },
+                }
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == ["Hello generic"]
+
+
+@pytest.mark.asyncio
 async def test_sse_on_complete_ignores_artifact_updates_without_parts():
     completed: list[str] = []
 
@@ -1568,6 +1603,21 @@ def test_extract_stream_chunk_accepts_missing_opencode_identity_metadata():
     assert chunk is not None
     assert chunk["event_id"] == "evt-nested"
     assert chunk["message_id"] is None
+
+
+def test_extract_stream_chunk_rejects_unsupported_explicit_block_type():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "artifact_id": "task-generic:stream",
+                "parts": [{"kind": "text", "text": "hello generic"}],
+                "metadata": {"opencode": {"block_type": "custom_phase"}},
+            },
+        }
+    )
+
+    assert chunk is None
 
 
 def test_extract_stream_chunk_ignores_non_artifact_payloads():

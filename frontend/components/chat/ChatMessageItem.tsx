@@ -92,6 +92,11 @@ export function ChatMessageItem({
   const renderableBlocks = deriveRenderableBlocks(message);
   const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
   const hasPlainContent = message.content.trim().length > 0;
+  const suppressFallbackWhileStreaming =
+    message.role === "agent" &&
+    message.status === "streaming" &&
+    !hasBlocks &&
+    !hasPlainContent;
   const canRetry =
     isLastMessage &&
     message.role === "agent" &&
@@ -117,26 +122,26 @@ export function ChatMessageItem({
                 : "bg-slate-900"
           }`}
         >
-          {hasBlocks ? (
-            renderableBlocks.map((block, blockIndex) => (
-              <MessageBlock
-                key={block.id || `${message.id}:${blockIndex}`}
-                block={block}
-                messageId={message.id}
-                blockIndex={blockIndex}
-                role={message.role}
-                onLayoutChangeStart={onLayoutChangeStart}
-                onLoadBlockContent={onLoadBlockContent}
-              />
-            ))
-          ) : (
-            <MessageContentFallback
-              hasPlainContent={hasPlainContent}
-              content={message.content}
-              messageId={message.id}
-              role={message.role}
-            />
-          )}
+          {hasBlocks
+            ? renderableBlocks.map((block, blockIndex) => (
+                <MessageBlock
+                  key={block.id || `${message.id}:${blockIndex}`}
+                  block={block}
+                  messageId={message.id}
+                  blockIndex={blockIndex}
+                  role={message.role}
+                  onLayoutChangeStart={onLayoutChangeStart}
+                  onLoadBlockContent={onLoadBlockContent}
+                />
+              ))
+            : !suppressFallbackWhileStreaming && (
+                <MessageContentFallback
+                  hasPlainContent={hasPlainContent}
+                  content={message.content}
+                  messageId={message.id}
+                  role={message.role}
+                />
+              )}
           {message.status === "streaming" ? (
             <View className="mt-2 flex-row items-center gap-2">
               <ActivityIndicator size="small" color="#34D399" />

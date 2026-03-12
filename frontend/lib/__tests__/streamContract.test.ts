@@ -208,6 +208,41 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.eventIdSource).toBe("upstream");
   });
 
+  it("prefers standard metadata.block_type over opencode metadata", () => {
+    const parsed = extractStreamBlockUpdate({
+      kind: "artifact-update",
+      task_id: "task-9",
+      message_id: "msg-9",
+      event_id: "evt-9",
+      artifact: {
+        artifact_id: "task-9:stream",
+        parts: [{ kind: "text", text: "thinking" }],
+        metadata: {
+          block_type: "reasoning",
+          opencode: {
+            block_type: "text",
+          },
+        },
+      },
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.blockType).toBe("reasoning");
+  });
+
+  it("infers text block type when opencode metadata is missing", () => {
+    const parsed = extractStreamBlockUpdate({
+      kind: "artifact-update",
+      taskId: "task-9",
+      artifact: {
+        artifactId: "task-9:stream",
+        parts: [{ kind: "text", text: "hello" }],
+      },
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.blockType).toBe("text");
+    expect(parsed?.messageId).toBe("task:task-9");
+  });
+
   it("ignores unsupported block_type values", () => {
     const parsed = extractStreamBlockUpdate({
       kind: "artifact-update",

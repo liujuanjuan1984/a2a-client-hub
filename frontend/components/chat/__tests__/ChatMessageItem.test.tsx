@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 import * as Clipboard from "expo-clipboard";
 import React from "react";
 
@@ -73,12 +73,12 @@ describe("ChatMessageItem interaction", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Copy message"));
-
-    await waitFor(() => {
-      expect(Clipboard.setStringAsync).toHaveBeenCalledWith("Copy via button");
-      expect(toast.success).toHaveBeenCalledWith("Copied", expect.any(String));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Copy message"));
     });
+
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith("Copy via button");
+    expect(toast.success).toHaveBeenCalledWith("Copied", expect.any(String));
   });
 
   it("shows retry button and calls onRetry when session status is error", () => {
@@ -112,6 +112,25 @@ describe("ChatMessageItem interaction", () => {
       />,
     );
 
+    expect(screen.getByText("Streaming...")).toBeTruthy();
+  });
+
+  it("does not show empty fallback while agent message is streaming without content", () => {
+    const message = buildAgentMessage({
+      content: "",
+      status: "streaming",
+      blocks: [],
+    });
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("Content unavailable.")).toBeNull();
     expect(screen.getByText("Streaming...")).toBeTruthy();
   });
 });
