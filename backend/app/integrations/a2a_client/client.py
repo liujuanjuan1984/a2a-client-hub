@@ -460,11 +460,16 @@ class A2AClient:
 
         # Validate only the negotiated transport target so non-selected interface URLs
         # (for unsupported protocols like GRPC) do not block HTTP-capable agents.
+        selected_transport_label = (
+            selected_transport.value
+            if isinstance(selected_transport, TransportProtocol)
+            else str(selected_transport)
+        )
         try:
             validate_outbound_http_url(
                 selected_url,
                 allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
-                purpose=f"Agent interface URL ({selected_transport})",
+                purpose=f"Agent interface URL ({selected_transport_label})",
             )
         except OutboundURLNotAllowedError as exc:
             raise A2AOutboundNotAllowedError(str(exc)) from exc
@@ -479,47 +484,52 @@ class A2AClient:
 
     def _resolve_negotiated_transport_target(
         self, card: AgentCard
-    ) -> tuple[str | None, str | None, list[str]]:
-        def _as_transport_label(value: TransportProtocol | str | None) -> str:
+    ) -> tuple[TransportProtocol | str | None, str | None, list[str]]:
+        def _as_display_label(value: TransportProtocol | str | None) -> str:
             if value is None:
                 return ""
             if isinstance(value, TransportProtocol):
-                return value.value.strip().upper()
-            return str(value).strip().upper()
+                return value.value
+            return str(value).strip()
 
-        supported_labels: list[str] = []
-        for value in self._supported_transports or [TransportProtocol.jsonrpc]:
-            label = _as_transport_label(value)
-            if label:
-                supported_labels.append(label)
+        client_set: list[TransportProtocol | str] = list(
+            self._supported_transports or [TransportProtocol.jsonrpc]
+        )
+        if not client_set:
+            client_set = [TransportProtocol.jsonrpc]
+
+        supported_labels: list[str] = [
+            label
+            for label in (_as_display_label(value) for value in client_set)
+            if label
+        ]
         if not supported_labels:
             supported_labels = [TransportProtocol.jsonrpc.value]
 
         preferred_transport = (
             getattr(card, "preferred_transport", None) or TransportProtocol.jsonrpc
         )
-        preferred_url = (getattr(card, "url", "") or "").strip()
+        preferred_url = getattr(card, "url", "") or ""
 
-        server_set: dict[str, str] = {}
-        preferred_label = _as_transport_label(preferred_transport)
-        if preferred_label and preferred_url:
-            server_set[preferred_label] = preferred_url
+        server_set: dict[TransportProtocol | str, str] = {}
+        if preferred_transport and preferred_url:
+            server_set[preferred_transport] = preferred_url
 
         for iface in getattr(card, "additional_interfaces", None) or []:
-            transport = _as_transport_label(getattr(iface, "transport", None))
-            interface_url = (getattr(iface, "url", "") or "").strip()
+            transport = getattr(iface, "transport", None)
+            interface_url = getattr(iface, "url", "") or ""
             if transport and interface_url:
                 server_set[transport] = interface_url
 
         if self._use_client_preference:
-            for transport in supported_labels:
+            for transport in client_set:
                 url = server_set.get(transport)
                 if url:
                     return transport, url, supported_labels
             return None, None, supported_labels
 
         for transport, url in server_set.items():
-            if transport in supported_labels:
+            if transport in client_set:
                 return transport, url, supported_labels
         return None, None, supported_labels
 
