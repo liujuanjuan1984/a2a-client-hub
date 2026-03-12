@@ -483,10 +483,37 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   };
 
   const queueIncomingChunk = (chunk: StreamBlockUpdate) => {
-    if (seenEventIds.has(chunk.eventId)) {
-      return;
+    const usesWeakEventIdentity = chunk.eventIdSource === "fallback_chunk";
+    if (usesWeakEventIdentity) {
+      warnStreamOnce(
+        `weak-event-id:${conversationId}:${chunk.messageId}`,
+        "[Chat Stream] weak event identity detected; duplicate suppression disabled",
+        {
+          conversationId,
+          messageId: chunk.messageId,
+          eventId: chunk.eventId,
+          eventIdSource: chunk.eventIdSource,
+          seq: chunk.seq,
+          artifactId: chunk.artifactId,
+        },
+      );
+    } else {
+      if (seenEventIds.has(chunk.eventId)) {
+        warnStreamOnce(
+          `duplicate-event-id:${conversationId}:${chunk.messageId}:${chunk.eventId}`,
+          "[Chat Stream] dropped duplicate stream chunk by event id",
+          {
+            conversationId,
+            messageId: chunk.messageId,
+            eventId: chunk.eventId,
+            eventIdSource: chunk.eventIdSource,
+            seq: chunk.seq,
+          },
+        );
+        return;
+      }
+      seenEventIds.add(chunk.eventId);
     }
-    seenEventIds.add(chunk.eventId);
 
     if (chunk.seq === null) {
       appendStreamChunk(chunk);

@@ -20,6 +20,7 @@ export type ChatMessage = {
 
 export type StreamBlockUpdate = {
   eventId: string;
+  eventIdSource: "upstream" | "fallback_seq" | "fallback_chunk";
   seq: number | null;
   taskId: string;
   artifactId: string;
@@ -393,15 +394,22 @@ export const extractStreamBlockUpdate = (
     data.last_chunk === true ||
     artifact?.lastChunk === true ||
     artifact?.last_chunk === true;
-  const eventId =
+  const upstreamEventId =
     pickString(data, ["event_id", "eventId"]) ??
     pickString(artifact ?? null, ["event_id", "eventId"]) ??
-    pickString(opencodeMetadata, ["event_id", "eventId"]) ??
-    buildFallbackEventId({
-      messageId,
-      artifactId: resolvedArtifactId,
-      seq: seq ?? null,
-    });
+    pickString(opencodeMetadata, ["event_id", "eventId"]);
+  const eventId = upstreamEventId
+    ? upstreamEventId
+    : buildFallbackEventId({
+        messageId,
+        artifactId: resolvedArtifactId,
+        seq: seq ?? null,
+      });
+  const eventIdSource: StreamBlockUpdate["eventIdSource"] = upstreamEventId
+    ? "upstream"
+    : seq !== null
+      ? "fallback_seq"
+      : "fallback_chunk";
 
   const source =
     pickString(opencodeMetadata, ["source"]) ??
@@ -413,6 +421,7 @@ export const extractStreamBlockUpdate = (
 
   return {
     eventId,
+    eventIdSource,
     seq: seq ?? null,
     taskId,
     artifactId: resolvedArtifactId,
