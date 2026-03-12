@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.api.routers._opencode_extension_router import (
+from app.api.routers._extension_capability_router import (
     create_extension_capability_router,
 )
 from app.services.a2a_runtime import (
