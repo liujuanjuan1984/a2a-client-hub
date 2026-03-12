@@ -303,10 +303,12 @@ async def test_sse_on_complete_ignores_non_typed_events():
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents(
             [
-                _artifact_event(
-                    artifact_id="legacy-stream",
-                    text="foo",
-                ),
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "parts": [{"kind": "unsupported_kind", "value": "foo"}]
+                    },
+                },
                 {"content": "bar"},
             ]
         ),
