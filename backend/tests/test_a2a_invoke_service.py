@@ -100,14 +100,19 @@ def _artifact_event(
     block_type: str | None = None,
     source: str | None = None,
     append: bool | None = None,
+    message_id: str | None = None,
+    event_id: str | None = None,
 ) -> dict:
     metadata: dict[str, dict[str, str]] = {}
-    if block_type or source:
+    if block_type or source or message_id or event_id:
+        artifact_key = artifact_id.replace(":", "-").replace("/", "-")
         opencode: dict[str, str] = {}
         if block_type:
             opencode["block_type"] = block_type
         if source:
             opencode["source"] = source
+        opencode["message_id"] = message_id or f"msg-{artifact_key}"
+        opencode["event_id"] = event_id or f"evt-{artifact_key}"
         metadata["opencode"] = opencode
 
     payload: dict = {
@@ -289,7 +294,7 @@ async def test_sse_invokes_complete_metadata_before_complete():
 
 
 @pytest.mark.asyncio
-async def test_sse_on_complete_accepts_untyped_text_artifact_events():
+async def test_sse_on_complete_ignores_non_typed_events():
     completed: list[str] = []
 
     async def _on_complete(text: str):
@@ -298,10 +303,12 @@ async def test_sse_on_complete_accepts_untyped_text_artifact_events():
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents(
             [
-                _artifact_event(
-                    artifact_id="legacy-stream",
-                    text="foo",
-                ),
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "parts": [{"kind": "unsupported_kind", "value": "foo"}]
+                    },
+                },
                 {"content": "bar"},
             ]
         ),
@@ -317,7 +324,7 @@ async def test_sse_on_complete_accepts_untyped_text_artifact_events():
     async for _ in response.body_iterator:
         pass
 
-    assert completed == ["foo"]
+    assert completed == [""]
 
 
 @pytest.mark.asyncio
@@ -378,13 +385,14 @@ async def test_sse_on_complete_supports_block_type():
                 {
                     "kind": "artifact-update",
                     "task_id": "task-block-type",
-                    "message_id": "msg-block-type",
                     "artifact": {
                         "artifact_id": "task-block-type:stream",
                         "parts": [{"kind": "text", "text": "Hello alias"}],
                         "metadata": {
                             "opencode": {
                                 "block_type": "text",
+                                "message_id": "msg-block-type",
+                                "event_id": "evt-block-type-1",
                             }
                         },
                     },
@@ -442,6 +450,46 @@ async def test_sse_on_complete_accepts_text_parts_without_block_type():
 
 
 @pytest.mark.asyncio
+async def test_sse_on_complete_ignores_artifact_updates_without_parts():
+    completed: list[str] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-no-parts",
+                                "event_id": "evt-legacy-no-parts",
+                            }
+                        },
+                        "content": "legacy-content-should-be-ignored",
+                    },
+                }
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == [""]
+
+
+@pytest.mark.asyncio
 async def test_sse_drops_invalid_artifact_update_events():
     completed: list[str] = []
     observed_events: list[dict] = []
@@ -492,10 +540,125 @@ async def test_sse_drops_invalid_artifact_update_events():
             "artifact": {
                 "artifact_id": "task-valid:stream",
                 "parts": [{"kind": "text", "text": "kept"}],
-                "metadata": {"opencode": {"block_type": "text"}},
+                "metadata": {
+                    "opencode": {
+                        "block_type": "text",
+                        "message_id": "msg-task-valid-stream",
+                        "event_id": "evt-task-valid-stream",
+                    }
+                },
             },
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
+    completed: list[str] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    caplog.set_level(logging.WARNING)
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-1",
+                                "event_id": "evt-legacy-1",
+                            }
+                        },
+                        "content": "legacy-1",
+                    },
+                },
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-2",
+                                "event_id": "evt-legacy-2",
+                            }
+                        },
+                        "content": "legacy-2",
+                    },
+                },
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == [""]
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING"
+        and record.message == "Dropped non-contract artifact-update event"
+    ]
+    assert len(warning_records) == 1
+    assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
+
+
+@pytest.mark.asyncio
+async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
+    completed: list[str] = []
+
+    async def _on_complete(text: str):
+        completed.append(text)
+
+    caplog.set_level(logging.WARNING)
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                            }
+                        },
+                        "content": "legacy",
+                    },
+                }
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_complete=_on_complete,
+    )
+    async for _ in response.body_iterator:
+        pass
+
+    assert completed == [""]
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING"
+        and record.message == "Dropped non-contract artifact-update event"
+    ]
+    assert len(warning_records) == 1
+    assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
 
 
 @pytest.mark.asyncio
@@ -638,6 +801,62 @@ async def test_ws_breaks_stream_after_terminal_status_update():
     assert not any(
         item.get("content") == "should-not-be-forwarded" for item in payloads
     )
+
+
+@pytest.mark.asyncio
+async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
+    websocket = _DummyWebSocket()
+    caplog.set_level(logging.WARNING)
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-ws-1",
+                                "event_id": "evt-legacy-ws-1",
+                            }
+                        },
+                        "content": "legacy-1",
+                    },
+                },
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-ws-2",
+                                "event_id": "evt-legacy-ws-2",
+                            }
+                        },
+                        "content": "legacy-2",
+                    },
+                },
+                {"kind": "status-update", "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING"
+        and record.message == "Dropped non-contract artifact-update event"
+    ]
+    assert len(warning_records) == 1
+    assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
 
 
 @pytest.mark.asyncio
@@ -885,6 +1104,63 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason(
+    caplog,
+):
+    caplog.set_level(logging.WARNING)
+    result = await a2a_invoke_service.consume_stream(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-consume-1",
+                                "event_id": "evt-legacy-consume-1",
+                            }
+                        },
+                        "content": "legacy-1",
+                    },
+                },
+                {
+                    "kind": "artifact-update",
+                    "artifact": {
+                        "metadata": {
+                            "opencode": {
+                                "block_type": "text",
+                                "message_id": "msg-legacy-consume-2",
+                                "event_id": "evt-legacy-consume-2",
+                            }
+                        },
+                        "content": "legacy-2",
+                    },
+                },
+                {"kind": "status-update", "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    assert result.success is True
+    assert result.final_text == ""
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING"
+        and record.message == "Dropped non-contract artifact-update event"
+    ]
+    assert len(warning_records) == 1
+    assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
+
+
+@pytest.mark.asyncio
 async def test_consume_stream_reports_total_timeout_with_partial_content(monkeypatch):
     monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
     monotonic_values = [0.0, 0.0, 0.01, 0.06, 0.06, 0.06, 0.06, 0.06]
@@ -915,13 +1191,11 @@ async def test_consume_stream_reports_total_timeout_with_partial_content(monkeyp
     )
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithSingleEventThenPending(
-            first_event={
-                "kind": "artifact-update",
-                "artifact": {
-                    "parts": [{"kind": "text", "text": "partial result"}],
-                    "metadata": {"opencode": {"block_type": "text"}},
-                },
-            },
+            first_event=_artifact_event(
+                artifact_id="task-total-timeout:stream",
+                text="partial result",
+                block_type="text",
+            )
         ),
         resolved=object(),
         query="hello",
@@ -1152,6 +1426,26 @@ def test_extract_stream_identity_hints_from_serialized_event():
     }
 
 
+def test_extract_stream_identity_hints_reads_seq_only_from_top_level_field():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "artifact": {
+                "metadata": {
+                    "opencode": {
+                        "message_id": "msg-1",
+                        "event_id": "evt-1",
+                        "seq": 99,
+                    }
+                },
+            }
+        }
+    )
+    assert hints == {
+        "upstream_message_id": "msg-1",
+        "upstream_event_id": "evt-1",
+    }
+
+
 def test_extract_stream_identity_hints_from_invoke_result_prefers_raw_payload():
     class _RawPayload:
         def model_dump(self, **kwargs):  # noqa: ARG002
@@ -1217,6 +1511,23 @@ def test_extract_stream_identity_hints_includes_upstream_task_id():
     )
 
     assert hints["upstream_task_id"] == "task-abc"
+
+
+def test_extract_stream_identity_hints_ignores_nested_status_task_fallback():
+    hints = a2a_invoke_service.extract_stream_identity_hints_from_serialized_event(
+        {
+            "status": {"task": {"id": "task-from-status"}},
+            "artifact": {
+                "metadata": {
+                    "opencode": {
+                        "message_id": "msg-1",
+                        "event_id": "evt-1",
+                    }
+                }
+            },
+        }
+    )
+    assert "upstream_task_id" not in hints
 
 
 def test_extract_stream_chunk_reads_nested_opencode_event_and_message_ids():
