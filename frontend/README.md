@@ -126,7 +126,7 @@ Message id contract:
   `POST /me/conversations/{conversation_id}/blocks:query`.
 - `blocks:query` detail items include `messageId` and must match the target
   message before cache patching.
-- Stream events must use snake_case contract fields: `message_id`, `event_id`, `seq`.
+- Stream events are consumed via normalized snake_case fields (`message_id`, `event_id`, `seq`); missing upstream ids are tolerated with client fallback keys.
 - Invoke payloads should carry both `userMessageId` and `agentMessageId` (UUID).
 - Message status semantics are preserved from history payloads (`streaming`,
   `done`, `error`, `interrupted`).

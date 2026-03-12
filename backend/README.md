@@ -199,6 +199,9 @@ Message query contract boundary:
   block `content` is fetched via `blocks:query` on demand.
 - `blocks:query` returns per-block `messageId` so clients can validate cache
   injection ownership before patching local message state.
+- For streaming `artifact-update`, upstream `message_id/event_id` are treated as
+  optional hints; hub rewrites outgoing stream payloads with stable local
+  `message_id/event_id/seq` for frontend consumption.
 
 Invoke message id contract:
 

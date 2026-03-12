@@ -316,6 +316,21 @@ const inferTaskIdFromArtifactId = (
   return artifactId.slice(0, firstSep);
 };
 
+const buildFallbackEventId = ({
+  messageId,
+  artifactId,
+  seq,
+}: {
+  messageId: string;
+  artifactId: string;
+  seq: number | null;
+}) => {
+  if (seq !== null) {
+    return `seq:${messageId}:${seq}`;
+  }
+  return `chunk:${messageId}:${artifactId}`;
+};
+
 export const extractStreamBlockUpdate = (
   data: Record<string, unknown>,
 ): StreamBlockUpdate | null => {
@@ -333,35 +348,13 @@ export const extractStreamBlockUpdate = (
     return null;
   }
 
-  const messageId =
-    pickString(data, ["message_id"]) ??
-    pickString(artifact ?? null, ["message_id"]) ??
-    pickString(opencodeMetadata, ["message_id"]);
-  // New contract: missing message_id events are invalid and should be ignored.
-  if (!messageId) {
-    return null;
-  }
-
-  const eventId =
-    pickString(data, ["event_id"]) ??
-    pickString(artifact ?? null, ["event_id"]) ??
-    pickString(opencodeMetadata, ["event_id"]);
-  // V2 contract: every stream event must carry event_id.
-  if (!eventId) {
-    return null;
-  }
-
   const seq =
     pickInteger(data, ["seq"]) ??
     pickInteger(artifact ?? null, ["seq"]) ??
     pickInteger(opencodeMetadata, ["seq"]);
 
   const artifactId =
-    pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ??
-    `${messageId}:${blockType}`;
-  if (!artifactId) {
-    return null;
-  }
+    pickString(artifact ?? null, ["artifact_id", "artifactId", "id"]) ?? null;
   const taskId =
     pickString(data, ["task_id", "taskId"]) ??
     pickString(artifact ?? null, ["task_id", "taskId"]) ??
@@ -369,6 +362,13 @@ export const extractStreamBlockUpdate = (
   if (!taskId) {
     return null;
   }
+
+  const messageId =
+    pickString(data, ["message_id", "messageId"]) ??
+    pickString(artifact ?? null, ["message_id", "messageId"]) ??
+    pickString(opencodeMetadata, ["message_id", "messageId"]) ??
+    `task:${taskId}`;
+  const resolvedArtifactId = artifactId ?? `${taskId}:${blockType}`;
 
   const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
   const delta =
@@ -393,6 +393,15 @@ export const extractStreamBlockUpdate = (
     data.last_chunk === true ||
     artifact?.lastChunk === true ||
     artifact?.last_chunk === true;
+  const eventId =
+    pickString(data, ["event_id", "eventId"]) ??
+    pickString(artifact ?? null, ["event_id", "eventId"]) ??
+    pickString(opencodeMetadata, ["event_id", "eventId"]) ??
+    buildFallbackEventId({
+      messageId,
+      artifactId: resolvedArtifactId,
+      seq: seq ?? null,
+    });
 
   const source =
     pickString(opencodeMetadata, ["source"]) ??
@@ -406,7 +415,7 @@ export const extractStreamBlockUpdate = (
     eventId,
     seq: seq ?? null,
     taskId,
-    artifactId,
+    artifactId: resolvedArtifactId,
     blockType,
     source,
     messageId,
