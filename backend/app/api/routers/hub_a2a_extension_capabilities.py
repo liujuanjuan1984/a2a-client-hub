@@ -1,15 +1,17 @@
-"""A2A extension endpoints for OpenCode session query (hub catalog agents)."""
+"""A2A extension endpoints for shared session/interrupt capabilities."""
 
 from __future__ import annotations
 
-from app.api.routers._opencode_extension_router import create_opencode_extension_router
+from app.api.routers._extension_capability_router import (
+    create_extension_capability_router,
+)
 from app.services.hub_a2a_runtime import (
     HubA2ARuntimeNotFoundError,
     HubA2ARuntimeValidationError,
     hub_a2a_runtime_builder,
 )
 
-router = create_opencode_extension_router(
+router = create_extension_capability_router(
     prefix="/a2a/agents",
     build_runtime=hub_a2a_runtime_builder.build,
     runtime_not_found_error=HubA2ARuntimeNotFoundError,

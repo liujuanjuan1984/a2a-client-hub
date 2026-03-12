@@ -1,4 +1,4 @@
-"""OpenCode interrupt callback extension resolver and helpers."""
+"""Shared interrupt callback extension resolver and helpers."""
 
 from __future__ import annotations
 
@@ -8,17 +8,19 @@ from app.integrations.a2a_extensions.contract_utils import (
     as_dict,
     build_business_code_map,
     normalize_method_name,
+    require_str,
     resolve_jsonrpc_interface,
 )
 from app.integrations.a2a_extensions.errors import A2AExtensionNotSupportedError
+from app.integrations.a2a_extensions.shared_contract import (
+    SHARED_INTERRUPT_CALLBACK_URI,
+)
 from app.integrations.a2a_extensions.types import (
     ResolvedInterruptCallbackExtension,
 )
 
-OPENCODE_INTERRUPT_CALLBACK_URI = "urn:opencode-a2a:opencode-interrupt-callback/v1"
 
-
-def resolve_opencode_interrupt_callback(
+def resolve_interrupt_callback(
     card: AgentCard,
 ) -> ResolvedInterruptCallbackExtension:
     capabilities = getattr(card, "capabilities", None)
@@ -28,16 +30,17 @@ def resolve_opencode_interrupt_callback(
 
     ext = None
     for candidate in extensions:
-        if getattr(candidate, "uri", None) == OPENCODE_INTERRUPT_CALLBACK_URI:
+        if getattr(candidate, "uri", None) == SHARED_INTERRUPT_CALLBACK_URI:
             ext = candidate
             break
     if ext is None:
         raise A2AExtensionNotSupportedError(
-            "OpenCode interrupt callback extension not found"
+            "Shared interrupt callback extension not found"
         )
 
     required = bool(getattr(ext, "required", False))
     params = as_dict(getattr(ext, "params", None))
+    provider = require_str(params.get("provider"), field="params.provider").lower()
     methods = as_dict(params.get("methods"))
     reply_permission_method = normalize_method_name(
         methods.get("reply_permission"),
@@ -56,8 +59,9 @@ def resolve_opencode_interrupt_callback(
     code_to_error = build_business_code_map(errors.get("business_codes"))
 
     return ResolvedInterruptCallbackExtension(
-        uri=OPENCODE_INTERRUPT_CALLBACK_URI,
+        uri=SHARED_INTERRUPT_CALLBACK_URI,
         required=required,
+        provider=provider,
         jsonrpc=resolve_jsonrpc_interface(card),
         methods={
             "reply_permission": reply_permission_method,
@@ -68,7 +72,4 @@ def resolve_opencode_interrupt_callback(
     )
 
 
-__all__ = [
-    "OPENCODE_INTERRUPT_CALLBACK_URI",
-    "resolve_opencode_interrupt_callback",
-]
+__all__ = ["resolve_interrupt_callback"]

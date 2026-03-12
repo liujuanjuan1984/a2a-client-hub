@@ -44,16 +44,16 @@ const coerceStringArray = (value: unknown) =>
     ? (value as string[])
     : undefined;
 
-export type OpencodeInterruptQuestionOption = {
+export type InterruptQuestionOption = {
   label: string;
   description: string | null;
   value: string | null;
 };
 
-export type OpencodeInterruptQuestion = {
+export type InterruptQuestion = {
   header: string | null;
   question: string;
-  options: OpencodeInterruptQuestionOption[];
+  options: InterruptQuestionOption[];
 };
 
 export type RuntimeInterrupt = {
@@ -62,7 +62,7 @@ export type RuntimeInterrupt = {
   details: {
     permission?: string | null;
     patterns?: string[];
-    questions?: OpencodeInterruptQuestion[];
+    questions?: InterruptQuestion[];
   };
 };
 
@@ -77,13 +77,7 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
   const externalSessionId =
     pickString(metadata, ["externalSessionId"]) ?? undefined;
   const rawProvider = pickString(metadata, ["provider"]);
-  const normalizedProvider = rawProvider?.trim().toLowerCase();
-  const provider =
-    normalizedProvider === undefined
-      ? undefined
-      : normalizedProvider.startsWith("opencode")
-        ? "opencode"
-        : normalizedProvider;
+  const provider = rawProvider?.trim().toLowerCase() ?? undefined;
   const transport =
     typeof data.transport === "string" ? data.transport : undefined;
   const inputModes =
@@ -218,7 +212,7 @@ export const isInputRequiredRuntimeState = (state: string) => {
 
 const parseInterruptQuestionOption = (
   value: unknown,
-): OpencodeInterruptQuestionOption | null => {
+): InterruptQuestionOption | null => {
   const option = asRecord(value);
   if (!option) {
     return null;
@@ -234,9 +228,7 @@ const parseInterruptQuestionOption = (
   };
 };
 
-const parseInterruptQuestion = (
-  value: unknown,
-): OpencodeInterruptQuestion | null => {
+const parseInterruptQuestion = (value: unknown): InterruptQuestion | null => {
   const question = asRecord(value);
   if (!question) {
     return null;
@@ -248,7 +240,7 @@ const parseInterruptQuestion = (
   const rawOptions = Array.isArray(question.options) ? question.options : [];
   const options = rawOptions
     .map(parseInterruptQuestionOption)
-    .filter((item): item is OpencodeInterruptQuestionOption => Boolean(item));
+    .filter((item): item is InterruptQuestionOption => Boolean(item));
   return {
     header: pickRawString(question, ["header"]) ?? null,
     question: prompt,
@@ -260,8 +252,7 @@ const extractRuntimeInterrupt = (
   data: Record<string, unknown>,
 ): RuntimeInterrupt | null => {
   const metadata = asRecord(data.metadata);
-  const opencodeMetadata = asRecord(metadata?.opencode);
-  const interrupt = asRecord(opencodeMetadata?.interrupt);
+  const interrupt = asRecord(metadata?.interrupt);
   if (!interrupt) {
     return null;
   }
@@ -288,7 +279,7 @@ const extractRuntimeInterrupt = (
       : [];
     const questions = rawQuestions
       .map(parseInterruptQuestion)
-      .filter((item): item is OpencodeInterruptQuestion => Boolean(item));
+      .filter((item): item is InterruptQuestion => Boolean(item));
     return {
       requestId,
       type: "question",
@@ -366,15 +357,11 @@ export const extractStreamBlockUpdate = (
   const artifact = asRecord(data.artifact);
   const rootMetadata = asRecord(data.metadata);
   const metadata = asRecord(artifact?.metadata) ?? rootMetadata;
-  const rootOpencodeMetadata = asRecord(rootMetadata?.opencode);
-  const opencodeMetadata = asRecord(metadata?.opencode) ?? rootOpencodeMetadata;
   const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
   const textFromParts = extractTextFromParts(parts);
   const rawBlockType =
     pickString(metadata, ["block_type"]) ??
-    pickString(opencodeMetadata, ["block_type"]) ??
-    pickString(rootMetadata, ["block_type"]) ??
-    pickString(rootOpencodeMetadata, ["block_type"]);
+    pickString(rootMetadata, ["block_type"]);
   const explicitBlockType = parseBlockType(rawBlockType);
   const blockType =
     explicitBlockType ??
@@ -386,8 +373,7 @@ export const extractStreamBlockUpdate = (
   const seq =
     pickInteger(data, ["seq"]) ??
     pickInteger(artifact ?? null, ["seq"]) ??
-    pickInteger(opencodeMetadata, ["seq"]) ??
-    pickInteger(rootOpencodeMetadata, ["seq"]) ??
+    pickInteger(metadata, ["seq"]) ??
     pickInteger(rootMetadata, ["seq"]);
 
   const artifactId =
@@ -401,8 +387,7 @@ export const extractStreamBlockUpdate = (
   const upstreamMessageId =
     pickString(data, ["message_id", "messageId"]) ??
     pickString(artifact ?? null, ["message_id", "messageId"]) ??
-    pickString(opencodeMetadata, ["message_id", "messageId"]) ??
-    pickString(rootOpencodeMetadata, ["message_id", "messageId"]) ??
+    pickString(metadata, ["message_id", "messageId"]) ??
     pickString(rootMetadata, ["message_id", "messageId"]);
   const resolvedMessageId =
     upstreamMessageId ?? (taskIdHint ? `task:${taskIdHint}` : null);
@@ -441,8 +426,7 @@ export const extractStreamBlockUpdate = (
   const upstreamEventId =
     pickString(data, ["event_id", "eventId"]) ??
     pickString(artifact ?? null, ["event_id", "eventId"]) ??
-    pickString(opencodeMetadata, ["event_id", "eventId"]) ??
-    pickString(rootOpencodeMetadata, ["event_id", "eventId"]) ??
+    pickString(metadata, ["event_id", "eventId"]) ??
     pickString(rootMetadata, ["event_id", "eventId"]);
   const eventId = upstreamEventId
     ? upstreamEventId
@@ -458,13 +442,13 @@ export const extractStreamBlockUpdate = (
       : "fallback_chunk";
 
   const source =
-    pickString(opencodeMetadata, ["source"]) ??
     pickString(metadata, ["source"]) ??
-    pickString(rootOpencodeMetadata, ["source"]) ??
     pickString(rootMetadata, ["source"]) ??
     null;
   const role = normalizeRole(
-    pickString(data, ["role"]) ?? pickString(opencodeMetadata, ["role"]),
+    pickString(data, ["role"]) ??
+      pickString(metadata, ["role"]) ??
+      pickString(rootMetadata, ["role"]),
   );
 
   return {

@@ -52,7 +52,7 @@ type InterruptAckResult = {
   requestId: string;
 };
 
-const buildOpencodeInterruptPath = (
+const buildInterruptPath = (
   source: ExtensionAgentSource,
   agentId: string,
   suffix: string,
@@ -61,10 +61,10 @@ const buildOpencodeInterruptPath = (
     source === "shared"
       ? `/a2a/agents/${encodeURIComponent(agentId)}`
       : `/me/a2a/agents/${encodeURIComponent(agentId)}`;
-  return `${base}/extensions/opencode/interrupts/${suffix}`;
+  return `${base}/extensions/interrupts/${suffix}`;
 };
 
-const buildOpencodeSessionPath = (
+const buildSessionPath = (
   source: ExtensionAgentSource,
   agentId: string,
   suffix: string,
@@ -73,7 +73,7 @@ const buildOpencodeSessionPath = (
     source === "shared"
       ? `/a2a/agents/${encodeURIComponent(agentId)}`
       : `/me/a2a/agents/${encodeURIComponent(agentId)}`;
-  return `${base}/extensions/opencode/sessions/${suffix}`;
+  return `${base}/extensions/sessions/${suffix}`;
 };
 
 const assertInterruptAckResult = (
@@ -93,7 +93,7 @@ const assertInterruptAckResult = (
   return { ok: true, requestId };
 };
 
-export const replyOpencodePermissionInterrupt = async (input: {
+export const replyPermissionInterrupt = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
   requestId: string;
@@ -107,21 +107,18 @@ export const replyOpencodePermissionInterrupt = async (input: {
       reply: "once" | "always" | "reject";
       metadata?: Record<string, unknown>;
     }
-  >(
-    buildOpencodeInterruptPath(input.source, input.agentId, "permission:reply"),
-    {
-      method: "POST",
-      body: {
-        request_id: input.requestId,
-        reply: input.reply,
-        ...(input.metadata ? { metadata: input.metadata } : {}),
-      },
+  >(buildInterruptPath(input.source, input.agentId, "permission:reply"), {
+    method: "POST",
+    body: {
+      request_id: input.requestId,
+      reply: input.reply,
+      ...(input.metadata ? { metadata: input.metadata } : {}),
     },
-  );
+  });
   return assertInterruptAckResult(response, input.requestId);
 };
 
-export const replyOpencodeQuestionInterrupt = async (input: {
+export const replyQuestionInterrupt = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
   requestId: string;
@@ -135,7 +132,7 @@ export const replyOpencodeQuestionInterrupt = async (input: {
       answers: string[][];
       metadata?: Record<string, unknown>;
     }
-  >(buildOpencodeInterruptPath(input.source, input.agentId, "question:reply"), {
+  >(buildInterruptPath(input.source, input.agentId, "question:reply"), {
     method: "POST",
     body: {
       request_id: input.requestId,
@@ -146,7 +143,7 @@ export const replyOpencodeQuestionInterrupt = async (input: {
   return assertInterruptAckResult(response, input.requestId);
 };
 
-export const rejectOpencodeQuestionInterrupt = async (input: {
+export const rejectQuestionInterrupt = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
   requestId: string;
@@ -155,16 +152,13 @@ export const rejectOpencodeQuestionInterrupt = async (input: {
   const response = await apiRequest<
     A2AExtensionResponse,
     { request_id: string; metadata?: Record<string, unknown> }
-  >(
-    buildOpencodeInterruptPath(input.source, input.agentId, "question:reject"),
-    {
-      method: "POST",
-      body: {
-        request_id: input.requestId,
-        ...(input.metadata ? { metadata: input.metadata } : {}),
-      },
+  >(buildInterruptPath(input.source, input.agentId, "question:reject"), {
+    method: "POST",
+    body: {
+      request_id: input.requestId,
+      ...(input.metadata ? { metadata: input.metadata } : {}),
     },
-  );
+  });
   return assertInterruptAckResult(response, input.requestId);
 };
 
@@ -197,7 +191,7 @@ const assertPromptAsyncResult = (
   };
 };
 
-export const promptOpencodeSessionAsync = async (input: {
+export const promptSessionAsync = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
   sessionId: string;
@@ -211,7 +205,7 @@ export const promptOpencodeSessionAsync = async (input: {
       metadata?: Record<string, unknown>;
     }
   >(
-    buildOpencodeSessionPath(
+    buildSessionPath(
       input.source,
       input.agentId,
       `${encodeURIComponent(input.sessionId)}:prompt-async`,

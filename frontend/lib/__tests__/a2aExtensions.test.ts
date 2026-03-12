@@ -1,8 +1,8 @@
 import {
   A2AExtensionCallError,
   assertExtensionSuccess,
-  promptOpencodeSessionAsync,
-  replyOpencodePermissionInterrupt,
+  promptSessionAsync,
+  replyPermissionInterrupt,
 } from "@/lib/api/a2aExtensions";
 import { apiRequest } from "@/lib/api/client";
 
@@ -58,25 +58,25 @@ describe("assertExtensionSuccess", () => {
       result: { ok: true, session_id: "ses-1" },
     });
 
-    const result = await promptOpencodeSessionAsync({
+    const result = await promptSessionAsync({
       source: "personal",
       agentId: "agent-1",
       sessionId: "ses-1",
       request: {
         parts: [{ type: "text", text: "Continue" }],
       },
-      metadata: { opencode: { directory: "/workspace/project" } },
+      metadata: { provider: "opencode", externalSessionId: "ses-1" },
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
-      "/me/a2a/agents/agent-1/extensions/opencode/sessions/ses-1:prompt-async",
+      "/me/a2a/agents/agent-1/extensions/sessions/ses-1:prompt-async",
       {
         method: "POST",
         body: {
           request: {
             parts: [{ type: "text", text: "Continue" }],
           },
-          metadata: { opencode: { directory: "/workspace/project" } },
+          metadata: { provider: "opencode", externalSessionId: "ses-1" },
         },
       },
     );
@@ -90,7 +90,7 @@ describe("assertExtensionSuccess", () => {
     });
 
     await expect(
-      promptOpencodeSessionAsync({
+      promptSessionAsync({
         source: "shared",
         agentId: "agent-1",
         sessionId: "ses-1",
@@ -107,22 +107,22 @@ describe("assertExtensionSuccess", () => {
       result: { ok: true, request_id: "perm-1" },
     });
 
-    const result = await replyOpencodePermissionInterrupt({
+    const result = await replyPermissionInterrupt({
       source: "shared",
       agentId: "agent-1",
       requestId: "perm-1",
       reply: "once",
-      metadata: { opencode: { directory: "/workspace/project" } },
+      metadata: { provider: "opencode", requestScope: "shared" },
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
-      "/a2a/agents/agent-1/extensions/opencode/interrupts/permission:reply",
+      "/a2a/agents/agent-1/extensions/interrupts/permission:reply",
       {
         method: "POST",
         body: {
           request_id: "perm-1",
           reply: "once",
-          metadata: { opencode: { directory: "/workspace/project" } },
+          metadata: { provider: "opencode", requestScope: "shared" },
         },
       },
     );

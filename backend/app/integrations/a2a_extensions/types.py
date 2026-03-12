@@ -25,11 +25,11 @@ class JsonRpcInterface:
 class ResolvedExtension:
     uri: str
     required: bool
+    provider: str
     jsonrpc: JsonRpcInterface
     methods: Mapping[str, Optional[str]]
     pagination: PageSizePagination
     business_code_map: Mapping[int, str]
-    session_binding_metadata_key: Optional[str]
     result_envelope: Optional[Mapping[str, Any]]
 
 
@@ -37,6 +37,7 @@ class ResolvedExtension:
 class ResolvedInterruptCallbackExtension:
     uri: str
     required: bool
+    provider: str
     jsonrpc: JsonRpcInterface
     methods: Mapping[str, Optional[str]]
     business_code_map: Mapping[int, str]

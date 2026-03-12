@@ -183,53 +183,51 @@ class A2AInvokeService:
         # 1. Identity & Sequence hints (Candidates for identity)
         artifact = as_dict(root.get("artifact"))
         artifact_metadata = as_dict(artifact.get("metadata"))
-        artifact_opencode = as_dict(artifact_metadata.get("opencode"))
-
         message = as_dict(root.get("message"))
         message_metadata = as_dict(message.get("metadata"))
-        message_opencode = as_dict(message_metadata.get("opencode"))
-
         status = as_dict(root.get("status"))
         status_metadata = as_dict(status.get("metadata"))
-        status_opencode = as_dict(status_metadata.get("opencode"))
-
         task = as_dict(root.get("task"))
         task_status = as_dict(task.get("status"))
         task_status_metadata = as_dict(task_status.get("metadata"))
-        task_status_opencode = as_dict(task_status_metadata.get("opencode"))
-
         result = as_dict(root.get("result"))
         result_status = as_dict(result.get("status"))
         result_status_metadata = as_dict(result_status.get("metadata"))
-        result_status_opencode = as_dict(result_status_metadata.get("opencode"))
-
         root_metadata = as_dict(root.get("metadata"))
-        root_opencode = as_dict(root_metadata.get("opencode"))
 
         # Identity extraction
         msg_id = None
         evt_id = None
         for cand in (
-            artifact_opencode,
-            root_opencode,
-            status_opencode,
-            message_opencode,
-            task_status_opencode,
-            result_status_opencode,
+            root,
+            artifact,
+            artifact_metadata,
+            message,
+            message_metadata,
+            status,
+            status_metadata,
+            task,
+            task_status,
+            task_status_metadata,
+            result,
+            result_status,
+            result_status_metadata,
+            root_metadata,
         ):
             if msg_id is None:
-                msg_id = cls._pick_non_empty_str(cand, ("message_id",))
+                msg_id = cls._pick_non_empty_str(cand, ("message_id", "messageId"))
             if evt_id is None:
-                evt_id = cls._pick_non_empty_str(cand, ("event_id",))
+                evt_id = cls._pick_non_empty_str(cand, ("event_id", "eventId"))
 
         # Task ID extraction
         t_id = cls._pick_non_empty_str(root, ("task_id", "taskId"))
         if t_id is None:
             for cand in (
+                artifact,
                 task,
                 as_dict(result.get("task")),
                 as_dict(status.get("task")),
-                root_opencode,
+                root_metadata,
             ):
                 t_id = cls._pick_non_empty_str(cand, ("task_id", "taskId", "id"))
                 if t_id:
@@ -240,10 +238,8 @@ class A2AInvokeService:
         if seq is None:
             for cand in (
                 root_metadata,
-                root_opencode,
                 artifact,
                 artifact_metadata,
-                artifact_opencode,
             ):
                 seq = cls._pick_int(cand, ("seq",))
                 if seq is not None:
@@ -365,14 +361,13 @@ class A2AInvokeService:
 
         direct_usage = as_dict(payload.get("usage"))
         metadata = as_dict(payload.get("metadata"))
-        opencode = as_dict(metadata.get("opencode"))
-        nested_usage = as_dict(opencode.get("usage"))
+        metadata_usage = as_dict(metadata.get("usage"))
 
         usage_payload: dict[str, Any] = {}
         if direct_usage:
             usage_payload.update(direct_usage)
-        if nested_usage:
-            usage_payload.update(nested_usage)
+        if metadata_usage:
+            usage_payload.update(metadata_usage)
         if not usage_payload:
             return {}
 
@@ -437,9 +432,7 @@ class A2AInvokeService:
         if not artifact:
             return None
         artifact_metadata = as_dict(artifact.get("metadata"))
-        opencode_metadata = as_dict(artifact_metadata.get("opencode"))
         root_metadata = as_dict(payload.get("metadata"))
-        root_opencode_metadata = as_dict(root_metadata.get("opencode"))
 
         block_type = cls._StreamTextAccumulator._extract_artifact_type(
             payload, artifact
@@ -452,8 +445,8 @@ class A2AInvokeService:
         for candidate in (
             payload,
             artifact,
-            opencode_metadata,
-            root_opencode_metadata,
+            artifact_metadata,
+            root_metadata,
         ):
             if event_id is None:
                 event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
@@ -480,8 +473,8 @@ class A2AInvokeService:
         seq = (
             cls._pick_int(payload, ("seq",))
             or cls._pick_int(artifact, ("seq",))
-            or cls._pick_int(opencode_metadata, ("seq",))
-            or cls._pick_int(root_opencode_metadata, ("seq",))
+            or cls._pick_int(artifact_metadata, ("seq",))
+            or cls._pick_int(root_metadata, ("seq",))
         )
         source = cls._StreamTextAccumulator._extract_artifact_source(payload, artifact)
         return {
@@ -722,15 +715,7 @@ class A2AInvokeService:
 
             raw = metadata.get("block_type")
             if not isinstance(raw, str) or not raw.strip():
-                opencode = metadata.get("opencode")
-                if isinstance(opencode, dict):
-                    raw = opencode.get("block_type")
-            if not isinstance(raw, str) or not raw.strip():
                 raw = root_metadata.get("block_type")
-            if not isinstance(raw, str) or not raw.strip():
-                root_opencode = root_metadata.get("opencode")
-                if isinstance(root_opencode, dict):
-                    raw = root_opencode.get("block_type")
 
             if not isinstance(raw, str) or not raw.strip():
                 if A2AInvokeService._StreamTextAccumulator._extract_text_from_parts(
@@ -754,17 +739,7 @@ class A2AInvokeService:
             root_metadata = payload.get("metadata")
             if not isinstance(root_metadata, dict):
                 root_metadata = {}
-            opencode = metadata.get("opencode")
-            source = opencode.get("source") if isinstance(opencode, dict) else None
-            if not isinstance(source, str) or not source.strip():
-                source = metadata.get("source")
-            if not isinstance(source, str) or not source.strip():
-                root_opencode = root_metadata.get("opencode")
-                source = (
-                    root_opencode.get("source")
-                    if isinstance(root_opencode, dict)
-                    else None
-                )
+            source = metadata.get("source")
             if not isinstance(source, str) or not source.strip():
                 source = root_metadata.get("source")
             if isinstance(source, str) and source.strip():
@@ -961,18 +936,14 @@ class A2AInvokeService:
 
         artifact = as_dict(payload.get("artifact"))
         artifact_metadata = as_dict(artifact.get("metadata"))
-        artifact_opencode = as_dict(artifact_metadata.get("opencode"))
         root_metadata = as_dict(payload.get("metadata"))
-        root_opencode = as_dict(root_metadata.get("opencode"))
 
         message_id = None
         for candidate in (
             payload,
             artifact,
             artifact_metadata,
-            artifact_opencode,
             root_metadata,
-            root_opencode,
         ):
             if message_id is None:
                 message_id = cls._pick_non_empty_str(
@@ -989,9 +960,7 @@ class A2AInvokeService:
             payload,
             artifact,
             artifact_metadata,
-            artifact_opencode,
             root_metadata,
-            root_opencode,
         ):
             if event_id is None:
                 event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))

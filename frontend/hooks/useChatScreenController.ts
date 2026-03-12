@@ -19,9 +19,9 @@ import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import {
   A2AExtensionCallError,
-  rejectOpencodeQuestionInterrupt,
-  replyOpencodePermissionInterrupt,
-  replyOpencodeQuestionInterrupt,
+  rejectQuestionInterrupt,
+  replyPermissionInterrupt,
+  replyQuestionInterrupt,
 } from "@/lib/api/a2aExtensions";
 import { type ChatMessage } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
@@ -506,7 +506,7 @@ export function useChatScreenController({
       runInterruptAction(
         `permission:${reply}`,
         async () => {
-          await replyOpencodePermissionInterrupt({
+          await replyPermissionInterrupt({
             source: agent.source,
             agentId: activeAgentId,
             requestId,
@@ -569,7 +569,7 @@ export function useChatScreenController({
     runInterruptAction(
       "question:reply",
       async () => {
-        await replyOpencodeQuestionInterrupt({
+        await replyQuestionInterrupt({
           source: agent.source,
           agentId: activeAgentId,
           requestId,
@@ -600,7 +600,7 @@ export function useChatScreenController({
     runInterruptAction(
       "question:reject",
       async () => {
-        await rejectOpencodeQuestionInterrupt({
+        await rejectQuestionInterrupt({
           source: agent.source,
           agentId: activeAgentId,
           requestId,

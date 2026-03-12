@@ -2085,11 +2085,6 @@ def _derive_session_title_from_invoke_metadata(
     root_title = normalize_non_empty_text(metadata.get("title"))
     if root_title:
         return root_title[: ConversationThread.TITLE_MAX_LENGTH]
-    nested = metadata.get("opencode")
-    if isinstance(nested, dict):
-        nested_title = normalize_non_empty_text(nested.get("title"))
-        if nested_title:
-            return nested_title[: ConversationThread.TITLE_MAX_LENGTH]
     return None
 
 

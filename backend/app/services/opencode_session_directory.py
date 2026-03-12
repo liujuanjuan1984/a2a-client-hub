@@ -244,13 +244,11 @@ class OpencodeSessionDirectoryService:
             async def _fetch_one(agent: _AgentRef, runtime: Any):
                 async with sem:
                     try:
-                        result = (
-                            await get_a2a_extensions_service().opencode_list_sessions(
-                                runtime=runtime,
-                                page=1,
-                                size=int(settings.opencode_sessions_per_agent_size),
-                                query=None,
-                            )
+                        result = await get_a2a_extensions_service().list_sessions(
+                            runtime=runtime,
+                            page=1,
+                            size=int(settings.opencode_sessions_per_agent_size),
+                            query=None,
                         )
                         return agent, result
                     except A2AExtensionUpstreamError as exc:

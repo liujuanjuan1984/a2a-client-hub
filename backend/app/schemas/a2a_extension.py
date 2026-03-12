@@ -36,9 +36,7 @@ class A2AExtensionPermissionReplyRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
-        description=(
-            "Optional metadata object (for example metadata.opencode.directory)"
-        ),
+        description="Optional extension metadata object forwarded to upstream",
     )
 
 
@@ -50,9 +48,7 @@ class A2AExtensionQuestionReplyRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
-        description=(
-            "Optional metadata object (for example metadata.opencode.directory)"
-        ),
+        description="Optional extension metadata object forwarded to upstream",
     )
 
 
@@ -60,22 +56,18 @@ class A2AExtensionQuestionRejectRequest(BaseModel):
     request_id: str = Field(..., min_length=1, description="Interrupt request id")
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
-        description=(
-            "Optional metadata object (for example metadata.opencode.directory)"
-        ),
+        description="Optional extension metadata object forwarded to upstream",
     )
 
 
 class A2AExtensionPromptAsyncRequest(BaseModel):
     request: Dict[str, Any] = Field(
         ...,
-        description="OpenCode prompt_async payload forwarded to upstream",
+        description="Shared session control payload forwarded to upstream",
     )
     metadata: Optional[Dict[str, Any]] = Field(
         default=None,
-        description=(
-            "Optional metadata object (for example metadata.opencode.directory)"
-        ),
+        description="Optional extension metadata object forwarded to upstream",
     )
 
 

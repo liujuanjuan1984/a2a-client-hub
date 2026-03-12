@@ -7,11 +7,8 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
-from app.integrations.a2a_extensions.opencode_session_query import (
-    OPENCODE_SESSION_BINDING_URI,
-    OPENCODE_SESSION_QUERY_URI,
-    resolve_opencode_session_query,
-)
+from app.integrations.a2a_extensions.session_query import resolve_session_query
+from app.integrations.a2a_extensions.shared_contract import SHARED_SESSION_QUERY_URI
 
 
 def _base_card_payload() -> dict:
@@ -31,20 +28,21 @@ def test_resolve_requires_extension_present() -> None:
     payload = _base_card_payload()
     card = AgentCard.model_validate(payload)
     with pytest.raises(A2AExtensionNotSupportedError):
-        resolve_opencode_session_query(card)
+        resolve_session_query(card)
 
 
-def test_resolve_extracts_methods_pagination_and_interface() -> None:
+def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_SESSION_QUERY_URI,
+            "uri": SHARED_SESSION_QUERY_URI,
             "required": False,
             "params": {
+                "provider": "OpenCode",
                 "methods": {
-                    "list_sessions": "opencode.sessions.list",
-                    "get_session_messages": "opencode.sessions.messages.list",
-                    "prompt_async": "opencode.sessions.prompt_async",
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
+                    "prompt_async": "shared.sessions.prompt_async",
                 },
                 "pagination": {
                     "mode": "page_size",
@@ -62,24 +60,20 @@ def test_resolve_extracts_methods_pagination_and_interface() -> None:
                 },
                 "result_envelope": {"raw": True, "items": True, "pagination": True},
             },
-        },
-        {
-            "uri": OPENCODE_SESSION_BINDING_URI,
-            "required": False,
-            "params": {"metadata_key": "opencode_session_id"},
-        },
+        }
     ]
     payload["additionalInterfaces"] = [
         {"transport": "jsonrpc", "url": "https://api.example.com/jsonrpc"}
     ]
 
     card = AgentCard.model_validate(payload)
-    resolved = resolve_opencode_session_query(card)
+    resolved = resolve_session_query(card)
 
-    assert resolved.uri == OPENCODE_SESSION_QUERY_URI
-    assert resolved.methods["list_sessions"] == "opencode.sessions.list"
-    assert resolved.methods["get_session_messages"] == "opencode.sessions.messages.list"
-    assert resolved.methods["prompt_async"] == "opencode.sessions.prompt_async"
+    assert resolved.uri == SHARED_SESSION_QUERY_URI
+    assert resolved.provider == "opencode"
+    assert resolved.methods["list_sessions"] == "shared.sessions.list"
+    assert resolved.methods["get_session_messages"] == "shared.sessions.messages.list"
+    assert resolved.methods["prompt_async"] == "shared.sessions.prompt_async"
     assert resolved.pagination.default_size == 20
     assert resolved.pagination.max_size == 100
     assert resolved.jsonrpc.url == "https://api.example.com/jsonrpc"
@@ -87,7 +81,6 @@ def test_resolve_extracts_methods_pagination_and_interface() -> None:
     assert resolved.business_code_map[-32001] == "session_not_found"
     assert resolved.business_code_map[-32005] == "upstream_payload_error"
     assert resolved.business_code_map[-32006] == "session_forbidden"
-    assert resolved.session_binding_metadata_key == "opencode_session_id"
     assert resolved.pagination.params == ("page", "size")
     assert resolved.pagination.supports_offset is False
 
@@ -96,12 +89,13 @@ def test_resolve_falls_back_to_card_url_when_interface_missing() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_SESSION_QUERY_URI,
+            "uri": SHARED_SESSION_QUERY_URI,
             "required": False,
             "params": {
+                "provider": "opencode",
                 "methods": {
-                    "list_sessions": "opencode.sessions.list",
-                    "get_session_messages": "opencode.sessions.messages.list",
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
                 },
                 "pagination": {"mode": "page_size", "default_size": 1, "max_size": 2},
                 "errors": {"business_codes": {}},
@@ -110,42 +104,43 @@ def test_resolve_falls_back_to_card_url_when_interface_missing() -> None:
         }
     ]
     card = AgentCard.model_validate(payload)
-    resolved = resolve_opencode_session_query(card)
+    resolved = resolve_session_query(card)
     assert resolved.jsonrpc.url == "https://example.com"
     assert resolved.jsonrpc.fallback_used is True
     assert resolved.methods["prompt_async"] is None
-    assert resolved.session_binding_metadata_key is None
 
 
 def test_resolve_rejects_missing_pagination() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_SESSION_QUERY_URI,
+            "uri": SHARED_SESSION_QUERY_URI,
             "required": False,
             "params": {
+                "provider": "opencode",
                 "methods": {
-                    "list_sessions": "opencode.sessions.list",
-                    "get_session_messages": "opencode.sessions.messages.list",
-                }
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
+                },
             },
         }
     ]
     card = AgentCard.model_validate(payload)
     with pytest.raises(A2AExtensionContractError):
-        resolve_opencode_session_query(card)
+        resolve_session_query(card)
 
 
 def test_resolve_accepts_limit_mode_with_default_limit_keys() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_SESSION_QUERY_URI,
+            "uri": SHARED_SESSION_QUERY_URI,
             "required": False,
             "params": {
+                "provider": "opencode",
                 "methods": {
-                    "list_sessions": "opencode.sessions.list",
-                    "get_session_messages": "opencode.sessions.messages.list",
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
                 },
                 "pagination": {
                     "mode": "limit",
@@ -158,7 +153,7 @@ def test_resolve_accepts_limit_mode_with_default_limit_keys() -> None:
         }
     ]
     card = AgentCard.model_validate(payload)
-    resolved = resolve_opencode_session_query(card)
+    resolved = resolve_session_query(card)
     assert resolved.pagination.mode == "limit"
     assert resolved.pagination.default_size == 20
     assert resolved.pagination.max_size == 100
@@ -170,12 +165,13 @@ def test_resolve_accepts_limit_mode_with_offset_param() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_SESSION_QUERY_URI,
+            "uri": SHARED_SESSION_QUERY_URI,
             "required": False,
             "params": {
+                "provider": "opencode",
                 "methods": {
-                    "list_sessions": "opencode.sessions.list",
-                    "get_session_messages": "opencode.sessions.messages.list",
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
                 },
                 "pagination": {
                     "mode": "limit",
@@ -189,21 +185,21 @@ def test_resolve_accepts_limit_mode_with_offset_param() -> None:
         }
     ]
     card = AgentCard.model_validate(payload)
-    resolved = resolve_opencode_session_query(card)
+    resolved = resolve_session_query(card)
     assert resolved.pagination.params == ("limit", "offset")
     assert resolved.pagination.supports_offset is True
 
 
-def test_resolve_rejects_invalid_session_binding_metadata_key() -> None:
+def test_resolve_rejects_missing_provider() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
-            "uri": OPENCODE_SESSION_QUERY_URI,
+            "uri": SHARED_SESSION_QUERY_URI,
             "required": False,
             "params": {
                 "methods": {
-                    "list_sessions": "opencode.sessions.list",
-                    "get_session_messages": "opencode.sessions.messages.list",
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
                 },
                 "pagination": {
                     "mode": "page_size",
@@ -211,16 +207,10 @@ def test_resolve_rejects_invalid_session_binding_metadata_key() -> None:
                     "max_size": 100,
                 },
                 "errors": {"business_codes": {}},
-                "result_envelope": {"raw": True, "items": True, "pagination": True},
             },
-        },
-        {
-            "uri": OPENCODE_SESSION_BINDING_URI,
-            "required": False,
-            "params": {"metadata_key": "   "},
-        },
+        }
     ]
 
     card = AgentCard.model_validate(payload)
     with pytest.raises(A2AExtensionContractError):
-        resolve_opencode_session_query(card)
+        resolve_session_query(card)
