@@ -352,6 +352,24 @@ class A2AInvokeService:
         return None
 
     @classmethod
+    def _extract_stream_sequence_from_serialized_event(
+        cls, payload: dict[str, Any]
+    ) -> int | None:
+        root = as_dict(payload)
+        return cls._pick_int(root, ("seq",))
+
+    @classmethod
+    def _extract_stream_task_id_from_serialized_event(
+        cls, payload: dict[str, Any]
+    ) -> str | None:
+        root = as_dict(payload)
+        task = as_dict(root.get("task"))
+        task_id = cls._pick_non_empty_str(root, ("task_id",))
+        if task_id is not None:
+            return task_id
+        return cls._pick_non_empty_str(task, ("id", "task_id"))
+
+    @classmethod
     def _extract_usage_from_candidate(cls, payload: dict[str, Any]) -> dict[str, Any]:
         if not payload:
             return {}
@@ -404,10 +422,12 @@ class A2AInvokeService:
             hints["upstream_message_id"] = analysis.upstream_message_id
         if analysis.upstream_event_id:
             hints["upstream_event_id"] = analysis.upstream_event_id
-        if analysis.upstream_event_seq is not None:
-            hints["upstream_event_seq"] = analysis.upstream_event_seq
-        if analysis.upstream_task_id:
-            hints["upstream_task_id"] = analysis.upstream_task_id
+        seq = cls._extract_stream_sequence_from_serialized_event(payload)
+        if seq is not None:
+            hints["upstream_event_seq"] = seq
+        task_id = cls._extract_stream_task_id_from_serialized_event(payload)
+        if task_id:
+            hints["upstream_task_id"] = task_id
         return hints
 
     @classmethod
@@ -705,44 +725,6 @@ class A2AInvokeService:
                 return source.strip().lower()
             return None
 
-        @staticmethod
-        def _resolve_append(payload: dict[str, Any], artifact: dict[str, Any]) -> bool:
-            append = payload.get("append")
-            if isinstance(append, bool):
-                return append
-            artifact_append = artifact.get("append")
-            if isinstance(artifact_append, bool):
-                return artifact_append
-            return True
-
-        @staticmethod
-        def _resolve_done(payload: dict[str, Any], artifact: dict[str, Any]) -> bool:
-            return bool(
-                payload.get("lastChunk") is True
-                or payload.get("last_chunk") is True
-                or artifact.get("lastChunk") is True
-                or artifact.get("last_chunk") is True
-            )
-
-        @staticmethod
-        def _extract_delta(payload: dict[str, Any], artifact: dict[str, Any]) -> str:
-            text = A2AInvokeService._StreamTextAccumulator._extract_text_from_parts(
-                artifact.get("parts")
-            )
-            if text:
-                return text
-            for source in (payload, artifact):
-                delta = source.get("delta")
-                if isinstance(delta, str):
-                    return delta
-                content = source.get("content")
-                if isinstance(content, str):
-                    return content
-                raw_text = source.get("text")
-                if isinstance(raw_text, str):
-                    return raw_text
-            return ""
-
         def _push_new_block(self, block_type: str, delta: str, done: bool) -> None:
             now = self._block_seq
             self._block_seq += 1
@@ -800,27 +782,34 @@ class A2AInvokeService:
                 last["is_finished"] = True
             self._push_new_block(block_type, delta, done)
 
-        def consume(self, payload: dict[str, Any]) -> None:
-            if payload.get("kind") == "artifact-update":
-                artifact = payload.get("artifact")
-                if isinstance(artifact, dict):
-                    block_type = self._extract_artifact_type(payload, artifact)
-                    if not block_type:
-                        return
-                    delta = self._extract_delta(payload, artifact)
-                    if not delta:
-                        return
-                    append = self._resolve_append(payload, artifact)
-                    done = self._resolve_done(payload, artifact)
-                    source = self._extract_artifact_source(artifact)
-                    self._apply_block_update(
-                        block_type=block_type,
-                        delta=delta,
-                        append=append,
-                        done=done,
-                        source=source,
-                    )
-                    return
+        def consume(
+            self,
+            payload: dict[str, Any],
+            *,
+            stream_block: dict[str, Any] | None = None,
+        ) -> None:
+            resolved_stream_block = stream_block
+            if resolved_stream_block is None:
+                resolved_stream_block = (
+                    A2AInvokeService.extract_stream_chunk_from_serialized_event(payload)
+                )
+            if not resolved_stream_block:
+                return
+            block_type = resolved_stream_block.get("block_type")
+            delta = resolved_stream_block.get("content")
+            if not isinstance(block_type, str) or not isinstance(delta, str):
+                return
+            self._apply_block_update(
+                block_type=block_type,
+                delta=delta,
+                append=bool(resolved_stream_block.get("append", True)),
+                done=bool(resolved_stream_block.get("is_finished", False)),
+                source=(
+                    str(resolved_stream_block.get("source"))
+                    if isinstance(resolved_stream_block.get("source"), str)
+                    else None
+                ),
+            )
 
         def result(self) -> str:
             return "".join(
@@ -855,6 +844,58 @@ class A2AInvokeService:
         if payload.get("kind") != "artifact-update":
             return []
         return [str(item) for item in validate_message(payload)]
+
+    @classmethod
+    def _analyze_stream_chunk_contract(
+        cls, payload: dict[str, Any]
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        if payload.get("kind") != "artifact-update":
+            return None, None
+        stream_block = cls.extract_stream_chunk_from_serialized_event(payload)
+        if stream_block is not None:
+            return stream_block, None
+
+        artifact = as_dict(payload.get("artifact"))
+        if not artifact:
+            return None, "missing_artifact"
+
+        block_type = cls._StreamTextAccumulator._extract_artifact_type(
+            payload, artifact
+        )
+        if block_type is None:
+            return None, "missing_or_invalid_block_type"
+        if (
+            cls._StreamTextAccumulator._extract_text_from_parts(artifact.get("parts"))
+            == ""
+        ):
+            return None, "missing_text_parts"
+        return None, "invalid_artifact_update_shape"
+
+    @staticmethod
+    def _warn_non_contract_artifact_update_once(
+        *,
+        seen_reasons: set[str],
+        reason: str | None,
+        log_warning: Callable[..., Any] | None,
+        log_info: Callable[..., Any] | None,
+        log_extra: dict[str, Any],
+    ) -> None:
+        if reason is None or reason in seen_reasons:
+            return
+        seen_reasons.add(reason)
+        warning_payload = {**log_extra, "drop_reason": reason}
+        if callable(log_warning):
+            log_warning(
+                "Dropped non-contract artifact-update event",
+                extra=warning_payload,
+            )
+            return
+        if callable(log_info):
+            log_info(
+                "Dropped non-contract artifact-update event",
+                extra=warning_payload,
+            )
+            return
 
     @staticmethod
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
@@ -980,6 +1021,9 @@ class A2AInvokeService:
             terminal_event_seen = False
             final_outcome: StreamOutcome | None = None
             heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+            log_warning = getattr(logger, "warning", None)
+            log_info = getattr(logger, "info", None)
+            non_contract_drop_reasons: set[str] = set()
 
             # Replay cached events if resuming
             seq_counter = 0
@@ -990,9 +1034,11 @@ class A2AInvokeService:
                     )
                 )
                 for cached_sequence, cached_event in cached_events:
-                    parsed_sequence = self.analyze_payload(
-                        cached_event
-                    ).upstream_event_seq
+                    parsed_sequence = (
+                        self._extract_stream_sequence_from_serialized_event(
+                            cached_event
+                        )
+                    )
                     if parsed_sequence is not None:
                         seq_counter = max(seq_counter, parsed_sequence)
                     else:
@@ -1034,10 +1080,25 @@ class A2AInvokeService:
                             },
                         )
                         continue
+                    stream_block, non_contract_reason = (
+                        self._analyze_stream_chunk_contract(serialized)
+                    )
+                    self._warn_non_contract_artifact_update_once(
+                        seen_reasons=non_contract_drop_reasons,
+                        reason=non_contract_reason,
+                        log_warning=log_warning,
+                        log_info=log_info,
+                        log_extra=log_extra,
+                    )
 
-                    parsed_sequence = self.analyze_payload(
-                        serialized
-                    ).upstream_event_seq
+                    parsed_sequence = (
+                        stream_block.get("seq")
+                        if isinstance(stream_block, dict)
+                        and isinstance(stream_block.get("seq"), int)
+                        else self._extract_stream_sequence_from_serialized_event(
+                            serialized
+                        )
+                    )
                     event_sequence = (
                         parsed_sequence
                         if parsed_sequence is not None
@@ -1060,7 +1121,9 @@ class A2AInvokeService:
                         await global_stream_cache.append_event(
                             cache_key, serialized, seq_counter
                         )
-                    stream_text_accumulator.consume(serialized)
+                    stream_text_accumulator.consume(
+                        serialized, stream_block=stream_block
+                    )
                     last_event_at = time.monotonic()
                     yield f"data: {json_dumps(serialized, ensure_ascii=False)}\n\n"
                     if self._is_terminal_status_event(serialized):
@@ -1178,6 +1241,9 @@ class A2AInvokeService:
         terminal_event_seen = False
         final_outcome: StreamOutcome | None = None
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
+        log_warning = getattr(logger, "warning", None)
+        log_info = getattr(logger, "info", None)
+        non_contract_drop_reasons: set[str] = set()
 
         # Replay cached events if resuming
         seq_counter = 0
@@ -1186,7 +1252,9 @@ class A2AInvokeService:
                 cache_key, resume_from_sequence
             )
             for cached_sequence, cached_event in cached_events:
-                parsed_sequence = self.analyze_payload(cached_event).upstream_event_seq
+                parsed_sequence = self._extract_stream_sequence_from_serialized_event(
+                    cached_event
+                )
                 if parsed_sequence is not None:
                     seq_counter = max(seq_counter, parsed_sequence)
                 else:
@@ -1230,8 +1298,23 @@ class A2AInvokeService:
                         },
                     )
                     continue
+                stream_block, non_contract_reason = self._analyze_stream_chunk_contract(
+                    serialized
+                )
+                self._warn_non_contract_artifact_update_once(
+                    seen_reasons=non_contract_drop_reasons,
+                    reason=non_contract_reason,
+                    log_warning=log_warning,
+                    log_info=log_info,
+                    log_extra=log_extra,
+                )
 
-                parsed_sequence = self.analyze_payload(serialized).upstream_event_seq
+                parsed_sequence = (
+                    stream_block.get("seq")
+                    if isinstance(stream_block, dict)
+                    and isinstance(stream_block.get("seq"), int)
+                    else self._extract_stream_sequence_from_serialized_event(serialized)
+                )
                 event_sequence = (
                     parsed_sequence if parsed_sequence is not None else seq_counter + 1
                 )
@@ -1249,7 +1332,7 @@ class A2AInvokeService:
                     await global_stream_cache.append_event(
                         cache_key, serialized, seq_counter
                     )
-                stream_text_accumulator.consume(serialized)
+                stream_text_accumulator.consume(serialized, stream_block=stream_block)
                 last_event_at = time.monotonic()
                 await websocket.send_text(json_dumps(serialized, ensure_ascii=False))
                 if self._is_terminal_status_event(serialized):
@@ -1358,6 +1441,7 @@ class A2AInvokeService:
         stream_text_accumulator = self._StreamTextAccumulator()
         log_warning = getattr(logger, "warning", None)
         log_info = getattr(logger, "info", None)
+        non_contract_drop_reasons: set[str] = set()
         started_at = time.monotonic()
         last_event_at = started_at
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
@@ -1504,10 +1588,20 @@ class A2AInvokeService:
                             extra=warning_payload,
                         )
                     continue
+                stream_block, non_contract_reason = self._analyze_stream_chunk_contract(
+                    serialized
+                )
+                self._warn_non_contract_artifact_update_once(
+                    seen_reasons=non_contract_drop_reasons,
+                    reason=non_contract_reason,
+                    log_warning=log_warning,
+                    log_info=log_info,
+                    log_extra=log_extra,
+                )
 
                 last_event_at = time.monotonic()
                 await self._call_callback(on_event, serialized)
-                stream_text_accumulator.consume(serialized)
+                stream_text_accumulator.consume(serialized, stream_block=stream_block)
                 if self._is_terminal_status_event(serialized):
                     terminal_event_seen = True
                     break
