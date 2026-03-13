@@ -1,6 +1,8 @@
 import {
   A2AExtensionCallError,
   assertExtensionSuccess,
+  listOpencodeModels,
+  listOpencodeProviders,
   promptSessionAsync,
   replyPermissionInterrupt,
 } from "@/lib/api/a2aExtensions";
@@ -127,5 +129,71 @@ describe("assertExtensionSuccess", () => {
       },
     );
     expect(result).toEqual({ ok: true, requestId: "perm-1" });
+  });
+
+  it("calls provider discovery endpoint and normalizes response", async () => {
+    mockedApiRequest.mockResolvedValue({
+      success: true,
+      result: {
+        items: [
+          {
+            provider_id: "openai",
+            name: "OpenAI",
+            default_model_id: "gpt-5",
+          },
+        ],
+        default_by_provider: { openai: "gpt-5" },
+        connected: ["openai"],
+      },
+    });
+
+    const result = await listOpencodeProviders({
+      source: "shared",
+      agentId: "agent-1",
+      metadata: { opencode: { directory: "/workspace" } },
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/a2a/agents/agent-1/extensions/opencode/providers:list",
+      {
+        method: "POST",
+        body: { metadata: { opencode: { directory: "/workspace" } } },
+      },
+    );
+    expect(result.items[0]?.provider_id).toBe("openai");
+    expect(result.defaultByProvider).toEqual({ openai: "gpt-5" });
+    expect(result.connected).toEqual(["openai"]);
+  });
+
+  it("calls model discovery endpoint with provider filter", async () => {
+    mockedApiRequest.mockResolvedValue({
+      success: true,
+      result: {
+        items: [
+          {
+            provider_id: "openai",
+            model_id: "gpt-5",
+            name: "GPT-5",
+          },
+        ],
+        default_by_provider: { openai: "gpt-5" },
+        connected: ["openai"],
+      },
+    });
+
+    const result = await listOpencodeModels({
+      source: "personal",
+      agentId: "agent-1",
+      providerId: "openai",
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/a2a/agents/agent-1/extensions/opencode/models:list",
+      {
+        method: "POST",
+        body: { provider_id: "openai" },
+      },
+    );
+    expect(result.items[0]?.model_id).toBe("gpt-5");
   });
 });

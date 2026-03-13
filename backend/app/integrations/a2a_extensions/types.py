@@ -43,9 +43,21 @@ class ResolvedInterruptCallbackExtension:
     business_code_map: Mapping[int, str]
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedProviderDiscoveryExtension:
+    uri: str
+    required: bool
+    provider: str
+    jsonrpc: JsonRpcInterface
+    methods: Mapping[str, Optional[str]]
+    business_code_map: Mapping[int, str]
+    result_envelope: Optional[Mapping[str, Any]]
+
+
 __all__ = [
     "JsonRpcInterface",
     "PageSizePagination",
+    "ResolvedProviderDiscoveryExtension",
     "ResolvedExtension",
     "ResolvedInterruptCallbackExtension",
 ]

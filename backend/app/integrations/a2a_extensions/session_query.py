@@ -18,7 +18,10 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
-from app.integrations.a2a_extensions.shared_contract import SHARED_SESSION_QUERY_URI
+from app.integrations.a2a_extensions.shared_contract import (
+    SHARED_SESSION_QUERY_URI,
+    SUPPORTED_SESSION_QUERY_URIS,
+)
 from app.integrations.a2a_extensions.types import PageSizePagination, ResolvedExtension
 
 
@@ -85,7 +88,7 @@ def resolve_session_query(card: AgentCard) -> ResolvedExtension:
 
     ext = None
     for candidate in extensions:
-        if getattr(candidate, "uri", None) == SHARED_SESSION_QUERY_URI:
+        if getattr(candidate, "uri", None) in SUPPORTED_SESSION_QUERY_URIS:
             ext = candidate
             break
     if ext is None:
@@ -93,7 +96,11 @@ def resolve_session_query(card: AgentCard) -> ResolvedExtension:
 
     required = bool(getattr(ext, "required", False))
     params: Dict[str, Any] = as_dict(getattr(ext, "params", None))
-    provider = require_str(params.get("provider"), field="params.provider").lower()
+    raw_provider = params.get("provider")
+    if raw_provider is None:
+        provider = "opencode"
+    else:
+        provider = require_str(raw_provider, field="params.provider").lower()
 
     methods = as_dict(params.get("methods"))
     list_sessions_method = require_str(
@@ -151,7 +158,7 @@ def resolve_session_query(card: AgentCard) -> ResolvedExtension:
         envelope_mapping = dict(result_envelope)
 
     return ResolvedExtension(
-        uri=SHARED_SESSION_QUERY_URI,
+        uri=str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI)),
         required=required,
         provider=provider,
         jsonrpc=resolve_jsonrpc_interface(card),
