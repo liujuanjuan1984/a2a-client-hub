@@ -1,20 +1,13 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
 import { PAGE_HEADER_CONTENT_GAP } from "@/components/layout/spacing";
 import { Button } from "@/components/ui/Button";
+import { CopyButton } from "@/components/ui/CopyButton";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
@@ -154,15 +147,6 @@ export function AdminInvitationsScreen() {
     [],
   );
 
-  const handleCopyLink = useCallback(async (link: string) => {
-    try {
-      await Clipboard.setStringAsync(link);
-      toast.success("Copied", "Invitation link copied.");
-    } catch {
-      toast.error("Copy failed", "Could not copy invitation link.");
-    }
-  }, []);
-
   if (!isReady) {
     return <FullscreenLoader message="Checking permissions..." />;
   }
@@ -285,25 +269,17 @@ export function AdminInvitationsScreen() {
                     </Text>
                     <View className="mt-2 flex-row items-center gap-2">
                       {inv.status === "pending" ? (
-                        <Pressable
-                          className="flex-row items-center gap-1 rounded-lg px-2 py-2 active:bg-slate-800/40"
-                          onPress={() =>
-                            handleCopyLink(
-                              buildInvitationLink(inv.code, inv.target_email),
-                            )
-                          }
-                          accessibilityRole="button"
+                        <CopyButton
+                          value={buildInvitationLink(
+                            inv.code,
+                            inv.target_email,
+                          )}
+                          successMessage="Invitation link copied."
                           accessibilityLabel="Copy invitation link"
-                        >
-                          <Ionicons
-                            name="copy-outline"
-                            size={14}
-                            color="#94a3b8"
-                          />
-                          <Text className="text-xs font-medium text-slate-300">
-                            Copy
-                          </Text>
-                        </Pressable>
+                          variant="ghost"
+                          size="xs"
+                          className="rounded-lg mr-1"
+                        />
                       ) : null}
                       <Text
                         className="flex-1 font-mono text-[11px] text-muted"

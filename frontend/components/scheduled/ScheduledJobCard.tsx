@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Switch, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
+import { CopyButton } from "@/components/ui/CopyButton";
 import {
   type IntervalTimePoint,
   type ScheduledJob,
@@ -206,10 +207,19 @@ export function ScheduledJobCard({
         </View>
 
         {promptExpanded && (
-          <View className="mt-4 pt-4 border-t border-white/5">
-            <Text className={`text-[11px] leading-5 ${tone.prompt}`}>
+          <View className="relative mt-4 pt-4 border-t border-white/5">
+            <Text className={`text-[11px] leading-5 pr-8 ${tone.prompt}`}>
               {job.prompt}
             </Text>
+            <View className="absolute top-2 right-0">
+              <CopyButton
+                value={job.prompt}
+                successMessage="Prompt copied to clipboard."
+                accessibilityLabel="Copy prompt"
+                variant="ghost"
+                size="sm"
+              />
+            </View>
           </View>
         )}
       </View>
