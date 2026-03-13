@@ -172,6 +172,7 @@ describe("chat store idempotency semantics", () => {
           pendingInterrupt: {
             requestId: "req-1",
             type: "permission",
+            phase: "asked",
             details: {
               permission: "tool.exec",
               patterns: ["*"],

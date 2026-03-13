@@ -56,15 +56,28 @@ export type InterruptQuestion = {
   options: InterruptQuestionOption[];
 };
 
-export type RuntimeInterrupt = {
+type RuntimeInterruptBase = {
   requestId: string;
   type: "permission" | "question";
+};
+
+export type PendingRuntimeInterrupt = RuntimeInterruptBase & {
+  phase: "asked";
   details: {
     permission?: string | null;
     patterns?: string[];
     questions?: InterruptQuestion[];
   };
 };
+
+export type ResolvedRuntimeInterrupt = RuntimeInterruptBase & {
+  phase: "resolved";
+  resolution: "replied" | "rejected";
+};
+
+export type RuntimeInterrupt =
+  | PendingRuntimeInterrupt
+  | ResolvedRuntimeInterrupt;
 
 export const extractSessionMeta = (data: Record<string, unknown>) => {
   const contextId =
@@ -112,9 +125,7 @@ export const extractRuntimeStatusEvent = (
     return {
       state,
       isFinal: data.final === true,
-      interrupt: isInputRequiredRuntimeState(state)
-        ? extractRuntimeInterrupt(data)
-        : null,
+      interrupt: extractRuntimeInterrupt(data, state),
     };
   }
   return null;
@@ -250,6 +261,7 @@ const parseInterruptQuestion = (value: unknown): InterruptQuestion | null => {
 
 const extractRuntimeInterrupt = (
   data: Record<string, unknown>,
+  runtimeState: string,
 ): RuntimeInterrupt | null => {
   const metadata = asRecord(data.metadata);
   const interrupt = asRecord(metadata?.interrupt);
@@ -258,7 +270,29 @@ const extractRuntimeInterrupt = (
   }
   const requestId = pickString(interrupt, ["request_id", "requestId"]);
   const interruptType = pickString(interrupt, ["type"])?.toLowerCase();
-  if (!requestId || !interruptType) {
+  if (
+    !requestId ||
+    (interruptType !== "permission" && interruptType !== "question")
+  ) {
+    return null;
+  }
+
+  const phase =
+    pickString(interrupt, ["phase"])?.toLowerCase() ??
+    (isInputRequiredRuntimeState(runtimeState) ? "asked" : null);
+  if (phase === "resolved") {
+    const resolution = pickString(interrupt, ["resolution"])?.toLowerCase();
+    if (resolution !== "replied" && resolution !== "rejected") {
+      return null;
+    }
+    return {
+      requestId,
+      type: interruptType,
+      phase: "resolved",
+      resolution,
+    };
+  }
+  if (phase !== "asked") {
     return null;
   }
 
@@ -267,6 +301,7 @@ const extractRuntimeInterrupt = (
     return {
       requestId,
       type: "permission",
+      phase: "asked",
       details: {
         permission: pickRawString(details, ["permission"]) ?? null,
         patterns: coerceStringArray(details?.patterns) ?? [],
@@ -283,6 +318,7 @@ const extractRuntimeInterrupt = (
     return {
       requestId,
       type: "question",
+      phase: "asked",
       details: {
         questions,
       },

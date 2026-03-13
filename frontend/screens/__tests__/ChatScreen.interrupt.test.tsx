@@ -78,7 +78,9 @@ jest.mock("@/components/chat/ChatTimelinePanel", () => ({
       type?: string;
       details?: { questions?: { question?: string }[] };
     } | null;
-    onPermissionReply?: (reply: "once" | "allow") => void | Promise<void>;
+    onPermissionReply?: (
+      reply: "once" | "always" | "reject",
+    ) => void | Promise<void>;
     onQuestionAnswerChange?: (index: number, value: string) => void;
     onQuestionReply?: () => void | Promise<void>;
   }) => {
@@ -158,6 +160,7 @@ type MockAgentSession = {
   contextId: string | null;
   runtimeStatus: string | null;
   pendingInterrupt: unknown;
+  lastResolvedInterrupt: unknown;
   streamState: "idle" | "streaming" | "recoverable" | "error";
   lastStreamError: string | null;
   transport: string;
@@ -177,6 +180,7 @@ const baseSession = (): MockAgentSession => ({
   contextId: "ctx-1",
   runtimeStatus: "input-required",
   pendingInterrupt: null,
+  lastResolvedInterrupt: null,
   streamState: "idle",
   lastStreamError: null,
   transport: "ws",
@@ -413,6 +417,7 @@ describe("ChatScreen interrupt handling", () => {
       pendingInterrupt: {
         requestId: "perm-1",
         type: "permission",
+        phase: "asked",
         details: {
           permission: "read",
           patterns: ["/repo/.env"],
@@ -446,6 +451,7 @@ describe("ChatScreen interrupt handling", () => {
       pendingInterrupt: {
         requestId: "perm-1",
         type: "permission",
+        phase: "asked",
         details: {
           permission: "read",
           patterns: ["/repo/.env"],
@@ -485,6 +491,7 @@ describe("ChatScreen interrupt handling", () => {
       pendingInterrupt: {
         requestId: "q-1",
         type: "question",
+        phase: "asked",
         details: {
           questions: [
             {
@@ -524,6 +531,92 @@ describe("ChatScreen interrupt handling", () => {
       "q-1",
     );
     expect(mockToastSuccess).toHaveBeenCalled();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("shows resolved interrupt feedback once for remotely resolved question events", () => {
+    const tree = renderChatScreen(conversationId);
+    const observedAt = new Date(Date.now() + 1_000).toISOString();
+
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      lastResolvedInterrupt: {
+        requestId: "q-1",
+        type: "question",
+        phase: "resolved",
+        resolution: "replied",
+        observedAt,
+      },
+    };
+
+    act(() => {
+      tree.update(
+        <ChatScreen agentId="agent-1" conversationId={conversationId} />,
+      );
+    });
+
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      "Interrupt resolved",
+      "Question answer received. Agent resumed.",
+    );
+
+    act(() => {
+      tree.update(
+        <ChatScreen agentId="agent-1" conversationId={conversationId} />,
+      );
+    });
+
+    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("does not duplicate resolved feedback after local permission reply succeeds", async () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      pendingInterrupt: {
+        requestId: "perm-1",
+        type: "permission",
+        phase: "asked",
+        details: {
+          permission: "read",
+          patterns: ["/repo/.env"],
+        },
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const allowOnceButton = root.findByProps({
+      testID: "interrupt-permission-once",
+    });
+
+    await act(async () => {
+      allowOnceButton.props.onPress();
+    });
+    const observedAt = new Date(Date.now() + 1_000).toISOString();
+
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      lastResolvedInterrupt: {
+        requestId: "perm-1",
+        type: "permission",
+        phase: "resolved",
+        resolution: "replied",
+        observedAt,
+      },
+    };
+
+    act(() => {
+      tree.update(
+        <ChatScreen agentId="agent-1" conversationId={conversationId} />,
+      );
+    });
+
+    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
     act(() => {
       tree.unmount();
     });

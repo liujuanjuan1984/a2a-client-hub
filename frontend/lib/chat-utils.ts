@@ -2,7 +2,8 @@ import type { A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
 import type {
   ChatMessage,
   MessageBlock,
-  RuntimeInterrupt,
+  PendingRuntimeInterrupt,
+  ResolvedRuntimeInterrupt,
 } from "@/lib/api/chat-utils";
 
 export const isSameBlockList = (
@@ -57,13 +58,18 @@ export type SharedModelSelection = {
   modelID: string;
 };
 
+export type ResolvedRuntimeInterruptRecord = ResolvedRuntimeInterrupt & {
+  observedAt: string;
+};
+
 export type AgentSession = {
   agentId: string;
   createdAt?: string;
   source?: "manual" | "scheduled" | null;
   contextId: string | null;
   runtimeStatus?: string | null;
-  pendingInterrupt?: RuntimeInterrupt | null;
+  pendingInterrupt?: PendingRuntimeInterrupt | null;
+  lastResolvedInterrupt?: ResolvedRuntimeInterruptRecord | null;
   streamState?: "idle" | "streaming" | "recoverable" | "error";
   lastStreamError?: string | null;
   lastReceivedSequence?: number;
@@ -89,6 +95,7 @@ export const createAgentSession = (agentId: string): AgentSession => ({
   contextId: null,
   runtimeStatus: null,
   pendingInterrupt: null,
+  lastResolvedInterrupt: null,
   streamState: "idle",
   lastStreamError: null,
   transport: "http_json",
@@ -245,6 +252,7 @@ const normalizeSessionForPersistence = (
   contextId: null,
   runtimeStatus: null,
   pendingInterrupt: null,
+  lastResolvedInterrupt: null,
   streamState: "idle",
   lastStreamError: null,
   transport: "http_json",

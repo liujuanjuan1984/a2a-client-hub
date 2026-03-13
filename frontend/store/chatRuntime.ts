@@ -5,9 +5,9 @@ import {
   extractRuntimeStatusEvent,
   extractSessionMeta,
   finalizeMessageBlocks,
+  type PendingRuntimeInterrupt,
   type RuntimeInterrupt,
   type StreamBlockUpdate,
-  isInputRequiredRuntimeState,
   extractStreamBlockUpdate,
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
@@ -18,7 +18,11 @@ import {
 } from "@/lib/api/client";
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
-import { mergeExternalSessionRef, type AgentSession } from "@/lib/chat-utils";
+import {
+  mergeExternalSessionRef,
+  type AgentSession,
+  type ResolvedRuntimeInterruptRecord,
+} from "@/lib/chat-utils";
 import {
   addConversationMessage,
   getConversationMessages,
@@ -49,8 +53,8 @@ export type ChatRuntimeSetState<
 ) => void;
 
 const isSamePendingInterrupt = (
-  left: RuntimeInterrupt | null | undefined,
-  right: RuntimeInterrupt | null | undefined,
+  left: PendingRuntimeInterrupt | null | undefined,
+  right: PendingRuntimeInterrupt | null | undefined,
 ) => {
   const lhs = left ?? null;
   const rhs = right ?? null;
@@ -113,6 +117,22 @@ const isSamePendingInterrupt = (
   }
 
   return false;
+};
+
+const isSameResolvedInterrupt = (
+  left: ResolvedRuntimeInterruptRecord | null | undefined,
+  right: ResolvedRuntimeInterruptRecord | null | undefined,
+) => {
+  const lhs = left ?? null;
+  const rhs = right ?? null;
+  if (lhs === rhs) return true;
+  if (!lhs || !rhs) return false;
+  return (
+    lhs.requestId === rhs.requestId &&
+    lhs.type === rhs.type &&
+    lhs.phase === rhs.phase &&
+    lhs.resolution === rhs.resolution
+  );
 };
 
 const buildApiErrorMessage = (error: unknown): string => {
@@ -209,7 +229,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     provider?: string | null;
     externalSessionId?: string | null;
     runtimeStatus?: string | null;
-    pendingInterrupt?: RuntimeInterrupt | null;
+    runtimeInterruptEvent?: RuntimeInterrupt | null;
     transport?: string;
     inputModes?: string[];
     outputModes?: string[];
@@ -231,11 +251,36 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       ) {
         nextPatch.runtimeStatus = meta.runtimeStatus;
       }
-      if (
-        meta.pendingInterrupt !== undefined &&
-        !isSamePendingInterrupt(current.pendingInterrupt, meta.pendingInterrupt)
-      ) {
-        nextPatch.pendingInterrupt = meta.pendingInterrupt;
+      if (meta.runtimeInterruptEvent?.phase === "asked") {
+        if (
+          !isSamePendingInterrupt(
+            current.pendingInterrupt,
+            meta.runtimeInterruptEvent,
+          )
+        ) {
+          nextPatch.pendingInterrupt = meta.runtimeInterruptEvent;
+        }
+      } else if (meta.runtimeInterruptEvent?.phase === "resolved") {
+        const resolvedInterrupt: ResolvedRuntimeInterruptRecord = {
+          ...meta.runtimeInterruptEvent,
+          observedAt: new Date().toISOString(),
+        };
+        if (
+          !isSameResolvedInterrupt(
+            current.lastResolvedInterrupt,
+            resolvedInterrupt,
+          )
+        ) {
+          nextPatch.lastResolvedInterrupt = resolvedInterrupt;
+        }
+        if (
+          current.pendingInterrupt &&
+          current.pendingInterrupt.requestId ===
+            meta.runtimeInterruptEvent.requestId
+        ) {
+          // Only a matching resolved event should close the current action card.
+          nextPatch.pendingInterrupt = null;
+        }
       }
       if (
         meta.transport !== undefined &&
@@ -655,11 +700,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const meta = extractSessionMeta(data);
     const runtimeStatus = runtimeStatusEvent?.state ?? null;
     const hasRuntimeStatusEvent = runtimeStatusEvent !== null;
-    const pendingInterrupt =
-      runtimeStatusEvent &&
-      isInputRequiredRuntimeState(runtimeStatusEvent.state)
-        ? runtimeStatusEvent.interrupt
-        : null;
     if (
       meta.contextId ||
       meta.provider !== undefined ||
@@ -671,7 +711,12 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     ) {
       updateSessionMeta({
         ...meta,
-        ...(hasRuntimeStatusEvent ? { runtimeStatus, pendingInterrupt } : {}),
+        ...(hasRuntimeStatusEvent
+          ? {
+              runtimeStatus,
+              runtimeInterruptEvent: runtimeStatusEvent.interrupt,
+            }
+          : {}),
       });
     }
 

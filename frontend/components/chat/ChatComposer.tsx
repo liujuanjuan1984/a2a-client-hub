@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 
-import { type RuntimeInterrupt } from "@/lib/api/chat-utils";
+import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import { type SharedModelSelection } from "@/lib/chat-utils";
 
 export function ChatComposer({
@@ -30,7 +30,7 @@ export function ChatComposer({
   showScrollToBottom,
   onScrollToBottom,
 }: {
-  pendingInterrupt: RuntimeInterrupt | null;
+  pendingInterrupt: PendingRuntimeInterrupt | null;
   showShortcutManager: boolean;
   onOpenShortcutManager: () => void;
   selectedModel: SharedModelSelection | null;
