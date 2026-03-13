@@ -21,6 +21,7 @@ import { listSessionMessagesPage } from "@/lib/api/sessions";
 import {
   mergeExternalSessionRef,
   type AgentSession,
+  type InterruptLifecycleRecord,
   type ResolvedRuntimeInterruptRecord,
 } from "@/lib/chat-utils";
 import {
@@ -135,6 +136,56 @@ const isSameResolvedInterrupt = (
   );
 };
 
+const updateInterruptLifecycleState = (input: {
+  current: AgentSession;
+  event: RuntimeInterrupt;
+  observedAt: string;
+}) => {
+  const { current, event, observedAt } = input;
+  const nextRecords = {
+    ...(current.interruptRecords ?? {}),
+  };
+  const existingRecord: InterruptLifecycleRecord | null =
+    nextRecords[event.requestId] ?? null;
+  const nextOrder = [...(current.interruptOrder ?? [])];
+  if (!nextOrder.includes(event.requestId)) {
+    nextOrder.push(event.requestId);
+  }
+
+  if (event.phase === "asked") {
+    nextRecords[event.requestId] = {
+      requestId: event.requestId,
+      type: event.type,
+      details: event.details,
+      askedAt: existingRecord?.askedAt ?? observedAt,
+      resolvedAt: existingRecord?.resolvedAt ?? null,
+      resolution: existingRecord?.resolution ?? null,
+    };
+    return {
+      interruptRecords: nextRecords,
+      interruptOrder: nextOrder,
+      activePendingInterruptId: event.requestId,
+    };
+  }
+
+  nextRecords[event.requestId] = {
+    requestId: event.requestId,
+    type: event.type,
+    details: existingRecord?.details ?? null,
+    askedAt: existingRecord?.askedAt ?? null,
+    resolvedAt: existingRecord?.resolvedAt ?? observedAt,
+    resolution: event.resolution,
+  };
+  return {
+    interruptRecords: nextRecords,
+    interruptOrder: nextOrder,
+    activePendingInterruptId:
+      current.activePendingInterruptId === event.requestId
+        ? null
+        : (current.activePendingInterruptId ?? null),
+  };
+};
+
 const buildApiErrorMessage = (error: unknown): string => {
   if (!(error instanceof ApiRequestError)) {
     return error instanceof Error ? error.message : "Request failed.";
@@ -221,6 +272,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       streamState: "idle",
       lastStreamError: null,
       pendingInterrupt: null,
+      activePendingInterruptId: null,
     });
   };
 
@@ -252,6 +304,15 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         nextPatch.runtimeStatus = meta.runtimeStatus;
       }
       if (meta.runtimeInterruptEvent?.phase === "asked") {
+        const lifecyclePatch = updateInterruptLifecycleState({
+          current,
+          event: meta.runtimeInterruptEvent,
+          observedAt: new Date().toISOString(),
+        });
+        nextPatch.interruptRecords = lifecyclePatch.interruptRecords;
+        nextPatch.interruptOrder = lifecyclePatch.interruptOrder;
+        nextPatch.activePendingInterruptId =
+          lifecyclePatch.activePendingInterruptId;
         if (
           !isSamePendingInterrupt(
             current.pendingInterrupt,
@@ -261,6 +322,15 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           nextPatch.pendingInterrupt = meta.runtimeInterruptEvent;
         }
       } else if (meta.runtimeInterruptEvent?.phase === "resolved") {
+        const lifecyclePatch = updateInterruptLifecycleState({
+          current,
+          event: meta.runtimeInterruptEvent,
+          observedAt: new Date().toISOString(),
+        });
+        nextPatch.interruptRecords = lifecyclePatch.interruptRecords;
+        nextPatch.interruptOrder = lifecyclePatch.interruptOrder;
+        nextPatch.activePendingInterruptId =
+          lifecyclePatch.activePendingInterruptId;
         const resolvedInterrupt: ResolvedRuntimeInterruptRecord = {
           ...meta.runtimeInterruptEvent,
           observedAt: new Date().toISOString(),
@@ -737,6 +807,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       streamState: "recoverable",
       lastStreamError: errorText,
       pendingInterrupt: null,
+      activePendingInterruptId: null,
     });
     warnStreamOnce(
       `recoverable:${conversationId}:${errorText}`,
@@ -942,6 +1013,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       streamState: "error",
       lastStreamError: message,
       pendingInterrupt: null,
+      activePendingInterruptId: null,
     });
     return;
   }

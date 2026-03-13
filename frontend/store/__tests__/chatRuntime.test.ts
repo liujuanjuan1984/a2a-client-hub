@@ -346,15 +346,6 @@ describe("executeChatRuntime empty-content recovery", () => {
         [conversationId]: {
           ...createAgentSession(agentId),
           streamState: "streaming",
-          pendingInterrupt: {
-            requestId: "perm-1",
-            type: "permission",
-            phase: "asked",
-            details: {
-              permission: "read",
-              patterns: ["/repo/.env"],
-            },
-          },
           lastUserMessageId: userMessageId,
           lastAgentMessageId: agentMessageId,
         },
@@ -380,6 +371,22 @@ describe("executeChatRuntime empty-content recovery", () => {
           onData: (data: Record<string, unknown>) => boolean | void;
         };
       }) => {
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "input-required" },
+          final: false,
+          metadata: {
+            interrupt: {
+              request_id: "perm-1",
+              type: "permission",
+              phase: "asked",
+              details: {
+                permission: "read",
+                patterns: ["/repo/.env"],
+              },
+            },
+          },
+        });
         params.callbacks.onData({
           kind: "status-update",
           status: { state: "working" },
@@ -417,6 +424,16 @@ describe("executeChatRuntime empty-content recovery", () => {
     });
     expect(state.sessions[conversationId]?.pendingInterrupt).toBeNull();
     expect(state.sessions[conversationId]?.lastResolvedInterrupt).toBeNull();
+    expect(state.sessions[conversationId]?.interruptOrder).toEqual(["perm-1"]);
+    expect(
+      state.sessions[conversationId]?.interruptRecords["perm-1"],
+    ).toMatchObject({
+      requestId: "perm-1",
+      type: "permission",
+      askedAt: expect.any(String),
+      resolvedAt: null,
+      resolution: null,
+    });
   });
 
   it("records resolved interrupt state and only clears matching pending interrupt", async () => {
@@ -538,5 +555,27 @@ describe("executeChatRuntime empty-content recovery", () => {
         resolution: "replied",
       },
     );
+    expect(state.sessions[conversationId]?.interruptOrder).toEqual([
+      "q-other",
+      "perm-1",
+    ]);
+    expect(
+      state.sessions[conversationId]?.interruptRecords["q-other"],
+    ).toMatchObject({
+      requestId: "q-other",
+      type: "question",
+      askedAt: null,
+      resolvedAt: expect.any(String),
+      resolution: "rejected",
+    });
+    expect(
+      state.sessions[conversationId]?.interruptRecords["perm-1"],
+    ).toMatchObject({
+      requestId: "perm-1",
+      type: "permission",
+      askedAt: null,
+      resolvedAt: expect.any(String),
+      resolution: "replied",
+    });
   });
 });
