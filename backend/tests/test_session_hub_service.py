@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.models.agent_message import AgentMessage
 from app.db.models.conversation_thread import ConversationThread
-from app.services import session_hub as session_hub_module
+from app.services import session_history_projection as session_history_projection_module
 from app.services.conversation_identity import conversation_identity_service
 from app.services.session_hub import session_hub_service
 from app.utils.idempotency_key import (
@@ -1429,17 +1429,17 @@ async def test_append_agent_message_block_update_unique_conflict_does_not_rollba
         )
 
     monkeypatch.setattr(
-        session_hub_module.agent_message_block_handler,
+        session_history_projection_module.agent_message_block_handler,
         "find_block_by_message_and_block_seq",
         _find_existing,
     )
     monkeypatch.setattr(
-        session_hub_module.agent_message_block_handler,
+        session_history_projection_module.agent_message_block_handler,
         "find_last_block_for_message",
         _find_none,
     )
     monkeypatch.setattr(
-        session_hub_module.agent_message_block_handler,
+        session_history_projection_module.agent_message_block_handler,
         "create_block",
         _raise_unique_conflict,
     )
