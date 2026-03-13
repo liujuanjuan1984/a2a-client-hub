@@ -1636,11 +1636,11 @@ async def test_recover_stale_running_tasks_commits_per_recovered_task(
         timeout_apply_call_count += 1
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_service.commit_safely",
+        "app.services.a2a_schedule_dispatch.commit_safely",
         _counting_commit,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_service.set_postgres_local_timeouts",
+        "app.services.a2a_schedule_support.set_postgres_local_timeouts",
         _counting_set_timeouts,
     )
 
