@@ -218,6 +218,7 @@ export function ScheduledJobCard({
                 accessibilityLabel="Copy prompt"
                 variant="ghost"
                 size="sm"
+                iconColor={tone.iconColor}
               />
             </View>
           </View>

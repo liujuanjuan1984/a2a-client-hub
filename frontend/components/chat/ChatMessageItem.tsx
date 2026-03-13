@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import React, { useCallback, useMemo } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View, Platform } from "react-native";
 
 import { MessageBlock, MessageContentFallback } from "./MessageBlock";
 import { CopyButton } from "../ui/CopyButton";
@@ -9,6 +10,7 @@ import {
   type ChatMessage,
   type MessageBlock as MessageBlockType,
 } from "@/lib/api/chat-utils";
+import { toast } from "@/lib/toast";
 
 export function ChatMessageItem({
   message,
@@ -78,6 +80,23 @@ export function ChatMessageItem({
     ["error", "recoverable"].includes(sessionStreamState);
   const userCopyButtonPositionClass = "right-0";
 
+  const handleLongPressCopy = useCallback(async () => {
+    try {
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(textToCopy);
+        } catch {
+          await Clipboard.setStringAsync(textToCopy);
+        }
+      } else {
+        await Clipboard.setStringAsync(textToCopy);
+      }
+      toast.success("Copied", "Message copied to clipboard.");
+    } catch {
+      toast.error("Copy failed", "Could not copy message.");
+    }
+  }, [textToCopy]);
+
   return (
     <View
       className={`mb-4 flex ${
@@ -85,7 +104,9 @@ export function ChatMessageItem({
       }`}
     >
       <View className="max-w-[94%] relative group">
-        <View
+        <Pressable
+          onLongPress={handleLongPressCopy}
+          delayLongPress={500}
           className={`px-4 py-3 rounded-2xl shadow-sm ${
             message.role === "user"
               ? "bg-[#1E222D]"
@@ -122,7 +143,7 @@ export function ChatMessageItem({
               </Text>
             </View>
           ) : null}
-        </View>
+        </Pressable>
         <View
           className={`absolute bottom-1 ${userCopyButtonPositionClass} opacity-30`}
         >
@@ -132,7 +153,7 @@ export function ChatMessageItem({
             accessibilityLabel="Copy message"
             variant="ghost"
             size="sm"
-            icon="copy-outline"
+            iconColor="#FFFFFF"
           />
         </View>
       </View>
