@@ -319,6 +319,248 @@ describe("executeChatRuntime empty-content recovery", () => {
     expect(streamedAgentMessage?.status).toBe("done");
   });
 
+  it("renders a tool_call placeholder during stream before any text block arrives", async () => {
+    const conversationId = "conv-stream-tool-call-1";
+    const agentId = "agent-tool-call-1";
+    const userMessageId = "user-msg-tool-call-1";
+    const agentMessageId = "agent-msg-tool-call-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T06:10:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T06:10:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    let renderedDuringStream = false;
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "working" },
+          final: false,
+        });
+        params.callbacks.onData({
+          kind: "artifact-update",
+          append: false,
+          message_id: agentMessageId,
+          event_id: `${agentMessageId}:1`,
+          seq: 1,
+          artifact: {
+            artifactId: `${agentMessageId}:stream`,
+            parts: [
+              {
+                kind: "data",
+                data: {
+                  call_id: "call-1",
+                  tool: "bash",
+                  status: "running",
+                  input: { command: "pwd" },
+                },
+              },
+            ],
+            metadata: {
+              shared: {
+                stream: {
+                  block_type: "tool_call",
+                  source: "tool_part_update",
+                  message_id: agentMessageId,
+                  event_id: `${agentMessageId}:1`,
+                  sequence: 1,
+                },
+              },
+            },
+          },
+        });
+
+        const agentMessage = getConversationMessages(conversationId).find(
+          (message) => message.id === agentMessageId,
+        );
+        renderedDuringStream =
+          agentMessage?.status === "streaming" &&
+          (agentMessage.blocks?.length ?? 0) > 0 &&
+          agentMessage?.blocks?.[0]?.type === "tool_call";
+
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(renderedDuringStream).toBe(true);
+    expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
+  });
+
+  it("renders a reasoning placeholder during stream before completion", async () => {
+    const conversationId = "conv-stream-reasoning-1";
+    const agentId = "agent-reasoning-1";
+    const userMessageId = "user-msg-reasoning-1";
+    const agentMessageId = "agent-msg-reasoning-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T06:20:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T06:20:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    let renderedDuringStream = false;
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "working" },
+          final: false,
+        });
+        params.callbacks.onData({
+          kind: "artifact-update",
+          append: false,
+          message_id: agentMessageId,
+          event_id: `${agentMessageId}:1`,
+          seq: 1,
+          artifact: {
+            artifactId: `${agentMessageId}:stream`,
+            parts: [{ kind: "text", text: "Reasoning in progress" }],
+            metadata: {
+              shared: {
+                stream: {
+                  block_type: "reasoning",
+                  source: "reasoning_part_update",
+                  message_id: agentMessageId,
+                  event_id: `${agentMessageId}:1`,
+                  sequence: 1,
+                },
+              },
+            },
+          },
+        });
+
+        const agentMessage = getConversationMessages(conversationId).find(
+          (message) => message.id === agentMessageId,
+        );
+        renderedDuringStream =
+          agentMessage?.status === "streaming" &&
+          (agentMessage.blocks?.length ?? 0) > 0 &&
+          agentMessage?.blocks?.[0]?.type === "reasoning";
+
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(renderedDuringStream).toBe(true);
+    expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
+  });
+
   it("keeps pending interrupt until a matching resolved event arrives", async () => {
     const conversationId = "conv-interrupt-pending-1";
     const agentId = "agent-interrupt-1";

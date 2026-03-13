@@ -546,6 +546,24 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   };
 
   const appendStreamChunk = (chunk: StreamBlockUpdate) => {
+    const shouldFlushImmediatelyForNonTextPlaceholder = (
+      targetMessageId: string,
+    ) => {
+      if (chunk.blockType !== "tool_call" && chunk.blockType !== "reasoning") {
+        return false;
+      }
+      if ((chunkBufferByMessageId.get(targetMessageId)?.length ?? 0) > 1) {
+        return false;
+      }
+      const targetMessage = getConversationMessages(conversationId).find(
+        (message) => message.id === targetMessageId,
+      );
+      if (!targetMessage || targetMessage.role !== "agent") {
+        return false;
+      }
+      return (targetMessage.blocks?.length ?? 0) === 0;
+    };
+
     const resolveChunkMessageId = () => {
       const mapped = streamMessageIdMap.get(chunk.messageId);
       if (mapped) {
@@ -595,6 +613,11 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const chunks = chunkBufferByMessageId.get(targetMessageId) ?? [];
     chunks.push(chunk);
     chunkBufferByMessageId.set(targetMessageId, chunks);
+
+    if (shouldFlushImmediatelyForNonTextPlaceholder(targetMessageId)) {
+      flushChunkBuffer();
+      return;
+    }
 
     if (!bufferTimeout) {
       bufferTimeout = setTimeout(flushChunkBuffer, 16);
