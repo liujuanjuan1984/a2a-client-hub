@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.handlers import agent_message_block as agent_message_block_handler
 from app.services.session_history_projection import SessionHistoryProjectionService
-from app.services.session_hub_common import (
-    ResolvedConversationTarget,
-    SessionSource,
-)
 from app.services.session_hub_support import SessionHubSupport
 from app.services.session_inflight_service import SessionInflightService
 from app.services.session_query_service import SessionQueryService
+
+if TYPE_CHECKING:
+    from app.services.session_hub_common import SessionSource
 
 
 class SessionHubService:
@@ -397,9 +395,6 @@ class SessionHubService:
 session_hub_service = SessionHubService()
 
 __all__ = [
-    "ResolvedConversationTarget",
     "SessionHubService",
-    "SessionSource",
-    "agent_message_block_handler",
     "session_hub_service",
 ]
