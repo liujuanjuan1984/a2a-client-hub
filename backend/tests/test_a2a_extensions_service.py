@@ -9,10 +9,14 @@ from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
     ExtensionCallResult,
 )
+from app.integrations.a2a_extensions.session_extension_service import (
+    SessionExtensionService,
+)
 from app.integrations.a2a_extensions.shared_contract import (
     SHARED_INTERRUPT_CALLBACK_URI,
     SHARED_SESSION_QUERY_URI,
 )
+from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
     JsonRpcInterface,
     PageSizePagination,
@@ -71,21 +75,21 @@ def _interrupt_extension_fixture() -> ResolvedInterruptCallbackExtension:
 def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
     ext = _resolved_extension()
     assert (
-        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_business_error_code(
             {"code": -32005},
             ext,
         )
         == "upstream_payload_error"
     )
     assert (
-        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_business_error_code(
             {"code": "-32001"},
             ext,
         )
         == "session_not_found"
     )
     assert (
-        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_business_error_code(
             {"code": -32006},
             ext,
         )
@@ -96,7 +100,7 @@ def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
 def test_map_business_error_code_prefers_error_data_type() -> None:
     ext = _resolved_extension()
     assert (
-        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_business_error_code(
             {
                 "code": -32001,
                 "data": {"type": "METHOD_DISABLED"},
@@ -110,7 +114,7 @@ def test_map_business_error_code_prefers_error_data_type() -> None:
 def test_map_business_error_code_maps_jsonrpc_invalid_params() -> None:
     ext = _resolved_extension()
     assert (
-        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_business_error_code(
             {"code": -32602},
             ext,
         )
@@ -130,7 +134,7 @@ def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
         business_code_map={-32004: "interrupt_request_not_found"},
     )
     assert (
-        A2AExtensionsService._map_interrupt_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_interrupt_business_error_code(
             {
                 "code": -32004,
                 "data": {"type": "INTERRUPT_REQUEST_EXPIRED"},
@@ -140,7 +144,7 @@ def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
         == "interrupt_request_expired"
     )
     assert (
-        A2AExtensionsService._map_interrupt_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_interrupt_business_error_code(
             {
                 "code": -32602,
                 "data": {"type": "INTERRUPT_TYPE_MISMATCH"},
@@ -171,8 +175,8 @@ async def test_continue_session_returns_canonical_binding_metadata(
         assert kwargs["params"]["limit"] == 1
         return ExtensionCallResult(success=True, result={"items": []}, meta={})
 
-    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_session_method", _fake_invoke)
+    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
 
     result = await service.continue_session(
         runtime=runtime,
@@ -209,8 +213,8 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
     async def _never_invoke(**_kwargs):
         raise AssertionError("Upstream call should be short-circuited")
 
-    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_session_method", _never_invoke)
+    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _never_invoke)
 
     result = await service.get_session_messages(
         runtime=runtime,
@@ -237,7 +241,7 @@ def test_normalize_envelope_excludes_raw_by_default() -> None:
         "extra": {"debug": True},
     }
 
-    envelope = A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+    envelope = SessionExtensionService._normalize_envelope(
         result,
         page=1,
         size=20,
@@ -252,7 +256,7 @@ def test_normalize_envelope_excludes_raw_by_default() -> None:
 def test_normalize_envelope_includes_raw_when_requested() -> None:
     result = [{"id": "sess-1"}]
 
-    envelope = A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+    envelope = SessionExtensionService._normalize_envelope(
         result,
         page=1,
         size=20,
@@ -274,7 +278,7 @@ def test_normalize_envelope_uses_result_envelope_aliases() -> None:
         }
     }
 
-    envelope = A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+    envelope = SessionExtensionService._normalize_envelope(
         result,
         page=1,
         size=20,
@@ -300,7 +304,7 @@ def test_normalize_envelope_rejects_invalid_result_envelope_items() -> None:
     result = {"payload": {"sessions": "not-a-list"}}
 
     with pytest.raises(A2AExtensionContractError):
-        A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+        SessionExtensionService._normalize_envelope(
             result,
             page=1,
             size=20,
@@ -315,7 +319,7 @@ def test_normalize_envelope_does_not_fallback_when_result_envelope_declared() ->
     }
 
     with pytest.raises(A2AExtensionContractError):
-        A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+        SessionExtensionService._normalize_envelope(
             result,
             page=1,
             size=20,
@@ -328,7 +332,7 @@ def test_normalize_envelope_does_not_fallback_when_result_envelope_declared() ->
 
 def test_normalize_envelope_rejects_non_object_items_in_result_list() -> None:
     with pytest.raises(A2AExtensionContractError):
-        A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+        SessionExtensionService._normalize_envelope(
             ["invalid-item"],
             page=1,
             size=20,
@@ -366,8 +370,8 @@ async def test_prompt_session_async_forwards_request_and_metadata(
             meta={"session_id": "ses_123"},
         )
 
-    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_session_method", _fake_invoke)
+    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
 
     result = await service.prompt_session_async(
         runtime=runtime,
@@ -413,8 +417,8 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
+    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.prompt_session_async(
         runtime=runtime,
@@ -486,8 +490,10 @@ async def test_reply_permission_interrupt_uses_request_id_and_reply_contract(
             meta={"request_id": "perm-1"},
         )
 
-    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_interrupt_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._interrupt_extensions, "resolve_extension", _fake_resolve
+    )
+    monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
 
     result = await service.reply_permission_interrupt(
         runtime=runtime,
@@ -547,8 +553,10 @@ async def test_reply_permission_interrupt_forwards_metadata(
             meta={"request_id": "perm-1"},
         )
 
-    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_interrupt_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._interrupt_extensions, "resolve_extension", _fake_resolve
+    )
+    monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
 
     result = await service.reply_permission_interrupt(
         runtime=runtime,
@@ -605,8 +613,10 @@ async def test_reject_question_interrupt_uses_request_id(
             meta={"request_id": "q-1"},
         )
 
-    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_interrupt_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._interrupt_extensions, "resolve_extension", _fake_resolve
+    )
+    monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
 
     result = await service.reject_question_interrupt(runtime=runtime, request_id="q-1")
     assert result.success is True
@@ -628,8 +638,10 @@ async def test_reply_permission_interrupt_returns_method_not_supported_if_missin
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
+    monkeypatch.setattr(
+        service._interrupt_extensions, "resolve_extension", _fake_resolve
+    )
+    monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.reply_permission_interrupt(
         runtime=runtime,
@@ -669,8 +681,10 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
+    monkeypatch.setattr(
+        service._interrupt_extensions, "resolve_extension", _fake_resolve
+    )
+    monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.reply_question_interrupt(
         runtime=runtime,

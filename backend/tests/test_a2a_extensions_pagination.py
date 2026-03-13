@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from app.integrations.a2a_extensions.service import A2AExtensionsService
+from app.integrations.a2a_extensions.session_extension_service import (
+    SessionExtensionService,
+)
 
 
 def test_extension_pagination_rejects_size_over_max() -> None:
     with pytest.raises(ValueError) as exc:
-        A2AExtensionsService._coerce_page_size(  # noqa: SLF001
+        SessionExtensionService._coerce_page_size(
             default_size=20,
             max_size=50,
             page=1,
@@ -17,7 +19,7 @@ def test_extension_pagination_rejects_size_over_max() -> None:
 
 
 def test_build_pagination_params_page_size_mode() -> None:
-    params = A2AExtensionsService._build_pagination_params(  # noqa: SLF001
+    params = SessionExtensionService._build_pagination_params(
         mode="page_size",
         page=3,
         size=20,
@@ -27,7 +29,7 @@ def test_build_pagination_params_page_size_mode() -> None:
 
 
 def test_build_pagination_params_limit_mode_with_offset() -> None:
-    params = A2AExtensionsService._build_pagination_params(  # noqa: SLF001
+    params = SessionExtensionService._build_pagination_params(
         mode="limit",
         page=3,
         size=20,
@@ -37,7 +39,7 @@ def test_build_pagination_params_limit_mode_with_offset() -> None:
 
 
 def test_build_pagination_params_limit_mode_first_page_without_offset() -> None:
-    params = A2AExtensionsService._build_pagination_params(  # noqa: SLF001
+    params = SessionExtensionService._build_pagination_params(
         mode="limit",
         page=1,
         size=20,
@@ -48,7 +50,7 @@ def test_build_pagination_params_limit_mode_first_page_without_offset() -> None:
 
 def test_build_pagination_params_limit_mode_rejects_deep_page_without_offset() -> None:
     with pytest.raises(ValueError) as exc:
-        A2AExtensionsService._build_pagination_params(  # noqa: SLF001
+        SessionExtensionService._build_pagination_params(
             mode="limit",
             page=2,
             size=20,
@@ -59,7 +61,7 @@ def test_build_pagination_params_limit_mode_rejects_deep_page_without_offset() -
 
 def test_build_pagination_params_rejects_unknown_mode() -> None:
     with pytest.raises(ValueError) as exc:
-        A2AExtensionsService._build_pagination_params(  # noqa: SLF001
+        SessionExtensionService._build_pagination_params(
             mode="cursor",
             page=1,
             size=20,
