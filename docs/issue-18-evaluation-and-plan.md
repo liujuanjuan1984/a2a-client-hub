@@ -88,6 +88,8 @@
 - 按 `result_envelope` 指定的位置提取 `pagination`
 - 按 `result_envelope` 指定的位置提取 `raw`
 - 当声明字段存在但类型不合法时，返回 contract error，而不是静默吞掉
+- 一旦显式声明 `result_envelope`，不再回退到默认顶层字段
+- 仅在未声明 `result_envelope` 时，才允许沿用默认 envelope 兼容路径
 
 ### 4. 强化 query result schema
 
@@ -122,6 +124,7 @@
 - limit-without-offset 深分页短路分支在默认场景不返回 `raw`
 - `result_envelope` 别名映射能驱动字段抽取
 - 非法 `result_envelope` 声明会被识别为 contract error
+- 已声明 `result_envelope` 时不会再静默回退到默认顶层字段
 - 非法 query result（如 `items` 不是对象列表）会被 schema 拦下
 
 ## 不在本次范围内
@@ -136,6 +139,7 @@
 1. 默认 query 响应中不存在顶层 `raw`
 2. 显式请求 `include_raw=true` 时，返回中存在顶层 `raw`
 3. `result_envelope` 声明可以真实影响 query 结果抽取
-4. query 路由响应不会再混入未声明的额外字段
-5. 现有前端与上层服务不因该变更发生行为回归
-6. 后端相关 scoped tests 全部通过
+4. 已声明 `result_envelope` 时，Hub 不再兼容未按声明实现的上游响应
+5. query 路由响应不会再混入未声明的额外字段
+6. 现有前端与上层服务不因该变更发生行为回归
+7. 后端相关 scoped tests 全部通过

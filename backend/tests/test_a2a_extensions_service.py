@@ -308,6 +308,24 @@ def test_normalize_envelope_rejects_invalid_result_envelope_items() -> None:
         )
 
 
+def test_normalize_envelope_does_not_fallback_when_result_envelope_declared() -> None:
+    result = {
+        "items": [{"id": "sess-1"}],
+        "pagination": {"page": 1, "size": 20},
+    }
+
+    with pytest.raises(A2AExtensionContractError):
+        A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+            result,
+            page=1,
+            size=20,
+            result_envelope=ResultEnvelopeMapping(
+                items="payload.sessions",
+                pagination="payload.page_info",
+            ),
+        )
+
+
 def test_normalize_envelope_rejects_non_object_items_in_result_list() -> None:
     with pytest.raises(A2AExtensionContractError):
         A2AExtensionsService._normalize_envelope(  # noqa: SLF001

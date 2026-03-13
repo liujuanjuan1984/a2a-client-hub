@@ -161,43 +161,77 @@ class A2AExtensionsService:
                 envelope["raw"] = result
             return A2AExtensionsService._validate_query_result(envelope)
 
+        strict_result_envelope = result_envelope is not None
         mapping = result_envelope or ResultEnvelopeMapping()
-
-        raw, _ = A2AExtensionsService._resolve_result_field(
-            result,
-            path=mapping.raw,
-            fallback_path="raw",
-        )
-        if raw is _MISSING:
-            raw = result
+        raw: Any = _MISSING
 
         items, items_found = A2AExtensionsService._resolve_result_field(
             result,
             path=mapping.items,
-            fallback_path="items",
+            fallback_path=None if strict_result_envelope else "items",
         )
         if items_found:
             if not isinstance(items, list):
                 raise A2AExtensionContractError(
                     "Extension result envelope resolved invalid 'items'"
                 )
-        elif isinstance(raw, list):
-            items = raw
+        elif strict_result_envelope:
+            raise A2AExtensionContractError(
+                "Extension result envelope missing declared 'items'"
+            )
         else:
-            items = []
+            raw, _ = A2AExtensionsService._resolve_result_field(
+                result,
+                path=mapping.raw,
+                fallback_path="raw",
+            )
+            if raw is _MISSING:
+                raw = result
+            if isinstance(raw, list):
+                items = raw
+            else:
+                items = []
+
+        if strict_result_envelope and include_raw:
+            raw, raw_found = A2AExtensionsService._resolve_result_field(
+                result,
+                path=mapping.raw,
+                fallback_path=None,
+            )
+            if not raw_found:
+                raise A2AExtensionContractError(
+                    "Extension result envelope missing declared 'raw'"
+                )
+        elif strict_result_envelope:
+            raw = _MISSING
+        elif isinstance(raw, list):
+            pass
 
         pagination, pagination_found = A2AExtensionsService._resolve_result_field(
             result,
             path=mapping.pagination,
-            fallback_path="pagination",
+            fallback_path=None if strict_result_envelope else "pagination",
         )
         if pagination_found:
             if not isinstance(pagination, dict):
                 raise A2AExtensionContractError(
                     "Extension result envelope resolved invalid 'pagination'"
                 )
+        elif strict_result_envelope:
+            raise A2AExtensionContractError(
+                "Extension result envelope missing declared 'pagination'"
+            )
         else:
             pagination = {"page": page, "size": size}
+
+        if include_raw and raw is _MISSING:
+            raw, _ = A2AExtensionsService._resolve_result_field(
+                result,
+                path=mapping.raw,
+                fallback_path=None if strict_result_envelope else "raw",
+            )
+            if raw is _MISSING:
+                raw = result
 
         envelope: Dict[str, Any] = {
             "items": items,
