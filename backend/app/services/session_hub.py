@@ -1459,7 +1459,6 @@ class SessionHubService:
         local_session_id: UUID,
         user_id: UUID,
         event: dict[str, Any],
-        observed_at: datetime | None = None,
     ) -> UUID | None:
         session = await self._get_local_session_by_id(
             db,
@@ -1473,7 +1472,6 @@ class SessionHubService:
             conversation_id=session.id,
             user_id=user_id,
             event=event,
-            observed_at=observed_at,
         )
 
     async def record_interrupt_lifecycle_event(
@@ -1483,7 +1481,6 @@ class SessionHubService:
         conversation_id: UUID,
         user_id: UUID,
         event: dict[str, Any],
-        observed_at: datetime | None = None,
     ) -> UUID | None:
         normalized_event = _normalize_interrupt_lifecycle_event(event)
         if normalized_event is None:
@@ -1494,10 +1491,7 @@ class SessionHubService:
             request_id=normalized_event["request_id"],
             phase=normalized_event["phase"],
         )
-        message_metadata = _build_interrupt_lifecycle_message_metadata(
-            normalized_event,
-            observed_at=observed_at,
-        )
+        message_metadata = {"interrupt": normalized_event}
         existing_message = await self._find_message_by_id_and_sender(
             db,
             user_id=user_id,
@@ -1509,7 +1503,7 @@ class SessionHubService:
             system_message = await agent_message_handler.create_agent_message(
                 db,
                 id=message_id,
-                created_at=ensure_utc(observed_at) if observed_at else utc_now(),
+                created_at=utc_now(),
                 user_id=user_id,
                 sender="system",
                 status="done",
@@ -2174,20 +2168,6 @@ def _build_interrupt_lifecycle_message_id(
         NAMESPACE_URL,
         f"interrupt-lifecycle:{conversation_id}:{request_id}:{phase}",
     )
-
-
-def _build_interrupt_lifecycle_message_metadata(
-    event: dict[str, Any],
-    *,
-    observed_at: datetime | None,
-) -> dict[str, Any]:
-    metadata: dict[str, Any] = {
-        "event_type": "interrupt_lifecycle",
-        "interrupt": event,
-    }
-    if observed_at is not None:
-        metadata["observed_at"] = ensure_utc(observed_at).isoformat()
-    return metadata
 
 
 def _build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
