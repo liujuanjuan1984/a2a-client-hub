@@ -6,8 +6,11 @@ import {
   buildInvokePayload,
   buildSessionCleanupPlan,
   createAgentSession,
+  type SharedModelSelection,
+  getSharedModelSelection,
   mergeExternalSessionRef,
   sortSessionsByLastActive,
+  withSharedModelSelection,
   type AgentSession,
 } from "@/lib/chat-utils";
 import {
@@ -107,6 +110,11 @@ type ChatState = {
       contextId?: string | null;
     },
   ) => void;
+  setSharedModelSelection: (
+    conversationId: string,
+    agentId: string,
+    selection: SharedModelSelection | null,
+  ) => void;
   clearPendingInterrupt: (conversationId: string, requestId?: string) => void;
   getLatestConversationIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
@@ -187,6 +195,33 @@ export const useChatStore = create<ChatState>()(
             },
           },
         }));
+      },
+      setSharedModelSelection: (conversationId, agentId, selection) => {
+        set((state) => {
+          const current =
+            state.sessions[conversationId] ?? createAgentSession(agentId);
+          const nextMetadata = withSharedModelSelection(
+            current.metadata,
+            selection,
+          );
+          if (
+            JSON.stringify(getSharedModelSelection(current.metadata)) ===
+            JSON.stringify(selection)
+          ) {
+            return state;
+          }
+          return {
+            sessions: {
+              ...state.sessions,
+              [conversationId]: {
+                ...current,
+                agentId,
+                metadata: nextMetadata,
+                lastActiveAt: new Date().toISOString(),
+              },
+            },
+          };
+        });
       },
       clearPendingInterrupt: (conversationId, requestId) => {
         set((state) => {

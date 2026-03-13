@@ -12,6 +12,8 @@ describe("ChatComposer clear button", () => {
     pendingInterrupt: null,
     showShortcutManager: false,
     onOpenShortcutManager: jest.fn(),
+    selectedModel: null,
+    onOpenModelPicker: jest.fn(),
     inputRef: { current: { focus: jest.fn() } } as any,
     input: "",
     onInputChange: jest.fn(),
@@ -52,5 +54,27 @@ describe("ChatComposer clear button", () => {
 
     expect(onInputChange).toHaveBeenCalledWith("");
     expect(focus).toHaveBeenCalled();
+  });
+
+  it("shows default model label and opens picker", () => {
+    const onOpenModelPicker = jest.fn();
+    const { getByLabelText, getByText } = render(
+      <ChatComposer {...mockProps} onOpenModelPicker={onOpenModelPicker} />,
+    );
+
+    expect(getByText("Model: Default")).toBeTruthy();
+    fireEvent.press(getByLabelText("Choose model"));
+    expect(onOpenModelPicker).toHaveBeenCalled();
+  });
+
+  it("renders selected provider/model in button", () => {
+    const { getByText } = render(
+      <ChatComposer
+        {...mockProps}
+        selectedModel={{ providerID: "openai", modelID: "gpt-5" }}
+      />,
+    );
+
+    expect(getByText("openai / gpt-5")).toBeTruthy();
   });
 });

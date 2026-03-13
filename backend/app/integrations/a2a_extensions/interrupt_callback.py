@@ -14,6 +14,7 @@ from app.integrations.a2a_extensions.contract_utils import (
 from app.integrations.a2a_extensions.errors import A2AExtensionNotSupportedError
 from app.integrations.a2a_extensions.shared_contract import (
     SHARED_INTERRUPT_CALLBACK_URI,
+    SUPPORTED_INTERRUPT_CALLBACK_URIS,
 )
 from app.integrations.a2a_extensions.types import (
     ResolvedInterruptCallbackExtension,
@@ -30,7 +31,7 @@ def resolve_interrupt_callback(
 
     ext = None
     for candidate in extensions:
-        if getattr(candidate, "uri", None) == SHARED_INTERRUPT_CALLBACK_URI:
+        if getattr(candidate, "uri", None) in SUPPORTED_INTERRUPT_CALLBACK_URIS:
             ext = candidate
             break
     if ext is None:
@@ -40,7 +41,11 @@ def resolve_interrupt_callback(
 
     required = bool(getattr(ext, "required", False))
     params = as_dict(getattr(ext, "params", None))
-    provider = require_str(params.get("provider"), field="params.provider").lower()
+    raw_provider = params.get("provider")
+    if raw_provider is None:
+        provider = "opencode"
+    else:
+        provider = require_str(raw_provider, field="params.provider").lower()
     methods = as_dict(params.get("methods"))
     reply_permission_method = normalize_method_name(
         methods.get("reply_permission"),
@@ -59,7 +64,7 @@ def resolve_interrupt_callback(
     code_to_error = build_business_code_map(errors.get("business_codes"))
 
     return ResolvedInterruptCallbackExtension(
-        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        uri=str(getattr(ext, "uri", SHARED_INTERRUPT_CALLBACK_URI)),
         required=required,
         provider=provider,
         jsonrpc=resolve_jsonrpc_interface(card),

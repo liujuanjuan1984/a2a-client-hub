@@ -52,6 +52,11 @@ export type ExternalSessionRef = {
   externalSessionId?: string | null;
 };
 
+export type SharedModelSelection = {
+  providerID: string;
+  modelID: string;
+};
+
 export type AgentSession = {
   agentId: string;
   createdAt?: string;
@@ -105,6 +110,53 @@ export const mergeExternalSessionRef = (
   externalSessionId:
     current?.externalSessionId ?? incoming.externalSessionId ?? null,
 });
+
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+export const getSharedModelSelection = (
+  metadata: Record<string, unknown> | null | undefined,
+): SharedModelSelection | null => {
+  const shared = asRecord(metadata?.shared);
+  const model = asRecord(shared?.model);
+  const providerID =
+    typeof model?.providerID === "string" ? model.providerID.trim() : "";
+  const modelID =
+    typeof model?.modelID === "string" ? model.modelID.trim() : "";
+  if (!providerID || !modelID) {
+    return null;
+  }
+  return { providerID, modelID };
+};
+
+export const withSharedModelSelection = (
+  metadata: Record<string, unknown> | null | undefined,
+  selection: SharedModelSelection | null,
+): Record<string, unknown> => {
+  const nextMetadata = { ...(metadata ?? {}) };
+  const nextShared = asRecord(nextMetadata.shared)
+    ? { ...(nextMetadata.shared as Record<string, unknown>) }
+    : {};
+
+  if (selection) {
+    nextShared.model = {
+      providerID: selection.providerID,
+      modelID: selection.modelID,
+    };
+    nextMetadata.shared = nextShared;
+    return nextMetadata;
+  }
+
+  delete nextShared.model;
+  if (Object.keys(nextShared).length > 0) {
+    nextMetadata.shared = nextShared;
+  } else {
+    delete nextMetadata.shared;
+  }
+  return nextMetadata;
+};
 
 export const buildInvokePayload = (
   query: string,

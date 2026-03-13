@@ -8,7 +8,10 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.session_query import resolve_session_query
-from app.integrations.a2a_extensions.shared_contract import SHARED_SESSION_QUERY_URI
+from app.integrations.a2a_extensions.shared_contract import (
+    LEGACY_SHARED_SESSION_QUERY_URI,
+    SHARED_SESSION_QUERY_URI,
+)
 
 
 def _base_card_payload() -> dict:
@@ -190,7 +193,7 @@ def test_resolve_accepts_limit_mode_with_offset_param() -> None:
     assert resolved.pagination.supports_offset is True
 
 
-def test_resolve_rejects_missing_provider() -> None:
+def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
         {
@@ -212,5 +215,32 @@ def test_resolve_rejects_missing_provider() -> None:
     ]
 
     card = AgentCard.model_validate(payload)
-    with pytest.raises(A2AExtensionContractError):
-        resolve_session_query(card)
+    resolved = resolve_session_query(card)
+    assert resolved.provider == "opencode"
+
+
+def test_resolve_accepts_legacy_session_query_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": LEGACY_SHARED_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "methods": {
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "page_size",
+                    "default_size": 20,
+                    "max_size": 100,
+                },
+                "errors": {"business_codes": {}},
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    resolved = resolve_session_query(card)
+    assert resolved.uri == LEGACY_SHARED_SESSION_QUERY_URI
+    assert resolved.provider == "opencode"

@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Platform, Text, View } from "react-native";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatHeaderPanel } from "@/components/chat/ChatHeaderPanel";
 import { ChatTimelinePanel } from "@/components/chat/ChatTimelinePanel";
+import { ModelPickerModal } from "@/components/chat/ModelPickerModal";
 import { SessionPickerModal } from "@/components/chat/SessionPickerModal";
 import { ShortcutManagerModal } from "@/components/chat/ShortcutManagerModal";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
@@ -96,10 +97,23 @@ export function ChatScreen({
         onSelect={controller.handleSessionSelect}
       />
 
+      <ModelPickerModal
+        visible={controller.showModelPicker}
+        onClose={controller.closeModelPicker}
+        agentId={controller.activeAgentId}
+        source={controller.agent.source}
+        sessionMetadata={controller.session?.metadata}
+        selectedModel={controller.selectedModel}
+        onSelectModel={controller.handleModelSelect}
+        onClearModelSelection={controller.clearModelSelection}
+      />
+
       <ChatComposer
         pendingInterrupt={controller.pendingInterrupt}
         showShortcutManager={controller.showShortcutManager}
         onOpenShortcutManager={controller.openShortcutManager}
+        selectedModel={controller.selectedModel}
+        onOpenModelPicker={controller.openModelPicker}
         inputRef={controller.inputRef}
         input={controller.input}
         onInputChange={controller.handleInputChange}

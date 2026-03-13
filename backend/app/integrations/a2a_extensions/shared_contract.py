@@ -1,10 +1,33 @@
-"""Canonical shared A2A extension contract constants."""
+"""Canonical A2A extension contract constants.
+
+The Hub now prefers the upstream ``urn:a2a:*`` / ``urn:opencode-a2a:*`` URIs,
+but still recognizes the older in-repo URIs during the transition window.
+"""
 
 from __future__ import annotations
 
-SHARED_SESSION_BINDING_URI = "urn:shared-a2a:session-binding:v1"
-SHARED_SESSION_QUERY_URI = "urn:shared-a2a:session-query:v1"
-SHARED_INTERRUPT_CALLBACK_URI = "urn:shared-a2a:interrupt-callback:v1"
+SHARED_SESSION_BINDING_URI = "urn:a2a:session-binding/v1"
+LEGACY_SHARED_SESSION_BINDING_URI = "urn:shared-a2a:session-binding:v1"
+SUPPORTED_SESSION_BINDING_URIS = (
+    SHARED_SESSION_BINDING_URI,
+    LEGACY_SHARED_SESSION_BINDING_URI,
+)
+
+SHARED_SESSION_QUERY_URI = "urn:opencode-a2a:session-query/v1"
+LEGACY_SHARED_SESSION_QUERY_URI = "urn:shared-a2a:session-query:v1"
+SUPPORTED_SESSION_QUERY_URIS = (
+    SHARED_SESSION_QUERY_URI,
+    LEGACY_SHARED_SESSION_QUERY_URI,
+)
+
+PROVIDER_DISCOVERY_URI = "urn:opencode-a2a:provider-discovery/v1"
+
+SHARED_INTERRUPT_CALLBACK_URI = "urn:a2a:interactive-interrupt/v1"
+LEGACY_SHARED_INTERRUPT_CALLBACK_URI = "urn:shared-a2a:interrupt-callback:v1"
+SUPPORTED_INTERRUPT_CALLBACK_URIS = (
+    SHARED_INTERRUPT_CALLBACK_URI,
+    LEGACY_SHARED_INTERRUPT_CALLBACK_URI,
+)
 
 CANONICAL_PROVIDER_KEY = "provider"
 CANONICAL_EXTERNAL_SESSION_ID_KEY = "externalSessionId"
@@ -14,7 +37,14 @@ __all__ = [
     "CANONICAL_EXTERNAL_SESSION_ID_KEY",
     "CANONICAL_INTERRUPT_KEY",
     "CANONICAL_PROVIDER_KEY",
+    "LEGACY_SHARED_INTERRUPT_CALLBACK_URI",
+    "LEGACY_SHARED_SESSION_BINDING_URI",
+    "LEGACY_SHARED_SESSION_QUERY_URI",
+    "PROVIDER_DISCOVERY_URI",
     "SHARED_INTERRUPT_CALLBACK_URI",
     "SHARED_SESSION_BINDING_URI",
     "SHARED_SESSION_QUERY_URI",
+    "SUPPORTED_INTERRUPT_CALLBACK_URIS",
+    "SUPPORTED_SESSION_BINDING_URIS",
+    "SUPPORTED_SESSION_QUERY_URIS",
 ]

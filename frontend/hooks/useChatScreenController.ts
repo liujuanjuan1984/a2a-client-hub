@@ -27,6 +27,10 @@ import { type ChatMessage } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
 import { continueSession, querySessionMessageBlocks } from "@/lib/api/sessions";
 import {
+  getSharedModelSelection,
+  type SharedModelSelection,
+} from "@/lib/chat-utils";
+import {
   getConversationMessages,
   updateConversationMessageWithUpdater,
 } from "@/lib/chatHistoryCache";
@@ -81,6 +85,9 @@ export function useChatScreenController({
   const clearPendingInterrupt = useChatStore(
     (state) => state.clearPendingInterrupt,
   );
+  const setSharedModelSelection = useChatStore(
+    (state) => state.setSharedModelSelection,
+  );
   const session = useChatStore((state) =>
     conversationId ? state.sessions[conversationId] : undefined,
   );
@@ -96,6 +103,7 @@ export function useChatScreenController({
   const [showDetails, setShowDetails] = useState(false);
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
   const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
 
@@ -137,6 +145,7 @@ export function useChatScreenController({
       : null;
   const sessionSource = session?.source ?? null;
   const pendingInterrupt = session?.pendingInterrupt ?? null;
+  const selectedModel = getSharedModelSelection(session?.metadata);
   const pendingQuestionCount =
     pendingInterrupt?.type === "question"
       ? (pendingInterrupt.details.questions?.length ?? 0)
@@ -636,6 +645,38 @@ export function useChatScreenController({
     setShowSessionPicker(false);
   }, []);
 
+  const openModelPicker = useCallback(() => {
+    setShowModelPicker(true);
+  }, []);
+
+  const closeModelPicker = useCallback(() => {
+    setShowModelPicker(false);
+  }, []);
+
+  const handleModelSelect = useCallback(
+    (selection: SharedModelSelection) => {
+      if (!conversationId || !activeAgentId) {
+        return;
+      }
+      ensureSession(conversationId, activeAgentId);
+      setSharedModelSelection(conversationId, activeAgentId, selection);
+      toast.success(
+        "Model updated",
+        `${selection.providerID} / ${selection.modelID}`,
+      );
+    },
+    [activeAgentId, conversationId, ensureSession, setSharedModelSelection],
+  );
+
+  const clearModelSelection = useCallback(() => {
+    if (!conversationId || !activeAgentId) {
+      return;
+    }
+    ensureSession(conversationId, activeAgentId);
+    setSharedModelSelection(conversationId, activeAgentId, null);
+    toast.success("Model updated", "Using server default model.");
+  }, [activeAgentId, conversationId, ensureSession, setSharedModelSelection]);
+
   const handleUseShortcut = useCallback(
     (prompt: string) => {
       setInput(prompt);
@@ -832,6 +873,7 @@ export function useChatScreenController({
     conversationId,
     session,
     sessionSource,
+    selectedModel,
     messages,
     historyLoading,
     historyLoadingMore,
@@ -847,10 +889,15 @@ export function useChatScreenController({
     scrollToBottom,
     showShortcutManager,
     showSessionPicker,
+    showModelPicker,
     openShortcutManager,
     closeShortcutManager,
     openSessionPicker,
     closeSessionPicker,
+    openModelPicker,
+    closeModelPicker,
+    handleModelSelect,
+    clearModelSelection,
     handleUseShortcut,
     handleSessionSelect,
     handleTest,

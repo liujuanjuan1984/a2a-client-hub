@@ -3,8 +3,10 @@ import {
   buildInvokePayload,
   buildSessionCleanupPlan,
   createAgentSession,
+  getSharedModelSelection,
   mergeExternalSessionRef,
   sortSessionsByLastActive,
+  withSharedModelSelection,
 } from "@/lib/chat-utils";
 
 describe("chat store utils", () => {
@@ -90,6 +92,24 @@ describe("chat store utils", () => {
         provider: "opencode",
         externalSessionId: "ses-upstream-1",
       },
+    });
+  });
+
+  it("reads and writes shared model selection metadata", () => {
+    const nextMetadata = withSharedModelSelection(
+      { locale: "zh-CN" },
+      {
+        providerID: "openai",
+        modelID: "gpt-5",
+      },
+    );
+
+    expect(getSharedModelSelection(nextMetadata)).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5",
+    });
+    expect(withSharedModelSelection(nextMetadata, null)).toEqual({
+      locale: "zh-CN",
     });
   });
 
