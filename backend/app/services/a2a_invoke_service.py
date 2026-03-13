@@ -22,8 +22,13 @@ from a2a.types import Message
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
+from app.services.a2a_stream_diagnostics import (
+    build_artifact_update_log_sample,
+    build_validation_errors_log_sample,
+    extract_artifact_validation_errors,
+    warn_non_contract_artifact_update_once,
+)
 from app.utils.json_encoder import json_dumps
-from app.utils.logging_redaction import redact_sensitive_value
 from app.utils.payload_extract import (
     as_dict,
     extract_context_id,
@@ -86,24 +91,6 @@ class A2AInvokeService:
     _WS_HEARTBEAT_EVENT = {"event": "heartbeat", "data": {}}
     _WS_STREAM_END_EVENT = {"event": "stream_end", "data": {}}
     _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,64}$")
-    _LOG_SAMPLE_MAX_DEPTH = 6
-    _LOG_SAMPLE_MAX_DICT_ITEMS = 20
-    _LOG_SAMPLE_MAX_LIST_ITEMS = 8
-    _LOG_SAMPLE_MAX_STRING_LENGTH = 160
-    _LOG_SAMPLE_SENSITIVE_KEYWORDS = (
-        "authorization",
-        "cookie",
-        "token",
-        "ticket",
-        "secret",
-        "api-key",
-        "apikey",
-        "password",
-        "access_token",
-        "refresh_token",
-        "api_key",
-        "x-api-key",
-    )
 
     @classmethod
     def build_ws_error_event(
@@ -1016,100 +1003,6 @@ class A2AInvokeService:
             payload["validation_errors"] = validate_message(payload)
         return payload
 
-    @staticmethod
-    def _extract_artifact_validation_errors(
-        payload: dict[str, Any], *, validate_message: ValidateMessageFn
-    ) -> list[str]:
-        if payload.get("kind") != "artifact-update":
-            return []
-        return [str(item) for item in validate_message(payload)]
-
-    @classmethod
-    def _truncate_log_string(cls, value: str) -> str:
-        if len(value) <= cls._LOG_SAMPLE_MAX_STRING_LENGTH:
-            return value
-        remaining = len(value) - cls._LOG_SAMPLE_MAX_STRING_LENGTH
-        return (
-            value[: cls._LOG_SAMPLE_MAX_STRING_LENGTH]
-            + f"...<truncated:{remaining} chars>"
-        )
-
-    @classmethod
-    def _sanitize_log_sample(
-        cls,
-        value: Any,
-        *,
-        key_path: tuple[str, ...] = (),
-        depth: int = 0,
-    ) -> Any:
-        if depth >= cls._LOG_SAMPLE_MAX_DEPTH:
-            return "<max_depth_exceeded>"
-
-        last_key = key_path[-1].lower() if key_path else ""
-        if any(keyword in last_key for keyword in cls._LOG_SAMPLE_SENSITIVE_KEYWORDS):
-            if isinstance(value, str):
-                return redact_sensitive_value(value) or "<redacted>"
-            return "<redacted>"
-
-        if value is None or isinstance(value, (bool, int, float)):
-            return value
-
-        if isinstance(value, str):
-            return cls._truncate_log_string(value)
-
-        if isinstance(value, dict):
-            sanitized: dict[str, Any] = {}
-            items = list(value.items())
-            for key, child in items[: cls._LOG_SAMPLE_MAX_DICT_ITEMS]:
-                key_str = str(key)
-                sanitized[key_str] = cls._sanitize_log_sample(
-                    child,
-                    key_path=(*key_path, key_str),
-                    depth=depth + 1,
-                )
-            remaining = len(items) - cls._LOG_SAMPLE_MAX_DICT_ITEMS
-            if remaining > 0:
-                sanitized["__truncated_keys__"] = remaining
-            return sanitized
-
-        if isinstance(value, list):
-            sanitized_list = [
-                cls._sanitize_log_sample(
-                    child,
-                    key_path=key_path,
-                    depth=depth + 1,
-                )
-                for child in value[: cls._LOG_SAMPLE_MAX_LIST_ITEMS]
-            ]
-            remaining = len(value) - cls._LOG_SAMPLE_MAX_LIST_ITEMS
-            if remaining > 0:
-                sanitized_list.append(f"<truncated_items:{remaining}>")
-            return sanitized_list
-
-        if isinstance(value, tuple):
-            return cls._sanitize_log_sample(
-                list(value),
-                key_path=key_path,
-                depth=depth,
-            )
-
-        return cls._truncate_log_string(repr(value))
-
-    @classmethod
-    def _build_artifact_update_log_sample(
-        cls, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        return cls._sanitize_log_sample(payload)
-
-    @classmethod
-    def _build_validation_errors_log_sample(
-        cls, validation_errors: list[str]
-    ) -> list[str]:
-        return [
-            cls._truncate_log_string(item)
-            for item in validation_errors[: cls._LOG_SAMPLE_MAX_LIST_ITEMS]
-        ]
-
     @classmethod
     def _analyze_stream_chunk_contract(
         cls, payload: dict[str, Any]
@@ -1135,39 +1028,6 @@ class A2AInvokeService:
         ):
             return None, "missing_text_parts"
         return None, "invalid_artifact_update_shape"
-
-    @staticmethod
-    def _warn_non_contract_artifact_update_once(
-        *,
-        seen_reasons: set[str],
-        reason: str | None,
-        payload: dict[str, Any],
-        log_warning: Callable[..., Any] | None,
-        log_info: Callable[..., Any] | None,
-        log_extra: dict[str, Any],
-    ) -> None:
-        if reason is None or reason in seen_reasons:
-            return
-        seen_reasons.add(reason)
-        warning_payload = {
-            **log_extra,
-            "drop_reason": reason,
-            "artifact_update_sample": A2AInvokeService._build_artifact_update_log_sample(
-                payload
-            ),
-        }
-        if callable(log_warning):
-            log_warning(
-                "Dropped non-contract artifact-update event",
-                extra=warning_payload,
-            )
-            return
-        if callable(log_info):
-            log_info(
-                "Dropped non-contract artifact-update event",
-                extra=warning_payload,
-            )
-            return
 
     @staticmethod
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
@@ -1392,7 +1252,7 @@ class A2AInvokeService:
                     serialized = self.serialize_stream_event(
                         event, validate_message=validate_message
                     )
-                    validation_errors = self._extract_artifact_validation_errors(
+                    validation_errors = extract_artifact_validation_errors(
                         serialized,
                         validate_message=validate_message,
                     )
@@ -1402,10 +1262,10 @@ class A2AInvokeService:
                             extra={
                                 **log_extra,
                                 "validation_error_count": len(validation_errors),
-                                "validation_errors_sample": self._build_validation_errors_log_sample(
+                                "validation_errors_sample": build_validation_errors_log_sample(
                                     validation_errors
                                 ),
-                                "artifact_update_sample": self._build_artifact_update_log_sample(
+                                "artifact_update_sample": build_artifact_update_log_sample(
                                     serialized
                                 ),
                             },
@@ -1414,7 +1274,7 @@ class A2AInvokeService:
                     stream_block, non_contract_reason = (
                         self._analyze_stream_chunk_contract(serialized)
                     )
-                    self._warn_non_contract_artifact_update_once(
+                    warn_non_contract_artifact_update_once(
                         seen_reasons=non_contract_drop_reasons,
                         reason=non_contract_reason,
                         payload=serialized,
@@ -1620,7 +1480,7 @@ class A2AInvokeService:
                 serialized = self.serialize_stream_event(
                     event, validate_message=validate_message
                 )
-                validation_errors = self._extract_artifact_validation_errors(
+                validation_errors = extract_artifact_validation_errors(
                     serialized,
                     validate_message=validate_message,
                 )
@@ -1630,10 +1490,10 @@ class A2AInvokeService:
                         extra={
                             **log_extra,
                             "validation_error_count": len(validation_errors),
-                            "validation_errors_sample": self._build_validation_errors_log_sample(
+                            "validation_errors_sample": build_validation_errors_log_sample(
                                 validation_errors
                             ),
-                            "artifact_update_sample": self._build_artifact_update_log_sample(
+                            "artifact_update_sample": build_artifact_update_log_sample(
                                 serialized
                             ),
                         },
@@ -1642,7 +1502,7 @@ class A2AInvokeService:
                 stream_block, non_contract_reason = self._analyze_stream_chunk_contract(
                     serialized
                 )
-                self._warn_non_contract_artifact_update_once(
+                warn_non_contract_artifact_update_once(
                     seen_reasons=non_contract_drop_reasons,
                     reason=non_contract_reason,
                     payload=serialized,
@@ -1914,17 +1774,17 @@ class A2AInvokeService:
                 serialized = self.serialize_stream_event(
                     event, validate_message=validate_message
                 )
-                validation_errors = self._extract_artifact_validation_errors(
+                validation_errors = extract_artifact_validation_errors(
                     serialized, validate_message=validate_message
                 )
                 if validation_errors:
                     warning_payload = {
                         **log_extra,
                         "validation_error_count": len(validation_errors),
-                        "validation_errors_sample": self._build_validation_errors_log_sample(
+                        "validation_errors_sample": build_validation_errors_log_sample(
                             validation_errors
                         ),
-                        "artifact_update_sample": self._build_artifact_update_log_sample(
+                        "artifact_update_sample": build_artifact_update_log_sample(
                             serialized
                         ),
                     }
@@ -1942,7 +1802,7 @@ class A2AInvokeService:
                 stream_block, non_contract_reason = self._analyze_stream_chunk_contract(
                     serialized
                 )
-                self._warn_non_contract_artifact_update_once(
+                warn_non_contract_artifact_update_once(
                     seen_reasons=non_contract_drop_reasons,
                     reason=non_contract_reason,
                     payload=serialized,

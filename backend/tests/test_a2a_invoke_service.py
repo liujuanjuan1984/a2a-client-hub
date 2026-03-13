@@ -10,6 +10,7 @@ from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
 from app.services.a2a_invoke_service import StreamFinishReason, a2a_invoke_service
+from app.services.a2a_stream_diagnostics import build_artifact_update_log_sample
 
 
 class _BrokenGateway:
@@ -1227,7 +1228,7 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
 
 
 def test_build_artifact_update_log_sample_redacts_sensitive_fields_and_truncates():
-    sample = a2a_invoke_service._build_artifact_update_log_sample(
+    sample = build_artifact_update_log_sample(
         {
             "kind": "artifact-update",
             "metadata": {
