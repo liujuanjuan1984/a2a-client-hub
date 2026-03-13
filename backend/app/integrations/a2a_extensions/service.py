@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
 
 import httpx
 from a2a.types import AgentCard
-from pydantic import ValidationError
 
 from app.core.config import settings
 from app.core.http_client import get_global_http_client
@@ -18,26 +16,25 @@ from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
 )
-from app.integrations.a2a_extensions.errors import (
-    A2AExtensionContractError,
-    A2AExtensionUpstreamError,
-)
-from app.integrations.a2a_extensions.interrupt_callback import (
-    resolve_interrupt_callback,
+from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
+from app.integrations.a2a_extensions.interrupt_extension_service import (
+    InterruptExtensionService,
 )
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient, JsonRpcResponse
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
-from app.integrations.a2a_extensions.opencode_provider_discovery import (
-    resolve_opencode_provider_discovery,
+from app.integrations.a2a_extensions.opencode_discovery_service import (
+    OpencodeDiscoveryService,
 )
-from app.integrations.a2a_extensions.session_query import resolve_session_query
+from app.integrations.a2a_extensions.service_common import ExtensionCallResult
+from app.integrations.a2a_extensions.session_extension_service import (
+    SessionExtensionService,
+)
 from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
     ResolvedProviderDiscoveryExtension,
     ResultEnvelopeMapping,
 )
-from app.schemas.a2a_extension import A2AExtensionQueryResult
 from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.a2a_runtime import A2ARuntime
 from app.utils.outbound_url import (
@@ -46,7 +43,6 @@ from app.utils.outbound_url import (
 )
 
 logger = get_logger(__name__)
-_MISSING = object()
 
 _JSONRPC_STANDARD_ERROR_CODE_MAP: dict[int, str] = {
     -32600: "invalid_request",
@@ -70,19 +66,13 @@ _ERROR_DATA_TYPE_TO_ERROR_CODE: dict[str, str] = {
 }
 
 
-@dataclass(frozen=True, slots=True)
-class ExtensionCallResult:
-    success: bool
-    result: Optional[Dict[str, Any]] = None
-    error_code: Optional[str] = None
-    upstream_error: Optional[Dict[str, Any]] = None
-    meta: Optional[Dict[str, Any]] = None
-
-
 class A2AExtensionsService:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._jsonrpc: Optional[JsonRpcClient] = None
+        self._session_extensions = SessionExtensionService(self)
+        self._interrupt_extensions = InterruptExtensionService(self)
+        self._opencode_discovery = OpencodeDiscoveryService(self)
 
     async def _get_http(self) -> httpx.AsyncClient:
         async with self._lock:
@@ -140,106 +130,13 @@ class A2AExtensionsService:
         result_envelope: ResultEnvelopeMapping | None = None,
         include_raw: bool = False,
     ) -> Optional[Dict[str, Any]]:
-        if result is None:
-            return None
-
-        if isinstance(result, list):
-            envelope = {
-                "items": result,
-                "pagination": {"page": page, "size": size},
-            }
-            if include_raw:
-                envelope["raw"] = result
-            return A2AExtensionsService._validate_query_result(envelope)
-
-        if not isinstance(result, dict):
-            envelope = {
-                "items": [],
-                "pagination": {"page": page, "size": size},
-            }
-            if include_raw:
-                envelope["raw"] = result
-            return A2AExtensionsService._validate_query_result(envelope)
-
-        strict_result_envelope = result_envelope is not None
-        mapping = result_envelope or ResultEnvelopeMapping()
-        raw: Any = _MISSING
-
-        items, items_found = A2AExtensionsService._resolve_result_field(
+        return SessionExtensionService._normalize_envelope(
             result,
-            path=mapping.items,
-            fallback_path=None if strict_result_envelope else "items",
+            page=page,
+            size=size,
+            result_envelope=result_envelope,
+            include_raw=include_raw,
         )
-        if items_found:
-            if not isinstance(items, list):
-                raise A2AExtensionContractError(
-                    "Extension result envelope resolved invalid 'items'"
-                )
-        elif strict_result_envelope:
-            raise A2AExtensionContractError(
-                "Extension result envelope missing declared 'items'"
-            )
-        else:
-            raw, _ = A2AExtensionsService._resolve_result_field(
-                result,
-                path=mapping.raw,
-                fallback_path="raw",
-            )
-            if raw is _MISSING:
-                raw = result
-            if isinstance(raw, list):
-                items = raw
-            else:
-                items = []
-
-        if strict_result_envelope and include_raw:
-            raw, raw_found = A2AExtensionsService._resolve_result_field(
-                result,
-                path=mapping.raw,
-                fallback_path=None,
-            )
-            if not raw_found:
-                raise A2AExtensionContractError(
-                    "Extension result envelope missing declared 'raw'"
-                )
-        elif strict_result_envelope:
-            raw = _MISSING
-        elif isinstance(raw, list):
-            pass
-
-        pagination, pagination_found = A2AExtensionsService._resolve_result_field(
-            result,
-            path=mapping.pagination,
-            fallback_path=None if strict_result_envelope else "pagination",
-        )
-        if pagination_found:
-            if not isinstance(pagination, dict):
-                raise A2AExtensionContractError(
-                    "Extension result envelope resolved invalid 'pagination'"
-                )
-        elif strict_result_envelope:
-            raise A2AExtensionContractError(
-                "Extension result envelope missing declared 'pagination'"
-            )
-        else:
-            pagination = {"page": page, "size": size}
-
-        if include_raw and raw is _MISSING:
-            raw, _ = A2AExtensionsService._resolve_result_field(
-                result,
-                path=mapping.raw,
-                fallback_path=None if strict_result_envelope else "raw",
-            )
-            if raw is _MISSING:
-                raw = result
-
-        envelope: Dict[str, Any] = {
-            "items": items,
-            "pagination": pagination,
-        }
-        if include_raw:
-            envelope["raw"] = raw
-        return A2AExtensionsService._validate_query_result(envelope)
 
     @staticmethod
     def _resolve_result_field(
@@ -248,36 +145,15 @@ class A2AExtensionsService:
         path: str,
         fallback_path: str | None = None,
     ) -> tuple[Any, bool]:
-        candidates = [path]
-        if fallback_path and fallback_path not in candidates:
-            candidates.append(fallback_path)
-
-        for candidate in candidates:
-            current: Any = result
-            found = True
-            for part in candidate.split("."):
-                token = part.strip()
-                if not token:
-                    found = False
-                    break
-                if not isinstance(current, Mapping) or token not in current:
-                    found = False
-                    break
-                current = current[token]
-            if found:
-                return current, True
-        return _MISSING, False
+        return SessionExtensionService._resolve_result_field(
+            result,
+            path=path,
+            fallback_path=fallback_path,
+        )
 
     @staticmethod
     def _validate_query_result(envelope: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            return A2AExtensionQueryResult.model_validate(envelope).model_dump(
-                exclude_none=True
-            )
-        except ValidationError as exc:
-            raise A2AExtensionContractError(
-                "Extension result envelope is invalid"
-            ) from exc
+        return SessionExtensionService._validate_query_result(envelope)
 
     async def _call_with_retry(
         self,
@@ -326,15 +202,12 @@ class A2AExtensionsService:
         page: int,
         size: Optional[int],
     ) -> tuple[int, int]:
-        resolved_page = int(page)
-        if resolved_page < 1:
-            raise ValueError("page must be >= 1")
-        resolved_size = default_size if size is None else int(size)
-        if resolved_size < 1:
-            raise ValueError("size must be >= 1")
-        if resolved_size > max_size:
-            raise ValueError(f"size must be <= {max_size}")
-        return resolved_page, resolved_size
+        return SessionExtensionService._coerce_page_size(
+            default_size=default_size,
+            max_size=max_size,
+            page=page,
+            size=size,
+        )
 
     @staticmethod
     def _build_pagination_params(
@@ -344,17 +217,12 @@ class A2AExtensionsService:
         size: int,
         supports_offset: bool,
     ) -> Dict[str, int]:
-        if mode == "page_size":
-            return {"page": page, "size": size}
-        if mode == "limit":
-            if supports_offset:
-                return {"offset": (page - 1) * size, "limit": size}
-            if page > 1:
-                raise ValueError(
-                    "limit pagination without offset does not support page > 1"
-                )
-            return {"limit": size}
-        raise ValueError(f"unsupported pagination mode: {mode}")
+        return SessionExtensionService._build_pagination_params(
+            mode=mode,
+            page=page,
+            size=size,
+            supports_offset=supports_offset,
+        )
 
     @staticmethod
     def _build_call_meta(
@@ -364,30 +232,17 @@ class A2AExtensionsService:
         size: int,
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        meta = {
-            "extension_uri": ext.uri,
-            "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
-            "pagination_mode": ext.pagination.mode,
-            "pagination_params": list(ext.pagination.params),
-            "pagination_supports_offset": ext.pagination.supports_offset,
-            "page": page,
-            "size": size,
-            "max_size": ext.pagination.max_size,
-            "default_size": ext.pagination.default_size,
-        }
-        if meta_extra:
-            meta.update(meta_extra)
-        return meta
+        return SessionExtensionService._build_call_meta(
+            ext=ext,
+            page=page,
+            size=size,
+            meta_extra=meta_extra,
+        )
 
     async def _resolve_session_extension(
         self, runtime: A2ARuntime
     ) -> tuple[ResolvedExtension, str]:
-        card = await self._fetch_card(runtime)
-        ext = resolve_session_query(card)
-        jsonrpc_url = self._ensure_outbound_allowed(
-            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
-        )
-        return ext, jsonrpc_url
+        return await self._session_extensions.resolve_extension(runtime)
 
     @staticmethod
     def _map_business_error_code(
@@ -542,58 +397,17 @@ class A2AExtensionsService:
         normalize_envelope: bool = True,
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        method_name = ext.methods.get(method_key)
-        if not method_name:
-            return ExtensionCallResult(
-                success=False,
-                error_code="method_not_supported",
-                upstream_error={
-                    "message": f"Method {method_key} is not supported by upstream"
-                },
-                meta={"extension_uri": ext.uri},
-            )
-
-        resp = await self._perform_jsonrpc_call(
+        return await self._session_extensions.invoke_method(
             runtime=runtime,
-            jsonrpc_url=jsonrpc_url,
-            method_name=method_name,
-            params=params,
-        )
-
-        meta = self._build_call_meta(
             ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key=method_key,
+            params=params,
             page=page,
             size=size,
+            include_raw=include_raw,
+            normalize_envelope=normalize_envelope,
             meta_extra=meta_extra,
-        )
-
-        metric_key = f"{ext.uri}:{method_name}"
-        if resp.ok:
-            resolved_result: Optional[Dict[str, Any]]
-            if normalize_envelope:
-                resolved_result = self._normalize_envelope(
-                    resp.result,
-                    page=page,
-                    size=size,
-                    result_envelope=ext.result_envelope,
-                    include_raw=include_raw,
-                )
-            elif isinstance(resp.result, dict):
-                resolved_result = dict(resp.result)
-            else:
-                resolved_result = {"raw": resp.result}
-
-            self._record_extension_metric(metric_key, success=True, error_code=None)
-            return ExtensionCallResult(success=True, result=resolved_result, meta=meta)
-
-        error = resp.error or {}
-        error_code = self._map_business_error_code(error, ext)
-        self._record_extension_metric(metric_key, success=False, error_code=error_code)
-        return ExtensionCallResult(
-            success=False,
-            error_code=error_code,
-            upstream_error=error,
-            meta=meta,
         )
 
     async def list_sessions(
@@ -605,52 +419,11 @@ class A2AExtensionsService:
         query: Optional[Dict[str, Any]],
         include_raw: bool = False,
     ) -> ExtensionCallResult:
-        ext, jsonrpc_url = await self._resolve_session_extension(runtime)
-
-        resolved_page, resolved_size = self._coerce_page_size(
-            default_size=ext.pagination.default_size,
-            max_size=ext.pagination.max_size,
+        return await self._session_extensions.list_sessions(
+            runtime=runtime,
             page=page,
             size=size,
-        )
-        if (
-            ext.pagination.mode == "limit"
-            and resolved_page > 1
-            and not ext.pagination.supports_offset
-        ):
-            return ExtensionCallResult(
-                success=True,
-                result=self._normalize_envelope(
-                    [],
-                    page=resolved_page,
-                    size=resolved_size,
-                    include_raw=include_raw,
-                ),
-                meta=self._build_call_meta(
-                    ext=ext,
-                    page=resolved_page,
-                    size=resolved_size,
-                    meta_extra={"short_circuit_reason": "limit_without_offset"},
-                ),
-            )
-
-        params: Dict[str, Any] = self._build_pagination_params(
-            mode=ext.pagination.mode,
-            page=resolved_page,
-            size=resolved_size,
-            supports_offset=ext.pagination.supports_offset,
-        )
-        if query is not None:
-            params["query"] = query
-
-        return await self._invoke_session_method(
-            runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="list_sessions",
-            params=params,
-            page=resolved_page,
-            size=resolved_size,
+            query=query,
             include_raw=include_raw,
         )
 
@@ -664,64 +437,13 @@ class A2AExtensionsService:
         query: Optional[Dict[str, Any]],
         include_raw: bool = False,
     ) -> ExtensionCallResult:
-        resolved_session_id = (session_id or "").strip()
-        if not resolved_session_id:
-            raise ValueError("session_id is required")
-
-        ext, jsonrpc_url = await self._resolve_session_extension(runtime)
-
-        resolved_page, resolved_size = self._coerce_page_size(
-            default_size=ext.pagination.default_size,
-            max_size=ext.pagination.max_size,
+        return await self._session_extensions.get_session_messages(
+            runtime=runtime,
+            session_id=session_id,
             page=page,
             size=size,
-        )
-        if (
-            ext.pagination.mode == "limit"
-            and resolved_page > 1
-            and not ext.pagination.supports_offset
-        ):
-            return ExtensionCallResult(
-                success=True,
-                result=self._normalize_envelope(
-                    [],
-                    page=resolved_page,
-                    size=resolved_size,
-                    include_raw=include_raw,
-                ),
-                meta=self._build_call_meta(
-                    ext=ext,
-                    page=resolved_page,
-                    size=resolved_size,
-                    meta_extra={
-                        "session_id": resolved_session_id,
-                        "short_circuit_reason": "limit_without_offset",
-                    },
-                ),
-            )
-
-        params: Dict[str, Any] = {
-            "session_id": resolved_session_id,
-            **self._build_pagination_params(
-                mode=ext.pagination.mode,
-                page=resolved_page,
-                size=resolved_size,
-                supports_offset=ext.pagination.supports_offset,
-            ),
-        }
-        if query is not None:
-            params["query"] = query
-
-        return await self._invoke_session_method(
-            runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="get_session_messages",
-            params=params,
-            page=resolved_page,
-            size=resolved_size,
+            query=query,
             include_raw=include_raw,
-            meta_extra={"session_id": resolved_session_id},
         )
 
     async def continue_session(
@@ -730,61 +452,9 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
         session_id: str,
     ) -> ExtensionCallResult:
-        """Return a stable continue binding for a provider-owned external session.
-
-        This endpoint is intentionally conservative:
-        - It validates the upstream session exists (best-effort) via the session
-          query contract, returning stable error_code values on failure.
-        - It returns canonical binding metadata understood by the Hub.
-        """
-
-        resolved_session_id = (session_id or "").strip()
-        if not resolved_session_id:
-            raise ValueError("session_id is required")
-
-        ext, jsonrpc_url = await self._resolve_session_extension(runtime)
-
-        validation = await self._invoke_session_method(
+        return await self._session_extensions.continue_session(
             runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="get_session_messages",
-            params={
-                "session_id": resolved_session_id,
-                **self._build_pagination_params(
-                    mode=ext.pagination.mode,
-                    page=1,
-                    size=1,
-                    supports_offset=ext.pagination.supports_offset,
-                ),
-            },
-            page=1,
-            size=1,
-            meta_extra={"session_id": resolved_session_id},
-        )
-        if not validation.success:
-            return validation
-
-        meta = dict(validation.meta or {})
-        meta.update(
-            {
-                "binding_mode": "contextId+metadata",
-                "validated": True,
-                "provider": ext.provider,
-            }
-        )
-        return ExtensionCallResult(
-            success=True,
-            result={
-                "contextId": resolved_session_id,
-                "provider": ext.provider,
-                "metadata": {
-                    "provider": ext.provider,
-                    "externalSessionId": resolved_session_id,
-                    "contextId": resolved_session_id,
-                },
-            },
-            meta=meta,
+            session_id=session_id,
         )
 
     async def prompt_session_async(
@@ -795,50 +465,17 @@ class A2AExtensionsService:
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        resolved_session_id = (session_id or "").strip()
-        if not resolved_session_id:
-            raise ValueError("session_id is required")
-
-        if not isinstance(request_payload, dict):
-            raise ValueError("request must be an object")
-
-        parts = request_payload.get("parts")
-        if not isinstance(parts, list) or len(parts) == 0:
-            raise ValueError("request.parts must be a non-empty array")
-
-        params: Dict[str, Any] = {
-            "session_id": resolved_session_id,
-            "request": dict(request_payload),
-        }
-        normalized_metadata = self._normalize_extension_metadata(metadata)
-        if normalized_metadata is not None:
-            params["metadata"] = normalized_metadata
-
-        ext, jsonrpc_url = await self._resolve_session_extension(runtime)
-        return await self._invoke_session_method(
+        return await self._session_extensions.prompt_session_async(
             runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="prompt_async",
-            params=params,
-            page=1,
-            size=1,
-            normalize_envelope=False,
-            meta_extra={
-                "session_id": resolved_session_id,
-                "control_method": "prompt_async",
-            },
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
         )
 
     async def _resolve_provider_discovery_extension(
         self, runtime: A2ARuntime
     ) -> tuple[ResolvedProviderDiscoveryExtension, str]:
-        card = await self._fetch_card(runtime)
-        ext = resolve_opencode_provider_discovery(card)
-        jsonrpc_url = self._ensure_outbound_allowed(
-            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
-        )
-        return ext, jsonrpc_url
+        return await self._opencode_discovery.resolve_extension(runtime)
 
     async def _invoke_provider_discovery_method(
         self,
@@ -850,54 +487,13 @@ class A2AExtensionsService:
         params: Dict[str, Any],
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        method_name = ext.methods.get(method_key)
-        if not method_name:
-            return ExtensionCallResult(
-                success=False,
-                error_code="method_not_supported",
-                upstream_error={
-                    "message": f"Method {method_key} is not supported by upstream"
-                },
-                meta={"extension_uri": ext.uri},
-            )
-
-        resp = await self._perform_jsonrpc_call(
+        return await self._opencode_discovery.invoke_method(
             runtime=runtime,
+            ext=ext,
             jsonrpc_url=jsonrpc_url,
-            method_name=method_name,
+            method_key=method_key,
             params=params,
-        )
-
-        meta: Dict[str, Any] = {
-            "extension_uri": ext.uri,
-            "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
-            "provider": ext.provider,
-        }
-        if meta_extra:
-            meta.update(meta_extra)
-
-        metric_key = f"{ext.uri}:{method_name}"
-        if resp.ok:
-            resolved_result = (
-                dict(resp.result)
-                if isinstance(resp.result, dict)
-                else {"raw": resp.result}
-            )
-            self._record_extension_metric(metric_key, success=True, error_code=None)
-            return ExtensionCallResult(
-                success=True,
-                result=resolved_result,
-                meta=meta,
-            )
-
-        error = resp.error or {}
-        error_code = self._map_business_error_code(error, ext)
-        self._record_extension_metric(metric_key, success=False, error_code=error_code)
-        return ExtensionCallResult(
-            success=False,
-            error_code=error_code,
-            upstream_error=error,
-            meta=meta,
+            meta_extra=meta_extra,
         )
 
     async def list_opencode_providers(
@@ -906,17 +502,9 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        ext, jsonrpc_url = await self._resolve_provider_discovery_extension(runtime)
-        params: Dict[str, Any] = {}
-        normalized_metadata = self._normalize_extension_metadata(metadata)
-        if normalized_metadata is not None:
-            params["metadata"] = normalized_metadata
-        return await self._invoke_provider_discovery_method(
+        return await self._opencode_discovery.list_opencode_providers(
             runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="list_providers",
-            params=params,
+            metadata=metadata,
         )
 
     async def list_opencode_models(
@@ -926,34 +514,16 @@ class A2AExtensionsService:
         provider_id: str | None = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        resolved_provider_id = (provider_id or "").strip()
-        ext, jsonrpc_url = await self._resolve_provider_discovery_extension(runtime)
-        params: Dict[str, Any] = {}
-        if resolved_provider_id:
-            params["provider_id"] = resolved_provider_id
-        normalized_metadata = self._normalize_extension_metadata(metadata)
-        if normalized_metadata is not None:
-            params["metadata"] = normalized_metadata
-        return await self._invoke_provider_discovery_method(
+        return await self._opencode_discovery.list_opencode_models(
             runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="list_models",
-            params=params,
-            meta_extra=(
-                {"provider_id": resolved_provider_id} if resolved_provider_id else None
-            ),
+            provider_id=provider_id,
+            metadata=metadata,
         )
 
     async def _resolve_interrupt_extension(
         self, runtime: A2ARuntime
     ) -> tuple[ResolvedInterruptCallbackExtension, str]:
-        card = await self._fetch_card(runtime)
-        ext = resolve_interrupt_callback(card)
-        jsonrpc_url = self._ensure_outbound_allowed(
-            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
-        )
-        return ext, jsonrpc_url
+        return await self._interrupt_extensions.resolve_extension(runtime)
 
     async def _invoke_interrupt_method(
         self,
@@ -965,44 +535,13 @@ class A2AExtensionsService:
         params: Dict[str, Any],
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        method_name = ext.methods.get(method_key)
-        if not method_name:
-            return ExtensionCallResult(
-                success=False,
-                error_code="method_not_supported",
-                upstream_error={
-                    "message": f"Method {method_key} is not supported by upstream"
-                },
-                meta={"extension_uri": ext.uri},
-            )
-
-        resp = await self._perform_jsonrpc_call(
+        return await self._interrupt_extensions.invoke_method(
             runtime=runtime,
+            ext=ext,
             jsonrpc_url=jsonrpc_url,
-            method_name=method_name,
+            method_key=method_key,
             params=params,
-        )
-
-        meta: Dict[str, Any] = {
-            "extension_uri": ext.uri,
-            "jsonrpc_fallback_used": ext.jsonrpc.fallback_used,
-        }
-        if meta_extra:
-            meta.update(meta_extra)
-
-        metric_key = f"{ext.uri}:{method_name}"
-        if resp.ok:
-            self._record_extension_metric(metric_key, success=True, error_code=None)
-            return ExtensionCallResult(success=True, result=resp.result, meta=meta)
-
-        error = resp.error or {}
-        error_code = self._map_interrupt_business_error_code(error, ext)
-        self._record_extension_metric(metric_key, success=False, error_code=error_code)
-        return ExtensionCallResult(
-            success=False,
-            error_code=error_code,
-            upstream_error=error,
-            meta=meta,
+            meta_extra=meta_extra,
         )
 
     async def reply_permission_interrupt(
@@ -1013,28 +552,11 @@ class A2AExtensionsService:
         reply: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        resolved_request_id = (request_id or "").strip()
-        if not resolved_request_id:
-            raise ValueError("request_id is required")
-        resolved_reply = (reply or "").strip().lower()
-        if resolved_reply not in {"once", "always", "reject"}:
-            raise ValueError("reply must be one of: once, always, reject")
-        normalized_metadata = self._normalize_extension_metadata(metadata)
-
-        ext, jsonrpc_url = await self._resolve_interrupt_extension(runtime)
-        params: Dict[str, Any] = {
-            "request_id": resolved_request_id,
-            "reply": resolved_reply,
-        }
-        if normalized_metadata is not None:
-            params["metadata"] = normalized_metadata
-        return await self._invoke_interrupt_method(
+        return await self._interrupt_extensions.reply_permission_interrupt(
             runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="reply_permission",
-            params=params,
-            meta_extra={"request_id": resolved_request_id},
+            request_id=request_id,
+            reply=reply,
+            metadata=metadata,
         )
 
     async def reply_question_interrupt(
@@ -1045,25 +567,11 @@ class A2AExtensionsService:
         answers: list[list[str]],
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        resolved_request_id = (request_id or "").strip()
-        if not resolved_request_id:
-            raise ValueError("request_id is required")
-        normalized_metadata = self._normalize_extension_metadata(metadata)
-
-        ext, jsonrpc_url = await self._resolve_interrupt_extension(runtime)
-        params: Dict[str, Any] = {
-            "request_id": resolved_request_id,
-            "answers": answers,
-        }
-        if normalized_metadata is not None:
-            params["metadata"] = normalized_metadata
-        return await self._invoke_interrupt_method(
+        return await self._interrupt_extensions.reply_question_interrupt(
             runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="reply_question",
-            params=params,
-            meta_extra={"request_id": resolved_request_id},
+            request_id=request_id,
+            answers=answers,
+            metadata=metadata,
         )
 
     async def reject_question_interrupt(
@@ -1073,22 +581,10 @@ class A2AExtensionsService:
         request_id: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        resolved_request_id = (request_id or "").strip()
-        if not resolved_request_id:
-            raise ValueError("request_id is required")
-        normalized_metadata = self._normalize_extension_metadata(metadata)
-
-        ext, jsonrpc_url = await self._resolve_interrupt_extension(runtime)
-        params: Dict[str, Any] = {"request_id": resolved_request_id}
-        if normalized_metadata is not None:
-            params["metadata"] = normalized_metadata
-        return await self._invoke_interrupt_method(
+        return await self._interrupt_extensions.reject_question_interrupt(
             runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="reject_question",
-            params=params,
-            meta_extra={"request_id": resolved_request_id},
+            request_id=request_id,
+            metadata=metadata,
         )
 
 

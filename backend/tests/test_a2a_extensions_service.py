@@ -9,6 +9,9 @@ from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
     ExtensionCallResult,
 )
+from app.integrations.a2a_extensions.session_extension_service import (
+    SessionExtensionService,
+)
 from app.integrations.a2a_extensions.shared_contract import (
     SHARED_INTERRUPT_CALLBACK_URI,
     SHARED_SESSION_QUERY_URI,
@@ -237,7 +240,7 @@ def test_normalize_envelope_excludes_raw_by_default() -> None:
         "extra": {"debug": True},
     }
 
-    envelope = A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+    envelope = SessionExtensionService._normalize_envelope(
         result,
         page=1,
         size=20,
@@ -252,7 +255,7 @@ def test_normalize_envelope_excludes_raw_by_default() -> None:
 def test_normalize_envelope_includes_raw_when_requested() -> None:
     result = [{"id": "sess-1"}]
 
-    envelope = A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+    envelope = SessionExtensionService._normalize_envelope(
         result,
         page=1,
         size=20,
@@ -274,7 +277,7 @@ def test_normalize_envelope_uses_result_envelope_aliases() -> None:
         }
     }
 
-    envelope = A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+    envelope = SessionExtensionService._normalize_envelope(
         result,
         page=1,
         size=20,
@@ -300,7 +303,7 @@ def test_normalize_envelope_rejects_invalid_result_envelope_items() -> None:
     result = {"payload": {"sessions": "not-a-list"}}
 
     with pytest.raises(A2AExtensionContractError):
-        A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+        SessionExtensionService._normalize_envelope(
             result,
             page=1,
             size=20,
@@ -315,7 +318,7 @@ def test_normalize_envelope_does_not_fallback_when_result_envelope_declared() ->
     }
 
     with pytest.raises(A2AExtensionContractError):
-        A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+        SessionExtensionService._normalize_envelope(
             result,
             page=1,
             size=20,
@@ -328,7 +331,7 @@ def test_normalize_envelope_does_not_fallback_when_result_envelope_declared() ->
 
 def test_normalize_envelope_rejects_non_object_items_in_result_list() -> None:
     with pytest.raises(A2AExtensionContractError):
-        A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+        SessionExtensionService._normalize_envelope(
             ["invalid-item"],
             page=1,
             size=20,
