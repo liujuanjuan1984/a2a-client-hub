@@ -166,9 +166,6 @@ type MockAgentSession = {
   runtimeStatus: string | null;
   pendingInterrupt: unknown;
   lastResolvedInterrupt: unknown;
-  interruptRecords: Record<string, unknown>;
-  interruptOrder: string[];
-  activePendingInterruptId: string | null;
   streamState: "idle" | "streaming" | "recoverable" | "error";
   lastStreamError: string | null;
   transport: string;
@@ -189,9 +186,6 @@ const baseSession = (): MockAgentSession => ({
   runtimeStatus: "input-required",
   pendingInterrupt: null,
   lastResolvedInterrupt: null,
-  interruptRecords: {},
-  interruptOrder: [],
-  activePendingInterruptId: null,
   streamState: "idle",
   lastStreamError: null,
   transport: "ws",
@@ -633,25 +627,23 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("renders persisted interrupt lifecycle messages in the chat timeline", () => {
-    mockChatState.sessions[conversationId] = {
-      ...baseSession(),
-      interruptRecords: {
-        "perm-1": {
-          requestId: "perm-1",
-          type: "permission",
-          details: {
-            permission: "read",
-            patterns: ["/repo/.env"],
-          },
-          askedAt: "2026-03-13T03:00:00.000Z",
-          resolvedAt: "2026-03-13T03:00:02.000Z",
-          resolution: "replied",
-        },
+  it("renders persisted interrupt lifecycle messages from session history", () => {
+    mockSessionHistoryState.messages = [
+      {
+        id: "9d615a18-a182-5efd-9ef4-7f84d6cb96b8",
+        role: "system",
+        content: "Agent requested authorization: read.\nTargets: /repo/.env",
+        createdAt: "2026-03-13T03:00:00.000Z",
+        status: "done",
       },
-      interruptOrder: ["perm-1"],
-      activePendingInterruptId: null,
-    };
+      {
+        id: "0dcbfb3d-e644-57fb-a6ad-b3662c1b0b9f",
+        role: "system",
+        content: "Authorization request was handled. Agent resumed.",
+        createdAt: "2026-03-13T03:00:02.000Z",
+        status: "done",
+      },
+    ];
 
     const tree = renderChatScreen(conversationId);
     const root = tree.root;

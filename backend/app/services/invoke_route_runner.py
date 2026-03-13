@@ -649,6 +649,35 @@ async def _persist_stream_block_update(
         await _flush_stream_buffer(state=state, user_id=user_id)
 
 
+async def _persist_interrupt_lifecycle_event(
+    *,
+    state: _InvokeState,
+    event_payload: dict[str, Any],
+    user_id: UUID,
+) -> None:
+    if state.local_session_id is None:
+        return
+    interrupt_event = (
+        a2a_invoke_service.extract_interrupt_lifecycle_from_serialized_event(
+            event_payload
+        )
+    )
+    if interrupt_event is None:
+        return
+    async with AsyncSessionLocal() as persist_db:
+        if not hasattr(persist_db, "scalar"):
+            return
+        persisted_message_id = await session_hub_service.record_interrupt_lifecycle_event_by_local_session_id(
+            persist_db,
+            local_session_id=state.local_session_id,
+            user_id=user_id,
+            event=interrupt_event,
+        )
+        if persisted_message_id is None:
+            return
+        await commit_safely(persist_db)
+
+
 async def _flush_stream_buffer(
     *,
     state: _InvokeState,
@@ -832,6 +861,11 @@ def _build_consume_stream_callbacks(
             query=query,
             transport=transport,
             stream_enabled=stream_enabled,
+        )
+        await _persist_interrupt_lifecycle_event(
+            state=state,
+            event_payload=event_payload,
+            user_id=user_id,
         )
 
     async def on_finalized(outcome: StreamOutcome) -> None:

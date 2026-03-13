@@ -238,10 +238,6 @@ export const useChatStore = create<ChatState>()(
               [conversationId]: {
                 ...current,
                 pendingInterrupt: null,
-                activePendingInterruptId:
-                  !requestId || current.activePendingInterruptId === requestId
-                    ? null
-                    : (current.activePendingInterruptId ?? null),
               },
             },
           };
@@ -359,7 +355,6 @@ export const useChatStore = create<ChatState>()(
                 ...targetSession,
                 streamState: "idle",
                 pendingInterrupt: null,
-                activePendingInterruptId: null,
                 lastStreamError: null,
               },
             },
@@ -407,7 +402,6 @@ export const useChatStore = create<ChatState>()(
               lastReceivedSequence: undefined,
               transport: chatConnectionService.getPreferredTransport(),
               pendingInterrupt: null,
-              activePendingInterruptId: null,
             },
           },
         }));
@@ -485,7 +479,6 @@ export const useChatStore = create<ChatState>()(
               lastAgentMessageId: agentMessageId,
               lastReceivedSequence: undefined,
               pendingInterrupt: null,
-              activePendingInterruptId: null,
             },
           },
         }));

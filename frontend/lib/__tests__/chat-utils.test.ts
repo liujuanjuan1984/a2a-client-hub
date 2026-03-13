@@ -1,5 +1,4 @@
 import {
-  buildInterruptTimelineMessages,
   buildPersistedSessions,
   buildInvokePayload,
   buildSessionCleanupPlan,
@@ -18,9 +17,6 @@ describe("chat store utils", () => {
     expect(session.streamState).toBe("idle");
     expect(session.pendingInterrupt).toBeNull();
     expect(session.lastResolvedInterrupt).toBeNull();
-    expect(session.interruptRecords).toEqual({});
-    expect(session.interruptOrder).toEqual([]);
-    expect(session.activePendingInterruptId).toBeNull();
     expect(session.transport).toBe("http_json");
     expect(session.inputModes).toEqual(["text/plain"]);
     expect(session.outputModes).toEqual(["text/plain"]);
@@ -204,28 +200,6 @@ describe("chat store utils", () => {
       resolution: "replied",
       observedAt: "2026-02-14T12:00:05.000Z",
     };
-    newest.interruptRecords = {
-      "perm-1": {
-        requestId: "perm-1",
-        type: "permission",
-        details: { permission: "read", patterns: ["/repo/.env"] },
-        askedAt: "2026-02-14T12:00:01.000Z",
-        resolvedAt: null,
-        resolution: null,
-      },
-      "q-1": {
-        requestId: "q-1",
-        type: "question",
-        details: {
-          questions: [{ header: null, question: "Proceed?", options: [] }],
-        },
-        askedAt: "2026-02-14T12:00:02.000Z",
-        resolvedAt: "2026-02-14T12:00:05.000Z",
-        resolution: "replied",
-      },
-    };
-    newest.interruptOrder = ["perm-1", "q-1"];
-    newest.activePendingInterruptId = "perm-1";
 
     const older = createAgentSession("agent-2");
     older.lastActiveAt = "2026-02-14T11:00:00.000Z";
@@ -238,12 +212,6 @@ describe("chat store utils", () => {
     expect(persisted.newest.runtimeStatus).toBeNull();
     expect(persisted.newest.pendingInterrupt).toBeNull();
     expect(persisted.newest.lastResolvedInterrupt).toBeNull();
-    expect(Object.keys(persisted.newest.interruptRecords)).toEqual([
-      "perm-1",
-      "q-1",
-    ]);
-    expect(persisted.newest.interruptOrder).toEqual(["perm-1", "q-1"]);
-    expect(persisted.newest.activePendingInterruptId).toBe("perm-1");
     expect(persisted.newest.transport).toBe("http_json");
     expect(persisted.newest.source).toBeNull();
     expect(persisted.newest.contextId).toBeNull();
@@ -252,56 +220,5 @@ describe("chat store utils", () => {
     expect(persisted.newest.lastReceivedSequence).toBeUndefined();
     expect(persisted.newest.lastUserMessageId).toBeUndefined();
     expect(persisted.newest.lastAgentMessageId).toBeUndefined();
-  });
-
-  it("builds interrupt timeline messages from persisted lifecycle records", () => {
-    const session = createAgentSession("agent-1");
-    session.interruptRecords = {
-      "perm-1": {
-        requestId: "perm-1",
-        type: "permission",
-        details: {
-          permission: "read",
-          patterns: ["/repo/.env"],
-        },
-        askedAt: "2026-02-14T12:00:01.000Z",
-        resolvedAt: "2026-02-14T12:00:03.000Z",
-        resolution: "replied",
-      },
-      "q-1": {
-        requestId: "q-1",
-        type: "question",
-        details: {
-          questions: [{ header: null, question: "Proceed?", options: [] }],
-        },
-        askedAt: "2026-02-14T12:00:04.000Z",
-        resolvedAt: null,
-        resolution: null,
-      },
-    };
-    session.interruptOrder = ["perm-1", "q-1"];
-    session.activePendingInterruptId = "q-1";
-
-    expect(buildInterruptTimelineMessages(session)).toEqual([
-      expect.objectContaining({
-        id: "interrupt:perm-1:asked",
-        role: "system",
-        createdAt: "2026-02-14T12:00:01.000Z",
-        content: "Agent requested authorization: read.\nTargets: /repo/.env",
-      }),
-      expect.objectContaining({
-        id: "interrupt:perm-1:resolved",
-        role: "system",
-        createdAt: "2026-02-14T12:00:03.000Z",
-        content: "Authorization request was handled. Agent resumed.",
-      }),
-      expect.objectContaining({
-        id: "interrupt:q-1:asked",
-        role: "system",
-        createdAt: "2026-02-14T12:00:04.000Z",
-        content:
-          "Agent requested additional input: Proceed?\nWaiting for your response.",
-      }),
-    ]);
   });
 });

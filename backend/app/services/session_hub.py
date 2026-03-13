@@ -16,7 +16,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Literal, Optional
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -1452,6 +1452,86 @@ class SessionHubService:
             error_code=None,
         )
 
+    async def record_interrupt_lifecycle_event_by_local_session_id(
+        self,
+        db: AsyncSession,
+        *,
+        local_session_id: UUID,
+        user_id: UUID,
+        event: dict[str, Any],
+        observed_at: datetime | None = None,
+    ) -> UUID | None:
+        session = await self._get_local_session_by_id(
+            db,
+            user_id=user_id,
+            local_session_id=local_session_id,
+        )
+        if session is None:
+            return None
+        return await self.record_interrupt_lifecycle_event(
+            db,
+            conversation_id=session.id,
+            user_id=user_id,
+            event=event,
+            observed_at=observed_at,
+        )
+
+    async def record_interrupt_lifecycle_event(
+        self,
+        db: AsyncSession,
+        *,
+        conversation_id: UUID,
+        user_id: UUID,
+        event: dict[str, Any],
+        observed_at: datetime | None = None,
+    ) -> UUID | None:
+        normalized_event = _normalize_interrupt_lifecycle_event(event)
+        if normalized_event is None:
+            return None
+
+        message_id = _build_interrupt_lifecycle_message_id(
+            conversation_id=conversation_id,
+            request_id=normalized_event["request_id"],
+            phase=normalized_event["phase"],
+        )
+        message_metadata = _build_interrupt_lifecycle_message_metadata(
+            normalized_event,
+            observed_at=observed_at,
+        )
+        existing_message = await self._find_message_by_id_and_sender(
+            db,
+            user_id=user_id,
+            message_id=message_id,
+            sender="system",
+            conversation_id=conversation_id,
+        )
+        if existing_message is None:
+            system_message = await agent_message_handler.create_agent_message(
+                db,
+                id=message_id,
+                created_at=ensure_utc(observed_at) if observed_at else utc_now(),
+                user_id=user_id,
+                sender="system",
+                status="done",
+                conversation_id=conversation_id,
+                metadata=message_metadata,
+            )
+        else:
+            system_message = await agent_message_handler.update_agent_message(
+                db,
+                message=existing_message,
+                status="done",
+                message_metadata=message_metadata,
+            )
+        await self._upsert_single_text_block(
+            db,
+            user_id=user_id,
+            message_id=system_message.id,
+            content=_build_interrupt_lifecycle_message_content(normalized_event),
+            source="interrupt_lifecycle",
+        )
+        return system_message.id
+
     async def append_agent_message_block_update(
         self,
         db: AsyncSession,
@@ -2004,6 +2084,157 @@ def _normalize_block_type(raw_type: str | None) -> str:
     if normalized in {"text", "reasoning", "tool_call", "system_error"}:
         return normalized
     return "text"
+
+
+def _normalize_interrupt_lifecycle_event(
+    event: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(event, dict):
+        return None
+    request_id = normalize_non_empty_text(event.get("request_id"))
+    interrupt_type = normalize_non_empty_text(event.get("type"))
+    phase = normalize_non_empty_text(event.get("phase"))
+    if not request_id or interrupt_type not in {"permission", "question"}:
+        return None
+    if phase not in {"asked", "resolved"}:
+        return None
+
+    normalized: dict[str, Any] = {
+        "request_id": request_id,
+        "type": interrupt_type,
+        "phase": phase,
+    }
+    if phase == "resolved":
+        resolution = normalize_non_empty_text(event.get("resolution"))
+        if resolution not in {"replied", "rejected"}:
+            return None
+        normalized["resolution"] = resolution
+        return normalized
+
+    details = event.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    if interrupt_type == "permission":
+        patterns = details.get("patterns")
+        normalized["details"] = {
+            "permission": normalize_non_empty_text(details.get("permission")),
+            "patterns": (
+                [item for item in patterns if isinstance(item, str)]
+                if isinstance(patterns, list)
+                else []
+            ),
+        }
+        return normalized
+
+    questions = details.get("questions")
+    normalized_questions: list[dict[str, Any]] = []
+    if isinstance(questions, list):
+        for entry in questions:
+            if not isinstance(entry, dict):
+                continue
+            question = normalize_non_empty_text(entry.get("question"))
+            if not question:
+                continue
+            options = entry.get("options")
+            normalized_options: list[dict[str, Any]] = []
+            if isinstance(options, list):
+                for raw_option in options:
+                    if not isinstance(raw_option, dict):
+                        continue
+                    label = normalize_non_empty_text(raw_option.get("label"))
+                    if not label:
+                        continue
+                    normalized_options.append(
+                        {
+                            "label": label,
+                            "description": normalize_non_empty_text(
+                                raw_option.get("description")
+                            ),
+                            "value": normalize_non_empty_text(raw_option.get("value")),
+                        }
+                    )
+            normalized_questions.append(
+                {
+                    "header": normalize_non_empty_text(entry.get("header")),
+                    "question": question,
+                    "options": normalized_options,
+                }
+            )
+    normalized["details"] = {"questions": normalized_questions}
+    return normalized
+
+
+def _build_interrupt_lifecycle_message_id(
+    *,
+    conversation_id: UUID,
+    request_id: str,
+    phase: str,
+) -> UUID:
+    return uuid5(
+        NAMESPACE_URL,
+        f"interrupt-lifecycle:{conversation_id}:{request_id}:{phase}",
+    )
+
+
+def _build_interrupt_lifecycle_message_metadata(
+    event: dict[str, Any],
+    *,
+    observed_at: datetime | None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "event_type": "interrupt_lifecycle",
+        "interrupt": event,
+    }
+    if observed_at is not None:
+        metadata["observed_at"] = ensure_utc(observed_at).isoformat()
+    return metadata
+
+
+def _build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
+    interrupt_type = str(event.get("type") or "")
+    phase = str(event.get("phase") or "")
+    if phase == "resolved":
+        if interrupt_type == "permission":
+            return "Authorization request was handled. Agent resumed."
+        if event.get("resolution") == "rejected":
+            return "Question request was rejected. Interrupt closed."
+        return "Question answer received. Agent resumed."
+
+    details = event.get("details")
+    if not isinstance(details, dict):
+        details = {}
+    if interrupt_type == "permission":
+        permission = normalize_non_empty_text(details.get("permission")) or "unknown"
+        patterns = details.get("patterns")
+        normalized_patterns = (
+            [item for item in patterns if isinstance(item, str)]
+            if isinstance(patterns, list)
+            else []
+        )
+        if normalized_patterns:
+            return (
+                f"Agent requested authorization: {permission}.\n"
+                f"Targets: {', '.join(normalized_patterns)}"
+            )
+        return f"Agent requested authorization: {permission}."
+
+    questions = details.get("questions")
+    normalized_questions = (
+        [item for item in questions if isinstance(item, dict)]
+        if isinstance(questions, list)
+        else []
+    )
+    question_lines = [
+        normalize_non_empty_text(item.get("question")) for item in normalized_questions
+    ]
+    question_lines = [item for item in question_lines if item]
+    if len(question_lines) == 1:
+        return f"Agent requested additional input: {question_lines[0]}"
+    if len(question_lines) > 1:
+        return "Agent requested additional input:\n" + "\n".join(
+            f"- {question}" for question in question_lines
+        )
+    return "Agent requested additional input."
 
 
 def _read_block_cursor_state(metadata: dict[str, Any]) -> dict[str, int]:

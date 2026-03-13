@@ -30,7 +30,6 @@ import {
 import { ApiRequestError } from "@/lib/api/client";
 import { continueSession, querySessionMessageBlocks } from "@/lib/api/sessions";
 import {
-  buildInterruptTimelineMessages,
   getSharedModelSelection,
   type SharedModelSelection,
 } from "@/lib/chat-utils";
@@ -44,7 +43,6 @@ import {
   shouldStickToBottom,
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
-import { mergeChatMessagesByCanonicalId } from "@/lib/messageMerge";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
@@ -142,27 +140,7 @@ export function useChatScreenController({
     enabled: Boolean(conversationId),
     paused: historyPaused,
   });
-  const interruptTimelineMessages = useMemo(
-    () => buildInterruptTimelineMessages(session ?? null),
-    [
-      session?.activePendingInterruptId,
-      session?.interruptOrder,
-      session?.interruptRecords,
-    ],
-  );
-  const messages = useMemo(
-    () =>
-      mergeChatMessagesByCanonicalId({
-        current: sessionHistoryQuery.messages,
-        incoming: interruptTimelineMessages,
-        isActivelyStreaming: session?.streamState === "streaming",
-      }),
-    [
-      interruptTimelineMessages,
-      session?.streamState,
-      sessionHistoryQuery.messages,
-    ],
-  );
+  const messages = sessionHistoryQuery.messages;
 
   useRefreshOnFocus(sessionHistoryQuery.loadFirstPage);
 

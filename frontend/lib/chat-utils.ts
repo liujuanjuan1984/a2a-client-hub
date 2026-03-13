@@ -62,15 +62,6 @@ export type ResolvedRuntimeInterruptRecord = ResolvedRuntimeInterrupt & {
   observedAt: string;
 };
 
-export type InterruptLifecycleRecord = {
-  requestId: string;
-  type: "permission" | "question";
-  details: PendingRuntimeInterrupt["details"] | null;
-  askedAt: string | null;
-  resolvedAt: string | null;
-  resolution: ResolvedRuntimeInterrupt["resolution"] | null;
-};
-
 export type AgentSession = {
   agentId: string;
   createdAt?: string;
@@ -79,9 +70,6 @@ export type AgentSession = {
   runtimeStatus?: string | null;
   pendingInterrupt?: PendingRuntimeInterrupt | null;
   lastResolvedInterrupt?: ResolvedRuntimeInterruptRecord | null;
-  interruptRecords: Record<string, InterruptLifecycleRecord>;
-  interruptOrder: string[];
-  activePendingInterruptId?: string | null;
   streamState?: "idle" | "streaming" | "recoverable" | "error";
   lastStreamError?: string | null;
   lastReceivedSequence?: number;
@@ -99,7 +87,6 @@ const FALLBACK_LAST_ACTIVE_AT = "1970-01-01T00:00:00.000Z";
 export const CHAT_SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 export const CHAT_SESSION_MAX_ACTIVE = 240;
 export const CHAT_SESSION_MAX_PERSISTED = 80;
-export const INTERRUPT_LIFECYCLE_MAX_PERSISTED = 40;
 
 export const createAgentSession = (agentId: string): AgentSession => ({
   agentId,
@@ -109,9 +96,6 @@ export const createAgentSession = (agentId: string): AgentSession => ({
   runtimeStatus: null,
   pendingInterrupt: null,
   lastResolvedInterrupt: null,
-  interruptRecords: {},
-  interruptOrder: [],
-  activePendingInterruptId: null,
   streamState: "idle",
   lastStreamError: null,
   transport: "http_json",
@@ -133,145 +117,6 @@ export const mergeExternalSessionRef = (
   externalSessionId:
     current?.externalSessionId ?? incoming.externalSessionId ?? null,
 });
-
-const normalizeInterruptOrder = (
-  records: Record<string, InterruptLifecycleRecord>,
-  order: string[],
-) => {
-  const seen = new Set<string>();
-  const normalized: string[] = [];
-  order.forEach((requestId) => {
-    const key = requestId.trim();
-    if (!key || seen.has(key) || !records[key]) {
-      return;
-    }
-    seen.add(key);
-    normalized.push(key);
-  });
-  Object.keys(records).forEach((requestId) => {
-    if (seen.has(requestId)) {
-      return;
-    }
-    seen.add(requestId);
-    normalized.push(requestId);
-  });
-  return normalized;
-};
-
-const compactInterruptLifecycleState = (input: {
-  records: Record<string, InterruptLifecycleRecord>;
-  order: string[];
-  activePendingInterruptId?: string | null;
-}) => {
-  const normalizedOrder = normalizeInterruptOrder(input.records, input.order);
-  const pinnedRequestId =
-    typeof input.activePendingInterruptId === "string" &&
-    input.activePendingInterruptId.trim()
-      ? input.activePendingInterruptId.trim()
-      : null;
-  const keepIds = new Set(
-    normalizedOrder.slice(-INTERRUPT_LIFECYCLE_MAX_PERSISTED),
-  );
-  if (pinnedRequestId && input.records[pinnedRequestId]) {
-    keepIds.add(pinnedRequestId);
-  }
-  const nextOrder = normalizedOrder.filter((requestId) =>
-    keepIds.has(requestId),
-  );
-  const nextRecords = nextOrder.reduce<
-    Record<string, InterruptLifecycleRecord>
-  >((acc, requestId) => {
-    const record = input.records[requestId];
-    if (record) {
-      acc[requestId] = record;
-    }
-    return acc;
-  }, {});
-  return {
-    records: nextRecords,
-    order: nextOrder,
-    activePendingInterruptId:
-      pinnedRequestId && nextRecords[pinnedRequestId] ? pinnedRequestId : null,
-  };
-};
-
-const buildInterruptAskedMessage = (record: InterruptLifecycleRecord) => {
-  if (record.type === "permission") {
-    const permission = record.details?.permission?.trim() || "unknown";
-    const patterns = record.details?.patterns ?? [];
-    const patternSummary =
-      patterns.length > 0 ? `\nTargets: ${patterns.join(", ")}` : "";
-    return `Agent requested authorization: ${permission}.${patternSummary}`;
-  }
-  const questions = record.details?.questions ?? [];
-  if (questions.length === 1) {
-    return `Agent requested additional input: ${questions[0]?.question ?? "Question"}`;
-  }
-  if (questions.length > 1) {
-    return `Agent requested answers for ${questions.length} questions.`;
-  }
-  return "Agent requested additional input.";
-};
-
-const buildInterruptResolvedMessage = (record: InterruptLifecycleRecord) => {
-  if (record.type === "permission") {
-    return "Authorization request was handled. Agent resumed.";
-  }
-  if (record.resolution === "rejected") {
-    return "Question request was rejected. Interrupt closed.";
-  }
-  return "Question answer received. Agent resumed.";
-};
-
-export const buildInterruptTimelineMessages = (
-  session:
-    | Pick<
-        AgentSession,
-        "interruptRecords" | "interruptOrder" | "activePendingInterruptId"
-      >
-    | null
-    | undefined,
-): ChatMessage[] => {
-  const records = session?.interruptRecords ?? {};
-  const order = normalizeInterruptOrder(records, session?.interruptOrder ?? []);
-  const activePendingRequestId =
-    typeof session?.activePendingInterruptId === "string" &&
-    session.activePendingInterruptId.trim()
-      ? session.activePendingInterruptId.trim()
-      : null;
-  const messages: ChatMessage[] = [];
-  order.forEach((requestId) => {
-    const record = records[requestId];
-    if (!record) {
-      return;
-    }
-    if (record.askedAt) {
-      const askedSuffix =
-        activePendingRequestId === requestId && !record.resolvedAt
-          ? "\nWaiting for your response."
-          : "";
-      messages.push({
-        id: `interrupt:${requestId}:asked`,
-        role: "system",
-        content: `${buildInterruptAskedMessage(record)}${askedSuffix}`,
-        createdAt: record.askedAt,
-        status: "done",
-        blocks: [],
-      });
-    }
-    if (record.resolvedAt) {
-      messages.push({
-        id: `interrupt:${requestId}:resolved`,
-        role: "system",
-        content: buildInterruptResolvedMessage(record),
-        createdAt: record.resolvedAt,
-        status: "done",
-        blocks: [],
-      });
-    }
-  });
-  return messages;
-};
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -401,19 +246,6 @@ export const sortSessionsByLastActive = (
 const normalizeSessionForPersistence = (
   session: AgentSession,
 ): AgentSession => ({
-  ...(() => {
-    const compactedInterruptState = compactInterruptLifecycleState({
-      records: session.interruptRecords ?? {},
-      order: session.interruptOrder ?? [],
-      activePendingInterruptId: session.activePendingInterruptId ?? null,
-    });
-    return {
-      interruptRecords: compactedInterruptState.records,
-      interruptOrder: compactedInterruptState.order,
-      activePendingInterruptId:
-        compactedInterruptState.activePendingInterruptId,
-    };
-  })(),
   agentId: session.agentId,
   createdAt: getSessionCreatedAt(session),
   source: null,
