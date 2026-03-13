@@ -23,6 +23,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from app.utils.json_encoder import json_dumps
+from app.utils.logging_redaction import redact_sensitive_value
 from app.utils.payload_extract import (
     as_dict,
     extract_context_id,
@@ -85,6 +86,24 @@ class A2AInvokeService:
     _WS_HEARTBEAT_EVENT = {"event": "heartbeat", "data": {}}
     _WS_STREAM_END_EVENT = {"event": "stream_end", "data": {}}
     _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,64}$")
+    _LOG_SAMPLE_MAX_DEPTH = 6
+    _LOG_SAMPLE_MAX_DICT_ITEMS = 20
+    _LOG_SAMPLE_MAX_LIST_ITEMS = 8
+    _LOG_SAMPLE_MAX_STRING_LENGTH = 160
+    _LOG_SAMPLE_SENSITIVE_KEYWORDS = (
+        "authorization",
+        "cookie",
+        "token",
+        "ticket",
+        "secret",
+        "api-key",
+        "apikey",
+        "password",
+        "access_token",
+        "refresh_token",
+        "api_key",
+        "x-api-key",
+    )
 
     @classmethod
     def build_ws_error_event(
@@ -1006,6 +1025,92 @@ class A2AInvokeService:
         return [str(item) for item in validate_message(payload)]
 
     @classmethod
+    def _truncate_log_string(cls, value: str) -> str:
+        if len(value) <= cls._LOG_SAMPLE_MAX_STRING_LENGTH:
+            return value
+        remaining = len(value) - cls._LOG_SAMPLE_MAX_STRING_LENGTH
+        return (
+            value[: cls._LOG_SAMPLE_MAX_STRING_LENGTH]
+            + f"...<truncated:{remaining} chars>"
+        )
+
+    @classmethod
+    def _sanitize_log_sample(
+        cls,
+        value: Any,
+        *,
+        key_path: tuple[str, ...] = (),
+        depth: int = 0,
+    ) -> Any:
+        if depth >= cls._LOG_SAMPLE_MAX_DEPTH:
+            return "<max_depth_exceeded>"
+
+        last_key = key_path[-1].lower() if key_path else ""
+        if any(keyword in last_key for keyword in cls._LOG_SAMPLE_SENSITIVE_KEYWORDS):
+            if isinstance(value, str):
+                return redact_sensitive_value(value) or "<redacted>"
+            return "<redacted>"
+
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+
+        if isinstance(value, str):
+            return cls._truncate_log_string(value)
+
+        if isinstance(value, dict):
+            sanitized: dict[str, Any] = {}
+            items = list(value.items())
+            for key, child in items[: cls._LOG_SAMPLE_MAX_DICT_ITEMS]:
+                key_str = str(key)
+                sanitized[key_str] = cls._sanitize_log_sample(
+                    child,
+                    key_path=(*key_path, key_str),
+                    depth=depth + 1,
+                )
+            remaining = len(items) - cls._LOG_SAMPLE_MAX_DICT_ITEMS
+            if remaining > 0:
+                sanitized["__truncated_keys__"] = remaining
+            return sanitized
+
+        if isinstance(value, list):
+            sanitized_list = [
+                cls._sanitize_log_sample(
+                    child,
+                    key_path=key_path,
+                    depth=depth + 1,
+                )
+                for child in value[: cls._LOG_SAMPLE_MAX_LIST_ITEMS]
+            ]
+            remaining = len(value) - cls._LOG_SAMPLE_MAX_LIST_ITEMS
+            if remaining > 0:
+                sanitized_list.append(f"<truncated_items:{remaining}>")
+            return sanitized_list
+
+        if isinstance(value, tuple):
+            return cls._sanitize_log_sample(
+                list(value),
+                key_path=key_path,
+                depth=depth,
+            )
+
+        return cls._truncate_log_string(repr(value))
+
+    @classmethod
+    def _build_artifact_update_log_sample(
+        cls, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return cls._sanitize_log_sample(payload)
+
+    @classmethod
+    def _build_validation_errors_log_sample(
+        cls, validation_errors: list[str]
+    ) -> list[str]:
+        return [
+            cls._truncate_log_string(item)
+            for item in validation_errors[: cls._LOG_SAMPLE_MAX_LIST_ITEMS]
+        ]
+
+    @classmethod
     def _analyze_stream_chunk_contract(
         cls, payload: dict[str, Any]
     ) -> tuple[dict[str, Any] | None, str | None]:
@@ -1036,6 +1141,7 @@ class A2AInvokeService:
         *,
         seen_reasons: set[str],
         reason: str | None,
+        payload: dict[str, Any],
         log_warning: Callable[..., Any] | None,
         log_info: Callable[..., Any] | None,
         log_extra: dict[str, Any],
@@ -1043,7 +1149,13 @@ class A2AInvokeService:
         if reason is None or reason in seen_reasons:
             return
         seen_reasons.add(reason)
-        warning_payload = {**log_extra, "drop_reason": reason}
+        warning_payload = {
+            **log_extra,
+            "drop_reason": reason,
+            "artifact_update_sample": A2AInvokeService._build_artifact_update_log_sample(
+                payload
+            ),
+        }
         if callable(log_warning):
             log_warning(
                 "Dropped non-contract artifact-update event",
@@ -1290,6 +1402,12 @@ class A2AInvokeService:
                             extra={
                                 **log_extra,
                                 "validation_error_count": len(validation_errors),
+                                "validation_errors_sample": self._build_validation_errors_log_sample(
+                                    validation_errors
+                                ),
+                                "artifact_update_sample": self._build_artifact_update_log_sample(
+                                    serialized
+                                ),
                             },
                         )
                         continue
@@ -1299,6 +1417,7 @@ class A2AInvokeService:
                     self._warn_non_contract_artifact_update_once(
                         seen_reasons=non_contract_drop_reasons,
                         reason=non_contract_reason,
+                        payload=serialized,
                         log_warning=log_warning,
                         log_info=log_info,
                         log_extra=log_extra,
@@ -1511,6 +1630,12 @@ class A2AInvokeService:
                         extra={
                             **log_extra,
                             "validation_error_count": len(validation_errors),
+                            "validation_errors_sample": self._build_validation_errors_log_sample(
+                                validation_errors
+                            ),
+                            "artifact_update_sample": self._build_artifact_update_log_sample(
+                                serialized
+                            ),
                         },
                     )
                     continue
@@ -1520,6 +1645,7 @@ class A2AInvokeService:
                 self._warn_non_contract_artifact_update_once(
                     seen_reasons=non_contract_drop_reasons,
                     reason=non_contract_reason,
+                    payload=serialized,
                     log_warning=log_warning,
                     log_info=log_info,
                     log_extra=log_extra,
@@ -1795,6 +1921,12 @@ class A2AInvokeService:
                     warning_payload = {
                         **log_extra,
                         "validation_error_count": len(validation_errors),
+                        "validation_errors_sample": self._build_validation_errors_log_sample(
+                            validation_errors
+                        ),
+                        "artifact_update_sample": self._build_artifact_update_log_sample(
+                            serialized
+                        ),
                     }
                     if callable(log_warning):
                         log_warning(
@@ -1813,6 +1945,7 @@ class A2AInvokeService:
                 self._warn_non_contract_artifact_update_once(
                     seen_reasons=non_contract_drop_reasons,
                     reason=non_contract_reason,
+                    payload=serialized,
                     log_warning=log_warning,
                     log_info=log_info,
                     log_extra=log_extra,
