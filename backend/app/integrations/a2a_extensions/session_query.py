@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Optional
 
 from a2a.types import AgentCard
 
@@ -22,7 +22,11 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_SESSION_QUERY_URI,
     SUPPORTED_SESSION_QUERY_URIS,
 )
-from app.integrations.a2a_extensions.types import PageSizePagination, ResolvedExtension
+from app.integrations.a2a_extensions.types import (
+    PageSizePagination,
+    ResolvedExtension,
+    ResultEnvelopeMapping,
+)
 
 
 def _resolve_pagination_size(
@@ -76,6 +80,49 @@ def _parse_pagination_params(
             "Extension pagination.params must include limit for mode 'limit'"
         )
     return tuple(params), "offset" in params
+
+
+def _resolve_result_envelope_field(value: Any, *, field: str, default: str) -> str:
+    if value is None or value is True:
+        return default
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
+
+
+def _resolve_result_envelope(value: Any) -> Optional[ResultEnvelopeMapping]:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise A2AExtensionContractError(
+            "Extension contract missing/invalid 'result_envelope'"
+        )
+
+    unknown_keys = sorted(
+        key for key in value.keys() if key not in {"items", "pagination", "raw"}
+    )
+    if unknown_keys:
+        raise A2AExtensionContractError(
+            "Extension result_envelope contains unsupported keys"
+        )
+
+    return ResultEnvelopeMapping(
+        items=_resolve_result_envelope_field(
+            value.get("items"),
+            field="result_envelope.items",
+            default="items",
+        ),
+        pagination=_resolve_result_envelope_field(
+            value.get("pagination"),
+            field="result_envelope.pagination",
+            default="pagination",
+        ),
+        raw=_resolve_result_envelope_field(
+            value.get("raw"),
+            field="result_envelope.raw",
+            default="raw",
+        ),
+    )
 
 
 def resolve_session_query(card: AgentCard) -> ResolvedExtension:
@@ -152,10 +199,7 @@ def resolve_session_query(card: AgentCard) -> ResolvedExtension:
     errors = as_dict(params.get("errors"))
     code_to_error = build_business_code_map(errors.get("business_codes"))
 
-    result_envelope = params.get("result_envelope")
-    envelope_mapping: Optional[Mapping[str, Any]] = None
-    if isinstance(result_envelope, dict):
-        envelope_mapping = dict(result_envelope)
+    envelope_mapping = _resolve_result_envelope(params.get("result_envelope"))
 
     return ResolvedExtension(
         uri=str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI)),

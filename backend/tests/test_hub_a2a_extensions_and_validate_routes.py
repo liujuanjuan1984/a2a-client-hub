@@ -98,34 +98,56 @@ class _FakeExtensionsService:
             meta={},
         )
 
-    async def list_sessions(self, *, runtime, page: int, size, query):
+    async def list_sessions(
+        self, *, runtime, page: int, size, query, include_raw=False
+    ):
+        raw_items = [{"id": "sess-1", "title": "One", "provider": "opencode"}]
         self.calls.append(
             {
                 "fn": "list_sessions",
                 "runtime": runtime,
                 "page": page,
                 "size": size,
+                "include_raw": include_raw,
                 "query": query,
             }
         )
+        result = {
+            "items": [{"id": "sess-1", "title": "One"}],
+            "pagination": {
+                "page": page,
+                "size": size or 20,
+                "total": 1,
+                "pages": 1,
+            },
+        }
+        if include_raw:
+            result["raw"] = raw_items
         return _FakeExtensionResult(
             success=True,
-            result={
-                "items": [{"id": "sess-1", "title": "One"}],
-                "pagination": {
-                    "page": page,
-                    "size": size or 20,
-                    "total": 1,
-                    "pages": 1,
-                },
-                "meta": {},
-            },
+            result=result,
             meta={},
         )
 
     async def get_session_messages(
-        self, *, runtime, session_id: str, page: int, size, query
+        self,
+        *,
+        runtime,
+        session_id: str,
+        page: int,
+        size,
+        query,
+        include_raw=False,
     ):
+        raw_items = [
+            {
+                "id": "msg-1",
+                "role": "assistant",
+                "text": "hello",
+                "timestamp": "2026-02-09T00:00:00Z",
+                "provider": "opencode",
+            }
+        ]
         self.calls.append(
             {
                 "fn": "get_session_messages",
@@ -133,28 +155,31 @@ class _FakeExtensionsService:
                 "session_id": session_id,
                 "page": page,
                 "size": size,
+                "include_raw": include_raw,
                 "query": query,
             }
         )
+        result = {
+            "items": [
+                {
+                    "id": "msg-1",
+                    "role": "assistant",
+                    "text": "hello",
+                    "timestamp": "2026-02-09T00:00:00Z",
+                }
+            ],
+            "pagination": {
+                "page": page,
+                "size": size or 50,
+                "total": 1,
+                "pages": 1,
+            },
+        }
+        if include_raw:
+            result["raw"] = raw_items
         return _FakeExtensionResult(
             success=True,
-            result={
-                "items": [
-                    {
-                        "id": "msg-1",
-                        "role": "assistant",
-                        "text": "hello",
-                        "timestamp": "2026-02-09T00:00:00Z",
-                    }
-                ],
-                "pagination": {
-                    "page": page,
-                    "size": size or 50,
-                    "total": 1,
-                    "pages": 1,
-                },
-                "meta": {},
-            },
+            result=result,
             meta={},
         )
 
@@ -685,6 +710,68 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
     for call in fake_extensions.calls:
         resolved = call["runtime"].resolved
         assert resolved.headers["Authorization"].endswith("secret-token-opencode")
+
+
+@pytest.mark.asyncio
+async def test_hub_session_query_routes_exclude_raw_by_default_and_allow_include_raw(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_opencode_envelope@example.com",
+        user_email="alice_opencode_envelope@example.com",
+        token="secret-token-opencode-envelope",
+    )
+
+    fake_extensions = _FakeExtensionsService()
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        sessions_resp = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20"
+        )
+        assert sessions_resp.status_code == 200
+        sessions_payload = sessions_resp.json()
+        assert sessions_payload["success"] is True
+        assert "raw" not in sessions_payload["result"]
+
+        sessions_raw_resp = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20&include_raw=true"
+        )
+        assert sessions_raw_resp.status_code == 200
+        sessions_raw_payload = sessions_raw_resp.json()
+        assert sessions_raw_payload["success"] is True
+        assert sessions_raw_payload["result"]["raw"][0]["provider"] == "opencode"
+
+        messages_raw_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions/sess-1/messages:query",
+            json={"page": 1, "size": 50, "include_raw": True, "query": {}},
+        )
+        assert messages_raw_resp.status_code == 200
+        messages_raw_payload = messages_raw_resp.json()
+        assert messages_raw_payload["success"] is True
+        assert messages_raw_payload["result"]["raw"][0]["provider"] == "opencode"
+
+    session_calls = [
+        call for call in fake_extensions.calls if call["fn"] == "list_sessions"
+    ]
+    assert [call["include_raw"] for call in session_calls] == [False, True]
+    message_calls = [
+        call for call in fake_extensions.calls if call["fn"] == "get_session_messages"
+    ]
+    assert [call["include_raw"] for call in message_calls] == [True]
 
 
 @pytest.mark.asyncio

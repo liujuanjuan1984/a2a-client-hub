@@ -8,6 +8,7 @@ from typing import Any, Dict, Mapping, Optional
 
 import httpx
 from a2a.types import AgentCard
+from pydantic import ValidationError
 
 from app.core.config import settings
 from app.core.http_client import get_global_http_client
@@ -18,6 +19,7 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
 )
 from app.integrations.a2a_extensions.errors import (
+    A2AExtensionContractError,
     A2AExtensionUpstreamError,
 )
 from app.integrations.a2a_extensions.interrupt_callback import (
@@ -33,7 +35,9 @@ from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
     ResolvedProviderDiscoveryExtension,
+    ResultEnvelopeMapping,
 )
+from app.schemas.a2a_extension import A2AExtensionQueryResult
 from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.a2a_runtime import A2ARuntime
 from app.utils.outbound_url import (
@@ -42,6 +46,7 @@ from app.utils.outbound_url import (
 )
 
 logger = get_logger(__name__)
+_MISSING = object()
 
 _JSONRPC_STANDARD_ERROR_CODE_MAP: dict[int, str] = {
     -32600: "invalid_request",
@@ -132,42 +137,147 @@ class A2AExtensionsService:
         *,
         page: int,
         size: int,
+        result_envelope: ResultEnvelopeMapping | None = None,
+        include_raw: bool = False,
     ) -> Optional[Dict[str, Any]]:
         if result is None:
             return None
-        # Upstream extensions may return either:
-        # - a pre-wrapped envelope (dict), or
-        # - a plain list of items.
+
         if isinstance(result, list):
-            return {
-                "raw": result,
+            envelope = {
                 "items": result,
                 "pagination": {"page": page, "size": size},
             }
+            if include_raw:
+                envelope["raw"] = result
+            return A2AExtensionsService._validate_query_result(envelope)
 
         if not isinstance(result, dict):
-            return {
-                "raw": result,
+            envelope = {
                 "items": [],
                 "pagination": {"page": page, "size": size},
             }
+            if include_raw:
+                envelope["raw"] = result
+            return A2AExtensionsService._validate_query_result(envelope)
 
-        envelope: Dict[str, Any] = dict(result)
-        envelope.setdefault("raw", result)
+        strict_result_envelope = result_envelope is not None
+        mapping = result_envelope or ResultEnvelopeMapping()
+        raw: Any = _MISSING
 
-        items = envelope.get("items")
-        if not isinstance(items, list):
-            raw = envelope.get("raw")
-            if items is None and isinstance(raw, list):
-                envelope["items"] = raw
+        items, items_found = A2AExtensionsService._resolve_result_field(
+            result,
+            path=mapping.items,
+            fallback_path=None if strict_result_envelope else "items",
+        )
+        if items_found:
+            if not isinstance(items, list):
+                raise A2AExtensionContractError(
+                    "Extension result envelope resolved invalid 'items'"
+                )
+        elif strict_result_envelope:
+            raise A2AExtensionContractError(
+                "Extension result envelope missing declared 'items'"
+            )
+        else:
+            raw, _ = A2AExtensionsService._resolve_result_field(
+                result,
+                path=mapping.raw,
+                fallback_path="raw",
+            )
+            if raw is _MISSING:
+                raw = result
+            if isinstance(raw, list):
+                items = raw
             else:
-                envelope["items"] = []
+                items = []
 
-        pagination = envelope.get("pagination")
-        if not isinstance(pagination, dict):
-            envelope["pagination"] = {"page": page, "size": size}
+        if strict_result_envelope and include_raw:
+            raw, raw_found = A2AExtensionsService._resolve_result_field(
+                result,
+                path=mapping.raw,
+                fallback_path=None,
+            )
+            if not raw_found:
+                raise A2AExtensionContractError(
+                    "Extension result envelope missing declared 'raw'"
+                )
+        elif strict_result_envelope:
+            raw = _MISSING
+        elif isinstance(raw, list):
+            pass
 
-        return envelope
+        pagination, pagination_found = A2AExtensionsService._resolve_result_field(
+            result,
+            path=mapping.pagination,
+            fallback_path=None if strict_result_envelope else "pagination",
+        )
+        if pagination_found:
+            if not isinstance(pagination, dict):
+                raise A2AExtensionContractError(
+                    "Extension result envelope resolved invalid 'pagination'"
+                )
+        elif strict_result_envelope:
+            raise A2AExtensionContractError(
+                "Extension result envelope missing declared 'pagination'"
+            )
+        else:
+            pagination = {"page": page, "size": size}
+
+        if include_raw and raw is _MISSING:
+            raw, _ = A2AExtensionsService._resolve_result_field(
+                result,
+                path=mapping.raw,
+                fallback_path=None if strict_result_envelope else "raw",
+            )
+            if raw is _MISSING:
+                raw = result
+
+        envelope: Dict[str, Any] = {
+            "items": items,
+            "pagination": pagination,
+        }
+        if include_raw:
+            envelope["raw"] = raw
+        return A2AExtensionsService._validate_query_result(envelope)
+
+    @staticmethod
+    def _resolve_result_field(
+        result: Mapping[str, Any],
+        *,
+        path: str,
+        fallback_path: str | None = None,
+    ) -> tuple[Any, bool]:
+        candidates = [path]
+        if fallback_path and fallback_path not in candidates:
+            candidates.append(fallback_path)
+
+        for candidate in candidates:
+            current: Any = result
+            found = True
+            for part in candidate.split("."):
+                token = part.strip()
+                if not token:
+                    found = False
+                    break
+                if not isinstance(current, Mapping) or token not in current:
+                    found = False
+                    break
+                current = current[token]
+            if found:
+                return current, True
+        return _MISSING, False
+
+    @staticmethod
+    def _validate_query_result(envelope: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            return A2AExtensionQueryResult.model_validate(envelope).model_dump(
+                exclude_none=True
+            )
+        except ValidationError as exc:
+            raise A2AExtensionContractError(
+                "Extension result envelope is invalid"
+            ) from exc
 
     async def _call_with_retry(
         self,
@@ -428,6 +538,7 @@ class A2AExtensionsService:
         params: Dict[str, Any],
         page: int,
         size: int,
+        include_raw: bool = False,
         normalize_envelope: bool = True,
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
@@ -464,6 +575,8 @@ class A2AExtensionsService:
                     resp.result,
                     page=page,
                     size=size,
+                    result_envelope=ext.result_envelope,
+                    include_raw=include_raw,
                 )
             elif isinstance(resp.result, dict):
                 resolved_result = dict(resp.result)
@@ -490,6 +603,7 @@ class A2AExtensionsService:
         page: int,
         size: Optional[int],
         query: Optional[Dict[str, Any]],
+        include_raw: bool = False,
     ) -> ExtensionCallResult:
         ext, jsonrpc_url = await self._resolve_session_extension(runtime)
 
@@ -506,11 +620,12 @@ class A2AExtensionsService:
         ):
             return ExtensionCallResult(
                 success=True,
-                result={
-                    "raw": [],
-                    "items": [],
-                    "pagination": {"page": resolved_page, "size": resolved_size},
-                },
+                result=self._normalize_envelope(
+                    [],
+                    page=resolved_page,
+                    size=resolved_size,
+                    include_raw=include_raw,
+                ),
                 meta=self._build_call_meta(
                     ext=ext,
                     page=resolved_page,
@@ -536,6 +651,7 @@ class A2AExtensionsService:
             params=params,
             page=resolved_page,
             size=resolved_size,
+            include_raw=include_raw,
         )
 
     async def get_session_messages(
@@ -546,6 +662,7 @@ class A2AExtensionsService:
         page: int,
         size: Optional[int],
         query: Optional[Dict[str, Any]],
+        include_raw: bool = False,
     ) -> ExtensionCallResult:
         resolved_session_id = (session_id or "").strip()
         if not resolved_session_id:
@@ -566,11 +683,12 @@ class A2AExtensionsService:
         ):
             return ExtensionCallResult(
                 success=True,
-                result={
-                    "raw": [],
-                    "items": [],
-                    "pagination": {"page": resolved_page, "size": resolved_size},
-                },
+                result=self._normalize_envelope(
+                    [],
+                    page=resolved_page,
+                    size=resolved_size,
+                    include_raw=include_raw,
+                ),
                 meta=self._build_call_meta(
                     ext=ext,
                     page=resolved_page,
@@ -602,6 +720,7 @@ class A2AExtensionsService:
             params=params,
             page=resolved_page,
             size=resolved_size,
+            include_raw=include_raw,
             meta_extra={"session_id": resolved_session_id},
         )
 

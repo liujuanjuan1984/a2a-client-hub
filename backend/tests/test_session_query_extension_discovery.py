@@ -12,6 +12,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     LEGACY_SHARED_SESSION_QUERY_URI,
     SHARED_SESSION_QUERY_URI,
 )
+from app.integrations.a2a_extensions.types import ResultEnvelopeMapping
 
 
 def _base_card_payload() -> dict:
@@ -86,6 +87,7 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
     assert resolved.business_code_map[-32006] == "session_forbidden"
     assert resolved.pagination.params == ("page", "size")
     assert resolved.pagination.supports_offset is False
+    assert resolved.result_envelope == ResultEnvelopeMapping()
 
 
 def test_resolve_falls_back_to_card_url_when_interface_missing() -> None:
@@ -191,6 +193,73 @@ def test_resolve_accepts_limit_mode_with_offset_param() -> None:
     resolved = resolve_session_query(card)
     assert resolved.pagination.params == ("limit", "offset")
     assert resolved.pagination.supports_offset is True
+
+
+def test_resolve_accepts_result_envelope_field_aliases() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": SHARED_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "provider": "opencode",
+                "methods": {
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "page_size",
+                    "default_size": 20,
+                    "max_size": 100,
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {
+                    "items": "payload.sessions",
+                    "pagination": "payload.page_info",
+                    "raw": "payload",
+                },
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    resolved = resolve_session_query(card)
+    assert resolved.result_envelope == ResultEnvelopeMapping(
+        items="payload.sessions",
+        pagination="payload.page_info",
+        raw="payload",
+    )
+
+
+def test_resolve_rejects_result_envelope_unknown_keys() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": SHARED_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "provider": "opencode",
+                "methods": {
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "page_size",
+                    "default_size": 20,
+                    "max_size": 100,
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {
+                    "items": "payload.sessions",
+                    "unknown": "payload.unknown",
+                },
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    with pytest.raises(A2AExtensionContractError):
+        resolve_session_query(card)
 
 
 def test_resolve_defaults_provider_to_opencode_when_missing() -> None:

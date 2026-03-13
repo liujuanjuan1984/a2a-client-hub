@@ -30,6 +30,7 @@ from app.schemas.a2a_extension import (
     A2AExtensionPermissionReplyRequest,
     A2AExtensionPromptAsyncRequest,
     A2AExtensionQueryRequest,
+    A2AExtensionQueryResponse,
     A2AExtensionQuestionRejectRequest,
     A2AExtensionQuestionReplyRequest,
     A2AExtensionResponse,
@@ -168,8 +169,9 @@ def create_extension_capability_router(
 
     @router.get(
         "/{agent_id}/extensions/sessions",
-        response_model=A2AExtensionResponse,
+        response_model=A2AExtensionQueryResponse,
         status_code=status.HTTP_200_OK,
+        response_model_exclude_none=True,
     )
     async def list_external_sessions(
         *,
@@ -180,6 +182,10 @@ def create_extension_capability_router(
         page: int = Query(1, ge=1, description="Page number (1-indexed)"),
         size: Optional[int] = Query(
             None, ge=1, description="Page size (uses card default when omitted)"
+        ),
+        include_raw: bool = Query(
+            False,
+            description="Whether to include the upstream raw payload in the response",
         ),
         query: Optional[str] = Query(
             None, description="Optional JSON object encoded as a string"
@@ -197,6 +203,7 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "page": page,
                 "size": size,
+                "include_raw": include_raw,
                 "query_meta": _summarize_query_object(query_obj),
             },
         )
@@ -206,6 +213,7 @@ def create_extension_capability_router(
                 runtime=runtime,
                 page=page,
                 size=size,
+                include_raw=include_raw,
                 query=query_obj,
             )
         )
@@ -396,8 +404,9 @@ def create_extension_capability_router(
 
     @router.post(
         "/{agent_id}/extensions/sessions:query",
-        response_model=A2AExtensionResponse,
+        response_model=A2AExtensionQueryResponse,
         status_code=status.HTTP_200_OK,
+        response_model_exclude_none=True,
     )
     async def query_external_sessions(
         *,
@@ -418,6 +427,7 @@ def create_extension_capability_router(
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "page": payload.page,
                 "size": payload.size,
+                "include_raw": payload.include_raw,
                 "query_meta": _summarize_query_object(payload.query),
             },
         )
@@ -427,14 +437,16 @@ def create_extension_capability_router(
                 runtime=runtime,
                 page=payload.page,
                 size=payload.size,
+                include_raw=payload.include_raw,
                 query=payload.query,
             )
         )
 
     @router.get(
         "/{agent_id}/extensions/sessions/{session_id}/messages",
-        response_model=A2AExtensionResponse,
+        response_model=A2AExtensionQueryResponse,
         status_code=status.HTTP_200_OK,
+        response_model_exclude_none=True,
     )
     async def list_external_session_messages(
         *,
@@ -446,6 +458,10 @@ def create_extension_capability_router(
         page: int = Query(1, ge=1, description="Page number (1-indexed)"),
         size: Optional[int] = Query(
             None, ge=1, description="Page size (uses card default when omitted)"
+        ),
+        include_raw: bool = Query(
+            False,
+            description="Whether to include the upstream raw payload in the response",
         ),
         query: Optional[str] = Query(
             None, description="Optional JSON object encoded as a string"
@@ -464,6 +480,7 @@ def create_extension_capability_router(
                 "session_id": session_id,
                 "page": page,
                 "size": size,
+                "include_raw": include_raw,
                 "query_meta": _summarize_query_object(query_obj),
             },
         )
@@ -474,14 +491,16 @@ def create_extension_capability_router(
                 session_id=session_id,
                 page=page,
                 size=size,
+                include_raw=include_raw,
                 query=query_obj,
             )
         )
 
     @router.post(
         "/{agent_id}/extensions/sessions/{session_id}/messages:query",
-        response_model=A2AExtensionResponse,
+        response_model=A2AExtensionQueryResponse,
         status_code=status.HTTP_200_OK,
+        response_model_exclude_none=True,
     )
     async def query_external_session_messages(
         *,
@@ -504,6 +523,7 @@ def create_extension_capability_router(
                 "session_id": session_id,
                 "page": payload.page,
                 "size": payload.size,
+                "include_raw": payload.include_raw,
                 "query_meta": _summarize_query_object(payload.query),
             },
         )
@@ -514,6 +534,7 @@ def create_extension_capability_router(
                 session_id=session_id,
                 page=payload.page,
                 size=payload.size,
+                include_raw=payload.include_raw,
                 query=payload.query,
             )
         )
