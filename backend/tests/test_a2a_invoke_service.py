@@ -10,6 +10,7 @@ from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
 from app.services.a2a_invoke_service import StreamFinishReason, a2a_invoke_service
+from app.services.a2a_stream_diagnostics import build_artifact_update_log_sample
 
 
 class _BrokenGateway:
@@ -603,6 +604,17 @@ async def test_sse_warns_non_contract_artifact_update_once_per_reason(caplog):
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
+    assert getattr(warning_records[0], "artifact_update_sample", None) == {
+        "kind": "artifact-update",
+        "artifact": {
+            "metadata": {
+                "block_type": "text",
+                "message_id": "msg-legacy-1",
+                "event_id": "evt-legacy-1",
+            },
+            "content": "legacy-1",
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -648,6 +660,15 @@ async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
+    assert getattr(warning_records[0], "artifact_update_sample", None) == {
+        "kind": "artifact-update",
+        "artifact": {
+            "metadata": {
+                "block_type": "text",
+            },
+            "content": "legacy",
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -885,6 +906,17 @@ async def test_ws_warns_non_contract_artifact_update_once_per_reason(caplog):
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
+    assert getattr(warning_records[0], "artifact_update_sample", None) == {
+        "kind": "artifact-update",
+        "artifact": {
+            "metadata": {
+                "block_type": "text",
+                "message_id": "msg-legacy-ws-1",
+                "event_id": "evt-legacy-ws-1",
+            },
+            "content": "legacy-1",
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -1182,6 +1214,46 @@ async def test_consume_stream_warns_non_contract_artifact_update_once_per_reason
     ]
     assert len(warning_records) == 1
     assert getattr(warning_records[0], "drop_reason", None) == "missing_text_parts"
+    assert getattr(warning_records[0], "artifact_update_sample", None) == {
+        "kind": "artifact-update",
+        "artifact": {
+            "metadata": {
+                "block_type": "text",
+                "message_id": "msg-legacy-consume-1",
+                "event_id": "evt-legacy-consume-1",
+            },
+            "content": "legacy-1",
+        },
+    }
+
+
+def test_build_artifact_update_log_sample_redacts_sensitive_fields_and_truncates():
+    sample = build_artifact_update_log_sample(
+        {
+            "kind": "artifact-update",
+            "metadata": {
+                "Authorization": "Bearer secret-token-value",
+                "nested": {
+                    "access_token": "super-secret-token-value",
+                },
+            },
+            "artifact": {
+                "parts": [
+                    {
+                        "kind": "text",
+                        "text": "x" * 200,
+                    }
+                ]
+            },
+        }
+    )
+
+    assert sample["metadata"]["Authorization"].startswith("Bearer")
+    assert "secret-token-value" not in sample["metadata"]["Authorization"]
+    assert sample["metadata"]["nested"]["access_token"] != "super-secret-token-value"
+    truncated_text = sample["artifact"]["parts"][0]["text"]
+    assert truncated_text.startswith("x" * 160)
+    assert truncated_text.endswith("...<truncated:40 chars>")
 
 
 @pytest.mark.asyncio

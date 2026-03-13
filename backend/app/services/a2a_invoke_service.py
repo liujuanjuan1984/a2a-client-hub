@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import json
 import logging
 import re
 import time
@@ -22,12 +21,55 @@ from a2a.types import Message
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
-from app.utils.json_encoder import json_dumps
-from app.utils.payload_extract import (
-    as_dict,
-    extract_context_id,
-    extract_provider_and_external_session_id,
+from app.services.a2a_payload_analysis import (
+    PayloadAnalysis,
 )
+from app.services.a2a_payload_analysis import analyze_payload as analyze_payload_object
+from app.services.a2a_payload_analysis import (
+    coerce_payload_to_dict as coerce_payload_object,
+)
+from app.services.a2a_payload_analysis import (
+    extract_binding_hints_from_invoke_result as extract_binding_hints_from_result,
+)
+from app.services.a2a_payload_analysis import (
+    extract_binding_hints_from_serialized_event as extract_binding_hints_from_event,
+)
+from app.services.a2a_payload_analysis import (
+    extract_preferred_text_from_payload as extract_preferred_text,
+)
+from app.services.a2a_payload_analysis import (
+    extract_readable_content_from_invoke_result as extract_readable_content_from_result,
+)
+from app.services.a2a_payload_analysis import (
+    extract_stream_identity_hints_from_invoke_result as extract_stream_identity_hints_from_result,
+)
+from app.services.a2a_payload_analysis import (
+    extract_stream_identity_hints_from_serialized_event as extract_stream_identity_hints_from_event,
+)
+from app.services.a2a_payload_analysis import (
+    extract_usage_hints_from_invoke_result as extract_usage_hints_from_result,
+)
+from app.services.a2a_payload_analysis import (
+    extract_usage_hints_from_serialized_event as extract_usage_hints_from_event,
+)
+from app.services.a2a_stream_diagnostics import (
+    build_artifact_update_log_sample,
+    build_validation_errors_log_sample,
+    extract_artifact_validation_errors,
+    warn_non_contract_artifact_update_once,
+)
+from app.services.a2a_stream_payloads import (
+    analyze_stream_chunk_contract,
+    extract_artifact_source,
+    extract_artifact_type,
+    extract_interrupt_lifecycle_from_serialized_event,
+    extract_shared_stream_metadata,
+    extract_stream_chunk_from_serialized_event,
+    extract_stream_sequence_from_serialized_event,
+    extract_stream_text_from_parts,
+)
+from app.utils.json_encoder import json_dumps
+from app.utils.payload_extract import as_dict
 
 logger = logging.getLogger(__name__)
 
@@ -57,19 +99,6 @@ class StreamOutcome:
     elapsed_seconds: float
     idle_seconds: float
     terminal_event_seen: bool
-
-
-@dataclass(frozen=True)
-class PayloadAnalysis:
-    """Unified container for extracted payload metadata."""
-
-    usage: dict[str, Any]
-    upstream_message_id: str | None = None
-    upstream_event_id: str | None = None
-    upstream_event_seq: int | None = None
-    upstream_task_id: str | None = None
-    context_id: str | None = None
-    binding_metadata: dict[str, Any] = None
 
 
 StreamFinalizedCallbackFn = Callable[[StreamOutcome], Any]
@@ -177,139 +206,13 @@ class A2AInvokeService:
 
     @classmethod
     def analyze_payload(cls, payload: dict[str, Any]) -> PayloadAnalysis:
-        """Analyze a payload to extract all relevant metadata in a single pass."""
-        root = as_dict(payload)
-
-        # 1. Identity & Sequence hints (Candidates for identity)
-        artifact = as_dict(root.get("artifact"))
-        artifact_metadata = as_dict(artifact.get("metadata"))
-        message = as_dict(root.get("message"))
-        message_metadata = as_dict(message.get("metadata"))
-        status = as_dict(root.get("status"))
-        status_metadata = as_dict(status.get("metadata"))
-        task = as_dict(root.get("task"))
-        task_status = as_dict(task.get("status"))
-        task_status_metadata = as_dict(task_status.get("metadata"))
-        result = as_dict(root.get("result"))
-        result_status = as_dict(result.get("status"))
-        result_status_metadata = as_dict(result_status.get("metadata"))
-        root_metadata = as_dict(root.get("metadata"))
-        artifact_shared_stream = (
-            cls._StreamTextAccumulator._extract_shared_stream_metadata(root, artifact)
-        )
-
-        # Identity extraction
-        msg_id = None
-        evt_id = None
-        for cand in (
-            root,
-            artifact,
-            artifact_metadata,
-            message,
-            message_metadata,
-            status,
-            status_metadata,
-            task,
-            task_status,
-            task_status_metadata,
-            result,
-            result_status,
-            result_status_metadata,
-            artifact_shared_stream,
-            root_metadata,
-        ):
-            if msg_id is None:
-                msg_id = cls._pick_non_empty_str(cand, ("message_id", "messageId"))
-            if evt_id is None:
-                evt_id = cls._pick_non_empty_str(cand, ("event_id", "eventId"))
-
-        # Task ID extraction
-        t_id = cls._pick_non_empty_str(root, ("task_id", "taskId"))
-        if t_id is None:
-            for cand in (
-                artifact,
-                task,
-                as_dict(result.get("task")),
-                as_dict(status.get("task")),
-                root_metadata,
-            ):
-                t_id = cls._pick_non_empty_str(cand, ("task_id", "taskId", "id"))
-                if t_id:
-                    break
-
-        # Sequence extraction
-        seq = cls._pick_int(root, ("seq",))
-        if seq is None:
-            for cand in (
-                artifact,
-                artifact_metadata,
-                root_metadata,
-                artifact_shared_stream,
-            ):
-                seq = cls._pick_int(cand, ("seq", "sequence"))
-                if seq is not None:
-                    break
-
-        # 2. Usage hints
-        usage: dict[str, Any] = {}
-        for cand in (root, artifact, message, status, task, result):
-            cand_usage = cls._extract_usage_from_candidate(cand)
-            if cand_usage:
-                usage.update(cand_usage)
-
-        # 3. Binding hints
-        context_id = None
-        provider = None
-        ext_session_id = None
-        binding_meta: dict[str, Any] = {}
-
-        for cand in (root, message, result):
-            if context_id is None:
-                context_id = extract_context_id(cand)
-
-            c_meta = cls._extract_metadata_dict(cand)
-            if c_meta:
-                binding_meta.update(c_meta)
-
-            if provider is None or ext_session_id is None:
-                c_prov, c_ext = extract_provider_and_external_session_id(cand)
-                if provider is None:
-                    provider = c_prov
-                if ext_session_id is None:
-                    ext_session_id = c_ext
-
-        if context_id is None:
-            context_id = extract_context_id(binding_meta)
-        if provider is None or ext_session_id is None:
-            m_prov, m_ext = extract_provider_and_external_session_id(binding_meta)
-            if provider is None:
-                provider = m_prov
-            if ext_session_id is None:
-                ext_session_id = m_ext
-
-        if provider:
-            binding_meta["provider"] = provider
-        if ext_session_id:
-            binding_meta["externalSessionId"] = ext_session_id
-
-        return PayloadAnalysis(
-            usage=usage,
-            upstream_message_id=msg_id,
-            upstream_event_id=evt_id,
-            upstream_event_seq=seq,
-            upstream_task_id=t_id,
-            context_id=context_id,
-            binding_metadata=binding_meta,
-        )
+        return analyze_payload_object(payload)
 
     @classmethod
-    def _extract_metadata_dict(cls, payload: dict[str, Any]) -> dict[str, Any]:
-        resolved: dict[str, Any] = {}
-        for key in ("metadata", "bindingMetadata", "binding_metadata"):
-            value = payload.get(key)
-            if isinstance(value, dict):
-                resolved.update(value)
-        return resolved
+    def _extract_stream_sequence_from_serialized_event(
+        cls, payload: dict[str, Any]
+    ) -> int | None:
+        return extract_stream_sequence_from_serialized_event(payload)
 
     @staticmethod
     def _pick_non_empty_str(
@@ -334,446 +237,72 @@ class A2AInvokeService:
                 return int(value.strip())
         return None
 
-    @staticmethod
-    def _pick_number(payload: dict[str, Any], keys: tuple[str, ...]) -> float | None:
-        for key in keys:
-            value = payload.get(key)
-            if isinstance(value, bool):
-                continue
-            if isinstance(value, (int, float)):
-                return float(value)
-            if isinstance(value, str):
-                raw = value.strip()
-                if not raw:
-                    continue
-                try:
-                    return float(raw)
-                except ValueError:
-                    continue
-        return None
-
-    @classmethod
-    def _extract_stream_sequence_from_serialized_event(
-        cls, payload: dict[str, Any]
-    ) -> int | None:
-        root = as_dict(payload)
-        sequence = cls._pick_int(root, ("seq",))
-        if sequence is not None:
-            return sequence
-        artifact = as_dict(root.get("artifact"))
-        shared_stream = cls._StreamTextAccumulator._extract_shared_stream_metadata(
-            root, artifact
-        )
-        return cls._pick_int(shared_stream, ("sequence", "seq"))
-
-    @classmethod
-    def _extract_usage_from_candidate(cls, payload: dict[str, Any]) -> dict[str, Any]:
-        if not payload:
-            return {}
-
-        direct_usage = as_dict(payload.get("usage"))
-        metadata = as_dict(payload.get("metadata"))
-        metadata_usage = as_dict(metadata.get("usage"))
-
-        usage_payload: dict[str, Any] = {}
-        if direct_usage:
-            usage_payload.update(direct_usage)
-        if metadata_usage:
-            usage_payload.update(metadata_usage)
-        if not usage_payload:
-            return {}
-
-        normalized: dict[str, Any] = {}
-        token_field_map: dict[str, tuple[str, ...]] = {
-            "input_tokens": ("input_tokens", "inputTokens"),
-            "output_tokens": ("output_tokens", "outputTokens"),
-            "total_tokens": ("total_tokens", "totalTokens"),
-            "reasoning_tokens": ("reasoning_tokens", "reasoningTokens"),
-            "cache_tokens": ("cache_tokens", "cacheTokens"),
-        }
-        for field_name, keys in token_field_map.items():
-            value = cls._pick_int(usage_payload, keys)
-            if value is not None and value >= 0:
-                normalized[field_name] = value
-
-        cost = cls._pick_number(usage_payload, ("cost",))
-        if cost is not None and cost >= 0:
-            normalized["cost"] = cost
-        return normalized
-
     @classmethod
     def extract_binding_hints_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> tuple[str | None, dict[str, Any]]:
-        analysis = cls.analyze_payload(payload)
-        return analysis.context_id, analysis.binding_metadata
+        return extract_binding_hints_from_event(payload)
 
     @classmethod
     def extract_stream_identity_hints_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        analysis = cls.analyze_payload(payload)
-        hints: dict[str, Any] = {}
-        if analysis.upstream_message_id:
-            hints["upstream_message_id"] = analysis.upstream_message_id
-        if analysis.upstream_event_id:
-            hints["upstream_event_id"] = analysis.upstream_event_id
-        if analysis.upstream_event_seq is not None:
-            hints["upstream_event_seq"] = analysis.upstream_event_seq
-        if analysis.upstream_task_id:
-            hints["upstream_task_id"] = analysis.upstream_task_id
-        return hints
+        return extract_stream_identity_hints_from_event(payload)
 
     @classmethod
     def extract_usage_hints_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        analysis = cls.analyze_payload(payload)
-        return analysis.usage
+        return extract_usage_hints_from_event(payload)
 
     @classmethod
     def extract_interrupt_lifecycle_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
-        if not isinstance(payload, dict) or payload.get("kind") != "status-update":
-            return None
-
-        status = as_dict(payload.get("status"))
-        raw_state = cls._pick_non_empty_str(status, ("state",))
-        metadata = as_dict(payload.get("metadata"))
-        interrupt = as_dict(metadata.get("interrupt"))
-        if not interrupt:
-            return None
-
-        request_id = cls._pick_non_empty_str(interrupt, ("request_id", "requestId"))
-        interrupt_type = cls._pick_non_empty_str(interrupt, ("type",))
-        if not request_id or interrupt_type not in {"permission", "question"}:
-            return None
-
-        phase = cls._pick_non_empty_str(interrupt, ("phase",))
-        normalized_state = (raw_state or "").strip().lower()
-        if phase is None:
-            phase = (
-                "asked"
-                if normalized_state in {"input-required", "input_required"}
-                else None
-            )
-        if phase not in {"asked", "resolved"}:
-            return None
-
-        payload_event: dict[str, Any] = {
-            "request_id": request_id,
-            "type": interrupt_type,
-            "phase": phase,
-        }
-        if phase == "resolved":
-            resolution = cls._pick_non_empty_str(interrupt, ("resolution",))
-            if resolution not in {"replied", "rejected"}:
-                return None
-            payload_event["resolution"] = resolution
-            return payload_event
-
-        details = as_dict(interrupt.get("details")) or {}
-        if interrupt_type == "permission":
-            patterns = details.get("patterns")
-            payload_event["details"] = {
-                "permission": cls._pick_non_empty_str(details, ("permission",)),
-                "patterns": (
-                    [item for item in patterns if isinstance(item, str)]
-                    if isinstance(patterns, list)
-                    else []
-                ),
-            }
-            return payload_event
-
-        questions = details.get("questions")
-        normalized_questions: list[dict[str, Any]] = []
-        if isinstance(questions, list):
-            for entry in questions:
-                candidate = as_dict(entry)
-                if not candidate:
-                    continue
-                question = cls._pick_non_empty_str(candidate, ("question",))
-                if not question:
-                    continue
-                raw_options = candidate.get("options")
-                normalized_options: list[dict[str, Any]] = []
-                if isinstance(raw_options, list):
-                    for raw_option in raw_options:
-                        option = as_dict(raw_option)
-                        if not option:
-                            continue
-                        label = cls._pick_non_empty_str(option, ("label",))
-                        if not label:
-                            continue
-                        normalized_options.append(
-                            {
-                                "label": label,
-                                "description": cls._pick_non_empty_str(
-                                    option, ("description",)
-                                ),
-                                "value": cls._pick_non_empty_str(option, ("value",)),
-                            }
-                        )
-                normalized_questions.append(
-                    {
-                        "header": cls._pick_non_empty_str(candidate, ("header",)),
-                        "question": question,
-                        "options": normalized_options,
-                    }
-                )
-        payload_event["details"] = {"questions": normalized_questions}
-        return payload_event
+        return extract_interrupt_lifecycle_from_serialized_event(payload)
 
     @classmethod
     def extract_stream_chunk_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
-        # Accept standard A2A artifact-update payloads first. Upstream identity
-        # fields (message_id/event_id) are treated as optional hints.
-        if not isinstance(payload, dict) or payload.get("kind") != "artifact-update":
-            return None
-
-        artifact = as_dict(payload.get("artifact"))
-        if not artifact:
-            return None
-        artifact_metadata = as_dict(artifact.get("metadata"))
-        root_metadata = as_dict(payload.get("metadata"))
-        shared_stream = cls._StreamTextAccumulator._extract_shared_stream_metadata(
-            payload, artifact
-        )
-
-        block_type = cls._StreamTextAccumulator._extract_artifact_type(
-            payload, artifact
-        )
-        if block_type is None:
-            return None
-
-        event_id = None
-        message_id = None
-        for candidate in (
-            payload,
-            artifact,
-            artifact_metadata,
-            root_metadata,
-            shared_stream,
-        ):
-            if event_id is None:
-                event_id = cls._pick_non_empty_str(candidate, ("event_id", "eventId"))
-            if message_id is None:
-                message_id = cls._pick_non_empty_str(
-                    candidate, ("message_id", "messageId")
-                )
-
-        delta = cls._StreamTextAccumulator._extract_text_from_parts(
-            artifact.get("parts")
-        )
-        if not delta:
-            return None
-
-        append = payload.get("append")
-        resolved_append = append if isinstance(append, bool) else True
-        resolved_is_finished = (
-            payload.get("lastChunk") is True
-            or payload.get("last_chunk") is True
-            or artifact.get("lastChunk") is True
-            or artifact.get("last_chunk") is True
-        )
-
-        seq = (
-            cls._pick_int(payload, ("seq",))
-            or cls._pick_int(artifact, ("seq",))
-            or cls._pick_int(artifact_metadata, ("seq",))
-            or cls._pick_int(root_metadata, ("seq",))
-            or cls._pick_int(shared_stream, ("sequence", "seq"))
-        )
-        source = cls._StreamTextAccumulator._extract_artifact_source(payload, artifact)
-        return {
-            "event_id": event_id,
-            "seq": seq,
-            "message_id": message_id,
-            "block_type": block_type,
-            "content": delta,
-            "append": resolved_append,
-            "is_finished": resolved_is_finished,
-            "source": source,
-        }
+        return extract_stream_chunk_from_serialized_event(payload)
 
     @classmethod
     def _coerce_payload_to_dict(cls, payload: Any) -> dict[str, Any]:
-        resolved_payload = payload
-        if isinstance(resolved_payload, tuple):
-            if len(resolved_payload) >= 2 and resolved_payload[1]:
-                resolved_payload = resolved_payload[1]
-            elif resolved_payload:
-                resolved_payload = resolved_payload[0]
-            else:
-                return {}
-        if isinstance(resolved_payload, dict):
-            return dict(resolved_payload)
-        if hasattr(resolved_payload, "model_dump"):
-            try:
-                dumped = resolved_payload.model_dump(exclude_none=True)
-            except Exception as exc:
-                logger.error("Failed to dump A2A payload", exc_info=True)
-                raise ValueError("Payload serialization failed") from exc
-            if isinstance(dumped, dict):
-                return dumped
-        return {}
+        return coerce_payload_object(payload)
 
     @classmethod
     def extract_binding_hints_from_invoke_result(
         cls, result: dict[str, Any]
     ) -> tuple[str | None, dict[str, Any]]:
-        analysis = cls.analyze_payload(result)
-        context_id = analysis.context_id
-        metadata = analysis.binding_metadata
-
-        raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
-        if raw_payload:
-            raw_analysis = cls.analyze_payload(raw_payload)
-            if raw_analysis.context_id:
-                context_id = raw_analysis.context_id
-            if raw_analysis.binding_metadata:
-                metadata.update(raw_analysis.binding_metadata)
-        return context_id, metadata
+        return extract_binding_hints_from_result(result)
 
     @classmethod
     def extract_stream_identity_hints_from_invoke_result(
         cls, result: dict[str, Any]
     ) -> dict[str, Any]:
-        analysis = cls.analyze_payload(result)
-        hints: dict[str, Any] = {}
-        if analysis.upstream_message_id:
-            hints["upstream_message_id"] = analysis.upstream_message_id
-        if analysis.upstream_event_id:
-            hints["upstream_event_id"] = analysis.upstream_event_id
-        if analysis.upstream_event_seq is not None:
-            hints["upstream_event_seq"] = analysis.upstream_event_seq
-        if analysis.upstream_task_id:
-            hints["upstream_task_id"] = analysis.upstream_task_id
-
-        raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
-        if raw_payload:
-            raw_analysis = cls.analyze_payload(raw_payload)
-            if raw_analysis.upstream_message_id:
-                hints["upstream_message_id"] = raw_analysis.upstream_message_id
-            if raw_analysis.upstream_event_id:
-                hints["upstream_event_id"] = raw_analysis.upstream_event_id
-            if raw_analysis.upstream_event_seq is not None:
-                hints["upstream_event_seq"] = raw_analysis.upstream_event_seq
-            if raw_analysis.upstream_task_id:
-                hints["upstream_task_id"] = raw_analysis.upstream_task_id
-        return hints
+        return extract_stream_identity_hints_from_result(result)
 
     @classmethod
     def extract_usage_hints_from_invoke_result(
         cls, result: dict[str, Any]
     ) -> dict[str, Any]:
-        analysis = cls.analyze_payload(result)
-        usage_hints = analysis.usage
-
-        raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
-        if raw_payload:
-            raw_analysis = cls.analyze_payload(raw_payload)
-            if raw_analysis.usage:
-                usage_hints = raw_analysis.usage
-        return usage_hints
+        return extract_usage_hints_from_result(result)
 
     @staticmethod
     def _extract_text_from_parts(parts: Any) -> str | None:
-        if not isinstance(parts, list):
-            return None
-        collected: list[str] = []
-        for part in parts:
-            if not isinstance(part, dict):
-                continue
-            text = part.get("text")
-            if isinstance(text, str) and text.strip():
-                collected.append(text)
-                continue
-            content = part.get("content")
-            if isinstance(content, str) and content.strip():
-                collected.append(content)
-        if collected:
-            return "".join(collected)
-        return None
+        resolved = extract_stream_text_from_parts(parts)
+        return resolved or None
 
     @classmethod
     def _extract_preferred_text_from_payload(cls, payload: Any) -> str | None:
-        root = as_dict(payload)
-        if not root:
-            return None
-
-        direct_text = cls._pick_non_empty_str(root, ("text", "content", "message"))
-        if direct_text:
-            return direct_text
-
-        parts_text = cls._extract_text_from_parts(root.get("parts"))
-        if parts_text:
-            return parts_text
-
-        artifact = as_dict(root.get("artifact"))
-        if artifact:
-            artifact_text = cls._extract_text_from_parts(artifact.get("parts"))
-            if artifact_text:
-                return artifact_text
-
-        artifacts = root.get("artifacts")
-        if isinstance(artifacts, list):
-            for artifact_item in reversed(artifacts):
-                artifact_text = cls._extract_preferred_text_from_payload(artifact_item)
-                if artifact_text:
-                    return artifact_text
-
-        history = root.get("history")
-        if isinstance(history, list):
-            for entry in reversed(history):
-                entry_root = as_dict(entry)
-                if not entry_root:
-                    continue
-                role = cls._pick_non_empty_str(entry_root, ("role",))
-                if role and role.lower() in {"agent", "assistant", "model"}:
-                    history_text = cls._extract_preferred_text_from_payload(entry_root)
-                    if history_text:
-                        return history_text
-            for entry in reversed(history):
-                history_text = cls._extract_preferred_text_from_payload(entry)
-                if history_text:
-                    return history_text
-
-        for key in ("status", "result", "message"):
-            nested = as_dict(root.get(key))
-            if nested:
-                nested_text = cls._extract_preferred_text_from_payload(nested)
-                if nested_text:
-                    return nested_text
-
-        return None
+        return extract_preferred_text(payload)
 
     @classmethod
     def extract_readable_content_from_invoke_result(
         cls, result: dict[str, Any]
     ) -> str | None:
-        raw_payload = cls._coerce_payload_to_dict(result.get("raw"))
-        if raw_payload:
-            raw_text = cls._extract_preferred_text_from_payload(raw_payload)
-            if raw_text:
-                return raw_text
-
-        content = result.get("content")
-        if isinstance(content, str) and content.strip():
-            stripped = content.strip()
-            if stripped[:1] in {"{", "["}:
-                try:
-                    parsed = json.loads(stripped)
-                except Exception:
-                    return stripped
-                parsed_text = cls._extract_preferred_text_from_payload(parsed)
-                if parsed_text:
-                    return parsed_text
-            return stripped
-        return None
+        return extract_readable_content_from_result(result)
 
     class _StreamTextAccumulator:
         """Accumulates stream text for persistence.
@@ -792,98 +321,25 @@ class A2AInvokeService:
 
         @staticmethod
         def _extract_text_from_parts(parts: Any) -> str:
-            if not isinstance(parts, list):
-                return ""
-            collected: list[str] = []
-            for part in parts:
-                if not isinstance(part, dict):
-                    continue
-                raw_kind = part.get("kind") or part.get("type")
-                normalized_kind = (
-                    raw_kind.strip().lower() if isinstance(raw_kind, str) else None
-                )
-                if normalized_kind not in {None, "", "text"}:
-                    continue
-                text = part.get("text")
-                if isinstance(text, str):
-                    collected.append(text)
-                    continue
-                content = part.get("content")
-                if isinstance(content, str):
-                    collected.append(content)
-            return "".join(collected)
+            return extract_stream_text_from_parts(parts)
 
         @staticmethod
         def _extract_shared_stream_metadata(
             payload: dict[str, Any], artifact: dict[str, Any]
         ) -> dict[str, Any]:
-            resolved: dict[str, Any] = {}
-            root_metadata = as_dict(payload.get("metadata"))
-            artifact_metadata = as_dict(artifact.get("metadata"))
-            for metadata in (root_metadata, artifact_metadata):
-                shared = as_dict(metadata.get("shared"))
-                stream = as_dict(shared.get("stream"))
-                if stream:
-                    resolved.update(stream)
-            return resolved
+            return extract_shared_stream_metadata(payload, artifact)
 
         @staticmethod
         def _extract_artifact_type(
             payload: dict[str, Any], artifact: dict[str, Any]
         ) -> str | None:
-            metadata = artifact.get("metadata")
-            if not isinstance(metadata, dict):
-                metadata = {}
-            root_metadata = payload.get("metadata")
-            if not isinstance(root_metadata, dict):
-                root_metadata = {}
-            shared_stream = (
-                A2AInvokeService._StreamTextAccumulator._extract_shared_stream_metadata(
-                    payload, artifact
-                )
-            )
-
-            raw = shared_stream.get("block_type")
-            if not isinstance(raw, str) or not raw.strip():
-                raw = metadata.get("block_type")
-            if not isinstance(raw, str) or not raw.strip():
-                raw = root_metadata.get("block_type")
-
-            if not isinstance(raw, str) or not raw.strip():
-                if A2AInvokeService._StreamTextAccumulator._extract_text_from_parts(
-                    artifact.get("parts")
-                ):
-                    return "text"
-                return None
-
-            normalized = raw.strip().lower()
-            if normalized in {"text", "reasoning", "tool_call"}:
-                return normalized
-            return None
+            return extract_artifact_type(payload, artifact)
 
         @staticmethod
         def _extract_artifact_source(
             payload: dict[str, Any], artifact: dict[str, Any]
         ) -> str | None:
-            metadata = artifact.get("metadata")
-            if not isinstance(metadata, dict):
-                metadata = {}
-            root_metadata = payload.get("metadata")
-            if not isinstance(root_metadata, dict):
-                root_metadata = {}
-            shared_stream = (
-                A2AInvokeService._StreamTextAccumulator._extract_shared_stream_metadata(
-                    payload, artifact
-                )
-            )
-            source = shared_stream.get("source")
-            if not isinstance(source, str) or not source.strip():
-                source = metadata.get("source")
-            if not isinstance(source, str) or not source.strip():
-                source = root_metadata.get("source")
-            if isinstance(source, str) and source.strip():
-                return source.strip().lower()
-            return None
+            return extract_artifact_source(payload, artifact)
 
         def _push_new_block(self, block_type: str, delta: str, done: bool) -> None:
             now = self._block_seq
@@ -997,65 +453,11 @@ class A2AInvokeService:
             payload["validation_errors"] = validate_message(payload)
         return payload
 
-    @staticmethod
-    def _extract_artifact_validation_errors(
-        payload: dict[str, Any], *, validate_message: ValidateMessageFn
-    ) -> list[str]:
-        if payload.get("kind") != "artifact-update":
-            return []
-        return [str(item) for item in validate_message(payload)]
-
     @classmethod
     def _analyze_stream_chunk_contract(
         cls, payload: dict[str, Any]
     ) -> tuple[dict[str, Any] | None, str | None]:
-        if payload.get("kind") != "artifact-update":
-            return None, None
-        stream_block = cls.extract_stream_chunk_from_serialized_event(payload)
-        if stream_block is not None:
-            return stream_block, None
-
-        artifact = as_dict(payload.get("artifact"))
-        if not artifact:
-            return None, "missing_artifact"
-
-        block_type = cls._StreamTextAccumulator._extract_artifact_type(
-            payload, artifact
-        )
-        if block_type is None:
-            return None, "missing_or_invalid_block_type"
-        if (
-            cls._StreamTextAccumulator._extract_text_from_parts(artifact.get("parts"))
-            == ""
-        ):
-            return None, "missing_text_parts"
-        return None, "invalid_artifact_update_shape"
-
-    @staticmethod
-    def _warn_non_contract_artifact_update_once(
-        *,
-        seen_reasons: set[str],
-        reason: str | None,
-        log_warning: Callable[..., Any] | None,
-        log_info: Callable[..., Any] | None,
-        log_extra: dict[str, Any],
-    ) -> None:
-        if reason is None or reason in seen_reasons:
-            return
-        seen_reasons.add(reason)
-        warning_payload = {**log_extra, "drop_reason": reason}
-        if callable(log_warning):
-            log_warning(
-                "Dropped non-contract artifact-update event",
-                extra=warning_payload,
-            )
-            return
-        if callable(log_info):
-            log_info(
-                "Dropped non-contract artifact-update event",
-                extra=warning_payload,
-            )
-            return
+        return analyze_stream_chunk_contract(payload)
 
     @staticmethod
     def _is_terminal_status_event(payload: dict[str, Any]) -> bool:
@@ -1280,7 +682,7 @@ class A2AInvokeService:
                     serialized = self.serialize_stream_event(
                         event, validate_message=validate_message
                     )
-                    validation_errors = self._extract_artifact_validation_errors(
+                    validation_errors = extract_artifact_validation_errors(
                         serialized,
                         validate_message=validate_message,
                     )
@@ -1290,15 +692,22 @@ class A2AInvokeService:
                             extra={
                                 **log_extra,
                                 "validation_error_count": len(validation_errors),
+                                "validation_errors_sample": build_validation_errors_log_sample(
+                                    validation_errors
+                                ),
+                                "artifact_update_sample": build_artifact_update_log_sample(
+                                    serialized
+                                ),
                             },
                         )
                         continue
                     stream_block, non_contract_reason = (
                         self._analyze_stream_chunk_contract(serialized)
                     )
-                    self._warn_non_contract_artifact_update_once(
+                    warn_non_contract_artifact_update_once(
                         seen_reasons=non_contract_drop_reasons,
                         reason=non_contract_reason,
+                        payload=serialized,
                         log_warning=log_warning,
                         log_info=log_info,
                         log_extra=log_extra,
@@ -1501,7 +910,7 @@ class A2AInvokeService:
                 serialized = self.serialize_stream_event(
                     event, validate_message=validate_message
                 )
-                validation_errors = self._extract_artifact_validation_errors(
+                validation_errors = extract_artifact_validation_errors(
                     serialized,
                     validate_message=validate_message,
                 )
@@ -1511,15 +920,22 @@ class A2AInvokeService:
                         extra={
                             **log_extra,
                             "validation_error_count": len(validation_errors),
+                            "validation_errors_sample": build_validation_errors_log_sample(
+                                validation_errors
+                            ),
+                            "artifact_update_sample": build_artifact_update_log_sample(
+                                serialized
+                            ),
                         },
                     )
                     continue
                 stream_block, non_contract_reason = self._analyze_stream_chunk_contract(
                     serialized
                 )
-                self._warn_non_contract_artifact_update_once(
+                warn_non_contract_artifact_update_once(
                     seen_reasons=non_contract_drop_reasons,
                     reason=non_contract_reason,
+                    payload=serialized,
                     log_warning=log_warning,
                     log_info=log_info,
                     log_extra=log_extra,
@@ -1788,13 +1204,19 @@ class A2AInvokeService:
                 serialized = self.serialize_stream_event(
                     event, validate_message=validate_message
                 )
-                validation_errors = self._extract_artifact_validation_errors(
+                validation_errors = extract_artifact_validation_errors(
                     serialized, validate_message=validate_message
                 )
                 if validation_errors:
                     warning_payload = {
                         **log_extra,
                         "validation_error_count": len(validation_errors),
+                        "validation_errors_sample": build_validation_errors_log_sample(
+                            validation_errors
+                        ),
+                        "artifact_update_sample": build_artifact_update_log_sample(
+                            serialized
+                        ),
                     }
                     if callable(log_warning):
                         log_warning(
@@ -1810,9 +1232,10 @@ class A2AInvokeService:
                 stream_block, non_contract_reason = self._analyze_stream_chunk_contract(
                     serialized
                 )
-                self._warn_non_contract_artifact_update_once(
+                warn_non_contract_artifact_update_once(
                     seen_reasons=non_contract_drop_reasons,
                     reason=non_contract_reason,
+                    payload=serialized,
                     log_warning=log_warning,
                     log_info=log_info,
                     log_extra=log_extra,
