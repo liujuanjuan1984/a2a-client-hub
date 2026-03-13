@@ -48,7 +48,6 @@ def test_resolve_extracts_provider_discovery_methods_and_interface() -> None:
                         "UPSTREAM_HTTP_ERROR": -32003,
                     }
                 },
-                "result_envelope": {"by_method": {}},
             },
         }
     ]

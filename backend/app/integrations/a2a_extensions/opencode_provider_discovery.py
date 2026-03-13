@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict
 
 from a2a.types import AgentCard
 
@@ -54,11 +54,6 @@ def resolve_opencode_provider_discovery(
     errors = as_dict(params.get("errors"))
     code_to_error = build_business_code_map(errors.get("business_codes"))
 
-    result_envelope = params.get("result_envelope")
-    envelope_mapping: Optional[Mapping[str, Any]] = None
-    if isinstance(result_envelope, dict):
-        envelope_mapping = dict(result_envelope)
-
     return ResolvedProviderDiscoveryExtension(
         uri=str(getattr(ext, "uri", PROVIDER_DISCOVERY_URI)),
         required=required,
@@ -69,7 +64,6 @@ def resolve_opencode_provider_discovery(
             "list_models": list_models_method,
         },
         business_code_map=code_to_error,
-        result_envelope=envelope_mapping,
     )
 
 

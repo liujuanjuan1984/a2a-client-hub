@@ -51,7 +51,6 @@ class ResolvedProviderDiscoveryExtension:
     jsonrpc: JsonRpcInterface
     methods: Mapping[str, Optional[str]]
     business_code_map: Mapping[int, str]
-    result_envelope: Optional[Mapping[str, Any]]
 
 
 __all__ = [
