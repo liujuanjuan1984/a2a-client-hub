@@ -14,6 +14,10 @@ class A2AExtensionQueryRequest(BaseModel):
         ge=1,
         description="Page size (uses card default when omitted)",
     )
+    include_raw: bool = Field(
+        default=False,
+        description="Whether to include the upstream raw payload in the response",
+    )
     query: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Optional query object forwarded to the upstream extension method",

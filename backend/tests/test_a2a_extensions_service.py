@@ -215,17 +215,53 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
         session_id="ses_123",
         page=2,
         size=20,
+        include_raw=False,
         query=None,
     )
 
     assert result.success is True
     assert result.result == {
-        "raw": [],
         "items": [],
         "pagination": {"page": 2, "size": 20},
     }
     assert result.meta["session_id"] == "ses_123"
     assert result.meta["short_circuit_reason"] == "limit_without_offset"
+
+
+def test_normalize_envelope_excludes_raw_by_default() -> None:
+    result = {
+        "items": [{"id": "sess-1"}],
+        "pagination": {"page": 1, "size": 20, "total": 1},
+        "extra": {"debug": True},
+    }
+
+    envelope = A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+        result,
+        page=1,
+        size=20,
+    )
+
+    assert envelope == {
+        "items": [{"id": "sess-1"}],
+        "pagination": {"page": 1, "size": 20, "total": 1},
+    }
+
+
+def test_normalize_envelope_includes_raw_when_requested() -> None:
+    result = [{"id": "sess-1"}]
+
+    envelope = A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+        result,
+        page=1,
+        size=20,
+        include_raw=True,
+    )
+
+    assert envelope == {
+        "items": [{"id": "sess-1"}],
+        "pagination": {"page": 1, "size": 20},
+        "raw": [{"id": "sess-1"}],
+    }
 
 
 @pytest.mark.asyncio

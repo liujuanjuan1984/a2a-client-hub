@@ -132,41 +132,47 @@ class A2AExtensionsService:
         *,
         page: int,
         size: int,
+        include_raw: bool = False,
     ) -> Optional[Dict[str, Any]]:
         if result is None:
             return None
-        # Upstream extensions may return either:
-        # - a pre-wrapped envelope (dict), or
-        # - a plain list of items.
+
         if isinstance(result, list):
-            return {
-                "raw": result,
+            envelope = {
                 "items": result,
                 "pagination": {"page": page, "size": size},
             }
+            if include_raw:
+                envelope["raw"] = result
+            return envelope
 
         if not isinstance(result, dict):
-            return {
-                "raw": result,
+            envelope = {
                 "items": [],
                 "pagination": {"page": page, "size": size},
             }
+            if include_raw:
+                envelope["raw"] = result
+            return envelope
 
-        envelope: Dict[str, Any] = dict(result)
-        envelope.setdefault("raw", result)
-
-        items = envelope.get("items")
+        raw = result.get("raw", result)
+        items = result.get("items")
         if not isinstance(items, list):
-            raw = envelope.get("raw")
             if items is None and isinstance(raw, list):
-                envelope["items"] = raw
+                items = raw
             else:
-                envelope["items"] = []
+                items = []
 
-        pagination = envelope.get("pagination")
+        pagination = result.get("pagination")
         if not isinstance(pagination, dict):
-            envelope["pagination"] = {"page": page, "size": size}
+            pagination = {"page": page, "size": size}
 
+        envelope: Dict[str, Any] = {
+            "items": items,
+            "pagination": pagination,
+        }
+        if include_raw:
+            envelope["raw"] = raw
         return envelope
 
     async def _call_with_retry(
@@ -428,6 +434,7 @@ class A2AExtensionsService:
         params: Dict[str, Any],
         page: int,
         size: int,
+        include_raw: bool = False,
         normalize_envelope: bool = True,
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
@@ -464,6 +471,7 @@ class A2AExtensionsService:
                     resp.result,
                     page=page,
                     size=size,
+                    include_raw=include_raw,
                 )
             elif isinstance(resp.result, dict):
                 resolved_result = dict(resp.result)
@@ -490,6 +498,7 @@ class A2AExtensionsService:
         page: int,
         size: Optional[int],
         query: Optional[Dict[str, Any]],
+        include_raw: bool = False,
     ) -> ExtensionCallResult:
         ext, jsonrpc_url = await self._resolve_session_extension(runtime)
 
@@ -506,11 +515,12 @@ class A2AExtensionsService:
         ):
             return ExtensionCallResult(
                 success=True,
-                result={
-                    "raw": [],
-                    "items": [],
-                    "pagination": {"page": resolved_page, "size": resolved_size},
-                },
+                result=self._normalize_envelope(
+                    [],
+                    page=resolved_page,
+                    size=resolved_size,
+                    include_raw=include_raw,
+                ),
                 meta=self._build_call_meta(
                     ext=ext,
                     page=resolved_page,
@@ -536,6 +546,7 @@ class A2AExtensionsService:
             params=params,
             page=resolved_page,
             size=resolved_size,
+            include_raw=include_raw,
         )
 
     async def get_session_messages(
@@ -546,6 +557,7 @@ class A2AExtensionsService:
         page: int,
         size: Optional[int],
         query: Optional[Dict[str, Any]],
+        include_raw: bool = False,
     ) -> ExtensionCallResult:
         resolved_session_id = (session_id or "").strip()
         if not resolved_session_id:
@@ -566,11 +578,12 @@ class A2AExtensionsService:
         ):
             return ExtensionCallResult(
                 success=True,
-                result={
-                    "raw": [],
-                    "items": [],
-                    "pagination": {"page": resolved_page, "size": resolved_size},
-                },
+                result=self._normalize_envelope(
+                    [],
+                    page=resolved_page,
+                    size=resolved_size,
+                    include_raw=include_raw,
+                ),
                 meta=self._build_call_meta(
                     ext=ext,
                     page=resolved_page,
@@ -602,6 +615,7 @@ class A2AExtensionsService:
             params=params,
             page=resolved_page,
             size=resolved_size,
+            include_raw=include_raw,
             meta_extra={"session_id": resolved_session_id},
         )
 
