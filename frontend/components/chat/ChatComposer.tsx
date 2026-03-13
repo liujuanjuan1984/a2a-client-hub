@@ -11,11 +11,14 @@ import {
 } from "react-native";
 
 import { type RuntimeInterrupt } from "@/lib/api/chat-utils";
+import { type SharedModelSelection } from "@/lib/chat-utils";
 
 export function ChatComposer({
   pendingInterrupt,
   showShortcutManager,
   onOpenShortcutManager,
+  selectedModel,
+  onOpenModelPicker,
   inputRef,
   input,
   onInputChange,
@@ -30,6 +33,8 @@ export function ChatComposer({
   pendingInterrupt: RuntimeInterrupt | null;
   showShortcutManager: boolean;
   onOpenShortcutManager: () => void;
+  selectedModel: SharedModelSelection | null;
+  onOpenModelPicker: () => void;
   inputRef: React.RefObject<TextInput | null>;
   input: string;
   onInputChange: (value: string) => void;
@@ -41,6 +46,10 @@ export function ChatComposer({
   showScrollToBottom?: boolean;
   onScrollToBottom?: () => void;
 }) {
+  const modelLabel = selectedModel
+    ? `${selectedModel.providerID} / ${selectedModel.modelID}`
+    : "Model: Default";
+
   return (
     <View className="relative border-t border-slate-800 px-2 sm:px-6 py-4">
       {pendingInterrupt ? (
@@ -54,6 +63,22 @@ export function ChatComposer({
 
       <View className="mb-2 flex-row items-center justify-between rounded-xl bg-black/25 px-2 py-1">
         <View className="flex-row items-center gap-2">
+          <Pressable
+            className="h-9 max-w-[180px] flex-row items-center gap-2 rounded-xl bg-slate-800/40 px-3"
+            onPress={onOpenModelPicker}
+            accessibilityRole="button"
+            accessibilityLabel="Choose model"
+            accessibilityHint="Open the model picker"
+          >
+            <Ionicons name="git-branch-outline" size={16} color="#FFFFFF" />
+            <Text
+              className="flex-1 text-xs font-medium text-white"
+              numberOfLines={1}
+            >
+              {modelLabel}
+            </Text>
+          </Pressable>
+
           <Pressable
             className={`h-9 w-14 items-center justify-center rounded-xl ${
               showShortcutManager ? "bg-primary" : "bg-slate-800/40"

@@ -98,6 +98,7 @@ export function ModelPickerModal({
   sessionMetadata,
   selectedModel,
   onSelectModel,
+  onClearModelSelection,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -106,6 +107,7 @@ export function ModelPickerModal({
   sessionMetadata?: Record<string, unknown>;
   selectedModel: SharedModelSelection | null;
   onSelectModel: (selection: SharedModelSelection) => void;
+  onClearModelSelection: () => void;
 }) {
   const [providers, setProviders] = useState<OpencodeProviderSummary[]>([]);
   const [models, setModels] = useState<OpencodeModelSummary[]>([]);
@@ -230,6 +232,28 @@ export function ModelPickerModal({
             >
               <Ionicons name="close" size={20} color="#FFFFFF" />
             </Pressable>
+          </View>
+
+          <View className="mb-4 flex-row items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+            <View className="flex-1 pr-3">
+              <Text className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                Current
+              </Text>
+              <Text className="mt-1 text-sm text-white" numberOfLines={1}>
+                {selectedModel
+                  ? `${selectedModel.providerID} / ${selectedModel.modelID}`
+                  : "Server default"}
+              </Text>
+            </View>
+            <Button
+              label="Use Default"
+              size="xs"
+              variant="secondary"
+              onPress={() => {
+                onClearModelSelection();
+                onClose();
+              }}
+            />
           </View>
 
           <Text className="mb-2 text-[11px] font-medium uppercase tracking-wider text-slate-500">

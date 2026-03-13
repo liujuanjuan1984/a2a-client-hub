@@ -4,7 +4,7 @@ import { Pressable, Text, View } from "react-native";
 
 import { BackButton } from "@/components/ui/BackButton";
 import { Button } from "@/components/ui/Button";
-import { type AgentSession, type SharedModelSelection } from "@/lib/chat-utils";
+import { type AgentSession } from "@/lib/chat-utils";
 import { type AgentConfig } from "@/store/agents";
 
 export function ChatHeaderPanel({
@@ -16,11 +16,8 @@ export function ChatHeaderPanel({
   showDetails,
   onToggleDetails,
   onOpenSessionPicker,
-  onOpenModelPicker,
-  onClearModelSelection,
   onTestConnection,
   testingConnection,
-  selectedModel,
 }: {
   topInset: number;
   agent: AgentConfig;
@@ -30,11 +27,8 @@ export function ChatHeaderPanel({
   showDetails: boolean;
   onToggleDetails: () => void;
   onOpenSessionPicker: () => void;
-  onOpenModelPicker: () => void;
-  onClearModelSelection: () => void;
   onTestConnection: () => void;
   testingConnection: boolean;
-  selectedModel: SharedModelSelection | null;
 }) {
   return (
     <View
@@ -137,37 +131,6 @@ export function ChatHeaderPanel({
               <Text className="mt-1 text-[11px] font-normal text-slate-300">
                 {session?.transport ?? "N/A"}
               </Text>
-            </View>
-          </View>
-
-          <View className="h-[1px] bg-white/5" />
-
-          <View className="flex-row items-center justify-between gap-3">
-            <View className="flex-1">
-              <Text className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
-                Model
-              </Text>
-              <Text className="mt-1 text-[11px] font-normal text-slate-300">
-                {selectedModel
-                  ? `${selectedModel.providerID} / ${selectedModel.modelID}`
-                  : "Server default"}
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-2">
-              {selectedModel ? (
-                <Button
-                  label="Clear"
-                  size="xs"
-                  variant="secondary"
-                  onPress={onClearModelSelection}
-                />
-              ) : null}
-              <Button
-                label="Choose"
-                size="xs"
-                variant="secondary"
-                onPress={onOpenModelPicker}
-              />
             </View>
           </View>
 

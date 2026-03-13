@@ -52,11 +52,8 @@ export function ChatScreen({
         showDetails={controller.showDetails}
         onToggleDetails={controller.toggleDetails}
         onOpenSessionPicker={controller.openSessionPicker}
-        onOpenModelPicker={controller.openModelPicker}
-        onClearModelSelection={controller.clearModelSelection}
         onTestConnection={controller.handleTest}
         testingConnection={controller.testingConnection}
-        selectedModel={controller.selectedModel}
       />
 
       <ChatTimelinePanel
@@ -108,12 +105,15 @@ export function ChatScreen({
         sessionMetadata={controller.session?.metadata}
         selectedModel={controller.selectedModel}
         onSelectModel={controller.handleModelSelect}
+        onClearModelSelection={controller.clearModelSelection}
       />
 
       <ChatComposer
         pendingInterrupt={controller.pendingInterrupt}
         showShortcutManager={controller.showShortcutManager}
         onOpenShortcutManager={controller.openShortcutManager}
+        selectedModel={controller.selectedModel}
+        onOpenModelPicker={controller.openModelPicker}
         inputRef={controller.inputRef}
         input={controller.input}
         onInputChange={controller.handleInputChange}
