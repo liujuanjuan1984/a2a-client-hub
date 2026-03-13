@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Optional
 
 from app.core.logging import get_logger
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
@@ -16,12 +16,8 @@ from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.session_extension_service import (
     SessionExtensionService,
 )
-from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
-from app.integrations.a2a_extensions.types import (
-    ResolvedExtension,
-    ResolvedInterruptCallbackExtension,
-    ResolvedProviderDiscoveryExtension,
-    ResultEnvelopeMapping,
+from app.integrations.a2a_extensions.shared_support import (
+    A2AExtensionSupport,
 )
 from app.services.a2a_runtime import A2ARuntime
 
@@ -37,130 +33,6 @@ class A2AExtensionsService:
 
     async def shutdown(self) -> None:
         await self._support.shutdown()
-
-    @staticmethod
-    def _normalize_envelope(
-        result: Any,
-        *,
-        page: int,
-        size: int,
-        result_envelope: ResultEnvelopeMapping | None = None,
-        include_raw: bool = False,
-    ) -> Optional[Dict[str, Any]]:
-        return SessionExtensionService._normalize_envelope(
-            result,
-            page=page,
-            size=size,
-            result_envelope=result_envelope,
-            include_raw=include_raw,
-        )
-
-    @staticmethod
-    def _resolve_result_field(
-        result: Mapping[str, Any],
-        *,
-        path: str,
-        fallback_path: str | None = None,
-    ) -> tuple[Any, bool]:
-        return SessionExtensionService._resolve_result_field(
-            result,
-            path=path,
-            fallback_path=fallback_path,
-        )
-
-    @staticmethod
-    def _validate_query_result(envelope: Dict[str, Any]) -> Dict[str, Any]:
-        return SessionExtensionService._validate_query_result(envelope)
-
-    @staticmethod
-    def _coerce_page_size(
-        *,
-        default_size: int,
-        max_size: int,
-        page: int,
-        size: Optional[int],
-    ) -> tuple[int, int]:
-        return SessionExtensionService._coerce_page_size(
-            default_size=default_size,
-            max_size=max_size,
-            page=page,
-            size=size,
-        )
-
-    @staticmethod
-    def _build_pagination_params(
-        *,
-        mode: str,
-        page: int,
-        size: int,
-        supports_offset: bool,
-    ) -> Dict[str, int]:
-        return SessionExtensionService._build_pagination_params(
-            mode=mode,
-            page=page,
-            size=size,
-            supports_offset=supports_offset,
-        )
-
-    @staticmethod
-    def _build_call_meta(
-        *,
-        ext: ResolvedExtension,
-        page: int,
-        size: int,
-        meta_extra: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        return SessionExtensionService._build_call_meta(
-            ext=ext,
-            page=page,
-            size=size,
-            meta_extra=meta_extra,
-        )
-
-    @staticmethod
-    def _map_business_error_code(
-        error: Dict[str, Any],
-        ext: ResolvedExtension | ResolvedProviderDiscoveryExtension,
-    ) -> str:
-        return A2AExtensionSupport.map_business_error_code(error, ext)
-
-    @staticmethod
-    def _map_interrupt_business_error_code(
-        error: Dict[str, Any],
-        ext: ResolvedInterruptCallbackExtension,
-    ) -> str:
-        return A2AExtensionSupport.map_interrupt_business_error_code(error, ext)
-
-    @staticmethod
-    def _coerce_jsonrpc_error_code(error: Dict[str, Any]) -> Optional[int]:
-        return A2AExtensionSupport.coerce_jsonrpc_error_code(error)
-
-    @staticmethod
-    def _normalize_error_data_type(error: Dict[str, Any]) -> Optional[str]:
-        return A2AExtensionSupport.normalize_error_data_type(error)
-
-    @staticmethod
-    def _map_upstream_error_code(
-        *,
-        error: Dict[str, Any],
-        business_code_map: Mapping[int, str],
-    ) -> str:
-        return A2AExtensionSupport.map_upstream_error_code(
-            error=error,
-            business_code_map=business_code_map,
-        )
-
-    @staticmethod
-    def _normalize_extension_metadata(
-        metadata: Optional[Dict[str, Any]],
-    ) -> Optional[Dict[str, Any]]:
-        return A2AExtensionSupport.normalize_extension_metadata(metadata)
-
-    @staticmethod
-    def _record_extension_metric(
-        metric_key: str, success: bool, error_code: Optional[str]
-    ) -> None:
-        A2AExtensionSupport.record_extension_metric(metric_key, success, error_code)
 
     async def list_sessions(
         self,

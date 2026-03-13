@@ -16,6 +16,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_INTERRUPT_CALLBACK_URI,
     SHARED_SESSION_QUERY_URI,
 )
+from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
     JsonRpcInterface,
     PageSizePagination,
@@ -74,21 +75,21 @@ def _interrupt_extension_fixture() -> ResolvedInterruptCallbackExtension:
 def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
     ext = _resolved_extension()
     assert (
-        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_business_error_code(
             {"code": -32005},
             ext,
         )
         == "upstream_payload_error"
     )
     assert (
-        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_business_error_code(
             {"code": "-32001"},
             ext,
         )
         == "session_not_found"
     )
     assert (
-        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_business_error_code(
             {"code": -32006},
             ext,
         )
@@ -99,7 +100,7 @@ def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
 def test_map_business_error_code_prefers_error_data_type() -> None:
     ext = _resolved_extension()
     assert (
-        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_business_error_code(
             {
                 "code": -32001,
                 "data": {"type": "METHOD_DISABLED"},
@@ -113,7 +114,7 @@ def test_map_business_error_code_prefers_error_data_type() -> None:
 def test_map_business_error_code_maps_jsonrpc_invalid_params() -> None:
     ext = _resolved_extension()
     assert (
-        A2AExtensionsService._map_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_business_error_code(
             {"code": -32602},
             ext,
         )
@@ -133,7 +134,7 @@ def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
         business_code_map={-32004: "interrupt_request_not_found"},
     )
     assert (
-        A2AExtensionsService._map_interrupt_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_interrupt_business_error_code(
             {
                 "code": -32004,
                 "data": {"type": "INTERRUPT_REQUEST_EXPIRED"},
@@ -143,7 +144,7 @@ def test_map_interrupt_business_error_code_prefers_error_data_type() -> None:
         == "interrupt_request_expired"
     )
     assert (
-        A2AExtensionsService._map_interrupt_business_error_code(  # noqa: SLF001
+        A2AExtensionSupport.map_interrupt_business_error_code(
             {
                 "code": -32602,
                 "data": {"type": "INTERRUPT_TYPE_MISMATCH"},
