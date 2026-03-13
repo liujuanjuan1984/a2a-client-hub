@@ -30,6 +30,7 @@ from app.schemas.a2a_extension import (
     A2AExtensionPermissionReplyRequest,
     A2AExtensionPromptAsyncRequest,
     A2AExtensionQueryRequest,
+    A2AExtensionQueryResponse,
     A2AExtensionQuestionRejectRequest,
     A2AExtensionQuestionReplyRequest,
     A2AExtensionResponse,
@@ -168,8 +169,9 @@ def create_extension_capability_router(
 
     @router.get(
         "/{agent_id}/extensions/sessions",
-        response_model=A2AExtensionResponse,
+        response_model=A2AExtensionQueryResponse,
         status_code=status.HTTP_200_OK,
+        response_model_exclude_none=True,
     )
     async def list_external_sessions(
         *,
@@ -402,8 +404,9 @@ def create_extension_capability_router(
 
     @router.post(
         "/{agent_id}/extensions/sessions:query",
-        response_model=A2AExtensionResponse,
+        response_model=A2AExtensionQueryResponse,
         status_code=status.HTTP_200_OK,
+        response_model_exclude_none=True,
     )
     async def query_external_sessions(
         *,
@@ -441,8 +444,9 @@ def create_extension_capability_router(
 
     @router.get(
         "/{agent_id}/extensions/sessions/{session_id}/messages",
-        response_model=A2AExtensionResponse,
+        response_model=A2AExtensionQueryResponse,
         status_code=status.HTTP_200_OK,
+        response_model_exclude_none=True,
     )
     async def list_external_session_messages(
         *,
@@ -494,8 +498,9 @@ def create_extension_capability_router(
 
     @router.post(
         "/{agent_id}/extensions/sessions/{session_id}/messages:query",
-        response_model=A2AExtensionResponse,
+        response_model=A2AExtensionQueryResponse,
         status_code=status.HTTP_200_OK,
+        response_model_exclude_none=True,
     )
     async def query_external_session_messages(
         *,

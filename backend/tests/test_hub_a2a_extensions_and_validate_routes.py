@@ -120,7 +120,6 @@ class _FakeExtensionsService:
                 "total": 1,
                 "pages": 1,
             },
-            "meta": {},
         }
         if include_raw:
             result["raw"] = raw_items
@@ -175,7 +174,6 @@ class _FakeExtensionsService:
                 "total": 1,
                 "pages": 1,
             },
-            "meta": {},
         }
         if include_raw:
             result["raw"] = raw_items

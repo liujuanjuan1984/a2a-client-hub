@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Mapping, Optional
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +22,13 @@ class JsonRpcInterface:
 
 
 @dataclass(frozen=True, slots=True)
+class ResultEnvelopeMapping:
+    items: str = "items"
+    pagination: str = "pagination"
+    raw: str = "raw"
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedExtension:
     uri: str
     required: bool
@@ -30,7 +37,7 @@ class ResolvedExtension:
     methods: Mapping[str, Optional[str]]
     pagination: PageSizePagination
     business_code_map: Mapping[int, str]
-    result_envelope: Optional[Mapping[str, Any]]
+    result_envelope: Optional[ResultEnvelopeMapping]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +63,7 @@ class ResolvedProviderDiscoveryExtension:
 __all__ = [
     "JsonRpcInterface",
     "PageSizePagination",
+    "ResultEnvelopeMapping",
     "ResolvedProviderDiscoveryExtension",
     "ResolvedExtension",
     "ResolvedInterruptCallbackExtension",

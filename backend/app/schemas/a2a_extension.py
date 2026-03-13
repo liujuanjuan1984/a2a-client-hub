@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class A2AExtensionQueryRequest(BaseModel):
@@ -30,6 +30,27 @@ class A2AExtensionResponse(BaseModel):
     error_code: Optional[str] = None
     upstream_error: Optional[Dict[str, Any]] = None
     meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class A2AExtensionQueryPagination(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    page: int = Field(..., ge=1)
+    size: int = Field(..., ge=1)
+    total: Optional[int] = None
+    pages: Optional[int] = None
+
+
+class A2AExtensionQueryResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: List[Dict[str, Any]]
+    pagination: A2AExtensionQueryPagination
+    raw: Optional[Any] = None
+
+
+class A2AExtensionQueryResponse(A2AExtensionResponse):
+    result: Optional[A2AExtensionQueryResult] = None
 
 
 class A2AExtensionPermissionReplyRequest(BaseModel):
@@ -90,7 +111,10 @@ class A2AProviderDiscoveryRequest(BaseModel):
 __all__ = [
     "A2AExtensionPromptAsyncRequest",
     "A2AExtensionPermissionReplyRequest",
+    "A2AExtensionQueryPagination",
+    "A2AExtensionQueryResponse",
     "A2AExtensionQueryRequest",
+    "A2AExtensionQueryResult",
     "A2AExtensionQuestionRejectRequest",
     "A2AExtensionQuestionReplyRequest",
     "A2AExtensionResponse",

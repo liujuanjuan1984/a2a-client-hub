@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
     ExtensionCallResult,
@@ -17,6 +18,7 @@ from app.integrations.a2a_extensions.types import (
     PageSizePagination,
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
+    ResultEnvelopeMapping,
 )
 
 
@@ -262,6 +264,57 @@ def test_normalize_envelope_includes_raw_when_requested() -> None:
         "pagination": {"page": 1, "size": 20},
         "raw": [{"id": "sess-1"}],
     }
+
+
+def test_normalize_envelope_uses_result_envelope_aliases() -> None:
+    result = {
+        "payload": {
+            "sessions": [{"id": "sess-1"}],
+            "page_info": {"page": 1, "size": 20, "total": 1},
+        }
+    }
+
+    envelope = A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+        result,
+        page=1,
+        size=20,
+        result_envelope=ResultEnvelopeMapping(
+            items="payload.sessions",
+            pagination="payload.page_info",
+            raw="payload",
+        ),
+        include_raw=True,
+    )
+
+    assert envelope == {
+        "items": [{"id": "sess-1"}],
+        "pagination": {"page": 1, "size": 20, "total": 1},
+        "raw": {
+            "sessions": [{"id": "sess-1"}],
+            "page_info": {"page": 1, "size": 20, "total": 1},
+        },
+    }
+
+
+def test_normalize_envelope_rejects_invalid_result_envelope_items() -> None:
+    result = {"payload": {"sessions": "not-a-list"}}
+
+    with pytest.raises(A2AExtensionContractError):
+        A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+            result,
+            page=1,
+            size=20,
+            result_envelope=ResultEnvelopeMapping(items="payload.sessions"),
+        )
+
+
+def test_normalize_envelope_rejects_non_object_items_in_result_list() -> None:
+    with pytest.raises(A2AExtensionContractError):
+        A2AExtensionsService._normalize_envelope(  # noqa: SLF001
+            ["invalid-item"],
+            page=1,
+            size=20,
+        )
 
 
 @pytest.mark.asyncio
