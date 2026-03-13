@@ -97,14 +97,14 @@ class InterruptExtensionService:
             raise ValueError("reply must be one of: once, always, reject")
         normalized_metadata = self._service._normalize_extension_metadata(metadata)
 
-        ext, jsonrpc_url = await self._service._resolve_interrupt_extension(runtime)
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
         params: Dict[str, Any] = {
             "request_id": resolved_request_id,
             "reply": resolved_reply,
         }
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
-        return await self._service._invoke_interrupt_method(
+        return await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -126,14 +126,14 @@ class InterruptExtensionService:
             raise ValueError("request_id is required")
         normalized_metadata = self._service._normalize_extension_metadata(metadata)
 
-        ext, jsonrpc_url = await self._service._resolve_interrupt_extension(runtime)
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
         params: Dict[str, Any] = {
             "request_id": resolved_request_id,
             "answers": answers,
         }
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
-        return await self._service._invoke_interrupt_method(
+        return await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -154,11 +154,11 @@ class InterruptExtensionService:
             raise ValueError("request_id is required")
         normalized_metadata = self._service._normalize_extension_metadata(metadata)
 
-        ext, jsonrpc_url = await self._service._resolve_interrupt_extension(runtime)
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
         params: Dict[str, Any] = {"request_id": resolved_request_id}
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
-        return await self._service._invoke_interrupt_method(
+        return await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,

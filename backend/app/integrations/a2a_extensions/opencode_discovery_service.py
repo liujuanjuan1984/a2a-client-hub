@@ -97,14 +97,12 @@ class OpencodeDiscoveryService:
         runtime: A2ARuntime,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        ext, jsonrpc_url = await self._service._resolve_provider_discovery_extension(
-            runtime
-        )
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
         params: Dict[str, Any] = {}
         normalized_metadata = self._service._normalize_extension_metadata(metadata)
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
-        return await self._service._invoke_provider_discovery_method(
+        return await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -120,16 +118,14 @@ class OpencodeDiscoveryService:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
         resolved_provider_id = (provider_id or "").strip()
-        ext, jsonrpc_url = await self._service._resolve_provider_discovery_extension(
-            runtime
-        )
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
         params: Dict[str, Any] = {}
         if resolved_provider_id:
             params["provider_id"] = resolved_provider_id
         normalized_metadata = self._service._normalize_extension_metadata(metadata)
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
-        return await self._service._invoke_provider_discovery_method(
+        return await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,

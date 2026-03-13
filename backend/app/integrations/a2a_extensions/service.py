@@ -239,11 +239,6 @@ class A2AExtensionsService:
             meta_extra=meta_extra,
         )
 
-    async def _resolve_session_extension(
-        self, runtime: A2ARuntime
-    ) -> tuple[ResolvedExtension, str]:
-        return await self._session_extensions.resolve_extension(runtime)
-
     @staticmethod
     def _map_business_error_code(
         error: Dict[str, Any],
@@ -383,33 +378,6 @@ class A2AExtensionsService:
                 upstream_error={"message": str(exc), "type": type(exc).__name__},
             ) from exc
 
-    async def _invoke_session_method(
-        self,
-        *,
-        runtime: A2ARuntime,
-        ext: ResolvedExtension,
-        jsonrpc_url: str,
-        method_key: str,
-        params: Dict[str, Any],
-        page: int,
-        size: int,
-        include_raw: bool = False,
-        normalize_envelope: bool = True,
-        meta_extra: Optional[Dict[str, Any]] = None,
-    ) -> ExtensionCallResult:
-        return await self._session_extensions.invoke_method(
-            runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key=method_key,
-            params=params,
-            page=page,
-            size=size,
-            include_raw=include_raw,
-            normalize_envelope=normalize_envelope,
-            meta_extra=meta_extra,
-        )
-
     async def list_sessions(
         self,
         *,
@@ -472,30 +440,6 @@ class A2AExtensionsService:
             metadata=metadata,
         )
 
-    async def _resolve_provider_discovery_extension(
-        self, runtime: A2ARuntime
-    ) -> tuple[ResolvedProviderDiscoveryExtension, str]:
-        return await self._opencode_discovery.resolve_extension(runtime)
-
-    async def _invoke_provider_discovery_method(
-        self,
-        *,
-        runtime: A2ARuntime,
-        ext: ResolvedProviderDiscoveryExtension,
-        jsonrpc_url: str,
-        method_key: str,
-        params: Dict[str, Any],
-        meta_extra: Optional[Dict[str, Any]] = None,
-    ) -> ExtensionCallResult:
-        return await self._opencode_discovery.invoke_method(
-            runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key=method_key,
-            params=params,
-            meta_extra=meta_extra,
-        )
-
     async def list_opencode_providers(
         self,
         *,
@@ -518,30 +462,6 @@ class A2AExtensionsService:
             runtime=runtime,
             provider_id=provider_id,
             metadata=metadata,
-        )
-
-    async def _resolve_interrupt_extension(
-        self, runtime: A2ARuntime
-    ) -> tuple[ResolvedInterruptCallbackExtension, str]:
-        return await self._interrupt_extensions.resolve_extension(runtime)
-
-    async def _invoke_interrupt_method(
-        self,
-        *,
-        runtime: A2ARuntime,
-        ext: ResolvedInterruptCallbackExtension,
-        jsonrpc_url: str,
-        method_key: str,
-        params: Dict[str, Any],
-        meta_extra: Optional[Dict[str, Any]] = None,
-    ) -> ExtensionCallResult:
-        return await self._interrupt_extensions.invoke_method(
-            runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key=method_key,
-            params=params,
-            meta_extra=meta_extra,
         )
 
     async def reply_permission_interrupt(

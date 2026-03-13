@@ -324,7 +324,7 @@ class SessionExtensionService:
         query: Optional[Dict[str, Any]],
         include_raw: bool = False,
     ) -> ExtensionCallResult:
-        ext, jsonrpc_url = await self._service._resolve_session_extension(runtime)
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -362,7 +362,7 @@ class SessionExtensionService:
         if query is not None:
             params["query"] = query
 
-        return await self._service._invoke_session_method(
+        return await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -387,7 +387,7 @@ class SessionExtensionService:
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        ext, jsonrpc_url = await self._service._resolve_session_extension(runtime)
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -431,7 +431,7 @@ class SessionExtensionService:
         if query is not None:
             params["query"] = query
 
-        return await self._service._invoke_session_method(
+        return await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -453,9 +453,9 @@ class SessionExtensionService:
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        ext, jsonrpc_url = await self._service._resolve_session_extension(runtime)
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
 
-        validation = await self._service._invoke_session_method(
+        validation = await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -525,8 +525,8 @@ class SessionExtensionService:
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
 
-        ext, jsonrpc_url = await self._service._resolve_session_extension(runtime)
-        return await self._service._invoke_session_method(
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
+        return await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,

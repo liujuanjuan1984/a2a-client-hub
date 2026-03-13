@@ -174,8 +174,8 @@ async def test_continue_session_returns_canonical_binding_metadata(
         assert kwargs["params"]["limit"] == 1
         return ExtensionCallResult(success=True, result={"items": []}, meta={})
 
-    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_session_method", _fake_invoke)
+    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
 
     result = await service.continue_session(
         runtime=runtime,
@@ -212,8 +212,8 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
     async def _never_invoke(**_kwargs):
         raise AssertionError("Upstream call should be short-circuited")
 
-    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_session_method", _never_invoke)
+    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _never_invoke)
 
     result = await service.get_session_messages(
         runtime=runtime,
@@ -369,8 +369,8 @@ async def test_prompt_session_async_forwards_request_and_metadata(
             meta={"session_id": "ses_123"},
         )
 
-    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_session_method", _fake_invoke)
+    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
 
     result = await service.prompt_session_async(
         runtime=runtime,
@@ -416,7 +416,7 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(service, "_resolve_session_extension", _fake_resolve)
+    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
     monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.prompt_session_async(
@@ -489,8 +489,10 @@ async def test_reply_permission_interrupt_uses_request_id_and_reply_contract(
             meta={"request_id": "perm-1"},
         )
 
-    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_interrupt_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._interrupt_extensions, "resolve_extension", _fake_resolve
+    )
+    monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
 
     result = await service.reply_permission_interrupt(
         runtime=runtime,
@@ -550,8 +552,10 @@ async def test_reply_permission_interrupt_forwards_metadata(
             meta={"request_id": "perm-1"},
         )
 
-    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_interrupt_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._interrupt_extensions, "resolve_extension", _fake_resolve
+    )
+    monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
 
     result = await service.reply_permission_interrupt(
         runtime=runtime,
@@ -608,8 +612,10 @@ async def test_reject_question_interrupt_uses_request_id(
             meta={"request_id": "q-1"},
         )
 
-    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_invoke_interrupt_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._interrupt_extensions, "resolve_extension", _fake_resolve
+    )
+    monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
 
     result = await service.reject_question_interrupt(runtime=runtime, request_id="q-1")
     assert result.success is True
@@ -631,7 +637,9 @@ async def test_reply_permission_interrupt_returns_method_not_supported_if_missin
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
+    monkeypatch.setattr(
+        service._interrupt_extensions, "resolve_extension", _fake_resolve
+    )
     monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.reply_permission_interrupt(
@@ -672,7 +680,9 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(service, "_resolve_interrupt_extension", _fake_resolve)
+    monkeypatch.setattr(
+        service._interrupt_extensions, "resolve_extension", _fake_resolve
+    )
     monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.reply_question_interrupt(
