@@ -160,6 +160,56 @@ const extractTextFromParts = (parts: unknown[]) =>
     .filter((item): item is string => Boolean(item))
     .join("");
 
+const sortSerializableValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => sortSerializableValue(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = sortSerializableValue(
+          (value as Record<string, unknown>)[key],
+        );
+        return acc;
+      }, {});
+  }
+  return value;
+};
+
+const serializeDataPartValue = (value: unknown): string | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  try {
+    return JSON.stringify(sortSerializableValue(value));
+  } catch {
+    return JSON.stringify(String(value));
+  }
+};
+
+const extractDataFromParts = (parts: unknown[]) =>
+  parts
+    .map((part) => {
+      if (!part || typeof part !== "object") {
+        return null;
+      }
+      const typed = part as {
+        kind?: unknown;
+        type?: unknown;
+        data?: unknown;
+      };
+      const rawKind = typed.kind ?? typed.type;
+      const normalizedKind =
+        typeof rawKind === "string" ? rawKind.trim().toLowerCase() : null;
+      if (normalizedKind !== "data" && !("data" in typed)) {
+        return null;
+      }
+      return serializeDataPartValue(typed.data);
+    })
+    .filter((item): item is string => Boolean(item))
+    .join("\n");
+
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -411,6 +461,7 @@ export const extractStreamBlockUpdate = (
   const sharedStream = extractSharedStreamMetadata(metadata, rootMetadata);
   const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
   const textFromParts = extractTextFromParts(parts);
+  const dataFromParts = extractDataFromParts(parts);
   const rawBlockType =
     pickString(sharedStream, ["block_type"]) ??
     pickString(metadata, ["block_type"]) ??
@@ -457,7 +508,9 @@ export const extractStreamBlockUpdate = (
   const messageId = resolvedMessageId ?? `artifact:${resolvedArtifactId}`;
 
   const delta =
-    textFromParts ||
+    (blockType === "tool_call"
+      ? dataFromParts || textFromParts
+      : textFromParts) ||
     pickRawString(data, ["delta"]) ||
     pickRawString(artifact ?? null, ["delta"]) ||
     pickRawString(data, ["content", "text"]) ||
