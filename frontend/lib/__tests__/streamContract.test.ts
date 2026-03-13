@@ -247,6 +247,45 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.source).toBe("tool_part_update");
   });
 
+  it("parses tool_call blocks carried in data parts", () => {
+    const parsed = extractStreamBlockUpdate({
+      kind: "artifact-update",
+      taskId: "task-10",
+      artifact: {
+        artifactId: "task-10:stream",
+        parts: [
+          {
+            kind: "data",
+            data: {
+              call_id: "call-1",
+              tool: "read",
+              status: "pending",
+              input: {},
+            },
+          },
+        ],
+        metadata: {
+          shared: {
+            stream: {
+              block_type: "tool_call",
+              source: "tool_part_update",
+              message_id: "msg-data",
+              event_id: "evt-data",
+              sequence: 11,
+            },
+          },
+        },
+      },
+    });
+    expect(parsed?.blockType).toBe("tool_call");
+    expect(parsed?.delta).toBe(
+      '{"call_id":"call-1","input":{},"status":"pending","tool":"read"}',
+    );
+    expect(parsed?.messageId).toBe("msg-data");
+    expect(parsed?.eventId).toBe("evt-data");
+    expect(parsed?.seq).toBe(11);
+  });
+
   it("infers text block type when explicit metadata is missing", () => {
     const parsed = extractStreamBlockUpdate({
       kind: "artifact-update",

@@ -127,6 +127,37 @@ def _artifact_event(
     return payload
 
 
+def _artifact_data_event(
+    *,
+    artifact_id: str,
+    data: dict,
+    block_type: str,
+    source: str | None = None,
+    append: bool | None = None,
+    message_id: str | None = None,
+    event_id: str | None = None,
+) -> dict:
+    metadata: dict[str, str] = {}
+    artifact_key = artifact_id.replace(":", "-").replace("/", "-")
+    metadata["block_type"] = block_type
+    if source:
+        metadata["source"] = source
+    metadata["message_id"] = message_id or f"msg-{artifact_key}"
+    metadata["event_id"] = event_id or f"evt-{artifact_key}"
+
+    payload: dict = {
+        "kind": "artifact-update",
+        "artifact": {
+            "artifact_id": artifact_id,
+            "parts": [{"kind": "data", "data": data}],
+            "metadata": metadata,
+        },
+    }
+    if append is not None:
+        payload["append"] = append
+    return payload
+
+
 @pytest.mark.asyncio
 async def test_sse_error_event_contains_unified_error_code():
     response = a2a_invoke_service.stream_sse(
@@ -669,6 +700,50 @@ async def test_sse_warns_missing_text_parts_when_identity_ids_absent(caplog):
             "content": "legacy",
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_sse_accepts_tool_call_data_parts_without_non_contract_warning(caplog):
+    caplog.set_level(logging.WARNING)
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_data_event(
+                    artifact_id="task-tool:stream",
+                    block_type="tool_call",
+                    source="tool_part_update",
+                    data={
+                        "call_id": "call-1",
+                        "tool": "read",
+                        "status": "pending",
+                        "input": {},
+                    },
+                ),
+                {"kind": "status-update", "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    frames: list[str] = []
+    async for chunk in response.body_iterator:
+        frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.levelname == "WARNING"
+        and record.message == "Dropped non-contract artifact-update event"
+    ]
+    assert warning_records == []
+    payload = "".join(frames)
+    assert '"kind": "artifact-update"' in payload
+    assert '"block_type": "tool_call"' in payload
 
 
 @pytest.mark.asyncio

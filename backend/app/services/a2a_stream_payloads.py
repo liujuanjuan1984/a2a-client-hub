@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.utils.payload_extract import as_dict
@@ -49,6 +50,47 @@ def extract_stream_text_from_parts(parts: Any) -> str:
         if isinstance(content, str):
             collected.append(content)
     return "".join(collected)
+
+
+def _serialize_stream_data_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except TypeError:
+        return json.dumps(repr(value), ensure_ascii=False)
+
+
+def extract_stream_data_from_parts(parts: Any) -> str:
+    if not isinstance(parts, list):
+        return ""
+    collected: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        raw_kind = part.get("kind") or part.get("type")
+        normalized_kind = (
+            raw_kind.strip().lower() if isinstance(raw_kind, str) else None
+        )
+        if normalized_kind != "data" and "data" not in part:
+            continue
+        serialized = _serialize_stream_data_value(part.get("data"))
+        if serialized:
+            collected.append(serialized)
+    return "\n".join(collected)
+
+
+def extract_stream_content_from_parts(parts: Any, *, block_type: str) -> str:
+    if block_type == "tool_call":
+        return extract_stream_data_from_parts(parts) or extract_stream_text_from_parts(
+            parts
+        )
+    return extract_stream_text_from_parts(parts)
 
 
 def extract_shared_stream_metadata(
@@ -156,7 +198,9 @@ def extract_stream_chunk_from_serialized_event(
         if message_id is None:
             message_id = _pick_non_empty_str(candidate, ("message_id", "messageId"))
 
-    delta = extract_stream_text_from_parts(artifact.get("parts"))
+    delta = extract_stream_content_from_parts(
+        artifact.get("parts"), block_type=block_type
+    )
     if not delta:
         return None
 
@@ -205,7 +249,10 @@ def analyze_stream_chunk_contract(
     block_type = extract_artifact_type(payload, artifact)
     if block_type is None:
         return None, "missing_or_invalid_block_type"
-    if extract_stream_text_from_parts(artifact.get("parts")) == "":
+    if (
+        extract_stream_content_from_parts(artifact.get("parts"), block_type=block_type)
+        == ""
+    ):
         return None, "missing_text_parts"
     return None, "invalid_artifact_update_shape"
 
