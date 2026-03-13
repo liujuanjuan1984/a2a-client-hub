@@ -12,6 +12,7 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_service import a2a_schedule_service
+from app.services.session_hub import session_hub_service
 from app.utils.timezone_util import utc_now
 from tests.api_utils import create_test_client
 from tests.utils import create_user
@@ -586,6 +587,75 @@ async def test_messages_query_reads_local_history_for_opencode_bound_conversatio
         assert payload["items"][1]["role"] == "agent"
         assert payload["items"][0]["blocks"][0]["content"] == "hello"
         assert payload["items"][1]["blocks"][0]["content"] == "world"
+
+
+async def test_messages_query_includes_persisted_interrupt_lifecycle_history(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="interrupts")
+
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Interrupt History",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+
+    await session_hub_service.record_interrupt_lifecycle_event_by_local_session_id(
+        async_db_session,
+        local_session_id=session.id,
+        user_id=user.id,
+        event={
+            "request_id": "perm-1",
+            "type": "permission",
+            "phase": "asked",
+            "details": {
+                "permission": "read",
+                "patterns": ["/repo/.env"],
+            },
+        },
+    )
+    await session_hub_service.record_interrupt_lifecycle_event_by_local_session_id(
+        async_db_session,
+        local_session_id=session.id,
+        user_id=user.id,
+        event={
+            "request_id": "perm-1",
+            "type": "permission",
+            "phase": "resolved",
+            "resolution": "replied",
+        },
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/conversations/{session.id}/messages:query",
+            json={"limit": 8},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert len(payload["items"]) == 2
+    assert [item["role"] for item in payload["items"]] == ["system", "system"]
+    assert payload["items"][0]["blocks"][0]["content"] == (
+        "Agent requested authorization: read.\nTargets: /repo/.env"
+    )
+    assert payload["items"][1]["blocks"][0]["content"] == (
+        "Authorization request was handled. Agent resumed."
+    )
 
 
 async def test_continue_keeps_external_session_id_empty_when_missing(

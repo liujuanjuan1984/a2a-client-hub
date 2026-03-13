@@ -74,11 +74,14 @@ jest.mock("@/components/chat/ShortcutManagerModal", () => ({
 
 jest.mock("@/components/chat/ChatTimelinePanel", () => ({
   ChatTimelinePanel: (props: {
+    messages?: { id: string; content: string }[];
     pendingInterrupt?: {
       type?: string;
       details?: { questions?: { question?: string }[] };
     } | null;
-    onPermissionReply?: (reply: "once" | "allow") => void | Promise<void>;
+    onPermissionReply?: (
+      reply: "once" | "always" | "reject",
+    ) => void | Promise<void>;
     onQuestionAnswerChange?: (index: number, value: string) => void;
     onQuestionReply?: () => void | Promise<void>;
   }) => {
@@ -86,41 +89,45 @@ jest.mock("@/components/chat/ChatTimelinePanel", () => ({
     const { Pressable, Text, TextInput, View } = require("react-native");
     const [answer, setAnswer] = React.useState("");
 
-    if (!props.pendingInterrupt) {
-      return null;
-    }
     return (
       <View>
-        <Text>
-          Agent is waiting for authorization/input. Resolve the action card
-          first.
-        </Text>
-        {props.pendingInterrupt.type === "permission" ? (
-          <Pressable
-            testID="interrupt-permission-once"
-            onPress={() => props.onPermissionReply?.("once")}
-          >
-            <Text>Allow once</Text>
-          </Pressable>
-        ) : null}
-        {props.pendingInterrupt.type === "question" ? (
+        {(props.messages ?? []).map((message) => (
+          <Text key={message.id}>{message.content}</Text>
+        ))}
+        {!props.pendingInterrupt ? null : (
           <>
-            <TextInput
-              testID="interrupt-question-input-0"
-              value={answer}
-              onChangeText={(value: string) => {
-                setAnswer(value);
-                props.onQuestionAnswerChange?.(0, value);
-              }}
-            />
-            <Pressable
-              testID="interrupt-question-submit"
-              onPress={() => props.onQuestionReply?.()}
-            >
-              <Text>Submit</Text>
-            </Pressable>
+            <Text>
+              Agent is waiting for authorization/input. Resolve the action card
+              first.
+            </Text>
+            {props.pendingInterrupt.type === "permission" ? (
+              <Pressable
+                testID="interrupt-permission-once"
+                onPress={() => props.onPermissionReply?.("once")}
+              >
+                <Text>Allow once</Text>
+              </Pressable>
+            ) : null}
+            {props.pendingInterrupt.type === "question" ? (
+              <>
+                <TextInput
+                  testID="interrupt-question-input-0"
+                  value={answer}
+                  onChangeText={(value: string) => {
+                    setAnswer(value);
+                    props.onQuestionAnswerChange?.(0, value);
+                  }}
+                />
+                <Pressable
+                  testID="interrupt-question-submit"
+                  onPress={() => props.onQuestionReply?.()}
+                >
+                  <Text>Submit</Text>
+                </Pressable>
+              </>
+            ) : null}
           </>
-        ) : null}
+        )}
       </View>
     );
   },
@@ -158,6 +165,7 @@ type MockAgentSession = {
   contextId: string | null;
   runtimeStatus: string | null;
   pendingInterrupt: unknown;
+  lastResolvedInterrupt: unknown;
   streamState: "idle" | "streaming" | "recoverable" | "error";
   lastStreamError: string | null;
   transport: string;
@@ -177,6 +185,7 @@ const baseSession = (): MockAgentSession => ({
   contextId: "ctx-1",
   runtimeStatus: "input-required",
   pendingInterrupt: null,
+  lastResolvedInterrupt: null,
   streamState: "idle",
   lastStreamError: null,
   transport: "ws",
@@ -413,6 +422,7 @@ describe("ChatScreen interrupt handling", () => {
       pendingInterrupt: {
         requestId: "perm-1",
         type: "permission",
+        phase: "asked",
         details: {
           permission: "read",
           patterns: ["/repo/.env"],
@@ -446,6 +456,7 @@ describe("ChatScreen interrupt handling", () => {
       pendingInterrupt: {
         requestId: "perm-1",
         type: "permission",
+        phase: "asked",
         details: {
           permission: "read",
           patterns: ["/repo/.env"],
@@ -485,6 +496,7 @@ describe("ChatScreen interrupt handling", () => {
       pendingInterrupt: {
         requestId: "q-1",
         type: "question",
+        phase: "asked",
         details: {
           questions: [
             {
@@ -524,6 +536,129 @@ describe("ChatScreen interrupt handling", () => {
       "q-1",
     );
     expect(mockToastSuccess).toHaveBeenCalled();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("shows resolved interrupt feedback once for remotely resolved question events", () => {
+    const tree = renderChatScreen(conversationId);
+    const observedAt = new Date(Date.now() + 1_000).toISOString();
+
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      lastResolvedInterrupt: {
+        requestId: "q-1",
+        type: "question",
+        phase: "resolved",
+        resolution: "replied",
+        observedAt,
+      },
+    };
+
+    act(() => {
+      tree.update(
+        <ChatScreen agentId="agent-1" conversationId={conversationId} />,
+      );
+    });
+
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      "Interrupt resolved",
+      "Question answer received. Agent resumed.",
+    );
+
+    act(() => {
+      tree.update(
+        <ChatScreen agentId="agent-1" conversationId={conversationId} />,
+      );
+    });
+
+    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("does not duplicate resolved feedback after local permission reply succeeds", async () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      pendingInterrupt: {
+        requestId: "perm-1",
+        type: "permission",
+        phase: "asked",
+        details: {
+          permission: "read",
+          patterns: ["/repo/.env"],
+        },
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const allowOnceButton = root.findByProps({
+      testID: "interrupt-permission-once",
+    });
+
+    await act(async () => {
+      allowOnceButton.props.onPress();
+    });
+    const observedAt = new Date(Date.now() + 1_000).toISOString();
+
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      lastResolvedInterrupt: {
+        requestId: "perm-1",
+        type: "permission",
+        phase: "resolved",
+        resolution: "replied",
+        observedAt,
+      },
+    };
+
+    act(() => {
+      tree.update(
+        <ChatScreen agentId="agent-1" conversationId={conversationId} />,
+      );
+    });
+
+    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("renders persisted interrupt lifecycle messages from session history", () => {
+    mockSessionHistoryState.messages = [
+      {
+        id: "9d615a18-a182-5efd-9ef4-7f84d6cb96b8",
+        role: "system",
+        content: "Agent requested authorization: read.\nTargets: /repo/.env",
+        createdAt: "2026-03-13T03:00:00.000Z",
+        status: "done",
+      },
+      {
+        id: "0dcbfb3d-e644-57fb-a6ad-b3662c1b0b9f",
+        role: "system",
+        content: "Authorization request was handled. Agent resumed.",
+        createdAt: "2026-03-13T03:00:02.000Z",
+        status: "done",
+      },
+    ];
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+
+    expect(
+      root.findByProps({
+        children: "Agent requested authorization: read.\nTargets: /repo/.env",
+      }),
+    ).toBeTruthy();
+    expect(
+      root.findByProps({
+        children: "Authorization request was handled. Agent resumed.",
+      }),
+    ).toBeTruthy();
+
     act(() => {
       tree.unmount();
     });

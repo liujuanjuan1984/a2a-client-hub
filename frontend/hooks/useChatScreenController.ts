@@ -23,7 +23,10 @@ import {
   replyPermissionInterrupt,
   replyQuestionInterrupt,
 } from "@/lib/api/a2aExtensions";
-import { type ChatMessage } from "@/lib/api/chat-utils";
+import {
+  type ChatMessage,
+  type ResolvedRuntimeInterrupt,
+} from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
 import { continueSession, querySessionMessageBlocks } from "@/lib/api/sessions";
 import {
@@ -106,6 +109,11 @@ export function useChatScreenController({
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
   const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
+  const handledResolvedInterruptKeysRef = useRef<Set<string>>(new Set());
+  const locallyAcknowledgedResolvedInterruptKeysRef = useRef<Set<string>>(
+    new Set(),
+  );
+  const mountedAtRef = useRef(Date.now());
 
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const scrollOffsetRef = useRef(0);
@@ -145,6 +153,7 @@ export function useChatScreenController({
       : null;
   const sessionSource = session?.source ?? null;
   const pendingInterrupt = session?.pendingInterrupt ?? null;
+  const lastResolvedInterrupt = session?.lastResolvedInterrupt ?? null;
   const selectedModel = getSharedModelSelection(session?.metadata);
   const pendingQuestionCount =
     pendingInterrupt?.type === "question"
@@ -179,6 +188,54 @@ export function useChatScreenController({
       ? error.message
       : "Interrupt callback failed.";
   }, []);
+
+  const buildResolvedInterruptKey = useCallback(
+    (interrupt: ResolvedRuntimeInterrupt | null) =>
+      interrupt
+        ? `${interrupt.requestId}:${interrupt.type}:${interrupt.resolution}`
+        : "",
+    [],
+  );
+
+  const acknowledgeLocalInterruptResolution = useCallback(
+    (
+      requestId: string,
+      interruptType: "permission" | "question",
+      resolution: "replied" | "rejected",
+    ) => {
+      locallyAcknowledgedResolvedInterruptKeysRef.current.add(
+        buildResolvedInterruptKey({
+          requestId,
+          type: interruptType,
+          phase: "resolved",
+          resolution,
+        }),
+      );
+    },
+    [buildResolvedInterruptKey],
+  );
+
+  const buildResolvedInterruptFeedback = useCallback(
+    (interrupt: ResolvedRuntimeInterrupt) => {
+      if (interrupt.type === "permission") {
+        return {
+          title: "Interrupt resolved",
+          message: "Authorization request was handled.",
+        };
+      }
+      if (interrupt.resolution === "rejected") {
+        return {
+          title: "Interrupt resolved",
+          message: "Question request was rejected and the interrupt is closed.",
+        };
+      }
+      return {
+        title: "Interrupt resolved",
+        message: "Question answer received. Agent resumed.",
+      };
+    },
+    [],
+  );
 
   const clearScrollSettleTimer = useCallback(() => {
     if (scrollSettleTimerRef.current) {
@@ -224,6 +281,31 @@ export function useChatScreenController({
       ensureSession(conversationId, activeAgentId);
     }
   }, [activeAgentId, conversationId, ensureSession]);
+
+  useEffect(() => {
+    if (!lastResolvedInterrupt) {
+      return;
+    }
+    const observedAt = Date.parse(lastResolvedInterrupt.observedAt);
+    if (Number.isFinite(observedAt) && observedAt < mountedAtRef.current) {
+      return;
+    }
+    const key = buildResolvedInterruptKey(lastResolvedInterrupt);
+    if (!key || handledResolvedInterruptKeysRef.current.has(key)) {
+      return;
+    }
+    handledResolvedInterruptKeysRef.current.add(key);
+    if (locallyAcknowledgedResolvedInterruptKeysRef.current.has(key)) {
+      locallyAcknowledgedResolvedInterruptKeysRef.current.delete(key);
+      return;
+    }
+    const feedback = buildResolvedInterruptFeedback(lastResolvedInterrupt);
+    toast.success(feedback.title, feedback.message);
+  }, [
+    buildResolvedInterruptFeedback,
+    buildResolvedInterruptKey,
+    lastResolvedInterrupt,
+  ]);
 
   useEffect(() => {
     if (!conversationId || !activeAgentId) return;
@@ -521,6 +603,11 @@ export function useChatScreenController({
             requestId,
             reply,
           });
+          acknowledgeLocalInterruptResolution(
+            requestId,
+            "permission",
+            "replied",
+          );
           clearPendingInterrupt(conversationId, requestId);
         },
         "Permission reply delivered to upstream.",
@@ -529,6 +616,7 @@ export function useChatScreenController({
     [
       activeAgentId,
       agent,
+      acknowledgeLocalInterruptResolution,
       clearPendingInterrupt,
       conversationId,
       pendingInterrupt,
@@ -584,6 +672,7 @@ export function useChatScreenController({
           requestId,
           answers: normalizedAnswers,
         });
+        acknowledgeLocalInterruptResolution(requestId, "question", "replied");
         clearPendingInterrupt(conversationId, requestId);
       },
       "Question answers delivered to upstream.",
@@ -591,6 +680,7 @@ export function useChatScreenController({
   }, [
     activeAgentId,
     agent,
+    acknowledgeLocalInterruptResolution,
     clearPendingInterrupt,
     conversationId,
     pendingInterrupt,
@@ -614,6 +704,7 @@ export function useChatScreenController({
           agentId: activeAgentId,
           requestId,
         });
+        acknowledgeLocalInterruptResolution(requestId, "question", "rejected");
         clearPendingInterrupt(conversationId, requestId);
       },
       "Question request rejected.",
@@ -621,6 +712,7 @@ export function useChatScreenController({
   }, [
     activeAgentId,
     agent,
+    acknowledgeLocalInterruptResolution,
     clearPendingInterrupt,
     conversationId,
     pendingInterrupt,

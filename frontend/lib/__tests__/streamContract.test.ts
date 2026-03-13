@@ -430,6 +430,7 @@ describe("block-based stream parser and reducer", () => {
       interrupt: {
         requestId: "perm-1",
         type: "permission",
+        phase: "asked",
         details: {
           permission: "read",
           patterns: ["/repo/.env"],
@@ -464,6 +465,7 @@ describe("block-based stream parser and reducer", () => {
       interrupt: {
         requestId: "q-1",
         type: "question",
+        phase: "asked",
         details: {
           questions: [
             {
@@ -473,6 +475,31 @@ describe("block-based stream parser and reducer", () => {
             },
           ],
         },
+      },
+    });
+  });
+
+  it("parses resolved interrupt metadata from non-input-required status-update", () => {
+    const payload = {
+      kind: "status-update",
+      status: { state: "working" },
+      metadata: {
+        interrupt: {
+          request_id: "q-1",
+          type: "question",
+          phase: "resolved",
+          resolution: "rejected",
+        },
+      },
+    };
+    expect(extractRuntimeStatusEvent(payload)).toEqual({
+      state: "working",
+      isFinal: false,
+      interrupt: {
+        requestId: "q-1",
+        type: "question",
+        phase: "resolved",
+        resolution: "rejected",
       },
     });
   });

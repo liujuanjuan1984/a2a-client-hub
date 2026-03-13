@@ -318,4 +318,232 @@ describe("executeChatRuntime empty-content recovery", () => {
     );
     expect(streamedAgentMessage?.status).toBe("done");
   });
+
+  it("keeps pending interrupt until a matching resolved event arrives", async () => {
+    const conversationId = "conv-interrupt-pending-1";
+    const agentId = "agent-interrupt-1";
+    const userMessageId = "user-msg-interrupt-1";
+    const agentMessageId = "agent-msg-interrupt-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T07:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T07:00:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    let pendingAfterWorking = state.sessions[conversationId]?.pendingInterrupt;
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "input-required" },
+          final: false,
+          metadata: {
+            interrupt: {
+              request_id: "perm-1",
+              type: "permission",
+              phase: "asked",
+              details: {
+                permission: "read",
+                patterns: ["/repo/.env"],
+              },
+            },
+          },
+        });
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "working" },
+          final: false,
+        });
+        pendingAfterWorking = state.sessions[conversationId]?.pendingInterrupt;
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(pendingAfterWorking).toMatchObject({
+      requestId: "perm-1",
+      type: "permission",
+      phase: "asked",
+    });
+    expect(state.sessions[conversationId]?.pendingInterrupt).toBeNull();
+    expect(state.sessions[conversationId]?.lastResolvedInterrupt).toBeNull();
+  });
+
+  it("records resolved interrupt state and only clears matching pending interrupt", async () => {
+    const conversationId = "conv-interrupt-resolved-1";
+    const agentId = "agent-interrupt-2";
+    const userMessageId = "user-msg-interrupt-2";
+    const agentMessageId = "agent-msg-interrupt-2";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T08:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T08:00:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          pendingInterrupt: {
+            requestId: "perm-1",
+            type: "permission",
+            phase: "asked",
+            details: {
+              permission: "read",
+              patterns: ["/repo/.env"],
+            },
+          },
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "working" },
+          final: false,
+          metadata: {
+            interrupt: {
+              request_id: "q-other",
+              type: "question",
+              phase: "resolved",
+              resolution: "rejected",
+            },
+          },
+        });
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "working" },
+          final: false,
+          metadata: {
+            interrupt: {
+              request_id: "perm-1",
+              type: "permission",
+              phase: "resolved",
+              resolution: "replied",
+            },
+          },
+        });
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(state.sessions[conversationId]?.pendingInterrupt).toBeNull();
+    expect(state.sessions[conversationId]?.lastResolvedInterrupt).toMatchObject(
+      {
+        requestId: "perm-1",
+        type: "permission",
+        phase: "resolved",
+        resolution: "replied",
+      },
+    );
+  });
 });

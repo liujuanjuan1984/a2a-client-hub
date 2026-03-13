@@ -651,6 +651,94 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
     assert captured["agent_message_id"] == UUID(client_agent_message_id)
 
 
+@pytest.mark.asyncio
+async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _DummySession:
+        async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
+            return object()
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> _DummySession:
+            return _DummySession()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+    async def fake_record_interrupt_lifecycle_event(
+        db,  # noqa: ARG001
+        **kwargs,
+    ) -> UUID | None:
+        captured.update(kwargs)
+        return uuid4()
+
+    async def fake_commit_safely(_db):  # noqa: ANN001
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "record_interrupt_lifecycle_event_by_local_session_id",
+        fake_record_interrupt_lifecycle_event,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    local_session_id = uuid4()
+    state = invoke_route_runner._InvokeState(
+        local_session_id=local_session_id,
+        local_source="manual",
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+    )
+    on_event, _ = invoke_route_runner._build_consume_stream_callbacks(
+        state=state,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        query="hello",
+        transport="http_sse",
+        stream_enabled=True,
+    )
+
+    await on_event(
+        {
+            "kind": "status-update",
+            "status": {"state": "input-required"},
+            "metadata": {
+                "interrupt": {
+                    "request_id": "perm-1",
+                    "type": "permission",
+                    "phase": "asked",
+                    "details": {
+                        "permission": "read",
+                        "patterns": ["/repo/.env"],
+                    },
+                }
+            },
+        }
+    )
+
+    assert captured["local_session_id"] == local_session_id
+    assert captured["event"] == {
+        "request_id": "perm-1",
+        "type": "permission",
+        "phase": "asked",
+        "details": {
+            "permission": "read",
+            "patterns": ["/repo/.env"],
+        },
+    }
+
+
 def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
     long_user_message_id = "m" * 512
     state = invoke_route_runner._InvokeState(

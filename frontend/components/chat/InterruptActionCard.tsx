@@ -2,7 +2,7 @@ import React from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
-import { type RuntimeInterrupt } from "@/lib/api/chat-utils";
+import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 
 export function InterruptActionCard({
   pendingInterrupt,
@@ -14,7 +14,7 @@ export function InterruptActionCard({
   onQuestionReply,
   onQuestionReject,
 }: {
-  pendingInterrupt: RuntimeInterrupt;
+  pendingInterrupt: PendingRuntimeInterrupt;
   interruptAction: string | null;
   questionAnswers: string[];
   onPermissionReply: (reply: "once" | "always" | "reject") => void;

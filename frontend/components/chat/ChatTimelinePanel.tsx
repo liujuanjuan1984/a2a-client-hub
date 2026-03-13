@@ -13,7 +13,10 @@ import { ChatMessageItem } from "./ChatMessageItem";
 
 import { InterruptActionCard } from "@/components/chat/InterruptActionCard";
 import { Button } from "@/components/ui/Button";
-import { type ChatMessage, type RuntimeInterrupt } from "@/lib/api/chat-utils";
+import {
+  type ChatMessage,
+  type PendingRuntimeInterrupt,
+} from "@/lib/api/chat-utils";
 import { type AgentSession } from "@/lib/chat-utils";
 
 const LIST_INITIAL_NUM_TO_RENDER = 16;
@@ -58,7 +61,7 @@ export function ChatTimelinePanel({
   onRetry: () => void;
   onListContentSizeChange: (w: number, h: number) => void;
   onListScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
-  pendingInterrupt: RuntimeInterrupt | null;
+  pendingInterrupt: PendingRuntimeInterrupt | null;
   interruptAction: string | null;
   questionAnswers: string[];
   onPermissionReply: (reply: "once" | "always" | "reject") => void;

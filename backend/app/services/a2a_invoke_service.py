@@ -432,6 +432,100 @@ class A2AInvokeService:
         return analysis.usage
 
     @classmethod
+    def extract_interrupt_lifecycle_from_serialized_event(
+        cls, payload: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        if not isinstance(payload, dict) or payload.get("kind") != "status-update":
+            return None
+
+        status = as_dict(payload.get("status"))
+        raw_state = cls._pick_non_empty_str(status, ("state",))
+        metadata = as_dict(payload.get("metadata"))
+        interrupt = as_dict(metadata.get("interrupt"))
+        if not interrupt:
+            return None
+
+        request_id = cls._pick_non_empty_str(interrupt, ("request_id", "requestId"))
+        interrupt_type = cls._pick_non_empty_str(interrupt, ("type",))
+        if not request_id or interrupt_type not in {"permission", "question"}:
+            return None
+
+        phase = cls._pick_non_empty_str(interrupt, ("phase",))
+        normalized_state = (raw_state or "").strip().lower()
+        if phase is None:
+            phase = (
+                "asked"
+                if normalized_state in {"input-required", "input_required"}
+                else None
+            )
+        if phase not in {"asked", "resolved"}:
+            return None
+
+        payload_event: dict[str, Any] = {
+            "request_id": request_id,
+            "type": interrupt_type,
+            "phase": phase,
+        }
+        if phase == "resolved":
+            resolution = cls._pick_non_empty_str(interrupt, ("resolution",))
+            if resolution not in {"replied", "rejected"}:
+                return None
+            payload_event["resolution"] = resolution
+            return payload_event
+
+        details = as_dict(interrupt.get("details")) or {}
+        if interrupt_type == "permission":
+            patterns = details.get("patterns")
+            payload_event["details"] = {
+                "permission": cls._pick_non_empty_str(details, ("permission",)),
+                "patterns": (
+                    [item for item in patterns if isinstance(item, str)]
+                    if isinstance(patterns, list)
+                    else []
+                ),
+            }
+            return payload_event
+
+        questions = details.get("questions")
+        normalized_questions: list[dict[str, Any]] = []
+        if isinstance(questions, list):
+            for entry in questions:
+                candidate = as_dict(entry)
+                if not candidate:
+                    continue
+                question = cls._pick_non_empty_str(candidate, ("question",))
+                if not question:
+                    continue
+                raw_options = candidate.get("options")
+                normalized_options: list[dict[str, Any]] = []
+                if isinstance(raw_options, list):
+                    for raw_option in raw_options:
+                        option = as_dict(raw_option)
+                        if not option:
+                            continue
+                        label = cls._pick_non_empty_str(option, ("label",))
+                        if not label:
+                            continue
+                        normalized_options.append(
+                            {
+                                "label": label,
+                                "description": cls._pick_non_empty_str(
+                                    option, ("description",)
+                                ),
+                                "value": cls._pick_non_empty_str(option, ("value",)),
+                            }
+                        )
+                normalized_questions.append(
+                    {
+                        "header": cls._pick_non_empty_str(candidate, ("header",)),
+                        "question": question,
+                        "options": normalized_options,
+                    }
+                )
+        payload_event["details"] = {"questions": normalized_questions}
+        return payload_event
+
+    @classmethod
     def extract_stream_chunk_from_serialized_event(
         cls, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
