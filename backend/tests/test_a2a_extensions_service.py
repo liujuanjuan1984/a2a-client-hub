@@ -417,7 +417,7 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
         raise AssertionError("method should be short-circuited as unsupported")
 
     monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
-    monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
+    monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.prompt_session_async(
         runtime=runtime,
@@ -640,7 +640,7 @@ async def test_reply_permission_interrupt_returns_method_not_supported_if_missin
     monkeypatch.setattr(
         service._interrupt_extensions, "resolve_extension", _fake_resolve
     )
-    monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
+    monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.reply_permission_interrupt(
         runtime=runtime,
@@ -683,7 +683,7 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
     monkeypatch.setattr(
         service._interrupt_extensions, "resolve_extension", _fake_resolve
     )
-    monkeypatch.setattr(service, "_call_with_retry", _unexpected_remote_call)
+    monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.reply_question_interrupt(
         runtime=runtime,
