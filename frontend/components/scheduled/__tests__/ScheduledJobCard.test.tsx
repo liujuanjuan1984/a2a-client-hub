@@ -1,7 +1,9 @@
 import { fireEvent, render } from "@testing-library/react-native";
+import * as Clipboard from "expo-clipboard";
 import { act, create } from "react-test-renderer";
 
 import { ScheduledJobCard } from "@/components/scheduled/ScheduledJobCard";
+import { toast } from "@/lib/toast";
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({
@@ -16,7 +18,12 @@ jest.mock("@/lib/focus", () => ({
 jest.mock("@/lib/toast", () => ({
   toast: {
     error: jest.fn(),
+    success: jest.fn(),
   },
+}));
+
+jest.mock("expo-clipboard", () => ({
+  setStringAsync: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock("@/components/ui/Button", () => {
@@ -212,6 +219,10 @@ describe("ScheduledJobCard interactions", () => {
     onToggleExecutions: jest.fn(),
   };
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("calls onDelete when Delete button is pressed and confirmed", async () => {
     const job = {
       id: "8",
@@ -230,5 +241,34 @@ describe("ScheduledJobCard interactions", () => {
     });
 
     expect(defaultProps.onDelete).toHaveBeenCalled();
+  });
+
+  it("copies prompt from the action bar without expanding the prompt area", async () => {
+    const job = {
+      id: "9",
+      name: "Job",
+      enabled: true,
+      prompt: "Prompt ready to copy",
+      cycle_type: "daily" as const,
+      time_point: { time: "09:00" },
+      last_run_status: "success" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const { getByLabelText, queryByText } = render(
+      <ScheduledJobCard {...defaultProps} job={job as any} />,
+    );
+
+    expect(queryByText(job.prompt)).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(getByLabelText("Copy prompt"));
+    });
+
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(job.prompt);
+    expect(toast.success).toHaveBeenCalledWith(
+      "Copied",
+      "Prompt copied to clipboard.",
+    );
   });
 });
