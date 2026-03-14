@@ -212,8 +212,21 @@ async def test_continue_session_returns_canonical_binding_metadata(
         assert kwargs["params"]["limit"] == 1
         return ExtensionCallResult(success=True, result={"items": []}, meta={})
 
+    async def _fake_binding_capability(_runtime):
+        return None, {
+            "session_binding_declared": True,
+            "session_binding_uri": SHARED_SESSION_BINDING_URI,
+            "session_binding_mode": "declared_contract",
+            "session_binding_fallback_used": False,
+        }
+
     monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
     monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._session_extensions,
+        "resolve_session_binding_capability",
+        _fake_binding_capability,
+    )
 
     result = await service.continue_session(
         runtime=runtime,
@@ -225,13 +238,18 @@ async def test_continue_session_returns_canonical_binding_metadata(
         "contextId": "ses_123",
         "provider": "opencode",
         "metadata": {
-            "provider": "opencode",
-            "externalSessionId": "ses_123",
             "contextId": "ses_123",
+            "shared": {
+                "session": {
+                    "id": "ses_123",
+                    "provider": "opencode",
+                }
+            },
         },
     }
     assert result.meta["provider"] == "opencode"
     assert result.meta["validated"] is True
+    assert result.meta["session_binding_mode"] == "declared_contract"
 
 
 @pytest.mark.asyncio

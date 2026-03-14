@@ -1817,6 +1817,9 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     async def fake_commit_safely(_: object) -> None:
         return None
 
+    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
+        return False
+
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -1824,6 +1827,11 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
         fake_continue_session,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_resolve_session_binding_rebound_mode",
+        fake_resolve_session_binding_rebound_mode,
+    )
 
     async def runtime_builder():
         return runtime
@@ -1861,8 +1869,12 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     assert len(attempts) == 2
     assert attempts[0]["conversationId"] == original_conversation_id
     assert attempts[1]["conversationId"] == rebound_conversation_id
-    assert attempts[1]["metadata"].get("provider") == "opencode"
-    assert attempts[1]["metadata"].get("externalSessionId") == "upstream-sid-2"
+    assert attempts[1]["metadata"].get("provider") is None
+    assert attempts[1]["metadata"].get("externalSessionId") is None
+    assert attempts[1]["metadata"]["shared"]["session"] == {
+        "id": "upstream-sid-2",
+        "provider": "opencode",
+    }
 
 
 @pytest.mark.asyncio
@@ -1908,6 +1920,9 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
     async def fake_commit_safely(_: object) -> None:
         return None
 
+    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
+        return False
+
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -1915,6 +1930,11 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
         fake_continue_session,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_resolve_session_binding_rebound_mode",
+        fake_resolve_session_binding_rebound_mode,
+    )
 
     async def runtime_builder():
         return runtime
@@ -2020,6 +2040,9 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     async def fake_commit_safely(_: object) -> None:
         return None
 
+    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
+        return False
+
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_service,
@@ -2032,6 +2055,11 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
         fake_continue_session,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_resolve_session_binding_rebound_mode",
+        fake_resolve_session_binding_rebound_mode,
+    )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
         "record_local_invoke_messages_by_local_session_id",
@@ -2073,8 +2101,12 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
         {
             "conversationId": rebound_conversation_id,
             "metadata": {
-                "provider": "opencode",
-                "externalSessionId": "upstream-sid-2",
+                "shared": {
+                    "session": {
+                        "id": "upstream-sid-2",
+                        "provider": "opencode",
+                    }
+                },
             },
         },
     ]
@@ -2151,6 +2183,9 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     async def fake_commit_safely(_: object) -> None:
         return None
 
+    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
+        return False
+
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
     monkeypatch.setattr(
         invoke_route_runner.a2a_invoke_service,
@@ -2163,6 +2198,11 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
         fake_continue_session,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_resolve_session_binding_rebound_mode",
+        fake_resolve_session_binding_rebound_mode,
+    )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
         "record_local_invoke_messages_by_local_session_id",
@@ -2206,8 +2246,12 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
         {
             "conversationId": rebound_conversation_id,
             "metadata": {
-                "provider": "opencode",
-                "externalSessionId": "upstream-sid-2",
+                "shared": {
+                    "session": {
+                        "id": "upstream-sid-2",
+                        "provider": "opencode",
+                    }
+                },
             },
         },
     ]
@@ -2221,8 +2265,12 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
         {
             "conversationId": rebound_conversation_id,
             "metadata": {
-                "provider": "opencode",
-                "externalSessionId": "upstream-sid-2",
+                "shared": {
+                    "session": {
+                        "id": "upstream-sid-2",
+                        "provider": "opencode",
+                    }
+                },
             },
         },
     ]
