@@ -1,3 +1,15 @@
+jest.mock("react-native", () => ({
+  Platform: {
+    OS: "web",
+  },
+}));
+
+jest.mock("@/lib/config", () => ({
+  ENV: {
+    apiBaseUrl: "http://localhost:8000",
+  },
+}));
+
 jest.mock("@/lib/api/client", () => {
   class MockApiRequestError extends Error {
     status: number;
@@ -26,6 +38,29 @@ jest.mock("@/lib/api/sessions", () => ({
   cancelSession: jest.fn(),
 }));
 
+jest.mock("@/lib/api/sse", () => ({
+  fetchSSE: jest.fn(),
+}));
+
+jest.mock("@/lib/api/a2aAgents", () => ({
+  getInvokeWsTicket: jest.fn().mockResolvedValue({ token: "test-token" }),
+}));
+
+jest.mock("@/lib/api/hubA2aAgentsUser", () => ({
+  getHubInvokeWsTicket: jest.fn().mockResolvedValue({ token: "test-token" }),
+}));
+
+const OriginalWebSocket: any = globalThis.WebSocket;
+const mockWs: any = {
+  close: jest.fn(),
+  send: jest.fn(),
+};
+(globalThis as any).WebSocket = jest.fn(() => mockWs);
+
+afterAll(() => {
+  globalThis.WebSocket = OriginalWebSocket;
+});
+
 const { ApiRequestError } = require("@/lib/api/client") as {
   ApiRequestError: new (
     message: string,
@@ -36,44 +71,160 @@ const { ApiRequestError } = require("@/lib/api/client") as {
 const { cancelSession: cancelSessionApi } = require("@/lib/api/sessions") as {
   cancelSession: jest.Mock;
 };
+const { fetchSSE } = require("@/lib/api/sse") as {
+  fetchSSE: jest.Mock;
+};
 const { chatConnectionService } =
   require("@/services/chatConnectionService") as {
-    chatConnectionService: {
-      cancelSession: (conversationId: string) => Promise<unknown>;
-    };
+    chatConnectionService: any;
   };
 
-describe("chatConnectionService.cancelSession", () => {
+describe("chatConnectionService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it("treats session_not_found as an idempotent no-op", async () => {
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    cancelSessionApi.mockRejectedValue(
-      new ApiRequestError('{"message":"session_not_found"}', 404),
-    );
+  describe("cancelSession", () => {
+    it("treats session_not_found as an idempotent no-op", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+      cancelSessionApi.mockRejectedValue(
+        new ApiRequestError('{"message":"session_not_found"}', 404),
+      );
 
-    const result = await chatConnectionService.cancelSession(" conv-1 ");
+      const result = await chatConnectionService.cancelSession(" conv-1 ");
 
-    expect(result).toEqual({
-      conversationId: "conv-1",
-      taskId: null,
-      cancelled: false,
-      status: "no_inflight",
+      expect(result).toEqual({
+        conversationId: "conv-1",
+        taskId: null,
+        cancelled: false,
+        status: "no_inflight",
+      });
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
     });
-    expect(warnSpy).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+
+    it("logs warning for non-idempotent cancellation failures", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+      cancelSessionApi.mockRejectedValue(new ApiRequestError("boom", 500));
+
+      const result = await chatConnectionService.cancelSession("conv-2");
+
+      expect(result).toBeNull();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      warnSpy.mockRestore();
+    });
   });
 
-  it("logs warning for non-idempotent cancellation failures", async () => {
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    cancelSessionApi.mockRejectedValue(new ApiRequestError("boom", 500));
+  describe("tryWebSocketTransport edge cases", () => {
+    beforeEach(() => {
+      mockWs.close.mockClear();
+      mockWs.send.mockClear();
+      mockWs.onopen = undefined;
+      mockWs.onmessage = undefined;
+      mockWs.onclose = undefined;
+      mockWs.onerror = undefined;
+    });
 
-    const result = await chatConnectionService.cancelSession("conv-2");
+    it("handles onclose without terminal event", async () => {
+      const callbacks = {
+        onData: jest.fn(),
+        onDone: jest.fn(),
+        onStreamError: jest.fn(),
+      };
 
-    expect(result).toBeNull();
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    warnSpy.mockRestore();
+      const p = chatConnectionService.tryWebSocketTransport({
+        conversationId: "conv-1",
+        agentId: "agent-1",
+        source: "personal",
+        payload: { query: "hello" },
+        callbacks,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      mockWs.onopen();
+
+      // Send some data
+      mockWs.onmessage({ data: JSON.stringify({ kind: "chunk" }) });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Simulate close before receiving terminal event
+      mockWs.onclose();
+
+      try {
+        await p;
+      } catch {
+        // Expected to throw
+      }
+
+      expect(callbacks.onStreamError).toHaveBeenCalledWith(
+        "WebSocket closed unexpectedly",
+        "stream_closed",
+      );
+    });
+
+    it("handles onerror without terminal event", async () => {
+      const callbacks = {
+        onData: jest.fn().mockReturnValue(false), // return false means not terminal
+        onDone: jest.fn(),
+        onStreamError: jest.fn(),
+      };
+
+      const p = chatConnectionService.tryWebSocketTransport({
+        conversationId: "conv-3",
+        agentId: "agent-1",
+        source: "personal",
+        payload: { query: "hello" },
+        callbacks,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      mockWs.onopen();
+      mockWs.onmessage({ data: JSON.stringify({ kind: "chunk" }) });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      mockWs.onerror();
+      try {
+        await p;
+      } catch {}
+
+      expect(callbacks.onStreamError).toHaveBeenCalledWith(
+        "WebSocket error",
+        "stream_error",
+      );
+    });
+  });
+
+  describe("trySseTransport edge cases", () => {
+    it("passes structured SSE error codes to the runtime", async () => {
+      fetchSSE.mockImplementationOnce(async (_url, handlers) => {
+        handlers.onData?.({ kind: "chunk" });
+        const error = Object.assign(new Error("Upstream streaming failed"), {
+          errorCode: "agent_unavailable",
+        });
+        handlers.onError?.(error);
+      });
+
+      const callbacks = {
+        onData: jest.fn(),
+        onDone: jest.fn(),
+        onStreamError: jest.fn(),
+      };
+
+      const result = await chatConnectionService.trySseTransport({
+        conversationId: "conv-sse-1",
+        agentId: "agent-1",
+        source: "personal",
+        payload: { query: "hello" },
+        callbacks,
+      });
+
+      expect(result).toBe(true);
+      expect(callbacks.onStreamError).toHaveBeenCalledWith(
+        "Upstream streaming failed",
+        "agent_unavailable",
+      );
+    });
   });
 });

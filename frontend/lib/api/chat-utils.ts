@@ -22,6 +22,8 @@ export type ChatMessage = {
   createdAt: string;
   status?: "streaming" | "done" | "error" | "interrupted";
   blocks?: MessageBlock[];
+  errorCode?: string | null;
+  errorMessage?: string | null;
 };
 
 export type StreamBlockUpdate = {
