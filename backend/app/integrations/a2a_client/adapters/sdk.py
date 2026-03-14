@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -17,8 +18,18 @@ from a2a.client import (
     ClientFactory,
     Consumer,
 )
-from a2a.client.errors import A2AClientJSONRPCError
-from a2a.types import Message, Part, Role, TaskIdParams, TextPart, TransportProtocol
+from a2a.client.errors import A2AClientHTTPError, A2AClientJSONRPCError
+from a2a.types import (
+    Message,
+    MessageSendConfiguration,
+    MessageSendParams,
+    Part,
+    Role,
+    SendStreamingMessageRequest,
+    TaskIdParams,
+    TextPart,
+    TransportProtocol,
+)
 
 from app.integrations.a2a_client.adapters.base import A2AAdapter
 from app.integrations.a2a_client.errors import A2APeerProtocolError
@@ -129,6 +140,14 @@ class SDKA2AAdapter(A2AAdapter):
                     yield payload
             except A2AClientJSONRPCError as exc:
                 raise _map_protocol_error(exc) from exc
+            except A2AClientHTTPError as exc:
+                protocol_error = await self._probe_streaming_protocol_error(
+                    request=request,
+                    exc=exc,
+                )
+                if protocol_error is not None:
+                    raise protocol_error from exc
+                raise
 
     async def cancel_task(
         self,
@@ -222,6 +241,75 @@ class SDKA2AAdapter(A2AAdapter):
             self._clients[streaming] = _SDKClientEntry(config=config, client=client)
             return client
 
+    async def _apply_interceptors(
+        self,
+        method_name: str,
+        request_payload: dict[str, Any],
+        http_kwargs: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        final_payload = request_payload
+        final_http_kwargs = dict(http_kwargs or {})
+        for interceptor in self._interceptors:
+            final_payload, final_http_kwargs = await interceptor.intercept(
+                method_name,
+                final_payload,
+                final_http_kwargs,
+                self.descriptor.card,
+                None,
+            )
+        return final_payload, final_http_kwargs
+
+    async def _probe_streaming_protocol_error(
+        self,
+        *,
+        request: A2AMessageRequest,
+        exc: A2AClientHTTPError,
+    ) -> A2APeerProtocolError | None:
+        if self.descriptor.selected_transport.upper() != "JSONRPC":
+            return None
+
+        message = getattr(exc, "message", str(exc)).lower()
+        if "text/event-stream" not in message and "invalid sse response" not in message:
+            return None
+
+        params = MessageSendParams(
+            message=self._build_message(request),
+            configuration=MessageSendConfiguration(
+                accepted_output_modes=["text/plain"],
+                blocking=True,
+            ),
+        )
+        rpc_request = SendStreamingMessageRequest(
+            params=params,
+            id=str(uuid4()),
+        )
+        payload, http_kwargs = await self._apply_interceptors(
+            "message/stream",
+            rpc_request.model_dump(mode="json", exclude_none=True),
+            {
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Accept": "text/event-stream",
+                    "Cache-Control": "no-store",
+                },
+                "timeout": self._transport_http_client.timeout.as_dict().get(
+                    "read", None
+                ),
+            },
+        )
+        try:
+            response = await self._transport_http_client.post(
+                self.descriptor.selected_url,
+                json=payload,
+                **http_kwargs,
+            )
+        except httpx.RequestError:
+            return None
+        return _parse_jsonrpc_error_response(
+            response=response,
+            invalid_stream_error_message=getattr(exc, "message", str(exc)),
+        )
+
     def _transport_usage(self):
         return use_shared_sdk_transport_http_client(self._shared_transport_lease)
 
@@ -283,3 +371,30 @@ def _normalize_protocol_error_code(*, code: Any, message: str) -> str:
         return "method_not_found"
     candidate = str(message).strip().replace("-", "_").replace(" ", "_").lower()
     return candidate or "peer_protocol_error"
+
+
+def _parse_jsonrpc_error_response(
+    *,
+    response: httpx.Response,
+    invalid_stream_error_message: str,
+) -> A2APeerProtocolError | None:
+    try:
+        data = response.json()
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+    error = data.get("error")
+    if not isinstance(error, dict):
+        return None
+
+    code = error.get("code")
+    message = error.get("message") or invalid_stream_error_message
+    return A2APeerProtocolError(
+        message=str(message),
+        error_code=("method_not_found" if code == -32601 else "peer_protocol_error"),
+        rpc_code=code if isinstance(code, int) else None,
+        data=error.get("data"),
+        http_status=response.status_code,
+    )
