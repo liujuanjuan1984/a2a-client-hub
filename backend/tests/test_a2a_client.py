@@ -15,6 +15,7 @@ from app.core import http_client as http_client_module
 from app.integrations.a2a_client import client as client_module
 from app.integrations.a2a_client import gateway as gateway_module
 from app.integrations.a2a_client import http_clients as shared_http_clients_module
+from app.integrations.a2a_client import lifecycle as lifecycle_module
 from app.integrations.a2a_client.adapters import sdk as sdk_module
 from app.integrations.a2a_client.adapters.sdk import (
     SDKA2AAdapter,
@@ -391,6 +392,27 @@ async def test_shared_sdk_transport_usage_rejects_invalidated_lease() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a2a_client_lifecycle_snapshot_reports_shared_transport_state() -> None:
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    lease = shared_http_clients_module.borrow_shared_sdk_transport_http_client(
+        timeout=a2a_client._timeout
+    )
+    a2a_client._active_requests = 1
+
+    snapshot = a2a_client.get_lifecycle_snapshot()
+
+    assert snapshot.busy is True
+    assert snapshot.active_requests == 1
+    assert snapshot.shared_transport is not None
+    assert snapshot.shared_transport.current_generation == lease.generation
+    assert snapshot.shared_transport.tracked_generations == 1
+
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+
+@pytest.mark.asyncio
 async def test_gateway_cleanup_idle_clients_skips_busy_clients() -> None:
     gateway = gateway_module.A2AGateway(
         A2ASettings(
@@ -402,6 +424,15 @@ async def test_gateway_cleanup_idle_clients_skips_busy_clients() -> None:
     busy_client = SimpleNamespace(
         is_busy=Mock(return_value=True),
         close=AsyncMock(),
+        get_lifecycle_snapshot=Mock(
+            return_value=lifecycle_module.A2AClientLifecycleSnapshot(
+                active_requests=1,
+                busy=True,
+                cached_adapter_count=0,
+                adapter_snapshots=(),
+                shared_transport=None,
+            )
+        ),
     )
     cache_key = ("http://example-agent.internal:24020", ())
     gateway._clients[cache_key] = gateway_module.CachedClientEntry(
@@ -451,6 +482,7 @@ async def test_gateway_invalidate_client_schedules_background_close() -> None:
 
     assert cache_key not in gateway._clients
     await asyncio.wait_for(close_started.wait(), timeout=0.1)
+    assert gateway.get_lifecycle_snapshot().reaper.pending_tasks == 1
 
     release_close.set()
     await gateway.shutdown()

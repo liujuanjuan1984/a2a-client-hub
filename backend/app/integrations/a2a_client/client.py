@@ -46,6 +46,11 @@ from app.integrations.a2a_client.errors import (
 from app.integrations.a2a_client.http_clients import (
     SharedSDKTransportInvalidatedError,
     borrow_shared_sdk_transport_http_client,
+    get_shared_sdk_transport_bucket_snapshot,
+)
+from app.integrations.a2a_client.lifecycle import (
+    A2AClientLifecycleSnapshot,
+    AdapterLifecycleSnapshot,
 )
 from app.integrations.a2a_client.models import A2AMessageRequest
 from app.integrations.a2a_client.selection import (
@@ -152,6 +157,35 @@ class A2AClient:
         """Report whether this facade currently has in-flight work."""
 
         return self._active_requests > 0
+
+    def get_lifecycle_snapshot(self) -> A2AClientLifecycleSnapshot:
+        adapter_snapshots: list[AdapterLifecycleSnapshot] = []
+        for entry in self._clients.values():
+            snapshot_fn = getattr(entry.client, "get_lifecycle_snapshot", None)
+            if callable(snapshot_fn):
+                adapter_snapshots.append(snapshot_fn())
+                continue
+            dialect = getattr(entry.client, "dialect", type(entry.client).__name__)
+            adapter_snapshots.append(
+                AdapterLifecycleSnapshot(
+                    dialect=str(dialect),
+                    active_operations=0,
+                    retired=False,
+                    closed=False,
+                )
+            )
+        shared_transport = None
+        if self._http_client is None or not self._owns_http_client:
+            shared_transport = get_shared_sdk_transport_bucket_snapshot(
+                timeout=self._timeout
+            )
+        return A2AClientLifecycleSnapshot(
+            active_requests=self._active_requests,
+            busy=self.is_busy(),
+            cached_adapter_count=len(self._clients),
+            adapter_snapshots=tuple(adapter_snapshots),
+            shared_transport=shared_transport,
+        )
 
     async def call_agent(
         self,

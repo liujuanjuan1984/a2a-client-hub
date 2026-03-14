@@ -11,6 +11,7 @@ import httpx
 
 from app.core.http_client import create_http_client, resolve_http_client_timeout
 from app.core.logging import get_logger
+from app.integrations.a2a_client.lifecycle import SharedSDKTransportBucketSnapshot
 from app.utils.async_cleanup import await_cancel_safe
 
 logger = get_logger(__name__)
@@ -182,6 +183,42 @@ async def close_shared_sdk_transport_http_clients() -> None:
         logger.info("Closed shared SDK transport HTTP clients")
 
 
+def get_shared_sdk_transport_bucket_snapshot(
+    *,
+    timeout: httpx.Timeout | None = None,
+) -> SharedSDKTransportBucketSnapshot | None:
+    """Return observable state for one shared SDK transport timeout bucket."""
+
+    timeout_key = _build_timeout_key(timeout)
+    with _sdk_transport_clients_lock:
+        entries = [
+            entry
+            for (
+                entry_timeout_key,
+                _generation,
+            ), entry in _sdk_transport_entries.items()
+            if entry_timeout_key == timeout_key
+        ]
+        if not entries and timeout_key not in _sdk_transport_clients:
+            return None
+        current_entry = _sdk_transport_clients.get(timeout_key)
+        invalidated_generations = sum(1 for entry in entries if entry.invalidated)
+        draining_generations = sum(
+            1 for entry in entries if entry.invalidated and entry.active_users > 0
+        )
+        active_users = sum(entry.active_users for entry in entries)
+        return SharedSDKTransportBucketSnapshot(
+            timeout_key=timeout_key,
+            current_generation=(
+                current_entry.generation if current_entry is not None else None
+            ),
+            tracked_generations=len(entries),
+            invalidated_generations=invalidated_generations,
+            draining_generations=draining_generations,
+            active_users=active_users,
+        )
+
+
 def _build_timeout_key(timeout: httpx.Timeout | None) -> tuple[float | None, ...]:
     resolved = resolve_http_client_timeout(timeout)
     return (
@@ -204,6 +241,7 @@ __all__ = [
     "acquire_shared_sdk_transport_http_client_usage",
     "borrow_shared_sdk_transport_http_client",
     "close_shared_sdk_transport_http_clients",
+    "get_shared_sdk_transport_bucket_snapshot",
     "invalidate_shared_sdk_transport_http_client",
     "is_shared_sdk_transport_http_client_stale",
     "release_shared_sdk_transport_http_client_usage",

@@ -20,6 +20,10 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
     A2AOutboundNotAllowedError,
 )
+from app.integrations.a2a_client.lifecycle import (
+    A2AGatewayLifecycleSnapshot,
+    AsyncResourceReaper,
+)
 from app.integrations.a2a_client.metrics import a2a_metrics
 from app.utils.async_cleanup import await_cancel_safe
 from app.utils.logging_redaction import (
@@ -50,7 +54,7 @@ class A2AGateway:
             tuple[str, tuple[tuple[str, str], ...]], CachedClientEntry
         ] = {}
         self._client_lock = asyncio.Lock()
-        self._closing_tasks: set[asyncio.Task[None]] = set()
+        self._close_reaper = AsyncResourceReaper()
 
     async def invoke(
         self,
@@ -507,8 +511,6 @@ class A2AGateway:
         async with self._client_lock:
             entries = list(self._clients.values())
             self._clients.clear()
-            closing_tasks = list(self._closing_tasks)
-            self._closing_tasks.clear()
         for entry in entries:
             try:
                 await await_cancel_safe(entry.client.close())
@@ -516,8 +518,7 @@ class A2AGateway:
                 logger.debug(
                     "Failed to close A2A client during shutdown", exc_info=True
                 )
-        if closing_tasks:
-            await asyncio.gather(*closing_tasks, return_exceptions=True)
+        await self._close_reaper.drain()
 
     async def _get_client(self, resolved: "ResolvedAgent") -> A2AClient:
         await self._cleanup_idle_clients()
@@ -620,31 +621,24 @@ class A2AGateway:
         success_log: str,
         extra: dict[str, Any] | None = None,
     ) -> None:
-        task = asyncio.create_task(
-            self._close_client_in_background(
-                client,
-                failure_log=failure_log,
-                success_log=success_log,
-                extra=extra,
-            )
+        self._close_reaper.schedule(
+            client.close(),
+            failure_log=failure_log,
+            success_log=success_log,
+            extra=extra,
         )
-        self._closing_tasks.add(task)
-        task.add_done_callback(self._closing_tasks.discard)
 
-    @staticmethod
-    async def _close_client_in_background(
-        client: A2AClient,
-        *,
-        failure_log: str,
-        success_log: str,
-        extra: dict[str, Any] | None = None,
-    ) -> None:
-        try:
-            await await_cancel_safe(client.close())
-        except Exception:  # pragma: no cover - defensive cleanup
-            logger.debug(failure_log, exc_info=True)
-        else:
-            logger.info(success_log, extra=extra)
+    def get_lifecycle_snapshot(self) -> A2AGatewayLifecycleSnapshot:
+        client_snapshots = tuple(
+            entry.client.get_lifecycle_snapshot() for entry in self._clients.values()
+        )
+        busy_clients = sum(1 for snapshot in client_snapshots if snapshot.busy)
+        return A2AGatewayLifecycleSnapshot(
+            cached_clients=len(self._clients),
+            busy_clients=busy_clients,
+            reaper=self._close_reaper.snapshot(),
+            client_snapshots=client_snapshots,
+        )
 
 
 __all__ = ["A2AGateway"]

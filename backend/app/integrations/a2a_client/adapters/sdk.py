@@ -28,6 +28,7 @@ from app.integrations.a2a_client.http_clients import (
     is_shared_sdk_transport_http_client_stale,
     use_shared_sdk_transport_http_client,
 )
+from app.integrations.a2a_client.lifecycle import AdapterLifecycleSnapshot
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 from app.utils.async_cleanup import await_cancel_safe
 
@@ -189,6 +190,15 @@ class SDKA2AAdapter(A2AAdapter):
         if self._shared_transport_lease is None:
             return False
         return is_shared_sdk_transport_http_client_stale(self._shared_transport_lease)
+
+    def get_lifecycle_snapshot(self) -> AdapterLifecycleSnapshot:
+        return AdapterLifecycleSnapshot(
+            dialect=self.dialect,
+            active_operations=self._active_operations,
+            retired=self._retired,
+            closed=self._closed,
+            transport_stale=self.is_transport_stale(),
+        )
 
     async def _get_client(self, *, streaming: bool) -> Client:
         async with self._client_lock:
