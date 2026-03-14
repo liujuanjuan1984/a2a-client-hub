@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.integrations.a2a_client.lifecycle import AdapterLifecycleSnapshot
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 
 
@@ -44,3 +45,18 @@ class A2AAdapter(ABC):
     @abstractmethod
     async def close(self) -> None:
         """Release any owned transport resources."""
+
+    async def retire(self) -> None:
+        """Remove the adapter from future routing while draining in-flight work."""
+
+        await self.close()
+
+    def get_lifecycle_snapshot(self) -> AdapterLifecycleSnapshot:
+        """Return a lightweight lifecycle snapshot for diagnostics."""
+
+        return AdapterLifecycleSnapshot(
+            dialect=self.dialect,
+            active_operations=0,
+            retired=False,
+            closed=False,
+        )
