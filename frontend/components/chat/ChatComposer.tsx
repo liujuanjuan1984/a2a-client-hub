@@ -63,9 +63,9 @@ export function ChatComposer({
         </View>
       ) : null}
 
-      {!isFocused && (
-        <View className="mb-2 flex-row items-center justify-between rounded-xl bg-black/25 px-2 py-1">
-          <View className="flex-row items-center gap-2">
+      <View className="mb-2 flex-row items-center justify-between rounded-xl bg-black/25 px-2 py-1">
+        <View className="flex-row items-center gap-2">
+          {!isFocused && (
             <Pressable
               className="h-9 max-w-[180px] flex-row items-center gap-2 rounded-xl bg-slate-800/40 px-3"
               onPress={onOpenModelPicker}
@@ -85,49 +85,49 @@ export function ChatComposer({
                 {modelLabel}
               </Text>
             </Pressable>
+          )}
 
+          <Pressable
+            className={`h-9 w-14 items-center justify-center rounded-xl ${
+              showShortcutManager ? "bg-primary" : "bg-slate-800/40"
+            }`}
+            onPress={onOpenShortcutManager}
+            accessibilityRole="button"
+            accessibilityLabel="Open shortcut manager"
+          >
+            <Ionicons
+              name={showShortcutManager ? "flash" : "flash-outline"}
+              size={18}
+              color={showShortcutManager ? "#000000" : "#FFFFFF"}
+            />
+          </Pressable>
+
+          {input.length > 0 && (
             <Pressable
-              className={`h-9 w-14 items-center justify-center rounded-xl ${
-                showShortcutManager ? "bg-primary" : "bg-slate-800/40"
-              }`}
-              onPress={onOpenShortcutManager}
+              className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
+              onPress={() => {
+                onInputChange("");
+                inputRef.current?.focus();
+              }}
               accessibilityRole="button"
-              accessibilityLabel="Open shortcut manager"
+              accessibilityLabel="Clear input"
             >
-              <Ionicons
-                name={showShortcutManager ? "flash" : "flash-outline"}
-                size={18}
-                color={showShortcutManager ? "#000000" : "#FFFFFF"}
-              />
+              <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
             </Pressable>
+          )}
 
-            {input.length > 0 && (
-              <Pressable
-                className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
-                onPress={() => {
-                  onInputChange("");
-                  inputRef.current?.focus();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Clear input"
-              >
-                <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
-              </Pressable>
-            )}
-
-            {showScrollToBottom && (
-              <Pressable
-                className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
-                onPress={onScrollToBottom}
-                accessibilityRole="button"
-                accessibilityLabel="Scroll to bottom"
-              >
-                <Ionicons name="chevron-down" size={18} color="#FFFFFF" />
-              </Pressable>
-            )}
-          </View>
+          {showScrollToBottom && (
+            <Pressable
+              className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
+              onPress={onScrollToBottom}
+              accessibilityRole="button"
+              accessibilityLabel="Scroll to bottom"
+            >
+              <Ionicons name="chevron-down" size={18} color="#FFFFFF" />
+            </Pressable>
+          )}
         </View>
-      )}
+      </View>
 
       <View className="flex-row items-end gap-2 rounded-2xl bg-surface p-2">
         <TextInput
