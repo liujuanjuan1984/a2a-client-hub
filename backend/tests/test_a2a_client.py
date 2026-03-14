@@ -24,9 +24,8 @@ async def test_a2a_client_close_releases_adapters_without_owned_http_client() ->
     a2a_client = A2AClient("http://example-agent.internal:24020")
     close_mock = AsyncMock()
     a2a_client._agent_card = Mock()
-    a2a_client._clients[True] = ClientCacheEntry(
-        config=Mock(),
-        client=SimpleNamespace(close=close_mock),
+    a2a_client._clients["sdk"] = ClientCacheEntry(
+        client=SimpleNamespace(close=close_mock)
     )
 
     await a2a_client.close()
@@ -46,8 +45,7 @@ async def test_a2a_client_close_releases_owned_http_client_resources() -> None:
         owns_http_client=True,
     )
     a2a_client._agent_card = Mock()
-    a2a_client._clients[True] = ClientCacheEntry(
-        config=Mock(),
+    a2a_client._clients["sdk"] = ClientCacheEntry(
         client=SimpleNamespace(close=transport_close),
     )
 
@@ -107,9 +105,6 @@ async def test_call_agent_falls_back_to_plain_string_without_json_wrapping() -> 
         def __str__(self) -> str:
             return "Task(artifacts=[...])"
 
-    class FakeClient:
-        pass
-
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._send_with_fallback = AsyncMock(return_value=LegacyResponse())
 
@@ -121,9 +116,6 @@ async def test_call_agent_falls_back_to_plain_string_without_json_wrapping() -> 
 
 @pytest.mark.asyncio
 async def test_cancel_task_returns_success_for_valid_request() -> None:
-    class FakeClient:
-        pass
-
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._cancel_with_fallback = AsyncMock(return_value={"id": "task-1"})
 
@@ -136,9 +128,6 @@ async def test_cancel_task_returns_success_for_valid_request() -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_task_maps_http_status_error_codes() -> None:
-    class FakeClient:
-        pass
-
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._cancel_with_fallback = AsyncMock(
         side_effect=A2AClientHTTPError(404, "Task not found")

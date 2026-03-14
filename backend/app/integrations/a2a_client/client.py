@@ -81,7 +81,6 @@ class StaticHeaderInterceptor(ClientCallInterceptor):
 class ClientCacheEntry:
     """Backward-compatible adapter cache entry used by tests and cleanup."""
 
-    config: Any
     client: Any
 
 
@@ -615,7 +614,6 @@ class A2AClient:
             if dialect == SDK_DIALECT:
                 adapter = SDKA2AAdapter(
                     descriptor,
-                    timeout=self._timeout,
                     http_client=httpx_client,
                     interceptors=list(self._interceptors),
                     consumers=list(self._consumers),
@@ -634,7 +632,7 @@ class A2AClient:
                     f"Unsupported A2A adapter dialect: {dialect}"
                 )
 
-            self._clients[dialect] = ClientCacheEntry(config=None, client=adapter)
+            self._clients[dialect] = ClientCacheEntry(client=adapter)
             return adapter
 
     async def _get_preferred_dialects(self, descriptor) -> list[str]:

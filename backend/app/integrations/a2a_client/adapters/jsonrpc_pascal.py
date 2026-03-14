@@ -21,7 +21,6 @@ from app.integrations.a2a_client.selection import build_pascal_message_payload
 JSONRPC_PASCAL_DIALECT = "jsonrpc_pascal"
 
 _METHOD_SEND_MESSAGE = "SendMessage"
-_METHOD_SEND_STREAMING_MESSAGE = "SendStreamingMessage"
 _METHOD_CANCEL_TASK = "CancelTask"
 
 

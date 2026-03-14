@@ -40,7 +40,6 @@ class SDKA2AAdapter(A2AAdapter):
         self,
         descriptor: A2APeerDescriptor,
         *,
-        timeout: httpx.Timeout,
         http_client: httpx.AsyncClient,
         interceptors: list[ClientCallInterceptor] | None = None,
         consumers: list[Consumer] | None = None,
@@ -48,7 +47,6 @@ class SDKA2AAdapter(A2AAdapter):
         supported_transports: list[TransportProtocol | str] | None = None,
     ) -> None:
         super().__init__(descriptor)
-        self._timeout = timeout
         self._http_client = http_client
         self._interceptors = list(interceptors or [])
         self._consumers = list(consumers or [])
