@@ -98,8 +98,6 @@ class A2AClient:
         timeout_seconds: Optional[float] = None,
         borrowed_http_client: Optional[httpx.AsyncClient] = None,
         owned_http_client: Optional[httpx.AsyncClient] = None,
-        http_client: Optional[httpx.AsyncClient] = None,
-        owns_http_client: Optional[bool] = None,
         interceptors: Optional[List[ClientCallInterceptor]] = None,
         consumers: Optional[List[Consumer]] = None,
         use_client_preference: bool = False,
@@ -115,8 +113,6 @@ class A2AClient:
             self._resolve_http_client_dependency(
                 borrowed_http_client=borrowed_http_client,
                 owned_http_client=owned_http_client,
-                http_client=http_client,
-                owns_http_client=owns_http_client,
             )
         )
 
@@ -693,7 +689,6 @@ class A2AClient:
                     sdk_transport_http_client = shared_transport_lease.client
                 adapter = SDKA2AAdapter(
                     descriptor,
-                    http_client=httpx_client,
                     transport_http_client=sdk_transport_http_client,
                     shared_transport_lease=shared_transport_lease,
                     interceptors=list(self._interceptors),
@@ -832,39 +827,16 @@ class A2AClient:
         *,
         borrowed_http_client: httpx.AsyncClient | None,
         owned_http_client: httpx.AsyncClient | None,
-        http_client: httpx.AsyncClient | None,
-        owns_http_client: bool | None,
     ) -> tuple[httpx.AsyncClient | None, bool]:
-        explicit_count = sum(
-            1
-            for candidate in (borrowed_http_client, owned_http_client)
-            if candidate is not None
-        )
-        if explicit_count > 1:
+        if borrowed_http_client is not None and owned_http_client is not None:
             raise ValueError(
                 "Use only one of borrowed_http_client or owned_http_client."
-            )
-        if explicit_count and (http_client is not None or owns_http_client is not None):
-            raise ValueError(
-                "Do not mix borrowed/owned_http_client with legacy http_client "
-                "arguments."
             )
         if borrowed_http_client is not None:
             return borrowed_http_client, False
         if owned_http_client is not None:
             return owned_http_client, True
-        if http_client is None:
-            if owns_http_client is not None:
-                raise ValueError(
-                    "owns_http_client requires a matching legacy http_client."
-                )
-            return None, False
-        if owns_http_client is None:
-            raise TypeError(
-                "Passing http_client requires explicit ownership. "
-                "Use borrowed_http_client or owned_http_client instead."
-            )
-        return http_client, bool(owns_http_client)
+        return None, False
 
     @staticmethod
     def _should_reset_adapter_after_error(

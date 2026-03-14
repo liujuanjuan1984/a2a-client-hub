@@ -71,9 +71,7 @@ class SDKA2AAdapter(A2AAdapter):
         self,
         descriptor: A2APeerDescriptor,
         *,
-        http_client: httpx.AsyncClient,
-        transport_http_client: httpx.AsyncClient | None = None,
-        owns_transport_http_client: bool = False,
+        transport_http_client: httpx.AsyncClient,
         shared_transport_lease: SharedSDKTransportLease | None = None,
         interceptors: list[ClientCallInterceptor] | None = None,
         consumers: list[Consumer] | None = None,
@@ -81,15 +79,9 @@ class SDKA2AAdapter(A2AAdapter):
         supported_transports: list[TransportProtocol | str] | None = None,
     ) -> None:
         super().__init__(descriptor)
-        self._http_client = http_client
-        self._transport_http_client = transport_http_client or http_client
-        self._owns_transport_http_client = owns_transport_http_client
+        self._transport_http_client = transport_http_client
         self._shared_transport_lease = shared_transport_lease
-        self._sdk_http_client = (
-            self._transport_http_client
-            if owns_transport_http_client
-            else _NonClosingAsyncClientProxy(self._transport_http_client)
-        )
+        self._sdk_http_client = _NonClosingAsyncClientProxy(self._transport_http_client)
         self._interceptors = list(interceptors or [])
         self._consumers = list(consumers or [])
         self._use_client_preference = use_client_preference
@@ -144,12 +136,6 @@ class SDKA2AAdapter(A2AAdapter):
                 await await_cancel_safe(entry.client.close())
             except Exception:
                 continue
-        if (
-            self._owns_transport_http_client
-            and self._transport_http_client is not self._http_client
-            and not self._transport_http_client.is_closed
-        ):
-            await await_cancel_safe(self._transport_http_client.aclose())
 
     async def invalidate_borrowed_transport(self) -> bool:
         """Invalidate the borrowed shared transport generation, if any."""

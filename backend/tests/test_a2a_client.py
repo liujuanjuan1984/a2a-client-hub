@@ -74,21 +74,12 @@ async def test_a2a_client_does_not_close_injected_http_client_by_default() -> No
     http_client.aclose.assert_not_awaited()
 
 
-def test_a2a_client_rejects_legacy_http_client_without_explicit_ownership() -> None:
-    with pytest.raises(TypeError, match="borrowed_http_client or owned_http_client"):
-        A2AClient(
-            "http://example-agent.internal:24020",
-            http_client=AsyncMock(),
-        )
-
-
-def test_a2a_client_rejects_mixed_http_client_dependency_modes() -> None:
-    with pytest.raises(ValueError, match="Do not mix"):
+def test_a2a_client_rejects_multiple_http_client_dependency_modes() -> None:
+    with pytest.raises(ValueError, match="Use only one"):
         A2AClient(
             "http://example-agent.internal:24020",
             borrowed_http_client=AsyncMock(),
-            http_client=AsyncMock(),
-            owns_http_client=False,
+            owned_http_client=AsyncMock(),
         )
 
 
@@ -129,7 +120,6 @@ async def test_sdk_adapter_close_preserves_borrowed_http_client() -> None:
     monkeypatch.setattr(sdk_module, "ClientFactory", FakeFactory)
     adapter = SDKA2AAdapter(
         SimpleNamespace(card=Mock()),
-        http_client=shared_http_client,
         transport_http_client=shared_http_client,
     )
 
@@ -171,7 +161,6 @@ async def test_get_adapter_uses_shared_sdk_http_client_for_borrowed_http_client(
 
     await a2a_client._get_adapter(client_module.SDK_DIALECT)
 
-    assert captured["http_client"] is shared_http_client
     assert captured["transport_http_client"] is shared_lease.client
     assert captured["shared_transport_lease"] is shared_lease
 
