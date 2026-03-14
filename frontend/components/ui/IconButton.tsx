@@ -77,7 +77,10 @@ export function IconButton({
       {...props}
     >
       {loading ? (
-        <ActivityIndicator size="small" color={iconColor || iconColors[variant]} />
+        <ActivityIndicator
+          size="small"
+          color={iconColor || iconColors[variant]}
+        />
       ) : (
         <Ionicons
           name={icon}

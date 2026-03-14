@@ -103,6 +103,7 @@ export function ScheduledJobCard({
   const [deleting, setDeleting] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const canMarkFailed = isReallyRunning;
+  const hasPrompt = Boolean(job.prompt?.trim());
 
   const openExecutionSession = (execution: ScheduledJobExecution) => {
     if (!execution.conversation_id) return;
@@ -206,21 +207,11 @@ export function ScheduledJobCard({
           />
         </View>
 
-        {promptExpanded && (
-          <View className="relative mt-4 pt-4 border-t border-white/5">
-            <Text className={`text-[11px] leading-5 pr-8 ${tone.prompt}`}>
+        {promptExpanded && hasPrompt && (
+          <View className="mt-4 pt-4 border-t border-white/5">
+            <Text className={`text-[11px] leading-5 ${tone.prompt}`}>
               {job.prompt}
             </Text>
-            <View className="absolute top-2 right-0">
-              <CopyButton
-                value={job.prompt}
-                successMessage="Prompt copied to clipboard."
-                accessibilityLabel="Copy prompt"
-                variant="ghost"
-                size="sm"
-                iconColor={tone.iconColor}
-              />
-            </View>
           </View>
         )}
       </View>
@@ -243,6 +234,16 @@ export function ScheduledJobCard({
             iconLeft={promptExpanded ? "chevron-up" : "chevron-down"}
             onPress={() => setPromptExpanded(!promptExpanded)}
           />
+          {hasPrompt ? (
+            <CopyButton
+              value={job.prompt}
+              successMessage="Prompt copied to clipboard."
+              accessibilityLabel="Copy prompt"
+              variant="ghost"
+              size="xs"
+              iconColor={tone.iconColor}
+            />
+          ) : null}
           <Button
             label={executionsOpen ? "Hide" : "History"}
             size="xs"
