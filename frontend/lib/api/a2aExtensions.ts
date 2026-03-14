@@ -285,6 +285,19 @@ const asModelItems = (value: unknown): OpencodeModelSummary[] => {
   );
 };
 
+export const getOpencodeDiscoveryCapability = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+}): Promise<{ supported: boolean }> => {
+  const response = await apiRequest<{ supported: boolean }>(
+    buildOpencodeDiscoveryPath(input.source, input.agentId, "capability"),
+    {
+      method: "GET",
+    },
+  );
+  return response;
+};
+
 export const listOpencodeProviders = async (input: {
   source: ExtensionAgentSource;
   agentId: string;

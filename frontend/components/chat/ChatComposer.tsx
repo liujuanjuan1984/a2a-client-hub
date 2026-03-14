@@ -14,6 +14,7 @@ import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import { type SharedModelSelection } from "@/lib/chat-utils";
 
 export function ChatComposer({
+  supportsOpencodeDiscovery,
   pendingInterrupt,
   showShortcutManager,
   onOpenShortcutManager,
@@ -30,6 +31,7 @@ export function ChatComposer({
   showScrollToBottom,
   onScrollToBottom,
 }: {
+  supportsOpencodeDiscovery?: boolean;
   pendingInterrupt: PendingRuntimeInterrupt | null;
   showShortcutManager: boolean;
   onOpenShortcutManager: () => void;
@@ -63,21 +65,23 @@ export function ChatComposer({
 
       <View className="mb-2 flex-row items-center justify-between rounded-xl bg-black/25 px-2 py-1">
         <View className="flex-row items-center gap-2">
-          <Pressable
-            className="h-9 max-w-[180px] flex-row items-center gap-2 rounded-xl bg-slate-800/40 px-3"
-            onPress={onOpenModelPicker}
-            accessibilityRole="button"
-            accessibilityLabel="Choose model"
-            accessibilityHint="Open the model picker"
-          >
-            <Ionicons name="git-branch-outline" size={16} color="#FFFFFF" />
-            <Text
-              className="flex-1 text-xs font-medium text-white"
-              numberOfLines={1}
+          {supportsOpencodeDiscovery && (
+            <Pressable
+              className="h-9 max-w-[180px] flex-row items-center gap-2 rounded-xl bg-slate-800/40 px-3"
+              onPress={onOpenModelPicker}
+              accessibilityRole="button"
+              accessibilityLabel="Choose model"
+              accessibilityHint="Open the model picker"
             >
-              {modelLabel}
-            </Text>
-          </Pressable>
+              <Ionicons name="git-branch-outline" size={16} color="#FFFFFF" />
+              <Text
+                className="flex-1 text-xs font-medium text-white"
+                numberOfLines={1}
+              >
+                {modelLabel}
+              </Text>
+            </Pressable>
+          )}
 
           <Pressable
             className={`h-9 w-14 items-center justify-center rounded-xl ${

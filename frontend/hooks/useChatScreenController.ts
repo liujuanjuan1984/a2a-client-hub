@@ -19,6 +19,7 @@ import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import {
   A2AExtensionCallError,
+  getOpencodeDiscoveryCapability,
   rejectQuestionInterrupt,
   replyPermissionInterrupt,
   replyQuestionInterrupt,
@@ -109,6 +110,8 @@ export function useChatScreenController({
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
   const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
+  const [supportsOpencodeDiscovery, setSupportsOpencodeDiscovery] =
+    useState<boolean>(false);
   const handledResolvedInterruptKeysRef = useRef<Set<string>>(new Set());
   const locallyAcknowledgedResolvedInterruptKeysRef = useRef<Set<string>>(
     new Set(),
@@ -281,6 +284,25 @@ export function useChatScreenController({
       ensureSession(conversationId, activeAgentId);
     }
   }, [activeAgentId, conversationId, ensureSession]);
+
+  useEffect(() => {
+    if (!activeAgentId || !agent?.source) {
+      setSupportsOpencodeDiscovery(false);
+      return;
+    }
+    const checkCapability = async () => {
+      try {
+        const capability = await getOpencodeDiscoveryCapability({
+          source: agent.source as "personal" | "shared",
+          agentId: activeAgentId,
+        });
+        setSupportsOpencodeDiscovery(capability.supported);
+      } catch (e) {
+        setSupportsOpencodeDiscovery(false);
+      }
+    };
+    checkCapability();
+  }, [activeAgentId, agent?.source]);
 
   useEffect(() => {
     if (!lastResolvedInterrupt) {
@@ -965,6 +987,7 @@ export function useChatScreenController({
     conversationId,
     session,
     sessionSource,
+    supportsOpencodeDiscovery,
     selectedModel,
     messages,
     historyLoading,

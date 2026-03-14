@@ -245,23 +245,36 @@ export const sortSessionsByLastActive = (
 
 const normalizeSessionForPersistence = (
   session: AgentSession,
-): AgentSession => ({
-  agentId: session.agentId,
-  createdAt: getSessionCreatedAt(session),
-  source: null,
-  contextId: null,
-  runtimeStatus: null,
-  pendingInterrupt: null,
-  lastResolvedInterrupt: null,
-  streamState: "idle",
-  lastStreamError: null,
-  transport: "http_json",
-  inputModes: ["text/plain"],
-  outputModes: ["text/plain"],
-  metadata: {},
-  externalSessionRef: null,
-  lastActiveAt: getSessionLastActiveAt(session),
-});
+): AgentSession => {
+  const persistedMetadata: Record<string, unknown> = {};
+  const sharedModel = getSharedModelSelection(session.metadata);
+  if (sharedModel) {
+    persistedMetadata.shared = {
+      model: {
+        providerID: sharedModel.providerID,
+        modelID: sharedModel.modelID,
+      },
+    };
+  }
+
+  return {
+    agentId: session.agentId,
+    createdAt: getSessionCreatedAt(session),
+    source: null,
+    contextId: null,
+    runtimeStatus: null,
+    pendingInterrupt: null,
+    lastResolvedInterrupt: null,
+    streamState: "idle",
+    lastStreamError: null,
+    transport: "http_json",
+    inputModes: ["text/plain"],
+    outputModes: ["text/plain"],
+    metadata: persistedMetadata,
+    externalSessionRef: null,
+    lastActiveAt: getSessionLastActiveAt(session),
+  };
+};
 
 export const buildPersistedSessions = (
   sessions: Record<string, AgentSession>,
