@@ -21,6 +21,7 @@ type IconButtonProps = Omit<PressableProps, "accessibilityLabel"> & {
   size?: IconButtonSize;
   loading?: boolean;
   iconColor?: string;
+  iconSize?: number;
 };
 
 export function IconButton({
@@ -32,6 +33,7 @@ export function IconButton({
   className,
   accessibilityLabel,
   iconColor,
+  iconSize,
   ...props
 }: IconButtonProps) {
   const variants: Record<IconButtonVariant, string> = {
@@ -84,7 +86,7 @@ export function IconButton({
       ) : (
         <Ionicons
           name={icon}
-          size={iconSizes[size]}
+          size={iconSize || iconSizes[size]}
           color={iconColor || iconColors[variant]}
         />
       )}

@@ -3,6 +3,11 @@ import { Platform } from "react-native";
 
 import { toast } from "@/lib/toast";
 
+export const COPY_FEEDBACK_TITLES = {
+  success: "Copied",
+  error: "Copy failed",
+} as const;
+
 type CopyTextOptions = {
   successMessage?: string;
   errorMessage?: string;
@@ -11,6 +16,10 @@ type CopyTextOptions = {
   onSuccess?: () => void;
   onError?: () => void;
 };
+
+export function isCopyableText(value: string | null | undefined) {
+  return typeof value === "string" && value.trim().length > 0;
+}
 
 async function writeClipboardText(value: string) {
   if (
@@ -34,12 +43,16 @@ export async function copyTextToClipboard(
   {
     successMessage = "Copied to clipboard.",
     errorMessage = "Could not copy to clipboard.",
-    successTitle = "Copied",
-    errorTitle = "Copy failed",
+    successTitle = COPY_FEEDBACK_TITLES.success,
+    errorTitle = COPY_FEEDBACK_TITLES.error,
     onSuccess,
     onError,
   }: CopyTextOptions = {},
 ) {
+  if (!isCopyableText(value)) {
+    return false;
+  }
+
   try {
     await writeClipboardText(value);
     onSuccess?.();

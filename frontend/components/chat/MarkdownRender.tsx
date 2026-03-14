@@ -1,9 +1,8 @@
-import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useMemo } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useMemo } from "react";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import Markdown, { RenderRules } from "react-native-markdown-display";
 
-import { copyTextToClipboard } from "@/lib/clipboard";
+import { CopyButton } from "../ui/CopyButton";
 
 interface MarkdownRenderProps {
   content: string;
@@ -11,13 +10,6 @@ interface MarkdownRenderProps {
 }
 
 export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
-  const handleCopyCode = useCallback(async (code: string) => {
-    await copyTextToClipboard(code, {
-      successMessage: "Code copied to clipboard.",
-      errorMessage: "Could not copy code.",
-    });
-  }, []);
-
   const styles = useMemo(() => {
     const baseTextColor = isAgent ? "#E2E8F0" : "#FFFFFF"; // slate-200 or white
     return StyleSheet.create({
@@ -115,12 +107,17 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
             <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
               {(node as any).sourceInfo || "Code"}
             </Text>
-            <Pressable
-              onPress={() => handleCopyCode(content)}
-              className="p-1 hover:bg-white/10 rounded"
-            >
-              <Ionicons name="copy-outline" size={14} color="#94A3B8" />
-            </Pressable>
+            <CopyButton
+              value={content}
+              successMessage="Code copied to clipboard."
+              errorMessage="Could not copy code."
+              accessibilityLabel="Copy code block"
+              variant="ghost"
+              size="xs"
+              iconSize={14}
+              iconColor="#94A3B8"
+              className="h-6 w-6 rounded-md"
+            />
           </View>
           <Text style={styles.code_block}>{content.trim()}</Text>
         </View>
@@ -131,12 +128,17 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
       return (
         <View key={node.key} style={styles.code_block}>
           <View className="flex-row justify-end mb-1">
-            <Pressable
-              onPress={() => handleCopyCode(content)}
-              className="p-1 hover:bg-white/10 rounded"
-            >
-              <Ionicons name="copy-outline" size={12} color="#94A3B8" />
-            </Pressable>
+            <CopyButton
+              value={content}
+              successMessage="Code copied to clipboard."
+              errorMessage="Could not copy code."
+              accessibilityLabel="Copy code block"
+              variant="ghost"
+              size="xs"
+              iconSize={12}
+              iconColor="#94A3B8"
+              className="h-5 w-5 rounded"
+            />
           </View>
           <Text style={styles.code_block}>{content.trim()}</Text>
         </View>

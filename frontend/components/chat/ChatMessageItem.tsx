@@ -9,7 +9,7 @@ import {
   type ChatMessage,
   type MessageBlock as MessageBlockType,
 } from "@/lib/api/chat-utils";
-import { copyTextToClipboard } from "@/lib/clipboard";
+import { copyTextToClipboard, isCopyableText } from "@/lib/clipboard";
 
 export function ChatMessageItem({
   message,
@@ -77,14 +77,17 @@ export function ChatMessageItem({
     message.role === "agent" &&
     sessionStreamState &&
     ["error", "recoverable"].includes(sessionStreamState);
+  const canCopyMessage = isCopyableText(textToCopy);
   const userCopyButtonPositionClass = "right-0";
 
   const handleLongPressCopy = useCallback(async () => {
+    if (!canCopyMessage) return;
+
     await copyTextToClipboard(textToCopy, {
       successMessage: "Message copied to clipboard.",
       errorMessage: "Could not copy message.",
     });
-  }, [textToCopy]);
+  }, [canCopyMessage, textToCopy]);
 
   return (
     <View
@@ -94,7 +97,7 @@ export function ChatMessageItem({
     >
       <View className="max-w-[94%] relative group">
         <Pressable
-          onLongPress={handleLongPressCopy}
+          onLongPress={canCopyMessage ? handleLongPressCopy : undefined}
           delayLongPress={500}
           className={`px-4 py-3 rounded-2xl shadow-sm ${
             message.role === "user"
@@ -139,10 +142,12 @@ export function ChatMessageItem({
           <CopyButton
             value={textToCopy}
             successMessage="Message copied to clipboard."
+            errorMessage="Could not copy message."
             accessibilityLabel="Copy message"
             variant="ghost"
             size="sm"
             iconColor="#FFFFFF"
+            disabled={!canCopyMessage}
           />
         </View>
       </View>
