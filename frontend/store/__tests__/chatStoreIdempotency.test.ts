@@ -178,6 +178,7 @@ describe("chat store idempotency semantics", () => {
         basicPassword: "",
         extraHeaders: [],
         status: "success",
+        lastCheckedAt: new Date().toISOString(),
         capabilities: {
           sessionBinding: {
             declared: true,

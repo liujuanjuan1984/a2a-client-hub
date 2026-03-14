@@ -2458,3 +2458,113 @@ async def test_run_http_invoke_route_returns_status_for_error_code(
     response_payload = json.loads(response.body.decode())
     assert response_payload["success"] is False
     assert response_payload["error_code"] == error_code
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_with_session_recovery_skips_binding_resolution_without_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    resolve_calls = 0
+
+    async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
+        return A2AAgentInvokeResponse(
+            success=True,
+            content="ok",
+            agent_name="Demo Agent",
+            agent_url="https://example.com/a2a",
+        )
+
+    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
+        nonlocal resolve_calls
+        resolve_calls += 1
+        return False
+
+    monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_resolve_session_binding_rebound_mode",
+        fake_resolve_session_binding_rebound_mode,
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "test invoke route",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke_with_session_recovery(
+        db=object(),
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+        max_recovery_attempts=1,
+    )
+
+    assert response.success is True
+    assert resolve_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_run_ws_invoke_with_session_recovery_skips_binding_resolution_without_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+    websocket = _NoopWebSocket()
+    resolve_calls = 0
+
+    async def fake_run_ws_invoke(**kwargs):  # noqa: ARG001
+        return None
+
+    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
+        nonlocal resolve_calls
+        resolve_calls += 1
+        return False
+
+    monkeypatch.setattr(invoke_route_runner, "run_ws_invoke", fake_run_ws_invoke)
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_resolve_session_binding_rebound_mode",
+        fake_resolve_session_binding_rebound_mode,
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "test invoke route",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+
+    await invoke_route_runner.run_ws_invoke_with_session_recovery(
+        websocket=websocket,
+        db=object(),
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+        max_recovery_attempts=1,
+    )
+
+    assert resolve_calls == 0
+    assert [json.loads(item) for item in websocket.sent] == [
+        {"event": "stream_end", "data": {}}
+    ]

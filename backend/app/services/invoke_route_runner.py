@@ -988,11 +988,7 @@ async def run_http_invoke_with_session_recovery(
 ) -> A2AAgentInvokeResponse | StreamingResponse:
     current_payload = payload
     remaining_retries = max_recovery_attempts
-    include_legacy_session_binding = await _resolve_session_binding_rebound_mode(
-        runtime=runtime,
-        logger=logger,
-        log_extra=log_extra,
-    )
+    include_legacy_session_binding: bool | None = None
 
     while True:
         response = await run_http_invoke(
@@ -1018,6 +1014,14 @@ async def run_http_invoke_with_session_recovery(
             return response
 
         remaining_retries -= 1
+        if include_legacy_session_binding is None:
+            include_legacy_session_binding = (
+                await _resolve_session_binding_rebound_mode(
+                    runtime=runtime,
+                    logger=logger,
+                    log_extra=log_extra,
+                )
+            )
         try:
             continue_binding = await _continue_session_with_short_transaction(
                 user_id=user_id,
@@ -1298,11 +1302,7 @@ async def run_ws_invoke_with_session_recovery(
 ) -> None:
     current_payload = payload
     remaining_retries = max_recovery_attempts
-    include_legacy_session_binding = await _resolve_session_binding_rebound_mode(
-        runtime=runtime,
-        logger=logger,
-        log_extra=log_extra,
-    )
+    include_legacy_session_binding: bool | None = None
     while True:
         stream_error_code: str | None = None
         stream_error_message: str | None = None
@@ -1356,6 +1356,14 @@ async def run_ws_invoke_with_session_recovery(
             return
 
         remaining_retries -= 1
+        if include_legacy_session_binding is None:
+            include_legacy_session_binding = (
+                await _resolve_session_binding_rebound_mode(
+                    runtime=runtime,
+                    logger=logger,
+                    log_extra=log_extra,
+                )
+            )
         try:
             continue_binding = await _continue_session_with_short_transaction(
                 user_id=user_id,

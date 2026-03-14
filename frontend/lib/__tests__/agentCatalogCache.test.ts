@@ -33,6 +33,12 @@ describe("agentCatalogCache", () => {
         status: "error",
         lastCheckedAt: "2026-02-12T01:02:03.000Z",
         lastError: "timeout",
+        capabilities: {
+          sessionBinding: {
+            declared: true,
+            mode: "declared_contract",
+          },
+        },
       }),
     ];
 
@@ -45,8 +51,39 @@ describe("agentCatalogCache", () => {
         status: "error",
         lastCheckedAt: "2026-02-12T01:02:03.000Z",
         lastError: "timeout",
+        capabilities: {
+          sessionBinding: {
+            declared: true,
+            mode: "declared_contract",
+          },
+        },
       }),
     ]);
+  });
+
+  it("drops validation state when the agent card identity changes", () => {
+    const previous = [
+      buildAgent({
+        id: "agent-1",
+        status: "success",
+        lastCheckedAt: "2026-02-12T01:02:03.000Z",
+        capabilities: {
+          sessionBinding: {
+            declared: true,
+            mode: "declared_contract",
+          },
+        },
+      }),
+    ];
+
+    const next = [
+      buildAgent({
+        id: "agent-1",
+        cardUrl: "https://example.com/agent-1-updated.json",
+      }),
+    ];
+
+    expect(mergeTransientAgentState(next, previous)).toEqual(next);
   });
 
   it("updates a specific agent in catalog", () => {
@@ -67,7 +104,17 @@ describe("agentCatalogCache", () => {
 
   it("upserts agent and preserves transient status from previous record", () => {
     const catalog = [
-      buildAgent({ id: "agent-1", status: "success", lastError: "old" }),
+      buildAgent({
+        id: "agent-1",
+        status: "success",
+        lastError: "old",
+        capabilities: {
+          sessionBinding: {
+            declared: true,
+            mode: "declared_contract",
+          },
+        },
+      }),
       buildAgent({ id: "agent-2" }),
     ];
 
@@ -82,8 +129,47 @@ describe("agentCatalogCache", () => {
       name: "Renamed",
       status: "success",
       lastError: "old",
+      capabilities: {
+        sessionBinding: {
+          declared: true,
+          mode: "declared_contract",
+        },
+      },
     });
     expect(updated).toHaveLength(2);
+  });
+
+  it("drops transient validation state on upsert when card identity changes", () => {
+    const catalog = [
+      buildAgent({
+        id: "agent-1",
+        status: "success",
+        lastCheckedAt: "2026-02-12T01:02:03.000Z",
+        capabilities: {
+          sessionBinding: {
+            declared: true,
+            mode: "declared_contract",
+          },
+        },
+      }),
+    ];
+
+    const updated = upsertAgentInCatalog(
+      catalog,
+      buildAgent({
+        id: "agent-1",
+        cardUrl: "https://example.com/agent-1-updated.json",
+      }),
+      "agent-1",
+    );
+
+    expect(updated[0]).toMatchObject({
+      id: "agent-1",
+      cardUrl: "https://example.com/agent-1-updated.json",
+      status: "idle",
+      lastCheckedAt: undefined,
+      capabilities: undefined,
+    });
   });
 
   it("removes agent from catalog", () => {
