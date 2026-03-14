@@ -11,6 +11,40 @@ import {
 } from "@/lib/api/chat-utils";
 import { copyTextToClipboard, isCopyableText } from "@/lib/clipboard";
 
+const AGENT_CONNECTIVITY_ERROR_CODES = new Set([
+  "agent_unavailable",
+  "timeout",
+]);
+
+const STREAM_FAILURE_ERROR_CODES = new Set([
+  "stream_error",
+  "stream_closed",
+  "upstream_stream_error",
+]);
+
+const resolveErrorBannerText = (message: ChatMessage): string => {
+  const normalizedErrorCode =
+    typeof message.errorCode === "string" ? message.errorCode.trim() : "";
+
+  if (AGENT_CONNECTIVITY_ERROR_CODES.has(normalizedErrorCode)) {
+    return "当前无法连接到上游 Agent，请稍后重试。";
+  }
+
+  if (normalizedErrorCode === "outbound_not_allowed") {
+    return "当前配置不允许访问该上游 Agent。";
+  }
+
+  if (STREAM_FAILURE_ERROR_CODES.has(normalizedErrorCode)) {
+    return "流响应异常，请重试。";
+  }
+
+  if (typeof message.errorMessage === "string" && message.errorMessage.trim()) {
+    return message.errorMessage.trim();
+  }
+
+  return "流响应异常，请重试。";
+};
+
 export function ChatMessageItem({
   message,
   isLastMessage,
@@ -72,6 +106,13 @@ export function ChatMessageItem({
     message.status === "streaming" &&
     !hasBlocks &&
     !hasPlainContent;
+  const suppressFallbackWhileError =
+    message.role === "agent" &&
+    message.status === "error" &&
+    !hasBlocks &&
+    !hasPlainContent;
+  const shouldRenderMessageFallback =
+    !suppressFallbackWhileStreaming && !suppressFallbackWhileError;
   const canRetry =
     isLastMessage &&
     message.role === "agent" &&
@@ -79,6 +120,29 @@ export function ChatMessageItem({
     ["error", "recoverable"].includes(sessionStreamState);
   const canCopyMessage = isCopyableText(textToCopy);
   const userCopyButtonPositionClass = "right-0";
+  let messageBody: React.ReactNode = null;
+  if (hasBlocks) {
+    messageBody = renderableBlocks.map((block, blockIndex) => (
+      <MessageBlock
+        key={block.id || `${message.id}:${blockIndex}`}
+        block={block}
+        messageId={message.id}
+        blockIndex={blockIndex}
+        role={message.role}
+        onLayoutChangeStart={onLayoutChangeStart}
+        onLoadBlockContent={onLoadBlockContent}
+      />
+    ));
+  } else if (shouldRenderMessageFallback) {
+    messageBody = (
+      <MessageContentFallback
+        hasPlainContent={hasPlainContent}
+        content={message.content}
+        messageId={message.id}
+        role={message.role}
+      />
+    );
+  }
 
   const handleLongPressCopy = useCallback(async () => {
     if (!canCopyMessage) return;
@@ -107,26 +171,7 @@ export function ChatMessageItem({
                 : "bg-slate-900"
           }`}
         >
-          {hasBlocks
-            ? renderableBlocks.map((block, blockIndex) => (
-                <MessageBlock
-                  key={block.id || `${message.id}:${blockIndex}`}
-                  block={block}
-                  messageId={message.id}
-                  blockIndex={blockIndex}
-                  role={message.role}
-                  onLayoutChangeStart={onLayoutChangeStart}
-                  onLoadBlockContent={onLoadBlockContent}
-                />
-              ))
-            : !suppressFallbackWhileStreaming && (
-                <MessageContentFallback
-                  hasPlainContent={hasPlainContent}
-                  content={message.content}
-                  messageId={message.id}
-                  role={message.role}
-                />
-              )}
+          {messageBody}
           {message.status === "streaming" ? (
             <View className="mt-2 flex-row items-center gap-2">
               <ActivityIndicator size="small" color="#34D399" />
@@ -139,17 +184,7 @@ export function ChatMessageItem({
             <View className="mt-2 flex-row items-center gap-1.5 p-2 bg-red-500/10 rounded border border-red-500/20">
               <Ionicons name="warning-outline" size={14} color="#EF4444" />
               <Text className="text-[12px] font-medium text-red-400">
-                {message.errorCode === "agent_unavailable" ||
-                message.errorCode === "timeout" ||
-                message.errorCode === "outbound_not_allowed" ||
-                message.errorCode === "stream_error" ||
-                message.errorCode === "stream_closed" ||
-                message.content === "Request failed." ||
-                message.content.includes("timeout") ||
-                message.content.includes("WebSocket") ||
-                !message.content
-                  ? "当前无法连接到上游 Agent，请稍后重试。"
-                  : "流响应异常，请重试。"}
+                {resolveErrorBannerText(message)}
               </Text>
             </View>
           ) : null}

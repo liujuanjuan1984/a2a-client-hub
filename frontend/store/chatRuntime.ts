@@ -140,7 +140,10 @@ const buildApiErrorMessage = (error: unknown): string => {
     return error instanceof Error ? error.message : "Request failed.";
   }
 
-  const codeSuffix = error.errorCode ? ` [${error.errorCode}]` : "";
+  const codeSuffix =
+    error.errorCode && !error.message.includes(`[${error.errorCode}]`)
+      ? ` [${error.errorCode}]`
+      : "";
   const upstreamMessage =
     error.upstreamError &&
     typeof error.upstreamError === "object" &&
@@ -152,6 +155,17 @@ const buildApiErrorMessage = (error: unknown): string => {
     ? `${error.message}${codeSuffix}：${upstreamMessage}`
     : `${error.message}${codeSuffix}`;
 };
+
+const normalizeErrorCode = (value: unknown): string | null =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+const buildApiErrorDetails = (error: unknown) => ({
+  message: buildApiErrorMessage(error),
+  errorCode:
+    error instanceof ApiRequestError
+      ? normalizeErrorCode(error.errorCode)
+      : null,
+});
 
 const streamWarnThrottleMs = 15_000;
 const streamWarnTimestamps = new Map<string, number>();
@@ -750,21 +764,30 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     return false;
   };
 
-  const appendStreamError = (errorText: string, errorCode?: string | null) => {
+  const finalizeStreamingFailure = ({
+    errorText,
+    errorCode,
+  }: {
+    errorText: string;
+    errorCode?: string | null;
+  }) => {
     if (terminalHandled) {
       return;
     }
     terminalHandled = true;
     flushChunkBuffer();
 
+    const normalizedErrorCode = normalizeErrorCode(errorCode);
+
     const currentMsg = getConversationMessages(conversationId).find(
-      (m) => m.id === activeAgentMessageId
+      (m) => m.id === activeAgentMessageId,
     );
 
     updateConversationMessage(conversationId, activeAgentMessageId, {
       status: "error",
-      content: currentMsg?.content || errorText,
-      errorCode: errorCode ?? undefined,
+      content: currentMsg?.content ?? "",
+      errorCode: normalizedErrorCode,
+      errorMessage: errorText,
     });
 
     patchSession({
@@ -779,10 +802,14 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         conversationId,
         source: get().sessions[conversationId]?.source ?? null,
         message: errorText,
-        errorCode,
+        errorCode: normalizedErrorCode,
         transport: get().sessions[conversationId]?.transport ?? "unknown",
       },
     );
+  };
+
+  const appendStreamError = (errorText: string, errorCode?: string | null) => {
+    finalizeStreamingFailure({ errorText, errorCode });
   };
 
   const completeStreamingMessage = () => {
@@ -926,13 +953,9 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       if (!response.success) {
         const message =
           response.error || response.error_code || "Request failed.";
-        updateConversationMessage(conversationId, activeAgentMessageId, {
-          content: message,
-          status: "done",
-        });
-        patchSession({
-          streamState: "error",
-          lastStreamError: message,
+        finalizeStreamingFailure({
+          errorText: message,
+          errorCode: normalizeErrorCode(response.error_code),
         });
         return;
       }
@@ -940,17 +963,15 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       updateConversationMessage(conversationId, activeAgentMessageId, {
         content: response.content ?? "",
         status: "done",
+        errorCode: null,
+        errorMessage: null,
       });
       markSessionIdle();
     } catch (error) {
-      const message = buildApiErrorMessage(error);
-      updateConversationMessage(conversationId, activeAgentMessageId, {
-        content: message,
-        status: "done",
-      });
-      patchSession({
-        streamState: "error",
-        lastStreamError: message,
+      const { message, errorCode } = buildApiErrorDetails(error);
+      finalizeStreamingFailure({
+        errorText: message,
+        errorCode,
       });
     }
   };

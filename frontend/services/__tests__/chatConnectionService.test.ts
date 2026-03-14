@@ -1,3 +1,9 @@
+jest.mock("react-native", () => ({
+  Platform: {
+    OS: "web",
+  },
+}));
+
 jest.mock("@/lib/config", () => ({
   ENV: {
     apiBaseUrl: "http://localhost:8000",
@@ -32,6 +38,10 @@ jest.mock("@/lib/api/sessions", () => ({
   cancelSession: jest.fn(),
 }));
 
+jest.mock("@/lib/api/sse", () => ({
+  fetchSSE: jest.fn(),
+}));
+
 jest.mock("@/lib/api/a2aAgents", () => ({
   getInvokeWsTicket: jest.fn().mockResolvedValue({ token: "test-token" }),
 }));
@@ -40,8 +50,8 @@ jest.mock("@/lib/api/hubA2aAgentsUser", () => ({
   getHubInvokeWsTicket: jest.fn().mockResolvedValue({ token: "test-token" }),
 }));
 
-let OriginalWebSocket: any = globalThis.WebSocket;
-let mockWs: any = {
+const OriginalWebSocket: any = globalThis.WebSocket;
+const mockWs: any = {
   close: jest.fn(),
   send: jest.fn(),
 };
@@ -60,6 +70,9 @@ const { ApiRequestError } = require("@/lib/api/client") as {
 };
 const { cancelSession: cancelSessionApi } = require("@/lib/api/sessions") as {
   cancelSession: jest.Mock;
+};
+const { fetchSSE } = require("@/lib/api/sse") as {
+  fetchSSE: jest.Mock;
 };
 const { chatConnectionService } =
   require("@/services/chatConnectionService") as {
@@ -112,9 +125,6 @@ describe("chatConnectionService", () => {
       mockWs.onerror = undefined;
     });
 
-    afterEach(() => {
-    });
-
     it("handles onclose without terminal event", async () => {
       const callbacks = {
         onData: jest.fn(),
@@ -130,26 +140,29 @@ describe("chatConnectionService", () => {
         callbacks,
       });
 
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
       mockWs.onopen();
-      
+
       // Send some data
       mockWs.onmessage({ data: JSON.stringify({ kind: "chunk" }) });
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
       // Simulate close before receiving terminal event
       mockWs.onclose();
-      
+
       try {
         await p;
-      } catch (e) {
+      } catch {
         // Expected to throw
       }
-      
-      expect(callbacks.onStreamError).toHaveBeenCalledWith("WebSocket closed unexpectedly", "stream_closed");
+
+      expect(callbacks.onStreamError).toHaveBeenCalledWith(
+        "WebSocket closed unexpectedly",
+        "stream_closed",
+      );
     });
-    
+
     it("handles onerror without terminal event", async () => {
       const callbacks = {
         onData: jest.fn().mockReturnValue(false), // return false means not terminal
@@ -165,18 +178,53 @@ describe("chatConnectionService", () => {
         callbacks,
       });
 
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
       mockWs.onopen();
       mockWs.onmessage({ data: JSON.stringify({ kind: "chunk" }) });
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
       mockWs.onerror();
       try {
         await p;
-      } catch (e) {}
-      
-      expect(callbacks.onStreamError).toHaveBeenCalledWith("WebSocket error", "stream_error");
+      } catch {}
+
+      expect(callbacks.onStreamError).toHaveBeenCalledWith(
+        "WebSocket error",
+        "stream_error",
+      );
+    });
+  });
+
+  describe("trySseTransport edge cases", () => {
+    it("passes structured SSE error codes to the runtime", async () => {
+      fetchSSE.mockImplementationOnce(async (_url, handlers) => {
+        handlers.onData?.({ kind: "chunk" });
+        const error = Object.assign(new Error("Upstream streaming failed"), {
+          errorCode: "agent_unavailable",
+        });
+        handlers.onError?.(error);
+      });
+
+      const callbacks = {
+        onData: jest.fn(),
+        onDone: jest.fn(),
+        onStreamError: jest.fn(),
+      };
+
+      const result = await chatConnectionService.trySseTransport({
+        conversationId: "conv-sse-1",
+        agentId: "agent-1",
+        source: "personal",
+        payload: { query: "hello" },
+        callbacks,
+      });
+
+      expect(result).toBe(true);
+      expect(callbacks.onStreamError).toHaveBeenCalledWith(
+        "Upstream streaming failed",
+        "agent_unavailable",
+      );
     });
   });
 });
