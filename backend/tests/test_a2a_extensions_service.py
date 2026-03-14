@@ -253,6 +253,58 @@ async def test_continue_session_returns_canonical_binding_metadata(
 
 
 @pytest.mark.asyncio
+async def test_continue_session_keeps_legacy_binding_metadata_in_fallback_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(supports_offset=True)
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_resolve(_runtime):
+        return ext, "https://example.com/jsonrpc"
+
+    async def _fake_invoke(**kwargs):
+        return ExtensionCallResult(success=True, result={"items": []}, meta={})
+
+    async def _fake_binding_capability(_runtime):
+        return None, {
+            "session_binding_declared": False,
+            "session_binding_mode": "compat_fallback",
+            "session_binding_fallback_used": True,
+        }
+
+    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._session_extensions,
+        "resolve_session_binding_capability",
+        _fake_binding_capability,
+    )
+
+    result = await service.continue_session(runtime=runtime, session_id="ses_legacy")
+
+    assert result.success is True
+    assert result.result == {
+        "contextId": "ses_legacy",
+        "provider": "opencode",
+        "metadata": {
+            "contextId": "ses_legacy",
+            "provider": "opencode",
+            "externalSessionId": "ses_legacy",
+            "shared": {
+                "session": {
+                    "id": "ses_legacy",
+                    "provider": "opencode",
+                }
+            },
+        },
+    }
+    assert result.meta["session_binding_mode"] == "compat_fallback"
+
+
+@pytest.mark.asyncio
 async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
