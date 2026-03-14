@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 from a2a.client.errors import A2AClientHTTPError
 from a2a.types import Message, Role, TextPart
@@ -1002,6 +1004,122 @@ async def test_call_agent_falls_back_to_pascal_jsonrpc_on_method_not_found() -> 
     a2a_client._discard_adapter.assert_awaited_once()
     assert a2a_client._discard_adapter.await_args.args == (client_module.SDK_DIALECT,)
     assert a2a_client._discard_adapter.await_args.kwargs["expected_adapter"] is not None
+
+
+@pytest.mark.asyncio
+async def test_call_agent_pascal_fallback_includes_message_id_for_http_json_preferred_peer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client_module.global_dialect_cache._entries.clear()
+    captured: dict[str, object] = {}
+
+    class FakeResolver:
+        base_url = "http://example-agent.internal:24020"
+        agent_card_path = ".well-known/agent-card.json"
+
+        def __init__(self, card_payload: SimpleNamespace) -> None:
+            self._card_payload = card_payload
+
+        async def get_agent_card(self, **_kwargs):
+            return self._card_payload
+
+    card = SimpleNamespace(
+        name="Hybrid peer",
+        preferred_transport="HTTP+JSON",
+        url="http://example-agent.internal:24020/v1",
+        additional_interfaces=[
+            SimpleNamespace(
+                transport="JSONRPC",
+                url="http://example-agent.internal:24020/jsonrpc",
+            )
+        ],
+        capabilities=SimpleNamespace(streaming=False),
+        protocol_version="1.0",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": captured["body"]["id"],
+                "result": {"parts": [{"text": "pascal-result"}]},
+            },
+        )
+
+    def fake_validate_outbound_http_url(
+        url: str,
+        *,
+        allowed_hosts,
+        purpose: str = "outbound HTTP request",
+    ) -> str:
+        _ = allowed_hosts, purpose
+        return url
+
+    class FakeSlashAdapter:
+        def __init__(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def send_message(self, _request):
+            raise A2APeerProtocolError(
+                "Unknown method: message/send",
+                error_code="method_not_found",
+                rpc_code=-32601,
+            )
+
+        async def retire(self) -> None:
+            return None
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        client_module,
+        "validate_outbound_http_url",
+        fake_validate_outbound_http_url,
+    )
+    monkeypatch.setattr(
+        client_module.a2a_proxy_service,
+        "get_effective_allowed_hosts_sync",
+        lambda: ["example-agent.internal:24020"],
+    )
+    monkeypatch.setattr(client_module, "SDKA2AAdapter", FakeSlashAdapter)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        a2a_client = A2AClient(
+            "http://example-agent.internal:24020",
+            use_client_preference=True,
+        )
+        a2a_client._get_http_client = AsyncMock(return_value=http_client)
+        a2a_client._build_card_resolver = Mock(return_value=FakeResolver(card))
+
+        result = await a2a_client.call_agent(
+            "hello",
+            context_id="ctx-1",
+            metadata={"trace_id": "trace-1"},
+        )
+
+    assert result["success"] is True
+    assert result["content"] == "pascal-result"
+    assert a2a_client._peer_descriptor is not None
+    assert a2a_client._peer_descriptor.selected_transport == "JSONRPC"
+    assert a2a_client._peer_descriptor.selected_url == (
+        "http://example-agent.internal:24020/jsonrpc"
+    )
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://example-agent.internal:24020/jsonrpc"
+    assert captured["body"]["method"] == "SendMessage"
+    message = captured["body"]["params"]["message"]
+    assert isinstance(message["messageId"], str)
+    assert message["messageId"]
+    assert message["role"] == "user"
+    assert message["parts"] == [{"type": "text", "text": "hello"}]
+    assert message["contextId"] == "ctx-1"
+    assert message["metadata"] == {"trace_id": "trace-1"}
 
 
 @pytest.mark.asyncio
