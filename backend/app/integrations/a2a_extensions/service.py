@@ -13,12 +13,14 @@ from app.integrations.a2a_extensions.opencode_discovery_service import (
     OpencodeDiscoveryService,
 )
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
+from app.integrations.a2a_extensions.session_binding import resolve_session_binding
 from app.integrations.a2a_extensions.session_extension_service import (
     SessionExtensionService,
 )
 from app.integrations.a2a_extensions.shared_support import (
     A2AExtensionSupport,
 )
+from app.integrations.a2a_extensions.types import ResolvedSessionBindingExtension
 from app.services.a2a_runtime import A2ARuntime
 
 logger = get_logger(__name__)
@@ -33,6 +35,14 @@ class A2AExtensionsService:
 
     async def shutdown(self) -> None:
         await self._support.shutdown()
+
+    async def resolve_session_binding(
+        self,
+        *,
+        runtime: A2ARuntime,
+    ) -> ResolvedSessionBindingExtension:
+        card = await self._support.fetch_card(runtime)
+        return resolve_session_binding(card)
 
     async def list_sessions(
         self,

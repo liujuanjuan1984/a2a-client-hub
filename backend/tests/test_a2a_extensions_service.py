@@ -14,6 +14,8 @@ from app.integrations.a2a_extensions.session_extension_service import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     SHARED_INTERRUPT_CALLBACK_URI,
+    SHARED_SESSION_BINDING_URI,
+    SHARED_SESSION_ID_FIELD,
     SHARED_SESSION_QUERY_URI,
 )
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
@@ -70,6 +72,41 @@ def _interrupt_extension_fixture() -> ResolvedInterruptCallbackExtension:
         },
         business_code_map={},
     )
+
+
+@pytest.mark.asyncio
+async def test_resolve_session_binding_fetches_card_and_returns_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    fake_card = SimpleNamespace(
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri=SHARED_SESSION_BINDING_URI,
+                    required=False,
+                    params={
+                        "metadata_field": SHARED_SESSION_ID_FIELD,
+                        "behavior": "prefer_metadata_binding_else_create_session",
+                    },
+                )
+            ]
+        )
+    )
+
+    async def _fake_fetch_card(_runtime):
+        return fake_card
+
+    monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
+
+    resolved = await service.resolve_session_binding(runtime=runtime)
+
+    assert resolved.uri == SHARED_SESSION_BINDING_URI
+    assert resolved.metadata_field == SHARED_SESSION_ID_FIELD
+    assert resolved.behavior == "prefer_metadata_binding_else_create_session"
 
 
 def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
