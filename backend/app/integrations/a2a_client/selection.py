@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import Iterable
 from typing import Any
+from uuid import uuid4
 
 from a2a.types import AgentCard
 
@@ -67,6 +68,7 @@ def build_peer_descriptor(
 
 def build_pascal_message_payload(request: A2AMessageRequest) -> dict[str, Any]:
     payload: dict[str, Any] = {
+        "messageId": str(uuid4()),
         "role": "user",
         "parts": [{"type": "text", "text": request.query}],
     }
