@@ -20,9 +20,7 @@ from app.utils.outbound_url import OutboundURLNotAllowedError
 
 
 @pytest.mark.asyncio
-async def test_a2a_client_close_does_not_close_shared_transport_when_http_client_is_owned() -> (
-    None
-):
+async def test_a2a_client_close_releases_adapters_without_owned_http_client() -> None:
     a2a_client = A2AClient("http://example-agent.internal:24020")
     close_mock = AsyncMock()
     a2a_client._agent_card = Mock()
@@ -33,7 +31,7 @@ async def test_a2a_client_close_does_not_close_shared_transport_when_http_client
 
     await a2a_client.close()
 
-    close_mock.assert_not_called()
+    close_mock.assert_awaited_once()
     assert a2a_client._agent_card is None
     assert a2a_client._clients == {}
 

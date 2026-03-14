@@ -485,14 +485,15 @@ class A2AClient:
             owns_http_client = self._owns_http_client
             http_client = self._http_client if owns_http_client else None
 
-        if not owns_http_client:
-            return
-
         for entry in entries:
             try:
                 await await_cancel_safe(entry.client.close())
             except Exception:  # pragma: no cover
                 logger.debug("Failed to close A2A adapter", exc_info=True)
+
+        if not owns_http_client:
+            return
+
         if http_client is None:
             return
 
