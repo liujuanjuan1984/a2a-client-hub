@@ -91,44 +91,6 @@ export const getPreferredSessionMetadata = (
   return Object.keys(legacy).length > 0 ? legacy : null;
 };
 
-export const withSharedSessionBinding = (
-  metadata: Record<string, unknown> | null | undefined,
-  sessionId: string | null,
-  provider?: string | null,
-) => {
-  const nextMetadata = { ...(metadata ?? {}) };
-  const nextShared = asRecord(nextMetadata.shared)
-    ? { ...(nextMetadata.shared as Record<string, unknown>) }
-    : {};
-
-  const normalizedSessionId =
-    typeof sessionId === "string" ? sessionId.trim() : "";
-  if (normalizedSessionId) {
-    const nextSession = asRecord(nextShared.session)
-      ? { ...(nextShared.session as Record<string, unknown>) }
-      : {};
-    nextSession.id = normalizedSessionId;
-    const normalizedProvider =
-      typeof provider === "string" ? provider.trim().toLowerCase() : "";
-    if (normalizedProvider) {
-      nextSession.provider = normalizedProvider;
-    } else {
-      delete nextSession.provider;
-    }
-    nextShared.session = nextSession;
-    nextMetadata.shared = nextShared;
-    return nextMetadata;
-  }
-
-  delete nextShared.session;
-  if (Object.keys(nextShared).length > 0) {
-    nextMetadata.shared = nextShared;
-  } else {
-    delete nextMetadata.shared;
-  }
-  return nextMetadata;
-};
-
 export const withoutSharedSessionBinding = (
   metadata: Record<string, unknown> | null | undefined,
 ) => {

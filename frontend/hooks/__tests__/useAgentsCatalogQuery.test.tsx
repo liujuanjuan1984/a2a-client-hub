@@ -259,7 +259,7 @@ describe("useAgentsCatalogQuery mutations", () => {
     expect(useAgentStore.getState().activeAgentId).toBeNull();
   });
 
-  it("stores parsed session-binding capability after successful validation", async () => {
+  it("stores validation success metadata after successful validation", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
       buildAgent({ id: "agent-1" }),
     ]);
@@ -292,12 +292,12 @@ describe("useAgentsCatalogQuery mutations", () => {
     const cached = queryClient.getQueryData<AgentConfig[]>(
       queryKeys.agents.catalog(),
     );
-    expect(cached?.[0]?.capabilities?.sessionBinding).toEqual({
-      declared: true,
-      mode: "declared_contract",
-      uri: "urn:a2a:session-binding/v1",
-      metadataField: "metadata.shared.session.id",
+    expect(cached?.[0]).toMatchObject({
+      id: "agent-1",
+      status: "success",
+      lastError: undefined,
     });
+    expect(typeof cached?.[0]?.lastCheckedAt).toBe("string");
   });
 
   it("appends newly created agent to cache without full refetch", async () => {

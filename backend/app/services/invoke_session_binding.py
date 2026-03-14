@@ -57,10 +57,6 @@ def normalize_error_code(detail: str | None) -> str:
     return detail.strip().lower().replace("-", "_")
 
 
-def normalize_detail(detail: str | None) -> str:
-    return normalize_error_code(detail)
-
-
 def normalize_invoke_binding_state(
     *,
     context_id: str | None,

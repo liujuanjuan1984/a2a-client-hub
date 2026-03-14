@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-import { extractAgentCapabilitiesFromCard } from "@/lib/agentCapabilities";
 import {
   AGENT_ERROR_MESSAGES,
   mergeTransientAgentState,
@@ -298,7 +297,6 @@ export function useValidateAgentMutation() {
       return {
         agentId,
         checkedAt: new Date().toISOString(),
-        capabilities: extractAgentCapabilitiesFromCard(response.card ?? null),
       };
     },
     onMutate: (agentId) => {
@@ -312,7 +310,7 @@ export function useValidateAgentMutation() {
           })),
       );
     },
-    onSuccess: ({ agentId, checkedAt, capabilities }) => {
+    onSuccess: ({ agentId, checkedAt }) => {
       queryClient.setQueryData<AgentConfig[] | undefined>(
         queryKeys.agents.catalog(),
         (catalog) =>
@@ -321,7 +319,6 @@ export function useValidateAgentMutation() {
             status: "success",
             lastCheckedAt: checkedAt,
             lastError: undefined,
-            capabilities,
           })),
       );
     },

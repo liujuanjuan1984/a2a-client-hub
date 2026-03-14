@@ -39,7 +39,6 @@ export const mergeTransientAgentState = (
       status: previous.status,
       lastCheckedAt: previous.lastCheckedAt,
       lastError: previous.lastError,
-      capabilities: previous.capabilities ?? agent.capabilities,
     };
   });
 };
@@ -78,9 +77,6 @@ export const upsertAgentInCatalog = (
     lastError: canReuseValidationState
       ? preserveFrom.lastError
       : nextAgent.lastError,
-    capabilities: canReuseValidationState
-      ? (preserveFrom.capabilities ?? nextAgent.capabilities)
-      : nextAgent.capabilities,
   };
 
   return [merged, ...current.filter((item) => item.id !== merged.id)];

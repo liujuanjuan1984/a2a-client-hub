@@ -33,12 +33,6 @@ describe("agentCatalogCache", () => {
         status: "error",
         lastCheckedAt: "2026-02-12T01:02:03.000Z",
         lastError: "timeout",
-        capabilities: {
-          sessionBinding: {
-            declared: true,
-            mode: "declared_contract",
-          },
-        },
       }),
     ];
 
@@ -51,12 +45,6 @@ describe("agentCatalogCache", () => {
         status: "error",
         lastCheckedAt: "2026-02-12T01:02:03.000Z",
         lastError: "timeout",
-        capabilities: {
-          sessionBinding: {
-            declared: true,
-            mode: "declared_contract",
-          },
-        },
       }),
     ]);
   });
@@ -67,12 +55,6 @@ describe("agentCatalogCache", () => {
         id: "agent-1",
         status: "success",
         lastCheckedAt: "2026-02-12T01:02:03.000Z",
-        capabilities: {
-          sessionBinding: {
-            declared: true,
-            mode: "declared_contract",
-          },
-        },
       }),
     ];
 
@@ -108,12 +90,6 @@ describe("agentCatalogCache", () => {
         id: "agent-1",
         status: "success",
         lastError: "old",
-        capabilities: {
-          sessionBinding: {
-            declared: true,
-            mode: "declared_contract",
-          },
-        },
       }),
       buildAgent({ id: "agent-2" }),
     ];
@@ -129,12 +105,6 @@ describe("agentCatalogCache", () => {
       name: "Renamed",
       status: "success",
       lastError: "old",
-      capabilities: {
-        sessionBinding: {
-          declared: true,
-          mode: "declared_contract",
-        },
-      },
     });
     expect(updated).toHaveLength(2);
   });
@@ -145,12 +115,6 @@ describe("agentCatalogCache", () => {
         id: "agent-1",
         status: "success",
         lastCheckedAt: "2026-02-12T01:02:03.000Z",
-        capabilities: {
-          sessionBinding: {
-            declared: true,
-            mode: "declared_contract",
-          },
-        },
       }),
     ];
 
@@ -168,7 +132,6 @@ describe("agentCatalogCache", () => {
       cardUrl: "https://example.com/agent-1-updated.json",
       status: "idle",
       lastCheckedAt: undefined,
-      capabilities: undefined,
     });
   });
 
