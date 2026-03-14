@@ -211,6 +211,47 @@ describe("useAgentsCatalogQuery mutations", () => {
     expect(useAgentStore.getState().activeAgentId).toBeNull();
   });
 
+  it("stores parsed session-binding capability after successful validation", async () => {
+    queryClient.setQueryData(queryKeys.agents.catalog(), [
+      buildAgent({ id: "agent-1" }),
+    ]);
+
+    mocks.validateAgentCard.mockResolvedValue({
+      success: true,
+      message: "ok",
+      card: {
+        capabilities: {
+          extensions: [
+            {
+              uri: "urn:a2a:session-binding/v1",
+              params: {
+                metadata_field: "metadata.shared.session.id",
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useValidateAgentMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync("agent-1");
+    });
+
+    const cached = queryClient.getQueryData<AgentConfig[]>(
+      queryKeys.agents.catalog(),
+    );
+    expect(cached?.[0]?.capabilities?.sessionBinding).toEqual({
+      declared: true,
+      mode: "declared_contract",
+      uri: "urn:a2a:session-binding/v1",
+      metadataField: "metadata.shared.session.id",
+    });
+  });
+
   it("appends newly created agent to cache without full refetch", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
       buildAgent({ id: "shared-1", source: "shared" }),

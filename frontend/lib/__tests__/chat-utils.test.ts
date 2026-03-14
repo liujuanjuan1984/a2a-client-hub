@@ -95,6 +95,34 @@ describe("chat store utils", () => {
         shared: {
           session: {
             id: "ses-upstream-1",
+            provider: "opencode",
+          },
+        },
+      },
+    });
+  });
+
+  it("writes shared-only session binding metadata for declared contract agents", () => {
+    const session = createAgentSession("agent-3");
+    session.metadata = { locale: "zh-CN", provider: "legacy" };
+    session.externalSessionRef = {
+      provider: "OpenCode",
+      externalSessionId: "ses-upstream-2",
+    };
+
+    expect(
+      buildInvokePayload("hello", session, "conversation:def", {
+        sessionBindingWriteMode: "declared_contract",
+      }),
+    ).toEqual({
+      query: "hello",
+      conversationId: "conversation:def",
+      metadata: {
+        locale: "zh-CN",
+        shared: {
+          session: {
+            id: "ses-upstream-2",
+            provider: "opencode",
           },
         },
       },

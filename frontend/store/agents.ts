@@ -11,6 +11,22 @@ export type AgentHeader = HeaderEntryWithId;
 
 export type AgentSource = "personal" | "shared";
 
+export type AgentSessionBindingWriteMode =
+  | "declared_contract"
+  | "compat_fallback"
+  | "unknown";
+
+export type AgentSessionBindingCapability = {
+  declared: boolean;
+  mode: AgentSessionBindingWriteMode;
+  uri?: string | null;
+  metadataField?: string | null;
+};
+
+export type AgentCapabilities = {
+  sessionBinding?: AgentSessionBindingCapability | null;
+};
+
 export type AgentConfig = {
   id: string;
   source: AgentSource;
@@ -26,6 +42,7 @@ export type AgentConfig = {
   status: AgentStatus;
   lastCheckedAt?: string;
   lastError?: string;
+  capabilities?: AgentCapabilities | null;
 };
 
 type AgentState = {

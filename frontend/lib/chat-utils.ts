@@ -6,6 +6,7 @@ import type {
   ResolvedRuntimeInterrupt,
 } from "@/lib/api/chat-utils";
 import { withSharedSessionBinding } from "@/lib/sharedMetadata";
+import type { AgentSessionBindingWriteMode } from "@/store/agents";
 
 export const isSameBlockList = (
   left: MessageBlock[] = [],
@@ -175,6 +176,7 @@ export const buildInvokePayload = (
     agentMessageId?: string;
     resumeFromSequence?: number;
     interrupt?: boolean;
+    sessionBindingWriteMode?: AgentSessionBindingWriteMode;
   },
 ): A2AAgentInvokeRequest => {
   const payload: A2AAgentInvokeRequest = { query, conversationId };
@@ -199,15 +201,27 @@ export const buildInvokePayload = (
   const providerForSessionBinding = (externalProvider ?? metadataProvider)
     .trim()
     .toLowerCase();
-  if (providerForSessionBinding) {
-    metadata.provider = providerForSessionBinding;
-  }
+  const sessionBindingWriteMode = options?.sessionBindingWriteMode ?? "unknown";
   if (externalSessionId) {
-    metadata.externalSessionId = externalSessionId;
     Object.assign(
       metadata,
-      withSharedSessionBinding(metadata, externalSessionId),
+      withSharedSessionBinding(
+        metadata,
+        externalSessionId,
+        providerForSessionBinding || null,
+      ),
     );
+    if (sessionBindingWriteMode === "declared_contract") {
+      delete metadata.provider;
+      delete metadata.externalSessionId;
+    } else {
+      if (providerForSessionBinding) {
+        metadata.provider = providerForSessionBinding;
+      }
+      metadata.externalSessionId = externalSessionId;
+    }
+  } else if (providerForSessionBinding) {
+    metadata.provider = providerForSessionBinding;
   }
   if (Object.keys(metadata).length > 0) {
     payload.metadata = metadata;

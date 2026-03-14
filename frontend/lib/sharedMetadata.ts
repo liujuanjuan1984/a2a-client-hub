@@ -94,6 +94,7 @@ export const getPreferredSessionMetadata = (
 export const withSharedSessionBinding = (
   metadata: Record<string, unknown> | null | undefined,
   sessionId: string | null,
+  provider?: string | null,
 ) => {
   const nextMetadata = { ...(metadata ?? {}) };
   const nextShared = asRecord(nextMetadata.shared)
@@ -107,6 +108,13 @@ export const withSharedSessionBinding = (
       ? { ...(nextShared.session as Record<string, unknown>) }
       : {};
     nextSession.id = normalizedSessionId;
+    const normalizedProvider =
+      typeof provider === "string" ? provider.trim().toLowerCase() : "";
+    if (normalizedProvider) {
+      nextSession.provider = normalizedProvider;
+    } else {
+      delete nextSession.provider;
+    }
     nextShared.session = nextSession;
     nextMetadata.shared = nextShared;
     return nextMetadata;
