@@ -1,21 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
-import React, { useCallback } from "react";
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  Text,
-  View,
-} from "react-native";
+import React, { useCallback, useMemo } from "react";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 import { MessageBlock, MessageContentFallback } from "./MessageBlock";
+import { CopyButton } from "../ui/CopyButton";
 
 import {
   type ChatMessage,
   type MessageBlock as MessageBlockType,
 } from "@/lib/api/chat-utils";
-import { toast } from "@/lib/toast";
+import { copyTextToClipboard, isCopyableText } from "@/lib/clipboard";
 
 export function ChatMessageItem({
   message,
@@ -57,37 +51,18 @@ export function ChatMessageItem({
     [],
   );
 
-  const handleCopyPayload = useCallback(async (text: string) => {
-    if (Platform.OS === "web" && typeof navigator !== "undefined") {
-      if (navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(text);
-          return;
-        } catch {
-          // Fall back to Expo clipboard API when browser clipboard write is blocked.
-        }
+  const textToCopy = useMemo(() => {
+    let text = message.content;
+    if (message.role === "agent" && message.blocks?.length) {
+      const blockContent = message.blocks
+        .map((b) => `[${b.type}]\n${b.content}`)
+        .join("\n\n");
+      if (blockContent) {
+        text = `${blockContent}\n\n${text}`;
       }
     }
-    await Clipboard.setStringAsync(text);
-  }, []);
-
-  const handleCopyMessage = useCallback(async () => {
-    try {
-      let textToCopy = message.content;
-      if (message.role === "agent" && message.blocks?.length) {
-        const blockContent = message.blocks
-          .map((b) => `[${b.type}]\n${b.content}`)
-          .join("\n\n");
-        if (blockContent) {
-          textToCopy = `${blockContent}\n\n${textToCopy}`;
-        }
-      }
-      await handleCopyPayload(textToCopy.trim());
-      toast.success("Copied", "Message copied to clipboard.");
-    } catch {
-      toast.error("Copy failed", "Could not copy message.");
-    }
-  }, [handleCopyPayload, message]);
+    return text.trim();
+  }, [message]);
 
   const renderableBlocks = deriveRenderableBlocks(message);
   const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
@@ -102,7 +77,17 @@ export function ChatMessageItem({
     message.role === "agent" &&
     sessionStreamState &&
     ["error", "recoverable"].includes(sessionStreamState);
+  const canCopyMessage = isCopyableText(textToCopy);
   const userCopyButtonPositionClass = "right-0";
+
+  const handleLongPressCopy = useCallback(async () => {
+    if (!canCopyMessage) return;
+
+    await copyTextToClipboard(textToCopy, {
+      successMessage: "Message copied to clipboard.",
+      errorMessage: "Could not copy message.",
+    });
+  }, [canCopyMessage, textToCopy]);
 
   return (
     <View
@@ -110,9 +95,9 @@ export function ChatMessageItem({
         message.role === "user" ? "items-end" : "items-start"
       }`}
     >
-      <View className="max-w-[94%] relative">
+      <View className="max-w-[94%] relative group">
         <Pressable
-          onLongPress={handleCopyMessage}
+          onLongPress={canCopyMessage ? handleLongPressCopy : undefined}
           delayLongPress={500}
           className={`px-4 py-3 rounded-2xl shadow-sm ${
             message.role === "user"
@@ -151,14 +136,20 @@ export function ChatMessageItem({
             </View>
           ) : null}
         </Pressable>
-        <Pressable
-          className={`absolute bottom-2 ${userCopyButtonPositionClass} rounded-lg px-2 py-2 opacity-30`}
-          onPress={handleCopyMessage}
-          accessibilityRole="button"
-          accessibilityLabel="Copy message"
+        <View
+          className={`absolute bottom-1 ${userCopyButtonPositionClass} opacity-30`}
         >
-          <Ionicons name="copy-outline" size={16} color="#FFFFFF" />
-        </Pressable>
+          <CopyButton
+            value={textToCopy}
+            successMessage="Message copied to clipboard."
+            errorMessage="Could not copy message."
+            accessibilityLabel="Copy message"
+            variant="ghost"
+            size="sm"
+            iconColor="#FFFFFF"
+            disabled={!canCopyMessage}
+          />
+        </View>
       </View>
       {canRetry && (
         <Pressable
