@@ -172,7 +172,7 @@ describe("chat store idempotency semantics", () => {
         cardUrl: "https://example.com/agent-1.json",
         authType: "none",
         bearerToken: "",
-        apiKeyHeader: "X-API-Key",
+        apiKeyHeader: "X-API-Key", // pragma: allowlist secret
         apiKeyValue: "",
         basicUsername: "",
         basicPassword: "",
