@@ -448,6 +448,55 @@ async def test_gateway_cleanup_idle_clients_skips_busy_clients() -> None:
 
 
 @pytest.mark.asyncio
+async def test_gateway_get_client_does_not_run_cleanup_inline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+            client_maintenance_interval=60.0,
+        )
+    )
+    cleanup_mock = AsyncMock()
+    monkeypatch.setattr(gateway, "_cleanup_idle_clients", cleanup_mock)
+
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={},
+        name="TestAgent",
+    )
+
+    client = await asyncio.wait_for(gateway._get_client(resolved), timeout=0.1)
+
+    assert isinstance(client, A2AClient)
+    cleanup_mock.assert_not_awaited()
+
+    await gateway.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_gateway_maintenance_loop_runs_cleanup() -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+            client_maintenance_interval=0.01,
+        )
+    )
+    cleanup_mock = AsyncMock()
+    gateway._cleanup_idle_clients = cleanup_mock
+
+    await gateway.start_maintenance()
+    await asyncio.sleep(0.03)
+    await gateway.stop_maintenance()
+
+    assert cleanup_mock.await_count >= 1
+
+
+@pytest.mark.asyncio
 async def test_gateway_invalidate_client_schedules_background_close() -> None:
     gateway = gateway_module.A2AGateway(
         A2ASettings(

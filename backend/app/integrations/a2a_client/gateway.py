@@ -55,6 +55,8 @@ class A2AGateway:
         ] = {}
         self._client_lock = asyncio.Lock()
         self._close_reaper = AsyncResourceReaper()
+        self._maintenance_lock = asyncio.Lock()
+        self._maintenance_task: asyncio.Task[None] | None = None
 
     async def invoke(
         self,
@@ -508,6 +510,7 @@ class A2AGateway:
         return card
 
     async def shutdown(self) -> None:
+        await self.stop_maintenance()
         async with self._client_lock:
             entries = list(self._clients.values())
             self._clients.clear()
@@ -521,7 +524,7 @@ class A2AGateway:
         await self._close_reaper.drain()
 
     async def _get_client(self, resolved: "ResolvedAgent") -> A2AClient:
-        await self._cleanup_idle_clients()
+        await self.start_maintenance()
         cache_key = self._build_cache_key(resolved)
         async with self._client_lock:
             cached = self._clients.get(cache_key)
@@ -639,6 +642,50 @@ class A2AGateway:
             reaper=self._close_reaper.snapshot(),
             client_snapshots=client_snapshots,
         )
+
+    async def start_maintenance(self) -> None:
+        interval = self._resolve_maintenance_interval()
+        if interval is None:
+            return
+        async with self._maintenance_lock:
+            if self._maintenance_task is not None and not self._maintenance_task.done():
+                return
+            self._maintenance_task = asyncio.create_task(
+                self._run_maintenance_loop(interval)
+            )
+
+    async def stop_maintenance(self) -> None:
+        async with self._maintenance_lock:
+            task = self._maintenance_task
+            self._maintenance_task = None
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    async def _run_maintenance_loop(self, interval: float) -> None:
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                await self._cleanup_idle_clients()
+        except asyncio.CancelledError:  # pragma: no cover - cooperative shutdown
+            raise
+        except Exception:  # pragma: no cover - defensive background task
+            logger.exception("A2A gateway maintenance loop failed")
+            async with self._maintenance_lock:
+                if self._maintenance_task is asyncio.current_task():
+                    self._maintenance_task = None
+            raise
+
+    def _resolve_maintenance_interval(self) -> float | None:
+        idle_timeout = max(self.settings.client_idle_timeout, 0.0)
+        if idle_timeout <= 0:
+            return None
+        configured_interval = self.settings.client_maintenance_interval
+        if configured_interval > 0:
+            return configured_interval
+        return min(max(idle_timeout / 2, 1.0), 60.0)
 
 
 __all__ = ["A2AGateway"]
