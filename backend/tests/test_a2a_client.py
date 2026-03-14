@@ -13,6 +13,7 @@ from a2a.types import Message, Role, TextPart
 
 from app.core import http_client as http_client_module
 from app.integrations.a2a_client import client as client_module
+from app.integrations.a2a_client import config as config_module
 from app.integrations.a2a_client import gateway as gateway_module
 from app.integrations.a2a_client import http_clients as shared_http_clients_module
 from app.integrations.a2a_client import lifecycle as lifecycle_module
@@ -92,6 +93,28 @@ def test_a2a_client_rejects_multiple_http_client_dependency_modes() -> None:
             borrowed_http_client=AsyncMock(),
             owned_http_client=AsyncMock(),
         )
+
+
+def test_load_settings_defaults_maintenance_interval_to_idle_timeout_derivation() -> (
+    None
+):
+    settings = config_module.load_settings(SimpleNamespace())
+
+    assert settings.client_idle_timeout == 600.0
+    assert settings.client_maintenance_interval == 0.0
+
+
+def test_gateway_resolve_maintenance_interval_derives_from_idle_timeout() -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=20.0,
+            client_maintenance_interval=0.0,
+        )
+    )
+
+    assert gateway._resolve_maintenance_interval() == 10.0
 
 
 @pytest.mark.asyncio

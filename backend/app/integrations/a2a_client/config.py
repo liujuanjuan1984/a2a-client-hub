@@ -14,7 +14,7 @@ class A2ASettings:
     card_fetch_timeout: float = 5.0
     invoke_watchdog_interval: float = 5.0
     client_idle_timeout: float = 600.0
-    client_maintenance_interval: float = 60.0
+    client_maintenance_interval: float = 0.0
 
 
 def load_settings(raw_settings) -> A2ASettings:
@@ -33,6 +33,6 @@ def load_settings(raw_settings) -> A2ASettings:
             getattr(raw_settings, "a2a_client_idle_timeout", 600.0)
         ),
         client_maintenance_interval=float(
-            getattr(raw_settings, "a2a_client_maintenance_interval", 60.0)
+            getattr(raw_settings, "a2a_client_maintenance_interval", 0.0)
         ),
     )
