@@ -618,13 +618,15 @@ describe("executeChatRuntime empty-content recovery", () => {
           status: { state: "input-required" },
           final: false,
           metadata: {
-            interrupt: {
-              request_id: "perm-1",
-              type: "permission",
-              phase: "asked",
-              details: {
-                permission: "read",
-                patterns: ["/repo/.env"],
+            shared: {
+              interrupt: {
+                request_id: "perm-1",
+                type: "permission",
+                phase: "asked",
+                details: {
+                  permission: "read",
+                  patterns: ["/repo/.env"],
+                },
               },
             },
           },
@@ -733,11 +735,13 @@ describe("executeChatRuntime empty-content recovery", () => {
           status: { state: "working" },
           final: false,
           metadata: {
-            interrupt: {
-              request_id: "q-other",
-              type: "question",
-              phase: "resolved",
-              resolution: "rejected",
+            shared: {
+              interrupt: {
+                request_id: "q-other",
+                type: "question",
+                phase: "resolved",
+                resolution: "rejected",
+              },
             },
           },
         });
@@ -746,11 +750,13 @@ describe("executeChatRuntime empty-content recovery", () => {
           status: { state: "working" },
           final: false,
           metadata: {
-            interrupt: {
-              request_id: "perm-1",
-              type: "permission",
-              phase: "resolved",
-              resolution: "replied",
+            shared: {
+              interrupt: {
+                request_id: "perm-1",
+                type: "permission",
+                phase: "resolved",
+                resolution: "replied",
+              },
             },
           },
         });

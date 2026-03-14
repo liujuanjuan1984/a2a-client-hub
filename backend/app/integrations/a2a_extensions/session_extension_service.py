@@ -4,16 +4,22 @@ from typing import Any, Dict, Mapping, Optional
 
 from pydantic import ValidationError
 
-from app.integrations.a2a_extensions.errors import A2AExtensionContractError
+from app.integrations.a2a_extensions.errors import (
+    A2AExtensionContractError,
+    A2AExtensionNotSupportedError,
+)
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
+from app.integrations.a2a_extensions.session_binding import resolve_session_binding
 from app.integrations.a2a_extensions.session_query import resolve_session_query
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
+    ResolvedSessionBindingExtension,
     ResultEnvelopeMapping,
 )
 from app.schemas.a2a_extension import A2AExtensionQueryResult
 from app.services.a2a_runtime import A2ARuntime
+from app.services.a2a_shared_metadata import merge_preferred_session_binding_metadata
 
 _MISSING = object()
 
@@ -21,6 +27,36 @@ _MISSING = object()
 class SessionExtensionService:
     def __init__(self, support: A2AExtensionSupport) -> None:
         self._support = support
+
+    async def resolve_session_binding_capability(
+        self,
+        runtime: A2ARuntime,
+    ) -> tuple[ResolvedSessionBindingExtension | None, Dict[str, Any]]:
+        card = await self._support.fetch_card(runtime)
+        try:
+            ext = resolve_session_binding(card)
+        except A2AExtensionNotSupportedError:
+            return None, {
+                "session_binding_declared": False,
+                "session_binding_mode": "compat_fallback",
+                "session_binding_fallback_used": True,
+            }
+        except A2AExtensionContractError as exc:
+            return None, {
+                "session_binding_declared": True,
+                "session_binding_mode": "compat_fallback",
+                "session_binding_fallback_used": True,
+                "session_binding_contract_error": str(exc),
+            }
+
+        return ext, {
+            "session_binding_declared": True,
+            "session_binding_uri": ext.uri,
+            "session_binding_mode": (
+                "compat_fallback" if ext.legacy_uri_used else "declared_contract"
+            ),
+            "session_binding_fallback_used": ext.legacy_uri_used,
+        }
 
     @staticmethod
     def _normalize_envelope(
@@ -475,6 +511,9 @@ class SessionExtensionService:
             return validation
 
         meta = dict(validation.meta or {})
+        _binding_ext, binding_meta = await self.resolve_session_binding_capability(
+            runtime
+        )
         meta.update(
             {
                 "binding_mode": "contextId+metadata",
@@ -482,16 +521,21 @@ class SessionExtensionService:
                 "provider": ext.provider,
             }
         )
+        meta.update(binding_meta)
+        binding_metadata = merge_preferred_session_binding_metadata(
+            {"contextId": resolved_session_id},
+            provider=ext.provider,
+            external_session_id=resolved_session_id,
+            include_legacy_root=(
+                binding_meta.get("session_binding_mode") != "declared_contract"
+            ),
+        )
         return ExtensionCallResult(
             success=True,
             result={
                 "contextId": resolved_session_id,
                 "provider": ext.provider,
-                "metadata": {
-                    "provider": ext.provider,
-                    "externalSessionId": resolved_session_id,
-                    "contextId": resolved_session_id,
-                },
+                "metadata": binding_metadata,
             },
             meta=meta,
         )

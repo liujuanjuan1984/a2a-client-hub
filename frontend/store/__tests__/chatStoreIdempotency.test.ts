@@ -160,6 +160,40 @@ describe("chat store idempotency semantics", () => {
     });
   });
 
+  it("sends neutral session binding intent and leaves metadata shape adaptation to backend", async () => {
+    useChatStore.getState().ensureSession("conv-cap", "agent-1");
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-cap": {
+          ...state.sessions["conv-cap"],
+          externalSessionRef: {
+            provider: "OpenCode",
+            externalSessionId: "ses-upstream-cap",
+          },
+        },
+      },
+    }));
+
+    await useChatStore
+      .getState()
+      .sendMessage("conv-cap", "agent-1", "hello world", "personal");
+
+    const runtimeCall = mockedExecuteChatRuntime.mock.calls[0];
+    expect(runtimeCall?.[3]).toMatchObject({
+      sessionBinding: {
+        provider: "opencode",
+        externalSessionId: "ses-upstream-cap",
+      },
+    });
+    expect(runtimeCall?.[3]?.metadata?.provider).toBeUndefined();
+    expect(runtimeCall?.[3]?.metadata?.externalSessionId).toBeUndefined();
+    const sharedMetadata = runtimeCall?.[3]?.metadata?.shared as
+      | Record<string, unknown>
+      | undefined;
+    expect(sharedMetadata?.session).toBeUndefined();
+  });
+
   it("cancelMessage marks streaming session as idle immediately", () => {
     useChatStore.getState().ensureSession("conv-4", "agent-1");
     useChatStore.setState((state) => ({

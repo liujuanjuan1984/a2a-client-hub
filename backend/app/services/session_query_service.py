@@ -12,6 +12,7 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message_block as agent_message_block_handler
+from app.services.a2a_shared_metadata import merge_preferred_session_binding_metadata
 from app.services.conversation_identity import conversation_identity_service
 from app.services.session_hub_common import (
     MessagesBeforeCursor,
@@ -326,15 +327,12 @@ class SessionQueryService:
                 build_continue_response(
                     conversation_id=resolved_conversation_id,
                     source="manual",
-                    metadata={
-                        k: v
-                        for k, v in [
-                            ("provider", provider),
-                            ("externalSessionId", external_session_id),
-                            ("contextId", context_id),
-                        ]
-                        if v is not None
-                    },
+                    metadata=merge_preferred_session_binding_metadata(
+                        {"contextId": context_id} if context_id is not None else {},
+                        provider=provider,
+                        external_session_id=external_session_id,
+                        include_legacy_root=True,
+                    ),
                 ),
                 False,
             )
@@ -386,15 +384,12 @@ class SessionQueryService:
             build_continue_response(
                 conversation_id=resolved_conversation or resolved_conversation_id,
                 source=resolved_source,
-                metadata={
-                    k: v
-                    for k, v in [
-                        ("provider", resolved_provider),
-                        ("externalSessionId", resolved_external_session_id),
-                        ("contextId", context_id),
-                    ]
-                    if v is not None
-                },
+                metadata=merge_preferred_session_binding_metadata(
+                    {"contextId": context_id} if context_id is not None else {},
+                    provider=resolved_provider,
+                    external_session_id=resolved_external_session_id,
+                    include_legacy_root=True,
+                ),
             ),
             db_mutated,
         )

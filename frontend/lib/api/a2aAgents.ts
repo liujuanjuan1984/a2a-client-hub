@@ -59,6 +59,10 @@ export type A2AAgentInvokeRequest = {
   agentMessageId?: string;
   resumeFromSequence?: number;
   metadata?: Record<string, unknown>;
+  sessionBinding?: {
+    provider?: string | null;
+    externalSessionId?: string | null;
+  };
 };
 
 export type A2AAgentInvokeResponse = {

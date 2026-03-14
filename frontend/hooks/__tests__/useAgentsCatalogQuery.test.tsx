@@ -129,7 +129,7 @@ describe("useAgentsCatalogQuery mutations", () => {
     ).toBe(false);
   });
 
-  it("upserts updated agent while preserving transient status", async () => {
+  it("clears transient validation state when an update changes the card identity", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
       buildAgent({
         id: "agent-1",
@@ -169,13 +169,61 @@ describe("useAgentsCatalogQuery mutations", () => {
     expect(cached?.[0]).toMatchObject({
       id: "agent-1",
       name: "Renamed Agent",
-      status: "error",
-      lastError: "network",
-      lastCheckedAt: "2026-02-12T00:00:00.000Z",
+      cardUrl: "https://example.com/renamed.json",
+      status: "idle",
+      lastError: undefined,
+      lastCheckedAt: undefined,
     });
     expect(
       queryClient.getQueryState(queryKeys.agents.catalog())?.isInvalidated,
     ).toBe(false);
+  });
+
+  it("preserves transient validation state when an update keeps the same card identity", async () => {
+    queryClient.setQueryData(queryKeys.agents.catalog(), [
+      buildAgent({
+        id: "agent-1",
+        status: "error",
+        lastError: "network",
+        lastCheckedAt: "2026-02-12T00:00:00.000Z",
+      }),
+    ]);
+
+    mocks.updateAgent.mockResolvedValue({
+      id: "agent-1",
+      name: "Renamed Agent",
+      card_url: "https://example.com/agent-1.json",
+      auth_type: "none",
+      enabled: true,
+      tags: [],
+      extra_headers: {},
+      created_at: "2026-02-12T00:00:00.000Z",
+      updated_at: "2026-02-12T00:01:00.000Z",
+    });
+
+    const { result } = renderHook(() => useUpdateAgentMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        id: "agent-1",
+        payload: { name: "Renamed Agent" },
+      });
+    });
+
+    const cached = queryClient.getQueryData<AgentConfig[]>(
+      queryKeys.agents.catalog(),
+    );
+
+    expect(cached?.[0]).toMatchObject({
+      id: "agent-1",
+      name: "Renamed Agent",
+      cardUrl: "https://example.com/agent-1.json",
+      status: "error",
+      lastError: "network",
+      lastCheckedAt: "2026-02-12T00:00:00.000Z",
+    });
   });
 
   it("removes missing agent during validate and clears active selection", async () => {
@@ -209,6 +257,47 @@ describe("useAgentsCatalogQuery mutations", () => {
       queryClient.getQueryData<AgentConfig[]>(queryKeys.agents.catalog()),
     ).toEqual([]);
     expect(useAgentStore.getState().activeAgentId).toBeNull();
+  });
+
+  it("stores validation success metadata after successful validation", async () => {
+    queryClient.setQueryData(queryKeys.agents.catalog(), [
+      buildAgent({ id: "agent-1" }),
+    ]);
+
+    mocks.validateAgentCard.mockResolvedValue({
+      success: true,
+      message: "ok",
+      card: {
+        capabilities: {
+          extensions: [
+            {
+              uri: "urn:a2a:session-binding/v1",
+              params: {
+                metadata_field: "metadata.shared.session.id",
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useValidateAgentMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync("agent-1");
+    });
+
+    const cached = queryClient.getQueryData<AgentConfig[]>(
+      queryKeys.agents.catalog(),
+    );
+    expect(cached?.[0]).toMatchObject({
+      id: "agent-1",
+      status: "success",
+      lastError: undefined,
+    });
+    expect(typeof cached?.[0]?.lastCheckedAt).toBe("string");
   });
 
   it("appends newly created agent to cache without full refetch", async () => {
