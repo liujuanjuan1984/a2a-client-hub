@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import AnyHttpUrl, BaseModel, Field
 
@@ -22,6 +22,29 @@ class A2AAgentCardProxyRequest(BaseModel):
     extra_headers: Dict[str, str] = Field(default_factory=dict)
 
 
+class SharedSessionQueryDiagnostic(BaseModel):
+    declared: bool = Field(
+        ..., description="Whether the card declares a shared session query extension"
+    )
+    status: Literal["canonical", "legacy", "unsupported", "invalid"] = Field(
+        ...,
+        description="Hub compatibility classification for the declared contract",
+    )
+    uri: Optional[str] = Field(default=None)
+    provider: Optional[str] = Field(default=None)
+    methods: List[str] = Field(default_factory=list)
+    pagination_mode: Optional[str] = Field(default=None)
+    pagination_params: List[str] = Field(default_factory=list)
+    result_envelope_declared: Optional[bool] = Field(default=None)
+    jsonrpc_interface_fallback_used: Optional[bool] = Field(default=None)
+    uses_legacy_uri: bool = Field(default=False)
+    uses_legacy_contract_fields: bool = Field(default=False)
+    error: Optional[str] = Field(
+        default=None,
+        description="Structured validation error when the contract is invalid",
+    )
+
+
 class A2AAgentCardValidationResponse(BaseModel):
     success: bool = Field(..., description="Whether the card validation succeeded")
     message: str = Field(..., description="Human-readable validation result")
@@ -34,6 +57,14 @@ class A2AAgentCardValidationResponse(BaseModel):
     validation_errors: Optional[List[str]] = Field(
         default=None, description="Detailed validation errors (only in debug mode)"
     )
+    shared_session_query: Optional[SharedSessionQueryDiagnostic] = Field(
+        default=None,
+        description="接入期 shared session query extension 兼容诊断结果",
+    )
 
 
-__all__ = ["A2AAgentCardProxyRequest", "A2AAgentCardValidationResponse"]
+__all__ = [
+    "A2AAgentCardProxyRequest",
+    "A2AAgentCardValidationResponse",
+    "SharedSessionQueryDiagnostic",
+]

@@ -50,12 +50,13 @@ class _FakeCard:
 class _FakeGateway:
     def __init__(self) -> None:
         self.card_calls: list[Dict[str, Any]] = []
+        self.card_payload = _valid_card_payload()
 
     async def fetch_agent_card_detail(self, *, resolved, raise_on_failure: bool):
         self.card_calls.append(
             {"resolved": resolved, "raise_on_failure": raise_on_failure}
         )
-        return _FakeCard(_valid_card_payload())
+        return _FakeCard(self.card_payload)
 
 
 class _FakeA2AService:
@@ -567,6 +568,61 @@ async def test_hub_card_validate_success_for_allowlisted_user(
     assert len(fake_gateway.card_calls) == 1
     resolved = fake_gateway.card_calls[0]["resolved"]
     assert resolved.headers["Authorization"].endswith("secret-token-validate")
+
+
+@pytest.mark.asyncio
+async def test_hub_card_validate_reports_shared_session_query_diagnostics(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_validate_diag@example.com",
+        user_email="alice_validate_diag@example.com",
+        token="secret-token-validate-diag",
+    )
+
+    fake_gateway = _FakeGateway()
+    fake_gateway.card_payload["capabilities"]["extensions"] = [
+        {
+            "uri": "urn:shared-a2a:session-query:v1",
+            "params": {
+                "provider": "opencode",
+                "methods": {
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "page_size",
+                    "default_size": 20,
+                    "max_size": 100,
+                },
+                "result_envelope": {"raw": True, "items": True, "pagination": True},
+            },
+        }
+    ]
+    monkeypatch.setattr(
+        hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
+    )
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/card:validate"
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["success"] is True
+    assert payload["shared_session_query"]["declared"] is True
+    assert payload["shared_session_query"]["status"] == "legacy"
+    assert payload["shared_session_query"]["uses_legacy_uri"] is True
 
 
 @pytest.mark.asyncio
