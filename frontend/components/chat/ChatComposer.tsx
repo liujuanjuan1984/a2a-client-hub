@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useState } from "react";
 import {
   NativeSyntheticEvent,
   Platform,
@@ -46,6 +46,8 @@ export function ChatComposer({
   showScrollToBottom?: boolean;
   onScrollToBottom?: () => void;
 }) {
+  const [isFocused, setIsFocused] = useState(false);
+
   const modelLabel = selectedModel
     ? `${selectedModel.providerID} / ${selectedModel.modelID}`
     : "Model: Default";
@@ -61,85 +63,76 @@ export function ChatComposer({
         </View>
       ) : null}
 
-      <View className="mb-2 flex-row items-center justify-between rounded-xl bg-black/25 px-2 py-1">
-        <View className="flex-row items-center gap-2">
-          <Pressable
-            className="h-9 max-w-[180px] flex-row items-center gap-2 rounded-xl bg-slate-800/40 px-3"
-            onPress={onOpenModelPicker}
-            accessibilityRole="button"
-            accessibilityLabel="Choose model"
-            accessibilityHint="Open the model picker"
-          >
-            <Ionicons name="git-branch-outline" size={16} color="#FFFFFF" />
-            <Text
-              className="flex-1 text-xs font-medium text-white"
-              numberOfLines={1}
-            >
-              {modelLabel}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            className={`h-9 w-14 items-center justify-center rounded-xl ${
-              showShortcutManager ? "bg-primary" : "bg-slate-800/40"
-            }`}
-            onPress={onOpenShortcutManager}
-            accessibilityRole="button"
-            accessibilityLabel="Open shortcut manager"
-          >
-            <Ionicons
-              name={showShortcutManager ? "flash" : "flash-outline"}
-              size={18}
-              color={showShortcutManager ? "#000000" : "#FFFFFF"}
-            />
-          </Pressable>
-
-          {input.length > 0 && (
+      {!isFocused && (
+        <View className="mb-2 flex-row items-center justify-between rounded-xl bg-black/25 px-2 py-1">
+          <View className="flex-row items-center gap-2">
             <Pressable
-              className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
-              onPress={() => {
-                onInputChange("");
-                inputRef.current?.focus();
-              }}
+              className="h-9 max-w-[180px] flex-row items-center gap-2 rounded-xl bg-slate-800/40 px-3"
+              onPress={onOpenModelPicker}
               accessibilityRole="button"
-              accessibilityLabel="Clear input"
+              accessibilityLabel="Choose model"
+              accessibilityHint="Open the model picker"
             >
-              <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+              <Ionicons
+                name="hardware-chip-outline"
+                size={16}
+                color="#FFFFFF"
+              />
+              <Text
+                className="flex-1 text-xs font-medium text-white"
+                numberOfLines={1}
+              >
+                {modelLabel}
+              </Text>
             </Pressable>
-          )}
 
-          {showScrollToBottom && (
-            <Pressable
-              className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
-              onPress={onScrollToBottom}
-              accessibilityRole="button"
-              accessibilityLabel="Scroll to bottom"
-            >
-              <Ionicons name="chevron-down" size={18} color="#FFFFFF" />
-            </Pressable>
-          )}
-        </View>
-
-        <View className="flex-row items-center gap-3">
-          {input.trim().length > 0 && (
             <Pressable
               className={`h-9 w-14 items-center justify-center rounded-xl ${
-                pendingInterrupt ? "bg-slate-800/30 opacity-40" : "bg-primary"
+                showShortcutManager ? "bg-primary" : "bg-slate-800/40"
               }`}
-              testID="chat-send-button"
-              onPress={onSubmit}
-              disabled={Boolean(pendingInterrupt)}
+              onPress={onOpenShortcutManager}
               accessibilityRole="button"
-              accessibilityLabel="Send message"
+              accessibilityLabel="Open shortcut manager"
             >
-              <Ionicons name="send" size={16} color="#000000" />
+              <Ionicons
+                name={showShortcutManager ? "flash" : "flash-outline"}
+                size={18}
+                color={showShortcutManager ? "#000000" : "#FFFFFF"}
+              />
             </Pressable>
-          )}
+
+            {input.length > 0 && (
+              <Pressable
+                className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
+                onPress={() => {
+                  onInputChange("");
+                  inputRef.current?.focus();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Clear input"
+              >
+                <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+              </Pressable>
+            )}
+
+            {showScrollToBottom && (
+              <Pressable
+                className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
+                onPress={onScrollToBottom}
+                accessibilityRole="button"
+                accessibilityLabel="Scroll to bottom"
+              >
+                <Ionicons name="chevron-down" size={18} color="#FFFFFF" />
+              </Pressable>
+            )}
+          </View>
         </View>
-      </View>
+      )}
 
       <View className="flex-row items-end gap-2 rounded-2xl bg-surface p-2">
         <TextInput
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           ref={inputRef}
           className="flex-1 px-3 py-2 text-white"
           placeholder="Type your message"
@@ -159,6 +152,22 @@ export function ChatComposer({
           blurOnSubmit={false}
           returnKeyType="default"
         />
+        <View className="flex-row items-center pb-1">
+          {input.trim().length > 0 && (
+            <Pressable
+              className={`h-9 w-14 items-center justify-center rounded-xl ${
+                pendingInterrupt ? "bg-slate-800/30 opacity-40" : "bg-primary"
+              }`}
+              testID="chat-send-button"
+              onPress={onSubmit}
+              disabled={Boolean(pendingInterrupt)}
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+            >
+              <Ionicons name="send" size={16} color="#000000" />
+            </Pressable>
+          )}
+        </View>
       </View>
     </View>
   );
