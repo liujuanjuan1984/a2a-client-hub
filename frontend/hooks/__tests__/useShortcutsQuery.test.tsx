@@ -80,4 +80,61 @@ describe("useShortcutsQuery", () => {
     const globalShortcuts = result.current.getShortcutsForAgent(null);
     expect(globalShortcuts.every((s) => s.agentId === null)).toBe(true);
   });
+
+  it("preserves the original order within agent-specific and system shortcut groups", async () => {
+    (listShortcuts as jest.Mock).mockResolvedValue([
+      {
+        id: "system-b",
+        title: "System B",
+        prompt: "System prompt B",
+        is_default: false,
+        order: 11,
+        agent_id: null,
+      },
+      {
+        id: "agent-1-b",
+        title: "Agent 1 B",
+        prompt: "Agent 1 prompt B",
+        is_default: false,
+        order: 8,
+        agent_id: "agent-1",
+      },
+      {
+        id: "agent-1-a",
+        title: "Agent 1 A",
+        prompt: "Agent 1 prompt A",
+        is_default: false,
+        order: 2,
+        agent_id: "agent-1",
+      },
+      {
+        id: "system-a",
+        title: "System A",
+        prompt: "System prompt A",
+        is_default: false,
+        order: 1,
+        agent_id: null,
+      },
+    ]);
+
+    const { result } = renderHook(() => useShortcutsQuery(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const agent1Shortcuts = result.current.getShortcutsForAgent("agent-1");
+
+    expect(agent1Shortcuts.map((shortcut) => shortcut.id)).toEqual([
+      "agent-1-a",
+      "agent-1-b",
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
+      "system-a",
+      "33333333-3333-3333-3333-333333333333",
+      "44444444-4444-4444-4444-444444444444",
+      "55555555-5555-5555-5555-555555555555",
+      "system-b",
+    ]);
+  });
 });
