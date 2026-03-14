@@ -50,6 +50,7 @@ class A2AGateway:
             tuple[str, tuple[tuple[str, str], ...]], CachedClientEntry
         ] = {}
         self._client_lock = asyncio.Lock()
+        self._closing_tasks: set[asyncio.Task[None]] = set()
 
     async def invoke(
         self,
@@ -506,6 +507,8 @@ class A2AGateway:
         async with self._client_lock:
             entries = list(self._clients.values())
             self._clients.clear()
+            closing_tasks = list(self._closing_tasks)
+            self._closing_tasks.clear()
         for entry in entries:
             try:
                 await await_cancel_safe(entry.client.close())
@@ -513,6 +516,8 @@ class A2AGateway:
                 logger.debug(
                     "Failed to close A2A client during shutdown", exc_info=True
                 )
+        if closing_tasks:
+            await asyncio.gather(*closing_tasks, return_exceptions=True)
 
     async def _get_client(self, resolved: "ResolvedAgent") -> A2AClient:
         await self._cleanup_idle_clients()
@@ -558,22 +563,24 @@ class A2AGateway:
         now = time.monotonic()
         to_close: list[A2AClient] = []
         async with self._client_lock:
-            stale_keys = [
-                key
-                for key, entry in self._clients.items()
-                if now - entry.last_used > idle_timeout
-            ]
+            stale_keys: list[tuple[str, tuple[tuple[str, str], ...]]] = []
+            for key, entry in self._clients.items():
+                if now - entry.last_used <= idle_timeout:
+                    continue
+                if entry.client.is_busy():
+                    entry.last_used = now
+                    continue
+                stale_keys.append(key)
             for key in stale_keys:
                 entry = self._clients.pop(key, None)
                 if entry:
                     to_close.append(entry.client)
         for client in to_close:
-            try:
-                await await_cancel_safe(client.close())
-            except Exception:  # pragma: no cover - defensive cleanup
-                logger.debug("Failed to close idle A2A client", exc_info=True)
-            else:
-                logger.info("Evicted idle A2A client")
+            self._schedule_client_close(
+                client,
+                failure_log="Failed to close idle A2A client",
+                success_log="Evicted idle A2A client",
+            )
 
     async def _invalidate_client(self, resolved: "ResolvedAgent") -> None:
         cache_key = self._build_cache_key(resolved)
@@ -581,18 +588,15 @@ class A2AGateway:
             entry = self._clients.pop(cache_key, None)
         if not entry:
             return
-        try:
-            await await_cancel_safe(entry.client.close())
-        except Exception:  # pragma: no cover - defensive cleanup
-            logger.debug("Failed to close invalidated A2A client", exc_info=True)
-        else:
-            logger.info(
-                "Invalidated A2A client",
-                extra={
-                    "agent_name": resolved.name,
-                    "headers": redact_headers_for_logging(resolved.headers),
-                },
-            )
+        self._schedule_client_close(
+            entry.client,
+            failure_log="Failed to close invalidated A2A client",
+            success_log="Invalidated A2A client",
+            extra={
+                "agent_name": resolved.name,
+                "headers": redact_headers_for_logging(resolved.headers),
+            },
+        )
 
     def _build_interceptors(
         self, resolved: "ResolvedAgent"
@@ -607,6 +611,40 @@ class A2AGateway:
     ) -> tuple[str, tuple[tuple[str, str], ...]]:
         headers_tuple = tuple(sorted(resolved.headers.items()))
         return resolved.url, headers_tuple
+
+    def _schedule_client_close(
+        self,
+        client: A2AClient,
+        *,
+        failure_log: str,
+        success_log: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        task = asyncio.create_task(
+            self._close_client_in_background(
+                client,
+                failure_log=failure_log,
+                success_log=success_log,
+                extra=extra,
+            )
+        )
+        self._closing_tasks.add(task)
+        task.add_done_callback(self._closing_tasks.discard)
+
+    @staticmethod
+    async def _close_client_in_background(
+        client: A2AClient,
+        *,
+        failure_log: str,
+        success_log: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            await await_cancel_safe(client.close())
+        except Exception:  # pragma: no cover - defensive cleanup
+            logger.debug(failure_log, exc_info=True)
+        else:
+            logger.info(success_log, extra=extra)
 
 
 __all__ = ["A2AGateway"]

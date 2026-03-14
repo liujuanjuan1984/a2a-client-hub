@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Dict, List, Optional
 from urllib.parse import urlsplit, urlunsplit
@@ -140,10 +141,17 @@ class A2AClient:
 
         self._adapter_lock = asyncio.Lock()
         self._clients: Dict[str, ClientCacheEntry] = {}
+        self._request_lock = asyncio.Lock()
+        self._active_requests = 0
 
         logger.debug(
             "A2A client facade created for %s", redact_url_for_logging(self.agent_url)
         )
+
+    def is_busy(self) -> bool:
+        """Report whether this facade currently has in-flight work."""
+
+        return self._active_requests > 0
 
     async def call_agent(
         self,
@@ -154,75 +162,76 @@ class A2AClient:
     ) -> Dict[str, Any]:
         """Execute a blocking request against the downstream agent."""
 
-        logger.info(
-            "Calling A2A agent %s (blocking)",
-            redact_url_for_logging(self.agent_url),
-            extra={
-                "query_meta": summarize_query(query),
-            },
-        )
-
-        try:
-            request = A2AMessageRequest(
-                query=query,
-                context_id=context_id,
-                metadata=metadata,
+        async with self._request_usage():
+            logger.info(
+                "Calling A2A agent %s (blocking)",
+                redact_url_for_logging(self.agent_url),
+                extra={
+                    "query_meta": summarize_query(query),
+                },
             )
-            final_payload = await self._send_with_fallback(request)
 
-            if final_payload is None:
-                logger.error(
-                    "No response returned from %s",
+            try:
+                request = A2AMessageRequest(
+                    query=query,
+                    context_id=context_id,
+                    metadata=metadata,
+                )
+                final_payload = await self._send_with_fallback(request)
+
+                if final_payload is None:
+                    logger.error(
+                        "No response returned from %s",
+                        redact_url_for_logging(self.agent_url),
+                    )
+                    return {
+                        "success": False,
+                        "agent_url": self.agent_url,
+                        "error": "No response received from agent.",
+                    }
+
+                content = self._extract_text_from_payload(final_payload)
+                if content is None:
+                    fallback_payload = _as_plain_serializable(final_payload)
+                    if isinstance(fallback_payload, str):
+                        content = fallback_payload.strip()
+                    else:
+                        content = json.dumps(
+                            fallback_payload,
+                            ensure_ascii=False,
+                            indent=2,
+                            default=_json_fallback,
+                        ).strip()
+                    if not content:
+                        content = str(final_payload).strip()
+
+                logger.info("A2A agent call succeeded (chars=%s)", len(content))
+                return {
+                    "success": True,
+                    "agent_url": self.agent_url,
+                    "content": content,
+                    "raw": final_payload,
+                }
+            except Exception as exc:  # noqa: BLE001
+                http_error = _unwrap_httpx_error(exc)
+                if http_error and _should_reset_http_error(http_error):
+                    logger.warning(
+                        "Detected unrecoverable HTTP error, scheduling client reset",
+                        extra={
+                            "agent_url": redact_url_for_logging(self.agent_url),
+                            "error_type": type(http_error).__name__,
+                        },
+                    )
+                    raise A2AClientResetRequiredError(str(http_error)) from exc
+                logger.exception(
+                    "Blocking invocation to %s failed",
                     redact_url_for_logging(self.agent_url),
                 )
                 return {
                     "success": False,
                     "agent_url": self.agent_url,
-                    "error": "No response received from agent.",
+                    "error": str(exc),
                 }
-
-            content = self._extract_text_from_payload(final_payload)
-            if content is None:
-                fallback_payload = _as_plain_serializable(final_payload)
-                if isinstance(fallback_payload, str):
-                    content = fallback_payload.strip()
-                else:
-                    content = json.dumps(
-                        fallback_payload,
-                        ensure_ascii=False,
-                        indent=2,
-                        default=_json_fallback,
-                    ).strip()
-                if not content:
-                    content = str(final_payload).strip()
-
-            logger.info("A2A agent call succeeded (chars=%s)", len(content))
-            return {
-                "success": True,
-                "agent_url": self.agent_url,
-                "content": content,
-                "raw": final_payload,
-            }
-        except Exception as exc:  # noqa: BLE001
-            http_error = _unwrap_httpx_error(exc)
-            if http_error and _should_reset_http_error(http_error):
-                logger.warning(
-                    "Detected unrecoverable HTTP error, scheduling client reset",
-                    extra={
-                        "agent_url": redact_url_for_logging(self.agent_url),
-                        "error_type": type(http_error).__name__,
-                    },
-                )
-                raise A2AClientResetRequiredError(str(http_error)) from exc
-            logger.exception(
-                "Blocking invocation to %s failed",
-                redact_url_for_logging(self.agent_url),
-            )
-            return {
-                "success": False,
-                "agent_url": self.agent_url,
-                "error": str(exc),
-            }
 
     async def stream_agent(
         self,
@@ -233,21 +242,22 @@ class A2AClient:
     ) -> AsyncIterator[Any]:
         """Stream responses from the downstream agent."""
 
-        logger.info(
-            "Calling A2A agent %s (streaming)",
-            redact_url_for_logging(self.agent_url),
-            extra={
-                "query_meta": summarize_query(query),
-            },
-        )
+        async with self._request_usage():
+            logger.info(
+                "Calling A2A agent %s (streaming)",
+                redact_url_for_logging(self.agent_url),
+                extra={
+                    "query_meta": summarize_query(query),
+                },
+            )
 
-        request = A2AMessageRequest(
-            query=query,
-            context_id=context_id,
-            metadata=metadata,
-        )
-        async for payload in self._stream_with_fallback(request):
-            yield payload
+            request = A2AMessageRequest(
+                query=query,
+                context_id=context_id,
+                metadata=metadata,
+            )
+            async for payload in self._stream_with_fallback(request):
+                yield payload
 
     async def cancel_task(
         self,
@@ -257,175 +267,181 @@ class A2AClient:
     ) -> Dict[str, Any]:
         """Cancel one upstream A2A task by task id."""
 
-        normalized_task_id = task_id.strip() if isinstance(task_id, str) else ""
-        if not normalized_task_id:
-            return {
-                "success": False,
-                "agent_url": self.agent_url,
-                "task_id": normalized_task_id,
-                "error": "Task id is required.",
-                "error_code": "invalid_task_id",
-            }
+        async with self._request_usage():
+            normalized_task_id = task_id.strip() if isinstance(task_id, str) else ""
+            if not normalized_task_id:
+                return {
+                    "success": False,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "error": "Task id is required.",
+                    "error_code": "invalid_task_id",
+                }
 
-        try:
-            task = await self._cancel_with_fallback(
-                normalized_task_id,
-                metadata=metadata,
-            )
-            logger.info(
-                "Cancelled A2A task %s for %s",
-                normalized_task_id,
-                redact_url_for_logging(self.agent_url),
-            )
-            return {
-                "success": True,
-                "agent_url": self.agent_url,
-                "task_id": normalized_task_id,
-                "task": task,
-            }
-        except A2AClientHTTPError as exc:
-            status_code = getattr(exc, "status_code", None)
-            error_code = "cancel_failed"
-            if status_code == 404:
-                error_code = "task_not_found"
-            elif status_code == 409:
-                error_code = "task_not_cancelable"
-            logger.warning(
-                "Failed to cancel A2A task %s for %s",
-                normalized_task_id,
-                redact_url_for_logging(self.agent_url),
-                extra={"status_code": status_code},
-            )
-            return {
-                "success": False,
-                "agent_url": self.agent_url,
-                "task_id": normalized_task_id,
-                "error": str(exc),
-                "error_code": error_code,
-            }
-        except A2APeerProtocolError as exc:
-            return {
-                "success": False,
-                "agent_url": self.agent_url,
-                "task_id": normalized_task_id,
-                "error": str(exc),
-                "error_code": getattr(exc, "error_code", "cancel_failed"),
-            }
-        except Exception as exc:  # noqa: BLE001
-            http_error = _unwrap_httpx_error(exc)
-            if http_error and _should_reset_http_error(http_error):
-                raise A2AClientResetRequiredError(str(http_error)) from exc
-            logger.exception(
-                "Failed to cancel A2A task %s for %s",
-                normalized_task_id,
-                redact_url_for_logging(self.agent_url),
-            )
-            return {
-                "success": False,
-                "agent_url": self.agent_url,
-                "task_id": normalized_task_id,
-                "error": str(exc),
-                "error_code": "cancel_failed",
-            }
+            try:
+                task = await self._cancel_with_fallback(
+                    normalized_task_id,
+                    metadata=metadata,
+                )
+                logger.info(
+                    "Cancelled A2A task %s for %s",
+                    normalized_task_id,
+                    redact_url_for_logging(self.agent_url),
+                )
+                return {
+                    "success": True,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "task": task,
+                }
+            except A2AClientHTTPError as exc:
+                status_code = getattr(exc, "status_code", None)
+                error_code = "cancel_failed"
+                if status_code == 404:
+                    error_code = "task_not_found"
+                elif status_code == 409:
+                    error_code = "task_not_cancelable"
+                logger.warning(
+                    "Failed to cancel A2A task %s for %s",
+                    normalized_task_id,
+                    redact_url_for_logging(self.agent_url),
+                    extra={"status_code": status_code},
+                )
+                return {
+                    "success": False,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                    "error_code": error_code,
+                }
+            except A2APeerProtocolError as exc:
+                return {
+                    "success": False,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                    "error_code": getattr(exc, "error_code", "cancel_failed"),
+                }
+            except Exception as exc:  # noqa: BLE001
+                http_error = _unwrap_httpx_error(exc)
+                if http_error and _should_reset_http_error(http_error):
+                    raise A2AClientResetRequiredError(str(http_error)) from exc
+                logger.exception(
+                    "Failed to cancel A2A task %s for %s",
+                    normalized_task_id,
+                    redact_url_for_logging(self.agent_url),
+                )
+                return {
+                    "success": False,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                    "error_code": "cancel_failed",
+                }
 
     async def get_agent_card(self) -> AgentCard:
         """Fetch (and cache) the agent card."""
 
-        if self._agent_card is not None:
-            return self._agent_card
+        async with self._request_usage():
+            if self._agent_card is not None:
+                return self._agent_card
 
-        try:
-            validate_outbound_http_url(
-                self.agent_url,
-                allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
-                purpose="Agent card URL",
-            )
-        except OutboundURLNotAllowedError as exc:
-            raise A2AOutboundNotAllowedError(str(exc)) from exc
-
-        httpx_client = await self._get_http_client()
-        request_http_kwargs: Dict[str, Any] = {}
-        if self._default_headers:
-            request_http_kwargs["headers"] = dict(self._default_headers)
-        request_http_kwargs["timeout"] = self._timeout
-        resolver = self._build_card_resolver(httpx_client)
-        logger.info(
-            "Requesting A2A agent card",
-            extra={
-                "agent_url": redact_url_for_logging(self.agent_url),
-                "resolver_base": redact_url_for_logging(resolver.base_url),
-                "card_path": resolver.agent_card_path.split("?", 1)[0].split("#", 1)[0],
-            },
-        )
-        fetch_timeout = self._card_fetch_timeout
-        try:
-            if fetch_timeout and fetch_timeout > 0:
-                card = await asyncio.wait_for(
-                    resolver.get_agent_card(http_kwargs=request_http_kwargs),
-                    timeout=fetch_timeout,
+            try:
+                validate_outbound_http_url(
+                    self.agent_url,
+                    allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
+                    purpose="Agent card URL",
                 )
-            else:
-                card = await resolver.get_agent_card(http_kwargs=request_http_kwargs)
-        except asyncio.TimeoutError as exc:
-            logger.warning(
-                "Timed out requesting A2A agent card",
+            except OutboundURLNotAllowedError as exc:
+                raise A2AOutboundNotAllowedError(str(exc)) from exc
+
+            httpx_client = await self._get_http_client()
+            request_http_kwargs: Dict[str, Any] = {}
+            if self._default_headers:
+                request_http_kwargs["headers"] = dict(self._default_headers)
+            request_http_kwargs["timeout"] = self._timeout
+            resolver = self._build_card_resolver(httpx_client)
+            logger.info(
+                "Requesting A2A agent card",
                 extra={
                     "agent_url": redact_url_for_logging(self.agent_url),
-                    "timeout_seconds": fetch_timeout,
+                    "resolver_base": redact_url_for_logging(resolver.base_url),
+                    "card_path": resolver.agent_card_path.split("?", 1)[0].split(
+                        "#", 1
+                    )[0],
                 },
             )
-            raise A2AAgentUnavailableError(
-                f"A2A agent '{redact_url_for_logging(self.agent_url)}' timed out while "
-                "fetching metadata"
-            ) from exc
-        except Exception as exc:
-            logger.warning(
-                "Failed to retrieve A2A agent card",
-                exc_info=True,
-                extra={"agent_url": redact_url_for_logging(self.agent_url)},
-            )
-            raise A2AAgentUnavailableError(
-                f"Failed to fetch metadata for A2A agent "
-                f"'{redact_url_for_logging(self.agent_url)}'"
-            ) from exc
+            fetch_timeout = self._card_fetch_timeout
+            try:
+                if fetch_timeout and fetch_timeout > 0:
+                    card = await asyncio.wait_for(
+                        resolver.get_agent_card(http_kwargs=request_http_kwargs),
+                        timeout=fetch_timeout,
+                    )
+                else:
+                    card = await resolver.get_agent_card(
+                        http_kwargs=request_http_kwargs
+                    )
+            except asyncio.TimeoutError as exc:
+                logger.warning(
+                    "Timed out requesting A2A agent card",
+                    extra={
+                        "agent_url": redact_url_for_logging(self.agent_url),
+                        "timeout_seconds": fetch_timeout,
+                    },
+                )
+                raise A2AAgentUnavailableError(
+                    f"A2A agent '{redact_url_for_logging(self.agent_url)}' timed out while "
+                    "fetching metadata"
+                ) from exc
+            except Exception as exc:
+                logger.warning(
+                    "Failed to retrieve A2A agent card",
+                    exc_info=True,
+                    extra={"agent_url": redact_url_for_logging(self.agent_url)},
+                )
+                raise A2AAgentUnavailableError(
+                    f"Failed to fetch metadata for A2A agent "
+                    f"'{redact_url_for_logging(self.agent_url)}'"
+                ) from exc
 
-        selected_transport, selected_url, supported_labels = (
-            self._resolve_negotiated_transport_target(card)
-        )
-        if not selected_transport or not selected_url:
-            supported = ", ".join(supported_labels)
-            raise A2AAgentUnavailableError(
-                f"A2A agent '{redact_url_for_logging(self.agent_url)}' has no "
-                f"compatible transports (client supports: {supported})"
+            selected_transport, selected_url, supported_labels = (
+                self._resolve_negotiated_transport_target(card)
             )
+            if not selected_transport or not selected_url:
+                supported = ", ".join(supported_labels)
+                raise A2AAgentUnavailableError(
+                    f"A2A agent '{redact_url_for_logging(self.agent_url)}' has no "
+                    f"compatible transports (client supports: {supported})"
+                )
 
-        selected_transport_label = (
-            selected_transport.value
-            if isinstance(selected_transport, TransportProtocol)
-            else str(selected_transport)
-        )
-        try:
-            validate_outbound_http_url(
-                selected_url,
-                allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
-                purpose=f"Agent interface URL ({selected_transport_label})",
+            selected_transport_label = (
+                selected_transport.value
+                if isinstance(selected_transport, TransportProtocol)
+                else str(selected_transport)
             )
-        except OutboundURLNotAllowedError as exc:
-            raise A2AOutboundNotAllowedError(str(exc)) from exc
+            try:
+                validate_outbound_http_url(
+                    selected_url,
+                    allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
+                    purpose=f"Agent interface URL ({selected_transport_label})",
+                )
+            except OutboundURLNotAllowedError as exc:
+                raise A2AOutboundNotAllowedError(str(exc)) from exc
 
-        self._agent_card = card
-        self._peer_descriptor = build_peer_descriptor(
-            agent_url=self.agent_url,
-            card=card,
-            selected_transport=selected_transport_label,
-            selected_url=selected_url,
-        )
-        logger.info(
-            "Fetched agent card for %s (name=%s)",
-            redact_url_for_logging(self.agent_url),
-            getattr(card, "name", "unknown"),
-        )
-        return card
+            self._agent_card = card
+            self._peer_descriptor = build_peer_descriptor(
+                agent_url=self.agent_url,
+                card=card,
+                selected_transport=selected_transport_label,
+                selected_url=selected_url,
+            )
+            logger.info(
+                "Fetched agent card for %s (name=%s)",
+                redact_url_for_logging(self.agent_url),
+                getattr(card, "name", "unknown"),
+            )
+            return card
 
     def _resolve_negotiated_transport_target(
         self, card: AgentCard
@@ -548,7 +564,17 @@ class A2AClient:
                     )
                 ):
                     did_reset_adapter = True
-                    await self._reset_adapter(dialect=dialect, adapter=adapter)
+                    await self._reset_adapter_with_policy(
+                        dialect=dialect,
+                        adapter=adapter,
+                        invalidate_transport=(
+                            self._should_invalidate_transport_after_error(
+                                dialect=dialect,
+                                adapter=adapter,
+                                exc=exc,
+                            )
+                        ),
+                    )
                     adapter = await self._get_adapter(dialect)
                     logger.info(
                         "Retrying A2A stream after adapter reset",
@@ -618,7 +644,17 @@ class A2AClient:
                     exc=exc,
                 ):
                     did_reset_adapter = True
-                    await self._reset_adapter(dialect=dialect, adapter=adapter)
+                    await self._reset_adapter_with_policy(
+                        dialect=dialect,
+                        adapter=adapter,
+                        invalidate_transport=(
+                            self._should_invalidate_transport_after_error(
+                                dialect=dialect,
+                                adapter=adapter,
+                                exc=exc,
+                            )
+                        ),
+                    )
                     adapter = await self._get_adapter(dialect)
                     logger.info(
                         "Retrying A2A invoke after adapter reset",
@@ -759,7 +795,20 @@ class A2AClient:
         await await_cancel_safe(adapter.close())
 
     async def _reset_adapter(self, *, dialect: str, adapter: Any) -> None:
-        if isinstance(adapter, SDKA2AAdapter):
+        await self._reset_adapter_with_policy(
+            dialect=dialect,
+            adapter=adapter,
+            invalidate_transport=True,
+        )
+
+    async def _reset_adapter_with_policy(
+        self,
+        *,
+        dialect: str,
+        adapter: Any,
+        invalidate_transport: bool,
+    ) -> None:
+        if invalidate_transport and isinstance(adapter, SDKA2AAdapter):
             try:
                 await adapter.invalidate_borrowed_transport()
             except Exception:  # pragma: no cover - defensive cleanup
@@ -880,6 +929,36 @@ class A2AClient:
             return True
         http_error = _unwrap_httpx_error(exc)
         return bool(http_error and isinstance(http_error, httpx.TransportError))
+
+    @staticmethod
+    def _should_invalidate_transport_after_error(
+        *,
+        dialect: str,
+        adapter: Any,
+        exc: Exception,
+    ) -> bool:
+        if dialect != SDK_DIALECT or not isinstance(adapter, SDKA2AAdapter):
+            return False
+        if isinstance(
+            exc,
+            (SharedSDKTransportInvalidatedError, SDKA2AAdapterRetiredError),
+        ):
+            return False
+        if _is_closed_http_client_error(exc):
+            return True
+        http_error = _unwrap_httpx_error(exc)
+        return bool(http_error and isinstance(http_error, httpx.TransportError))
+
+    @asynccontextmanager
+    async def _request_usage(self) -> AsyncIterator[None]:
+        async with self._request_lock:
+            self._active_requests += 1
+        try:
+            yield
+        finally:
+            async with self._request_lock:
+                if self._active_requests > 0:
+                    self._active_requests -= 1
 
     @staticmethod
     def _extract_text_from_payload(payload: ClientEvent | Message) -> Optional[str]:

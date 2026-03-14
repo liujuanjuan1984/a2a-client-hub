@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -12,10 +13,15 @@ from a2a.types import Message, Role, TextPart
 
 from app.core import http_client as http_client_module
 from app.integrations.a2a_client import client as client_module
+from app.integrations.a2a_client import gateway as gateway_module
 from app.integrations.a2a_client import http_clients as shared_http_clients_module
 from app.integrations.a2a_client.adapters import sdk as sdk_module
-from app.integrations.a2a_client.adapters.sdk import SDKA2AAdapter
+from app.integrations.a2a_client.adapters.sdk import (
+    SDKA2AAdapter,
+    SDKA2AAdapterRetiredError,
+)
 from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
+from app.integrations.a2a_client.config import A2ASettings
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AOutboundNotAllowedError,
@@ -382,6 +388,73 @@ async def test_shared_sdk_transport_usage_rejects_invalidated_lease() -> None:
             pass
 
     await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+
+@pytest.mark.asyncio
+async def test_gateway_cleanup_idle_clients_skips_busy_clients() -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    busy_client = SimpleNamespace(
+        is_busy=Mock(return_value=True),
+        close=AsyncMock(),
+    )
+    cache_key = ("http://example-agent.internal:24020", ())
+    gateway._clients[cache_key] = gateway_module.CachedClientEntry(
+        client=busy_client,
+        last_used=time.monotonic() - 30.0,
+    )
+
+    await gateway._cleanup_idle_clients()
+
+    assert cache_key in gateway._clients
+    busy_client.close.assert_not_awaited()
+    assert gateway._clients[cache_key].last_used > time.monotonic() - 2.0
+
+
+@pytest.mark.asyncio
+async def test_gateway_invalidate_client_schedules_background_close() -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    close_started = asyncio.Event()
+    release_close = asyncio.Event()
+
+    async def _close() -> None:
+        close_started.set()
+        await release_close.wait()
+
+    fake_client = SimpleNamespace(
+        close=AsyncMock(side_effect=_close),
+        is_busy=Mock(return_value=False),
+    )
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={},
+        name="TestAgent",
+    )
+    cache_key = gateway._build_cache_key(resolved)
+    gateway._clients[cache_key] = gateway_module.CachedClientEntry(
+        client=fake_client,
+        last_used=time.monotonic(),
+    )
+
+    await asyncio.wait_for(gateway._invalidate_client(resolved), timeout=0.1)
+
+    assert cache_key not in gateway._clients
+    await asyncio.wait_for(close_started.wait(), timeout=0.1)
+
+    release_close.set()
+    await gateway.shutdown()
+    fake_client.close.assert_awaited_once()
 
 
 def test_extract_text_from_payload_can_handle_task_like_payload() -> None:
@@ -885,4 +958,65 @@ async def test_call_agent_retries_sdk_dialect_after_transport_reset() -> None:
     assert result["success"] is True
     assert result["content"] == "sdk-recovered"
     first_adapter.invalidate_borrowed_transport.assert_awaited_once()
+    first_adapter.retire.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_call_agent_retries_retired_sdk_adapter_without_transport_invalidation() -> (
+    None
+):
+    client_module.global_dialect_cache._entries.clear()
+
+    card = SimpleNamespace(
+        name="SDK peer",
+        preferred_transport="JSONRPC",
+        url="http://example-agent.internal:24020/",
+        additional_interfaces=[],
+        capabilities=SimpleNamespace(streaming=False),
+        protocol_version="1.0",
+    )
+    descriptor = client_module.build_peer_descriptor(
+        agent_url="http://example-agent.internal:24020",
+        card=card,
+        selected_transport="JSONRPC",
+        selected_url="http://example-agent.internal:24020/",
+    )
+
+    class RetiredSdkAdapter(sdk_module.SDKA2AAdapter):
+        def __init__(self) -> None:
+            self.invalidate_borrowed_transport = AsyncMock(return_value=True)
+            self.send_message = AsyncMock(
+                side_effect=SDKA2AAdapterRetiredError("retired")
+            )
+            self.retire = AsyncMock()
+
+    class HealthySdkAdapter(sdk_module.SDKA2AAdapter):
+        def __init__(self) -> None:
+            self.send_message = AsyncMock(
+                return_value={"parts": [{"text": "sdk-recovered"}]}
+            )
+            self.retire = AsyncMock()
+
+    first_adapter = RetiredSdkAdapter()
+    second_adapter = HealthySdkAdapter()
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._peer_descriptor = descriptor
+
+    async def fake_get_adapter(dialect: str):
+        adapter = first_adapter
+        if fake_get_adapter.calls > 0:
+            adapter = second_adapter
+        fake_get_adapter.calls += 1
+        a2a_client._clients[dialect] = ClientCacheEntry(client=adapter)
+        return adapter
+
+    fake_get_adapter.calls = 0
+    a2a_client._get_adapter = AsyncMock(side_effect=fake_get_adapter)
+
+    result = await a2a_client.call_agent("hello")
+
+    assert result["success"] is True
+    assert result["content"] == "sdk-recovered"
+    first_adapter.invalidate_borrowed_transport.assert_not_awaited()
     first_adapter.retire.assert_awaited_once()
