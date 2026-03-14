@@ -1002,7 +1002,9 @@ async def test_call_agent_falls_back_to_pascal_jsonrpc_on_method_not_found() -> 
     assert result["success"] is True
     assert result["content"] == "pascal-result"
     a2a_client._discard_adapter.assert_awaited_once()
-    assert a2a_client._discard_adapter.await_args.args == (client_module.SDK_DIALECT,)
+    assert a2a_client._discard_adapter.await_args.args == (
+        client_module.JSONRPC_SLASH_DIALECT,
+    )
     assert a2a_client._discard_adapter.await_args.kwargs["expected_adapter"] is not None
 
 
@@ -1086,7 +1088,7 @@ async def test_call_agent_pascal_fallback_includes_message_id_for_http_json_pref
         "get_effective_allowed_hosts_sync",
         lambda: ["example-agent.internal:24020"],
     )
-    monkeypatch.setattr(client_module, "SDKA2AAdapter", FakeSlashAdapter)
+    monkeypatch.setattr(client_module, "JsonRpcSlashAdapter", FakeSlashAdapter)
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as http_client:
@@ -1123,13 +1125,198 @@ async def test_call_agent_pascal_fallback_includes_message_id_for_http_json_pref
 
 
 @pytest.mark.asyncio
+async def test_jsonrpc_slash_stream_message_maps_application_json_method_not_found_without_replaying() -> (
+    None
+):
+    captured_requests: list[dict[str, object]] = []
+    descriptor = SimpleNamespace(
+        selected_transport="JSONRPC",
+        selected_url="http://example-agent.internal:24020/jsonrpc",
+        supports_streaming=True,
+        card=Mock(),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(
+            {
+                "method": request.method,
+                "url": str(request.url),
+                "body": json.loads(request.content.decode("utf-8")),
+            }
+        )
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": captured_requests[-1]["body"]["id"],
+                "error": {
+                    "code": -32601,
+                    "message": "Unknown method: message/stream",
+                },
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        adapter = client_module.JsonRpcSlashAdapter(
+            descriptor,
+            http_client=http_client,
+        )
+
+        with pytest.raises(
+            A2APeerProtocolError,
+            match="Unknown method: message/stream",
+        ) as exc_info:
+            async for _payload in adapter.stream_message(
+                client_module.A2AMessageRequest(
+                    query="hello",
+                    context_id="ctx-1",
+                )
+            ):
+                pass
+
+    assert exc_info.value.error_code == "method_not_found"
+    assert exc_info.value.code == -32601
+    assert len(captured_requests) == 1
+    assert captured_requests[0]["method"] == "POST"
+    assert captured_requests[0]["url"] == "http://example-agent.internal:24020/jsonrpc"
+    assert captured_requests[0]["body"]["method"] == "message/stream"
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_falls_back_to_pascal_jsonrpc_streaming_for_http_json_preferred_peer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client_module.global_dialect_cache._entries.clear()
+    captured_requests: list[dict[str, object]] = []
+
+    class FakeResolver:
+        base_url = "http://example-agent.internal:24020"
+        agent_card_path = ".well-known/agent-card.json"
+
+        def __init__(self, card_payload: SimpleNamespace) -> None:
+            self._card_payload = card_payload
+
+        async def get_agent_card(self, **_kwargs):
+            return self._card_payload
+
+    card = SimpleNamespace(
+        name="Hybrid peer",
+        preferred_transport="HTTP+JSON",
+        url="http://example-agent.internal:24020/v1",
+        additional_interfaces=[
+            SimpleNamespace(
+                transport="JSONRPC",
+                url="http://example-agent.internal:24020/jsonrpc",
+            )
+        ],
+        capabilities=SimpleNamespace(streaming=True),
+        protocol_version="1.0",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8"))
+        captured_requests.append(
+            {
+                "method": request.method,
+                "url": str(request.url),
+                "body": body,
+            }
+        )
+        if body["method"] == "message/stream":
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "error": {
+                        "code": -32601,
+                        "message": "Unknown method: message/stream",
+                    },
+                },
+            )
+        stream_body = (
+            "event: TaskArtifactUpdateEvent\n"
+            'data: {"taskId":"task-1","contextId":"ctx-1","artifact":{"parts":[{"type":"text","text":"hello"}]}}\n\n'
+            "event: TaskStatusUpdateEvent\n"
+            'data: {"taskId":"task-1","contextId":"ctx-1","status":{"state":"completed"}}\n\n'
+        )
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text=stream_body,
+        )
+
+    def fake_validate_outbound_http_url(
+        url: str,
+        *,
+        allowed_hosts,
+        purpose: str = "outbound HTTP request",
+    ) -> str:
+        _ = allowed_hosts, purpose
+        return url
+
+    monkeypatch.setattr(
+        client_module,
+        "validate_outbound_http_url",
+        fake_validate_outbound_http_url,
+    )
+    monkeypatch.setattr(
+        client_module.a2a_proxy_service,
+        "get_effective_allowed_hosts_sync",
+        lambda: ["example-agent.internal:24020"],
+    )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        a2a_client = A2AClient(
+            "http://example-agent.internal:24020",
+            use_client_preference=True,
+        )
+        a2a_client._get_http_client = AsyncMock(return_value=http_client)
+        a2a_client._build_card_resolver = Mock(return_value=FakeResolver(card))
+
+        events: list[dict[str, object]] = []
+        async for event in a2a_client.stream_agent(
+            "hello",
+            context_id="ctx-1",
+            metadata={"trace_id": "trace-1"},
+        ):
+            events.append(event)
+
+    assert a2a_client._peer_descriptor is not None
+    assert a2a_client._peer_descriptor.selected_transport == "JSONRPC"
+    assert a2a_client._peer_descriptor.selected_url == (
+        "http://example-agent.internal:24020/jsonrpc"
+    )
+    assert [item["body"]["method"] for item in captured_requests] == [
+        "message/stream",
+        "SendStreamingMessage",
+    ]
+    assert all(
+        item["method"] == "POST"
+        and item["url"] == "http://example-agent.internal:24020/jsonrpc"
+        for item in captured_requests
+    )
+    assert captured_requests[1]["body"]["params"]["message"]["messageId"]
+    assert events[0]["kind"] == "artifact-update"
+    assert events[0]["artifact"]["metadata"]["block_type"] == "text"
+    assert events[0]["artifact"]["parts"] == [
+        {"type": "text", "text": "hello", "kind": "text"}
+    ]
+    assert events[1]["kind"] == "status-update"
+    assert events[1]["status"]["state"] == "completed"
+    assert events[1]["final"] is True
+
+
+@pytest.mark.asyncio
 async def test_call_agent_retries_sdk_dialect_after_transport_reset() -> None:
     client_module.global_dialect_cache._entries.clear()
 
     card = SimpleNamespace(
         name="SDK peer",
-        preferred_transport="JSONRPC",
-        url="http://example-agent.internal:24020/",
+        preferred_transport="HTTP+JSON",
+        url="http://example-agent.internal:24020/v1",
         additional_interfaces=[],
         capabilities=SimpleNamespace(streaming=False),
         protocol_version="1.0",
@@ -1137,8 +1324,8 @@ async def test_call_agent_retries_sdk_dialect_after_transport_reset() -> None:
     descriptor = client_module.build_peer_descriptor(
         agent_url="http://example-agent.internal:24020",
         card=card,
-        selected_transport="JSONRPC",
-        selected_url="http://example-agent.internal:24020/",
+        selected_transport="HTTP+JSON",
+        selected_url="http://example-agent.internal:24020/v1",
     )
 
     class ResettingSdkAdapter(sdk_module.SDKA2AAdapter):
@@ -1191,8 +1378,8 @@ async def test_call_agent_retries_retired_sdk_adapter_without_transport_invalida
 
     card = SimpleNamespace(
         name="SDK peer",
-        preferred_transport="JSONRPC",
-        url="http://example-agent.internal:24020/",
+        preferred_transport="HTTP+JSON",
+        url="http://example-agent.internal:24020/v1",
         additional_interfaces=[],
         capabilities=SimpleNamespace(streaming=False),
         protocol_version="1.0",
@@ -1200,8 +1387,8 @@ async def test_call_agent_retries_retired_sdk_adapter_without_transport_invalida
     descriptor = client_module.build_peer_descriptor(
         agent_url="http://example-agent.internal:24020",
         card=card,
-        selected_transport="JSONRPC",
-        selected_url="http://example-agent.internal:24020/",
+        selected_transport="HTTP+JSON",
+        selected_url="http://example-agent.internal:24020/v1",
     )
 
     class RetiredSdkAdapter(sdk_module.SDKA2AAdapter):

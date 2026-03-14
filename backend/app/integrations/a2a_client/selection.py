@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from typing import Any
 from uuid import uuid4
 
-from a2a.types import AgentCard
+from a2a.types import AgentCard, Message, Part, Role, TextPart
 
 from app.integrations.a2a_client.models import (
     A2AInterfaceDescriptor,
@@ -79,6 +79,21 @@ def build_pascal_message_payload(request: A2AMessageRequest) -> dict[str, Any]:
     return payload
 
 
+def build_a2a_message(request: A2AMessageRequest) -> Message:
+    raw_role = (
+        getattr(Role, "USER", None) or getattr(Role, "user", None) or Role("user")
+    )
+    resolved_context_id = request.context_id or str(uuid4())
+    parts: list[Part] = [TextPart(text=request.query)]
+    return Message(
+        message_id=str(uuid4()),
+        role=raw_role,
+        parts=parts,
+        context_id=resolved_context_id,
+        metadata=request.metadata or None,
+    )
+
+
 def _collect_interfaces(card: AgentCard) -> Iterable[A2AInterfaceDescriptor]:
     protocol_version = getattr(card, "protocol_version", None)
     preferred_transport = normalize_transport_label(
@@ -109,6 +124,7 @@ def _collect_interfaces(card: AgentCard) -> Iterable[A2AInterfaceDescriptor]:
 __all__ = [
     "A2AMessageRequest",
     "A2APeerDescriptor",
+    "build_a2a_message",
     "build_pascal_message_payload",
     "build_peer_descriptor",
     "normalize_transport_label",

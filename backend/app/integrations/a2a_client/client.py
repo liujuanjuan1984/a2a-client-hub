@@ -29,8 +29,10 @@ from app.core.http_client import get_global_http_client
 from app.core.logging import get_logger
 from app.integrations.a2a_client.adapters import (
     JSONRPC_PASCAL_DIALECT,
+    JSONRPC_SLASH_DIALECT,
     SDK_DIALECT,
     JsonRpcPascalAdapter,
+    JsonRpcSlashAdapter,
     SDKA2AAdapter,
 )
 from app.integrations.a2a_client.adapters.sdk import SDKA2AAdapterRetiredError
@@ -783,12 +785,19 @@ class A2AClient:
                     use_client_preference=self._use_client_preference,
                     supported_transports=list(self._supported_transports),
                 )
+            elif dialect == JSONRPC_SLASH_DIALECT:
+                adapter = JsonRpcSlashAdapter(
+                    descriptor,
+                    http_client=httpx_client,
+                    timeout=self._timeout,
+                    interceptors=list(self._interceptors),
+                )
             elif dialect == JSONRPC_PASCAL_DIALECT:
                 adapter = JsonRpcPascalAdapter(
                     descriptor,
                     http_client=httpx_client,
-                    headers=self._default_headers,
                     timeout=self._timeout,
+                    interceptors=list(self._interceptors),
                 )
             else:
                 raise A2AUnsupportedBindingError(
@@ -856,13 +865,14 @@ class A2AClient:
     async def _get_preferred_dialects(self, descriptor) -> list[str]:
         if normalize_transport_label(descriptor.selected_transport) != "JSONRPC":
             return [SDK_DIALECT]
+        choices = [JSONRPC_SLASH_DIALECT, JSONRPC_PASCAL_DIALECT]
         cached = global_dialect_cache.get(
             agent_url=descriptor.agent_url,
             card_fingerprint=descriptor.card_fingerprint,
         )
-        if cached:
-            return [cached]
-        return [SDK_DIALECT, JSONRPC_PASCAL_DIALECT]
+        if cached in choices:
+            return [cached, *[dialect for dialect in choices if dialect != cached]]
+        return choices
 
     @staticmethod
     def _should_try_alternate_dialect(
@@ -873,7 +883,7 @@ class A2AClient:
     ) -> bool:
         if normalize_transport_label(descriptor.selected_transport) != "JSONRPC":
             return False
-        if dialect != SDK_DIALECT:
+        if dialect != JSONRPC_SLASH_DIALECT:
             return False
         if isinstance(exc, A2APeerProtocolError):
             return exc.error_code == "method_not_found" or exc.code == -32601

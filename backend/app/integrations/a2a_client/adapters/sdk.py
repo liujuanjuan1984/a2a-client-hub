@@ -7,7 +7,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
-from uuid import uuid4
 
 import httpx
 from a2a.client import (
@@ -18,7 +17,7 @@ from a2a.client import (
     Consumer,
 )
 from a2a.client.errors import A2AClientJSONRPCError
-from a2a.types import Message, Part, Role, TaskIdParams, TextPart, TransportProtocol
+from a2a.types import TaskIdParams, TransportProtocol
 
 from app.integrations.a2a_client.adapters.base import A2AAdapter
 from app.integrations.a2a_client.errors import A2APeerProtocolError
@@ -30,6 +29,7 @@ from app.integrations.a2a_client.http_clients import (
 )
 from app.integrations.a2a_client.lifecycle import AdapterLifecycleSnapshot
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
+from app.integrations.a2a_client.selection import build_a2a_message
 from app.utils.async_cleanup import await_cancel_safe
 
 SDK_DIALECT = "sdk"
@@ -115,7 +115,7 @@ class SDKA2AAdapter(A2AAdapter):
             client = await self._get_client(streaming=False)
             try:
                 final_payload: Any = None
-                async for payload in client.send_message(self._build_message(request)):
+                async for payload in client.send_message(build_a2a_message(request)):
                     final_payload = payload
                 return final_payload
             except A2AClientJSONRPCError as exc:
@@ -125,7 +125,7 @@ class SDKA2AAdapter(A2AAdapter):
         async with self._operation_usage(), self._transport_usage():
             client = await self._get_client(streaming=True)
             try:
-                async for payload in client.send_message(self._build_message(request)):
+                async for payload in client.send_message(build_a2a_message(request)):
                     yield payload
             except A2AClientJSONRPCError as exc:
                 raise _map_protocol_error(exc) from exc
@@ -249,20 +249,6 @@ class SDKA2AAdapter(A2AAdapter):
                 should_finalize = True
         if should_finalize:
             await self._finalize_clients()
-
-    def _build_message(self, request: A2AMessageRequest) -> Message:
-        raw_role = (
-            getattr(Role, "USER", None) or getattr(Role, "user", None) or Role("user")
-        )
-        resolved_context_id = request.context_id or str(uuid4())
-        parts: list[Part] = [TextPart(text=request.query)]
-        return Message(
-            message_id=str(uuid4()),
-            role=raw_role,
-            parts=parts,
-            context_id=resolved_context_id,
-            metadata=request.metadata or None,
-        )
 
 
 def _map_protocol_error(exc: A2AClientJSONRPCError) -> A2APeerProtocolError:
