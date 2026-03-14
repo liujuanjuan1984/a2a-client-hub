@@ -7,15 +7,14 @@ from typing import Any
 
 from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.services.a2a_shared_metadata import (
-    extract_preferred_session_metadata,
     extract_preferred_usage_metadata,
     merge_shared_metadata_sections,
 )
 from app.utils.payload_extract import (
     as_dict,
     extract_context_id,
+    extract_provider_and_external_session_id,
 )
-from app.utils.session_identity import normalize_provider
 
 logger = logging.getLogger(__name__)
 
@@ -115,15 +114,6 @@ def _extract_usage_from_candidate(payload: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _extract_provider_and_external_session_id_from_candidate(
-    payload: dict[str, Any],
-) -> tuple[str | None, str | None]:
-    session = extract_preferred_session_metadata(payload)
-    provider = normalize_provider(_pick_non_empty_str(session, ("provider",)))
-    external_session_id = _pick_non_empty_str(session, ("id", "externalSessionId"))
-    return provider, external_session_id
-
-
 def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     root = as_dict(payload)
 
@@ -214,9 +204,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
             binding_meta.update(c_meta)
 
         if provider is None or external_session_id is None:
-            c_provider, c_external = (
-                _extract_provider_and_external_session_id_from_candidate(cand)
-            )
+            c_provider, c_external = extract_provider_and_external_session_id(cand)
             if provider is None:
                 provider = c_provider
             if external_session_id is None:
@@ -225,9 +213,7 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     if context_id is None:
         context_id = extract_context_id(binding_meta)
     if provider is None or external_session_id is None:
-        m_provider, m_external = (
-            _extract_provider_and_external_session_id_from_candidate(binding_meta)
-        )
+        m_provider, m_external = extract_provider_and_external_session_id(binding_meta)
         if provider is None:
             provider = m_provider
         if external_session_id is None:

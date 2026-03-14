@@ -10,14 +10,8 @@ export const buildContinueBindingPayload = (
   return {
     agentId,
     source: binding.source,
-    provider:
-      sessionBinding.provider ??
-      (typeof metadata.provider === "string" ? metadata.provider : undefined),
-    externalSessionId:
-      sessionBinding.externalSessionId ??
-      (typeof metadata.externalSessionId === "string"
-        ? metadata.externalSessionId
-        : undefined),
+    provider: sessionBinding.provider ?? undefined,
+    externalSessionId: sessionBinding.externalSessionId ?? undefined,
     contextId:
       typeof metadata.contextId === "string" ? metadata.contextId : undefined,
   };
