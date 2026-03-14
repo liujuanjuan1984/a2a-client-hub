@@ -747,6 +747,53 @@ async def test_record_local_invoke_messages_writes_canonical_external_session_id
         assert "external_session_id" not in metadata
 
 
+async def test_record_local_invoke_messages_reads_shared_session_binding_metadata(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="ok",
+        success=True,
+        context_id="ctx-1",
+        invoke_metadata={
+            "shared": {
+                "session": {
+                    "id": "ses-upstream-shared-1",
+                    "provider": "opencode",
+                }
+            }
+        },
+    )
+    await async_db_session.flush()
+
+    result = await async_db_session.execute(
+        select(AgentMessage).where(AgentMessage.conversation_id == thread.id)
+    )
+    messages = list(result.scalars().all())
+    assert len(messages) == 2
+    for msg in messages:
+        metadata = msg.message_metadata or {}
+        assert metadata.get("provider") == "opencode"
+        assert metadata.get("externalSessionId") == "ses-upstream-shared-1"
+
+
 async def test_record_local_invoke_messages_is_idempotent_with_key(
     async_db_session,
 ):

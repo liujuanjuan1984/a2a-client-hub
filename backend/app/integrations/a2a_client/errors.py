@@ -16,8 +16,43 @@ class A2AClientResetRequiredError(A2AAgentUnavailableError):
     error_code = "agent_unavailable"
 
 
+class A2AUnsupportedBindingError(A2AAgentUnavailableError):
+    """Raised when no supported adapter matches the peer declaration."""
+
+
+class A2AUnsupportedOperationError(A2AAgentUnavailableError):
+    """Raised when a peer does not implement an optional operation."""
+
+
+class A2AStreamingNotSupportedError(A2AUnsupportedOperationError):
+    """Raised when the selected adapter cannot stream for this peer."""
+
+
+class A2APeerProtocolError(A2AAgentUnavailableError):
+    """Raised when the downstream peer violates or rejects the active protocol."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: str = "peer_protocol_error",
+        rpc_code: int | None = None,
+        http_status: int | None = None,
+        data: object | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.code = rpc_code
+        self.http_status = http_status
+        self.data = data
+
+
 __all__ = [
     "A2AAgentUnavailableError",
     "A2AOutboundNotAllowedError",
     "A2AClientResetRequiredError",
+    "A2APeerProtocolError",
+    "A2AStreamingNotSupportedError",
+    "A2AUnsupportedBindingError",
+    "A2AUnsupportedOperationError",
 ]

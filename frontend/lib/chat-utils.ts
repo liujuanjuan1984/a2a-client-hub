@@ -5,6 +5,7 @@ import type {
   PendingRuntimeInterrupt,
   ResolvedRuntimeInterrupt,
 } from "@/lib/api/chat-utils";
+import { withoutSharedSessionBinding } from "@/lib/sharedMetadata";
 
 export const isSameBlockList = (
   left: MessageBlock[] = [],
@@ -189,20 +190,16 @@ export const buildInvokePayload = (
   if (session.contextId) {
     payload.contextId = session.contextId;
   }
-  const metadata: Record<string, unknown> = { ...(session.metadata ?? {}) };
+  const metadata = withoutSharedSessionBinding(session.metadata);
   const externalProvider = session.externalSessionRef?.provider?.trim();
   const externalSessionId =
     session.externalSessionRef?.externalSessionId?.trim();
-  const metadataProvider =
-    typeof metadata.provider === "string" ? metadata.provider.trim() : "";
-  const providerForSessionBinding = (externalProvider ?? metadataProvider)
-    .trim()
-    .toLowerCase();
-  if (providerForSessionBinding) {
-    metadata.provider = providerForSessionBinding;
-  }
-  if (externalSessionId) {
-    metadata.externalSessionId = externalSessionId;
+  const providerForSessionBinding = externalProvider?.trim().toLowerCase();
+  if (externalSessionId || providerForSessionBinding) {
+    payload.sessionBinding = {
+      provider: providerForSessionBinding || null,
+      externalSessionId: externalSessionId || null,
+    };
   }
   if (Object.keys(metadata).length > 0) {
     payload.metadata = metadata;

@@ -72,9 +72,13 @@ async def app_lifespan(_: FastAPI):
         ensure_a2a_schedule_job()
         ensure_ws_ticket_cleanup_job()
 
+        async def _init_a2a_service() -> None:
+            service = get_a2a_service()
+            await service.gateway.start_maintenance()
+
         await _run_startup_step(
             name="a2a_service_init",
-            step=get_a2a_service,
+            step=_init_a2a_service,
         )
 
         await _run_startup_step(

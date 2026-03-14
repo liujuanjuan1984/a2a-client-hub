@@ -7,6 +7,20 @@ from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
 
+class A2AAgentInvokeSessionBinding(BaseModel):
+    provider: Optional[str] = Field(
+        default=None,
+        description="Optional upstream provider hint for a bound external session.",
+    )
+    external_session_id: Optional[str] = Field(
+        default=None,
+        alias="externalSessionId",
+        description="Optional upstream external session identifier.",
+    )
+
+    model_config = {"populate_by_name": True}
+
+
 class A2AAgentInvokeRequest(BaseModel):
     query: str = Field(..., min_length=1, description="User query to forward")
     conversation_id: Optional[str] = Field(
@@ -38,6 +52,11 @@ class A2AAgentInvokeRequest(BaseModel):
         default_factory=dict,
         description="Optional A2A metadata forwarded with the message",
     )
+    session_binding: Optional[A2AAgentInvokeSessionBinding] = Field(
+        default=None,
+        alias="sessionBinding",
+        description="Optional hub-internal session binding intent. Not forwarded upstream as-is.",
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -51,4 +70,8 @@ class A2AAgentInvokeResponse(BaseModel):
     agent_url: Optional[str] = None
 
 
-__all__ = ["A2AAgentInvokeRequest", "A2AAgentInvokeResponse"]
+__all__ = [
+    "A2AAgentInvokeRequest",
+    "A2AAgentInvokeResponse",
+    "A2AAgentInvokeSessionBinding",
+]
