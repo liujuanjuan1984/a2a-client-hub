@@ -108,6 +108,10 @@ class A2AProviderDiscoveryRequest(BaseModel):
     )
 
 
+class OpenCodeCapabilityResponse(BaseModel):
+    supported: bool = Field(..., description="Whether the OpenCode discovery extension is supported by the agent")
+
+
 __all__ = [
     "A2AExtensionPromptAsyncRequest",
     "A2AExtensionPermissionReplyRequest",
@@ -119,4 +123,5 @@ __all__ = [
     "A2AExtensionQuestionReplyRequest",
     "A2AExtensionResponse",
     "A2AProviderDiscoveryRequest",
+    "OpenCodeCapabilityResponse",
 ]
