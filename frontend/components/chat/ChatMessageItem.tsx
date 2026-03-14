@@ -1,13 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
 import React, { useCallback, useMemo } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  Text,
-  View,
-  Platform,
-} from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 import { MessageBlock, MessageContentFallback } from "./MessageBlock";
 import { CopyButton } from "../ui/CopyButton";
@@ -16,7 +9,7 @@ import {
   type ChatMessage,
   type MessageBlock as MessageBlockType,
 } from "@/lib/api/chat-utils";
-import { toast } from "@/lib/toast";
+import { copyTextToClipboard } from "@/lib/clipboard";
 
 export function ChatMessageItem({
   message,
@@ -87,24 +80,10 @@ export function ChatMessageItem({
   const userCopyButtonPositionClass = "right-0";
 
   const handleLongPressCopy = useCallback(async () => {
-    try {
-      if (
-        Platform.OS === "web" &&
-        typeof navigator !== "undefined" &&
-        navigator.clipboard?.writeText
-      ) {
-        try {
-          await navigator.clipboard.writeText(textToCopy);
-        } catch {
-          await Clipboard.setStringAsync(textToCopy);
-        }
-      } else {
-        await Clipboard.setStringAsync(textToCopy);
-      }
-      toast.success("Copied", "Message copied to clipboard.");
-    } catch {
-      toast.error("Copy failed", "Could not copy message.");
-    }
+    await copyTextToClipboard(textToCopy, {
+      successMessage: "Message copied to clipboard.",
+      errorMessage: "Could not copy message.",
+    });
   }, [textToCopy]);
 
   return (

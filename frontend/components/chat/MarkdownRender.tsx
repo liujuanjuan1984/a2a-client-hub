@@ -1,10 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
 import React, { useCallback, useMemo } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Markdown, { RenderRules } from "react-native-markdown-display";
 
-import { toast } from "@/lib/toast";
+import { copyTextToClipboard } from "@/lib/clipboard";
 
 interface MarkdownRenderProps {
   content: string;
@@ -13,20 +12,10 @@ interface MarkdownRenderProps {
 
 export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
   const handleCopyCode = useCallback(async (code: string) => {
-    try {
-      if (Platform.OS === "web" && typeof navigator !== "undefined") {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(code);
-        } else {
-          await Clipboard.setStringAsync(code);
-        }
-      } else {
-        await Clipboard.setStringAsync(code);
-      }
-      toast.success("Copied", "Code copied to clipboard.");
-    } catch {
-      toast.error("Copy failed", "Could not copy code.");
-    }
+    await copyTextToClipboard(code, {
+      successMessage: "Code copied to clipboard.",
+      errorMessage: "Could not copy code.",
+    });
   }, []);
 
   const styles = useMemo(() => {

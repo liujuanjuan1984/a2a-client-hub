@@ -1,9 +1,8 @@
-import * as Clipboard from "expo-clipboard";
 import React, { useCallback, useEffect, useState } from "react";
 
 import { IconButton } from "./IconButton";
 
-import { toast } from "@/lib/toast";
+import { copyTextToClipboard } from "@/lib/clipboard";
 
 type CopyButtonProps = Omit<
   React.ComponentProps<typeof IconButton>,
@@ -31,13 +30,10 @@ export function CopyButton({
   }, [copied]);
 
   const handleCopy = useCallback(async () => {
-    try {
-      await Clipboard.setStringAsync(value);
-      setCopied(true);
-      toast.success("Copied", successMessage);
-    } catch {
-      toast.error("Copy failed", "Could not copy to clipboard.");
-    }
+    await copyTextToClipboard(value, {
+      successMessage,
+      onSuccess: () => setCopied(true),
+    });
   }, [value, successMessage]);
 
   return (
