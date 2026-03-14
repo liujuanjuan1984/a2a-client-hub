@@ -5,12 +5,18 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from typing import Any
-from uuid import uuid4
 
 import httpx
+from a2a.client import ClientCallInterceptor
 from httpx_sse import aconnect_sse
 
 from app.integrations.a2a_client.adapters.base import A2AAdapter
+from app.integrations.a2a_client.adapters.jsonrpc_common import (
+    apply_jsonrpc_interceptors,
+    build_jsonrpc_payload,
+    parse_jsonrpc_error_bytes,
+    parse_jsonrpc_error_payload,
+)
 from app.integrations.a2a_client.errors import (
     A2APeerProtocolError,
     A2AUnsupportedOperationError,
@@ -45,11 +51,13 @@ class JsonRpcPascalAdapter(A2AAdapter):
         http_client: httpx.AsyncClient,
         headers: dict[str, str] | None = None,
         timeout: httpx.Timeout | None = None,
+        interceptors: list[ClientCallInterceptor] | None = None,
     ) -> None:
         super().__init__(descriptor)
         self._http_client = http_client
         self._headers = dict(headers or {})
         self._timeout = timeout
+        self._interceptors = list(interceptors or [])
 
     @property
     def dialect(self) -> str:
@@ -96,20 +104,21 @@ class JsonRpcPascalAdapter(A2AAdapter):
         return None
 
     async def _send_rpc(self, method: str, *, params: dict[str, Any]) -> Any:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": str(uuid4()),
-            "method": method,
-            "params": params,
-        }
+        payload = build_jsonrpc_payload(method=method, params=params)
         request_headers = {"Content-Type": "application/json"}
         request_headers.update(self._headers)
+        payload, http_kwargs = await apply_jsonrpc_interceptors(
+            interceptors=self._interceptors,
+            method_name=method,
+            request_payload=payload,
+            http_kwargs={"headers": request_headers, "timeout": self._timeout},
+            agent_card=self.descriptor.card,
+        )
         try:
             response = await self._http_client.post(
                 self.descriptor.selected_url,
                 json=payload,
-                headers=request_headers,
-                timeout=self._timeout,
+                **http_kwargs,
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -133,19 +142,13 @@ class JsonRpcPascalAdapter(A2AAdapter):
                 http_status=response.status_code,
             ) from exc
 
-        if isinstance(data, dict) and isinstance(data.get("error"), dict):
-            error = data["error"]
-            code = error.get("code")
-            message = error.get("message") or f"JSON-RPC Error {error}"
-            raise A2APeerProtocolError(
-                message=message,
-                error_code=(
-                    "method_not_found" if code == -32601 else "peer_protocol_error"
-                ),
-                rpc_code=code if isinstance(code, int) else None,
-                data=error.get("data"),
-                http_status=response.status_code,
-            )
+        protocol_error = parse_jsonrpc_error_payload(
+            data,
+            fallback_message="Invalid JSON-RPC response",
+            http_status=response.status_code,
+        )
+        if protocol_error is not None:
+            raise protocol_error
 
         if isinstance(data, dict):
             return data.get("result")
@@ -157,22 +160,23 @@ class JsonRpcPascalAdapter(A2AAdapter):
         *,
         params: dict[str, Any],
     ) -> AsyncIterator[dict[str, Any]]:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": str(uuid4()),
-            "method": method,
-            "params": params,
-        }
+        payload = build_jsonrpc_payload(method=method, params=params)
         request_headers = {"Content-Type": "application/json"}
         request_headers.update(self._headers)
+        payload, http_kwargs = await apply_jsonrpc_interceptors(
+            interceptors=self._interceptors,
+            method_name=method,
+            request_payload=payload,
+            http_kwargs={"headers": request_headers, "timeout": self._timeout},
+            agent_card=self.descriptor.card,
+        )
         try:
             async with aconnect_sse(
                 self._http_client,
                 "POST",
                 self.descriptor.selected_url,
                 json=payload,
-                headers=request_headers,
-                timeout=self._timeout,
+                **http_kwargs,
             ) as event_source:
                 response = event_source.response
                 try:
@@ -221,23 +225,9 @@ class JsonRpcPascalAdapter(A2AAdapter):
         except httpx.RequestError:
             return None
 
-        try:
-            data = json.loads(raw_body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return None
-
-        if not isinstance(data, dict) or not isinstance(data.get("error"), dict):
-            return None
-        error = data["error"]
-        code = error.get("code")
-        message = error.get("message") or f"JSON-RPC Error {error}"
-        return A2APeerProtocolError(
-            message=str(message),
-            error_code=(
-                "method_not_found" if code == -32601 else "peer_protocol_error"
-            ),
-            rpc_code=code if isinstance(code, int) else None,
-            data=error.get("data"),
+        return parse_jsonrpc_error_bytes(
+            raw_body,
+            fallback_message="Invalid JSON-RPC stream response",
             http_status=response.status_code,
         )
 
