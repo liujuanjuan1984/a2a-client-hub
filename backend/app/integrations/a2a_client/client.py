@@ -32,6 +32,7 @@ from app.integrations.a2a_client.adapters import (
     JsonRpcPascalAdapter,
     SDKA2AAdapter,
 )
+from app.integrations.a2a_client.adapters.sdk import SDKA2AAdapterRetiredError
 from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.dialect_cache import global_dialect_cache
 from app.integrations.a2a_client.errors import (
@@ -42,6 +43,7 @@ from app.integrations.a2a_client.errors import (
     A2AUnsupportedBindingError,
 )
 from app.integrations.a2a_client.http_clients import (
+    SharedSDKTransportInvalidatedError,
     borrow_shared_sdk_transport_http_client,
 )
 from app.integrations.a2a_client.models import A2AMessageRequest
@@ -667,11 +669,26 @@ class A2AClient:
         return self._peer_descriptor
 
     async def _get_adapter(self, dialect: str):
+        stale_adapter = None
+        async with self._adapter_lock:
+            entry = self._clients.get(dialect)
+            if entry:
+                if (
+                    dialect == SDK_DIALECT
+                    and isinstance(entry.client, SDKA2AAdapter)
+                    and entry.client.is_transport_stale()
+                ):
+                    stale_adapter = self._clients.pop(dialect).client
+                else:
+                    return entry.client
+
+        if stale_adapter is not None:
+            await self._retire_adapter(stale_adapter)
+
         async with self._adapter_lock:
             entry = self._clients.get(dialect)
             if entry:
                 return entry.client
-
             descriptor = await self._get_peer_descriptor()
             httpx_client = await self._get_http_client()
 
@@ -725,13 +742,21 @@ class A2AClient:
                 return
             self._clients.pop(dialect, None)
         try:
-            await await_cancel_safe(entry.client.close())
+            await self._retire_adapter(entry.client)
         except Exception:  # pragma: no cover - defensive cleanup
             logger.debug(
                 "Failed to discard failed A2A adapter",
                 exc_info=True,
                 extra={"dialect": dialect},
             )
+
+    @staticmethod
+    async def _retire_adapter(adapter: Any) -> None:
+        retire = getattr(adapter, "retire", None)
+        if callable(retire):
+            await await_cancel_safe(retire())
+            return
+        await await_cancel_safe(adapter.close())
 
     async def _reset_adapter(self, *, dialect: str, adapter: Any) -> None:
         if isinstance(adapter, SDKA2AAdapter):
@@ -847,6 +872,10 @@ class A2AClient:
     ) -> bool:
         if dialect != SDK_DIALECT or not isinstance(adapter, SDKA2AAdapter):
             return False
+        if isinstance(exc, SharedSDKTransportInvalidatedError):
+            return True
+        if isinstance(exc, SDKA2AAdapterRetiredError):
+            return True
         if _is_closed_http_client_error(exc):
             return True
         http_error = _unwrap_httpx_error(exc)

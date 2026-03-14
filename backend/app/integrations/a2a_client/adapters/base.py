@@ -44,3 +44,8 @@ class A2AAdapter(ABC):
     @abstractmethod
     async def close(self) -> None:
         """Release any owned transport resources."""
+
+    async def retire(self) -> None:
+        """Remove the adapter from future routing while draining in-flight work."""
+
+        await self.close()

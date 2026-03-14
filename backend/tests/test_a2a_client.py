@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -20,7 +21,10 @@ from app.integrations.a2a_client.errors import (
     A2AOutboundNotAllowedError,
     A2APeerProtocolError,
 )
-from app.integrations.a2a_client.http_clients import SharedSDKTransportLease
+from app.integrations.a2a_client.http_clients import (
+    SharedSDKTransportInvalidatedError,
+    SharedSDKTransportLease,
+)
 from app.utils.outbound_url import OutboundURLNotAllowedError
 
 
@@ -132,6 +136,57 @@ async def test_sdk_adapter_close_preserves_borrowed_http_client() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sdk_adapter_retire_drains_inflight_operations_before_closing() -> None:
+    shared_http_client = AsyncMock()
+    shared_http_client.is_closed = False
+
+    operation_started = asyncio.Event()
+    release_operation = asyncio.Event()
+    closed = AsyncMock()
+
+    class FakeFactory:
+        def __init__(self, *, config, consumers) -> None:
+            self._config = config
+
+        def create(self, *_args, **_kwargs):
+            class FakeClient:
+                async def send_message(self, _message):
+                    operation_started.set()
+                    await release_operation.wait()
+                    yield "done"
+
+                async def close(self) -> None:
+                    await closed()
+
+            return FakeClient()
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(sdk_module, "ClientFactory", FakeFactory)
+
+    adapter = SDKA2AAdapter(
+        SimpleNamespace(card=Mock()),
+        transport_http_client=shared_http_client,
+    )
+
+    task = asyncio.create_task(
+        adapter.send_message(
+            client_module.A2AMessageRequest(query="hello", context_id="ctx-1")
+        )
+    )
+    await operation_started.wait()
+
+    await adapter.retire()
+
+    closed.assert_not_awaited()
+
+    release_operation.set()
+    assert await task == "done"
+
+    closed.assert_awaited_once()
+    monkeypatch.undo()
+
+
+@pytest.mark.asyncio
 async def test_get_adapter_uses_shared_sdk_http_client_for_borrowed_http_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -163,6 +218,59 @@ async def test_get_adapter_uses_shared_sdk_http_client_for_borrowed_http_client(
 
     assert captured["transport_http_client"] is shared_lease.client
     assert captured["shared_transport_lease"] is shared_lease
+
+
+@pytest.mark.asyncio
+async def test_get_adapter_recreates_stale_cached_sdk_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    descriptor = SimpleNamespace()
+    shared_http_client = AsyncMock()
+
+    class FakeSdkAdapter:
+        def __init__(self, _descriptor, **kwargs) -> None:
+            self.kwargs = kwargs
+            self.retire = AsyncMock()
+            self._stale = kwargs.get("shared_transport_lease") is not None
+
+        def is_transport_stale(self) -> bool:
+            return self._stale
+
+    stale_adapter = FakeSdkAdapter(
+        descriptor,
+        transport_http_client=AsyncMock(),
+        shared_transport_lease=SharedSDKTransportLease(
+            timeout_key=(10.0, 10.0, 10.0, 10.0),
+            generation=1,
+            client=AsyncMock(),
+        ),
+    )
+
+    fresh_lease = SharedSDKTransportLease(
+        timeout_key=(10.0, 10.0, 10.0, 10.0),
+        generation=2,
+        client=AsyncMock(),
+    )
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_peer_descriptor = AsyncMock(return_value=descriptor)
+    a2a_client._get_http_client = AsyncMock(return_value=shared_http_client)
+    a2a_client._clients[client_module.SDK_DIALECT] = ClientCacheEntry(
+        client=stale_adapter
+    )
+
+    monkeypatch.setattr(
+        client_module,
+        "borrow_shared_sdk_transport_http_client",
+        Mock(return_value=fresh_lease),
+    )
+    monkeypatch.setattr(client_module, "SDKA2AAdapter", FakeSdkAdapter)
+
+    adapter = await a2a_client._get_adapter(client_module.SDK_DIALECT)
+
+    stale_adapter.retire.assert_awaited_once()
+    assert adapter is not stale_adapter
+    assert adapter.kwargs["shared_transport_lease"] is fresh_lease
 
 
 @pytest.mark.asyncio
@@ -226,6 +334,52 @@ async def test_invalidate_shared_sdk_transport_http_client_ignores_stale_generat
 
     assert stale_result is False
     assert recreated.client.is_closed is False
+
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+
+@pytest.mark.asyncio
+async def test_invalidate_shared_sdk_transport_http_client_drains_inflight_usage() -> (
+    None
+):
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+    lease = shared_http_clients_module.borrow_shared_sdk_transport_http_client()
+    acquired = (
+        shared_http_clients_module.acquire_shared_sdk_transport_http_client_usage(lease)
+    )
+    invalidated = (
+        await shared_http_clients_module.invalidate_shared_sdk_transport_http_client(
+            lease
+        )
+    )
+
+    assert acquired is True
+    assert invalidated is True
+    assert shared_http_clients_module.is_shared_sdk_transport_http_client_stale(lease)
+    assert lease.client.is_closed is False
+
+    await shared_http_clients_module.release_shared_sdk_transport_http_client_usage(
+        lease
+    )
+
+    assert lease.client.is_closed is True
+
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+
+@pytest.mark.asyncio
+async def test_shared_sdk_transport_usage_rejects_invalidated_lease() -> None:
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+    lease = shared_http_clients_module.borrow_shared_sdk_transport_http_client()
+    await shared_http_clients_module.invalidate_shared_sdk_transport_http_client(lease)
+
+    with pytest.raises(SharedSDKTransportInvalidatedError):
+        async with shared_http_clients_module.use_shared_sdk_transport_http_client(
+            lease
+        ):
+            pass
 
     await shared_http_clients_module.close_shared_sdk_transport_http_clients()
 
@@ -700,14 +854,14 @@ async def test_call_agent_retries_sdk_dialect_after_transport_reset() -> None:
                     "Cannot send a request, as the client has been closed."
                 )
             )
-            self.close = AsyncMock()
+            self.retire = AsyncMock()
 
     class HealthySdkAdapter(sdk_module.SDKA2AAdapter):
         def __init__(self) -> None:
             self.send_message = AsyncMock(
                 return_value={"parts": [{"text": "sdk-recovered"}]}
             )
-            self.close = AsyncMock()
+            self.retire = AsyncMock()
 
     first_adapter = ResettingSdkAdapter()
     second_adapter = HealthySdkAdapter()
@@ -731,4 +885,4 @@ async def test_call_agent_retries_sdk_dialect_after_transport_reset() -> None:
     assert result["success"] is True
     assert result["content"] == "sdk-recovered"
     first_adapter.invalidate_borrowed_transport.assert_awaited_once()
-    first_adapter.close.assert_awaited_once()
+    first_adapter.retire.assert_awaited_once()
