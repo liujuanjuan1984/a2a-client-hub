@@ -24,7 +24,7 @@ from a2a.utils.constants import (
     PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
 
-from app.core.http_client import get_global_http_client
+from app.core.http_client import create_http_client, get_global_http_client
 from app.core.logging import get_logger
 from app.integrations.a2a_client.adapters import (
     JSONRPC_PASCAL_DIALECT,
@@ -612,9 +612,18 @@ class A2AClient:
             httpx_client = await self._get_http_client()
 
             if dialect == SDK_DIALECT:
+                sdk_transport_http_client = httpx_client
+                owns_sdk_transport_http_client = False
+                if self._http_client is None or not self._owns_http_client:
+                    sdk_transport_http_client = create_http_client(
+                        timeout=self._timeout
+                    )
+                    owns_sdk_transport_http_client = True
                 adapter = SDKA2AAdapter(
                     descriptor,
                     http_client=httpx_client,
+                    transport_http_client=sdk_transport_http_client,
+                    owns_transport_http_client=owns_sdk_transport_http_client,
                     interceptors=list(self._interceptors),
                     consumers=list(self._consumers),
                     use_client_preference=self._use_client_preference,

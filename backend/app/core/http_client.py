@@ -13,25 +13,33 @@ logger = get_logger(__name__)
 _global_http_client: Optional[httpx.AsyncClient] = None
 
 
+def create_http_client(*, timeout: httpx.Timeout | None = None) -> httpx.AsyncClient:
+    """Build a hub-configured async HTTP client."""
+
+    max_conn = max(settings.a2a_max_connections, 1)
+    limits = httpx.Limits(
+        max_connections=max_conn,
+        max_keepalive_connections=max(1, max_conn // 2),
+    )
+    resolved_timeout = timeout or httpx.Timeout(
+        max(settings.a2a_default_timeout, 1.0),
+        connect=10.0,
+    )
+    return httpx.AsyncClient(
+        limits=limits,
+        timeout=resolved_timeout,
+    )
+
+
 def init_global_http_client() -> None:
     """Initialize the global httpx client with connection pooling."""
     global _global_http_client
-    if _global_http_client is None:
-        max_conn = max(settings.a2a_max_connections, 1)
-        limits = httpx.Limits(
-            max_connections=max_conn,
-            max_keepalive_connections=max(1, max_conn // 2),
-        )
-        timeout = httpx.Timeout(max(settings.a2a_default_timeout, 1.0), connect=10.0)
-
-        _global_http_client = httpx.AsyncClient(
-            limits=limits,
-            timeout=timeout,
-        )
+    if _global_http_client is None or _global_http_client.is_closed:
+        _global_http_client = create_http_client()
         logger.info(
             "Global HTTP client initialized",
             extra={
-                "max_connections": max_conn,
+                "max_connections": max(settings.a2a_max_connections, 1),
                 "timeout": settings.a2a_default_timeout,
             },
         )
@@ -40,7 +48,12 @@ def init_global_http_client() -> None:
 def get_global_http_client() -> httpx.AsyncClient:
     """Get the initialized global httpx client."""
     global _global_http_client
-    if _global_http_client is None:
+    if _global_http_client is None or _global_http_client.is_closed:
+        if _global_http_client is not None and _global_http_client.is_closed:
+            logger.warning(
+                "Global HTTP client was closed unexpectedly; recreating client",
+                extra={"http_client_recreated": True},
+            )
         init_global_http_client()
     return _global_http_client
 

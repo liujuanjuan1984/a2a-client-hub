@@ -9,7 +9,10 @@ import pytest
 from a2a.client.errors import A2AClientHTTPError
 from a2a.types import Message, Role, TextPart
 
+from app.core import http_client as http_client_module
 from app.integrations.a2a_client import client as client_module
+from app.integrations.a2a_client.adapters import sdk as sdk_module
+from app.integrations.a2a_client.adapters.sdk import SDKA2AAdapter
 from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
@@ -55,6 +58,79 @@ async def test_a2a_client_close_releases_owned_http_client_resources() -> None:
     http_client.aclose.assert_awaited_once()
     assert a2a_client._agent_card is None
     assert a2a_client._clients == {}
+
+
+@pytest.mark.asyncio
+async def test_get_global_http_client_recreates_closed_instance() -> None:
+    await http_client_module.close_global_http_client()
+
+    original = http_client_module.get_global_http_client()
+    await original.aclose()
+
+    recreated = http_client_module.get_global_http_client()
+
+    assert recreated is not original
+    assert recreated.is_closed is False
+
+    await http_client_module.close_global_http_client()
+
+
+@pytest.mark.asyncio
+async def test_sdk_adapter_close_preserves_borrowed_http_client() -> None:
+    shared_http_client = AsyncMock()
+    shared_http_client.is_closed = False
+    shared_http_client.aclose = AsyncMock()
+    dedicated_transport_http_client = AsyncMock()
+    dedicated_transport_http_client.is_closed = False
+    dedicated_transport_http_client.aclose = AsyncMock()
+    transport_close = AsyncMock()
+    adapter = SDKA2AAdapter(
+        SimpleNamespace(),
+        http_client=shared_http_client,
+        transport_http_client=dedicated_transport_http_client,
+        owns_transport_http_client=True,
+    )
+    adapter._clients[False] = sdk_module._SDKClientEntry(
+        config=Mock(),
+        client=SimpleNamespace(close=transport_close),
+    )
+
+    await adapter.close()
+
+    transport_close.assert_awaited_once()
+    dedicated_transport_http_client.aclose.assert_awaited_once()
+    shared_http_client.aclose.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_adapter_uses_dedicated_sdk_http_client_for_borrowed_http_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    descriptor = SimpleNamespace()
+    shared_http_client = AsyncMock()
+    dedicated_transport_http_client = AsyncMock()
+    captured: dict[str, object] = {}
+
+    class FakeSdkAdapter:
+        def __init__(self, _descriptor, **kwargs) -> None:
+            captured.update(kwargs)
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_peer_descriptor = AsyncMock(return_value=descriptor)
+    a2a_client._get_http_client = AsyncMock(return_value=shared_http_client)
+
+    monkeypatch.setattr(
+        client_module,
+        "create_http_client",
+        Mock(return_value=dedicated_transport_http_client),
+    )
+    monkeypatch.setattr(client_module, "SDKA2AAdapter", FakeSdkAdapter)
+
+    await a2a_client._get_adapter(client_module.SDK_DIALECT)
+
+    assert captured["http_client"] is shared_http_client
+    assert captured["transport_http_client"] is dedicated_transport_http_client
+    assert captured["owns_transport_http_client"] is True
 
 
 def test_extract_text_from_payload_can_handle_task_like_payload() -> None:
