@@ -129,6 +129,28 @@ export const withSharedSessionBinding = (
   return nextMetadata;
 };
 
+export const withoutSharedSessionBinding = (
+  metadata: Record<string, unknown> | null | undefined,
+) => {
+  const nextMetadata = { ...(metadata ?? {}) };
+  const nextShared = asRecord(nextMetadata.shared)
+    ? { ...(nextMetadata.shared as Record<string, unknown>) }
+    : null;
+
+  if (nextShared) {
+    delete nextShared.session;
+    if (Object.keys(nextShared).length > 0) {
+      nextMetadata.shared = nextShared;
+    } else {
+      delete nextMetadata.shared;
+    }
+  }
+
+  delete nextMetadata.provider;
+  delete nextMetadata.externalSessionId;
+  return nextMetadata;
+};
+
 export const readSharedSessionBinding = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,
 ) => {

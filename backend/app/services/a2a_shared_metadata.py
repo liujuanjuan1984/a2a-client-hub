@@ -167,10 +167,49 @@ def merge_preferred_session_binding_metadata(
     return next_metadata
 
 
+def strip_session_binding_metadata(
+    metadata: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    next_metadata = coerce_metadata_mapping(metadata or {})
+    next_shared = _as_dict(next_metadata.get(SHARED_METADATA_KEY))
+    next_shared.pop(SHARED_SESSION_KEY, None)
+
+    if next_shared:
+        next_metadata[SHARED_METADATA_KEY] = next_shared
+    else:
+        next_metadata.pop(SHARED_METADATA_KEY, None)
+
+    next_metadata.pop(CANONICAL_EXTERNAL_SESSION_ID_KEY, None)
+    next_metadata.pop(CANONICAL_PROVIDER_KEY, None)
+    return next_metadata
+
+
+def apply_invoke_session_binding_metadata(
+    metadata: Mapping[str, Any] | None,
+    *,
+    provider: str | None,
+    external_session_id: str | None,
+    include_legacy_root: bool,
+) -> dict[str, Any]:
+    next_metadata = strip_session_binding_metadata(metadata or {})
+    if external_session_id:
+        return merge_preferred_session_binding_metadata(
+            next_metadata,
+            provider=provider,
+            external_session_id=external_session_id,
+            include_legacy_root=include_legacy_root,
+        )
+
+    if provider:
+        next_metadata[CANONICAL_PROVIDER_KEY] = provider
+    return next_metadata
+
+
 __all__ = [
     "SHARED_INTERRUPT_KEY",
     "SHARED_SESSION_KEY",
     "SHARED_STREAM_KEY",
+    "apply_invoke_session_binding_metadata",
     "coerce_metadata_mapping",
     "merge_preferred_session_binding_metadata",
     "extract_preferred_interrupt_metadata",
@@ -178,4 +217,5 @@ __all__ = [
     "extract_preferred_usage_metadata",
     "extract_shared_metadata_section",
     "merge_shared_metadata_sections",
+    "strip_session_binding_metadata",
 ]

@@ -1,6 +1,4 @@
 import { getConversationMessages } from "@/lib/chatHistoryCache";
-import { queryKeys } from "@/lib/queryKeys";
-import { queryClient } from "@/services/queryClient";
 import { useChatStore } from "@/store/chat";
 import { executeChatRuntime } from "@/store/chatRuntime";
 
@@ -44,7 +42,6 @@ describe("chat store idempotency semantics", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useChatStore.getState().clearAll();
-    queryClient.setQueryData(queryKeys.agents.catalog(), []);
   });
 
   it("sendMessage creates UUID message ids and forwards userMessageId", async () => {
@@ -163,32 +160,7 @@ describe("chat store idempotency semantics", () => {
     });
   });
 
-  it("uses shared-only binding metadata when cached capability declares session-binding contract", async () => {
-    queryClient.setQueryData(queryKeys.agents.catalog(), [
-      {
-        id: "agent-1",
-        source: "personal",
-        name: "Agent One",
-        cardUrl: "https://example.com/agent-1.json",
-        authType: "none",
-        bearerToken: "",
-        apiKeyHeader: "X-API-Key", // pragma: allowlist secret
-        apiKeyValue: "",
-        basicUsername: "",
-        basicPassword: "",
-        extraHeaders: [],
-        status: "success",
-        lastCheckedAt: new Date().toISOString(),
-        capabilities: {
-          sessionBinding: {
-            declared: true,
-            mode: "declared_contract",
-            uri: "urn:a2a:session-binding/v1",
-            metadataField: "metadata.shared.session.id",
-          },
-        },
-      },
-    ]);
+  it("sends neutral session binding intent and leaves metadata shape adaptation to backend", async () => {
     useChatStore.getState().ensureSession("conv-cap", "agent-1");
     useChatStore.setState((state) => ({
       sessions: {
@@ -209,17 +181,17 @@ describe("chat store idempotency semantics", () => {
 
     const runtimeCall = mockedExecuteChatRuntime.mock.calls[0];
     expect(runtimeCall?.[3]).toMatchObject({
-      metadata: {
-        shared: {
-          session: {
-            id: "ses-upstream-cap",
-            provider: "opencode",
-          },
-        },
+      sessionBinding: {
+        provider: "opencode",
+        externalSessionId: "ses-upstream-cap",
       },
     });
     expect(runtimeCall?.[3]?.metadata?.provider).toBeUndefined();
     expect(runtimeCall?.[3]?.metadata?.externalSessionId).toBeUndefined();
+    const sharedMetadata = runtimeCall?.[3]?.metadata?.shared as
+      | Record<string, unknown>
+      | undefined;
+    expect(sharedMetadata?.session).toBeUndefined();
   });
 
   it("cancelMessage marks streaming session as idle immediately", () => {

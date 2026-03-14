@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import { getAgentSessionBindingWriteMode } from "@/lib/agentCapabilities";
 import {
   buildPersistedSessions,
   buildInvokePayload,
@@ -23,24 +22,15 @@ import {
   updateConversationMessage,
 } from "@/lib/chatHistoryCache";
 import { generateUuid } from "@/lib/id";
-import { queryKeys } from "@/lib/queryKeys";
 import { createPersistStorage } from "@/lib/storage/mmkv";
 import { chatConnectionService } from "@/services/chatConnectionService";
-import { queryClient } from "@/services/queryClient";
-import { type AgentConfig, type AgentSource } from "@/store/agents";
+import { type AgentSource } from "@/store/agents";
 import { executeChatRuntime } from "@/store/chatRuntime";
 
 const CANCEL_REQUEST_DEBOUNCE_MS = 500;
 const CANCEL_REQUEST_HISTORY_TTL_MS = CANCEL_REQUEST_DEBOUNCE_MS * 4;
 const recentCancelRequestAt = new Map<string, number>();
 const pendingCancelRequests = new Map<string, Promise<void>>();
-
-const getSessionBindingWriteModeForAgent = (agentId: string) => {
-  const catalog =
-    queryClient.getQueryData<AgentConfig[]>(queryKeys.agents.catalog()) ?? [];
-  const agent = catalog.find((item) => item.id === agentId);
-  return getAgentSessionBindingWriteMode(agent);
-};
 
 const pruneRecentCancelRequestAt = (now: number) => {
   recentCancelRequestAt.forEach((requestedAt, conversationId) => {
@@ -316,8 +306,6 @@ export const useChatStore = create<ChatState>()(
             userMessageId,
             agentMessageId,
             resumeFromSequence: resumeFromSequence ?? undefined,
-            sessionBindingWriteMode:
-              getSessionBindingWriteModeForAgent(agentId),
           },
         );
 
@@ -427,7 +415,6 @@ export const useChatStore = create<ChatState>()(
           userMessageId: userMessage.id,
           agentMessageId: agentMessage.id,
           interrupt: shouldInterruptPrevious,
-          sessionBindingWriteMode: getSessionBindingWriteModeForAgent(agentId),
         });
 
         await executeChatRuntime(
@@ -504,8 +491,6 @@ export const useChatStore = create<ChatState>()(
             userMessageId,
             agentMessageId,
             interrupt: shouldInterruptPrevious,
-            sessionBindingWriteMode:
-              getSessionBindingWriteModeForAgent(agentId),
           },
         );
         await executeChatRuntime(

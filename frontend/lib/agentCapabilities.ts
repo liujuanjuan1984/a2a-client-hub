@@ -1,13 +1,11 @@
 import type {
   AgentCapabilities,
-  AgentConfig,
   AgentSessionBindingWriteMode,
 } from "@/store/agents";
 
 const SHARED_SESSION_BINDING_URI = "urn:a2a:session-binding/v1";
 const LEGACY_SHARED_SESSION_BINDING_URI = "urn:shared-a2a:session-binding:v1";
 const SHARED_SESSION_ID_FIELD = "metadata.shared.session.id";
-export const AGENT_CAPABILITY_TTL_MS = 6 * 60 * 60 * 1000;
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === "object" && !Array.isArray(value)
@@ -61,29 +59,4 @@ export const extractAgentCapabilitiesFromCard = (
       metadataField,
     },
   };
-};
-
-export const getAgentSessionBindingWriteMode = (
-  agent:
-    | Pick<AgentConfig, "capabilities" | "lastCheckedAt" | "status">
-    | null
-    | undefined,
-  now = Date.now(),
-): AgentSessionBindingWriteMode => {
-  if (agent?.status !== "success") {
-    return "unknown";
-  }
-  if (typeof agent.lastCheckedAt !== "string") {
-    return "unknown";
-  }
-
-  const checkedAtMs = Date.parse(agent.lastCheckedAt);
-  if (
-    Number.isNaN(checkedAtMs) ||
-    now - checkedAtMs > AGENT_CAPABILITY_TTL_MS
-  ) {
-    return "unknown";
-  }
-
-  return agent.capabilities?.sessionBinding?.mode ?? "unknown";
 };

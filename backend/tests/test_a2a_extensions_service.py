@@ -109,6 +109,96 @@ async def test_resolve_session_binding_fetches_card_and_returns_contract(
     assert resolved.behavior == "prefer_metadata_binding_else_create_session"
 
 
+@pytest.mark.asyncio
+async def test_resolve_session_binding_uses_cache_for_repeated_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(
+            url="https://example.com/.well-known/agent-card.json",
+            headers={"Authorization": "Bearer token"},
+        )
+    )
+    fake_card = SimpleNamespace(
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri=SHARED_SESSION_BINDING_URI,
+                    required=False,
+                    params={
+                        "metadata_field": SHARED_SESSION_ID_FIELD,
+                        "behavior": "prefer_metadata_binding_else_create_session",
+                    },
+                )
+            ]
+        )
+    )
+    fetch_calls = 0
+
+    async def _fake_fetch_card(_runtime):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return fake_card
+
+    monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
+
+    first = await service.resolve_session_binding(runtime=runtime)
+    second = await service.resolve_session_binding(runtime=runtime)
+
+    assert first == second
+    assert fetch_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_session_binding_refreshes_cache_after_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(
+            url="https://example.com/.well-known/agent-card.json",
+            headers={},
+        )
+    )
+    fake_card = SimpleNamespace(
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri=SHARED_SESSION_BINDING_URI,
+                    required=False,
+                    params={
+                        "metadata_field": SHARED_SESSION_ID_FIELD,
+                        "behavior": "prefer_metadata_binding_else_create_session",
+                    },
+                )
+            ]
+        )
+    )
+    fetch_calls = 0
+    current_monotonic = 100.0
+
+    async def _fake_fetch_card(_runtime):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return fake_card
+
+    def _fake_monotonic():
+        return current_monotonic
+
+    monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
+    monkeypatch.setattr(
+        "app.integrations.a2a_extensions.service.time.monotonic",
+        _fake_monotonic,
+    )
+
+    await service.resolve_session_binding(runtime=runtime)
+    current_monotonic = 500.0
+    await service.resolve_session_binding(runtime=runtime)
+
+    assert fetch_calls == 2
+
+
 def test_map_business_error_code_supports_dynamic_declared_codes() -> None:
     ext = _resolved_extension()
     assert (

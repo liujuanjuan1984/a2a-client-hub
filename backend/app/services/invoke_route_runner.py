@@ -29,14 +29,22 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
 )
-from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
+from app.schemas.a2a_invoke import (
+    A2AAgentInvokeRequest,
+    A2AAgentInvokeResponse,
+    A2AAgentInvokeSessionBinding,
+)
 from app.schemas.ws_ticket import WsTicketResponse
 from app.services.a2a_invoke_service import StreamOutcome, a2a_invoke_service
-from app.services.a2a_shared_metadata import merge_preferred_session_binding_metadata
+from app.services.a2a_shared_metadata import (
+    apply_invoke_session_binding_metadata,
+    strip_session_binding_metadata,
+)
 from app.services.invoke_session_binding import (
     is_recoverable_invoke_session_error,
     merge_invoke_binding_state,
     normalize_invoke_binding_state,
+    resolve_invoke_session_binding_hint,
     status_code_for_invoke_session_error,
     ws_error_code_for_invoke_session_error,
     ws_error_code_for_recovery_failed,
@@ -914,7 +922,6 @@ def _build_rebound_invoke_payload(
     *,
     payload: A2AAgentInvokeRequest,
     continue_payload: dict[str, Any],
-    include_legacy_session_binding: bool,
 ) -> A2AAgentInvokeRequest:
     (
         provider,
@@ -923,29 +930,31 @@ def _build_rebound_invoke_payload(
     ) = _extract_rebound_continue_binding_fields(continue_payload=continue_payload)
     conversation_id = continue_payload.get("conversationId")
 
-    normalized_provider = provider.lower() if provider else ""
-    normalized_external_session_id = external_session_id or ""
-    next_metadata = merge_preferred_session_binding_metadata(
-        payload.metadata or {},
-        provider=normalized_provider or None,
-        external_session_id=normalized_external_session_id or None,
-        include_legacy_root=include_legacy_session_binding,
-    )
+    normalized_provider = provider.lower() if provider else None
+    normalized_external_session_id = external_session_id or None
+    next_metadata = strip_session_binding_metadata(payload.metadata or {})
     next_context_id = normalize_non_empty_text(context_id) or payload.context_id
     next_conversation_id = (
         normalize_non_empty_text(conversation_id) or payload.conversation_id
     )
+    next_session_binding = None
+    if normalized_provider or normalized_external_session_id:
+        next_session_binding = A2AAgentInvokeSessionBinding(
+            provider=normalized_provider,
+            external_session_id=normalized_external_session_id,
+        )
 
     return payload.model_copy(
         update={
             "conversation_id": next_conversation_id,
             "context_id": next_context_id,
             "metadata": next_metadata,
+            "session_binding": next_session_binding,
         },
     )
 
 
-async def _resolve_session_binding_rebound_mode(
+async def _resolve_session_binding_outbound_mode(
     *,
     runtime: Any,
     logger: Any,
@@ -971,6 +980,37 @@ async def _resolve_session_binding_rebound_mode(
     return ext.legacy_uri_used
 
 
+async def _finalize_outbound_invoke_payload(
+    *,
+    payload: A2AAgentInvokeRequest,
+    runtime: Any,
+    logger: Any,
+    log_extra: dict[str, Any],
+) -> A2AAgentInvokeRequest:
+    provider, external_session_id = resolve_invoke_session_binding_hint(
+        session_binding=payload.session_binding,
+        metadata=payload.metadata,
+    )
+    cleaned_metadata = strip_session_binding_metadata(payload.metadata or {})
+    if not provider and not external_session_id:
+        if cleaned_metadata == (payload.metadata or {}):
+            return payload
+        return payload.model_copy(update={"metadata": cleaned_metadata})
+
+    include_legacy_root = await _resolve_session_binding_outbound_mode(
+        runtime=runtime,
+        logger=logger,
+        log_extra=log_extra,
+    )
+    next_metadata = apply_invoke_session_binding_metadata(
+        cleaned_metadata,
+        provider=provider,
+        external_session_id=external_session_id,
+        include_legacy_root=include_legacy_root,
+    )
+    return payload.model_copy(update={"metadata": next_metadata})
+
+
 async def run_http_invoke_with_session_recovery(
     *,
     db: AsyncSession,
@@ -988,7 +1028,6 @@ async def run_http_invoke_with_session_recovery(
 ) -> A2AAgentInvokeResponse | StreamingResponse:
     current_payload = payload
     remaining_retries = max_recovery_attempts
-    include_legacy_session_binding: bool | None = None
 
     while True:
         response = await run_http_invoke(
@@ -1014,14 +1053,6 @@ async def run_http_invoke_with_session_recovery(
             return response
 
         remaining_retries -= 1
-        if include_legacy_session_binding is None:
-            include_legacy_session_binding = (
-                await _resolve_session_binding_rebound_mode(
-                    runtime=runtime,
-                    logger=logger,
-                    log_extra=log_extra,
-                )
-            )
         try:
             continue_binding = await _continue_session_with_short_transaction(
                 user_id=user_id,
@@ -1032,7 +1063,6 @@ async def run_http_invoke_with_session_recovery(
         current_payload = _build_rebound_invoke_payload(
             payload=current_payload,
             continue_payload=continue_binding,
-            include_legacy_session_binding=include_legacy_session_binding,
         )
 
 
@@ -1050,6 +1080,12 @@ async def run_http_invoke(
     logger: Any,
     log_extra: dict[str, Any],
 ) -> A2AAgentInvokeResponse | StreamingResponse:
+    payload = await _finalize_outbound_invoke_payload(
+        payload=payload,
+        runtime=runtime,
+        logger=logger,
+        log_extra=log_extra,
+    )
     state = await _prepare_state(
         user_id=user_id,
         agent_id=agent_id,
@@ -1157,6 +1193,12 @@ async def run_background_invoke(
     total_timeout_seconds: float | None = None,
     idle_timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
+    payload = await _finalize_outbound_invoke_payload(
+        payload=payload,
+        runtime=runtime,
+        logger=logger,
+        log_extra=log_extra,
+    )
     state = await _prepare_state(
         user_id=user_id,
         agent_id=agent_id,
@@ -1236,6 +1278,12 @@ async def run_ws_invoke(
     on_error_metadata: Callable[[dict[str, Any]], Any] | None = None,
     send_stream_end: bool = True,
 ) -> None:
+    payload = await _finalize_outbound_invoke_payload(
+        payload=payload,
+        runtime=runtime,
+        logger=logger,
+        log_extra=log_extra,
+    )
     state = await _prepare_state(
         user_id=user_id,
         agent_id=agent_id,
@@ -1302,7 +1350,6 @@ async def run_ws_invoke_with_session_recovery(
 ) -> None:
     current_payload = payload
     remaining_retries = max_recovery_attempts
-    include_legacy_session_binding: bool | None = None
     while True:
         stream_error_code: str | None = None
         stream_error_message: str | None = None
@@ -1356,14 +1403,6 @@ async def run_ws_invoke_with_session_recovery(
             return
 
         remaining_retries -= 1
-        if include_legacy_session_binding is None:
-            include_legacy_session_binding = (
-                await _resolve_session_binding_rebound_mode(
-                    runtime=runtime,
-                    logger=logger,
-                    log_extra=log_extra,
-                )
-            )
         try:
             continue_binding = await _continue_session_with_short_transaction(
                 user_id=user_id,
@@ -1375,7 +1414,6 @@ async def run_ws_invoke_with_session_recovery(
         current_payload = _build_rebound_invoke_payload(
             payload=current_payload,
             continue_payload=continue_binding,
-            include_legacy_session_binding=include_legacy_session_binding,
         )
 
 

@@ -1768,7 +1768,7 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     )
     original_conversation_id = str(uuid4())
     rebound_conversation_id = str(uuid4())
-    attempts: list[dict[str, str]] = []
+    attempts: list[dict[str, object]] = []
 
     async def fake_run_http_invoke(**kwargs):  # noqa: ARG001
         payload = kwargs["payload"]
@@ -1776,6 +1776,11 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
             {
                 "conversationId": payload.conversation_id,
                 "metadata": dict(payload.metadata or {}),
+                "sessionBinding": (
+                    payload.session_binding.model_dump(by_alias=True)
+                    if payload.session_binding is not None
+                    else None
+                ),
             }
         )
         if len(attempts) == 1:
@@ -1817,9 +1822,6 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     async def fake_commit_safely(_: object) -> None:
         return None
 
-    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
-        return False
-
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -1827,11 +1829,6 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
         fake_continue_session,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
-    monkeypatch.setattr(
-        invoke_route_runner,
-        "_resolve_session_binding_rebound_mode",
-        fake_resolve_session_binding_rebound_mode,
-    )
 
     async def runtime_builder():
         return runtime
@@ -1869,11 +1866,10 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
     assert len(attempts) == 2
     assert attempts[0]["conversationId"] == original_conversation_id
     assert attempts[1]["conversationId"] == rebound_conversation_id
-    assert attempts[1]["metadata"].get("provider") is None
-    assert attempts[1]["metadata"].get("externalSessionId") is None
-    assert attempts[1]["metadata"]["shared"]["session"] == {
-        "id": "upstream-sid-2",
+    assert attempts[1]["metadata"] == {}
+    assert attempts[1]["sessionBinding"] == {
         "provider": "opencode",
+        "externalSessionId": "upstream-sid-2",
     }
 
 
@@ -1920,9 +1916,6 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
     async def fake_commit_safely(_: object) -> None:
         return None
 
-    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
-        return False
-
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -1930,11 +1923,6 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
         fake_continue_session,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
-    monkeypatch.setattr(
-        invoke_route_runner,
-        "_resolve_session_binding_rebound_mode",
-        fake_resolve_session_binding_rebound_mode,
-    )
 
     async def runtime_builder():
         return runtime
@@ -1992,6 +1980,11 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
             {
                 "conversationId": payload.conversation_id,
                 "metadata": dict(payload.metadata or {}),
+                "sessionBinding": (
+                    payload.session_binding.model_dump(by_alias=True)
+                    if payload.session_binding is not None
+                    else None
+                ),
             }
         )
         return invoke_route_runner._InvokeState(
@@ -2040,7 +2033,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     async def fake_commit_safely(_: object) -> None:
         return None
 
-    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
         return False
 
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
@@ -2057,8 +2050,8 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
         invoke_route_runner,
-        "_resolve_session_binding_rebound_mode",
-        fake_resolve_session_binding_rebound_mode,
+        "_resolve_session_binding_outbound_mode",
+        fake_resolve_session_binding_outbound_mode,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -2097,6 +2090,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
         {
             "conversationId": original_conversation_id,
             "metadata": {},
+            "sessionBinding": None,
         },
         {
             "conversationId": rebound_conversation_id,
@@ -2107,6 +2101,10 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
                         "provider": "opencode",
                     }
                 },
+            },
+            "sessionBinding": {
+                "provider": "opencode",
+                "externalSessionId": "upstream-sid-2",
             },
         },
     ]
@@ -2134,6 +2132,11 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
             {
                 "conversationId": payload.conversation_id,
                 "metadata": dict(payload.metadata or {}),
+                "sessionBinding": (
+                    payload.session_binding.model_dump(by_alias=True)
+                    if payload.session_binding is not None
+                    else None
+                ),
             }
         )
         return invoke_route_runner._InvokeState(
@@ -2183,7 +2186,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     async def fake_commit_safely(_: object) -> None:
         return None
 
-    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
         return False
 
     monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
@@ -2200,8 +2203,8 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
     monkeypatch.setattr(
         invoke_route_runner,
-        "_resolve_session_binding_rebound_mode",
-        fake_resolve_session_binding_rebound_mode,
+        "_resolve_session_binding_outbound_mode",
+        fake_resolve_session_binding_outbound_mode,
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
@@ -2242,6 +2245,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
         {
             "conversationId": original_conversation_id,
             "metadata": {},
+            "sessionBinding": None,
         },
         {
             "conversationId": rebound_conversation_id,
@@ -2252,28 +2256,15 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
                         "provider": "opencode",
                     }
                 },
+            },
+            "sessionBinding": {
+                "provider": "opencode",
+                "externalSessionId": "upstream-sid-2",
             },
         },
     ]
     assert stream_calls == 2
     assert observed_error_codes == ["session_not_found", "session_not_found"]
-    assert prepare_payloads == [
-        {
-            "conversationId": original_conversation_id,
-            "metadata": {},
-        },
-        {
-            "conversationId": rebound_conversation_id,
-            "metadata": {
-                "shared": {
-                    "session": {
-                        "id": "upstream-sid-2",
-                        "provider": "opencode",
-                    }
-                },
-            },
-        },
-    ]
     assert len(error_events) == 1
     assert (
         error_events[0]["data"]["error_code"] == "session_not_found_recovery_exhausted"
@@ -2477,7 +2468,7 @@ async def test_run_http_invoke_with_session_recovery_skips_binding_resolution_wi
             agent_url="https://example.com/a2a",
         )
 
-    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
         nonlocal resolve_calls
         resolve_calls += 1
         return False
@@ -2485,8 +2476,8 @@ async def test_run_http_invoke_with_session_recovery_skips_binding_resolution_wi
     monkeypatch.setattr(invoke_route_runner, "run_http_invoke", fake_run_http_invoke)
     monkeypatch.setattr(
         invoke_route_runner,
-        "_resolve_session_binding_rebound_mode",
-        fake_resolve_session_binding_rebound_mode,
+        "_resolve_session_binding_outbound_mode",
+        fake_resolve_session_binding_outbound_mode,
     )
 
     payload = A2AAgentInvokeRequest.model_validate(
@@ -2517,6 +2508,116 @@ async def test_run_http_invoke_with_session_recovery_skips_binding_resolution_wi
 
 
 @pytest.mark.asyncio
+async def test_finalize_outbound_invoke_payload_applies_declared_contract_from_session_binding_intent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+        return False
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_resolve_session_binding_outbound_mode",
+        fake_resolve_session_binding_outbound_mode,
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {
+                "locale": "zh-CN",
+                "provider": "legacy",
+                "externalSessionId": "legacy-sid",
+                "shared": {
+                    "session": {
+                        "id": "legacy-sid",
+                        "provider": "legacy",
+                    },
+                    "model": {
+                        "providerID": "openai",
+                        "modelID": "gpt-5",
+                    },
+                },
+            },
+            "sessionBinding": {
+                "provider": "OpenCode",
+                "externalSessionId": "ses-upstream-1",
+            },
+        }
+    )
+
+    finalized = await invoke_route_runner._finalize_outbound_invoke_payload(
+        payload=payload,
+        runtime=SimpleNamespace(
+            resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+        ),
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert finalized.metadata == {
+        "locale": "zh-CN",
+        "shared": {
+            "model": {
+                "providerID": "openai",
+                "modelID": "gpt-5",
+            },
+            "session": {
+                "id": "ses-upstream-1",
+                "provider": "opencode",
+            },
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_finalize_outbound_invoke_payload_normalizes_legacy_binding_metadata_for_compat_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+        return True
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_resolve_session_binding_outbound_mode",
+        fake_resolve_session_binding_outbound_mode,
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {
+                "locale": "zh-CN",
+                "provider": "OpenCode",
+                "externalSessionId": "ses-upstream-2",
+            },
+        }
+    )
+
+    finalized = await invoke_route_runner._finalize_outbound_invoke_payload(
+        payload=payload,
+        runtime=SimpleNamespace(
+            resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+        ),
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert finalized.metadata == {
+        "locale": "zh-CN",
+        "provider": "opencode",
+        "externalSessionId": "ses-upstream-2",
+        "shared": {
+            "session": {
+                "id": "ses-upstream-2",
+                "provider": "opencode",
+            }
+        },
+    }
+
+
+@pytest.mark.asyncio
 async def test_run_ws_invoke_with_session_recovery_skips_binding_resolution_without_recovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2529,7 +2630,7 @@ async def test_run_ws_invoke_with_session_recovery_skips_binding_resolution_with
     async def fake_run_ws_invoke(**kwargs):  # noqa: ARG001
         return None
 
-    async def fake_resolve_session_binding_rebound_mode(**kwargs):  # noqa: ARG001
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
         nonlocal resolve_calls
         resolve_calls += 1
         return False
@@ -2537,8 +2638,8 @@ async def test_run_ws_invoke_with_session_recovery_skips_binding_resolution_with
     monkeypatch.setattr(invoke_route_runner, "run_ws_invoke", fake_run_ws_invoke)
     monkeypatch.setattr(
         invoke_route_runner,
-        "_resolve_session_binding_rebound_mode",
-        fake_resolve_session_binding_rebound_mode,
+        "_resolve_session_binding_outbound_mode",
+        fake_resolve_session_binding_outbound_mode,
     )
 
     payload = A2AAgentInvokeRequest.model_validate(

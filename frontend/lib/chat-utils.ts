@@ -5,8 +5,7 @@ import type {
   PendingRuntimeInterrupt,
   ResolvedRuntimeInterrupt,
 } from "@/lib/api/chat-utils";
-import { withSharedSessionBinding } from "@/lib/sharedMetadata";
-import type { AgentSessionBindingWriteMode } from "@/store/agents";
+import { withoutSharedSessionBinding } from "@/lib/sharedMetadata";
 
 export const isSameBlockList = (
   left: MessageBlock[] = [],
@@ -176,7 +175,6 @@ export const buildInvokePayload = (
     agentMessageId?: string;
     resumeFromSequence?: number;
     interrupt?: boolean;
-    sessionBindingWriteMode?: AgentSessionBindingWriteMode;
   },
 ): A2AAgentInvokeRequest => {
   const payload: A2AAgentInvokeRequest = { query, conversationId };
@@ -192,36 +190,16 @@ export const buildInvokePayload = (
   if (session.contextId) {
     payload.contextId = session.contextId;
   }
-  const metadata: Record<string, unknown> = { ...(session.metadata ?? {}) };
+  const metadata = withoutSharedSessionBinding(session.metadata);
   const externalProvider = session.externalSessionRef?.provider?.trim();
   const externalSessionId =
     session.externalSessionRef?.externalSessionId?.trim();
-  const metadataProvider =
-    typeof metadata.provider === "string" ? metadata.provider.trim() : "";
-  const providerForSessionBinding = (externalProvider ?? metadataProvider)
-    .trim()
-    .toLowerCase();
-  const sessionBindingWriteMode = options?.sessionBindingWriteMode ?? "unknown";
-  if (externalSessionId) {
-    Object.assign(
-      metadata,
-      withSharedSessionBinding(
-        metadata,
-        externalSessionId,
-        providerForSessionBinding || null,
-      ),
-    );
-    if (sessionBindingWriteMode === "declared_contract") {
-      delete metadata.provider;
-      delete metadata.externalSessionId;
-    } else {
-      if (providerForSessionBinding) {
-        metadata.provider = providerForSessionBinding;
-      }
-      metadata.externalSessionId = externalSessionId;
-    }
-  } else if (providerForSessionBinding) {
-    metadata.provider = providerForSessionBinding;
+  const providerForSessionBinding = externalProvider?.trim().toLowerCase();
+  if (externalSessionId || providerForSessionBinding) {
+    payload.sessionBinding = {
+      provider: providerForSessionBinding || null,
+      externalSessionId: externalSessionId || null,
+    };
   }
   if (Object.keys(metadata).length > 0) {
     payload.metadata = metadata;

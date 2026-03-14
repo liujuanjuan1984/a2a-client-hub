@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.schemas.a2a_invoke import A2AAgentInvokeSessionBinding
+from app.utils.payload_extract import extract_provider_and_external_session_id
+from app.utils.session_identity import normalize_non_empty_text, normalize_provider
+
 
 def status_code_for_invoke_session_error(detail: str) -> int:
     normalized = normalize_error_code(detail)
@@ -69,6 +73,25 @@ def normalize_invoke_binding_state(
     return resolved_context_id, resolved_metadata
 
 
+def resolve_invoke_session_binding_hint(
+    *,
+    session_binding: A2AAgentInvokeSessionBinding | None,
+    metadata: dict[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    legacy_provider, legacy_external_session_id = (
+        extract_provider_and_external_session_id({"metadata": metadata or {}})
+    )
+    if session_binding is None:
+        return legacy_provider, legacy_external_session_id
+
+    provider = normalize_provider(session_binding.provider) or legacy_provider
+    external_session_id = (
+        normalize_non_empty_text(session_binding.external_session_id)
+        or legacy_external_session_id
+    )
+    return provider, external_session_id
+
+
 def merge_invoke_binding_state(
     *,
     current_context_id: str | None,
@@ -94,4 +117,5 @@ __all__ = [
     "is_recoverable_invoke_session_error",
     "ws_error_code_for_recovery_failed",
     "ws_error_code_for_invoke_session_error",
+    "resolve_invoke_session_binding_hint",
 ]

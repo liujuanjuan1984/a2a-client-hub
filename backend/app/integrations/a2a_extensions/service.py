@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from app.core.logging import get_logger
@@ -24,6 +27,13 @@ from app.integrations.a2a_extensions.types import ResolvedSessionBindingExtensio
 from app.services.a2a_runtime import A2ARuntime
 
 logger = get_logger(__name__)
+_SESSION_BINDING_CACHE_TTL_SECONDS = 300.0
+
+
+@dataclass(slots=True)
+class _SessionBindingCacheEntry:
+    resolved: ResolvedSessionBindingExtension
+    expires_at: float
 
 
 class A2AExtensionsService:
@@ -32,17 +42,45 @@ class A2AExtensionsService:
         self._session_extensions = SessionExtensionService(self._support)
         self._interrupt_extensions = InterruptExtensionService(self._support)
         self._opencode_discovery = OpencodeDiscoveryService(self._support)
+        self._session_binding_cache_lock = asyncio.Lock()
+        self._session_binding_cache: dict[
+            tuple[str, tuple[tuple[str, str], ...]],
+            _SessionBindingCacheEntry,
+        ] = {}
 
     async def shutdown(self) -> None:
         await self._support.shutdown()
+        async with self._session_binding_cache_lock:
+            self._session_binding_cache.clear()
+
+    @staticmethod
+    def _session_binding_cache_key(
+        runtime: A2ARuntime,
+    ) -> tuple[str, tuple[tuple[str, str], ...]]:
+        resolved_headers = getattr(runtime.resolved, "headers", {}) or {}
+        headers = tuple(sorted(resolved_headers.items()))
+        return runtime.resolved.url, headers
 
     async def resolve_session_binding(
         self,
         *,
         runtime: A2ARuntime,
     ) -> ResolvedSessionBindingExtension:
+        cache_key = self._session_binding_cache_key(runtime)
+        now = time.monotonic()
+        async with self._session_binding_cache_lock:
+            cached = self._session_binding_cache.get(cache_key)
+            if cached and cached.expires_at > now:
+                return cached.resolved
+
         card = await self._support.fetch_card(runtime)
-        return resolve_session_binding(card)
+        resolved = resolve_session_binding(card)
+        async with self._session_binding_cache_lock:
+            self._session_binding_cache[cache_key] = _SessionBindingCacheEntry(
+                resolved=resolved,
+                expires_at=now + _SESSION_BINDING_CACHE_TTL_SECONDS,
+            )
+        return resolved
 
     async def list_sessions(
         self,
