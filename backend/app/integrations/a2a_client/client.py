@@ -42,7 +42,7 @@ from app.integrations.a2a_client.errors import (
     A2AUnsupportedBindingError,
 )
 from app.integrations.a2a_client.http_clients import (
-    get_shared_sdk_transport_http_client,
+    borrow_shared_sdk_transport_http_client,
 )
 from app.integrations.a2a_client.models import A2AMessageRequest
 from app.integrations.a2a_client.selection import (
@@ -96,6 +96,8 @@ class A2AClient:
         *,
         timeout: Optional[httpx.Timeout] = None,
         timeout_seconds: Optional[float] = None,
+        borrowed_http_client: Optional[httpx.AsyncClient] = None,
+        owned_http_client: Optional[httpx.AsyncClient] = None,
         http_client: Optional[httpx.AsyncClient] = None,
         owns_http_client: Optional[bool] = None,
         interceptors: Optional[List[ClientCallInterceptor]] = None,
@@ -109,9 +111,13 @@ class A2AClient:
         self._agent_card: Optional[AgentCard] = None
         self._peer_descriptor = None
         self._timeout = timeout or self._build_timeout(timeout_seconds)
-        self._http_client = http_client
-        self._owns_http_client = (
-            owns_http_client if owns_http_client is not None else False
+        self._http_client, self._owns_http_client = (
+            self._resolve_http_client_dependency(
+                borrowed_http_client=borrowed_http_client,
+                owned_http_client=owned_http_client,
+                http_client=http_client,
+                owns_http_client=owns_http_client,
+            )
         )
 
         self._interceptors = list(interceptors or [])
@@ -521,8 +527,11 @@ class A2AClient:
         last_error: Exception | None = None
         for dialect in await self._get_preferred_dialects(descriptor):
             adapter = await self._get_adapter(dialect)
+            did_reset_adapter = False
+            yielded_payload = False
             try:
                 async for payload in adapter.stream_message(request):
+                    yielded_payload = True
                     global_dialect_cache.set(
                         agent_url=descriptor.agent_url,
                         card_fingerprint=descriptor.card_fingerprint,
@@ -531,6 +540,36 @@ class A2AClient:
                     yield payload
                 return
             except Exception as exc:  # noqa: BLE001
+                if (
+                    not yielded_payload
+                    and not did_reset_adapter
+                    and self._should_reset_adapter_after_error(
+                        dialect=dialect,
+                        adapter=adapter,
+                        exc=exc,
+                    )
+                ):
+                    did_reset_adapter = True
+                    await self._reset_adapter(dialect=dialect, adapter=adapter)
+                    adapter = await self._get_adapter(dialect)
+                    logger.info(
+                        "Retrying A2A stream after adapter reset",
+                        extra={
+                            "agent_url": redact_url_for_logging(self.agent_url),
+                            "failed_dialect": dialect,
+                        },
+                    )
+                    try:
+                        async for payload in adapter.stream_message(request):
+                            global_dialect_cache.set(
+                                agent_url=descriptor.agent_url,
+                                card_fingerprint=descriptor.card_fingerprint,
+                                dialect=dialect,
+                            )
+                            yield payload
+                        return
+                    except Exception as retry_exc:  # noqa: BLE001
+                        exc = retry_exc
                 last_error = exc
                 if not self._should_try_alternate_dialect(
                     descriptor=descriptor,
@@ -538,7 +577,7 @@ class A2AClient:
                     exc=exc,
                 ):
                     raise
-                await self._discard_adapter(dialect)
+                await self._discard_adapter(dialect, expected_adapter=adapter)
                 logger.info(
                     "Retrying A2A stream with alternate JSON-RPC dialect",
                     extra={
@@ -565,6 +604,7 @@ class A2AClient:
         last_error: Exception | None = None
         for dialect in await self._get_preferred_dialects(descriptor):
             adapter = await self._get_adapter(dialect)
+            did_reset_adapter = False
             try:
                 result = await callback(adapter)
                 global_dialect_cache.set(
@@ -574,6 +614,31 @@ class A2AClient:
                 )
                 return result
             except Exception as exc:  # noqa: BLE001
+                if not did_reset_adapter and self._should_reset_adapter_after_error(
+                    dialect=dialect,
+                    adapter=adapter,
+                    exc=exc,
+                ):
+                    did_reset_adapter = True
+                    await self._reset_adapter(dialect=dialect, adapter=adapter)
+                    adapter = await self._get_adapter(dialect)
+                    logger.info(
+                        "Retrying A2A invoke after adapter reset",
+                        extra={
+                            "agent_url": redact_url_for_logging(self.agent_url),
+                            "failed_dialect": dialect,
+                        },
+                    )
+                    try:
+                        result = await callback(adapter)
+                        global_dialect_cache.set(
+                            agent_url=descriptor.agent_url,
+                            card_fingerprint=descriptor.card_fingerprint,
+                            dialect=dialect,
+                        )
+                        return result
+                    except Exception as retry_exc:  # noqa: BLE001
+                        exc = retry_exc
                 last_error = exc
                 if not self._should_try_alternate_dialect(
                     descriptor=descriptor,
@@ -581,7 +646,7 @@ class A2AClient:
                     exc=exc,
                 ):
                     raise
-                await self._discard_adapter(dialect)
+                await self._discard_adapter(dialect, expected_adapter=adapter)
                 logger.info(
                     "Retrying A2A invoke with alternate JSON-RPC dialect",
                     extra={
@@ -615,15 +680,22 @@ class A2AClient:
             httpx_client = await self._get_http_client()
 
             if dialect == SDK_DIALECT:
+                shared_transport_lease = None
                 sdk_transport_http_client = (
                     self._http_client
                     if self._http_client is not None and self._owns_http_client
-                    else get_shared_sdk_transport_http_client(timeout=self._timeout)
+                    else None
                 )
+                if sdk_transport_http_client is None:
+                    shared_transport_lease = borrow_shared_sdk_transport_http_client(
+                        timeout=self._timeout
+                    )
+                    sdk_transport_http_client = shared_transport_lease.client
                 adapter = SDKA2AAdapter(
                     descriptor,
                     http_client=httpx_client,
                     transport_http_client=sdk_transport_http_client,
+                    shared_transport_lease=shared_transport_lease,
                     interceptors=list(self._interceptors),
                     consumers=list(self._consumers),
                     use_client_preference=self._use_client_preference,
@@ -644,11 +716,19 @@ class A2AClient:
             self._clients[dialect] = ClientCacheEntry(client=adapter)
             return adapter
 
-    async def _discard_adapter(self, dialect: str) -> None:
+    async def _discard_adapter(
+        self,
+        dialect: str,
+        *,
+        expected_adapter: Any | None = None,
+    ) -> None:
         async with self._adapter_lock:
-            entry = self._clients.pop(dialect, None)
-        if entry is None:
-            return
+            entry = self._clients.get(dialect)
+            if entry is None:
+                return
+            if expected_adapter is not None and entry.client is not expected_adapter:
+                return
+            self._clients.pop(dialect, None)
         try:
             await await_cancel_safe(entry.client.close())
         except Exception:  # pragma: no cover - defensive cleanup
@@ -657,6 +737,18 @@ class A2AClient:
                 exc_info=True,
                 extra={"dialect": dialect},
             )
+
+    async def _reset_adapter(self, *, dialect: str, adapter: Any) -> None:
+        if isinstance(adapter, SDKA2AAdapter):
+            try:
+                await adapter.invalidate_borrowed_transport()
+            except Exception:  # pragma: no cover - defensive cleanup
+                logger.debug(
+                    "Failed to invalidate shared SDK transport",
+                    exc_info=True,
+                    extra={"dialect": dialect},
+                )
+        await self._discard_adapter(dialect, expected_adapter=adapter)
 
     async def _get_preferred_dialects(self, descriptor) -> list[str]:
         if normalize_transport_label(descriptor.selected_transport) != "JSONRPC":
@@ -734,6 +826,59 @@ class A2AClient:
         if timeout_seconds and timeout_seconds > 0:
             return httpx.Timeout(timeout_seconds)
         return httpx.Timeout(10.0, connect=10.0)
+
+    @staticmethod
+    def _resolve_http_client_dependency(
+        *,
+        borrowed_http_client: httpx.AsyncClient | None,
+        owned_http_client: httpx.AsyncClient | None,
+        http_client: httpx.AsyncClient | None,
+        owns_http_client: bool | None,
+    ) -> tuple[httpx.AsyncClient | None, bool]:
+        explicit_count = sum(
+            1
+            for candidate in (borrowed_http_client, owned_http_client)
+            if candidate is not None
+        )
+        if explicit_count > 1:
+            raise ValueError(
+                "Use only one of borrowed_http_client or owned_http_client."
+            )
+        if explicit_count and (http_client is not None or owns_http_client is not None):
+            raise ValueError(
+                "Do not mix borrowed/owned_http_client with legacy http_client "
+                "arguments."
+            )
+        if borrowed_http_client is not None:
+            return borrowed_http_client, False
+        if owned_http_client is not None:
+            return owned_http_client, True
+        if http_client is None:
+            if owns_http_client is not None:
+                raise ValueError(
+                    "owns_http_client requires a matching legacy http_client."
+                )
+            return None, False
+        if owns_http_client is None:
+            raise TypeError(
+                "Passing http_client requires explicit ownership. "
+                "Use borrowed_http_client or owned_http_client instead."
+            )
+        return http_client, bool(owns_http_client)
+
+    @staticmethod
+    def _should_reset_adapter_after_error(
+        *,
+        dialect: str,
+        adapter: Any,
+        exc: Exception,
+    ) -> bool:
+        if dialect != SDK_DIALECT or not isinstance(adapter, SDKA2AAdapter):
+            return False
+        if _is_closed_http_client_error(exc):
+            return True
+        http_error = _unwrap_httpx_error(exc)
+        return bool(http_error and isinstance(http_error, httpx.TransportError))
 
     @staticmethod
     def _extract_text_from_payload(payload: ClientEvent | Message) -> Optional[str]:
@@ -950,6 +1095,21 @@ def _unwrap_httpx_error(exc: Exception) -> Optional[httpx.HTTPError]:
             current, "__context__", None
         )
     return None
+
+
+def _is_closed_http_client_error(exc: Exception) -> bool:
+    current: Exception | None = exc
+    visited: set[int] = set()
+    while current and id(current) not in visited:
+        visited.add(id(current))
+        if isinstance(current, RuntimeError):
+            message = str(current).lower()
+            if "client has been closed" in message:
+                return True
+        current = getattr(current, "__cause__", None) or getattr(
+            current, "__context__", None
+        )
+    return False
 
 
 def _should_reset_http_error(error: httpx.HTTPError) -> bool:

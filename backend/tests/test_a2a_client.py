@@ -20,6 +20,7 @@ from app.integrations.a2a_client.errors import (
     A2AOutboundNotAllowedError,
     A2APeerProtocolError,
 )
+from app.integrations.a2a_client.http_clients import SharedSDKTransportLease
 from app.utils.outbound_url import OutboundURLNotAllowedError
 
 
@@ -45,8 +46,7 @@ async def test_a2a_client_close_releases_owned_http_client_resources() -> None:
     transport_close = AsyncMock()
     a2a_client = A2AClient(
         "http://example-agent.internal:24020",
-        http_client=http_client,
-        owns_http_client=True,
+        owned_http_client=http_client,
     )
     a2a_client._agent_card = Mock()
     a2a_client._clients["sdk"] = ClientCacheEntry(
@@ -66,12 +66,30 @@ async def test_a2a_client_does_not_close_injected_http_client_by_default() -> No
     http_client = AsyncMock()
     a2a_client = A2AClient(
         "http://example-agent.internal:24020",
-        http_client=http_client,
+        borrowed_http_client=http_client,
     )
 
     await a2a_client.close()
 
     http_client.aclose.assert_not_awaited()
+
+
+def test_a2a_client_rejects_legacy_http_client_without_explicit_ownership() -> None:
+    with pytest.raises(TypeError, match="borrowed_http_client or owned_http_client"):
+        A2AClient(
+            "http://example-agent.internal:24020",
+            http_client=AsyncMock(),
+        )
+
+
+def test_a2a_client_rejects_mixed_http_client_dependency_modes() -> None:
+    with pytest.raises(ValueError, match="Do not mix"):
+        A2AClient(
+            "http://example-agent.internal:24020",
+            borrowed_http_client=AsyncMock(),
+            http_client=AsyncMock(),
+            owns_http_client=False,
+        )
 
 
 @pytest.mark.asyncio
@@ -129,7 +147,11 @@ async def test_get_adapter_uses_shared_sdk_http_client_for_borrowed_http_client(
 ) -> None:
     descriptor = SimpleNamespace()
     shared_http_client = AsyncMock()
-    shared_sdk_transport_http_client = AsyncMock()
+    shared_lease = SharedSDKTransportLease(
+        timeout_key=(10.0, 10.0, 10.0, 10.0),
+        generation=1,
+        client=AsyncMock(),
+    )
     captured: dict[str, object] = {}
 
     class FakeSdkAdapter:
@@ -142,32 +164,79 @@ async def test_get_adapter_uses_shared_sdk_http_client_for_borrowed_http_client(
 
     monkeypatch.setattr(
         client_module,
-        "get_shared_sdk_transport_http_client",
-        Mock(return_value=shared_sdk_transport_http_client),
+        "borrow_shared_sdk_transport_http_client",
+        Mock(return_value=shared_lease),
     )
     monkeypatch.setattr(client_module, "SDKA2AAdapter", FakeSdkAdapter)
 
     await a2a_client._get_adapter(client_module.SDK_DIALECT)
 
     assert captured["http_client"] is shared_http_client
-    assert captured["transport_http_client"] is shared_sdk_transport_http_client
+    assert captured["transport_http_client"] is shared_lease.client
+    assert captured["shared_transport_lease"] is shared_lease
 
 
 @pytest.mark.asyncio
 async def test_shared_sdk_transport_http_client_reuses_timeout_bucket() -> None:
     await shared_http_clients_module.close_shared_sdk_transport_http_clients()
 
-    original = shared_http_clients_module.get_shared_sdk_transport_http_client()
-    reused = shared_http_clients_module.get_shared_sdk_transport_http_client()
+    original = shared_http_clients_module.borrow_shared_sdk_transport_http_client()
+    reused = shared_http_clients_module.borrow_shared_sdk_transport_http_client()
 
-    assert reused is original
+    assert reused.client is original.client
+    assert reused.generation == original.generation
 
     await shared_http_clients_module.close_shared_sdk_transport_http_clients()
 
-    recreated = shared_http_clients_module.get_shared_sdk_transport_http_client()
+    recreated = shared_http_clients_module.borrow_shared_sdk_transport_http_client()
 
-    assert recreated is not original
-    assert recreated.is_closed is False
+    assert recreated.client is not original.client
+    assert recreated.client.is_closed is False
+    assert recreated.generation > original.generation
+
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+
+@pytest.mark.asyncio
+async def test_invalidate_shared_sdk_transport_http_client_recreates_generation() -> (
+    None
+):
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+    original = shared_http_clients_module.borrow_shared_sdk_transport_http_client()
+    invalidated = (
+        await shared_http_clients_module.invalidate_shared_sdk_transport_http_client(
+            original
+        )
+    )
+    recreated = shared_http_clients_module.borrow_shared_sdk_transport_http_client()
+
+    assert invalidated is True
+    assert recreated.client is not original.client
+    assert recreated.generation > original.generation
+
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+
+@pytest.mark.asyncio
+async def test_invalidate_shared_sdk_transport_http_client_ignores_stale_generation() -> (
+    None
+):
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+    original = shared_http_clients_module.borrow_shared_sdk_transport_http_client()
+    await shared_http_clients_module.invalidate_shared_sdk_transport_http_client(
+        original
+    )
+    recreated = shared_http_clients_module.borrow_shared_sdk_transport_http_client()
+    stale_result = (
+        await shared_http_clients_module.invalidate_shared_sdk_transport_http_client(
+            original
+        )
+    )
+
+    assert stale_result is False
+    assert recreated.client.is_closed is False
 
     await shared_http_clients_module.close_shared_sdk_transport_http_clients()
 
@@ -572,6 +641,8 @@ async def test_get_agent_card_uses_sdk_exact_transport_matching_semantics(
 
 @pytest.mark.asyncio
 async def test_call_agent_falls_back_to_pascal_jsonrpc_on_method_not_found() -> None:
+    client_module.global_dialect_cache._entries.clear()
+
     card = SimpleNamespace(
         name="Swival peer",
         preferred_transport="JSONRPC",
@@ -608,4 +679,67 @@ async def test_call_agent_falls_back_to_pascal_jsonrpc_on_method_not_found() -> 
 
     assert result["success"] is True
     assert result["content"] == "pascal-result"
-    a2a_client._discard_adapter.assert_awaited_once_with(client_module.SDK_DIALECT)
+    a2a_client._discard_adapter.assert_awaited_once()
+    assert a2a_client._discard_adapter.await_args.args == (client_module.SDK_DIALECT,)
+    assert a2a_client._discard_adapter.await_args.kwargs["expected_adapter"] is not None
+
+
+@pytest.mark.asyncio
+async def test_call_agent_retries_sdk_dialect_after_transport_reset() -> None:
+    client_module.global_dialect_cache._entries.clear()
+
+    card = SimpleNamespace(
+        name="SDK peer",
+        preferred_transport="JSONRPC",
+        url="http://example-agent.internal:24020/",
+        additional_interfaces=[],
+        capabilities=SimpleNamespace(streaming=False),
+        protocol_version="1.0",
+    )
+    descriptor = client_module.build_peer_descriptor(
+        agent_url="http://example-agent.internal:24020",
+        card=card,
+        selected_transport="JSONRPC",
+        selected_url="http://example-agent.internal:24020/",
+    )
+
+    class ResettingSdkAdapter(sdk_module.SDKA2AAdapter):
+        def __init__(self) -> None:
+            self.invalidate_borrowed_transport = AsyncMock(return_value=True)
+            self.send_message = AsyncMock(
+                side_effect=RuntimeError(
+                    "Cannot send a request, as the client has been closed."
+                )
+            )
+            self.close = AsyncMock()
+
+    class HealthySdkAdapter(sdk_module.SDKA2AAdapter):
+        def __init__(self) -> None:
+            self.send_message = AsyncMock(
+                return_value={"parts": [{"text": "sdk-recovered"}]}
+            )
+            self.close = AsyncMock()
+
+    first_adapter = ResettingSdkAdapter()
+    second_adapter = HealthySdkAdapter()
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._peer_descriptor = descriptor
+
+    async def fake_get_adapter(dialect: str):
+        adapter = first_adapter
+        if fake_get_adapter.calls > 0:
+            adapter = second_adapter
+        fake_get_adapter.calls += 1
+        a2a_client._clients[dialect] = ClientCacheEntry(client=adapter)
+        return adapter
+
+    fake_get_adapter.calls = 0
+    a2a_client._get_adapter = AsyncMock(side_effect=fake_get_adapter)
+
+    result = await a2a_client.call_agent("hello")
+
+    assert result["success"] is True
+    assert result["content"] == "sdk-recovered"
+    first_adapter.invalidate_borrowed_transport.assert_awaited_once()
+    first_adapter.close.assert_awaited_once()

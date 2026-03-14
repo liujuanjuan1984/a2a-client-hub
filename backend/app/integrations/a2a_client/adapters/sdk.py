@@ -21,6 +21,10 @@ from a2a.types import Message, Part, Role, TaskIdParams, TextPart, TransportProt
 
 from app.integrations.a2a_client.adapters.base import A2AAdapter
 from app.integrations.a2a_client.errors import A2APeerProtocolError
+from app.integrations.a2a_client.http_clients import (
+    SharedSDKTransportLease,
+    invalidate_shared_sdk_transport_http_client,
+)
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 from app.utils.async_cleanup import await_cancel_safe
 
@@ -70,6 +74,7 @@ class SDKA2AAdapter(A2AAdapter):
         http_client: httpx.AsyncClient,
         transport_http_client: httpx.AsyncClient | None = None,
         owns_transport_http_client: bool = False,
+        shared_transport_lease: SharedSDKTransportLease | None = None,
         interceptors: list[ClientCallInterceptor] | None = None,
         consumers: list[Consumer] | None = None,
         use_client_preference: bool = False,
@@ -79,6 +84,7 @@ class SDKA2AAdapter(A2AAdapter):
         self._http_client = http_client
         self._transport_http_client = transport_http_client or http_client
         self._owns_transport_http_client = owns_transport_http_client
+        self._shared_transport_lease = shared_transport_lease
         self._sdk_http_client = (
             self._transport_http_client
             if owns_transport_http_client
@@ -144,6 +150,15 @@ class SDKA2AAdapter(A2AAdapter):
             and not self._transport_http_client.is_closed
         ):
             await await_cancel_safe(self._transport_http_client.aclose())
+
+    async def invalidate_borrowed_transport(self) -> bool:
+        """Invalidate the borrowed shared transport generation, if any."""
+
+        if self._shared_transport_lease is None:
+            return False
+        return await invalidate_shared_sdk_transport_http_client(
+            self._shared_transport_lease
+        )
 
     async def _get_client(self, *, streaming: bool) -> Client:
         async with self._client_lock:
