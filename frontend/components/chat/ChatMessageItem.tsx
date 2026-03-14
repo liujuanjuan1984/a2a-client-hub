@@ -135,6 +135,24 @@ export function ChatMessageItem({
               </Text>
             </View>
           ) : null}
+          {message.status === "error" ? (
+            <View className="mt-2 flex-row items-center gap-1.5 p-2 bg-red-500/10 rounded border border-red-500/20">
+              <Ionicons name="warning-outline" size={14} color="#EF4444" />
+              <Text className="text-[12px] font-medium text-red-400">
+                {message.errorCode === "agent_unavailable" ||
+                message.errorCode === "timeout" ||
+                message.errorCode === "outbound_not_allowed" ||
+                message.errorCode === "stream_error" ||
+                message.errorCode === "stream_closed" ||
+                message.content === "Request failed." ||
+                message.content.includes("timeout") ||
+                message.content.includes("WebSocket") ||
+                !message.content
+                  ? "当前无法连接到上游 Agent，请稍后重试。"
+                  : "流响应异常，请重试。"}
+              </Text>
+            </View>
+          ) : null}
         </Pressable>
         <View
           className={`absolute bottom-1 ${userCopyButtonPositionClass} opacity-30`}

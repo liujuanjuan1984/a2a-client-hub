@@ -750,24 +750,36 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     return false;
   };
 
-  const appendStreamError = (errorText: string) => {
+  const appendStreamError = (errorText: string, errorCode?: string | null) => {
     if (terminalHandled) {
       return;
     }
     terminalHandled = true;
     flushChunkBuffer();
+
+    const currentMsg = getConversationMessages(conversationId).find(
+      (m) => m.id === activeAgentMessageId
+    );
+
+    updateConversationMessage(conversationId, activeAgentMessageId, {
+      status: "error",
+      content: currentMsg?.content || errorText,
+      errorCode: errorCode ?? undefined,
+    });
+
     patchSession({
-      streamState: "recoverable",
+      streamState: "error",
       lastStreamError: errorText,
       pendingInterrupt: null,
     });
     warnStreamOnce(
-      `recoverable:${conversationId}:${errorText}`,
-      "[Chat Stream] error (marked recoverable for resume)",
+      `error:${conversationId}:${errorText}`,
+      "[Chat Stream] stream error",
       {
         conversationId,
         source: get().sessions[conversationId]?.source ?? null,
         message: errorText,
+        errorCode,
         transport: get().sessions[conversationId]?.transport ?? "unknown",
       },
     );
@@ -864,7 +876,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
               typeof maybePayload?.message === "string"
                 ? (maybePayload as { message: string }).message
                 : "Stream error.";
-            appendStreamError(message);
+            appendStreamError(message, normalizedErrorCode || null);
             return true;
           }
 

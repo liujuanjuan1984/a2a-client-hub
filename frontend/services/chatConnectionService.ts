@@ -103,7 +103,7 @@ const logFallback = (channel: "WS" | "SSE", reason: string) => {
 type StreamCallbacks = {
   onData: (data: Record<string, unknown>) => boolean | void;
   onDone: () => void;
-  onStreamError: (message: string) => void;
+  onStreamError: (message: string, errorCode?: string | null) => void;
 };
 
 type TransportParams = {
@@ -325,6 +325,7 @@ class ChatConnectionService {
             if (hasReceivedData) {
               callbacks.onStreamError(
                 `WebSocket idle timeout after ${wsIdleTimeoutMs}ms`,
+                "timeout",
               );
               finalize("resolve");
               return;
@@ -380,7 +381,7 @@ class ChatConnectionService {
             finalize("reject", new Error("WebSocket connection failed"));
             return;
           }
-          callbacks.onStreamError("WebSocket error");
+          callbacks.onStreamError("WebSocket error", "stream_error");
           finalize("resolve");
         };
 
@@ -398,7 +399,7 @@ class ChatConnectionService {
             );
             return;
           }
-          callbacks.onDone();
+          callbacks.onStreamError("WebSocket closed unexpectedly", "stream_closed");
           finalize("resolve");
         };
 
@@ -446,7 +447,7 @@ class ChatConnectionService {
             if (!hasReceivedData) {
               throw error;
             }
-            callbacks.onStreamError(error.message);
+            callbacks.onStreamError(error.message, "stream_error");
           },
           onDone: callbacks.onDone,
         },
