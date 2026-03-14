@@ -954,6 +954,22 @@ def _build_rebound_invoke_payload(
     )
 
 
+def _log_session_binding_warning(
+    *,
+    logger: Any,
+    message: str,
+    log_extra: dict[str, Any],
+    extra: dict[str, Any] | None = None,
+) -> None:
+    log_warning = getattr(logger, "warning", None) or getattr(logger, "info", None)
+    if not callable(log_warning):
+        return
+    merged_extra = dict(log_extra)
+    if extra:
+        merged_extra.update(extra)
+    log_warning(message, extra=merged_extra)
+
+
 async def _resolve_session_binding_outbound_mode(
     *,
     runtime: Any,
@@ -966,15 +982,50 @@ async def _resolve_session_binding_outbound_mode(
         )
     except A2AExtensionNotSupportedError:
         return True
-    except (A2AExtensionUpstreamError, AttributeError):
+    except A2AExtensionUpstreamError as exc:
+        _log_session_binding_warning(
+            logger=logger,
+            message=(
+                "Session binding capability resolution failed upstream; "
+                "using compatibility fallback"
+            ),
+            log_extra=log_extra,
+            extra={
+                "session_binding_resolution_error": "upstream_fetch_failed",
+                "session_binding_resolution_detail": str(exc),
+                "session_binding_fallback_used": True,
+            },
+        )
+        return True
+    except AttributeError as exc:
+        _log_session_binding_warning(
+            logger=logger,
+            message=(
+                "Session binding capability resolution failed due to runtime shape; "
+                "using compatibility fallback"
+            ),
+            log_extra=log_extra,
+            extra={
+                "session_binding_resolution_error": "runtime_invalid",
+                "session_binding_resolution_detail": str(exc),
+                "session_binding_fallback_used": True,
+            },
+        )
         return True
     except A2AExtensionContractError as exc:
-        log_warning = getattr(logger, "warning", None) or getattr(logger, "info", None)
-        if callable(log_warning):
-            log_warning(
-                "Session binding capability contract invalid; using compatibility fallback",
-                extra={**log_extra, "session_binding_contract_error": str(exc)},
-            )
+        _log_session_binding_warning(
+            logger=logger,
+            message=(
+                "Session binding capability contract invalid; "
+                "using compatibility fallback"
+            ),
+            log_extra=log_extra,
+            extra={
+                "session_binding_resolution_error": "contract_invalid",
+                "session_binding_contract_error": str(exc),
+                "session_binding_fallback_used": True,
+            },
+        )
         return True
 
     return ext.legacy_uri_used
@@ -992,10 +1043,35 @@ async def _finalize_outbound_invoke_payload(
         metadata=payload.metadata,
     )
     cleaned_metadata = strip_session_binding_metadata(payload.metadata or {})
+    if provider and not external_session_id:
+        _log_session_binding_warning(
+            logger=logger,
+            message=(
+                "Discarding incomplete session binding intent without external "
+                "session id"
+            ),
+            log_extra=log_extra,
+            extra={
+                "session_binding_discarded": True,
+                "session_binding_discard_reason": "missing_external_session_id",
+                "session_binding_provider": provider,
+                "session_binding_source": (
+                    "session_binding_intent"
+                    if payload.session_binding is not None
+                    else "legacy_metadata"
+                ),
+            },
+        )
+        provider = None
     if not provider and not external_session_id:
-        if cleaned_metadata == (payload.metadata or {}):
+        if (
+            cleaned_metadata == (payload.metadata or {})
+            and payload.session_binding is None
+        ):
             return payload
-        return payload.model_copy(update={"metadata": cleaned_metadata})
+        return payload.model_copy(
+            update={"metadata": cleaned_metadata, "session_binding": None}
+        )
 
     include_legacy_root = await _resolve_session_binding_outbound_mode(
         runtime=runtime,
@@ -1008,7 +1084,9 @@ async def _finalize_outbound_invoke_payload(
         external_session_id=external_session_id,
         include_legacy_root=include_legacy_root,
     )
-    return payload.model_copy(update={"metadata": next_metadata})
+    return payload.model_copy(
+        update={"metadata": next_metadata, "session_binding": None}
+    )
 
 
 async def run_http_invoke_with_session_recovery(

@@ -16,6 +16,7 @@ from app.db.locking import (
     RetryableDbLockError,
     RetryableDbQueryTimeoutError,
 )
+from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.services import invoke_route_runner
 from app.services.a2a_invoke_service import StreamFinishReason, StreamOutcome
@@ -2102,10 +2103,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_once(
                     }
                 },
             },
-            "sessionBinding": {
-                "provider": "opencode",
-                "externalSessionId": "upstream-sid-2",
-            },
+            "sessionBinding": None,
         },
     ]
     assert stream_calls == 2
@@ -2257,10 +2255,7 @@ async def test_run_ws_invoke_route_retries_session_not_found_then_exhausts(
                     }
                 },
             },
-            "sessionBinding": {
-                "provider": "opencode",
-                "externalSessionId": "upstream-sid-2",
-            },
+            "sessionBinding": None,
         },
     ]
     assert stream_calls == 2
@@ -2615,6 +2610,115 @@ async def test_finalize_outbound_invoke_payload_normalizes_legacy_binding_metada
             }
         },
     }
+    assert finalized.session_binding is None
+
+
+@pytest.mark.asyncio
+async def test_finalize_outbound_invoke_payload_discards_incomplete_session_binding_and_warns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolve_calls = 0
+    warnings: list[tuple[str, dict[str, object]]] = []
+
+    async def fake_resolve_session_binding_outbound_mode(**kwargs):  # noqa: ARG001
+        nonlocal resolve_calls
+        resolve_calls += 1
+        return False
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "_resolve_session_binding_outbound_mode",
+        fake_resolve_session_binding_outbound_mode,
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {
+                "locale": "zh-CN",
+            },
+            "sessionBinding": {
+                "provider": "OpenCode",
+            },
+        }
+    )
+
+    finalized = await invoke_route_runner._finalize_outbound_invoke_payload(
+        payload=payload,
+        runtime=SimpleNamespace(
+            resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+        ),
+        logger=SimpleNamespace(
+            info=lambda *args, **kwargs: None,
+            warning=lambda message, *, extra: warnings.append((message, extra)),
+        ),
+        log_extra={"agent_id": "agent-1"},
+    )
+
+    assert resolve_calls == 0
+    assert finalized.metadata == {"locale": "zh-CN"}
+    assert finalized.session_binding is None
+    assert warnings == [
+        (
+            "Discarding incomplete session binding intent without external session id",
+            {
+                "agent_id": "agent-1",
+                "session_binding_discarded": True,
+                "session_binding_discard_reason": "missing_external_session_id",
+                "session_binding_provider": "opencode",
+                "session_binding_source": "session_binding_intent",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_resolve_session_binding_outbound_mode_warns_on_upstream_failure_and_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warnings: list[tuple[str, dict[str, object]]] = []
+
+    class _FailingExtensionsService:
+        async def resolve_session_binding(self, *, runtime):  # noqa: ARG002
+            raise A2AExtensionUpstreamError(
+                message="card fetch failed",
+                error_code="upstream_unavailable",
+            )
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "get_a2a_extensions_service",
+        lambda: _FailingExtensionsService(),
+    )
+
+    include_legacy_root = (
+        await invoke_route_runner._resolve_session_binding_outbound_mode(
+            runtime=SimpleNamespace(
+                resolved=SimpleNamespace(
+                    name="Demo Agent", url="https://example.com/a2a"
+                )
+            ),
+            logger=SimpleNamespace(
+                info=lambda *args, **kwargs: None,
+                warning=lambda message, *, extra: warnings.append((message, extra)),
+            ),
+            log_extra={"agent_id": "agent-1"},
+        )
+    )
+
+    assert include_legacy_root is True
+    assert warnings == [
+        (
+            "Session binding capability resolution failed upstream; using compatibility fallback",
+            {
+                "agent_id": "agent-1",
+                "session_binding_resolution_error": "upstream_fetch_failed",
+                "session_binding_resolution_detail": "card fetch failed",
+                "session_binding_fallback_used": True,
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio
