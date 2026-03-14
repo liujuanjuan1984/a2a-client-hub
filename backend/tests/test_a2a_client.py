@@ -14,6 +14,7 @@ from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AOutboundNotAllowedError,
+    A2APeerProtocolError,
 )
 from app.utils.outbound_url import OutboundURLNotAllowedError
 
@@ -109,11 +110,10 @@ async def test_call_agent_falls_back_to_plain_string_without_json_wrapping() -> 
             return "Task(artifacts=[...])"
 
     class FakeClient:
-        async def send_message(self, *_args, **_kwargs):
-            yield LegacyResponse()
+        pass
 
     a2a_client = A2AClient("http://example-agent.internal:24020")
-    a2a_client._get_client = AsyncMock(return_value=FakeClient())
+    a2a_client._send_with_fallback = AsyncMock(return_value=LegacyResponse())
 
     result = await a2a_client.call_agent("hello")
 
@@ -124,12 +124,10 @@ async def test_call_agent_falls_back_to_plain_string_without_json_wrapping() -> 
 @pytest.mark.asyncio
 async def test_cancel_task_returns_success_for_valid_request() -> None:
     class FakeClient:
-        async def cancel_task(self, request):
-            assert request.id == "task-1"
-            return {"id": request.id}
+        pass
 
     a2a_client = A2AClient("http://example-agent.internal:24020")
-    a2a_client._get_client = AsyncMock(return_value=FakeClient())
+    a2a_client._cancel_with_fallback = AsyncMock(return_value={"id": "task-1"})
 
     result = await a2a_client.cancel_task(" task-1 ")
 
@@ -141,11 +139,12 @@ async def test_cancel_task_returns_success_for_valid_request() -> None:
 @pytest.mark.asyncio
 async def test_cancel_task_maps_http_status_error_codes() -> None:
     class FakeClient:
-        async def cancel_task(self, _request):
-            raise A2AClientHTTPError(404, "Task not found")
+        pass
 
     a2a_client = A2AClient("http://example-agent.internal:24020")
-    a2a_client._get_client = AsyncMock(return_value=FakeClient())
+    a2a_client._cancel_with_fallback = AsyncMock(
+        side_effect=A2AClientHTTPError(404, "Task not found")
+    )
 
     result = await a2a_client.cancel_task("task-missing")
 
@@ -467,3 +466,42 @@ async def test_get_agent_card_uses_sdk_exact_transport_matching_semantics(
 
     # Only the card URL is validated because no compatible transport is negotiated.
     assert validate_calls == ["http://example-agent.internal:24020"]
+
+
+@pytest.mark.asyncio
+async def test_call_agent_falls_back_to_pascal_jsonrpc_on_method_not_found() -> None:
+    card = SimpleNamespace(
+        name="Swival peer",
+        preferred_transport="JSONRPC",
+        url="http://example-agent.internal:24020/",
+        additional_interfaces=[],
+        capabilities=SimpleNamespace(streaming=False),
+        protocol_version="1.0",
+    )
+    descriptor = client_module.build_peer_descriptor(
+        agent_url="http://example-agent.internal:24020",
+        card=card,
+        selected_transport="JSONRPC",
+        selected_url="http://example-agent.internal:24020/",
+    )
+
+    class SlashAdapter:
+        async def send_message(self, _request):
+            raise A2APeerProtocolError(
+                "Unknown method: message/send",
+                error_code="method_not_found",
+                rpc_code=-32601,
+            )
+
+    class PascalAdapter:
+        async def send_message(self, _request):
+            return {"parts": [{"text": "pascal-result"}]}
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._peer_descriptor = descriptor
+    a2a_client._get_adapter = AsyncMock(side_effect=[SlashAdapter(), PascalAdapter()])
+
+    result = await a2a_client.call_agent("hello")
+
+    assert result["success"] is True
+    assert result["content"] == "pascal-result"
