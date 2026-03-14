@@ -24,7 +24,7 @@ from a2a.utils.constants import (
     PREV_AGENT_CARD_WELL_KNOWN_PATH,
 )
 
-from app.core.http_client import create_http_client, get_global_http_client
+from app.core.http_client import get_global_http_client
 from app.core.logging import get_logger
 from app.integrations.a2a_client.adapters import (
     JSONRPC_PASCAL_DIALECT,
@@ -40,6 +40,9 @@ from app.integrations.a2a_client.errors import (
     A2AOutboundNotAllowedError,
     A2APeerProtocolError,
     A2AUnsupportedBindingError,
+)
+from app.integrations.a2a_client.http_clients import (
+    get_shared_sdk_transport_http_client,
 )
 from app.integrations.a2a_client.models import A2AMessageRequest
 from app.integrations.a2a_client.selection import (
@@ -108,9 +111,7 @@ class A2AClient:
         self._timeout = timeout or self._build_timeout(timeout_seconds)
         self._http_client = http_client
         self._owns_http_client = (
-            owns_http_client
-            if owns_http_client is not None
-            else (http_client is not None)
+            owns_http_client if owns_http_client is not None else False
         )
 
         self._interceptors = list(interceptors or [])
@@ -537,6 +538,7 @@ class A2AClient:
                     exc=exc,
                 ):
                     raise
+                await self._discard_adapter(dialect)
                 logger.info(
                     "Retrying A2A stream with alternate JSON-RPC dialect",
                     extra={
@@ -579,6 +581,7 @@ class A2AClient:
                     exc=exc,
                 ):
                     raise
+                await self._discard_adapter(dialect)
                 logger.info(
                     "Retrying A2A invoke with alternate JSON-RPC dialect",
                     extra={
@@ -612,18 +615,15 @@ class A2AClient:
             httpx_client = await self._get_http_client()
 
             if dialect == SDK_DIALECT:
-                sdk_transport_http_client = httpx_client
-                owns_sdk_transport_http_client = False
-                if self._http_client is None or not self._owns_http_client:
-                    sdk_transport_http_client = create_http_client(
-                        timeout=self._timeout
-                    )
-                    owns_sdk_transport_http_client = True
+                sdk_transport_http_client = (
+                    self._http_client
+                    if self._http_client is not None and self._owns_http_client
+                    else get_shared_sdk_transport_http_client(timeout=self._timeout)
+                )
                 adapter = SDKA2AAdapter(
                     descriptor,
                     http_client=httpx_client,
                     transport_http_client=sdk_transport_http_client,
-                    owns_transport_http_client=owns_sdk_transport_http_client,
                     interceptors=list(self._interceptors),
                     consumers=list(self._consumers),
                     use_client_preference=self._use_client_preference,
@@ -643,6 +643,20 @@ class A2AClient:
 
             self._clients[dialect] = ClientCacheEntry(client=adapter)
             return adapter
+
+    async def _discard_adapter(self, dialect: str) -> None:
+        async with self._adapter_lock:
+            entry = self._clients.pop(dialect, None)
+        if entry is None:
+            return
+        try:
+            await await_cancel_safe(entry.client.close())
+        except Exception:  # pragma: no cover - defensive cleanup
+            logger.debug(
+                "Failed to discard failed A2A adapter",
+                exc_info=True,
+                extra={"dialect": dialect},
+            )
 
     async def _get_preferred_dialects(self, descriptor) -> list[str]:
         if normalize_transport_label(descriptor.selected_transport) != "JSONRPC":

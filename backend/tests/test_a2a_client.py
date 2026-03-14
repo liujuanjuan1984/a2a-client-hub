@@ -11,6 +11,7 @@ from a2a.types import Message, Role, TextPart
 
 from app.core import http_client as http_client_module
 from app.integrations.a2a_client import client as client_module
+from app.integrations.a2a_client import http_clients as shared_http_clients_module
 from app.integrations.a2a_client.adapters import sdk as sdk_module
 from app.integrations.a2a_client.adapters.sdk import SDKA2AAdapter
 from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
@@ -61,6 +62,19 @@ async def test_a2a_client_close_releases_owned_http_client_resources() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a2a_client_does_not_close_injected_http_client_by_default() -> None:
+    http_client = AsyncMock()
+    a2a_client = A2AClient(
+        "http://example-agent.internal:24020",
+        http_client=http_client,
+    )
+
+    await a2a_client.close()
+
+    http_client.aclose.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_get_global_http_client_recreates_closed_instance() -> None:
     await http_client_module.close_global_http_client()
 
@@ -80,35 +94,42 @@ async def test_sdk_adapter_close_preserves_borrowed_http_client() -> None:
     shared_http_client = AsyncMock()
     shared_http_client.is_closed = False
     shared_http_client.aclose = AsyncMock()
-    dedicated_transport_http_client = AsyncMock()
-    dedicated_transport_http_client.is_closed = False
-    dedicated_transport_http_client.aclose = AsyncMock()
-    transport_close = AsyncMock()
+
+    captured_config: dict[str, object] = {}
+
+    class FakeFactory:
+        def __init__(self, *, config, consumers) -> None:
+            captured_config["config"] = config
+
+        def create(self, *_args, **_kwargs):
+            async def _close() -> None:
+                await captured_config["config"].httpx_client.aclose()
+
+            return SimpleNamespace(close=_close)
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(sdk_module, "ClientFactory", FakeFactory)
     adapter = SDKA2AAdapter(
-        SimpleNamespace(),
+        SimpleNamespace(card=Mock()),
         http_client=shared_http_client,
-        transport_http_client=dedicated_transport_http_client,
-        owns_transport_http_client=True,
+        transport_http_client=shared_http_client,
     )
-    adapter._clients[False] = sdk_module._SDKClientEntry(
-        config=Mock(),
-        client=SimpleNamespace(close=transport_close),
-    )
+
+    await adapter._get_client(streaming=False)
 
     await adapter.close()
+    monkeypatch.undo()
 
-    transport_close.assert_awaited_once()
-    dedicated_transport_http_client.aclose.assert_awaited_once()
     shared_http_client.aclose.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_get_adapter_uses_dedicated_sdk_http_client_for_borrowed_http_client(
+async def test_get_adapter_uses_shared_sdk_http_client_for_borrowed_http_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     descriptor = SimpleNamespace()
     shared_http_client = AsyncMock()
-    dedicated_transport_http_client = AsyncMock()
+    shared_sdk_transport_http_client = AsyncMock()
     captured: dict[str, object] = {}
 
     class FakeSdkAdapter:
@@ -121,16 +142,34 @@ async def test_get_adapter_uses_dedicated_sdk_http_client_for_borrowed_http_clie
 
     monkeypatch.setattr(
         client_module,
-        "create_http_client",
-        Mock(return_value=dedicated_transport_http_client),
+        "get_shared_sdk_transport_http_client",
+        Mock(return_value=shared_sdk_transport_http_client),
     )
     monkeypatch.setattr(client_module, "SDKA2AAdapter", FakeSdkAdapter)
 
     await a2a_client._get_adapter(client_module.SDK_DIALECT)
 
     assert captured["http_client"] is shared_http_client
-    assert captured["transport_http_client"] is dedicated_transport_http_client
-    assert captured["owns_transport_http_client"] is True
+    assert captured["transport_http_client"] is shared_sdk_transport_http_client
+
+
+@pytest.mark.asyncio
+async def test_shared_sdk_transport_http_client_reuses_timeout_bucket() -> None:
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+    original = shared_http_clients_module.get_shared_sdk_transport_http_client()
+    reused = shared_http_clients_module.get_shared_sdk_transport_http_client()
+
+    assert reused is original
+
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
+
+    recreated = shared_http_clients_module.get_shared_sdk_transport_http_client()
+
+    assert recreated is not original
+    assert recreated.is_closed is False
+
+    await shared_http_clients_module.close_shared_sdk_transport_http_clients()
 
 
 def test_extract_text_from_payload_can_handle_task_like_payload() -> None:
@@ -563,8 +602,10 @@ async def test_call_agent_falls_back_to_pascal_jsonrpc_on_method_not_found() -> 
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._peer_descriptor = descriptor
     a2a_client._get_adapter = AsyncMock(side_effect=[SlashAdapter(), PascalAdapter()])
+    a2a_client._discard_adapter = AsyncMock()
 
     result = await a2a_client.call_agent("hello")
 
     assert result["success"] is True
     assert result["content"] == "pascal-result"
+    a2a_client._discard_adapter.assert_awaited_once_with(client_module.SDK_DIALECT)

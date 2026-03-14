@@ -13,6 +13,17 @@ logger = get_logger(__name__)
 _global_http_client: Optional[httpx.AsyncClient] = None
 
 
+def resolve_http_client_timeout(
+    timeout: httpx.Timeout | None = None,
+) -> httpx.Timeout:
+    """Resolve an explicit or default timeout for hub-managed HTTP clients."""
+
+    return timeout or httpx.Timeout(
+        max(settings.a2a_default_timeout, 1.0),
+        connect=10.0,
+    )
+
+
 def create_http_client(*, timeout: httpx.Timeout | None = None) -> httpx.AsyncClient:
     """Build a hub-configured async HTTP client."""
 
@@ -21,10 +32,7 @@ def create_http_client(*, timeout: httpx.Timeout | None = None) -> httpx.AsyncCl
         max_connections=max_conn,
         max_keepalive_connections=max(1, max_conn // 2),
     )
-    resolved_timeout = timeout or httpx.Timeout(
-        max(settings.a2a_default_timeout, 1.0),
-        connect=10.0,
-    )
+    resolved_timeout = resolve_http_client_timeout(timeout)
     return httpx.AsyncClient(
         limits=limits,
         timeout=resolved_timeout,

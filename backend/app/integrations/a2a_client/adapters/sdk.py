@@ -33,6 +33,33 @@ class _SDKClientEntry:
     client: Client
 
 
+class _NonClosingAsyncClientProxy:
+    """Adapter-local proxy that borrows an AsyncClient without owning it."""
+
+    def __init__(self, http_client: httpx.AsyncClient) -> None:
+        self._http_client = http_client
+
+    @property
+    def headers(self):  # pragma: no cover - simple delegation
+        return self._http_client.headers
+
+    @property
+    def timeout(self):  # pragma: no cover - simple delegation
+        return self._http_client.timeout
+
+    @property
+    def is_closed(self) -> bool:  # pragma: no cover - simple delegation
+        return self._http_client.is_closed
+
+    async def aclose(self) -> None:
+        """No-op so SDK-managed close() cannot tear down shared transport state."""
+
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._http_client, name)
+
+
 class SDKA2AAdapter(A2AAdapter):
     """Adapter backed by the upstream `a2a-sdk` client factory."""
 
@@ -52,6 +79,11 @@ class SDKA2AAdapter(A2AAdapter):
         self._http_client = http_client
         self._transport_http_client = transport_http_client or http_client
         self._owns_transport_http_client = owns_transport_http_client
+        self._sdk_http_client = (
+            self._transport_http_client
+            if owns_transport_http_client
+            else _NonClosingAsyncClientProxy(self._transport_http_client)
+        )
         self._interceptors = list(interceptors or [])
         self._consumers = list(consumers or [])
         self._use_client_preference = use_client_preference
@@ -122,7 +154,7 @@ class SDKA2AAdapter(A2AAdapter):
             config = ClientConfig(
                 streaming=streaming,
                 polling=False,
-                httpx_client=self._transport_http_client,
+                httpx_client=self._sdk_http_client,
                 use_client_preference=self._use_client_preference,
                 supported_transports=list(self._supported_transports),
             )
