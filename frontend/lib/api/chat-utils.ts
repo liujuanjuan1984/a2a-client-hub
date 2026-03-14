@@ -1,3 +1,9 @@
+import {
+  getPreferredInterruptMetadata,
+  getPreferredSessionMetadata,
+  mergeSharedMetadataSection,
+} from "@/lib/sharedMetadata";
+
 export type ChatRole = "user" | "agent" | "system";
 
 export type MessageBlock = {
@@ -86,10 +92,10 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
       : typeof data.contextId === "string"
         ? data.contextId
         : null;
-  const metadata = asRecord(data.metadata);
+  const session = getPreferredSessionMetadata(data);
   const externalSessionId =
-    pickString(metadata, ["externalSessionId"]) ?? undefined;
-  const rawProvider = pickString(metadata, ["provider"]);
+    pickString(session, ["id", "externalSessionId"]) ?? undefined;
+  const rawProvider = pickString(session, ["provider"]);
   const provider = rawProvider?.trim().toLowerCase() ?? undefined;
   const transport =
     typeof data.transport === "string" ? data.transport : undefined;
@@ -313,8 +319,7 @@ const extractRuntimeInterrupt = (
   data: Record<string, unknown>,
   runtimeState: string,
 ): RuntimeInterrupt | null => {
-  const metadata = asRecord(data.metadata);
-  const interrupt = asRecord(metadata?.interrupt);
+  const interrupt = getPreferredInterruptMetadata(data);
   if (!interrupt) {
     return null;
   }
@@ -436,17 +441,7 @@ const buildFallbackEventId = ({
 const extractSharedStreamMetadata = (
   artifactMetadata: Record<string, unknown> | null,
   rootMetadata: Record<string, unknown> | null,
-) => {
-  const resolved: Record<string, unknown> = {};
-  for (const metadata of [rootMetadata, artifactMetadata]) {
-    const shared = asRecord(metadata?.shared);
-    const stream = asRecord(shared?.stream);
-    if (stream) {
-      Object.assign(resolved, stream);
-    }
-  }
-  return Object.keys(resolved).length > 0 ? resolved : null;
-};
+) => mergeSharedMetadataSection([rootMetadata, artifactMetadata], "stream");
 
 export const extractStreamBlockUpdate = (
   data: Record<string, unknown>,

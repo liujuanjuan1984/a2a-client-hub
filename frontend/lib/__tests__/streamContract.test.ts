@@ -453,12 +453,14 @@ describe("block-based stream parser and reducer", () => {
       kind: "status-update",
       status: { state: "input-required" },
       metadata: {
-        interrupt: {
-          request_id: "perm-1",
-          type: "permission",
-          details: {
-            permission: "read",
-            patterns: ["/repo/.env"],
+        shared: {
+          interrupt: {
+            request_id: "perm-1",
+            type: "permission",
+            details: {
+              permission: "read",
+              patterns: ["/repo/.env"],
+            },
           },
         },
       },
@@ -483,17 +485,19 @@ describe("block-based stream parser and reducer", () => {
       kind: "status-update",
       status: { state: "input-required" },
       metadata: {
-        interrupt: {
-          request_id: "q-1",
-          type: "question",
-          details: {
-            questions: [
-              {
-                header: "Confirm",
-                question: "Proceed?",
-                options: [{ label: "Yes", value: "yes" }],
-              },
-            ],
+        shared: {
+          interrupt: {
+            request_id: "q-1",
+            type: "question",
+            details: {
+              questions: [
+                {
+                  header: "Confirm",
+                  question: "Proceed?",
+                  options: [{ label: "Yes", value: "yes" }],
+                },
+              ],
+            },
           },
         },
       },
@@ -523,11 +527,13 @@ describe("block-based stream parser and reducer", () => {
       kind: "status-update",
       status: { state: "working" },
       metadata: {
-        interrupt: {
-          request_id: "q-1",
-          type: "question",
-          phase: "resolved",
-          resolution: "rejected",
+        shared: {
+          interrupt: {
+            request_id: "q-1",
+            type: "question",
+            phase: "resolved",
+            resolution: "rejected",
+          },
         },
       },
     };
@@ -543,7 +549,24 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
-  it("extracts external session from canonical metadata fields", () => {
+  it("extracts external session from canonical shared session metadata", () => {
+    const meta = extractSessionMeta({
+      kind: "status-update",
+      final: true,
+      metadata: {
+        provider: "opencode",
+        shared: {
+          session: {
+            id: "ses_upstream_1",
+          },
+        },
+      },
+    });
+    expect(meta.provider).toBe("opencode");
+    expect(meta.externalSessionId).toBe("ses_upstream_1");
+  });
+
+  it("falls back to legacy root session metadata when shared session metadata is missing", () => {
     const meta = extractSessionMeta({
       kind: "status-update",
       final: true,
@@ -556,18 +579,29 @@ describe("block-based stream parser and reducer", () => {
     expect(meta.externalSessionId).toBe("ses_upstream_1");
   });
 
-  it("extracts session metadata only from payload metadata block", () => {
-    const meta = extractSessionMeta({
+  it("falls back to legacy interrupt metadata when shared interrupt metadata is missing", () => {
+    const payload = {
       kind: "status-update",
-      final: true,
-      provider: "legacy",
-      externalSessionId: "legacy-root-value",
+      status: { state: "input-required" },
       metadata: {
-        provider: "opencode",
-        externalSessionId: "ses_upstream_1",
+        interrupt: {
+          request_id: "perm-legacy-1",
+          type: "permission",
+          details: {
+            permission: "read",
+            patterns: ["/repo/.env"],
+          },
+        },
+      },
+    };
+    expect(extractRuntimeStatusEvent(payload)?.interrupt).toEqual({
+      requestId: "perm-legacy-1",
+      type: "permission",
+      phase: "asked",
+      details: {
+        permission: "read",
+        patterns: ["/repo/.env"],
       },
     });
-    expect(meta.provider).toBe("opencode");
-    expect(meta.externalSessionId).toBe("ses_upstream_1");
   });
 });

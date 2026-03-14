@@ -500,11 +500,13 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
                         "block_type": "text",
                         "message_id": "msg-usage-1",
                         "event_id": "evt-usage-1",
-                        "usage": {
-                            "input_tokens": 100,
-                            "output_tokens": 20,
-                            "total_tokens": 120,
-                            "cost": 0.01,
+                        "shared": {
+                            "usage": {
+                                "input_tokens": 100,
+                                "output_tokens": 20,
+                                "total_tokens": 120,
+                                "cost": 0.01,
+                            },
                         },
                     },
                 },
@@ -714,13 +716,15 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
             "kind": "status-update",
             "status": {"state": "input-required"},
             "metadata": {
-                "interrupt": {
-                    "request_id": "perm-1",
-                    "type": "permission",
-                    "phase": "asked",
-                    "details": {
-                        "permission": "read",
-                        "patterns": ["/repo/.env"],
+                "shared": {
+                    "interrupt": {
+                        "request_id": "perm-1",
+                        "type": "permission",
+                        "phase": "asked",
+                        "details": {
+                            "permission": "read",
+                            "patterns": ["/repo/.env"],
+                        },
                     },
                 }
             },

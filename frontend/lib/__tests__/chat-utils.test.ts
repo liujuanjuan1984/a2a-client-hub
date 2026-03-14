@@ -92,6 +92,11 @@ describe("chat store utils", () => {
         locale: "zh-CN",
         provider: "opencode",
         externalSessionId: "ses-upstream-1",
+        shared: {
+          session: {
+            id: "ses-upstream-1",
+          },
+        },
       },
     });
   });
