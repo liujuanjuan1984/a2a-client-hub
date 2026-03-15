@@ -49,12 +49,12 @@
 - Standardized `useChatScroll` with an options object signature for better readability and maintainability.
 - Verified with type checks and linting.
 
-### 2026-03-15 08:00 (Swival) - YOLO Refactor: Deep Hook Decoupling (Issue #459)
-- Refactored `useA2AIntegration` and `useChatActions` to subscribe to the session store internally, reducing prop drilling from the controller.
-- Merged `useChatModals` into `useChatUI`, centralizing modal state and handlers.
-- Decoupled `useChatActions` from UI state by using an `onShortcutUsed` callback, breaking circular dependencies.
-- Simplified `useChatScreenController` to a clean orchestration layer with minimal prop passing.
-- Removed `useChatModals.ts` as it was fully consolidated into `useChatUI`.
-- Verified all changes with linting, type-checking, and related unit tests.
+### 2026-03-15 08:30 (Swival) - YOLO Refactor: Deep Hook Decoupling & Modularization (Issue #459)
+- Extracted session binding lifecycle from `useChatSession.ts` into a new, single-purpose `useSessionBinding.ts` hook, improving SRP.
+- Refined `useChatSession.ts` to focus exclusively on session state retrieval and model selection derivation.
+- Fully decoupled `useChatUI.ts` from `useChatActions.ts` by removing the direct dependency. Modal handlers (e.g., `onSelect`, `onClear`, `onUse`) are now injected at the controller layer.
+- Simplified `useChatScreenController.ts` orchestration. The controller now explicitly wires up the connections between pure logic hooks (`actions`) and UI state hooks (`ui`).
+- Verified all changes with `npm run lint`, `npm run check-types`, and comprehensive regression tests (`ChatScreen.interrupt.test.tsx`).
+- Achieved a highly modular, testable, and maintainable hook architecture with zero circular dependencies.
 
 

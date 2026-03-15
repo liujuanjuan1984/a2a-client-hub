@@ -6,6 +6,7 @@ import { useChatScroll } from "./useChatScroll";
 import { useChatSession } from "./useChatSession";
 import { useChatUI } from "./useChatUI";
 import { useMessageState } from "./useMessageState";
+import { useSessionBinding } from "./useSessionBinding";
 
 export function useChatScreenController({
   routeAgentId,
@@ -17,14 +18,19 @@ export function useChatScreenController({
   const { activeAgentId, agent, hasFetchedAgents } =
     useAgentSelection(routeAgentId);
 
-  // We call useMessageState first to get messages for useChatSession binding check.
   const messageState = useMessageState(conversationId);
 
   const { session, sessionSource, selectedModel } = useChatSession(
     conversationId,
     activeAgentId,
-    messageState.messages,
   );
+
+  useSessionBinding({
+    conversationId,
+    activeAgentId,
+    sessionSource,
+    messages: messageState.messages,
+  });
 
   const scroll = useChatScroll({
     conversationId,
@@ -35,14 +41,14 @@ export function useChatScreenController({
 
   useChatNavigation({ hasFetchedAgents, agent });
 
+  const ui = useChatUI();
+
   const actions = useChatActions({
     conversationId,
     agent,
     scheduleStickToBottom: scroll.scheduleStickToBottom,
     onShortcutUsed: () => ui.modals.shortcut.close(),
   });
-
-  const ui = useChatUI({ actions, selectedModel });
 
   const a2a = useA2AIntegration({
     conversationId,
@@ -63,7 +69,22 @@ export function useChatScreenController({
     input: actions.input,
     scroll: scroll.props,
     a2a,
-    modals: ui.modals,
+    modals: {
+      shortcut: {
+        ...ui.modals.shortcut,
+        onUse: actions.shortcuts.handleUseShortcut,
+      },
+      session: {
+        ...ui.modals.session,
+        onSelect: actions.handlers.onSessionSelect,
+      },
+      model: {
+        ...ui.modals.model,
+        selectedModel,
+        onSelect: actions.handlers.onModelSelect,
+        onClear: actions.handlers.onModelClear,
+      },
+    },
     actions: {
       onTest: actions.handlers.onTest,
       testingConnection: actions.testingConnection,
