@@ -19,9 +19,10 @@
 - Improved null-safety and robust error handling in `frontend/screens/LoginScreen.tsx` and `frontend/lib/config.ts`.
 - Verified changes with linting, type checking, and tests.
 
-## 2026-03-15 05:51 (EDT)
-- Finalized refactor of useChatScreenController (Issue #459):
-  - Improved type safety for all new hooks (useChatActions, useA2AIntegration, useChatStates, etc.).
-  - Used explicit types like AgentConfig, AgentSession, and SharedModelSelection instead of 'any'.
-  - Cleaned up manual type casts in useA2AIntegration.
-  - Fixed linting issues (import order) and verified with npm run lint and npm run check-types.
+## 2026-03-15 06:15 (EDT)
+- Refactored `useChatScreenController.ts` (Issue #459) to improve maintainability and encapsulation:
+  - Extracted domain-specific logic into new functional hooks: `useChatUI` (UI settings and modals) and `useChatHistory` (message state and pagination).
+  - Introduced `useChatMessaging` to encapsulate input handling and message sending.
+  - Redesigned `useChatScreenController` to return a structured, namespaced object (`navigation`, `ui`, `history`, `input`, `scroll`, `a2a`, `modals`, `actions`).
+  - Updated `ChatScreen.tsx` to use the new structured interface, significantly cleaning up component property access.
+  - Verified changes with `npm run lint` and `npm run check-types`.

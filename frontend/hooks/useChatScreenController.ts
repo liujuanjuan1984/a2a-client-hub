@@ -3,16 +3,15 @@ import { TextInput } from "react-native";
 import { useA2AIntegration } from "./useA2AIntegration";
 import { useAgentSelection } from "./useAgentSelection";
 import { useChatActions } from "./useChatActions";
-import { useChatInput } from "./useChatInput";
-import { useChatModalStates } from "./useChatModalStates";
+import { useChatHistory } from "./useChatHistory";
+import { useChatMessaging } from "./useChatMessaging";
 import { useChatNavigation } from "./useChatNavigation";
-import { useChatScreenEssentials } from "./useChatScreenEssentials";
 import { useChatScreenFocusEffects } from "./useChatScreenFocusEffects";
 import { useChatScroll } from "./useChatScroll";
 import { useChatSession } from "./useChatSession";
 import { useChatShortcut } from "./useChatShortcut";
 import { useChatStates } from "./useChatStates";
-import { useMessageState } from "./useMessageState";
+import { useChatUI } from "./useChatUI";
 
 import { useChatStore } from "@/store/chat";
 
@@ -28,31 +27,25 @@ export function useChatScreenController({
 
   useChatNavigation({ hasFetchedAgents, agent });
 
-  const essentials = useChatScreenEssentials();
-
   const session = useChatStore((state) =>
     conversationId ? state.sessions[conversationId] : undefined,
   );
-  const historyPaused = session?.streamState === "streaming";
 
   const states = useChatStates({ session });
 
-  const messageState = useMessageState(conversationId, historyPaused);
+  const scroll = useChatScroll(0, session?.streamState);
+
+  const history = useChatHistory(
+    conversationId,
+    session?.streamState,
+    scroll.scrollOffsetRef,
+    scroll.contentHeightRef,
+  );
 
   const { sessionSource, mountedAtRef } = useChatSession(
     conversationId,
     activeAgentId,
-    messageState.messages,
-  );
-
-  const scroll = useChatScroll(
-    messageState.messages.length,
-    session?.streamState,
-    () =>
-      messageState.loadEarlierHistory(
-        scroll.scrollOffsetRef.current,
-        scroll.contentHeightRef.current,
-      ),
+    history.messages,
   );
 
   useChatScreenFocusEffects({
@@ -60,11 +53,11 @@ export function useChatScreenController({
     scheduleStickToBottom: scroll.scheduleStickToBottom,
     forceScrollToBottomRef: scroll.forceScrollToBottomRef,
     shouldStickToBottomRef: scroll.shouldStickToBottomRef,
-    messages: messageState.messages,
+    messages: history.messages,
   });
 
-  const input = useChatInput(() =>
-    actions.handleSend(input.input, states.pendingInterrupt),
+  const messaging = useChatMessaging((text) =>
+    actions.handleSend(text, states.pendingInterrupt),
   );
 
   const actions = useChatActions(
@@ -73,7 +66,7 @@ export function useChatScreenController({
     agent,
     session,
     scroll.scheduleStickToBottom,
-    input.clearInput,
+    messaging.clear,
   );
 
   const a2a = useA2AIntegration(
@@ -85,74 +78,68 @@ export function useChatScreenController({
     mountedAtRef,
   );
 
-  const modals = useChatModalStates();
+  const ui = useChatUI();
 
   const shortcuts = useChatShortcut({
-    setInput: input.setInput,
-    closeShortcutManager: modals.closeShortcutManager,
-    inputRef: input.inputRef as React.RefObject<TextInput>,
+    setInput: messaging.setInput,
+    closeShortcutManager: ui.modals.shortcut.close,
+    inputRef: messaging.ref as React.RefObject<TextInput>,
   });
 
   return {
-    topInset: essentials.topInset,
-    agent,
-    activeAgentId,
-    hasFetchedAgents,
-    conversationId,
-    session,
-    sessionSource,
-    selectedModel: states.selectedModel,
-    messages: messageState.messages,
-    historyLoading: messageState.historyLoading,
-    historyLoadingMore: messageState.historyLoadingMore,
-    historyNextPage: messageState.historyNextPage,
-    historyPaused: session?.streamState === "streaming",
-    historyError: messageState.historyError,
-    pendingInterrupt: states.pendingInterrupt,
-    interruptAction: a2a.interruptAction,
-    questionAnswers: a2a.questionAnswers,
-    showDetails: essentials.showDetails,
-    toggleDetails: essentials.toggleDetails,
-    showScrollToBottom: scroll.showScrollToBottom,
-    scrollToBottom: scroll.scrollToBottom,
-    showShortcutManager: modals.showShortcutManager,
-    showSessionPicker: modals.showSessionPicker,
-    showModelPicker: modals.showModelPicker,
-    openShortcutManager: modals.openShortcutManager,
-    closeShortcutManager: modals.closeShortcutManager,
-    openSessionPicker: modals.openSessionPicker,
-    closeSessionPicker: modals.closeSessionPicker,
-    openModelPicker: modals.openModelPicker,
-    closeModelPicker: modals.closeModelPicker,
-    handleModelSelect: actions.handleModelSelect,
-    clearModelSelection: actions.clearModelSelection,
-    handleUseShortcut: shortcuts.handleUseShortcut,
-    handleSessionSelect: actions.handleSessionSelect,
-    handleTest: actions.handleTest,
-    testingConnection: actions.testingConnection,
-    listRef: scroll.listRef,
-    inputRef: input.inputRef,
-    input: input.input,
-    inputHeight: input.inputHeight,
-    maxInputHeight: input.maxInputHeight,
-    handleInputChange: input.handleInputChange,
-    handleContentSizeChange: input.handleContentSizeChange,
-    handleKeyPress: input.handleKeyPress,
-    handleSend: () => actions.handleSend(input.input, states.pendingInterrupt),
-    loadEarlierHistory: () =>
-      messageState.loadEarlierHistory(
-        scroll.scrollOffsetRef.current,
-        scroll.contentHeightRef.current,
-      ),
-    handleListContentSizeChange: scroll.handleListContentSizeChange,
-    handleListScroll: scroll.handleListScroll,
-    captureContentSizeAnchor: scroll.captureContentSizeAnchor,
-    handleLoadBlockContent: messageState.handleLoadBlockContent,
-    handleRetry: actions.handleRetry,
-    handlePermissionReply: a2a.handlePermissionReply,
-    handleQuestionAnswerChange: a2a.handleQuestionAnswerChange,
-    handleQuestionOptionPick: a2a.handleQuestionOptionPick,
-    handleQuestionReply: a2a.handleQuestionReply,
-    handleQuestionReject: a2a.handleQuestionReject,
+    navigation: {
+      agent,
+      activeAgentId,
+      hasFetchedAgents,
+      conversationId,
+      session,
+      sessionSource,
+    },
+    ui,
+    history,
+    input: {
+      ref: messaging.ref,
+      value: messaging.value,
+      height: messaging.height,
+      maxHeight: messaging.maxHeight,
+      onChange: messaging.onChange,
+      onContentSizeChange: messaging.onContentSizeChange,
+      onKeyPress: messaging.onKeyPress,
+      onSend: messaging.onSend,
+    },
+    scroll: {
+      listRef: scroll.listRef,
+      showScrollToBottom: scroll.showScrollToBottom,
+      scrollToBottom: scroll.scrollToBottom,
+      onListContentSizeChange: scroll.handleListContentSizeChange,
+      onListScroll: scroll.handleListScroll,
+      captureContentSizeAnchor: scroll.captureContentSizeAnchor,
+    },
+    a2a: {
+      ...a2a,
+      pendingInterrupt: states.pendingInterrupt,
+    },
+    modals: {
+      ...ui.modals,
+      shortcut: {
+        ...ui.modals.shortcut,
+        onUse: shortcuts.handleUseShortcut,
+      },
+      session: {
+        ...ui.modals.session,
+        onSelect: actions.handleSessionSelect,
+      },
+      model: {
+        ...ui.modals.model,
+        selectedModel: states.selectedModel,
+        onSelect: actions.handleModelSelect,
+        onClear: actions.clearModelSelection,
+      },
+    },
+    actions: {
+      onTest: actions.handleTest,
+      testingConnection: actions.testingConnection,
+      onRetry: actions.handleRetry,
+    },
   };
 }

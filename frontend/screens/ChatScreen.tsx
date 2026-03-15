@@ -22,8 +22,8 @@ export function ChatScreen({
     conversationId,
   });
 
-  if (!controller.agent) {
-    if (!controller.hasFetchedAgents) {
+  if (!controller.navigation.agent) {
+    if (!controller.navigation.hasFetchedAgents) {
       return <FullscreenLoader message="Restoring session..." />;
     }
     return (
@@ -44,86 +44,86 @@ export function ChatScreen({
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ChatHeaderPanel
-        topInset={controller.topInset}
-        agent={controller.agent}
-        conversationId={controller.conversationId}
-        sessionSource={controller.sessionSource}
-        session={controller.session}
-        showDetails={controller.showDetails}
-        onToggleDetails={controller.toggleDetails}
-        onOpenSessionPicker={controller.openSessionPicker}
-        onTestConnection={controller.handleTest}
-        testingConnection={controller.testingConnection}
+        topInset={controller.ui.topInset}
+        agent={controller.navigation.agent}
+        conversationId={controller.navigation.conversationId}
+        sessionSource={controller.navigation.sessionSource}
+        session={controller.navigation.session}
+        showDetails={controller.ui.showDetails}
+        onToggleDetails={controller.ui.toggleDetails}
+        onOpenSessionPicker={controller.modals.session.open}
+        onTestConnection={controller.actions.onTest}
+        testingConnection={controller.actions.testingConnection}
       />
 
       <ChatTimelinePanel
-        listRef={controller.listRef}
-        messages={controller.messages}
-        session={controller.session}
-        historyNextPage={controller.historyNextPage}
-        historyLoadingMore={controller.historyLoadingMore}
-        historyPaused={controller.historyPaused}
-        onLoadEarlierHistory={controller.loadEarlierHistory}
-        historyLoading={controller.historyLoading}
-        historyError={controller.historyError}
-        onCaptureContentSizeAnchor={controller.captureContentSizeAnchor}
-        onLoadBlockContent={controller.handleLoadBlockContent}
-        onRetry={controller.handleRetry}
-        onListContentSizeChange={controller.handleListContentSizeChange}
-        onListScroll={controller.handleListScroll}
-        pendingInterrupt={controller.pendingInterrupt}
-        interruptAction={controller.interruptAction}
-        questionAnswers={controller.questionAnswers}
-        onPermissionReply={controller.handlePermissionReply}
-        onQuestionAnswerChange={controller.handleQuestionAnswerChange}
-        onQuestionOptionPick={controller.handleQuestionOptionPick}
-        onQuestionReply={controller.handleQuestionReply}
-        onQuestionReject={controller.handleQuestionReject}
+        listRef={controller.scroll.listRef}
+        messages={controller.history.messages}
+        session={controller.navigation.session}
+        historyNextPage={controller.history.nextPage}
+        historyLoadingMore={controller.history.loadingMore}
+        historyPaused={controller.history.paused}
+        onLoadEarlierHistory={controller.history.loadMore}
+        historyLoading={controller.history.loading}
+        historyError={controller.history.error}
+        onCaptureContentSizeAnchor={controller.scroll.captureContentSizeAnchor}
+        onLoadBlockContent={controller.history.handleLoadBlockContent}
+        onRetry={controller.actions.onRetry}
+        onListContentSizeChange={controller.scroll.onListContentSizeChange}
+        onListScroll={controller.scroll.onListScroll}
+        pendingInterrupt={controller.a2a.pendingInterrupt}
+        interruptAction={controller.a2a.interruptAction}
+        questionAnswers={controller.a2a.questionAnswers}
+        onPermissionReply={controller.a2a.handlePermissionReply}
+        onQuestionAnswerChange={controller.a2a.handleQuestionAnswerChange}
+        onQuestionOptionPick={controller.a2a.handleQuestionOptionPick}
+        onQuestionReply={controller.a2a.handleQuestionReply}
+        onQuestionReject={controller.a2a.handleQuestionReject}
       />
 
       <ShortcutManagerModal
-        visible={controller.showShortcutManager}
-        onClose={controller.closeShortcutManager}
-        onUseShortcut={controller.handleUseShortcut}
-        initialPrompt={controller.input}
-        agentId={controller.activeAgentId}
+        visible={controller.modals.shortcut.visible}
+        onClose={controller.modals.shortcut.close}
+        onUseShortcut={controller.modals.shortcut.onUse}
+        initialPrompt={controller.input.value}
+        agentId={controller.navigation.activeAgentId}
       />
 
       <SessionPickerModal
-        visible={controller.showSessionPicker}
-        onClose={controller.closeSessionPicker}
-        agentId={controller.activeAgentId}
-        currentConversationId={controller.conversationId}
-        onSelect={controller.handleSessionSelect}
+        visible={controller.modals.session.visible}
+        onClose={controller.modals.session.close}
+        agentId={controller.navigation.activeAgentId}
+        currentConversationId={controller.navigation.conversationId}
+        onSelect={controller.modals.session.onSelect}
       />
 
       <ModelPickerModal
-        visible={controller.showModelPicker}
-        onClose={controller.closeModelPicker}
-        agentId={controller.activeAgentId}
-        source={controller.agent.source}
-        sessionMetadata={controller.session?.metadata}
-        selectedModel={controller.selectedModel}
-        onSelectModel={controller.handleModelSelect}
-        onClearModelSelection={controller.clearModelSelection}
+        visible={controller.modals.model.visible}
+        onClose={controller.modals.model.close}
+        agentId={controller.navigation.activeAgentId}
+        source={controller.navigation.agent.source}
+        sessionMetadata={controller.navigation.session?.metadata}
+        selectedModel={controller.modals.model.selectedModel}
+        onSelectModel={controller.modals.model.onSelect}
+        onClearModelSelection={controller.modals.model.onClear}
       />
 
       <ChatComposer
-        pendingInterrupt={controller.pendingInterrupt}
-        showShortcutManager={controller.showShortcutManager}
-        onOpenShortcutManager={controller.openShortcutManager}
-        selectedModel={controller.selectedModel}
-        onOpenModelPicker={controller.openModelPicker}
-        inputRef={controller.inputRef}
-        input={controller.input}
-        onInputChange={controller.handleInputChange}
-        onContentSizeChange={controller.handleContentSizeChange}
-        inputHeight={controller.inputHeight}
-        maxInputHeight={controller.maxInputHeight}
-        onSubmit={controller.handleSend}
-        onKeyPress={controller.handleKeyPress}
-        showScrollToBottom={controller.showScrollToBottom}
-        onScrollToBottom={() => controller.scrollToBottom(true)}
+        pendingInterrupt={controller.a2a.pendingInterrupt}
+        showShortcutManager={controller.modals.shortcut.visible}
+        onOpenShortcutManager={controller.modals.shortcut.open}
+        selectedModel={controller.modals.model.selectedModel}
+        onOpenModelPicker={controller.modals.model.open}
+        inputRef={controller.input.ref}
+        input={controller.input.value}
+        onInputChange={controller.input.onChange}
+        onContentSizeChange={controller.input.onContentSizeChange}
+        inputHeight={controller.input.height}
+        maxInputHeight={controller.input.maxHeight}
+        onSubmit={controller.input.onSend}
+        onKeyPress={controller.input.onKeyPress}
+        showScrollToBottom={controller.scroll.showScrollToBottom}
+        onScrollToBottom={() => controller.scroll.scrollToBottom(true)}
       />
     </KeyboardAvoidingView>
   );
