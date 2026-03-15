@@ -1,6 +1,18 @@
-import { useChatDisplayState } from "./useChatDisplayState";
-import { useChatNavigationState } from "./useChatNavigationState";
-import { useChatOperationState } from "./useChatOperationState";
+import { TextInput } from "react-native";
+
+import { useA2AIntegration } from "./useA2AIntegration";
+import { useAgentSelection } from "./useAgentSelection";
+import { useChatActions } from "./useChatActions";
+import { useChatHistory } from "./useChatHistory";
+import { useChatMessaging } from "./useChatMessaging";
+import { useChatNavigation } from "./useChatNavigation";
+import { useChatScreenFocusEffects } from "./useChatScreenFocusEffects";
+import { useChatScroll } from "./useChatScroll";
+import { useChatScrollRefs } from "./useChatScrollRefs";
+import { useChatSession } from "./useChatSession";
+import { useChatShortcut } from "./useChatShortcut";
+import { useChatStates } from "./useChatStates";
+import { useChatUI } from "./useChatUI";
 
 import { useChatStore } from "@/store/chat";
 
@@ -15,80 +27,125 @@ export function useChatScreenController({
     conversationId ? state.sessions[conversationId] : undefined,
   );
 
-  const display = useChatDisplayState({
+  const { activeAgentId, agent, hasFetchedAgents } =
+    useAgentSelection(routeAgentId);
+
+  const scrollRefs = useChatScrollRefs();
+
+  const history = useChatHistory(
     conversationId,
-    streamState: session?.streamState,
+    session?.streamState,
+    scrollRefs.scrollOffsetRef,
+    scrollRefs.contentHeightRef,
+  );
+
+  const scroll = useChatScroll(
+    scrollRefs,
+    session?.streamState,
+    history.loadMore,
+  );
+
+  useChatNavigation({ hasFetchedAgents, agent });
+
+  const {
+    session: navigationSession,
+    sessionSource,
+    mountedAtRef,
+  } = useChatSession(conversationId, activeAgentId, history.messages);
+
+  useChatScreenFocusEffects({
+    conversationId,
+    scheduleStickToBottom: scroll.scheduleStickToBottom,
+    forceScrollToBottomRef: scroll.forceScrollToBottomRef,
+    shouldStickToBottomRef: scroll.shouldStickToBottomRef,
+    messages: history.messages,
   });
 
-  const navigation = useChatNavigationState({
-    routeAgentId,
-    conversationId,
-    messages: display.history.messages,
-  });
+  const states = useChatStates({ session });
+  const ui = useChatUI();
 
-  const ops = useChatOperationState({
+  const messaging = useChatMessaging((text) =>
+    actions.handleSend(text, states.pendingInterrupt),
+  );
+
+  const actions = useChatActions(
     conversationId,
-    activeAgentId: navigation.activeAgentId,
-    agent: navigation.agent,
+    activeAgentId,
+    agent,
     session,
-    scheduleStickToBottom: display.scroll.scheduleStickToBottom,
-    mountedAtRef: navigation.mountedAtRef,
+    scroll.scheduleStickToBottom,
+    messaging.clear,
+  );
+
+  const a2a = useA2AIntegration(
+    conversationId,
+    activeAgentId,
+    agent,
+    states.pendingInterrupt,
+    states.lastResolvedInterrupt,
+    mountedAtRef,
+  );
+
+  const shortcuts = useChatShortcut({
+    setInput: messaging.setInput,
+    closeShortcutManager: ui.modals.shortcut.close,
+    inputRef: messaging.ref as React.RefObject<TextInput>,
   });
 
   return {
     navigation: {
-      agent: navigation.agent,
-      activeAgentId: navigation.activeAgentId,
-      hasFetchedAgents: navigation.hasFetchedAgents,
+      agent,
+      activeAgentId,
+      hasFetchedAgents,
       conversationId,
-      session: navigation.session,
-      sessionSource: navigation.sessionSource,
+      session: navigationSession,
+      sessionSource,
     },
-    ui: ops.ui,
-    history: display.history,
+    ui,
+    history,
     input: {
-      ref: ops.messaging.ref,
-      value: ops.messaging.value,
-      height: ops.messaging.height,
-      maxHeight: ops.messaging.maxHeight,
-      onChange: ops.messaging.onChange,
-      onContentSizeChange: ops.messaging.onContentSizeChange,
-      onKeyPress: ops.messaging.onKeyPress,
-      onSend: ops.messaging.onSend,
+      ref: messaging.ref,
+      value: messaging.value,
+      height: messaging.height,
+      maxHeight: messaging.maxHeight,
+      onChange: messaging.onChange,
+      onContentSizeChange: messaging.onContentSizeChange,
+      onKeyPress: messaging.onKeyPress,
+      onSend: messaging.onSend,
     },
     scroll: {
-      listRef: display.scroll.listRef,
-      showScrollToBottom: display.scroll.showScrollToBottom,
-      scrollToBottom: display.scroll.scrollToBottom,
-      onListContentSizeChange: display.scroll.handleListContentSizeChange,
-      onListScroll: display.scroll.handleListScroll,
-      captureContentSizeAnchor: display.scroll.captureContentSizeAnchor,
+      listRef: scroll.listRef,
+      showScrollToBottom: scroll.showScrollToBottom,
+      scrollToBottom: scroll.scrollToBottom,
+      onListContentSizeChange: scroll.handleListContentSizeChange,
+      onListScroll: scroll.handleListScroll,
+      captureContentSizeAnchor: scroll.captureContentSizeAnchor,
     },
     a2a: {
-      ...ops.a2a,
-      pendingInterrupt: ops.states.pendingInterrupt,
+      ...a2a,
+      pendingInterrupt: states.pendingInterrupt,
     },
     modals: {
-      ...ops.ui.modals,
+      ...ui.modals,
       shortcut: {
-        ...ops.ui.modals.shortcut,
-        onUse: ops.shortcuts.handleUseShortcut,
+        ...ui.modals.shortcut,
+        onUse: shortcuts.handleUseShortcut,
       },
       session: {
-        ...ops.ui.modals.session,
-        onSelect: ops.actions.handleSessionSelect,
+        ...ui.modals.session,
+        onSelect: actions.handleSessionSelect,
       },
       model: {
-        ...ops.ui.modals.model,
-        selectedModel: ops.states.selectedModel,
-        onSelect: ops.actions.handleModelSelect,
-        onClear: ops.actions.clearModelSelection,
+        ...ui.modals.model,
+        selectedModel: states.selectedModel,
+        onSelect: actions.handleModelSelect,
+        onClear: actions.clearModelSelection,
       },
     },
     actions: {
-      onTest: ops.actions.handleTest,
-      testingConnection: ops.actions.testingConnection,
-      onRetry: ops.actions.handleRetry,
+      onTest: actions.handleTest,
+      testingConnection: actions.testingConnection,
+      onRetry: actions.handleRetry,
     },
   };
 }
