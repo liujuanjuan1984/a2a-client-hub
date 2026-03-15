@@ -17,14 +17,21 @@ import { toast } from "@/lib/toast";
 import { type AgentConfig } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 
-export function useA2AIntegration(
-  conversationId: string | undefined,
-  activeAgentId: string | null,
-  agent: AgentConfig | undefined,
-  pendingInterrupt: PendingRuntimeInterrupt | null | undefined,
-  lastResolvedInterrupt: ResolvedRuntimeInterruptRecord | null | undefined,
-  mountedAtRef: React.MutableRefObject<number>,
-) {
+export function useA2AIntegration({
+  conversationId,
+  activeAgentId,
+  agent,
+  pendingInterrupt,
+  lastResolvedInterrupt,
+  mountedAtRef,
+}: {
+  conversationId: string | undefined;
+  activeAgentId: string | null;
+  agent: AgentConfig | undefined;
+  pendingInterrupt: PendingRuntimeInterrupt | null;
+  lastResolvedInterrupt: ResolvedRuntimeInterruptRecord | null;
+  mountedAtRef: React.MutableRefObject<number>;
+}) {
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
   const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
   const handledResolvedInterruptKeysRef = useRef<Set<string>>(new Set());
@@ -319,6 +326,7 @@ export function useA2AIntegration(
   ]);
 
   return {
+    pendingInterrupt,
     interruptAction,
     questionAnswers,
     handlePermissionReply,

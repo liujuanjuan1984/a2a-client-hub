@@ -1,6 +1,7 @@
 import { useA2AIntegration } from "./useA2AIntegration";
 import { useAgentSelection } from "./useAgentSelection";
 import { useChatActions } from "./useChatActions";
+import { useChatModals } from "./useChatModals";
 import { useChatNavigation } from "./useChatNavigation";
 import { useChatScreenFocusEffects } from "./useChatScreenFocusEffects";
 import { useChatScroll } from "./useChatScroll";
@@ -20,14 +21,10 @@ export function useChatScreenController({
 
   const ui = useChatUI();
 
-  // We call useMessageState first to get messages for useChatSession binding check
-  // It needs streamState which we can get from useChatSession return, but that's circular.
-  // Actually, useChatSession already subscribes to the session.
-  // Let's just have useChatSession return the session and we use it.
-
-  // To break the circle: useChatSession handles the binding and session state.
-  // We'll pass messageState.messages to it for the effect.
-  const messageState = useMessageState(conversationId, undefined); // We'll fix this hook next
+  // We call useMessageState first to get messages for useChatSession binding check.
+  // To break the circular dependency with streamState, useMessageState internally
+  // subscribes to the session state when streamState parameter is omitted.
+  const messageState = useMessageState(conversationId);
 
   const {
     session,
@@ -59,14 +56,16 @@ export function useChatScreenController({
     closeShortcutManager: ui.modals.shortcut.close,
   });
 
-  const a2a = useA2AIntegration(
+  const a2a = useA2AIntegration({
     conversationId,
     activeAgentId,
     agent,
     pendingInterrupt,
     lastResolvedInterrupt,
     mountedAtRef,
-  );
+  });
+
+  const modals = useChatModals({ ui, actions, selectedModel });
 
   return {
     navigation: {
@@ -81,27 +80,8 @@ export function useChatScreenController({
     history: messageState,
     input: actions.input,
     scroll: scroll.props,
-    a2a: {
-      ...a2a,
-      pendingInterrupt,
-    },
-    modals: {
-      ...ui.modals,
-      shortcut: {
-        ...ui.modals.shortcut,
-        onUse: actions.shortcuts.handleUseShortcut,
-      },
-      session: {
-        ...ui.modals.session,
-        onSelect: actions.handlers.onSessionSelect,
-      },
-      model: {
-        ...ui.modals.model,
-        selectedModel,
-        onSelect: actions.handlers.onModelSelect,
-        onClear: actions.handlers.onModelClear,
-      },
-    },
+    a2a,
+    modals,
     actions: {
       onTest: actions.handlers.onTest,
       testingConnection: actions.testingConnection,
