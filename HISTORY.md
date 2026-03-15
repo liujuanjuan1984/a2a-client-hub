@@ -1,4 +1,10 @@
 
+## [2026-03-15] YOLO Refactor: Modular Hook Orchestration (Issue #459)
+- Extracted `useMessageBlockLoader` from `useMessageState` to encapsulate dynamic block content loading logic.
+- Introduced `useChatUIOrchestrator` to consolidate UI state, actions, shortcuts, and modals, further simplifying the main `useChatScreenController`.
+- achieved a highly modular, deeply fragmented hook architecture where the main controller acts strictly as a high-level orchestrator.
+- Verified changes with linting, type-checking, and regression tests.
+
 ## [2026-03-15] YOLO Refactor: Horizontal Composition with useChatTimeline (Issue #459)
 - Introduced `useChatTimeline` to horizontal-compose `useMessageState` and `useChatScroll`.
 - Updated `useChatScreenController` to use `useChatTimeline`, further reducing its orchestration complexity.
