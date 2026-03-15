@@ -1,10 +1,8 @@
 import { useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
-import { type TextInput } from "react-native";
 
 import { useValidateAgentMutation } from "@/hooks/useAgentsCatalogQuery";
 import { useChatInput } from "@/hooks/useChatInput";
-import { useChatShortcut } from "@/hooks/useChatShortcut";
 import { type SharedModelSelection } from "@/lib/chat-utils";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
@@ -16,12 +14,10 @@ export function useChatActions({
   conversationId,
   agent,
   scheduleStickToBottom,
-  onShortcutUsed,
 }: {
   conversationId: string | undefined;
   agent: AgentConfig | undefined;
   scheduleStickToBottom: (animated: boolean) => void;
-  onShortcutUsed?: () => void;
 }) {
   const router = useRouter();
   const validateAgentMutation = useValidateAgentMutation();
@@ -71,12 +67,6 @@ export function useChatActions({
   );
 
   const inputHandlers = useChatInput(() => handleSend(inputHandlers.input));
-
-  const shortcuts = useChatShortcut({
-    setInput: inputHandlers.setInput,
-    closeShortcutManager: onShortcutUsed || (() => {}),
-    inputRef: inputHandlers.inputRef as React.RefObject<TextInput>,
-  });
 
   const handleTest = useCallback(async () => {
     if (!activeAgentId || !agent) return;
@@ -182,7 +172,6 @@ export function useChatActions({
 
   return {
     input,
-    shortcuts,
     testingConnection: validateAgentMutation.isPending,
     handlers: {
       onSend: handleSend,

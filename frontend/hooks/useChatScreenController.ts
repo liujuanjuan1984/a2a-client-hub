@@ -1,9 +1,13 @@
+import { type TextInput } from "react-native";
+
 import { useA2AIntegration } from "./useA2AIntegration";
 import { useAgentSelection } from "./useAgentSelection";
 import { useChatActions } from "./useChatActions";
+import { useChatModals } from "./useChatModals";
 import { useChatNavigation } from "./useChatNavigation";
 import { useChatScroll } from "./useChatScroll";
 import { useChatSession } from "./useChatSession";
+import { useChatShortcut } from "./useChatShortcut";
 import { useChatUI } from "./useChatUI";
 import { useMessageState } from "./useMessageState";
 import { useSessionBinding } from "./useSessionBinding";
@@ -47,7 +51,19 @@ export function useChatScreenController({
     conversationId,
     agent,
     scheduleStickToBottom: scroll.scheduleStickToBottom,
-    onShortcutUsed: () => ui.modals.shortcut.close(),
+  });
+
+  const shortcuts = useChatShortcut({
+    setInput: actions.input.setInput,
+    closeShortcutManager: () => ui.modals.shortcut.close(),
+    inputRef: actions.input.ref as React.RefObject<TextInput>,
+  });
+
+  const modals = useChatModals({
+    ui,
+    handlers: actions.handlers,
+    shortcuts,
+    selectedModel,
   });
 
   const a2a = useA2AIntegration({
@@ -69,22 +85,7 @@ export function useChatScreenController({
     input: actions.input,
     scroll: scroll.props,
     a2a,
-    modals: {
-      shortcut: {
-        ...ui.modals.shortcut,
-        onUse: actions.shortcuts.handleUseShortcut,
-      },
-      session: {
-        ...ui.modals.session,
-        onSelect: actions.handlers.onSessionSelect,
-      },
-      model: {
-        ...ui.modals.model,
-        selectedModel,
-        onSelect: actions.handlers.onModelSelect,
-        onClear: actions.handlers.onModelClear,
-      },
-    },
+    modals,
     actions: {
       onTest: actions.handlers.onTest,
       testingConnection: actions.testingConnection,
