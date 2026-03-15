@@ -5,7 +5,6 @@ import { useChatNavigation } from "./useChatNavigation";
 import { useChatScreenFocusEffects } from "./useChatScreenFocusEffects";
 import { useChatScroll } from "./useChatScroll";
 import { useChatSession } from "./useChatSession";
-import { useChatStates } from "./useChatStates";
 import { useChatUI } from "./useChatUI";
 import { useMessageState } from "./useMessageState";
 
@@ -27,11 +26,7 @@ export function useChatScreenController({
 
   const messageState = useMessageState(conversationId, session?.streamState);
 
-  const scroll = useChatScroll(
-    messageState.refs,
-    session?.streamState,
-    messageState.loadMore,
-  );
+  const scroll = useChatScroll(session?.streamState, messageState.loadMore);
 
   useChatNavigation({ hasFetchedAgents, agent });
 
@@ -39,6 +34,9 @@ export function useChatScreenController({
     session: navigationSession,
     sessionSource,
     mountedAtRef,
+    pendingInterrupt,
+    lastResolvedInterrupt,
+    selectedModel,
   } = useChatSession(conversationId, activeAgentId, messageState.messages);
 
   useChatScreenFocusEffects({
@@ -49,14 +47,13 @@ export function useChatScreenController({
     messages: messageState.messages,
   });
 
-  const states = useChatStates({ session });
   const ui = useChatUI();
 
   const actions = useChatActions({
     conversationId,
     activeAgentId,
     agent,
-    session,
+    session: navigationSession,
     scheduleStickToBottom: scroll.scheduleStickToBottom,
     closeShortcutManager: ui.modals.shortcut.close,
   });
@@ -65,8 +62,8 @@ export function useChatScreenController({
     conversationId,
     activeAgentId,
     agent,
-    states.pendingInterrupt,
-    states.lastResolvedInterrupt,
+    pendingInterrupt,
+    lastResolvedInterrupt,
     mountedAtRef,
   );
 
@@ -92,7 +89,7 @@ export function useChatScreenController({
     },
     a2a: {
       ...a2a,
-      pendingInterrupt: states.pendingInterrupt,
+      pendingInterrupt,
     },
     modals: {
       ...ui.modals,
@@ -106,7 +103,7 @@ export function useChatScreenController({
       },
       model: {
         ...ui.modals.model,
-        selectedModel: states.selectedModel,
+        selectedModel,
         onSelect: actions.handleModelSelect,
         onClear: actions.clearModelSelection,
       },

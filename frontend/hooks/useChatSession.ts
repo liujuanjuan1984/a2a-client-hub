@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 
 import { type ChatMessage } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
+import { getSharedModelSelection } from "@/lib/chat-utils";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
@@ -20,6 +21,10 @@ export function useChatSession(
   );
   const sessionSource = session?.source ?? null;
   const mountedAtRef = useRef(Date.now());
+
+  const pendingInterrupt = session?.pendingInterrupt ?? null;
+  const lastResolvedInterrupt = session?.lastResolvedInterrupt ?? null;
+  const selectedModel = getSharedModelSelection(session?.metadata);
 
   useEffect(() => {
     if (activeAgentId && conversationId) {
@@ -95,5 +100,12 @@ export function useChatSession(
     sessionSource,
   ]);
 
-  return { session, sessionSource, mountedAtRef };
+  return {
+    session,
+    sessionSource,
+    mountedAtRef,
+    pendingInterrupt,
+    lastResolvedInterrupt,
+    selectedModel,
+  };
 }

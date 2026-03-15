@@ -1,9 +1,7 @@
 import { useCallback, useRef } from "react";
-import { type FlatList } from "react-native";
 
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
-import { type ChatMessage } from "@/lib/api/chat-utils";
 import { querySessionMessageBlocks } from "@/lib/api/sessions";
 import {
   getConversationMessages,
@@ -33,31 +31,18 @@ export function useMessageState(
       ? sessionHistoryQuery.error.message
       : null;
 
-  const listRef = useRef<FlatList<ChatMessage>>(null);
-  const scrollOffsetRef = useRef(0);
-  const contentHeightRef = useRef(0);
-  const loadingEarlierRef = useRef(false);
   const blockDetailInFlightRef = useRef<Set<string>>(new Set());
 
   const loadMore = useCallback(async () => {
-    if (!conversationId) return null;
-    if (historyPaused) return null;
-    if (typeof historyNextPage !== "number") return null;
-    if (historyLoadingMore) return null;
-
-    loadingEarlierRef.current = true;
-    const anchor = {
-      offset: scrollOffsetRef.current,
-      contentHeight: contentHeightRef.current,
-    };
+    if (!conversationId) return;
+    if (historyPaused) return;
+    if (typeof historyNextPage !== "number") return;
+    if (historyLoadingMore) return;
 
     try {
       await sessionHistoryQuery.loadMore();
-      return anchor;
     } catch {
-      return null;
-    } finally {
-      loadingEarlierRef.current = false;
+      // Error handled by query
     }
   }, [
     historyLoadingMore,
@@ -165,10 +150,5 @@ export function useMessageState(
     error: historyError,
     loadMore,
     handleLoadBlockContent,
-    refs: {
-      listRef,
-      scrollOffsetRef,
-      contentHeightRef,
-    },
   };
 }

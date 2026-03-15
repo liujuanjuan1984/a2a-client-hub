@@ -17,19 +17,13 @@ const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 
 export function useChatScroll(
-  refs: {
-    listRef: React.RefObject<FlatList<ChatMessage> | null>;
-    scrollOffsetRef: React.MutableRefObject<number>;
-    contentHeightRef: React.MutableRefObject<number>;
-  },
   streamState: string | undefined,
-  onLoadEarlier?: () => Promise<void | {
-    offset: number;
-    contentHeight: number;
-  } | null>,
+  onLoadEarlier?: () => Promise<void> | void,
 ) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const { listRef, scrollOffsetRef, contentHeightRef } = refs;
+  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const scrollOffsetRef = useRef(0);
+  const contentHeightRef = useRef(0);
   const prependAnchorRef = useRef<{
     offset: number;
     contentHeight: number;
@@ -130,16 +124,16 @@ export function useChatScroll(
       );
 
       if (offsetY <= HISTORY_AUTOLOAD_THRESHOLD && onLoadEarlier) {
-        onLoadEarlier()
-          .then((anchor) => {
-            if (anchor) {
-              prependAnchorRef.current = anchor as {
-                offset: number;
-                contentHeight: number;
-              };
-            }
-          })
-          .catch(() => undefined);
+        prependAnchorRef.current = {
+          offset: scrollOffsetRef.current,
+          contentHeight: contentHeightRef.current,
+        };
+        const p = onLoadEarlier();
+        if (p instanceof Promise) {
+          p.catch(() => {
+            prependAnchorRef.current = null;
+          });
+        }
       }
     },
     [onLoadEarlier],

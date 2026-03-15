@@ -1,4 +1,11 @@
 
+## [2026-03-15] YOLO Refactor: Consolidation of Chat Logic (Issue #459)
+- Consolidated message-related logic into `useMessageState`, incorporating history, blocks, and scroll refs.
+- Merged messaging and shortcut logic into `useChatActions`.
+- Simplified `useChatScreenController` by reducing the number of direct hook calls and improving delegation.
+- Removed redundant hooks: `useChatHistory`, `useChatMessaging`, `useChatScrollRefs`.
+- Verified with linting, type-checking, and regression tests.
+
 ## [2026-03-15] Refactor ChatScreen Controller (Issue #459)
 - Split `useChatScreenController.ts` into multiple functional hooks:
   - `useAgentSelection`
@@ -34,3 +41,12 @@
 - Removed redundant middle-layer meta-hooks (`useChatDisplayState.ts`, `useChatNavigationState.ts`, `useChatOperationState.ts`), improving code transparency and reducing nesting depth.
 - Simplified internal prop passing by leveraging direct hook returns.
 - Verified with linting and type checks (#459).
+
+### 2026-03-15 06:50 (Swival)
+- Refined hook responsibilities and decoupled scrolling logic from message state (Issue #459):
+  - Moved `listRef`, `scrollOffsetRef`, and `contentHeightRef` from `useMessageState` to `useChatScroll`.
+  - Updated `useMessageState` to be pure history-logic focused, removing anchor capturing and returning only history data and handlers.
+  - Enhanced `useChatScroll` to manage its own refs and handle anchor capturing internally during `onLoadEarlier` calls.
+  - Eliminated the redundant `useChatStates` hook by moving its state extraction logic into `useChatSession`.
+  - Cleaned up `useChatScreenController` to use consolidated state from `useChatSession` and improved overall hook orchestration.
+  - Verified with `npm run lint` and `npm run check-types`.
