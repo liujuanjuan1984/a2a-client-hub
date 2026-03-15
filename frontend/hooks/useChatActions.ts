@@ -1,7 +1,10 @@
 import { useRouter } from "expo-router";
 import { useCallback } from "react";
+import { type TextInput } from "react-native";
 
 import { useValidateAgentMutation } from "@/hooks/useAgentsCatalogQuery";
+import { useChatInput } from "@/hooks/useChatInput";
+import { useChatShortcut } from "@/hooks/useChatShortcut";
 import { type SharedModelSelection, type AgentSession } from "@/lib/chat-utils";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
@@ -9,14 +12,21 @@ import { toast } from "@/lib/toast";
 import { type AgentConfig } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 
-export function useChatActions(
-  conversationId: string | undefined,
-  activeAgentId: string | null,
-  agent: AgentConfig | undefined,
-  session: AgentSession | undefined,
-  scheduleStickToBottom: (animated: boolean) => void,
-  clearInput: () => void,
-) {
+export function useChatActions({
+  conversationId,
+  activeAgentId,
+  agent,
+  session,
+  scheduleStickToBottom,
+  closeShortcutManager,
+}: {
+  conversationId: string | undefined;
+  activeAgentId: string | null;
+  agent: AgentConfig | undefined;
+  session: AgentSession | undefined;
+  scheduleStickToBottom: (animated: boolean) => void;
+  closeShortcutManager: () => void;
+}) {
   const router = useRouter();
   const validateAgentMutation = useValidateAgentMutation();
   const sendMessage = useChatStore((state) => state.sendMessage);
@@ -27,8 +37,10 @@ export function useChatActions(
     (state) => state.setSharedModelSelection,
   );
 
+  const pendingInterrupt = session?.pendingInterrupt ?? null;
+
   const handleSend = useCallback(
-    (input: string, pendingInterrupt: any) => {
+    (input: string) => {
       if (!activeAgentId || !conversationId || !agent) {
         return;
       }
@@ -42,13 +54,9 @@ export function useChatActions(
       if (!input.trim()) {
         return;
       }
-      // These should be set via refs or just assume we want it
-      // But the refs are in useChatScroll.
-      // I will pass a callback or just let the caller handle ref updates.
-      // Actually, I'll pass a function that wraps the ref updates.
 
       sendMessage(conversationId, activeAgentId, input, agent.source);
-      clearInput();
+      inputHandlers.clearInput();
       scheduleStickToBottom(true);
     },
     [
@@ -56,10 +64,18 @@ export function useChatActions(
       agent,
       conversationId,
       sendMessage,
-      clearInput,
       scheduleStickToBottom,
+      pendingInterrupt,
     ],
   );
+
+  const inputHandlers = useChatInput(() => handleSend(inputHandlers.input));
+
+  const shortcuts = useChatShortcut({
+    setInput: inputHandlers.setInput,
+    closeShortcutManager,
+    inputRef: inputHandlers.inputRef as React.RefObject<TextInput>,
+  });
 
   const handleTest = useCallback(async () => {
     if (!activeAgentId || !agent) return;
@@ -155,5 +171,18 @@ export function useChatActions(
     handleSessionSelect,
     handleModelSelect,
     clearModelSelection,
+    input: {
+      ref: inputHandlers.inputRef,
+      value: inputHandlers.input,
+      height: inputHandlers.inputHeight,
+      maxHeight: inputHandlers.maxInputHeight,
+      onChange: inputHandlers.handleInputChange,
+      onContentSizeChange: inputHandlers.handleContentSizeChange,
+      onKeyPress: inputHandlers.handleKeyPress,
+      onSend: () => handleSend(inputHandlers.input),
+      clear: inputHandlers.clearInput,
+      setInput: inputHandlers.setInput,
+    },
+    shortcuts,
   };
 }

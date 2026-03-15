@@ -1,7 +1,9 @@
 import { useCallback, useRef } from "react";
+import { type FlatList } from "react-native";
 
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
+import { type ChatMessage } from "@/lib/api/chat-utils";
 import { querySessionMessageBlocks } from "@/lib/api/sessions";
 import {
   getConversationMessages,
@@ -11,8 +13,9 @@ import { toast } from "@/lib/toast";
 
 export function useMessageState(
   conversationId: string | undefined,
-  historyPaused: boolean,
+  streamState: string | undefined,
 ) {
+  const historyPaused = streamState === "streaming";
   const sessionHistoryQuery = useSessionHistoryQuery({
     conversationId,
     enabled: Boolean(conversationId),
@@ -30,39 +33,39 @@ export function useMessageState(
       ? sessionHistoryQuery.error.message
       : null;
 
+  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const scrollOffsetRef = useRef(0);
+  const contentHeightRef = useRef(0);
   const loadingEarlierRef = useRef(false);
   const blockDetailInFlightRef = useRef<Set<string>>(new Set());
 
-  const loadEarlierHistory = useCallback(
-    async (scrollOffset: number, contentHeight: number) => {
-      if (!conversationId) return null;
-      if (historyPaused) return null;
-      if (typeof historyNextPage !== "number") return null;
-      if (historyLoadingMore) return null;
+  const loadMore = useCallback(async () => {
+    if (!conversationId) return null;
+    if (historyPaused) return null;
+    if (typeof historyNextPage !== "number") return null;
+    if (historyLoadingMore) return null;
 
-      loadingEarlierRef.current = true;
-      const anchor = {
-        offset: scrollOffset,
-        contentHeight,
-      };
+    loadingEarlierRef.current = true;
+    const anchor = {
+      offset: scrollOffsetRef.current,
+      contentHeight: contentHeightRef.current,
+    };
 
-      try {
-        await sessionHistoryQuery.loadMore();
-        return anchor;
-      } catch {
-        return null;
-      } finally {
-        loadingEarlierRef.current = false;
-      }
-    },
-    [
-      historyLoadingMore,
-      historyNextPage,
-      historyPaused,
-      sessionHistoryQuery,
-      conversationId,
-    ],
-  );
+    try {
+      await sessionHistoryQuery.loadMore();
+      return anchor;
+    } catch {
+      return null;
+    } finally {
+      loadingEarlierRef.current = false;
+    }
+  }, [
+    historyLoadingMore,
+    historyNextPage,
+    historyPaused,
+    sessionHistoryQuery,
+    conversationId,
+  ]);
 
   const handleLoadBlockContent = useCallback(
     async (messageId: string, blockId: string): Promise<boolean> => {
@@ -155,12 +158,17 @@ export function useMessageState(
 
   return {
     messages,
-    historyLoading,
-    historyLoadingMore,
-    historyNextPage,
-    historyError,
-    loadEarlierHistory,
+    loading: historyLoading,
+    loadingMore: historyLoadingMore,
+    nextPage: historyNextPage,
+    paused: historyPaused,
+    error: historyError,
+    loadMore,
     handleLoadBlockContent,
-    loadingEarlierRef,
+    refs: {
+      listRef,
+      scrollOffsetRef,
+      contentHeightRef,
+    },
   };
 }
