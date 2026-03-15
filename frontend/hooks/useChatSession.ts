@@ -20,10 +20,6 @@ export function useChatSession(
     conversationId ? state.sessions[conversationId] : undefined,
   );
   const sessionSource = session?.source ?? null;
-  const mountedAtRef = useRef(Date.now());
-
-  const pendingInterrupt = session?.pendingInterrupt ?? null;
-  const lastResolvedInterrupt = session?.lastResolvedInterrupt ?? null;
   const selectedModel = getSharedModelSelection(session?.metadata);
 
   useEffect(() => {
@@ -103,9 +99,6 @@ export function useChatSession(
   return {
     session,
     sessionSource,
-    mountedAtRef,
-    pendingInterrupt,
-    lastResolvedInterrupt,
     selectedModel,
   };
 }
