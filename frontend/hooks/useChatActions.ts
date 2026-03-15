@@ -1,17 +1,19 @@
-import { useCallback } from "react";
 import { useRouter } from "expo-router";
-import { useChatStore } from "@/store/chat";
+import { useCallback } from "react";
+
 import { useValidateAgentMutation } from "@/hooks/useAgentsCatalogQuery";
-import { toast } from "@/lib/toast";
+import { type SharedModelSelection, type AgentSession } from "@/lib/chat-utils";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
-import { type SharedModelSelection } from "@/lib/chat-utils";
+import { toast } from "@/lib/toast";
+import { type AgentConfig } from "@/store/agents";
+import { useChatStore } from "@/store/chat";
 
 export function useChatActions(
   conversationId: string | undefined,
   activeAgentId: string | null,
-  agent: any,
-  session: any,
+  agent: AgentConfig | undefined,
+  session: AgentSession | undefined,
   scheduleStickToBottom: (animated: boolean) => void,
   clearInput: () => void,
 ) {

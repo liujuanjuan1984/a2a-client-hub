@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef } from "react";
 import { useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useRef } from "react";
+
 import { type ChatMessage } from "@/lib/api/chat-utils";
 
 export function useChatScreenFocusEffects({

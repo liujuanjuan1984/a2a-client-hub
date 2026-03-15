@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
-import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
+
 import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
+import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 
 export function useChatScreenEssentials() {
   const insets = useAppSafeArea();

@@ -5,12 +5,13 @@ import {
   NativeSyntheticEvent,
   Platform,
 } from "react-native";
+
+import { type ChatMessage } from "@/lib/api/chat-utils";
 import {
   getAnchoredOffsetAfterContentResize,
   shouldShowScrollToBottom,
   shouldStickToBottom,
 } from "@/lib/chatScroll";
-import { type ChatMessage } from "@/lib/api/chat-utils";
 
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const HISTORY_AUTOLOAD_THRESHOLD = 72;

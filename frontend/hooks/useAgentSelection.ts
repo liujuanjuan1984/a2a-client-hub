@@ -1,6 +1,7 @@
 import { useMemo } from "react";
-import { useAgentStore } from "@/store/agents";
+
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
+import { useAgentStore } from "@/store/agents";
 
 export function useAgentSelection(routeAgentId?: string | null) {
   const storeActiveAgentId = useAgentStore((state) => state.activeAgentId);

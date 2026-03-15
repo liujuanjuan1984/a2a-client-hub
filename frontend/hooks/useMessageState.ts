@@ -1,4 +1,5 @@
 import { useCallback, useRef } from "react";
+
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import { querySessionMessageBlocks } from "@/lib/api/sessions";
@@ -42,7 +43,7 @@ export function useMessageState(
       loadingEarlierRef.current = true;
       const anchor = {
         offset: scrollOffset,
-        contentHeight: contentHeight,
+        contentHeight,
       };
 
       try {

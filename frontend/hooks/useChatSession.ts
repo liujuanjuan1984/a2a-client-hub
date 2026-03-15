@@ -1,11 +1,12 @@
-import { useEffect, useRef } from "react";
 import { useRouter } from "expo-router";
-import { useChatStore } from "@/store/chat";
+import { useEffect, useRef } from "react";
+
+import { type ChatMessage } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
-import { type ChatMessage } from "@/lib/api/chat-utils";
+import { useChatStore } from "@/store/chat";
 
 export function useChatSession(
   conversationId: string | undefined,

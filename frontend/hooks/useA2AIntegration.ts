@@ -1,21 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+
 import {
   A2AExtensionCallError,
   rejectQuestionInterrupt,
   replyPermissionInterrupt,
   replyQuestionInterrupt,
 } from "@/lib/api/a2aExtensions";
-import { type ResolvedRuntimeInterrupt } from "@/lib/api/chat-utils";
+import {
+  type PendingRuntimeInterrupt,
+  type ResolvedRuntimeInterrupt,
+  type InterruptQuestion,
+} from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
+import { type ResolvedRuntimeInterruptRecord } from "@/lib/chat-utils";
 import { toast } from "@/lib/toast";
+import { type AgentConfig } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 
 export function useA2AIntegration(
   conversationId: string | undefined,
   activeAgentId: string | null,
-  agent: any,
-  pendingInterrupt: any,
-  lastResolvedInterrupt: any,
+  agent: AgentConfig | undefined,
+  pendingInterrupt: PendingRuntimeInterrupt | null | undefined,
+  lastResolvedInterrupt: ResolvedRuntimeInterruptRecord | null | undefined,
   mountedAtRef: React.MutableRefObject<number>,
 ) {
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
@@ -77,7 +84,7 @@ export function useA2AIntegration(
           type: interruptType,
           phase: "resolved",
           resolution,
-        } as any),
+        }),
       );
     },
     [buildResolvedInterruptKey],
@@ -244,10 +251,12 @@ export function useA2AIntegration(
       return;
     }
     const questions = pendingInterrupt.details?.questions ?? [];
-    const normalizedAnswers = questions.map((_: any, index: number) => {
-      const answer = questionAnswers[index]?.trim() ?? "";
-      return answer ? [answer] : [];
-    });
+    const normalizedAnswers = questions.map(
+      (_: InterruptQuestion, index: number) => {
+        const answer = questionAnswers[index]?.trim() ?? "";
+        return answer ? [answer] : [];
+      },
+    );
     if (normalizedAnswers.some((group: string[]) => group.length === 0)) {
       toast.error("Missing answer", "Please answer all questions first.");
       return;

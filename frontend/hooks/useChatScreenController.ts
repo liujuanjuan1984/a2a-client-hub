@@ -1,18 +1,20 @@
 import { TextInput } from "react-native";
-import { useChatStore } from "@/store/chat";
-import { useAgentSelection } from "./useAgentSelection";
-import { useChatNavigation } from "./useChatNavigation";
-import { useMessageState } from "./useMessageState";
-import { useChatSession } from "./useChatSession";
-import { useChatScroll } from "./useChatScroll";
-import { useChatScreenFocusEffects } from "./useChatScreenFocusEffects";
-import { useChatInput } from "./useChatInput";
-import { useChatActions } from "./useChatActions";
-import { useChatStates } from "./useChatStates";
+
 import { useA2AIntegration } from "./useA2AIntegration";
-import { useChatScreenEssentials } from "./useChatScreenEssentials";
+import { useAgentSelection } from "./useAgentSelection";
+import { useChatActions } from "./useChatActions";
+import { useChatInput } from "./useChatInput";
 import { useChatModalStates } from "./useChatModalStates";
+import { useChatNavigation } from "./useChatNavigation";
+import { useChatScreenEssentials } from "./useChatScreenEssentials";
+import { useChatScreenFocusEffects } from "./useChatScreenFocusEffects";
+import { useChatScroll } from "./useChatScroll";
+import { useChatSession } from "./useChatSession";
 import { useChatShortcut } from "./useChatShortcut";
+import { useChatStates } from "./useChatStates";
+import { useMessageState } from "./useMessageState";
+
+import { useChatStore } from "@/store/chat";
 
 export function useChatScreenController({
   routeAgentId,

@@ -1,12 +1,14 @@
-import { useEffect } from "react";
 import { useRouter } from "expo-router";
+import { useEffect } from "react";
+
+import { type AgentConfig } from "@/store/agents";
 
 export function useChatNavigation({
   hasFetchedAgents,
   agent,
 }: {
   hasFetchedAgents: boolean;
-  agent: any;
+  agent: AgentConfig | undefined;
 }) {
   const router = useRouter();
 
