@@ -14,6 +14,26 @@ export class ApiConfigError extends Error {
   }
 }
 
+export class AllowlistError extends Error {
+  unauthorizedHost: string;
+  constructor(message: string, unauthorizedHost: string) {
+    super(message);
+    this.name = "AllowlistError";
+    this.unauthorizedHost = unauthorizedHost;
+    Object.setPrototypeOf(this, AllowlistError.prototype);
+  }
+}
+
+export class AllowlistError extends Error {
+  unauthorizedHost: string;
+  constructor(message: string, unauthorizedHost: string) {
+    super(message);
+    this.name = "AllowlistError";
+    this.unauthorizedHost = unauthorizedHost;
+    Object.setPrototypeOf(this, AllowlistError.prototype);
+  }
+}
+
 export class ApiRequestError extends Error {
   status: number;
   errorCode: string | null;

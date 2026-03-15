@@ -1,3 +1,5 @@
+import { AllowlistError, ApiConfigError } from "./api/client";
+
 type ValidationErrorItem = {
   loc?: unknown;
   msg?: unknown;
@@ -85,6 +87,13 @@ const pickMessageFromPayload = (
 };
 
 export const getFriendlyAuthErrorMessage = (error: unknown): string | null => {
+  if (error instanceof AllowlistError) {
+    return `Connection to \"${error.unauthorizedHost}\" is not allowed. Add it to the allowlist?`;
+  }
+  if (error instanceof ApiConfigError) {
+    return error.message;
+  }
+
   const errorRecord =
     error && typeof error === "object"
       ? (error as Record<string, unknown>)

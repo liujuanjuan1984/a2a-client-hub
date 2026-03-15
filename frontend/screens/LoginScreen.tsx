@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useLogin } from "@/hooks/useAuth";
 import { getFriendlyAuthErrorMessage } from "@/lib/authErrorMessage";
+import { AllowlistError } from "@/lib/api/client";
+import { ENV } from "@/lib/config";
 
 export function LoginScreen() {
   const login = useLogin();
@@ -57,7 +59,24 @@ export function LoginScreen() {
       />
 
       {errorMessage ? (
-        <Text className="mt-4 text-sm text-accent">{errorMessage}</Text>
+        <>
+          <Text className="mt-4 text-sm text-accent">{errorMessage}</Text>
+          {login.error instanceof AllowlistError && (
+            <Button
+              className="mt-4"
+              variant="outline"
+              label="Add to Allowlist"
+              onPress={() => {
+                // TODO: Implement actual allowlist addition logic
+                const currentAllowlist = ENV.apiAllowlist ? `${ENV.apiAllowlist},` : '';
+                const newAllowlist = `${currentAllowlist}${login.error.unauthorizedHost}`;
+                console.log('Action: Add to allowlist', newAllowlist);
+                alert(`Please add "${login.error.unauthorizedHost}" to your EXPO_PUBLIC_API_ALLOWLIST environment variable.`);
+                // In a real app, you might trigger a deep link here to guide the user to their config or a settings screen.
+              }}
+            />
+          )}
+        </>
       ) : null}
       <View className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
         <Text className="text-sm text-muted">
