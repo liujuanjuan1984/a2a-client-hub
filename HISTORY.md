@@ -1,4 +1,9 @@
 
+## [2026-03-15] YOLO Refactor: Horizontal Composition with useChatTimeline (Issue #459)
+- Introduced `useChatTimeline` to horizontal-compose `useMessageState` and `useChatScroll`.
+- Updated `useChatScreenController` to use `useChatTimeline`, further reducing its orchestration complexity.
+- Verified all changes with linting and type checking.
+
 ## [2026-03-15] YOLO Refactor: Consolidation of Chat Logic (Issue #459)
 - Consolidated message-related logic into `useMessageState`, incorporating history, blocks, and scroll refs.
 - Merged messaging and shortcut logic into `useChatActions`.

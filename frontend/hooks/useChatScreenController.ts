@@ -5,11 +5,10 @@ import { useAgentSelection } from "./useAgentSelection";
 import { useChatActions } from "./useChatActions";
 import { useChatModals } from "./useChatModals";
 import { useChatNavigation } from "./useChatNavigation";
-import { useChatScroll } from "./useChatScroll";
 import { useChatSession } from "./useChatSession";
 import { useChatShortcut } from "./useChatShortcut";
+import { useChatTimeline } from "./useChatTimeline";
 import { useChatUI } from "./useChatUI";
-import { useMessageState } from "./useMessageState";
 import { useSessionBinding } from "./useSessionBinding";
 
 export function useChatScreenController({
@@ -22,25 +21,21 @@ export function useChatScreenController({
   const { activeAgentId, agent, hasFetchedAgents } =
     useAgentSelection(routeAgentId);
 
-  const messageState = useMessageState(conversationId);
-
   const { session, sessionSource, selectedModel } = useChatSession(
     conversationId,
     activeAgentId,
   );
 
+  const { history, scroll } = useChatTimeline({
+    conversationId,
+    streamState: session?.streamState,
+  });
+
   useSessionBinding({
     conversationId,
     activeAgentId,
     sessionSource,
-    messages: messageState.messages,
-  });
-
-  const scroll = useChatScroll({
-    conversationId,
-    streamState: session?.streamState,
-    messages: messageState.messages,
-    onLoadEarlier: messageState.loadMore,
+    messages: history.messages,
   });
 
   useChatNavigation({ hasFetchedAgents, agent });
@@ -81,7 +76,7 @@ export function useChatScreenController({
       sessionSource,
     },
     ui,
-    history: messageState,
+    history,
     input: actions.input,
     scroll: scroll.props,
     a2a,
