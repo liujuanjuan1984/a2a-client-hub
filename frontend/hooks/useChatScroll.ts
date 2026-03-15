@@ -143,14 +143,16 @@ export function useChatScroll(
     listRef,
     showScrollToBottom,
     scrollToBottom,
-    handleListContentSizeChange,
-    captureContentSizeAnchor,
-    handleListScroll,
+    scheduleStickToBottom,
     forceScrollToBottomRef,
     shouldStickToBottomRef,
-    prependAnchorRef,
-    scrollOffsetRef,
-    contentHeightRef,
-    scheduleStickToBottom,
+    props: {
+      listRef,
+      showScrollToBottom,
+      scrollToBottom,
+      onListContentSizeChange: handleListContentSizeChange,
+      onListScroll: handleListScroll,
+      captureContentSizeAnchor,
+    },
   };
 }

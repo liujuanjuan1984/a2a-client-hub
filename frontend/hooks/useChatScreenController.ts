@@ -80,14 +80,7 @@ export function useChatScreenController({
     ui,
     history: messageState,
     input: actions.input,
-    scroll: {
-      listRef: scroll.listRef,
-      showScrollToBottom: scroll.showScrollToBottom,
-      scrollToBottom: scroll.scrollToBottom,
-      onListContentSizeChange: scroll.handleListContentSizeChange,
-      onListScroll: scroll.handleListScroll,
-      captureContentSizeAnchor: scroll.captureContentSizeAnchor,
-    },
+    scroll: scroll.props,
     a2a: {
       ...a2a,
       pendingInterrupt,
