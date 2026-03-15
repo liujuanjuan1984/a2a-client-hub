@@ -3,7 +3,6 @@ import { useAgentSelection } from "./useAgentSelection";
 import { useChatActions } from "./useChatActions";
 import { useChatModals } from "./useChatModals";
 import { useChatNavigation } from "./useChatNavigation";
-import { useChatScreenFocusEffects } from "./useChatScreenFocusEffects";
 import { useChatScroll } from "./useChatScroll";
 import { useChatSession } from "./useChatSession";
 import { useChatUI } from "./useChatUI";
@@ -35,17 +34,14 @@ export function useChatScreenController({
     selectedModel,
   } = useChatSession(conversationId, activeAgentId, messageState.messages);
 
-  const scroll = useChatScroll(session?.streamState, messageState.loadMore);
+  const scroll = useChatScroll({
+    conversationId,
+    streamState: session?.streamState,
+    messages: messageState.messages,
+    onLoadEarlier: messageState.loadMore,
+  });
 
   useChatNavigation({ hasFetchedAgents, agent });
-
-  useChatScreenFocusEffects({
-    conversationId,
-    scheduleStickToBottom: scroll.scheduleStickToBottom,
-    forceScrollToBottomRef: scroll.forceScrollToBottomRef,
-    shouldStickToBottomRef: scroll.shouldStickToBottomRef,
-    messages: messageState.messages,
-  });
 
   const actions = useChatActions({
     conversationId,

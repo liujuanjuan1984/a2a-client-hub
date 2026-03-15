@@ -1,3 +1,4 @@
+import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState, useEffect } from "react";
 import {
   FlatList,
@@ -16,10 +17,17 @@ import {
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 
-export function useChatScroll(
-  streamState: string | undefined,
-  onLoadEarlier?: () => Promise<void> | void,
-) {
+export function useChatScroll({
+  conversationId,
+  streamState,
+  messages,
+  onLoadEarlier,
+}: {
+  conversationId: string | undefined;
+  streamState: string | undefined;
+  messages: ChatMessage[];
+  onLoadEarlier?: () => Promise<void> | void;
+}) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const scrollOffsetRef = useRef(0);
@@ -35,6 +43,8 @@ export function useChatScroll(
 
   const shouldStickToBottomRef = useRef(true);
   const forceScrollToBottomRef = useRef(false);
+  const isInitialLoadRef = useRef(true);
+  const suppressAutoScrollRef = useRef(false);
   const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -76,6 +86,34 @@ export function useChatScroll(
     },
     [clearScrollSettleTimer, scheduleScrollSettleTimer, scrollToBottom],
   );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!conversationId) {
+        return;
+      }
+      forceScrollToBottomRef.current = true;
+      shouldStickToBottomRef.current = true;
+      scheduleStickToBottom(true);
+    }, [conversationId, scheduleStickToBottom]),
+  );
+
+  useEffect(() => {
+    if (suppressAutoScrollRef.current) {
+      suppressAutoScrollRef.current = false;
+      return;
+    }
+    const animated = !isInitialLoadRef.current;
+    scheduleStickToBottom(animated);
+
+    if (isInitialLoadRef.current && messages.length > 0) {
+      isInitialLoadRef.current = false;
+    }
+  }, [messages.length, scheduleStickToBottom]);
+
+  useEffect(() => {
+    isInitialLoadRef.current = true;
+  }, [conversationId]);
 
   useEffect(() => () => clearScrollSettleTimer(), [clearScrollSettleTimer]);
 
@@ -146,6 +184,7 @@ export function useChatScroll(
     scheduleStickToBottom,
     forceScrollToBottomRef,
     shouldStickToBottomRef,
+    suppressAutoScrollRef,
     props: {
       listRef,
       showScrollToBottom,

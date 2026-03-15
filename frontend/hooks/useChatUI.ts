@@ -1,13 +1,18 @@
 import { useCallback, useState } from "react";
 
-import { useChatScreenEssentials } from "./useChatScreenEssentials";
+import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
+import { useAppSafeArea } from "@/components/layout/useAppSafeArea";
 
 export function useChatUI() {
-  const essentials = useChatScreenEssentials();
-
+  const insets = useAppSafeArea();
+  const [showDetails, setShowDetails] = useState(false);
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
+
+  const toggleDetails = useCallback(() => {
+    setShowDetails((current) => !current);
+  }, []);
 
   const openShortcutManager = useCallback(() => {
     setShowShortcutManager(true);
@@ -34,9 +39,9 @@ export function useChatUI() {
   }, []);
 
   return {
-    topInset: essentials.topInset,
-    showDetails: essentials.showDetails,
-    toggleDetails: essentials.toggleDetails,
+    topInset: insets.top + PAGE_TOP_OFFSET,
+    showDetails,
+    toggleDetails,
     modals: {
       shortcut: {
         visible: showShortcutManager,

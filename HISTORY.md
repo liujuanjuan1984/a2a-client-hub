@@ -42,15 +42,11 @@
 - Simplified internal prop passing by leveraging direct hook returns.
 - Verified with linting and type checks (#459).
 
-### 2026-03-15 07:15 (Swival) - Refactor Completion
-- Completed detailed refactor of `useChatScreenController.ts` into a suite of specialized hooks (#459):
-  - `useMessageState.ts`: Manages chat history and block loading logic.
-  - `useChatActions.ts`: Handles messaging, agent testing, model selection, and shortcuts.
-  - `useChatModals.ts`: Encapsulates visible state and handlers for chat-related modals.
-  - `useA2AIntegration.ts`: Processes interactive interrupts and runtime requests.
-  - `useChatSession.ts`: Manages session binding and high-level session state.
-  - `useChatUI.ts`: Manages basic UI state like insets and modal visibility.
-  - `useChatScreenFocusEffects.ts`: Orchestrates side effects related to screen focus and auto-scrolling.
-- Standardized return interfaces and improved TypeScript type safety across all chat hooks.
-- Simplified `ChatScreen.tsx` property mapping by moving orchestration to the controller level.
-- Verified all changes with `npm run lint` and `npm run check-types`.
+### 2026-03-15 07:25 (Swival) - Refactor: Logic Consolidation
+- Merged `useChatScreenFocusEffects` logic directly into `useChatScroll` to centralize all scroll-related side effects (#459).
+- Merged `useChatScreenEssentials` into `useChatUI` to simplify UI state management.
+- Cleaned up `useChatScreenController.ts` by removing redundant hook orchestration.
+- Standardized `useChatScroll` with an options object signature for better readability and maintainability.
+- Verified with type checks and linting.
+
+
