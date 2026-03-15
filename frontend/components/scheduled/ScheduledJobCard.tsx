@@ -26,9 +26,9 @@ const getCardTone = (job: ScheduledJob, isReallyRunning: boolean) => {
   if (!job.enabled) {
     return {
       container: "opacity-80",
-      title: "text-slate-500",
-      text: "text-slate-600",
-      prompt: "text-slate-600",
+      title: "text-slate-300",
+      text: "text-slate-400",
+      prompt: "text-slate-400",
       statusText: "DISABLED",
       iconColor: "#475569",
       switchTrack: { false: "#1E293B", true: "#334155" },
