@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -32,11 +32,21 @@ import { toast } from "@/lib/toast";
 
 export function AdminProxyAllowlistScreen() {
   const router = useRouter();
+  const { unauthorizedHost: rawUnauthorizedHost } = useLocalSearchParams();
+  const unauthorizedHost = Array.isArray(rawUnauthorizedHost)
+    ? rawUnauthorizedHost[0]
+    : rawUnauthorizedHost;
   const queryClient = useQueryClient();
   const { isReady, isAdmin } = useRequireAdmin();
 
   const [newHost, setNewHost] = useState("");
   const [newRemark, setNewRemark] = useState("");
+
+  useEffect(() => {
+    if (unauthorizedHost) {
+      setNewHost(unauthorizedHost);
+    }
+  }, [unauthorizedHost]);
 
   const { data, isLoading, isRefetching, refetch } = useQuery({
     queryKey: queryKeys.admin.proxyAllowlist(),
@@ -130,7 +140,9 @@ export function AdminProxyAllowlistScreen() {
             variant="secondary"
             onPress={() => {
               blurActiveElement();
-              if (router.canGoBack()) {
+              if (unauthorizedHost) {
+                router.replace("/admin");
+              } else if (router.canGoBack()) {
                 router.back();
               } else {
                 router.replace("/admin");
@@ -156,6 +168,16 @@ export function AdminProxyAllowlistScreen() {
           <Text className="text-slate-200 font-bold mb-3">
             Add New Host Pattern
           </Text>
+          {unauthorizedHost && (
+            <View className="mb-4 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4">
+              <Text className="text-sm text-yellow-100">
+                An unauthorized host{" "}
+                <Text className="font-bold">{unauthorizedHost}</Text> tried to
+                access the hub. You can add it to the allowlist using the field
+                below.
+              </Text>
+            </View>
+          )}
           <Input
             placeholder="e.g. *.openai.com"
             value={newHost}
@@ -168,12 +190,29 @@ export function AdminProxyAllowlistScreen() {
             onChangeText={setNewRemark}
             className="mb-4"
           />
-          <Button
-            label="Add to Allowlist"
-            onPress={handleAdd}
-            loading={createMutation.isPending}
-            variant="primary"
-          />
+          <View className="flex-row gap-3">
+            {unauthorizedHost && (
+              <Button
+                label="Add Host"
+                onPress={() => {
+                  setNewHost(unauthorizedHost);
+                  handleAdd();
+                }}
+                loading={
+                  createMutation.isPending && newHost === unauthorizedHost
+                }
+                variant="secondary"
+                className="flex-1"
+              />
+            )}
+            <Button
+              label="Add to Allowlist"
+              onPress={handleAdd}
+              loading={createMutation.isPending && newHost !== unauthorizedHost}
+              variant="primary"
+              className={unauthorizedHost ? "flex-1" : ""}
+            />
+          </View>
         </View>
 
         {/* List Entries */}
