@@ -8,6 +8,7 @@ import { useChatMessaging } from "./useChatMessaging";
 import { useChatNavigation } from "./useChatNavigation";
 import { useChatScreenFocusEffects } from "./useChatScreenFocusEffects";
 import { useChatScroll } from "./useChatScroll";
+import { useChatScrollRefs } from "./useChatScrollRefs";
 import { useChatSession } from "./useChatSession";
 import { useChatShortcut } from "./useChatShortcut";
 import { useChatStates } from "./useChatStates";
@@ -33,13 +34,19 @@ export function useChatScreenController({
 
   const states = useChatStates({ session });
 
-  const scroll = useChatScroll(0, session?.streamState);
+  const scrollRefs = useChatScrollRefs();
 
   const history = useChatHistory(
     conversationId,
     session?.streamState,
-    scroll.scrollOffsetRef,
-    scroll.contentHeightRef,
+    scrollRefs.scrollOffsetRef,
+    scrollRefs.contentHeightRef,
+  );
+
+  const scroll = useChatScroll(
+    scrollRefs,
+    session?.streamState,
+    history.loadMore,
   );
 
   const { sessionSource, mountedAtRef } = useChatSession(

@@ -25,4 +25,6 @@
   - Introduced `useChatMessaging` to encapsulate input handling and message sending.
   - Redesigned `useChatScreenController` to return a structured, namespaced object (`navigation`, `ui`, `history`, `input`, `scroll`, `a2a`, `modals`, `actions`).
   - Updated `ChatScreen.tsx` to use the new structured interface, significantly cleaning up component property access.
+  - Refined `useChatScroll` by removing unused parameters and properly integrating `loadMore` callback for auto-paging on scroll.
+  - Introduced `useChatScrollRefs` to break circular dependencies between scroll and history hooks.
   - Verified changes with `npm run lint` and `npm run check-types`.

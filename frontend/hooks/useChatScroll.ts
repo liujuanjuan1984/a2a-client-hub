@@ -17,7 +17,11 @@ const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 
 export function useChatScroll(
-  messagesLength: number,
+  refs: {
+    listRef: React.RefObject<FlatList<ChatMessage> | null>;
+    scrollOffsetRef: React.MutableRefObject<number>;
+    contentHeightRef: React.MutableRefObject<number>;
+  },
   streamState: string | undefined,
   onLoadEarlier?: () => Promise<void | {
     offset: number;
@@ -25,9 +29,7 @@ export function useChatScroll(
   } | null>,
 ) {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const listRef = useRef<FlatList<ChatMessage>>(null);
-  const scrollOffsetRef = useRef(0);
-  const contentHeightRef = useRef(0);
+  const { listRef, scrollOffsetRef, contentHeightRef } = refs;
   const prependAnchorRef = useRef<{
     offset: number;
     contentHeight: number;
