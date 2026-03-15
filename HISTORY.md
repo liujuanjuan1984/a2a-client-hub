@@ -49,4 +49,12 @@
 - Standardized `useChatScroll` with an options object signature for better readability and maintainability.
 - Verified with type checks and linting.
 
+### 2026-03-15 08:00 (Swival) - YOLO Refactor: Deep Hook Decoupling (Issue #459)
+- Refactored `useA2AIntegration` and `useChatActions` to subscribe to the session store internally, reducing prop drilling from the controller.
+- Merged `useChatModals` into `useChatUI`, centralizing modal state and handlers.
+- Decoupled `useChatActions` from UI state by using an `onShortcutUsed` callback, breaking circular dependencies.
+- Simplified `useChatScreenController` to a clean orchestration layer with minimal prop passing.
+- Removed `useChatModals.ts` as it was fully consolidated into `useChatUI`.
+- Verified all changes with linting, type-checking, and related unit tests.
+
 
