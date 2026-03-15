@@ -50,13 +50,13 @@
 - Verified with type checks and linting.
 
 
-### 2026-03-15 08:45 (Swival) - YOLO Refactor: Modularized Orchestration (Issue #459)
-- Introduced `useChatModals.ts` to encapsulate the wiring between UI visibility states and action handlers for chat modals.
-- Decoupled `useChatActions.ts` from UI-specific cleanup logic by moving `useChatShortcut` orchestration to the controller level.
-- Refined `useChatScreenController.ts` by delegating high-level object construction to `useChatModals` and other specialized hooks.
-- Improved TypeScript discipline by explicitly typed hook returns and reduced reliance on implicit prop-drilling.
-- Verified system stability with `npm run check-types`, `npm run lint`, and passing `ChatScreen.interrupt.test.tsx`.
-- Completed the transition to a lean, delegated orchestration pattern for the primary chat controller.
+### 2026-03-15 09:15 (Swival) - YOLO Refactor: Deep Functional Fragmentation (Issue #459)
+- Further modularized the chat state by splitting `useA2AIntegration.ts` into three focused hooks: `useA2AState`, `useA2AHandlers`, and `useA2AResolutionWatcher`.
+- Fragmented `useChatActions.ts` into domain-specific action hooks: `useChatMessageActions`, `useChatModelActions`, `useChatNavigationActions`, and `useChatConnectionActions`.
+- Simplified the high-level orchestration hooks by delegating domain logic to these specialized sub-hooks, significantly reducing cyclomatic complexity.
+- Improved type safety and decreased lint debt by strictly typing hook returns and fixing import ordering.
+- Verified all architectural changes with full type checks and linting.
+- Completed the transition to a deeply fragmented, highly maintainable hook architecture.
 
 ### 2026-03-15 08:30 (Swival) - YOLO Refactor: Deep Hook Decoupling & Modularization (Issue #459)
 - Extracted session binding lifecycle from `useChatSession.ts` into a new, single-purpose `useSessionBinding.ts` hook, improving SRP.
