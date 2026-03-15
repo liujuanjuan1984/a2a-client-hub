@@ -65,13 +65,11 @@ export function LoginScreen() {
             <Button
               className="mt-4"
               variant="outline"
-              label="Add to Allowlist"
+              label="Show me how to add it"
               onPress={() => {
                 // TODO: Implement actual allowlist addition logic
-                const currentAllowlist = ENV.apiAllowlist ? `${ENV.apiAllowlist},` : '';
-                const newAllowlist = `${currentAllowlist}${login.error.unauthorizedHost}`;
-                console.log('Action: Add to allowlist', newAllowlist);
-                alert(`Please add "${login.error.unauthorizedHost}" to your EXPO_PUBLIC_API_ALLOWLIST environment variable.`);
+                console.log('Action: Show instructions for allowlist', login.error.unauthorizedHost);
+                alert(`To allow connections to "${login.error.unauthorizedHost}", you need to add it to your application's allowed server list. This usually involves updating the 'EXPO_PUBLIC_API_ALLOWLIST' environment variable in your project configuration. For further details, please refer to the project documentation on configuring API hosts.`);
                 // In a real app, you might trigger a deep link here to guide the user to their config or a settings screen.
               }}
             />

@@ -88,7 +88,7 @@ const pickMessageFromPayload = (
 
 export const getFriendlyAuthErrorMessage = (error: unknown): string | null => {
   if (error instanceof AllowlistError) {
-    return `Connection to \"${error.unauthorizedHost}\" is not allowed. Add it to the allowlist?`;
+    return `The app tried to connect to an unapproved server: \"${error.unauthorizedHost}\". To proceed, please add this server to your list of approved hosts.`;
   }
   if (error instanceof ApiConfigError) {
     return error.message;
