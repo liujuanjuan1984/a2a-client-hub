@@ -7,30 +7,20 @@ import {
   replyQuestionInterrupt,
 } from "@/lib/api/a2aExtensions";
 import {
-  type PendingRuntimeInterrupt,
   type ResolvedRuntimeInterrupt,
   type InterruptQuestion,
 } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
-import { type ResolvedRuntimeInterruptRecord } from "@/lib/chat-utils";
 import { toast } from "@/lib/toast";
 import { type AgentConfig } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 
 export function useA2AIntegration({
   conversationId,
-  activeAgentId,
   agent,
-  pendingInterrupt,
-  lastResolvedInterrupt,
-  mountedAtRef,
 }: {
   conversationId: string | undefined;
-  activeAgentId: string | null;
   agent: AgentConfig | undefined;
-  pendingInterrupt: PendingRuntimeInterrupt | null;
-  lastResolvedInterrupt: ResolvedRuntimeInterruptRecord | null;
-  mountedAtRef: React.MutableRefObject<number>;
 }) {
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
   const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
@@ -38,6 +28,16 @@ export function useA2AIntegration({
   const locallyAcknowledgedResolvedInterruptKeysRef = useRef<Set<string>>(
     new Set(),
   );
+
+  const activeAgentId = agent?.id ?? null;
+  const mountedAtRef = useRef(Date.now());
+
+  const session = useChatStore((state) =>
+    conversationId ? state.sessions[conversationId] : undefined,
+  );
+  const pendingInterrupt = session?.pendingInterrupt ?? null;
+  const lastResolvedInterrupt = session?.lastResolvedInterrupt ?? null;
+
   const clearPendingInterrupt = useChatStore(
     (state) => state.clearPendingInterrupt,
   );

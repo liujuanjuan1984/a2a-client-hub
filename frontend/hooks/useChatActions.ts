@@ -5,7 +5,7 @@ import { type TextInput } from "react-native";
 import { useValidateAgentMutation } from "@/hooks/useAgentsCatalogQuery";
 import { useChatInput } from "@/hooks/useChatInput";
 import { useChatShortcut } from "@/hooks/useChatShortcut";
-import { type SharedModelSelection, type AgentSession } from "@/lib/chat-utils";
+import { type SharedModelSelection } from "@/lib/chat-utils";
 import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
 import { toast } from "@/lib/toast";
@@ -14,22 +14,19 @@ import { useChatStore } from "@/store/chat";
 
 export function useChatActions({
   conversationId,
-  activeAgentId,
   agent,
-  session,
   scheduleStickToBottom,
-  closeShortcutManager,
+  onShortcutUsed,
 }: {
   conversationId: string | undefined;
-  activeAgentId: string | null;
   agent: AgentConfig | undefined;
-  session: AgentSession | undefined;
   scheduleStickToBottom: (animated: boolean) => void;
-  closeShortcutManager: () => void;
+  onShortcutUsed?: () => void;
 }) {
   const router = useRouter();
   const validateAgentMutation = useValidateAgentMutation();
 
+  const activeAgentId = agent?.id ?? null;
   const sendMessage = useChatStore((state) => state.sendMessage);
   const retryMessage = useChatStore((state) => state.retryMessage);
   const resumeMessage = useChatStore((state) => state.resumeMessage);
@@ -38,6 +35,9 @@ export function useChatActions({
     (state) => state.setSharedModelSelection,
   );
 
+  const session = useChatStore((state) =>
+    conversationId ? state.sessions[conversationId] : undefined,
+  );
   const pendingInterrupt = session?.pendingInterrupt ?? null;
 
   const handleSend = useCallback(
@@ -74,7 +74,7 @@ export function useChatActions({
 
   const shortcuts = useChatShortcut({
     setInput: inputHandlers.setInput,
-    closeShortcutManager,
+    closeShortcutManager: onShortcutUsed || (() => {}),
     inputRef: inputHandlers.inputRef as React.RefObject<TextInput>,
   });
 
