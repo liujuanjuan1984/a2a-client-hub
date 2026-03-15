@@ -8,8 +8,6 @@ import { useChatSession } from "./useChatSession";
 import { useChatUI } from "./useChatUI";
 import { useMessageState } from "./useMessageState";
 
-import { useChatStore } from "@/store/chat";
-
 export function useChatScreenController({
   routeAgentId,
   conversationId,
@@ -17,27 +15,32 @@ export function useChatScreenController({
   routeAgentId?: string | null;
   conversationId?: string;
 }) {
-  const session = useChatStore((state) =>
-    conversationId ? state.sessions[conversationId] : undefined,
-  );
-
   const { activeAgentId, agent, hasFetchedAgents } =
     useAgentSelection(routeAgentId);
 
-  const messageState = useMessageState(conversationId, session?.streamState);
+  const ui = useChatUI();
 
-  const scroll = useChatScroll(session?.streamState, messageState.loadMore);
+  // We call useMessageState first to get messages for useChatSession binding check
+  // It needs streamState which we can get from useChatSession return, but that's circular.
+  // Actually, useChatSession already subscribes to the session.
+  // Let's just have useChatSession return the session and we use it.
 
-  useChatNavigation({ hasFetchedAgents, agent });
+  // To break the circle: useChatSession handles the binding and session state.
+  // We'll pass messageState.messages to it for the effect.
+  const messageState = useMessageState(conversationId, undefined); // We'll fix this hook next
 
   const {
-    session: navigationSession,
+    session,
     sessionSource,
     mountedAtRef,
     pendingInterrupt,
     lastResolvedInterrupt,
     selectedModel,
   } = useChatSession(conversationId, activeAgentId, messageState.messages);
+
+  const scroll = useChatScroll(session?.streamState, messageState.loadMore);
+
+  useChatNavigation({ hasFetchedAgents, agent });
 
   useChatScreenFocusEffects({
     conversationId,
@@ -47,13 +50,11 @@ export function useChatScreenController({
     messages: messageState.messages,
   });
 
-  const ui = useChatUI();
-
   const actions = useChatActions({
     conversationId,
     activeAgentId,
     agent,
-    session: navigationSession,
+    session,
     scheduleStickToBottom: scroll.scheduleStickToBottom,
     closeShortcutManager: ui.modals.shortcut.close,
   });
@@ -73,7 +74,7 @@ export function useChatScreenController({
       activeAgentId,
       hasFetchedAgents,
       conversationId,
-      session: navigationSession,
+      session,
       sessionSource,
     },
     ui,
@@ -99,19 +100,19 @@ export function useChatScreenController({
       },
       session: {
         ...ui.modals.session,
-        onSelect: actions.handleSessionSelect,
+        onSelect: actions.handlers.onSessionSelect,
       },
       model: {
         ...ui.modals.model,
         selectedModel,
-        onSelect: actions.handleModelSelect,
-        onClear: actions.clearModelSelection,
+        onSelect: actions.handlers.onModelSelect,
+        onClear: actions.handlers.onModelClear,
       },
     },
     actions: {
-      onTest: actions.handleTest,
+      onTest: actions.handlers.onTest,
       testingConnection: actions.testingConnection,
-      onRetry: actions.handleRetry,
+      onRetry: actions.handlers.onRetry,
     },
   };
 }

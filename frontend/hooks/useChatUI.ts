@@ -1,9 +1,37 @@
-import { useChatModalStates } from "./useChatModalStates";
+import { useCallback, useState } from "react";
+
 import { useChatScreenEssentials } from "./useChatScreenEssentials";
 
 export function useChatUI() {
   const essentials = useChatScreenEssentials();
-  const modals = useChatModalStates();
+
+  const [showShortcutManager, setShowShortcutManager] = useState(false);
+  const [showSessionPicker, setShowSessionPicker] = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
+
+  const openShortcutManager = useCallback(() => {
+    setShowShortcutManager(true);
+  }, []);
+
+  const closeShortcutManager = useCallback(() => {
+    setShowShortcutManager(false);
+  }, []);
+
+  const openSessionPicker = useCallback(() => {
+    setShowSessionPicker(true);
+  }, []);
+
+  const closeSessionPicker = useCallback(() => {
+    setShowSessionPicker(false);
+  }, []);
+
+  const openModelPicker = useCallback(() => {
+    setShowModelPicker(true);
+  }, []);
+
+  const closeModelPicker = useCallback(() => {
+    setShowModelPicker(false);
+  }, []);
 
   return {
     topInset: essentials.topInset,
@@ -11,19 +39,19 @@ export function useChatUI() {
     toggleDetails: essentials.toggleDetails,
     modals: {
       shortcut: {
-        visible: modals.showShortcutManager,
-        open: modals.openShortcutManager,
-        close: modals.closeShortcutManager,
+        visible: showShortcutManager,
+        open: openShortcutManager,
+        close: closeShortcutManager,
       },
       session: {
-        visible: modals.showSessionPicker,
-        open: modals.openSessionPicker,
-        close: modals.closeSessionPicker,
+        visible: showSessionPicker,
+        open: openSessionPicker,
+        close: closeSessionPicker,
       },
       model: {
-        visible: modals.showModelPicker,
-        open: modals.openModelPicker,
-        close: modals.closeModelPicker,
+        visible: showModelPicker,
+        open: openModelPicker,
+        close: closeModelPicker,
       },
     },
   };

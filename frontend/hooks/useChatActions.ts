@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { type TextInput } from "react-native";
 
 import { useValidateAgentMutation } from "@/hooks/useAgentsCatalogQuery";
@@ -29,6 +29,7 @@ export function useChatActions({
 }) {
   const router = useRouter();
   const validateAgentMutation = useValidateAgentMutation();
+
   const sendMessage = useChatStore((state) => state.sendMessage);
   const retryMessage = useChatStore((state) => state.retryMessage);
   const resumeMessage = useChatStore((state) => state.resumeMessage);
@@ -163,15 +164,8 @@ export function useChatActions({
     toast.success("Model updated", "Using server default model.");
   }, [activeAgentId, conversationId, ensureSession, setSharedModelSelection]);
 
-  return {
-    handleSend,
-    handleTest,
-    testingConnection: validateAgentMutation.isPending,
-    handleRetry,
-    handleSessionSelect,
-    handleModelSelect,
-    clearModelSelection,
-    input: {
+  const input = useMemo(
+    () => ({
       ref: inputHandlers.inputRef,
       value: inputHandlers.input,
       height: inputHandlers.inputHeight,
@@ -182,7 +176,21 @@ export function useChatActions({
       onSend: () => handleSend(inputHandlers.input),
       clear: inputHandlers.clearInput,
       setInput: inputHandlers.setInput,
-    },
+    }),
+    [handleSend, inputHandlers],
+  );
+
+  return {
+    input,
     shortcuts,
+    testingConnection: validateAgentMutation.isPending,
+    handlers: {
+      onSend: handleSend,
+      onTest: handleTest,
+      onRetry: handleRetry,
+      onSessionSelect: handleSessionSelect,
+      onModelSelect: handleModelSelect,
+      onModelClear: clearModelSelection,
+    },
   };
 }

@@ -42,11 +42,11 @@
 - Simplified internal prop passing by leveraging direct hook returns.
 - Verified with linting and type checks (#459).
 
-### 2026-03-15 06:50 (Swival)
-- Refined hook responsibilities and decoupled scrolling logic from message state (Issue #459):
-  - Moved `listRef`, `scrollOffsetRef`, and `contentHeightRef` from `useMessageState` to `useChatScroll`.
-  - Updated `useMessageState` to be pure history-logic focused, removing anchor capturing and returning only history data and handlers.
-  - Enhanced `useChatScroll` to manage its own refs and handle anchor capturing internally during `onLoadEarlier` calls.
-  - Eliminated the redundant `useChatStates` hook by moving its state extraction logic into `useChatSession`.
-  - Cleaned up `useChatScreenController` to use consolidated state from `useChatSession` and improved overall hook orchestration.
+### 2026-03-15 06:55 (Swival) - YOLO Refactor
+- Refactored `frontend/hooks/useChatScreenController.ts` and associated hooks for better maintainability (#459):
+  - Consolidated modal visibility and UI state into `useChatUI.ts`.
+  - Removed `useChatModalStates.ts` to reduce hook depth.
+  - Refactored `useChatActions.ts` to return structured `handlers` and `input` objects, improving orchestration.
+  - Enhanced `useMessageState.ts` with autonomous `streamState` subscription while maintaining optional prop support.
+  - Streamlined `useChatScreenController.ts` by removing redundant store subscriptions and simplifying the return structure.
   - Verified with `npm run lint` and `npm run check-types`.

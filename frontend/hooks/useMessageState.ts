@@ -8,12 +8,21 @@ import {
   updateConversationMessageWithUpdater,
 } from "@/lib/chatHistoryCache";
 import { toast } from "@/lib/toast";
+import { useChatStore } from "@/store/chat";
 
 export function useMessageState(
   conversationId: string | undefined,
-  streamState: string | undefined,
+  streamState?: string | undefined,
 ) {
-  const historyPaused = streamState === "streaming";
+  // If streamState is not provided, we subscribe to it.
+  // This allows the hook to be used independently or with a derived value.
+  const sessionStreamState = useChatStore((state) =>
+    conversationId ? state.sessions[conversationId]?.streamState : undefined,
+  );
+
+  const effectiveStreamState = streamState ?? sessionStreamState;
+  const historyPaused = effectiveStreamState === "streaming";
+
   const sessionHistoryQuery = useSessionHistoryQuery({
     conversationId,
     enabled: Boolean(conversationId),
