@@ -16,6 +16,10 @@ import {
   useValidateAgentMutation,
 } from "@/hooks/useAgentsCatalogQuery";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
+import {
+  type GenericCapabilityStatus,
+  useExtensionCapabilitiesQuery,
+} from "@/hooks/useExtensionCapabilitiesQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import {
   A2AExtensionCallError,
@@ -155,6 +159,14 @@ export function useChatScreenController({
   const pendingInterrupt = session?.pendingInterrupt ?? null;
   const lastResolvedInterrupt = session?.lastResolvedInterrupt ?? null;
   const selectedModel = getSharedModelSelection(session?.metadata);
+  const extensionCapabilitiesQuery = useExtensionCapabilitiesQuery({
+    agentId: activeAgentId,
+    source: agent?.source,
+  });
+  const modelSelectionStatus: GenericCapabilityStatus =
+    !activeAgentId || !agent?.source
+      ? "unsupported"
+      : extensionCapabilitiesQuery.modelSelectionStatus;
   const pendingQuestionCount =
     pendingInterrupt?.type === "question"
       ? (pendingInterrupt.details.questions?.length ?? 0)
@@ -965,6 +977,7 @@ export function useChatScreenController({
     conversationId,
     session,
     sessionSource,
+    modelSelectionStatus,
     selectedModel,
     messages,
     historyLoading,

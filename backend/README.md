@@ -89,6 +89,16 @@ Requirements:
 
 Endpoints:
 
+- Read generic extension capabilities:
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
+- Discover generic model providers:
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
+    - body:
+      `{ "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
+- Discover generic models:
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models:list`
+    - body:
+      `{ "provider_id": "openai", "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
 - List sessions:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions:query`

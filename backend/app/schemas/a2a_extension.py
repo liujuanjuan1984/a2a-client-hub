@@ -96,20 +96,35 @@ class A2AExtensionPromptAsyncRequest(BaseModel):
     )
 
 
-class A2AProviderDiscoveryRequest(BaseModel):
+class A2AModelDiscoveryRequest(BaseModel):
     provider_id: Optional[str] = Field(
         default=None,
         min_length=1,
-        description="Optional provider id filter for model discovery",
+        description="Optional provider id filter for generic model discovery",
     )
-    metadata: Optional[Dict[str, Any]] = Field(
+    session_metadata: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Optional provider-private metadata object forwarded to upstream",
+        description=(
+            "Optional session metadata envelope used by the backend to resolve "
+            "provider-private discovery context"
+        ),
+    )
+
+
+class A2AExtensionCapabilitiesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    model_selection: bool = Field(
+        ...,
+        alias="modelSelection",
+        description="Whether the agent supports generic chat model selection",
     )
 
 
 __all__ = [
     "A2AExtensionPromptAsyncRequest",
+    "A2AExtensionCapabilitiesResponse",
+    "A2AModelDiscoveryRequest",
     "A2AExtensionPermissionReplyRequest",
     "A2AExtensionQueryPagination",
     "A2AExtensionQueryResponse",
@@ -118,5 +133,4 @@ __all__ = [
     "A2AExtensionQuestionRejectRequest",
     "A2AExtensionQuestionReplyRequest",
     "A2AExtensionResponse",
-    "A2AProviderDiscoveryRequest",
 ]

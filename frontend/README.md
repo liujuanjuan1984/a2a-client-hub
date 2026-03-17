@@ -104,9 +104,9 @@ The Sessions tab now uses the backend unified conversation domain API
 Notes:
 
 - Backend `source` currently uses `manual` / `scheduled` only.
-- OpenCode binding is represented by external binding fields (for example
-  `external_provider` / `external_session_id`), not by a separate `source`
-  enum value.
+- External provider binding is represented by external binding fields (for
+  example `external_provider` / `external_session_id`), not by a separate
+  `source` enum value.
 - Chat page SessionPicker queries backend with `agent_id` so each agent view
   reads its session directory from server-side authority.
 - SessionPicker titles are rendered from backend `title` directly (no local

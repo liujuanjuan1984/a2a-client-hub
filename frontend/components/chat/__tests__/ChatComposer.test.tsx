@@ -10,6 +10,7 @@ jest.mock("@expo/vector-icons", () => ({
 
 describe("ChatComposer clear button", () => {
   const mockProps = {
+    modelSelectionStatus: "supported" as const,
     pendingInterrupt: null,
     showShortcutManager: false,
     onOpenShortcutManager: jest.fn(),
@@ -77,6 +78,25 @@ describe("ChatComposer clear button", () => {
     );
 
     expect(getByText("openai / gpt-5")).toBeTruthy();
+  });
+
+  it("hides model picker when capability is unsupported", () => {
+    const { queryByLabelText } = render(
+      <ChatComposer {...mockProps} modelSelectionStatus="unsupported" />,
+    );
+
+    expect(queryByLabelText("Choose model")).toBeNull();
+  });
+
+  it("keeps model picker visible when capability is still unknown", () => {
+    const { getByA11yHint, getByLabelText } = render(
+      <ChatComposer {...mockProps} modelSelectionStatus="unknown" />,
+    );
+
+    expect(getByLabelText("Choose model")).toBeTruthy();
+    expect(
+      getByA11yHint("Open the model picker and verify discovery availability."),
+    ).toBeTruthy();
   });
 
   it("hides only the model picker while keeping other actions available on focus", () => {

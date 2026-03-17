@@ -27,6 +27,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionUpstreamError,
 )
 from app.schemas.a2a_extension import (
+    A2AExtensionCapabilitiesResponse,
     A2AExtensionPermissionReplyRequest,
     A2AExtensionPromptAsyncRequest,
     A2AExtensionQueryRequest,
@@ -34,6 +35,7 @@ from app.schemas.a2a_extension import (
     A2AExtensionQuestionRejectRequest,
     A2AExtensionQuestionReplyRequest,
     A2AExtensionResponse,
+    A2AModelDiscoveryRequest,
 )
 from app.utils.logging_redaction import redact_url_for_logging
 
@@ -125,6 +127,101 @@ def create_extension_capability_router(
         return JSONResponse(
             status_code=status_code,
             content=payload.model_dump(),
+        )
+
+    @router.get(
+        "/{agent_id}/extensions/capabilities",
+        response_model=A2AExtensionCapabilitiesResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def get_extension_capabilities(
+        *,
+        agent_id: UUID,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionCapabilitiesResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime(db, current_user, agent_id)
+
+        from app.integrations.a2a_extensions.opencode_provider_discovery import (
+            resolve_opencode_provider_discovery,
+        )
+
+        try:
+            resolve_opencode_provider_discovery(runtime.resolved)
+            model_selection = True
+        except A2AExtensionNotSupportedError:
+            model_selection = False
+
+        return A2AExtensionCapabilitiesResponse(model_selection=model_selection)
+
+    @router.post(
+        "/{agent_id}/extensions/models/providers:list",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def list_model_providers(
+        *,
+        agent_id: UUID,
+        payload: A2AModelDiscoveryRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Generic model provider discovery requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_metadata_keys": _summarize_metadata_keys(
+                    payload.session_metadata
+                ),
+            },
+        )
+        return await _run_extension_call(
+            get_a2a_extensions_service().list_model_providers(
+                runtime=runtime,
+                session_metadata=payload.session_metadata,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/models:list",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def list_models(
+        *,
+        agent_id: UUID,
+        payload: A2AModelDiscoveryRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+        runtime = await _get_runtime(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Generic model discovery requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "provider_id": payload.provider_id,
+                "session_metadata_keys": _summarize_metadata_keys(
+                    payload.session_metadata
+                ),
+            },
+        )
+        return await _run_extension_call(
+            get_a2a_extensions_service().list_models(
+                runtime=runtime,
+                provider_id=payload.provider_id,
+                session_metadata=payload.session_metadata,
+            )
         )
 
     async def _run_extension_call(

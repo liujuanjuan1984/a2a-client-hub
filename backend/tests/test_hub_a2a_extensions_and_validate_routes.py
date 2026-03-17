@@ -6,15 +6,9 @@ from typing import Any, Dict, Optional
 import pytest
 
 from app.api.routers import _extension_capability_router as extension_router_common
-from app.api.routers import (
-    _opencode_provider_discovery_router as provider_discovery_router_common,
-)
 from app.api.routers import admin_a2a_agents as admin_router
 from app.api.routers import hub_a2a_agents as hub_router
 from app.api.routers import hub_a2a_extension_capabilities as hub_extension_router
-from app.api.routers import (
-    hub_a2a_opencode_provider_discovery as hub_provider_discovery_router,
-)
 from app.core.config import settings
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
@@ -253,17 +247,17 @@ class _FakeExtensionsService:
             meta={},
         )
 
-    async def list_opencode_providers(
+    async def list_model_providers(
         self,
         *,
         runtime,
-        metadata: Optional[Dict[str, Any]] = None,
+        session_metadata: Optional[Dict[str, Any]] = None,
     ):
         self.calls.append(
             {
-                "fn": "list_opencode_providers",
+                "fn": "list_model_providers",
                 "runtime": runtime,
-                "metadata": metadata,
+                "session_metadata": session_metadata,
             }
         )
         return _FakeExtensionResult(
@@ -284,19 +278,19 @@ class _FakeExtensionsService:
             meta={"extension_uri": "urn:opencode-a2a:provider-discovery/v1"},
         )
 
-    async def list_opencode_models(
+    async def list_models(
         self,
         *,
         runtime,
         provider_id: str | None = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        session_metadata: Optional[Dict[str, Any]] = None,
     ):
         self.calls.append(
             {
-                "fn": "list_opencode_models",
+                "fn": "list_models",
                 "runtime": runtime,
                 "provider_id": provider_id,
-                "metadata": metadata,
+                "session_metadata": session_metadata,
             }
         )
         return _FakeExtensionResult(
@@ -831,7 +825,8 @@ async def test_hub_session_query_routes_exclude_raw_by_default_and_allow_include
 
 
 @pytest.mark.asyncio
-async def test_hub_opencode_provider_discovery_routes_use_hub_runtime(
+@pytest.mark.asyncio
+async def test_hub_extension_capabilities_route_returns_model_selection_true(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
@@ -839,27 +834,115 @@ async def test_hub_opencode_provider_discovery_routes_use_hub_runtime(
     agent_id, user = await _create_allowlisted_hub_agent(
         async_session_maker=async_session_maker,
         async_db_session=async_db_session,
-        admin_email="admin_opencode_discovery@example.com",
-        user_email="alice_opencode_discovery@example.com",
-        token="secret-token-opencode-discovery",
+        admin_email="admin_opencode_cap_true@example.com",
+        user_email="alice_opencode_cap_true@example.com",
+        token="secret-token-opencode-capability-true",
+    )
+
+    from app.integrations.a2a_extensions import (
+        opencode_provider_discovery as opencode_provider_discovery_module,
+    )
+
+    monkeypatch.setattr(
+        opencode_provider_discovery_module,
+        "resolve_opencode_provider_discovery",
+        lambda _resolved: object(),
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        response = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/capabilities"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"modelSelection": True}
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_hub_extension_capabilities_route_returns_model_selection_false_for_unsupported_agent(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_opencode_cap_false@example.com",
+        user_email="alice_opencode_cap_false@example.com",
+        token="secret-token-opencode-capability-false",
+    )
+
+    from app.integrations.a2a_extensions import (
+        opencode_provider_discovery as opencode_provider_discovery_module,
+    )
+
+    def _raise_not_supported(_resolved):
+        raise A2AExtensionNotSupportedError(
+            "OpenCode provider discovery extension not found"
+        )
+
+    monkeypatch.setattr(
+        opencode_provider_discovery_module,
+        "resolve_opencode_provider_discovery",
+        _raise_not_supported,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        response = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/capabilities"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"modelSelection": False}
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_hub_generic_model_discovery_routes_forward_session_metadata(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_model_discovery@example.com",
+        user_email="alice_model_discovery@example.com",
+        token="secret-token-model-discovery",
     )
 
     fake_extensions = _FakeExtensionsService()
     monkeypatch.setattr(
-        provider_discovery_router_common,
+        extension_router_common,
         "get_a2a_extensions_service",
         lambda: fake_extensions,
     )
 
+    session_metadata = {
+        "shared": {"model": {"providerID": "openai", "modelID": "gpt-5"}},
+        "opencode": {"directory": "/workspace"},
+    }
+
     async with create_test_client(
-        hub_provider_discovery_router.router,
+        hub_extension_router.router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
         providers_resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/providers:list",
-            json={"metadata": {"opencode": {"directory": "/workspace"}}},
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/models/providers:list",
+            json={"session_metadata": session_metadata},
         )
         assert providers_resp.status_code == 200
         providers_payload = providers_resp.json()
@@ -867,10 +950,10 @@ async def test_hub_opencode_provider_discovery_routes_use_hub_runtime(
         assert providers_payload["result"]["items"][0]["provider_id"] == "openai"
 
         models_resp = await user_client.post(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/models:list",
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/models:list",
             json={
                 "provider_id": "openai",
-                "metadata": {"opencode": {"directory": "/workspace"}},
+                "session_metadata": session_metadata,
             },
         )
         assert models_resp.status_code == 200
@@ -879,19 +962,15 @@ async def test_hub_opencode_provider_discovery_routes_use_hub_runtime(
         assert models_payload["result"]["items"][0]["model_id"] == "gpt-5"
 
     assert len(fake_extensions.calls) == 2
-    assert fake_extensions.calls[0]["fn"] == "list_opencode_providers"
-    assert fake_extensions.calls[0]["metadata"] == {
-        "opencode": {"directory": "/workspace"}
-    }
-    assert fake_extensions.calls[1]["fn"] == "list_opencode_models"
+    assert fake_extensions.calls[0]["fn"] == "list_model_providers"
+    assert fake_extensions.calls[0]["session_metadata"] == session_metadata
+    assert fake_extensions.calls[1]["fn"] == "list_models"
     assert fake_extensions.calls[1]["provider_id"] == "openai"
-    assert fake_extensions.calls[1]["metadata"] == {
-        "opencode": {"directory": "/workspace"}
-    }
+    assert fake_extensions.calls[1]["session_metadata"] == session_metadata
     for call in fake_extensions.calls:
         resolved = call["runtime"].resolved
         assert resolved.headers["Authorization"].endswith(
-            "secret-token-opencode-discovery"
+            "secret-token-model-discovery"
         )
 
 

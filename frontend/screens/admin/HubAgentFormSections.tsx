@@ -203,7 +203,7 @@ export function HubAgentFormSections({
         <View className="mt-4 gap-3">
           <Input
             label="Tags (comma separated)"
-            placeholder="e.g., coding, internal, opencode"
+            placeholder="e.g., coding, internal, research"
             value={values.tagsText}
             onChangeText={onTagsTextChange}
             autoCapitalize="none"

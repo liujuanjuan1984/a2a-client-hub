@@ -2,6 +2,16 @@ export const queryKeys = {
   me: () => ["auth", "me"] as const,
   agents: {
     catalog: () => ["agents", "catalog"] as const,
+    extensionCapabilities: (input: {
+      agentId: string;
+      source: "personal" | "shared";
+    }) =>
+      [
+        "agents",
+        "extension-capabilities",
+        input.source,
+        input.agentId,
+      ] as const,
   },
   schedules: {
     listRoot: () => ["scheduled-jobs", "list"] as const,

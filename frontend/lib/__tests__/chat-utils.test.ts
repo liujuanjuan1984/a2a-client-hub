@@ -209,7 +209,19 @@ describe("chat store utils", () => {
     newest.lastActiveAt = "2026-02-14T12:00:00.000Z";
     newest.source = "manual";
     newest.contextId = "ctx-1";
-    newest.metadata = { locale: "zh-CN" };
+    newest.metadata = {
+      locale: "zh-CN",
+      shared: {
+        model: {
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+        session: {
+          provider: "opencode",
+          id: "upstream-session-1",
+        },
+      },
+    };
     newest.externalSessionRef = {
       provider: "opencode",
       externalSessionId: "ses-upstream-1",
@@ -248,7 +260,14 @@ describe("chat store utils", () => {
     expect(persisted.newest.transport).toBe("http_json");
     expect(persisted.newest.source).toBeNull();
     expect(persisted.newest.contextId).toBeNull();
-    expect(persisted.newest.metadata).toEqual({});
+    expect(persisted.newest.metadata).toEqual({
+      shared: {
+        model: {
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+      },
+    });
     expect(persisted.newest.externalSessionRef).toBeNull();
     expect(persisted.newest.lastReceivedSequence).toBeUndefined();
     expect(persisted.newest.lastUserMessageId).toBeUndefined();

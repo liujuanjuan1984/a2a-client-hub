@@ -109,6 +109,7 @@ export function ChatScreen({
       />
 
       <ChatComposer
+        modelSelectionStatus={controller.modelSelectionStatus}
         pendingInterrupt={controller.pendingInterrupt}
         showShortcutManager={controller.showShortcutManager}
         onOpenShortcutManager={controller.openShortcutManager}
