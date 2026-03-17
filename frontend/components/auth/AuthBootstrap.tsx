@@ -3,13 +3,33 @@ import { AppState, type AppStateStatus } from "react-native";
 
 import {
   ApiConfigError,
+  AuthRecoverableError,
+  computeProactiveRefreshLeadMs,
   ensureFreshAccessToken,
+  handleAuthExpiredOnce,
+  hasExceededAuthRecoveryLimits,
   refreshAccessToken,
 } from "@/lib/api/client";
 import { useSessionStore } from "@/store/session";
 
+const RECOVERY_RETRY_DELAY_MS = 5_000;
+
 export function AuthBootstrap() {
   const hydrated = useSessionStore((state) => state.hydrated);
+  const token = useSessionStore((state) => state.token);
+  const accessTokenExpiresAtMs = useSessionStore(
+    (state) => state.accessTokenExpiresAtMs,
+  );
+  const accessTokenTtlSeconds = useSessionStore(
+    (state) => state.accessTokenTtlSeconds,
+  );
+  const authStatus = useSessionStore((state) => state.authStatus);
+  const recoveryStartedAtMs = useSessionStore(
+    (state) => state.recoveryStartedAtMs,
+  );
+  const recoveryRetryCount = useSessionStore(
+    (state) => state.recoveryRetryCount,
+  );
   const setAccessToken = useSessionStore((state) => state.setAccessToken);
   const setHydrated = useSessionStore((state) => state.setHydrated);
 
@@ -93,6 +113,54 @@ export function AuthBootstrap() {
       }
     };
   }, [hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !token || !accessTokenExpiresAtMs) {
+      return;
+    }
+
+    if (authStatus === "recovering" && hasExceededAuthRecoveryLimits()) {
+      handleAuthExpiredOnce();
+      return;
+    }
+
+    const scheduleDelayMs =
+      authStatus === "recovering"
+        ? RECOVERY_RETRY_DELAY_MS
+        : Math.max(
+            0,
+            accessTokenExpiresAtMs -
+              computeProactiveRefreshLeadMs(accessTokenTtlSeconds) -
+              Date.now(),
+          );
+
+    const timer = setTimeout(() => {
+      ensureFreshAccessToken().catch((error) => {
+        if (error instanceof ApiConfigError) {
+          console.error("[AuthBootstrap] Invalid API base URL:", error.message);
+          return;
+        }
+        if (error instanceof AuthRecoverableError) {
+          return;
+        }
+        console.warn("[AuthBootstrap] Timed refresh failed:", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }, scheduleDelayMs);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [
+    accessTokenExpiresAtMs,
+    accessTokenTtlSeconds,
+    authStatus,
+    hydrated,
+    recoveryRetryCount,
+    recoveryStartedAtMs,
+    token,
+  ]);
 
   return null;
 }

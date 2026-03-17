@@ -1,9 +1,10 @@
 import {
   ApiRequestError,
   AuthExpiredError,
+  AuthRecoverableError,
   ensureFreshAccessToken,
   handleAuthExpiredOnce,
-  refreshAccessToken,
+  refreshAccessTokenWithOutcome,
 } from "@/lib/api/client";
 import { useSessionStore } from "@/store/session";
 
@@ -183,10 +184,14 @@ export const fetchSSE = async (
       });
 
       if (isUnauthorizedStatusCode(response.status)) {
-        const refreshed = await refreshAccessToken({
+        const refreshOutcome = await refreshAccessTokenWithOutcome({
           force: true,
           expectedAuthVersion: requestAuthVersion,
         });
+        const refreshed = refreshOutcome.result;
+        if (refreshOutcome.didExpireSession) {
+          throw new AuthExpiredError();
+        }
         if (refreshed) {
           if (useSessionStore.getState().authVersion === requestAuthVersion) {
             useSessionStore
@@ -231,7 +236,9 @@ export const fetchSSE = async (
           });
           return { status: "done" as const, hasReceivedData };
         }
-
+        if (refreshOutcome.failureReason === "transient") {
+          throw new AuthRecoverableError();
+        }
         handleAuthExpiredOnce({
           expectedAuthVersion: requestAuthVersion,
         });

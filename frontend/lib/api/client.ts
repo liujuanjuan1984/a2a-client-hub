@@ -44,6 +44,14 @@ export class AuthExpiredError extends ApiRequestError {
   }
 }
 
+export class AuthRecoverableError extends ApiRequestError {
+  constructor(message = "Authentication recovery in progress. Please retry.") {
+    super(message, 503, { errorCode: "auth_recovering" });
+    this.name = "AuthRecoverableError";
+    Object.setPrototypeOf(this, AuthRecoverableError.prototype);
+  }
+}
+
 export const isAuthFailureError = (error: unknown): boolean => {
   if (error instanceof AuthExpiredError) {
     return true;
@@ -102,10 +110,20 @@ const REFRESH_COOLDOWN_MS = 10_000;
 const PROACTIVE_REFRESH_RATIO = 0.2;
 const PROACTIVE_REFRESH_MIN_LEAD_MS = 5_000;
 const PROACTIVE_REFRESH_MAX_LEAD_MS = 90_000;
+export const AUTH_RECOVERY_MAX_DURATION_MS = 2 * 60 * 1000;
+export const AUTH_RECOVERY_MAX_RETRIES = 12;
 
 type RefreshAccessTokenResult = {
   accessToken: string;
   expiresInSeconds: number | null;
+};
+
+type RefreshFailureReason = "unauthorized" | "transient";
+
+type RefreshAccessTokenOutcome = {
+  result: RefreshAccessTokenResult | null;
+  failureReason: RefreshFailureReason | null;
+  didExpireSession: boolean;
 };
 
 type RefreshAccessTokenOptions = {
@@ -113,10 +131,11 @@ type RefreshAccessTokenOptions = {
   expectedAuthVersion?: number;
 };
 
-let refreshPromise: Promise<RefreshAccessTokenResult | null> | null = null;
+let refreshPromise: Promise<RefreshAccessTokenOutcome> | null = null;
 let refreshPromiseForAuthVersion: number | null = null;
 let refreshCooldownUntilMs = 0;
 let authResetting = false;
+let lastRefreshFailureReason: RefreshFailureReason | null = null;
 
 const isAuthPath = (path: string) => {
   const authPaths = [
@@ -182,7 +201,9 @@ const parseRefreshPayloadFromResponse = async (
   return null;
 };
 
-const computeProactiveRefreshLeadMs = (ttlSeconds: number | null): number => {
+export const computeProactiveRefreshLeadMs = (
+  ttlSeconds: number | null,
+): number => {
   if (
     typeof ttlSeconds !== "number" ||
     !Number.isFinite(ttlSeconds) ||
@@ -202,6 +223,28 @@ const computeProactiveRefreshLeadMs = (ttlSeconds: number | null): number => {
   );
 };
 
+const buildRefreshFailureOutcome = (
+  response: Response,
+  result: RefreshAccessTokenResult | null,
+): RefreshAccessTokenOutcome => {
+  if (result) {
+    return {
+      result,
+      failureReason: null,
+      didExpireSession: false,
+    };
+  }
+
+  return {
+    result: null,
+    failureReason:
+      response.status === 401 || response.status === 403
+        ? "unauthorized"
+        : "transient",
+    didExpireSession: false,
+  };
+};
+
 const applyRefreshedToken = (
   result: RefreshAccessTokenResult,
   options?: {
@@ -217,14 +260,45 @@ const applyRefreshedToken = (
   return true;
 };
 
-export async function refreshAccessToken(
+const beginAuthRecovery = (options?: {
+  expectedAuthVersion?: number;
+}): void => {
+  if (!hasExpectedAuthVersion(options?.expectedAuthVersion)) {
+    return;
+  }
+  const session = useSessionStore.getState();
+  if (!session.token) {
+    return;
+  }
+  session.beginAuthRecovery();
+};
+
+export const hasExceededAuthRecoveryLimits = (options?: {
+  expectedAuthVersion?: number;
+  nowMs?: number;
+}): boolean => {
+  if (!hasExpectedAuthVersion(options?.expectedAuthVersion)) {
+    return false;
+  }
+  const session = useSessionStore.getState();
+  if (!session.token || session.recoveryStartedAtMs === null) {
+    return false;
+  }
+  const nowMs = options?.nowMs ?? Date.now();
+  return (
+    nowMs - session.recoveryStartedAtMs >= AUTH_RECOVERY_MAX_DURATION_MS ||
+    session.recoveryRetryCount >= AUTH_RECOVERY_MAX_RETRIES
+  );
+};
+
+export const refreshAccessTokenWithOutcome = async (
   options: RefreshAccessTokenOptions = {},
-): Promise<RefreshAccessTokenResult | null> {
+): Promise<RefreshAccessTokenOutcome> => {
   const force = Boolean(options.force);
   const expectedAuthVersion = options.expectedAuthVersion;
 
   if (!hasExpectedAuthVersion(expectedAuthVersion)) {
-    return null;
+    return { result: null, failureReason: null, didExpireSession: false };
   }
 
   if (
@@ -233,11 +307,15 @@ export async function refreshAccessToken(
     refreshPromiseForAuthVersion !== null &&
     refreshPromiseForAuthVersion !== expectedAuthVersion
   ) {
-    return null;
+    return { result: null, failureReason: null, didExpireSession: false };
   }
 
   if (!force && Date.now() < refreshCooldownUntilMs) {
-    return null;
+    return {
+      result: null,
+      failureReason: lastRefreshFailureReason ?? "transient",
+      didExpireSession: false,
+    };
   }
 
   if (!refreshPromise) {
@@ -246,9 +324,10 @@ export async function refreshAccessToken(
       expectedAuthVersion !== undefined &&
       session.authVersion !== expectedAuthVersion
     ) {
-      return null;
+      return { result: null, failureReason: null, didExpireSession: false };
     }
-    refreshPromiseForAuthVersion = session.authVersion;
+    const refreshAuthVersion = session.authVersion;
+    refreshPromiseForAuthVersion = refreshAuthVersion;
     if (session.token) {
       session.setAuthStatus("refreshing");
     }
@@ -267,48 +346,117 @@ export async function refreshAccessToken(
           },
           signal: controller.signal,
         });
-        return await parseRefreshPayloadFromResponse(response);
+        const parsed = await parseRefreshPayloadFromResponse(response);
+        return buildRefreshFailureOutcome(response, parsed);
       } finally {
         clearTimeout(timer);
       }
     })()
-      .catch((error) => {
+      .catch((error): RefreshAccessTokenOutcome => {
         if (error instanceof ApiConfigError) {
           throw error;
         }
-        if (error instanceof Error && error.name === "AbortError") {
-          return null;
+        return {
+          result: null,
+          failureReason: "transient",
+          didExpireSession: false,
+        };
+      })
+      .then((outcome) => {
+        if (outcome.result) {
+          lastRefreshFailureReason = null;
+          if (hasExpectedAuthVersion(refreshAuthVersion)) {
+            useSessionStore.getState().setAuthStatus("authenticated");
+          }
+          return {
+            result: outcome.result,
+            failureReason: null,
+            didExpireSession: false,
+          };
         }
-        return null;
+
+        const failureReason = outcome.failureReason ?? "transient";
+        lastRefreshFailureReason = failureReason;
+        refreshCooldownUntilMs = Date.now() + REFRESH_COOLDOWN_MS;
+
+        if (!hasExpectedAuthVersion(refreshAuthVersion)) {
+          return {
+            result: null,
+            failureReason,
+            didExpireSession: false,
+          };
+        }
+
+        const currentSession = useSessionStore.getState();
+        if (!currentSession.token) {
+          currentSession.setAuthStatus("expired");
+          return {
+            result: null,
+            failureReason,
+            didExpireSession: false,
+          };
+        }
+
+        if (failureReason === "transient") {
+          if (
+            hasExceededAuthRecoveryLimits({
+              expectedAuthVersion: refreshAuthVersion,
+            })
+          ) {
+            handleAuthExpiredOnce({
+              expectedAuthVersion: refreshAuthVersion,
+            });
+            return {
+              result: null,
+              failureReason,
+              didExpireSession: true,
+            };
+          }
+
+          beginAuthRecovery({
+            expectedAuthVersion: refreshAuthVersion,
+          });
+          return {
+            result: null,
+            failureReason,
+            didExpireSession: false,
+          };
+        }
+
+        currentSession.setAuthStatus("authenticated");
+        return {
+          result: null,
+          failureReason,
+          didExpireSession: false,
+        };
       })
       .finally(() => {
         refreshPromise = null;
         refreshPromiseForAuthVersion = null;
       });
   }
-  let result: RefreshAccessTokenResult | null;
+
+  let outcome: RefreshAccessTokenOutcome;
   try {
-    result = await refreshPromise;
+    outcome = await refreshPromise;
   } catch (error) {
     if (error instanceof ApiConfigError) {
-      // A misconfigured API base URL is a hard failure; do not hide it.
       throw error;
     }
-    result = null;
+    outcome = {
+      result: null,
+      failureReason: "transient",
+      didExpireSession: false,
+    };
   }
-  if (!result) {
-    // Avoid repeated refresh storms when the cookie is missing/expired.
-    refreshCooldownUntilMs = Date.now() + REFRESH_COOLDOWN_MS;
-    if (hasExpectedAuthVersion(expectedAuthVersion)) {
-      const { token, setAuthStatus } = useSessionStore.getState();
-      setAuthStatus(token ? "authenticated" : "expired");
-    }
-    return null;
-  }
-  if (hasExpectedAuthVersion(expectedAuthVersion)) {
-    useSessionStore.getState().setAuthStatus("authenticated");
-  }
-  return result;
+  return outcome;
+};
+
+export async function refreshAccessToken(
+  options: RefreshAccessTokenOptions = {},
+): Promise<RefreshAccessTokenResult | null> {
+  const outcome = await refreshAccessTokenWithOutcome(options);
+  return outcome.result;
 }
 
 export async function ensureFreshAccessToken(options?: {
@@ -336,9 +484,13 @@ export async function ensureFreshAccessToken(options?: {
     return token;
   }
 
-  const refreshed = await refreshAccessToken({
+  const refreshOutcome = await refreshAccessTokenWithOutcome({
     expectedAuthVersion: options?.expectedAuthVersion,
   });
+  const refreshed = refreshOutcome.result;
+  if (refreshOutcome.didExpireSession) {
+    throw new AuthExpiredError();
+  }
   if (refreshed) {
     applyRefreshedToken(refreshed, {
       expectedAuthVersion: options?.expectedAuthVersion,
@@ -347,6 +499,9 @@ export async function ensureFreshAccessToken(options?: {
   }
   if (Date.now() < expiresAt) {
     return token;
+  }
+  if (refreshOutcome.failureReason === "transient") {
+    throw new AuthRecoverableError();
   }
   handleAuthExpiredOnce({
     expectedAuthVersion: options?.expectedAuthVersion,
@@ -496,11 +651,18 @@ const executeRequestWithAuthRecovery = async (
     return response;
   }
 
-  const refreshed = await refreshAccessToken({
+  const refreshOutcome = await refreshAccessTokenWithOutcome({
     force: true,
     expectedAuthVersion: requestAuthVersion,
   });
+  const refreshed = refreshOutcome.result;
+  if (refreshOutcome.didExpireSession) {
+    throw new AuthExpiredError();
+  }
   if (!refreshed) {
+    if (refreshOutcome.failureReason === "transient") {
+      throw new AuthRecoverableError();
+    }
     handleAuthExpiredOnce({
       expectedAuthVersion: requestAuthVersion,
     });
