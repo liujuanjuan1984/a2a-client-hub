@@ -200,6 +200,71 @@ describe("ScheduledJobCard visuals", () => {
 
     expect(getByText(/Every 15 min/)).toBeTruthy();
   });
+
+  it("renders execution history as a single main row when no error summary exists", () => {
+    const job = {
+      id: "7a",
+      name: "History Job",
+      enabled: true,
+      last_run_status: "success" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const execution = {
+      id: "execution-1",
+      status: "success" as const,
+      scheduled_for: "2026-02-23T10:00:00Z",
+      conversation_id: "conversation-1",
+    };
+    let root: any;
+
+    act(() => {
+      root = create(
+        <ScheduledJobCard
+          {...defaultProps}
+          job={job as any}
+          executions={[execution] as any}
+          executionsOpen
+        />,
+      );
+    });
+
+    expect(JSON.stringify(root.toJSON())).toContain("SUCCESS");
+    expect(JSON.stringify(root.toJSON())).toContain("Open Session");
+    expect(JSON.stringify(root.toJSON())).not.toContain("upstream timeout");
+  });
+
+  it("renders execution error summary only when it exists", () => {
+    const job = {
+      id: "7b",
+      name: "History Job",
+      enabled: true,
+      last_run_status: "failed" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const errorMessage = "upstream timeout";
+    const { getByText } = render(
+      <ScheduledJobCard
+        {...defaultProps}
+        job={job as any}
+        executions={
+          [
+            {
+              id: "execution-2",
+              status: "failed" as const,
+              scheduled_for: "2026-02-23T10:00:00Z",
+              error_message: ` ${errorMessage} `,
+            },
+          ] as any
+        }
+        executionsOpen
+      />,
+    );
+
+    expect(getByText("FAILED")).toBeTruthy();
+    expect(getByText(errorMessage)).toBeTruthy();
+  });
 });
 
 jest.mock("@/lib/confirm", () => ({

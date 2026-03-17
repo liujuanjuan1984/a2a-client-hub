@@ -5,7 +5,11 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.a2a_stream_payloads import extract_shared_stream_metadata
+from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
+from app.services.a2a_shared_metadata import (
+    extract_preferred_usage_metadata,
+    merge_shared_metadata_sections,
+)
 from app.utils.payload_extract import (
     as_dict,
     extract_context_id,
@@ -81,8 +85,7 @@ def _extract_usage_from_candidate(payload: dict[str, Any]) -> dict[str, Any]:
         return {}
 
     direct_usage = as_dict(payload.get("usage"))
-    metadata = as_dict(payload.get("metadata"))
-    metadata_usage = as_dict(metadata.get("usage"))
+    metadata_usage = extract_preferred_usage_metadata(payload)
 
     usage_payload: dict[str, Any] = {}
     if direct_usage:
@@ -127,7 +130,10 @@ def analyze_payload(payload: dict[str, Any]) -> PayloadAnalysis:
     result_status = as_dict(result.get("status"))
     result_status_metadata = as_dict(result_status.get("metadata"))
     root_metadata = as_dict(root.get("metadata"))
-    artifact_shared_stream = extract_shared_stream_metadata(root, artifact)
+    artifact_shared_stream = merge_shared_metadata_sections(
+        (root, artifact),
+        section=SHARED_STREAM_KEY,
+    )
 
     msg_id = None
     evt_id = None

@@ -9,6 +9,9 @@ from app.core.config import settings as app_settings
 from app.core.logging import get_logger
 from app.integrations.a2a_client.config import A2ASettings, load_settings
 from app.integrations.a2a_client.gateway import A2AGateway
+from app.integrations.a2a_client.http_clients import (
+    close_shared_sdk_transport_http_clients,
+)
 from app.utils.logging_redaction import redact_url_for_logging
 
 logger = get_logger(__name__)
@@ -94,9 +97,9 @@ def get_a2a_service() -> A2AService:
 
 async def shutdown_a2a_service() -> None:
     global _service_instance
-    if _service_instance is None:
-        return
-    await _service_instance.gateway.shutdown()
+    if _service_instance is not None:
+        await _service_instance.gateway.shutdown()
+    await close_shared_sdk_transport_http_clients()
     _service_instance = None
 
 

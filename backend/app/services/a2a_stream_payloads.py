@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
+from app.services.a2a_shared_metadata import (
+    extract_preferred_interrupt_metadata,
+    merge_shared_metadata_sections,
+)
 from app.utils.payload_extract import as_dict
 
 
@@ -96,15 +101,10 @@ def extract_stream_content_from_parts(parts: Any, *, block_type: str) -> str:
 def extract_shared_stream_metadata(
     payload: dict[str, Any], artifact: dict[str, Any]
 ) -> dict[str, Any]:
-    resolved: dict[str, Any] = {}
-    root_metadata = as_dict(payload.get("metadata"))
-    artifact_metadata = as_dict(artifact.get("metadata"))
-    for metadata in (root_metadata, artifact_metadata):
-        shared = as_dict(metadata.get("shared"))
-        stream = as_dict(shared.get("stream"))
-        if stream:
-            resolved.update(stream)
-    return resolved
+    return merge_shared_metadata_sections(
+        (payload, artifact),
+        section=SHARED_STREAM_KEY,
+    )
 
 
 def extract_artifact_type(
@@ -265,8 +265,7 @@ def extract_interrupt_lifecycle_from_serialized_event(
 
     status = as_dict(payload.get("status"))
     raw_state = _pick_non_empty_str(status, ("state",))
-    metadata = as_dict(payload.get("metadata"))
-    interrupt = as_dict(metadata.get("interrupt"))
+    interrupt = extract_preferred_interrupt_metadata(payload)
     if not interrupt:
         return None
 

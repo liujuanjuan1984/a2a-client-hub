@@ -77,7 +77,7 @@ describe("chat store utils", () => {
     });
   });
 
-  it("injects generic external session metadata for bound sessions", () => {
+  it("builds neutral session binding intent for bound sessions", () => {
     const session = createAgentSession("agent-3");
     session.metadata = { locale: "zh-CN" };
     session.externalSessionRef = {
@@ -90,8 +90,41 @@ describe("chat store utils", () => {
       conversationId: "conversation:abc",
       metadata: {
         locale: "zh-CN",
+      },
+      sessionBinding: {
         provider: "opencode",
         externalSessionId: "ses-upstream-1",
+      },
+    });
+  });
+
+  it("strips binding-shaped metadata and only keeps neutral session binding intent", () => {
+    const session = createAgentSession("agent-3");
+    session.metadata = {
+      locale: "zh-CN",
+      provider: "legacy",
+      externalSessionId: "legacy-sid",
+      shared: {
+        session: {
+          id: "legacy-sid",
+          provider: "legacy",
+        },
+      },
+    };
+    session.externalSessionRef = {
+      provider: "OpenCode",
+      externalSessionId: "ses-upstream-2",
+    };
+
+    expect(buildInvokePayload("hello", session, "conversation:def")).toEqual({
+      query: "hello",
+      conversationId: "conversation:def",
+      metadata: {
+        locale: "zh-CN",
+      },
+      sessionBinding: {
+        provider: "opencode",
+        externalSessionId: "ses-upstream-2",
       },
     });
   });

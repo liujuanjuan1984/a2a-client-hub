@@ -160,4 +160,28 @@ describe("ChatMessageItem interaction", () => {
     expect(screen.queryByText("Content unavailable.")).toBeNull();
     expect(screen.getByText("Streaming...")).toBeTruthy();
   });
+
+  it("renders a structured upstream error banner without empty fallback", () => {
+    const message = buildAgentMessage({
+      content: "",
+      status: "error",
+      errorCode: "agent_unavailable",
+      errorMessage: "Upstream agent is unavailable.",
+      blocks: [],
+    });
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+        sessionStreamState="error"
+      />,
+    );
+
+    expect(screen.queryByText("Content unavailable.")).toBeNull();
+    expect(
+      screen.getByText("当前无法连接到上游 Agent，请稍后重试。"),
+    ).toBeTruthy();
+  });
 });

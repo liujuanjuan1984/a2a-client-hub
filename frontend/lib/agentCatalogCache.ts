@@ -12,6 +12,12 @@ type ValidationResponseLike = {
   message?: unknown;
 };
 
+const canReuseAgentValidationState = (
+  previous: AgentConfig,
+  next: AgentConfig,
+): boolean =>
+  previous.source === next.source && previous.cardUrl === next.cardUrl;
+
 export const mergeTransientAgentState = (
   nextAgents: AgentConfig[],
   previousAgents: AgentConfig[],
@@ -23,6 +29,9 @@ export const mergeTransientAgentState = (
   return nextAgents.map((agent) => {
     const previous = previousById.get(agent.id);
     if (!previous) {
+      return agent;
+    }
+    if (!canReuseAgentValidationState(previous, agent)) {
       return agent;
     }
     return {
@@ -56,12 +65,18 @@ export const upsertAgentInCatalog = (
   const preserveFrom = current.find(
     (item) => item.id === (preserveStatusFromAgentId ?? nextAgent.id),
   );
+  const canReuseValidationState =
+    preserveFrom && canReuseAgentValidationState(preserveFrom, nextAgent);
 
   const merged = {
     ...nextAgent,
-    status: preserveFrom?.status ?? nextAgent.status,
-    lastCheckedAt: preserveFrom?.lastCheckedAt,
-    lastError: preserveFrom?.lastError,
+    status: canReuseValidationState ? preserveFrom.status : nextAgent.status,
+    lastCheckedAt: canReuseValidationState
+      ? preserveFrom.lastCheckedAt
+      : nextAgent.lastCheckedAt,
+    lastError: canReuseValidationState
+      ? preserveFrom.lastError
+      : nextAgent.lastError,
   };
 
   return [merged, ...current.filter((item) => item.id !== merged.id)];
