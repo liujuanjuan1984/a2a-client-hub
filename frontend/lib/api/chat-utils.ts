@@ -661,6 +661,41 @@ export const projectPrimaryTextContent = (
     .map((block) => block.content)
     .join("");
 
+export const applyLoadedBlockDetail = (
+  message: Pick<ChatMessage, "content" | "blocks">,
+  input: {
+    blockId: string;
+    type?: string;
+    content?: string | null;
+    isFinished?: boolean;
+  },
+): Pick<ChatMessage, "content" | "blocks"> => {
+  const nextBlocks = (message.blocks ?? []).map((block) =>
+    block.id === input.blockId
+      ? {
+          ...block,
+          type:
+            typeof input.type === "string" && input.type.trim().length > 0
+              ? input.type
+              : block.type,
+          content: typeof input.content === "string" ? input.content : "",
+          isFinished:
+            typeof input.isFinished === "boolean"
+              ? input.isFinished
+              : block.isFinished,
+        }
+      : block,
+  );
+
+  const hasTextBlocks = nextBlocks.some((block) => block.type === "text");
+  return {
+    blocks: nextBlocks,
+    content: hasTextBlocks
+      ? projectPrimaryTextContent(nextBlocks)
+      : message.content,
+  };
+};
+
 export const finalizeMessageBlocks = (
   blocks: MessageBlock[] | undefined,
 ): MessageBlock[] | undefined => {
