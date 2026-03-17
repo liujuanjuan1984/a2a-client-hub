@@ -2,7 +2,11 @@ import { create } from "zustand";
 
 import { type UserProfile } from "@/lib/api/types";
 
-export type AuthStatus = "authenticated" | "refreshing" | "expired";
+export type AuthStatus =
+  | "authenticated"
+  | "refreshing"
+  | "recovering"
+  | "expired";
 
 const normalizeExpiresInSeconds = (
   value: number | null | undefined,

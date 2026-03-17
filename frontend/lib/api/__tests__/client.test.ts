@@ -5,6 +5,12 @@ const createJsonResponse = (status: number, payload: unknown): Response =>
     json: async () => payload,
   }) as Response;
 
+const createAbortError = () => {
+  const error = new Error("aborted");
+  error.name = "AbortError";
+  return error;
+};
+
 describe("api client auth refresh flow", () => {
   const originalApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -101,6 +107,47 @@ describe("api client auth refresh flow", () => {
     expect(resetAuthBoundState).not.toHaveBeenCalled();
   });
 
+  it("marks auth as recovering when proactive refresh fails transiently", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockRejectedValue(createAbortError());
+
+    useSessionStore.setState({
+      token: "still-valid-token",
+      accessTokenExpiresAtMs: Date.now() + 3_000,
+      accessTokenTtlSeconds: 10,
+      authStatus: "authenticated",
+    });
+
+    const token = await client.ensureFreshAccessToken();
+
+    expect(token).toBe("still-valid-token");
+    expect(useSessionStore.getState().authStatus).toBe("recovering");
+    expect(resetAuthBoundState).not.toHaveBeenCalled();
+  });
+
+  it("keeps session and throws recoverable auth error when expired token cannot refresh transiently", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockRejectedValue(createAbortError());
+
+    useSessionStore.setState({
+      token: "expired-token",
+      accessTokenExpiresAtMs: Date.now() - 1,
+      accessTokenTtlSeconds: 10,
+      authStatus: "authenticated",
+    });
+
+    await expect(client.ensureFreshAccessToken()).rejects.toMatchObject({
+      status: 503,
+      errorCode: "auth_recovering",
+    });
+
+    expect(useSessionStore.getState().token).toBe("expired-token");
+    expect(useSessionStore.getState().authStatus).toBe("recovering");
+    expect(resetAuthBoundState).not.toHaveBeenCalled();
+  });
+
   it("bypasses refresh cooldown when force=true", async () => {
     const { client, useSessionStore } = loadModules();
     const fetchMock = global.fetch as jest.Mock;
@@ -152,6 +199,56 @@ describe("api client auth refresh flow", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(resetAuthBoundState).not.toHaveBeenCalled();
     expect(useSessionStore.getState().token).toBe("old-token");
+  });
+
+  it("keeps session when request-side forced refresh fails transiently after a 401", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock
+      .mockResolvedValueOnce(createJsonResponse(401, { detail: "expired" }))
+      .mockRejectedValueOnce(createAbortError());
+
+    useSessionStore.setState({
+      token: "old-token",
+      authStatus: "authenticated",
+      accessTokenExpiresAtMs: null,
+      accessTokenTtlSeconds: null,
+    });
+
+    await expect(
+      client.apiRequest<{ ok: boolean }>("/me/echo"),
+    ).rejects.toMatchObject({
+      status: 503,
+      errorCode: "auth_recovering",
+    });
+
+    expect(resetAuthBoundState).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().token).toBe("old-token");
+    expect(useSessionStore.getState().authStatus).toBe("recovering");
+  });
+
+  it("clears session when request-side forced refresh is explicitly unauthorized", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock
+      .mockResolvedValueOnce(createJsonResponse(401, { detail: "expired" }))
+      .mockResolvedValueOnce(createJsonResponse(401, { detail: "expired" }));
+
+    useSessionStore.setState({
+      token: "old-token",
+      authStatus: "authenticated",
+      accessTokenExpiresAtMs: null,
+      accessTokenTtlSeconds: null,
+    });
+
+    await expect(
+      client.apiRequest<{ ok: boolean }>("/me/echo"),
+    ).rejects.toMatchObject({
+      status: 401,
+      errorCode: "auth_expired",
+    });
+
+    expect(resetAuthBoundState).toHaveBeenCalledTimes(1);
   });
 
   it("does not trigger refresh flow for auth endpoints", async () => {

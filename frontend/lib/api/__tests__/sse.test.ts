@@ -22,12 +22,24 @@ jest.mock("@/lib/api/client", () => {
     }
   }
 
+  class MockAuthRecoverableError extends MockApiRequestError {
+    constructor(message = "Authentication recovery in progress.") {
+      super(message, 503, "auth_recovering");
+      this.name = "AuthRecoverableError";
+    }
+  }
+
   return {
     ApiRequestError: MockApiRequestError,
     AuthExpiredError: MockAuthExpiredError,
+    AuthRecoverableError: MockAuthRecoverableError,
     ensureFreshAccessToken: jest.fn(async () => null),
     handleAuthExpiredOnce: jest.fn(),
     refreshAccessToken: jest.fn(async () => null),
+    refreshAccessTokenWithOutcome: jest.fn(async () => ({
+      result: null,
+      failureReason: "transient",
+    })),
   };
 });
 
@@ -44,6 +56,8 @@ jest.mock("@/store/session", () => ({
 
 const { fetchSSE, SSEStreamError } =
   require("@/lib/api/sse") as typeof import("@/lib/api/sse");
+const clientModule =
+  require("@/lib/api/client") as typeof import("@/lib/api/client");
 
 const createSseResponse = (payload: string): Response =>
   ({
@@ -92,5 +106,31 @@ describe("fetchSSE", () => {
       message: "Upstream streaming failed",
       errorCode: "agent_unavailable",
     });
+  });
+
+  it("does not reset auth state when sse refresh fails transiently after 401", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      text: async () => "expired",
+    } as Response);
+    (
+      clientModule.refreshAccessTokenWithOutcome as jest.Mock
+    ).mockResolvedValueOnce({
+      result: null,
+      failureReason: "transient",
+    });
+
+    const onError = jest.fn();
+
+    await fetchSSE("https://example.test/stream", { onError });
+
+    expect(clientModule.handleAuthExpiredOnce).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "AuthRecoverableError",
+        errorCode: "auth_recovering",
+      }),
+    );
   });
 });
