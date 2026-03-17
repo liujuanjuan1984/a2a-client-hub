@@ -18,6 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message_block as agent_message_block_handler
+from app.services.interrupt_metadata_normalization import (
+    normalize_permission_interrupt_details,
+    normalize_question_interrupt_details,
+)
 from app.utils.session_identity import normalize_non_empty_text
 from app.utils.timezone_util import ensure_utc
 
@@ -206,52 +210,10 @@ def normalize_interrupt_lifecycle_event(
     if not isinstance(details, dict):
         details = {}
     if interrupt_type == "permission":
-        patterns = details.get("patterns")
-        normalized["details"] = {
-            "permission": normalize_non_empty_text(details.get("permission")),
-            "patterns": (
-                [item for item in patterns if isinstance(item, str)]
-                if isinstance(patterns, list)
-                else []
-            ),
-        }
+        normalized["details"] = normalize_permission_interrupt_details(details)
         return normalized
 
-    questions = details.get("questions")
-    normalized_questions: list[dict[str, Any]] = []
-    if isinstance(questions, list):
-        for entry in questions:
-            if not isinstance(entry, dict):
-                continue
-            question = normalize_non_empty_text(entry.get("question"))
-            if not question:
-                continue
-            options = entry.get("options")
-            normalized_options: list[dict[str, Any]] = []
-            if isinstance(options, list):
-                for raw_option in options:
-                    if not isinstance(raw_option, dict):
-                        continue
-                    label = normalize_non_empty_text(raw_option.get("label"))
-                    if not label:
-                        continue
-                    normalized_options.append(
-                        {
-                            "label": label,
-                            "description": normalize_non_empty_text(
-                                raw_option.get("description")
-                            ),
-                            "value": normalize_non_empty_text(raw_option.get("value")),
-                        }
-                    )
-            normalized_questions.append(
-                {
-                    "header": normalize_non_empty_text(entry.get("header")),
-                    "question": question,
-                    "options": normalized_options,
-                }
-            )
-    normalized["details"] = {"questions": normalized_questions}
+    normalized["details"] = normalize_question_interrupt_details(details)
     return normalized
 
 

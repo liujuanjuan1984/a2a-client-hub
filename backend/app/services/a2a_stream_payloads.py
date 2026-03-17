@@ -8,6 +8,10 @@ from app.services.a2a_shared_metadata import (
     extract_preferred_interrupt_metadata,
     merge_shared_metadata_sections,
 )
+from app.services.interrupt_metadata_normalization import (
+    normalize_permission_interrupt_details,
+    normalize_question_interrupt_details,
+)
 from app.utils.payload_extract import as_dict
 
 
@@ -299,52 +303,8 @@ def extract_interrupt_lifecycle_from_serialized_event(
 
     details = as_dict(interrupt.get("details")) or {}
     if interrupt_type == "permission":
-        patterns = details.get("patterns")
-        payload_event["details"] = {
-            "permission": _pick_non_empty_str(details, ("permission",)),
-            "patterns": (
-                [item for item in patterns if isinstance(item, str)]
-                if isinstance(patterns, list)
-                else []
-            ),
-        }
+        payload_event["details"] = normalize_permission_interrupt_details(details)
         return payload_event
 
-    questions = details.get("questions")
-    normalized_questions: list[dict[str, Any]] = []
-    if isinstance(questions, list):
-        for entry in questions:
-            candidate = as_dict(entry)
-            if not candidate:
-                continue
-            question = _pick_non_empty_str(candidate, ("question",))
-            if not question:
-                continue
-            raw_options = candidate.get("options")
-            normalized_options: list[dict[str, Any]] = []
-            if isinstance(raw_options, list):
-                for raw_option in raw_options:
-                    option = as_dict(raw_option)
-                    if not option:
-                        continue
-                    label = _pick_non_empty_str(option, ("label",))
-                    if not label:
-                        continue
-                    normalized_options.append(
-                        {
-                            "label": label,
-                            "description": _pick_non_empty_str(
-                                option, ("description",)
-                            ),
-                            "value": _pick_non_empty_str(option, ("value",)),
-                        }
-                    )
-            normalized_questions.append(
-                {
-                    "header": _pick_non_empty_str(candidate, ("header",)),
-                    "question": question,
-                    "options": normalized_options,
-                }
-            )
-    payload_event["details"] = {"questions": normalized_questions}
+    payload_event["details"] = normalize_question_interrupt_details(details)
     return payload_event

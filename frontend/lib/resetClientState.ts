@@ -18,8 +18,3 @@ export const resetAuthBoundState = () => {
   removeLegacyPersistKey("a2a-client-hub.messages");
   queryClient.clear();
 };
-
-export const resetClientState = () => {
-  resetAuthBoundState();
-  removeLegacyPersistKey("a2a-client-hub.shortcuts");
-};

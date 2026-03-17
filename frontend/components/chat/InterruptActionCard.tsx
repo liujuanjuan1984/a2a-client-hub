@@ -26,11 +26,15 @@ export function InterruptActionCard({
   if (pendingInterrupt.type === "permission") {
     const permission = pendingInterrupt.details.permission ?? "unknown";
     const patterns = pendingInterrupt.details.patterns ?? [];
+    const displayMessage = pendingInterrupt.details.displayMessage ?? null;
     return (
       <View className="mt-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4">
         <Text className="text-xs font-semibold uppercase tracking-wide text-amber-300">
           Authorization Required
         </Text>
+        {displayMessage ? (
+          <Text className="mt-2 text-sm text-amber-50">{displayMessage}</Text>
+        ) : null}
         <Text className="mt-2 text-sm text-white">
           Permission: <Text className="font-semibold">{permission}</Text>
         </Text>
@@ -76,11 +80,15 @@ export function InterruptActionCard({
   }
 
   const questions = pendingInterrupt.details.questions ?? [];
+  const displayMessage = pendingInterrupt.details.displayMessage ?? null;
   return (
     <View className="mt-3 rounded-2xl border border-sky-500/40 bg-sky-500/10 p-4">
       <Text className="text-xs font-semibold uppercase tracking-wide text-sky-300">
         Additional Input Required
       </Text>
+      {displayMessage ? (
+        <Text className="mt-2 text-sm text-sky-50">{displayMessage}</Text>
+      ) : null}
       {questions.map((question, index) => {
         const answer = questionAnswers[index] ?? "";
         return (
@@ -91,6 +99,11 @@ export function InterruptActionCard({
               </Text>
             ) : null}
             <Text className="mt-1 text-sm text-white">{question.question}</Text>
+            {question.description ? (
+              <Text className="mt-1 text-xs text-sky-100">
+                {question.description}
+              </Text>
+            ) : null}
             <TextInput
               testID={`interrupt-question-input-${index}`}
               className="mt-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"

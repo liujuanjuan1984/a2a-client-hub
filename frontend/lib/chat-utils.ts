@@ -1,7 +1,5 @@
 import type { A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
 import type {
-  ChatMessage,
-  MessageBlock,
   PendingRuntimeInterrupt,
   ResolvedRuntimeInterrupt,
 } from "@/lib/api/chat-utils";
@@ -9,48 +7,6 @@ import {
   pickSharedMetadataSections,
   withoutSharedSessionBinding,
 } from "@/lib/sharedMetadata";
-
-export const isSameBlockList = (
-  left: MessageBlock[] = [],
-  right: MessageBlock[] = [],
-) => {
-  if (left.length !== right.length) return false;
-  for (let index = 0; index < left.length; index += 1) {
-    const lhs = left[index];
-    const rhs = right[index];
-    if (!lhs || !rhs) return false;
-    if (
-      lhs.id !== rhs.id ||
-      lhs.type !== rhs.type ||
-      lhs.content !== rhs.content ||
-      lhs.isFinished !== rhs.isFinished ||
-      lhs.createdAt !== rhs.createdAt ||
-      lhs.updatedAt !== rhs.updatedAt
-    ) {
-      return false;
-    }
-  }
-  return true;
-};
-
-export const isSameMessageList = (
-  left: ChatMessage[],
-  right: ChatMessage[],
-) => {
-  if (left.length !== right.length) return false;
-  return left.every((message, index) => {
-    const next = right[index];
-    if (!next) return false;
-    return (
-      message.id === next.id &&
-      message.role === next.role &&
-      message.content === next.content &&
-      message.createdAt === next.createdAt &&
-      isSameBlockList(message.blocks, next.blocks) &&
-      message.status === next.status
-    );
-  });
-};
 
 export type ExternalSessionRef = {
   provider?: string | null;
@@ -88,9 +44,9 @@ export type AgentSession = {
 };
 
 const FALLBACK_LAST_ACTIVE_AT = "1970-01-01T00:00:00.000Z";
-export const CHAT_SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
-export const CHAT_SESSION_MAX_ACTIVE = 240;
-export const CHAT_SESSION_MAX_PERSISTED = 80;
+const CHAT_SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const CHAT_SESSION_MAX_ACTIVE = 240;
+const CHAT_SESSION_MAX_PERSISTED = 80;
 
 export const createAgentSession = (agentId: string): AgentSession => ({
   agentId,
