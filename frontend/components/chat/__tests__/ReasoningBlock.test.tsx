@@ -1,5 +1,5 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
-import React from "react";
+import React, { useState } from "react";
 
 import { ReasoningBlock } from "../blocks/ReasoningBlock";
 
@@ -77,5 +77,42 @@ describe("ReasoningBlock", () => {
         "fallback-2",
       );
     });
+  });
+
+  it("renders markdown after loaded reasoning content is written back", async () => {
+    function TestHarness() {
+      const [content, setContent] = useState("");
+
+      return (
+        <ReasoningBlock
+          block={{
+            id: "reasoning-3",
+            type: "reasoning",
+            content,
+            isFinished: true,
+            createdAt: "2026-03-16T00:00:00.000Z",
+            updatedAt: "2026-03-16T00:00:00.000Z",
+          }}
+          fallbackBlockId="fallback-3"
+          messageId="message-3"
+          onLoadBlockContent={async () => {
+            setContent("## Loaded\n\n- step A");
+            return true;
+          }}
+        />
+      );
+    }
+
+    const screen = render(<TestHarness />);
+
+    fireEvent.press(screen.getByLabelText("Show Reasoning"));
+
+    await waitFor(() => {
+      expect(mockMarkdownRender).toHaveBeenCalledWith({
+        content: "## Loaded\n\n- step A",
+        isAgent: true,
+      });
+    });
+    expect(screen.getByLabelText("Show less")).toBeTruthy();
   });
 });
