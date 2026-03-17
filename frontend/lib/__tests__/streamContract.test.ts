@@ -1,6 +1,7 @@
 import {
   applyLoadedBlockDetail,
   applyStreamBlockUpdate,
+  buildInterruptEventBlockUpdate,
   extractSessionMeta,
   extractRuntimeStatus,
   extractRuntimeStatusEvent,
@@ -11,8 +12,16 @@ import {
   type StreamBlockUpdate,
 } from "@/lib/api/chat-utils";
 
+const interruptLifecycleMessageCases =
+  require("../../../docs/contracts/interrupt-lifecycle-message-cases.json") as {
+    name: string;
+    code: string;
+    event: Record<string, unknown>;
+    content: string;
+  }[];
+
 const buildBlockUpdatePayload = (input: {
-  blockType: "text" | "reasoning" | "tool_call";
+  blockType: "text" | "reasoning" | "tool_call" | "interrupt_event";
   delta: string;
   artifactId: string;
   taskId?: string;
@@ -149,6 +158,111 @@ describe("block-based stream parser and reducer", () => {
     );
 
     expect(projectPrimaryTextContent(blocks)).toBe("Hello world");
+  });
+
+  it("keeps interrupt_event blocks out of projected message content", () => {
+    const blocks = applyStreamBlockUpdate(
+      undefined,
+      buildInterruptEventBlockUpdate({
+        messageId: "msg-interrupt-1",
+        interrupt: {
+          requestId: "perm-1",
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission: "read",
+            patterns: ["/repo/.env"],
+            displayMessage: null,
+          },
+        },
+      }),
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks?.[0]?.type).toBe("interrupt_event");
+    expect(blocks?.[0]?.content).toBe(
+      "Agent requested authorization: read.\nTargets: /repo/.env",
+    );
+    expect(projectPrimaryTextContent(blocks)).toBe("");
+  });
+
+  it("matches the shared interrupt lifecycle message contract cases", () => {
+    const toRuntimeInterrupt = (
+      event: Record<string, unknown>,
+    ): Parameters<typeof buildInterruptEventBlockUpdate>[0]["interrupt"] => {
+      const details =
+        event.details && typeof event.details === "object"
+          ? (event.details as Record<string, unknown>)
+          : {};
+      if (event.phase === "resolved") {
+        return {
+          requestId: String(event.request_id),
+          type: event.type === "permission" ? "permission" : "question",
+          phase: "resolved",
+          resolution: event.resolution === "rejected" ? "rejected" : "replied",
+        };
+      }
+      if (event.type === "permission") {
+        return {
+          requestId: String(event.request_id),
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission:
+              typeof details.permission === "string"
+                ? details.permission
+                : null,
+            patterns: Array.isArray(details.patterns)
+              ? details.patterns.filter(
+                  (item): item is string => typeof item === "string",
+                )
+              : [],
+            displayMessage:
+              typeof details.display_message === "string"
+                ? details.display_message
+                : typeof details.displayMessage === "string"
+                  ? details.displayMessage
+                  : null,
+          },
+        };
+      }
+      return {
+        requestId: String(event.request_id),
+        type: "question",
+        phase: "asked",
+        details: {
+          displayMessage:
+            typeof details.display_message === "string"
+              ? details.display_message
+              : typeof details.displayMessage === "string"
+                ? details.displayMessage
+                : null,
+          questions: Array.isArray(details.questions)
+            ? details.questions.map((question) => {
+                const item = question as Record<string, unknown>;
+                return {
+                  header: typeof item.header === "string" ? item.header : null,
+                  question: String(item.question ?? ""),
+                  description:
+                    typeof item.description === "string"
+                      ? item.description
+                      : null,
+                  options: [],
+                };
+              })
+            : [],
+        },
+      };
+    };
+
+    interruptLifecycleMessageCases.forEach((testCase) => {
+      const update = buildInterruptEventBlockUpdate({
+        messageId: `msg-${testCase.name}`,
+        interrupt: toRuntimeInterrupt(testCase.event),
+      });
+
+      expect(update.delta).toBe(testCase.content);
+    });
   });
 
   it("supports overwrite semantics when append=false or final_snapshot arrives", () => {
@@ -324,6 +438,38 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.eventId).toBe("evt-shared");
     expect(parsed?.seq).toBe(10);
     expect(parsed?.source).toBe("tool_part_update");
+  });
+
+  it("parses interrupt_event blocks carried in artifact metadata", () => {
+    const parsed = extractStreamBlockUpdate({
+      kind: "artifact-update",
+      message_id: "msg-interrupt-2",
+      event_id: "evt-interrupt-2",
+      seq: 8,
+      append: false,
+      artifact: {
+        artifact_id: "artifact-interrupt-2",
+        parts: [
+          {
+            kind: "text",
+            text: "Agent requested additional input: Proceed?",
+          },
+        ],
+        metadata: {
+          block_type: "interrupt_event",
+          source: "interrupt_lifecycle",
+        },
+      },
+    });
+
+    expect(parsed).toMatchObject({
+      blockType: "interrupt_event",
+      delta: "Agent requested additional input: Proceed?",
+      messageId: "msg-interrupt-2",
+      source: "interrupt_lifecycle",
+      append: false,
+      done: false,
+    });
   });
 
   it("parses tool_call blocks carried in data parts", () => {

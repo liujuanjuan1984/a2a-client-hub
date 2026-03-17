@@ -7,6 +7,7 @@ import { type MessageBlock as MessageBlockType } from "@/lib/api/chat-utils";
 
 const mockReasoningBlock = jest.fn((_props: unknown) => null);
 const mockToolCallBlock = jest.fn((_props: unknown) => null);
+const mockInterruptEventBlock = jest.fn((_props: unknown) => null);
 const mockTextBlock = jest.fn((_props: unknown) => null);
 const mockGenericBlock = jest.fn((_props: unknown) => null);
 
@@ -20,6 +21,13 @@ jest.mock("../blocks/ReasoningBlock", () => ({
 jest.mock("../blocks/ToolCallBlock", () => ({
   ToolCallBlock: (props: unknown) => {
     mockToolCallBlock(props);
+    return null;
+  },
+}));
+
+jest.mock("../blocks/InterruptEventBlock", () => ({
+  InterruptEventBlock: (props: unknown) => {
+    mockInterruptEventBlock(props);
     return null;
   },
 }));
@@ -135,6 +143,35 @@ describe("MessageBlock and MessageContentFallback", () => {
         block,
         fallbackBlockId: "text-1",
         isAgent: false,
+        isFirst: false,
+      }),
+    );
+  });
+
+  it("routes interrupt_event block to InterruptEventBlock", () => {
+    const block: MessageBlockType = {
+      id: "interrupt-1",
+      type: "interrupt_event",
+      content: "Agent requested authorization: read.",
+      isFinished: true,
+      createdAt: "2026-02-24T00:00:00.000Z",
+      updatedAt: "2026-02-24T00:00:00.000Z",
+    };
+
+    render(
+      <MessageBlock
+        block={block}
+        messageId="msg-3b"
+        blockIndex={2}
+        role="agent"
+      />,
+    );
+
+    expect(mockInterruptEventBlock).toHaveBeenCalledTimes(1);
+    expect(mockInterruptEventBlock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        block,
+        fallbackBlockId: "interrupt-1",
         isFirst: false,
       }),
     );

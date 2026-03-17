@@ -168,10 +168,18 @@ class SessionQueryService:
             (AgentMessage.sender.in_(["user", "automation"]), 0),
             else_=1,
         )
+        interrupt_phase = AgentMessage.message_metadata.op("->")("interrupt").op("->>")(
+            "phase"
+        )
         stmt = select(AgentMessage).where(
             and_(
                 AgentMessage.user_id == user_id,
                 AgentMessage.conversation_id == resolved_conversation_id,
+                or_(
+                    AgentMessage.sender != "system",
+                    interrupt_phase.is_(None),
+                    interrupt_phase.not_in(("asked", "resolved")),
+                ),
             )
         )
         if cursor is not None:

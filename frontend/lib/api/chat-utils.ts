@@ -32,7 +32,7 @@ export type StreamBlockUpdate = {
   seq: number | null;
   taskId: string;
   artifactId: string;
-  blockType: "text" | "reasoning" | "tool_call";
+  blockType: "text" | "reasoning" | "tool_call" | "interrupt_event";
   source: string | null;
   messageId: string;
   role: ChatRole;
@@ -500,6 +500,131 @@ const extractRuntimeInterrupt = (
   return null;
 };
 
+const buildInterruptEventMessageCode = (
+  interrupt: RuntimeInterrupt,
+):
+  | "permission_requested"
+  | "permission_resolved"
+  | "question_requested"
+  | "question_answer_received"
+  | "question_rejected" => {
+  if (interrupt.phase === "resolved") {
+    if (interrupt.type === "permission") {
+      return "permission_resolved";
+    }
+    if (interrupt.resolution === "rejected") {
+      return "question_rejected";
+    }
+    return "question_answer_received";
+  }
+  if (interrupt.type === "permission") {
+    return "permission_requested";
+  }
+  return "question_requested";
+};
+
+const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
+  const messageCode = buildInterruptEventMessageCode(interrupt);
+  if (messageCode === "permission_resolved") {
+    return "Authorization request was handled. Agent resumed.";
+  }
+  if (messageCode === "question_rejected") {
+    return "Question request was rejected. Interrupt closed.";
+  }
+  if (messageCode === "question_answer_received") {
+    return "Question answer received. Agent resumed.";
+  }
+
+  const askedInterrupt = interrupt as PendingRuntimeInterrupt;
+
+  if (messageCode === "permission_requested") {
+    const displayMessage =
+      askedInterrupt.details.displayMessage?.trim() || null;
+    const permission = askedInterrupt.details.permission?.trim() || "unknown";
+    const patterns = askedInterrupt.details.patterns ?? [];
+    const baseMessage =
+      displayMessage || `Agent requested authorization: ${permission}.`;
+    if (patterns.length > 0) {
+      return `${baseMessage}\nTargets: ${patterns.join(", ")}`;
+    }
+    return baseMessage;
+  }
+
+  const displayMessage = askedInterrupt.details.displayMessage?.trim() || null;
+  const questionEntries = (askedInterrupt.details.questions ?? [])
+    .map((question: InterruptQuestion) => {
+      const prompt = question.question.trim();
+      if (!prompt) {
+        return null;
+      }
+      const description = question.description?.trim() || null;
+      return { prompt, description };
+    })
+    .filter(
+      (
+        question,
+      ): question is {
+        prompt: string;
+        description: string | null;
+      } => Boolean(question),
+    );
+  if (questionEntries.length === 1) {
+    const entry = questionEntries[0];
+    if (displayMessage) {
+      const lines = [displayMessage, `Question: ${entry.prompt}`];
+      if (entry.description) {
+        lines.push(`Details: ${entry.description}`);
+      }
+      return lines.join("\n");
+    }
+    if (entry.description) {
+      return `Agent requested additional input: ${entry.prompt}\nDetails: ${entry.description}`;
+    }
+    return `Agent requested additional input: ${entry.prompt}`;
+  }
+  if (questionEntries.length > 1) {
+    const lines = questionEntries.map(
+      (entry: { prompt: string; description: string | null }) =>
+        entry.description
+          ? `- ${entry.prompt} (${entry.description})`
+          : `- ${entry.prompt}`,
+    );
+    if (displayMessage) {
+      return `${displayMessage}\n${lines.join("\n")}`;
+    }
+    return `Agent requested additional input:\n${lines.join("\n")}`;
+  }
+  if (displayMessage) {
+    return displayMessage;
+  }
+  return "Agent requested additional input.";
+};
+
+export const buildInterruptEventBlockUpdate = ({
+  interrupt,
+  messageId,
+}: {
+  interrupt: RuntimeInterrupt;
+  messageId: string;
+}): StreamBlockUpdate => {
+  const normalizedMessageId = messageId.trim();
+  const eventId = `interrupt:${interrupt.requestId}:${interrupt.phase}`;
+  return {
+    eventId,
+    eventIdSource: "upstream",
+    seq: null,
+    taskId: `interrupt:${normalizedMessageId}`,
+    artifactId: `${normalizedMessageId}:interrupt:${interrupt.requestId}:${interrupt.phase}`,
+    blockType: "interrupt_event",
+    source: "interrupt_lifecycle",
+    messageId: normalizedMessageId,
+    role: "agent",
+    delta: buildInterruptEventContent(interrupt),
+    append: false,
+    done: true,
+  };
+};
+
 const normalizeRole = (raw: string | null): ChatRole => {
   const role = (raw ?? "").trim().toLowerCase();
   if (role === "user" || role === "human" || role === "automation") {
@@ -513,12 +638,13 @@ const normalizeRole = (raw: string | null): ChatRole => {
 
 const parseBlockType = (
   raw: string | null,
-): "text" | "reasoning" | "tool_call" | null => {
+): "text" | "reasoning" | "tool_call" | "interrupt_event" | null => {
   const normalized = (raw ?? "").trim().toLowerCase();
   if (!normalized) return null;
   if (normalized === "text") return "text";
   if (normalized === "reasoning") return "reasoning";
   if (normalized === "tool_call") return "tool_call";
+  if (normalized === "interrupt_event") return "interrupt_event";
   return null;
 };
 

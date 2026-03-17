@@ -2,6 +2,7 @@ import React from "react";
 import { Text, View } from "react-native";
 
 import { GenericBlock } from "./blocks/GenericBlock";
+import { InterruptEventBlock } from "./blocks/InterruptEventBlock";
 import { ReasoningBlock } from "./blocks/ReasoningBlock";
 import { TextBlock } from "./blocks/TextBlock";
 import { ToolCallBlock } from "./blocks/ToolCallBlock";
@@ -51,6 +52,14 @@ export function MessageBlock({
           messageId={messageId}
           onLayoutChangeStart={onLayoutChangeStart}
           onLoadBlockContent={onLoadBlockContent}
+          isFirst={isFirst}
+        />
+      );
+    case "interrupt_event":
+      return (
+        <InterruptEventBlock
+          block={block}
+          fallbackBlockId={blockId}
           isFirst={isFirst}
         />
       );

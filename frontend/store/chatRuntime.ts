@@ -1,6 +1,7 @@
 import { invokeAgent, type A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
 import {
   applyStreamBlockUpdate,
+  buildInterruptEventBlockUpdate,
   type ChatMessage,
   extractRuntimeStatusEvent,
   extractSessionMeta,
@@ -563,7 +564,11 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const shouldFlushImmediatelyForNonTextPlaceholder = (
       targetMessageId: string,
     ) => {
-      if (chunk.blockType !== "tool_call" && chunk.blockType !== "reasoning") {
+      if (
+        chunk.blockType !== "tool_call" &&
+        chunk.blockType !== "reasoning" &&
+        chunk.blockType !== "interrupt_event"
+      ) {
         return false;
       }
       if ((chunkBufferByMessageId.get(targetMessageId)?.length ?? 0) > 1) {
@@ -732,6 +737,15 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     }
     if (chunk) {
       queueIncomingChunk(chunk);
+    }
+    if (runtimeStatusEvent?.interrupt) {
+      flushChunkBuffer();
+      queueIncomingChunk(
+        buildInterruptEventBlockUpdate({
+          interrupt: runtimeStatusEvent.interrupt,
+          messageId: activeAgentMessageId,
+        }),
+      );
     }
 
     const meta = extractSessionMeta(data);

@@ -50,6 +50,7 @@ from app.services.invoke_session_binding import (
     ws_error_code_for_recovery_failed,
 )
 from app.services.session_hub import session_hub_service
+from app.services.session_hub_common import build_interrupt_lifecycle_message_content
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
 from app.utils.idempotency_key import normalize_idempotency_key
@@ -624,7 +625,8 @@ async def _persist_stream_block_update(
     resolved_seq = raw_seq if isinstance(raw_seq, int) and raw_seq > 0 else None
     if resolved_seq is None:
         resolved_seq = state.next_event_seq
-    state.next_event_seq = max(state.next_event_seq, resolved_seq + 1)
+    persist_seq = state.next_event_seq if state.next_event_seq > 0 else 1
+    state.next_event_seq = persist_seq + 1
     resolved_event_id = _resolve_stream_event_id(
         stream_block=stream_block,
         local_message_id=local_message_id,
@@ -646,7 +648,7 @@ async def _persist_stream_block_update(
     state.current_block_type = block_type
     state.chunk_buffer.append(
         {
-            "seq": resolved_seq,
+            "seq": persist_seq,
             "block_type": block_type,
             "content": str(stream_block.get("content") or ""),
             "append": bool(stream_block.get("append", True)),
@@ -669,6 +671,11 @@ async def _persist_interrupt_lifecycle_event(
     state: _InvokeState,
     event_payload: dict[str, Any],
     user_id: UUID,
+    agent_id: UUID,
+    agent_source: AgentSource,
+    query: str,
+    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
+    stream_enabled: bool,
 ) -> None:
     if state.local_session_id is None:
         return
@@ -679,18 +686,44 @@ async def _persist_interrupt_lifecycle_event(
     )
     if interrupt_event is None:
         return
+    await _ensure_local_message_headers(
+        state=state,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        query=query,
+        transport=transport,
+        stream_enabled=stream_enabled,
+    )
+    agent_message_id = _resolve_agent_message_id(state)
+    if agent_message_id is None:
+        return
+    await _flush_stream_buffer(state=state, user_id=user_id)
+    persist_seq = state.next_event_seq if state.next_event_seq > 0 else 1
+    interrupt_event_id = (
+        f"interrupt:{agent_message_id}:"
+        f"{interrupt_event['request_id']}:{interrupt_event['phase']}"
+    )
     async with AsyncSessionLocal() as persist_db:
         if not hasattr(persist_db, "scalar"):
             return
-        persisted_message_id = await session_hub_service.record_interrupt_lifecycle_event_by_local_session_id(
+        persisted_block = await session_hub_service.append_agent_message_block_update(
             persist_db,
-            local_session_id=state.local_session_id,
             user_id=user_id,
-            event=interrupt_event,
+            agent_message_id=agent_message_id,
+            seq=persist_seq,
+            block_type="interrupt_event",
+            content=build_interrupt_lifecycle_message_content(interrupt_event),
+            append=False,
+            is_finished=True,
+            event_id=interrupt_event_id,
+            source="interrupt_lifecycle",
         )
-        if persisted_message_id is None:
+        if persisted_block is None:
             return
         await commit_safely(persist_db)
+    state.next_event_seq = persist_seq + 1
+    state.persisted_block_count += 1
 
 
 async def _flush_stream_buffer(
@@ -881,6 +914,11 @@ def _build_consume_stream_callbacks(
             state=state,
             event_payload=event_payload,
             user_id=user_id,
+            agent_id=agent_id,
+            agent_source=agent_source,
+            query=query,
+            transport=transport,
+            stream_enabled=stream_enabled,
         )
 
     async def on_finalized(outcome: StreamOutcome) -> None:

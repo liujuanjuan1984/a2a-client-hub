@@ -1,7 +1,21 @@
+import json
+from pathlib import Path
+
 from app.services.a2a_stream_payloads import (
     extract_interrupt_lifecycle_from_serialized_event,
 )
-from app.services.session_hub_common import normalize_interrupt_lifecycle_event
+from app.services.session_hub_common import (
+    build_interrupt_lifecycle_message_code,
+    build_interrupt_lifecycle_message_content,
+    normalize_interrupt_lifecycle_event,
+)
+
+_MESSAGE_CASES = json.loads(
+    (
+        Path(__file__).resolve().parents[2]
+        / "docs/contracts/interrupt-lifecycle-message-cases.json"
+    ).read_text(encoding="utf-8")
+)
 
 
 def test_extract_interrupt_lifecycle_keeps_permission_display_message() -> None:
@@ -109,3 +123,11 @@ def test_normalize_interrupt_lifecycle_event_keeps_legacy_nested_permission_text
             "display_message": "Agent requests approval to continue.",
         },
     }
+
+
+def test_build_interrupt_lifecycle_message_contract_cases() -> None:
+    for case in _MESSAGE_CASES:
+        assert build_interrupt_lifecycle_message_code(case["event"]) == case["code"]
+        assert (
+            build_interrupt_lifecycle_message_content(case["event"]) == case["content"]
+        )

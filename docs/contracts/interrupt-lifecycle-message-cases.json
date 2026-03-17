@@ -1,0 +1,69 @@
+[
+  {
+    "name": "permission_asked_with_display_message",
+    "code": "permission_requested",
+    "event": {
+      "request_id": "perm-1",
+      "type": "permission",
+      "phase": "asked",
+      "details": {
+        "permission": "approval",
+        "patterns": ["/repo/.env"],
+        "display_message": "Agent wants to read the environment file."
+      }
+    },
+    "content": "Agent wants to read the environment file.\nTargets: /repo/.env"
+  },
+  {
+    "name": "permission_resolved",
+    "code": "permission_resolved",
+    "event": {
+      "request_id": "perm-2",
+      "type": "permission",
+      "phase": "resolved",
+      "resolution": "replied"
+    },
+    "content": "Authorization request was handled. Agent resumed."
+  },
+  {
+    "name": "question_asked_with_display_message_and_details",
+    "code": "question_requested",
+    "event": {
+      "request_id": "q-1",
+      "type": "question",
+      "phase": "asked",
+      "details": {
+        "display_message": "Please confirm how the agent should continue.",
+        "questions": [
+          {
+            "question": "Proceed with deployment?",
+            "description": "This will update the production service."
+          }
+        ]
+      }
+    },
+    "content": "Please confirm how the agent should continue.\nQuestion: Proceed with deployment?\nDetails: This will update the production service."
+  },
+  {
+    "name": "question_resolved_replied",
+    "code": "question_answer_received",
+    "event": {
+      "request_id": "q-2",
+      "type": "question",
+      "phase": "resolved",
+      "resolution": "replied"
+    },
+    "content": "Question answer received. Agent resumed."
+  },
+  {
+    "name": "question_resolved_rejected",
+    "code": "question_rejected",
+    "event": {
+      "request_id": "q-3",
+      "type": "question",
+      "phase": "resolved",
+      "resolution": "rejected"
+    },
+    "content": "Question request was rejected. Interrupt closed."
+  }
+]

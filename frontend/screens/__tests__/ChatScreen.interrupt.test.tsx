@@ -634,35 +634,28 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("renders persisted interrupt lifecycle messages from session history", () => {
-    mockSessionHistoryState.messages = [
-      {
-        id: "9d615a18-a182-5efd-9ef4-7f84d6cb96b8",
-        role: "system",
-        content: "Agent requested authorization: read.\nTargets: /repo/.env",
-        createdAt: "2026-03-13T03:00:00.000Z",
-        status: "done",
+  it("shows the interrupt action card without requiring lifecycle history messages", () => {
+    mockSessionHistoryState.messages = [];
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      pendingInterrupt: {
+        requestId: "perm-2",
+        type: "permission",
+        phase: "asked",
+        details: {
+          permission: "read",
+          patterns: ["/repo/.env"],
+        },
       },
-      {
-        id: "0dcbfb3d-e644-57fb-a6ad-b3662c1b0b9f",
-        role: "system",
-        content: "Authorization request was handled. Agent resumed.",
-        createdAt: "2026-03-13T03:00:02.000Z",
-        status: "done",
-      },
-    ];
+    };
 
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
 
     expect(
       root.findByProps({
-        children: "Agent requested authorization: read.\nTargets: /repo/.env",
-      }),
-    ).toBeTruthy();
-    expect(
-      root.findByProps({
-        children: "Authorization request was handled. Agent resumed.",
+        children:
+          "Agent is waiting for authorization/input. Resolve the action card first.",
       }),
     ).toBeTruthy();
 

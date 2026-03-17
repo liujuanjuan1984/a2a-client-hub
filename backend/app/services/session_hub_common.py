@@ -176,7 +176,13 @@ def derive_session_title_from_query(query: str) -> str | None:
 
 def normalize_block_type(raw_type: str | None) -> str:
     normalized = (raw_type or "").strip().lower()
-    if normalized in {"text", "reasoning", "tool_call", "system_error"}:
+    if normalized in {
+        "text",
+        "reasoning",
+        "tool_call",
+        "interrupt_event",
+        "system_error",
+    }:
         return normalized
     return "text"
 
@@ -229,20 +235,36 @@ def build_interrupt_lifecycle_message_id(
     )
 
 
-def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
+def build_interrupt_lifecycle_message_code(event: dict[str, Any]) -> str:
     interrupt_type = str(event.get("type") or "")
     phase = str(event.get("phase") or "")
     if phase == "resolved":
         if interrupt_type == "permission":
-            return "Authorization request was handled. Agent resumed."
+            return "permission_resolved"
         if event.get("resolution") == "rejected":
-            return "Question request was rejected. Interrupt closed."
+            return "question_rejected"
+        return "question_answer_received"
+    if interrupt_type == "permission":
+        return "permission_requested"
+    return "question_requested"
+
+
+def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
+    message_code = build_interrupt_lifecycle_message_code(event)
+    if message_code == "permission_resolved":
+        return "Authorization request was handled. Agent resumed."
+    if message_code == "question_rejected":
+        return "Question request was rejected. Interrupt closed."
+    if message_code == "question_answer_received":
         return "Question answer received. Agent resumed."
 
     details = event.get("details")
     if not isinstance(details, dict):
         details = {}
-    if interrupt_type == "permission":
+    if message_code == "permission_requested":
+        display_message = normalize_non_empty_text(
+            details.get("display_message") or details.get("displayMessage")
+        )
         permission = normalize_non_empty_text(details.get("permission")) or "unknown"
         patterns = details.get("patterns")
         normalized_patterns = (
@@ -250,12 +272,12 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
             if isinstance(patterns, list)
             else []
         )
+        base_message = (
+            display_message or f"Agent requested authorization: {permission}."
+        )
         if normalized_patterns:
-            return (
-                f"Agent requested authorization: {permission}.\n"
-                f"Targets: {', '.join(normalized_patterns)}"
-            )
-        return f"Agent requested authorization: {permission}."
+            return f"{base_message}\nTargets: {', '.join(normalized_patterns)}"
+        return base_message
 
     questions = details.get("questions")
     normalized_questions = (
@@ -263,16 +285,40 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
         if isinstance(questions, list)
         else []
     )
-    question_lines = [
-        normalize_non_empty_text(item.get("question")) for item in normalized_questions
-    ]
-    question_lines = [item for item in question_lines if item]
-    if len(question_lines) == 1:
-        return f"Agent requested additional input: {question_lines[0]}"
-    if len(question_lines) > 1:
-        return "Agent requested additional input:\n" + "\n".join(
-            f"- {question}" for question in question_lines
+    display_message = normalize_non_empty_text(
+        details.get("display_message") or details.get("displayMessage")
+    )
+    question_entries: list[tuple[str, str | None]] = []
+    for item in normalized_questions:
+        question = normalize_non_empty_text(item.get("question"))
+        if not question:
+            continue
+        question_entries.append(
+            (question, normalize_non_empty_text(item.get("description")))
         )
+    if len(question_entries) == 1:
+        question, description = question_entries[0]
+        if display_message:
+            lines = [display_message, f"Question: {question}"]
+            if description:
+                lines.append(f"Details: {description}")
+            return "\n".join(lines)
+        if description:
+            return (
+                f"Agent requested additional input: {question}\n"
+                f"Details: {description}"
+            )
+        return f"Agent requested additional input: {question}"
+    if len(question_entries) > 1:
+        lines = [
+            f"- {question}{f' ({description})' if description else ''}"
+            for question, description in question_entries
+        ]
+        if display_message:
+            return f"{display_message}\n" + "\n".join(lines)
+        return "Agent requested additional input:\n" + "\n".join(lines)
+    if display_message:
+        return display_message
     return "Agent requested additional input."
 
 
