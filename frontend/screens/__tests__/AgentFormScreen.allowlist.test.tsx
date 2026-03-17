@@ -172,6 +172,7 @@ describe("AgentFormScreen auto allowlist create flow", () => {
       .mockRejectedValueOnce(
         Object.assign(new Error("Card URL host is not allowed"), {
           status: 403,
+          errorCode: "card_url_host_not_allowed",
         }),
       )
       .mockResolvedValueOnce({ id: "agent-1" });

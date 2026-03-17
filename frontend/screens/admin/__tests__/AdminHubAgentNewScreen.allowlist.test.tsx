@@ -152,6 +152,7 @@ describe("AdminHubAgentNewScreen auto allowlist create flow", () => {
       .mockRejectedValueOnce(
         Object.assign(new Error("Card URL host is not allowed"), {
           status: 403,
+          errorCode: "card_url_host_not_allowed",
         }),
       )
       .mockResolvedValueOnce({ id: "shared-1", name: "Shared Agent" });

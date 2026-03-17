@@ -5,8 +5,8 @@ import {
   isCardUrlHostNotAllowedError,
 } from "@/lib/agentCreateAllowlist";
 
-const createApiError = (message: string, status: number) =>
-  Object.assign(new Error(message), { status });
+const createApiError = (message: string, status: number, errorCode?: string) =>
+  Object.assign(new Error(message), { status, errorCode });
 
 describe("agentCreateAllowlist", () => {
   it("extracts a normalized host from card url", () => {
@@ -18,11 +18,17 @@ describe("agentCreateAllowlist", () => {
   it("recognizes allowlist rejection errors", () => {
     expect(
       isCardUrlHostNotAllowedError(
-        createApiError("Card URL host is not allowed", 403),
+        createApiError(
+          "Card URL host is not allowed [card_url_host_not_allowed]",
+          403,
+          "card_url_host_not_allowed",
+        ),
       ),
     ).toBe(true);
     expect(
-      isCardUrlHostNotAllowedError(createApiError("Request failed", 403)),
+      isCardUrlHostNotAllowedError(
+        createApiError("Card URL host is not allowed", 403),
+      ),
     ).toBe(false);
   });
 
@@ -38,7 +44,11 @@ describe("agentCreateAllowlist", () => {
     const create = jest
       .fn<Promise<{ id: string }>, []>()
       .mockRejectedValueOnce(
-        createApiError("Card URL host is not allowed", 403),
+        createApiError(
+          "Card URL host is not allowed [card_url_host_not_allowed]",
+          403,
+          "card_url_host_not_allowed",
+        ),
       )
       .mockResolvedValueOnce({ id: "agent-1" });
     const confirmAddHost = jest.fn().mockResolvedValue(true);
@@ -65,7 +75,11 @@ describe("agentCreateAllowlist", () => {
     const create = jest
       .fn<Promise<{ id: string }>, []>()
       .mockRejectedValueOnce(
-        createApiError("Card URL host is not allowed", 403),
+        createApiError(
+          "Card URL host is not allowed [card_url_host_not_allowed]",
+          403,
+          "card_url_host_not_allowed",
+        ),
       )
       .mockResolvedValueOnce({ id: "agent-2" });
     const confirmAddHost = jest.fn().mockResolvedValue(true);
@@ -91,7 +105,13 @@ describe("agentCreateAllowlist", () => {
   it("cancels creation when admin declines auto allowlist add", async () => {
     const create = jest
       .fn<Promise<{ id: string }>, []>()
-      .mockRejectedValue(createApiError("Card URL host is not allowed", 403));
+      .mockRejectedValue(
+        createApiError(
+          "Card URL host is not allowed [card_url_host_not_allowed]",
+          403,
+          "card_url_host_not_allowed",
+        ),
+      );
     const confirmAddHost = jest.fn().mockResolvedValue(false);
     const addHostToAllowlist = jest.fn();
     const onCancelCreate = jest.fn();
@@ -112,7 +132,11 @@ describe("agentCreateAllowlist", () => {
   });
 
   it("does not intercept allowlist errors for non-admin users", async () => {
-    const error = createApiError("Card URL host is not allowed", 403);
+    const error = createApiError(
+      "Card URL host is not allowed [card_url_host_not_allowed]",
+      403,
+      "card_url_host_not_allowed",
+    );
 
     await expect(
       createWithAdminAutoAllowlist({

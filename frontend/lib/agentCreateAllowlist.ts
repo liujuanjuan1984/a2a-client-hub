@@ -1,9 +1,9 @@
-const CARD_URL_HOST_NOT_ALLOWED = "Card URL host is not allowed";
 const ALREADY_EXISTS = "already exists";
 
 type ApiLikeError = {
   status?: unknown;
   message?: unknown;
+  errorCode?: unknown;
 };
 
 const asApiLikeError = (error: unknown): ApiLikeError | null => {
@@ -27,10 +27,7 @@ export const isCardUrlHostNotAllowedError = (error: unknown): boolean => {
   if (!apiError || apiError.status !== 403) {
     return false;
   }
-  return (
-    typeof apiError.message === "string" &&
-    apiError.message.includes(CARD_URL_HOST_NOT_ALLOWED)
-  );
+  return apiError.errorCode === "card_url_host_not_allowed";
 };
 
 export const isAllowlistEntryAlreadyExistsError = (error: unknown): boolean => {

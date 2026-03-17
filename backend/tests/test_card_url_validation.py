@@ -37,4 +37,7 @@ def test_normalize_card_url_rejects_disallowed_host():
             allowed_hosts=["allowed.example.com"],
         )
     assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "Card URL host is not allowed"
+    assert exc_info.value.detail == {
+        "error_code": "card_url_host_not_allowed",
+        "message": "Card URL host is not allowed",
+    }
