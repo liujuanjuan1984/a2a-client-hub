@@ -47,7 +47,7 @@ export const assertExtensionSuccess = (response: A2AExtensionResponse) => {
 
 type ExtensionAgentSource = "personal" | "shared";
 
-export type OpencodeProviderSummary = {
+export type ModelProviderSummary = {
   provider_id: string;
   name?: string;
   source?: string;
@@ -56,7 +56,7 @@ export type OpencodeProviderSummary = {
   model_count?: number | null;
 };
 
-export type OpencodeModelSummary = {
+export type ModelSummary = {
   provider_id: string;
   model_id: string;
   name?: string;
@@ -110,11 +110,16 @@ const buildSessionPath = (
   return `${base}/extensions/sessions/${suffix}`;
 };
 
-const buildOpencodeDiscoveryPath = (
+const buildModelDiscoveryPath = (
   source: ExtensionAgentSource,
   agentId: string,
-  suffix: string,
-) => buildExtensionPath(source, agentId, `opencode/${suffix}`);
+  suffix: "providers:list" | ":list",
+) =>
+  buildExtensionPath(
+    source,
+    agentId,
+    suffix === "providers:list" ? "models/providers:list" : "models:list",
+  );
 
 const assertInterruptAckResult = (
   response: A2AExtensionResponse,
@@ -266,24 +271,24 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
     ? (value as Record<string, unknown>)
     : null;
 
-const asProviderItems = (value: unknown): OpencodeProviderSummary[] => {
+const asProviderItems = (value: unknown): ModelProviderSummary[] => {
   if (!Array.isArray(value)) {
     return [];
   }
   return value.filter(
-    (item): item is OpencodeProviderSummary =>
+    (item): item is ModelProviderSummary =>
       Boolean(item) &&
       typeof item === "object" &&
       typeof (item as Record<string, unknown>).provider_id === "string",
   );
 };
 
-const asModelItems = (value: unknown): OpencodeModelSummary[] => {
+const asModelItems = (value: unknown): ModelSummary[] => {
   if (!Array.isArray(value)) {
     return [];
   }
   return value.filter(
-    (item): item is OpencodeModelSummary =>
+    (item): item is ModelSummary =>
       Boolean(item) &&
       typeof item === "object" &&
       typeof (item as Record<string, unknown>).provider_id === "string" &&
@@ -304,17 +309,19 @@ export const getExtensionCapabilities = async (input: {
   return response;
 };
 
-export const listOpencodeProviders = async (input: {
+export const listModelProviders = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
-  metadata?: Record<string, unknown>;
+  sessionMetadata?: Record<string, unknown>;
 }) => {
   const response = await apiRequest<
     A2AExtensionResponse,
-    { metadata?: Record<string, unknown> }
-  >(buildOpencodeDiscoveryPath(input.source, input.agentId, "providers:list"), {
+    { session_metadata?: Record<string, unknown> }
+  >(buildModelDiscoveryPath(input.source, input.agentId, "providers:list"), {
     method: "POST",
-    body: input.metadata ? { metadata: input.metadata } : {},
+    body: input.sessionMetadata
+      ? { session_metadata: input.sessionMetadata }
+      : {},
   });
   assertExtensionSuccess(response);
   const result = asRecord(response.result) ?? {};
@@ -330,23 +337,26 @@ export const listOpencodeProviders = async (input: {
   };
 };
 
-export const listOpencodeModels = async (input: {
+export const listModels = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
   providerId?: string;
-  metadata?: Record<string, unknown>;
+  sessionMetadata?: Record<string, unknown>;
 }) => {
-  const body: { provider_id?: string; metadata?: Record<string, unknown> } = {};
+  const body: {
+    provider_id?: string;
+    session_metadata?: Record<string, unknown>;
+  } = {};
   if (input.providerId?.trim()) {
     body.provider_id = input.providerId.trim();
   }
-  if (input.metadata) {
-    body.metadata = input.metadata;
+  if (input.sessionMetadata) {
+    body.session_metadata = input.sessionMetadata;
   }
   const response = await apiRequest<
     A2AExtensionResponse,
-    { provider_id?: string; metadata?: Record<string, unknown> }
-  >(buildOpencodeDiscoveryPath(input.source, input.agentId, "models:list"), {
+    { provider_id?: string; session_metadata?: Record<string, unknown> }
+  >(buildModelDiscoveryPath(input.source, input.agentId, ":list"), {
     method: "POST",
     body,
   });

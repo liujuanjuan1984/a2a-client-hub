@@ -2,8 +2,8 @@ import {
   A2AExtensionCallError,
   assertExtensionSuccess,
   getExtensionCapabilities,
-  listOpencodeModels,
-  listOpencodeProviders,
+  listModelProviders,
+  listModels,
   promptSessionAsync,
   replyPermissionInterrupt,
 } from "@/lib/api/a2aExtensions";
@@ -148,17 +148,25 @@ describe("assertExtensionSuccess", () => {
       },
     });
 
-    const result = await listOpencodeProviders({
+    const result = await listModelProviders({
       source: "shared",
       agentId: "agent-1",
-      metadata: { opencode: { directory: "/workspace" } },
+      sessionMetadata: {
+        shared: { model: { providerID: "openai", modelID: "gpt-5" } },
+        opencode: { directory: "/workspace" },
+      },
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
-      "/a2a/agents/agent-1/extensions/opencode/providers:list",
+      "/a2a/agents/agent-1/extensions/models/providers:list",
       {
         method: "POST",
-        body: { metadata: { opencode: { directory: "/workspace" } } },
+        body: {
+          session_metadata: {
+            shared: { model: { providerID: "openai", modelID: "gpt-5" } },
+            opencode: { directory: "/workspace" },
+          },
+        },
       },
     );
     expect(result.items[0]?.provider_id).toBe("openai");
@@ -201,17 +209,27 @@ describe("assertExtensionSuccess", () => {
       },
     });
 
-    const result = await listOpencodeModels({
+    const result = await listModels({
       source: "personal",
       agentId: "agent-1",
       providerId: "openai",
+      sessionMetadata: {
+        shared: { model: { providerID: "openai", modelID: "gpt-5" } },
+        opencode: { directory: "/workspace" },
+      },
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
-      "/me/a2a/agents/agent-1/extensions/opencode/models:list",
+      "/me/a2a/agents/agent-1/extensions/models:list",
       {
         method: "POST",
-        body: { provider_id: "openai" },
+        body: {
+          provider_id: "openai",
+          session_metadata: {
+            shared: { model: { providerID: "openai", modelID: "gpt-5" } },
+            opencode: { directory: "/workspace" },
+          },
+        },
       },
     );
     expect(result.items[0]?.model_id).toBe("gpt-5");

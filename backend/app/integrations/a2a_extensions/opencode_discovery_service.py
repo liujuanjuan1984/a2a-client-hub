@@ -11,6 +11,18 @@ from app.integrations.a2a_extensions.types import ResolvedProviderDiscoveryExten
 from app.services.a2a_runtime import A2ARuntime
 
 
+def _extract_provider_private_metadata(
+    session_metadata: Optional[Dict[str, Any]],
+    provider: str,
+) -> Optional[Dict[str, Any]]:
+    if not session_metadata:
+        return None
+    section = session_metadata.get(provider)
+    if not isinstance(section, dict):
+        return None
+    return {provider: dict(section)}
+
+
 class OpencodeDiscoveryService:
     def __init__(self, support: A2AExtensionSupport) -> None:
         self._support = support
@@ -108,6 +120,27 @@ class OpencodeDiscoveryService:
             params=params,
         )
 
+    async def list_model_providers(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
+        params: Dict[str, Any] = {}
+        normalized_metadata = self._support.normalize_extension_metadata(
+            _extract_provider_private_metadata(session_metadata, ext.provider)
+        )
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
+        return await self.invoke_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="list_providers",
+            params=params,
+        )
+
     async def list_opencode_models(
         self,
         *,
@@ -121,6 +154,34 @@ class OpencodeDiscoveryService:
         if resolved_provider_id:
             params["provider_id"] = resolved_provider_id
         normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
+        return await self.invoke_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="list_models",
+            params=params,
+            meta_extra=(
+                {"provider_id": resolved_provider_id} if resolved_provider_id else None
+            ),
+        )
+
+    async def list_models(
+        self,
+        *,
+        runtime: A2ARuntime,
+        provider_id: str | None = None,
+        session_metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        resolved_provider_id = (provider_id or "").strip()
+        ext, jsonrpc_url = await self.resolve_extension(runtime)
+        params: Dict[str, Any] = {}
+        if resolved_provider_id:
+            params["provider_id"] = resolved_provider_id
+        normalized_metadata = self._support.normalize_extension_metadata(
+            _extract_provider_private_metadata(session_metadata, ext.provider)
+        )
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
         return await self.invoke_method(

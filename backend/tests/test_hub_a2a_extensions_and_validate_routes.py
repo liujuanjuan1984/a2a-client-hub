@@ -284,6 +284,37 @@ class _FakeExtensionsService:
             meta={"extension_uri": "urn:opencode-a2a:provider-discovery/v1"},
         )
 
+    async def list_model_providers(
+        self,
+        *,
+        runtime,
+        session_metadata: Optional[Dict[str, Any]] = None,
+    ):
+        self.calls.append(
+            {
+                "fn": "list_model_providers",
+                "runtime": runtime,
+                "session_metadata": session_metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={
+                "items": [
+                    {
+                        "provider_id": "openai",
+                        "name": "OpenAI",
+                        "connected": True,
+                        "default_model_id": "gpt-5",
+                        "model_count": 2,
+                    }
+                ],
+                "default_by_provider": {"openai": "gpt-5"},
+                "connected": ["openai"],
+            },
+            meta={"extension_uri": "urn:opencode-a2a:provider-discovery/v1"},
+        )
+
     async def list_opencode_models(
         self,
         *,
@@ -297,6 +328,39 @@ class _FakeExtensionsService:
                 "runtime": runtime,
                 "provider_id": provider_id,
                 "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={
+                "items": [
+                    {
+                        "provider_id": provider_id or "openai",
+                        "model_id": "gpt-5",
+                        "name": "GPT-5",
+                        "connected": True,
+                        "default": True,
+                    }
+                ],
+                "default_by_provider": {provider_id or "openai": "gpt-5"},
+                "connected": [provider_id or "openai"],
+            },
+            meta={"extension_uri": "urn:opencode-a2a:provider-discovery/v1"},
+        )
+
+    async def list_models(
+        self,
+        *,
+        runtime,
+        provider_id: str | None = None,
+        session_metadata: Optional[Dict[str, Any]] = None,
+    ):
+        self.calls.append(
+            {
+                "fn": "list_models",
+                "runtime": runtime,
+                "provider_id": provider_id,
+                "session_metadata": session_metadata,
             }
         )
         return _FakeExtensionResult(
@@ -976,6 +1040,72 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
     assert response.status_code == 200
     assert response.json() == {"modelSelection": False}
     assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_hub_generic_model_discovery_routes_forward_session_metadata(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_model_discovery@example.com",
+        user_email="alice_model_discovery@example.com",
+        token="secret-token-model-discovery",
+    )
+
+    fake_extensions = _FakeExtensionsService()
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    session_metadata = {
+        "shared": {"model": {"providerID": "openai", "modelID": "gpt-5"}},
+        "opencode": {"directory": "/workspace"},
+    }
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        providers_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/models/providers:list",
+            json={"session_metadata": session_metadata},
+        )
+        assert providers_resp.status_code == 200
+        providers_payload = providers_resp.json()
+        assert providers_payload["success"] is True
+        assert providers_payload["result"]["items"][0]["provider_id"] == "openai"
+
+        models_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/models:list",
+            json={
+                "provider_id": "openai",
+                "session_metadata": session_metadata,
+            },
+        )
+        assert models_resp.status_code == 200
+        models_payload = models_resp.json()
+        assert models_payload["success"] is True
+        assert models_payload["result"]["items"][0]["model_id"] == "gpt-5"
+
+    assert len(fake_extensions.calls) == 2
+    assert fake_extensions.calls[0]["fn"] == "list_model_providers"
+    assert fake_extensions.calls[0]["session_metadata"] == session_metadata
+    assert fake_extensions.calls[1]["fn"] == "list_models"
+    assert fake_extensions.calls[1]["provider_id"] == "openai"
+    assert fake_extensions.calls[1]["session_metadata"] == session_metadata
+    for call in fake_extensions.calls:
+        resolved = call["runtime"].resolved
+        assert resolved.headers["Authorization"].endswith(
+            "secret-token-model-discovery"
+        )
 
 
 @pytest.mark.asyncio

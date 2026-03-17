@@ -5,10 +5,10 @@ import { FlatList, Modal, Pressable, Text, View } from "react-native";
 import { Button } from "@/components/ui/Button";
 import {
   A2AExtensionCallError,
-  listOpencodeModels,
-  listOpencodeProviders,
-  type OpencodeModelSummary,
-  type OpencodeProviderSummary,
+  listModelProviders,
+  listModels,
+  type ModelSummary,
+  type ModelProviderSummary,
 } from "@/lib/api/a2aExtensions";
 import { type SharedModelSelection } from "@/lib/chat-utils";
 import { type AgentSource } from "@/store/agents";
@@ -16,24 +16,11 @@ import { type AgentSource } from "@/store/agents";
 const resolveDiscoveryError = (error: unknown) => {
   if (error instanceof A2AExtensionCallError) {
     if (error.errorCode === "not_supported") {
-      return "This agent does not expose OpenCode model discovery.";
+      return "This agent does not expose model discovery.";
     }
     return error.message;
   }
   return error instanceof Error ? error.message : "Model discovery failed.";
-};
-
-const extractDiscoveryMetadata = (
-  metadata: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined => {
-  const opencode =
-    metadata && typeof metadata.opencode === "object" && metadata.opencode
-      ? metadata.opencode
-      : null;
-  if (!opencode || Array.isArray(opencode)) {
-    return undefined;
-  }
-  return { opencode: { ...(opencode as Record<string, unknown>) } };
 };
 
 function ProviderChip({
@@ -41,7 +28,7 @@ function ProviderChip({
   active,
   onPress,
 }: {
-  item: OpencodeProviderSummary;
+  item: ModelProviderSummary;
   active: boolean;
   onPress: () => void;
 }) {
@@ -67,7 +54,7 @@ function ModelRow({
   active,
   onPress,
 }: {
-  item: OpencodeModelSummary;
+  item: ModelSummary;
   active: boolean;
   onPress: () => void;
 }) {
@@ -109,8 +96,8 @@ export function ModelPickerModal({
   onSelectModel: (selection: SharedModelSelection) => void;
   onClearModelSelection: () => void;
 }) {
-  const [providers, setProviders] = useState<OpencodeProviderSummary[]>([]);
-  const [models, setModels] = useState<OpencodeModelSummary[]>([]);
+  const [providers, setProviders] = useState<ModelProviderSummary[]>([]);
+  const [models, setModels] = useState<ModelSummary[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
   const [providerError, setProviderError] = useState<string | null>(null);
@@ -118,7 +105,6 @@ export function ModelPickerModal({
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
     null,
   );
-  const discoveryMetadata = extractDiscoveryMetadata(sessionMetadata);
 
   useEffect(() => {
     if (!visible || !agentId) {
@@ -127,10 +113,10 @@ export function ModelPickerModal({
     let cancelled = false;
     setLoadingProviders(true);
     setProviderError(null);
-    listOpencodeProviders({
+    listModelProviders({
       source,
       agentId,
-      metadata: discoveryMetadata,
+      sessionMetadata,
     })
       .then((result) => {
         if (cancelled) {
@@ -163,7 +149,7 @@ export function ModelPickerModal({
     return () => {
       cancelled = true;
     };
-  }, [agentId, discoveryMetadata, selectedModel?.providerID, source, visible]);
+  }, [agentId, selectedModel?.providerID, sessionMetadata, source, visible]);
 
   useEffect(() => {
     if (!visible || !agentId || !selectedProviderId) {
@@ -173,11 +159,11 @@ export function ModelPickerModal({
     let cancelled = false;
     setLoadingModels(true);
     setModelError(null);
-    listOpencodeModels({
+    listModels({
       source,
       agentId,
       providerId: selectedProviderId,
-      metadata: discoveryMetadata,
+      sessionMetadata,
     })
       .then((result) => {
         if (cancelled) {
@@ -200,7 +186,7 @@ export function ModelPickerModal({
     return () => {
       cancelled = true;
     };
-  }, [agentId, discoveryMetadata, selectedProviderId, source, visible]);
+  }, [agentId, selectedProviderId, sessionMetadata, source, visible]);
 
   return (
     <Modal
