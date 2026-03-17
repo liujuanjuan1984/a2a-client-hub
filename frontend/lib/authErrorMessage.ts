@@ -1,5 +1,3 @@
-import { AllowlistError, ApiConfigError } from "./api/client";
-
 type ValidationErrorItem = {
   loc?: unknown;
   msg?: unknown;
@@ -87,13 +85,6 @@ const pickMessageFromPayload = (
 };
 
 export const getFriendlyAuthErrorMessage = (error: unknown): string | null => {
-  if (error instanceof AllowlistError) {
-    return `The app tried to connect to an unapproved server: \"${error.unauthorizedHost}\". To proceed, please add this server to your list of approved hosts.`;
-  }
-  if (error instanceof ApiConfigError) {
-    return error.message;
-  }
-
   const errorRecord =
     error && typeof error === "object"
       ? (error as Record<string, unknown>)
