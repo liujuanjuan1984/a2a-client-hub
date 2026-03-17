@@ -46,7 +46,7 @@ type SessionState = {
   clearSession: () => void;
   setUserProfile: (user: UserProfile | null) => void;
   setAuthStatus: (status: AuthStatus) => void;
-  markAuthRecovering: () => void;
+  beginAuthRecovery: () => void;
   setHydrated: (value: boolean) => void;
 };
 
@@ -106,7 +106,7 @@ export const useSessionStore = create<SessionState>()((set) => ({
     })),
   setUserProfile: (user) => set({ user }),
   setAuthStatus: (authStatus) => set({ authStatus }),
-  markAuthRecovering: () =>
+  beginAuthRecovery: () =>
     set((state) => ({
       authStatus: "recovering",
       recoveryStartedAtMs: state.recoveryStartedAtMs ?? Date.now(),

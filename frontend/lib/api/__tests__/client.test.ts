@@ -11,6 +11,16 @@ const createAbortError = () => {
   return error;
 };
 
+const createDeferred = <T>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
 describe("api client auth refresh flow", () => {
   const originalApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -127,6 +137,8 @@ describe("api client auth refresh flow", () => {
 
     expect(token).toBe("still-valid-token");
     expect(useSessionStore.getState().authStatus).toBe("recovering");
+    expect(useSessionStore.getState().recoveryStartedAtMs).not.toBeNull();
+    expect(useSessionStore.getState().recoveryRetryCount).toBe(1);
     expect(resetAuthBoundState).not.toHaveBeenCalled();
   });
 
@@ -149,6 +161,40 @@ describe("api client auth refresh flow", () => {
 
     expect(useSessionStore.getState().token).toBe("expired-token");
     expect(useSessionStore.getState().authStatus).toBe("recovering");
+    expect(resetAuthBoundState).not.toHaveBeenCalled();
+  });
+
+  it("counts a shared transient refresh attempt only once", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    const deferred = createDeferred<Response>();
+    fetchMock.mockImplementation(() => deferred.promise);
+
+    useSessionStore.setState({
+      token: "expired-token",
+      accessTokenExpiresAtMs: Date.now() - 1,
+      accessTokenTtlSeconds: 10,
+      authStatus: "authenticated",
+    });
+
+    const firstAttempt = client.ensureFreshAccessToken();
+    const secondAttempt = client.ensureFreshAccessToken();
+
+    deferred.reject(createAbortError());
+
+    await expect(firstAttempt).rejects.toMatchObject({
+      status: 503,
+      errorCode: "auth_recovering",
+    });
+    await expect(secondAttempt).rejects.toMatchObject({
+      status: 503,
+      errorCode: "auth_recovering",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(useSessionStore.getState().authStatus).toBe("recovering");
+    expect(useSessionStore.getState().recoveryStartedAtMs).not.toBeNull();
+    expect(useSessionStore.getState().recoveryRetryCount).toBe(1);
     expect(resetAuthBoundState).not.toHaveBeenCalled();
   });
 

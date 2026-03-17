@@ -2,7 +2,6 @@ import {
   ApiRequestError,
   AuthExpiredError,
   AuthRecoverableError,
-  hasExceededAuthRecoveryLimits,
   ensureFreshAccessToken,
   handleAuthExpiredOnce,
   refreshAccessTokenWithOutcome,
@@ -190,6 +189,9 @@ export const fetchSSE = async (
           expectedAuthVersion: requestAuthVersion,
         });
         const refreshed = refreshOutcome.result;
+        if (refreshOutcome.didExpireSession) {
+          throw new AuthExpiredError();
+        }
         if (refreshed) {
           if (useSessionStore.getState().authVersion === requestAuthVersion) {
             useSessionStore
@@ -235,16 +237,6 @@ export const fetchSSE = async (
           return { status: "done" as const, hasReceivedData };
         }
         if (refreshOutcome.failureReason === "transient") {
-          if (
-            hasExceededAuthRecoveryLimits({
-              expectedAuthVersion: requestAuthVersion,
-            })
-          ) {
-            handleAuthExpiredOnce({
-              expectedAuthVersion: requestAuthVersion,
-            });
-            throw new AuthExpiredError();
-          }
           throw new AuthRecoverableError();
         }
         handleAuthExpiredOnce({

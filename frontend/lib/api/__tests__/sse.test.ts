@@ -36,12 +36,12 @@ jest.mock("@/lib/api/client", () => {
     AuthExpiredError: MockAuthExpiredError,
     AuthRecoverableError: MockAuthRecoverableError,
     ensureFreshAccessToken: jest.fn(async () => null),
-    hasExceededAuthRecoveryLimits: jest.fn(() => false),
     handleAuthExpiredOnce: jest.fn(),
     refreshAccessToken: jest.fn(async () => null),
     refreshAccessTokenWithOutcome: jest.fn(async () => ({
       result: null,
       failureReason: "transient",
+      didExpireSession: false,
     })),
   };
 });
@@ -122,6 +122,7 @@ describe("fetchSSE", () => {
     ).mockResolvedValueOnce({
       result: null,
       failureReason: "transient",
+      didExpireSession: false,
     });
 
     const onError = jest.fn();
@@ -145,13 +146,14 @@ describe("fetchSSE", () => {
     } as Response);
     (
       clientModule.refreshAccessTokenWithOutcome as jest.Mock
-    ).mockResolvedValueOnce({
-      result: null,
-      failureReason: "transient",
+    ).mockImplementationOnce(async () => {
+      clientModule.handleAuthExpiredOnce();
+      return {
+        result: null,
+        failureReason: "transient",
+        didExpireSession: true,
+      };
     });
-    (
-      clientModule.hasExceededAuthRecoveryLimits as jest.Mock
-    ).mockReturnValueOnce(true);
 
     const onError = jest.fn();
 
