@@ -13,14 +13,14 @@ from app.services.a2a_runtime import A2ARuntime
 
 def _extract_provider_private_metadata(
     session_metadata: Optional[Dict[str, Any]],
-    provider: str,
+    metadata_namespace: str,
 ) -> Optional[Dict[str, Any]]:
     if not session_metadata:
         return None
-    section = session_metadata.get(provider)
+    section = session_metadata.get(metadata_namespace)
     if not isinstance(section, dict):
         return None
-    return {provider: dict(section)}
+    return {metadata_namespace: dict(section)}
 
 
 class OpencodeDiscoveryService:
@@ -101,25 +101,6 @@ class OpencodeDiscoveryService:
             meta=meta,
         )
 
-    async def list_opencode_providers(
-        self,
-        *,
-        runtime: A2ARuntime,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> ExtensionCallResult:
-        ext, jsonrpc_url = await self.resolve_extension(runtime)
-        params: Dict[str, Any] = {}
-        normalized_metadata = self._support.normalize_extension_metadata(metadata)
-        if normalized_metadata is not None:
-            params["metadata"] = normalized_metadata
-        return await self.invoke_method(
-            runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="list_providers",
-            params=params,
-        )
-
     async def list_model_providers(
         self,
         *,
@@ -129,7 +110,7 @@ class OpencodeDiscoveryService:
         ext, jsonrpc_url = await self.resolve_extension(runtime)
         params: Dict[str, Any] = {}
         normalized_metadata = self._support.normalize_extension_metadata(
-            _extract_provider_private_metadata(session_metadata, ext.provider)
+            _extract_provider_private_metadata(session_metadata, ext.metadata_namespace)
         )
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
@@ -139,32 +120,6 @@ class OpencodeDiscoveryService:
             jsonrpc_url=jsonrpc_url,
             method_key="list_providers",
             params=params,
-        )
-
-    async def list_opencode_models(
-        self,
-        *,
-        runtime: A2ARuntime,
-        provider_id: str | None = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> ExtensionCallResult:
-        resolved_provider_id = (provider_id or "").strip()
-        ext, jsonrpc_url = await self.resolve_extension(runtime)
-        params: Dict[str, Any] = {}
-        if resolved_provider_id:
-            params["provider_id"] = resolved_provider_id
-        normalized_metadata = self._support.normalize_extension_metadata(metadata)
-        if normalized_metadata is not None:
-            params["metadata"] = normalized_metadata
-        return await self.invoke_method(
-            runtime=runtime,
-            ext=ext,
-            jsonrpc_url=jsonrpc_url,
-            method_key="list_models",
-            params=params,
-            meta_extra=(
-                {"provider_id": resolved_provider_id} if resolved_provider_id else None
-            ),
         )
 
     async def list_models(
@@ -180,7 +135,7 @@ class OpencodeDiscoveryService:
         if resolved_provider_id:
             params["provider_id"] = resolved_provider_id
         normalized_metadata = self._support.normalize_extension_metadata(
-            _extract_provider_private_metadata(session_metadata, ext.provider)
+            _extract_provider_private_metadata(session_metadata, ext.metadata_namespace)
         )
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata

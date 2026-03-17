@@ -58,6 +58,7 @@ def resolve_opencode_provider_discovery(
         uri=str(getattr(ext, "uri", PROVIDER_DISCOVERY_URI)),
         required=required,
         provider="opencode",
+        metadata_namespace="opencode",
         jsonrpc=resolve_jsonrpc_interface(card),
         methods={
             "list_providers": list_providers_method,

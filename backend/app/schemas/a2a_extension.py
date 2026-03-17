@@ -96,18 +96,6 @@ class A2AExtensionPromptAsyncRequest(BaseModel):
     )
 
 
-class A2AProviderDiscoveryRequest(BaseModel):
-    provider_id: Optional[str] = Field(
-        default=None,
-        min_length=1,
-        description="Optional provider id filter for model discovery",
-    )
-    metadata: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Optional provider-private metadata object forwarded to upstream",
-    )
-
-
 class A2AModelDiscoveryRequest(BaseModel):
     provider_id: Optional[str] = Field(
         default=None,
@@ -145,5 +133,4 @@ __all__ = [
     "A2AExtensionQuestionRejectRequest",
     "A2AExtensionQuestionReplyRequest",
     "A2AExtensionResponse",
-    "A2AProviderDiscoveryRequest",
 ]

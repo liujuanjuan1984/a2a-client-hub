@@ -69,6 +69,7 @@ class ResolvedProviderDiscoveryExtension:
     uri: str
     required: bool
     provider: str
+    metadata_namespace: str
     jsonrpc: JsonRpcInterface
     methods: Mapping[str, Optional[str]]
     business_code_map: Mapping[int, str]

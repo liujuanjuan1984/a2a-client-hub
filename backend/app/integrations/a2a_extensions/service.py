@@ -144,17 +144,6 @@ class A2AExtensionsService:
             metadata=metadata,
         )
 
-    async def list_opencode_providers(
-        self,
-        *,
-        runtime: A2ARuntime,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> ExtensionCallResult:
-        return await self._opencode_discovery.list_opencode_providers(
-            runtime=runtime,
-            metadata=metadata,
-        )
-
     async def list_model_providers(
         self,
         *,
@@ -164,19 +153,6 @@ class A2AExtensionsService:
         return await self._opencode_discovery.list_model_providers(
             runtime=runtime,
             session_metadata=session_metadata,
-        )
-
-    async def list_opencode_models(
-        self,
-        *,
-        runtime: A2ARuntime,
-        provider_id: str | None = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> ExtensionCallResult:
-        return await self._opencode_discovery.list_opencode_models(
-            runtime=runtime,
-            provider_id=provider_id,
-            metadata=metadata,
         )
 
     async def list_models(
