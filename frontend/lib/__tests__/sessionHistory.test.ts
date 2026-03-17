@@ -169,4 +169,27 @@ describe("session history mapping", () => {
     expect(mapped).toHaveLength(1);
     expect(mapped[0]?.status).toBe("error");
   });
+
+  it("does not drop reasoning-only messages", () => {
+    const mapped = mapSessionMessagesToChatMessages([
+      {
+        id: "msg1",
+        role: "agent",
+        created_at: "2023-01-01",
+        blocks: [
+          {
+            id: "b1",
+            type: "reasoning",
+            content: "Thinking...",
+            isFinished: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]?.blocks).toHaveLength(1);
+    expect(mapped[0]?.blocks?.[0]?.type).toBe("reasoning");
+    expect(mapped[0]?.content).toBe("");
+  });
 });
