@@ -88,6 +88,14 @@ describe("ChatComposer clear button", () => {
     expect(queryByLabelText("Choose model")).toBeNull();
   });
 
+  it("keeps model picker visible when capability is still unknown", () => {
+    const { getByLabelText } = render(
+      <ChatComposer {...mockProps} supportsOpencodeDiscovery={undefined} />,
+    );
+
+    expect(getByLabelText("Choose model")).toBeTruthy();
+  });
+
   it("hides only the model picker while keeping other actions available on focus", () => {
     const { getByLabelText, queryByLabelText, UNSAFE_getByType } = render(
       <ChatComposer

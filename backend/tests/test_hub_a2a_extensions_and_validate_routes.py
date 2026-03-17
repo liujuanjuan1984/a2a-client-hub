@@ -896,6 +896,89 @@ async def test_hub_opencode_provider_discovery_routes_use_hub_runtime(
 
 
 @pytest.mark.asyncio
+async def test_hub_opencode_capability_route_returns_supported_true(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_opencode_cap_true@example.com",
+        user_email="alice_opencode_cap_true@example.com",
+        token="secret-token-opencode-capability-true",
+    )
+
+    from app.integrations.a2a_extensions import (
+        opencode_provider_discovery as opencode_provider_discovery_module,
+    )
+
+    monkeypatch.setattr(
+        opencode_provider_discovery_module,
+        "resolve_opencode_provider_discovery",
+        lambda _resolved: object(),
+    )
+
+    async with create_test_client(
+        hub_provider_discovery_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        response = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/capability"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"supported": True}
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_hub_opencode_capability_route_returns_supported_false_for_unsupported_agent(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_opencode_cap_false@example.com",
+        user_email="alice_opencode_cap_false@example.com",
+        token="secret-token-opencode-capability-false",
+    )
+
+    from app.integrations.a2a_extensions import (
+        opencode_provider_discovery as opencode_provider_discovery_module,
+    )
+
+    def _raise_not_supported(_resolved):
+        raise A2AExtensionNotSupportedError(
+            "OpenCode provider discovery extension not found"
+        )
+
+    monkeypatch.setattr(
+        opencode_provider_discovery_module,
+        "resolve_opencode_provider_discovery",
+        _raise_not_supported,
+    )
+
+    async with create_test_client(
+        hub_provider_discovery_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        response = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/capability"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"supported": False}
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
 async def test_hub_interrupt_reply_rejects_legacy_payload_fields(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
