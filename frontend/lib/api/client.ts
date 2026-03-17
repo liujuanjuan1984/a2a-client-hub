@@ -110,6 +110,8 @@ const REFRESH_COOLDOWN_MS = 10_000;
 const PROACTIVE_REFRESH_RATIO = 0.2;
 const PROACTIVE_REFRESH_MIN_LEAD_MS = 5_000;
 const PROACTIVE_REFRESH_MAX_LEAD_MS = 90_000;
+export const AUTH_RECOVERY_MAX_DURATION_MS = 2 * 60 * 1000;
+export const AUTH_RECOVERY_MAX_RETRIES = 12;
 
 type RefreshAccessTokenResult = {
   accessToken: string;
@@ -265,7 +267,25 @@ const markAuthRecovering = (options?: {
   if (!session.token) {
     return;
   }
-  session.setAuthStatus("recovering");
+  session.markAuthRecovering();
+};
+
+export const hasExceededAuthRecoveryLimits = (options?: {
+  expectedAuthVersion?: number;
+  nowMs?: number;
+}): boolean => {
+  if (!hasExpectedAuthVersion(options?.expectedAuthVersion)) {
+    return false;
+  }
+  const session = useSessionStore.getState();
+  if (!session.token || session.recoveryStartedAtMs === null) {
+    return false;
+  }
+  const nowMs = options?.nowMs ?? Date.now();
+  return (
+    nowMs - session.recoveryStartedAtMs >= AUTH_RECOVERY_MAX_DURATION_MS ||
+    session.recoveryRetryCount >= AUTH_RECOVERY_MAX_RETRIES
+  );
 };
 
 export const refreshAccessTokenWithOutcome = async (
@@ -429,6 +449,16 @@ export async function ensureFreshAccessToken(options?: {
     return token;
   }
   if (refreshOutcome.failureReason === "transient") {
+    if (
+      hasExceededAuthRecoveryLimits({
+        expectedAuthVersion: options?.expectedAuthVersion,
+      })
+    ) {
+      handleAuthExpiredOnce({
+        expectedAuthVersion: options?.expectedAuthVersion,
+      });
+      throw new AuthExpiredError();
+    }
     markAuthRecovering({
       expectedAuthVersion: options?.expectedAuthVersion,
     });
@@ -589,6 +619,16 @@ const executeRequestWithAuthRecovery = async (
   const refreshed = refreshOutcome.result;
   if (!refreshed) {
     if (refreshOutcome.failureReason === "transient") {
+      if (
+        hasExceededAuthRecoveryLimits({
+          expectedAuthVersion: requestAuthVersion,
+        })
+      ) {
+        handleAuthExpiredOnce({
+          expectedAuthVersion: requestAuthVersion,
+        });
+        throw new AuthExpiredError();
+      }
       markAuthRecovering({
         expectedAuthVersion: requestAuthVersion,
       });

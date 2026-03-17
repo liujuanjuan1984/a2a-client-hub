@@ -30,6 +30,8 @@ type SessionState = {
   accessTokenExpiresAtMs: number | null;
   accessTokenTtlSeconds: number | null;
   authStatus: AuthStatus;
+  recoveryStartedAtMs: number | null;
+  recoveryRetryCount: number;
   authVersion: number;
   hydrated: boolean;
   setAccessToken: (
@@ -44,6 +46,7 @@ type SessionState = {
   clearSession: () => void;
   setUserProfile: (user: UserProfile | null) => void;
   setAuthStatus: (status: AuthStatus) => void;
+  markAuthRecovering: () => void;
   setHydrated: (value: boolean) => void;
 };
 
@@ -53,6 +56,8 @@ export const useSessionStore = create<SessionState>()((set) => ({
   accessTokenExpiresAtMs: null,
   accessTokenTtlSeconds: null,
   authStatus: "expired",
+  recoveryStartedAtMs: null,
+  recoveryRetryCount: 0,
   authVersion: 0,
   hydrated: false,
   setAccessToken: (token, expiresInSeconds) =>
@@ -69,6 +74,8 @@ export const useSessionStore = create<SessionState>()((set) => ({
               ? state.accessTokenExpiresAtMs
               : null,
         authStatus: token ? "authenticated" : "expired",
+        recoveryStartedAtMs: null,
+        recoveryRetryCount: 0,
         authVersion: state.authVersion + 1,
       };
     }),
@@ -81,6 +88,8 @@ export const useSessionStore = create<SessionState>()((set) => ({
         accessTokenTtlSeconds: normalizedTtl,
         accessTokenExpiresAtMs: toExpiresAtMs(normalizedTtl),
         authStatus: "authenticated",
+        recoveryStartedAtMs: null,
+        recoveryRetryCount: 0,
         authVersion: state.authVersion + 1,
       };
     }),
@@ -91,9 +100,17 @@ export const useSessionStore = create<SessionState>()((set) => ({
       accessTokenExpiresAtMs: null,
       accessTokenTtlSeconds: null,
       authStatus: "expired",
+      recoveryStartedAtMs: null,
+      recoveryRetryCount: 0,
       authVersion: state.authVersion + 1,
     })),
   setUserProfile: (user) => set({ user }),
   setAuthStatus: (authStatus) => set({ authStatus }),
+  markAuthRecovering: () =>
+    set((state) => ({
+      authStatus: "recovering",
+      recoveryStartedAtMs: state.recoveryStartedAtMs ?? Date.now(),
+      recoveryRetryCount: state.recoveryRetryCount + 1,
+    })),
   setHydrated: (value) => set({ hydrated: value }),
 }));

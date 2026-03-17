@@ -13,6 +13,8 @@ const mockRefreshAccessToken = jest.fn(
 const mockComputeProactiveRefreshLeadMs = jest.fn(
   (_ttlSeconds: number | null) => 5_000,
 );
+const mockHasExceededAuthRecoveryLimits = jest.fn(() => false);
+const mockHandleAuthExpiredOnce = jest.fn();
 
 jest.mock("@/lib/api/client", () => {
   class MockApiConfigError extends Error {
@@ -36,6 +38,8 @@ jest.mock("@/lib/api/client", () => {
     AuthRecoverableError: MockAuthRecoverableError,
     computeProactiveRefreshLeadMs: (ttlSeconds: number | null) =>
       mockComputeProactiveRefreshLeadMs(ttlSeconds),
+    hasExceededAuthRecoveryLimits: () => mockHasExceededAuthRecoveryLimits(),
+    handleAuthExpiredOnce: () => mockHandleAuthExpiredOnce(),
     ensureFreshAccessToken: (options?: { expectedAuthVersion?: number }) =>
       mockEnsureFreshAccessToken(options),
     refreshAccessToken: (options?: {
@@ -68,6 +72,8 @@ describe("AuthBootstrap", () => {
       accessTokenExpiresAtMs: null,
       accessTokenTtlSeconds: null,
       authStatus: "expired",
+      recoveryStartedAtMs: null,
+      recoveryRetryCount: 0,
       authVersion: 0,
       hydrated: true,
     });
@@ -106,6 +112,8 @@ describe("AuthBootstrap", () => {
       accessTokenExpiresAtMs: Date.now() + 60_000,
       accessTokenTtlSeconds: 30,
       authStatus: "recovering",
+      recoveryStartedAtMs: Date.now(),
+      recoveryRetryCount: 1,
       hydrated: true,
     });
 
@@ -120,5 +128,23 @@ describe("AuthBootstrap", () => {
       jest.advanceTimersByTime(1);
     });
     expect(mockEnsureFreshAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("forces logout instead of scheduling another retry when recovery window is exceeded", () => {
+    mockHasExceededAuthRecoveryLimits.mockReturnValueOnce(true);
+    useSessionStore.setState({
+      token: "token-1",
+      accessTokenExpiresAtMs: Date.now() + 60_000,
+      accessTokenTtlSeconds: 30,
+      authStatus: "recovering",
+      recoveryStartedAtMs: Date.now() - 120_000,
+      recoveryRetryCount: 12,
+      hydrated: true,
+    });
+
+    render(<AuthBootstrap />);
+
+    expect(mockHandleAuthExpiredOnce).toHaveBeenCalledTimes(1);
+    expect(mockEnsureFreshAccessToken).not.toHaveBeenCalled();
   });
 });

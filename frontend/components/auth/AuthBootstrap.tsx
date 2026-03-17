@@ -6,6 +6,8 @@ import {
   AuthRecoverableError,
   computeProactiveRefreshLeadMs,
   ensureFreshAccessToken,
+  handleAuthExpiredOnce,
+  hasExceededAuthRecoveryLimits,
   refreshAccessToken,
 } from "@/lib/api/client";
 import { useSessionStore } from "@/store/session";
@@ -22,6 +24,12 @@ export function AuthBootstrap() {
     (state) => state.accessTokenTtlSeconds,
   );
   const authStatus = useSessionStore((state) => state.authStatus);
+  const recoveryStartedAtMs = useSessionStore(
+    (state) => state.recoveryStartedAtMs,
+  );
+  const recoveryRetryCount = useSessionStore(
+    (state) => state.recoveryRetryCount,
+  );
   const setAccessToken = useSessionStore((state) => state.setAccessToken);
   const setHydrated = useSessionStore((state) => state.setHydrated);
 
@@ -111,6 +119,11 @@ export function AuthBootstrap() {
       return;
     }
 
+    if (authStatus === "recovering" && hasExceededAuthRecoveryLimits()) {
+      handleAuthExpiredOnce();
+      return;
+    }
+
     const scheduleDelayMs =
       authStatus === "recovering"
         ? RECOVERY_RETRY_DELAY_MS
@@ -144,6 +157,8 @@ export function AuthBootstrap() {
     accessTokenTtlSeconds,
     authStatus,
     hydrated,
+    recoveryRetryCount,
+    recoveryStartedAtMs,
     token,
   ]);
 

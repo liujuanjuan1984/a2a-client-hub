@@ -79,6 +79,8 @@ describe("api client auth refresh flow", () => {
       accessTokenExpiresAtMs: Date.now() + 2_000,
       accessTokenTtlSeconds: 10,
       authStatus: "authenticated",
+      recoveryStartedAtMs: Date.now() - 10_000,
+      recoveryRetryCount: 3,
     });
 
     const token = await client.ensureFreshAccessToken();
@@ -86,6 +88,8 @@ describe("api client auth refresh flow", () => {
     expect(token).toBe("new-token");
     expect(useSessionStore.getState().token).toBe("new-token");
     expect(useSessionStore.getState().authStatus).toBe("authenticated");
+    expect(useSessionStore.getState().recoveryStartedAtMs).toBeNull();
+    expect(useSessionStore.getState().recoveryRetryCount).toBe(0);
   });
 
   it("keeps current token when proactive refresh fails but token has not expired", async () => {
@@ -146,6 +150,55 @@ describe("api client auth refresh flow", () => {
     expect(useSessionStore.getState().token).toBe("expired-token");
     expect(useSessionStore.getState().authStatus).toBe("recovering");
     expect(resetAuthBoundState).not.toHaveBeenCalled();
+  });
+
+  it("forces logout when transient recovery exceeds max duration", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockRejectedValue(createAbortError());
+
+    useSessionStore.setState({
+      token: "expired-token",
+      accessTokenExpiresAtMs: Date.now() - 1,
+      accessTokenTtlSeconds: 10,
+      authStatus: "recovering",
+      recoveryStartedAtMs:
+        Date.now() - (client.AUTH_RECOVERY_MAX_DURATION_MS + 1),
+      recoveryRetryCount: 1,
+    });
+
+    await expect(client.ensureFreshAccessToken()).rejects.toMatchObject({
+      status: 401,
+      errorCode: "auth_expired",
+    });
+
+    expect(resetAuthBoundState).toHaveBeenCalledTimes(1);
+  });
+
+  it("forces logout when transient recovery exceeds max retries", async () => {
+    const { client, useSessionStore, resetAuthBoundState } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock
+      .mockResolvedValueOnce(createJsonResponse(401, { detail: "expired" }))
+      .mockRejectedValueOnce(createAbortError());
+
+    useSessionStore.setState({
+      token: "old-token",
+      authStatus: "recovering",
+      accessTokenExpiresAtMs: null,
+      accessTokenTtlSeconds: null,
+      recoveryStartedAtMs: Date.now() - 10_000,
+      recoveryRetryCount: client.AUTH_RECOVERY_MAX_RETRIES,
+    });
+
+    await expect(
+      client.apiRequest<{ ok: boolean }>("/me/echo"),
+    ).rejects.toMatchObject({
+      status: 401,
+      errorCode: "auth_expired",
+    });
+
+    expect(resetAuthBoundState).toHaveBeenCalledTimes(1);
   });
 
   it("bypasses refresh cooldown when force=true", async () => {

@@ -30,10 +30,13 @@ jest.mock("@/lib/api/client", () => {
   }
 
   return {
+    AUTH_RECOVERY_MAX_DURATION_MS: 120_000,
+    AUTH_RECOVERY_MAX_RETRIES: 12,
     ApiRequestError: MockApiRequestError,
     AuthExpiredError: MockAuthExpiredError,
     AuthRecoverableError: MockAuthRecoverableError,
     ensureFreshAccessToken: jest.fn(async () => null),
+    hasExceededAuthRecoveryLimits: jest.fn(() => false),
     handleAuthExpiredOnce: jest.fn(),
     refreshAccessToken: jest.fn(async () => null),
     refreshAccessTokenWithOutcome: jest.fn(async () => ({
@@ -130,6 +133,35 @@ describe("fetchSSE", () => {
       expect.objectContaining({
         name: "AuthRecoverableError",
         errorCode: "auth_recovering",
+      }),
+    );
+  });
+
+  it("forces logout when sse recovery is already beyond the allowed window", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      text: async () => "expired",
+    } as Response);
+    (
+      clientModule.refreshAccessTokenWithOutcome as jest.Mock
+    ).mockResolvedValueOnce({
+      result: null,
+      failureReason: "transient",
+    });
+    (
+      clientModule.hasExceededAuthRecoveryLimits as jest.Mock
+    ).mockReturnValueOnce(true);
+
+    const onError = jest.fn();
+
+    await fetchSSE("https://example.test/stream", { onError });
+
+    expect(clientModule.handleAuthExpiredOnce).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "AuthExpiredError",
+        errorCode: "auth_expired",
       }),
     );
   });
