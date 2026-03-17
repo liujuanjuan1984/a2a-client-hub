@@ -10,11 +10,12 @@ import {
   View,
 } from "react-native";
 
+import { type OpencodeCapabilityStatus } from "@/hooks/useOpencodeCapabilityQuery";
 import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import { type SharedModelSelection } from "@/lib/chat-utils";
 
 export function ChatComposer({
-  supportsOpencodeDiscovery,
+  opencodeCapabilityStatus,
   pendingInterrupt,
   showShortcutManager,
   onOpenShortcutManager,
@@ -31,7 +32,7 @@ export function ChatComposer({
   showScrollToBottom,
   onScrollToBottom,
 }: {
-  supportsOpencodeDiscovery?: boolean;
+  opencodeCapabilityStatus: OpencodeCapabilityStatus;
   pendingInterrupt: PendingRuntimeInterrupt | null;
   showShortcutManager: boolean;
   onOpenShortcutManager: () => void;
@@ -67,16 +68,24 @@ export function ChatComposer({
 
       <View className="mb-2 flex-row items-center justify-between rounded-xl bg-black/25 px-2 py-1">
         <View className="flex-row items-center gap-2">
-          {supportsOpencodeDiscovery !== false && !isFocused && (
+          {opencodeCapabilityStatus !== "unsupported" && !isFocused && (
             <Pressable
               className="h-9 max-w-[180px] flex-row items-center gap-2 rounded-xl bg-slate-800/40 px-3"
               onPress={onOpenModelPicker}
               accessibilityRole="button"
               accessibilityLabel="Choose model"
-              accessibilityHint="Open the model picker"
+              accessibilityHint={
+                opencodeCapabilityStatus === "unknown"
+                  ? "Open the model picker and verify discovery availability."
+                  : "Open the model picker"
+              }
             >
               <Ionicons
-                name="hardware-chip-outline"
+                name={
+                  opencodeCapabilityStatus === "unknown"
+                    ? "help-circle-outline"
+                    : "hardware-chip-outline"
+                }
                 size={16}
                 color="#FFFFFF"
               />

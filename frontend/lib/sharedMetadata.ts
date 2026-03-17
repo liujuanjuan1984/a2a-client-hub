@@ -47,6 +47,21 @@ export const mergeSharedMetadataSection = (
   return Object.keys(resolved).length > 0 ? resolved : null;
 };
 
+export const pickSharedMetadataSections = (
+  payloadOrMetadata: Record<string, unknown> | null | undefined,
+  sections: ("interrupt" | "model" | "session" | "stream" | "usage")[],
+) => {
+  const resolved: Record<string, unknown> = {};
+  sections.forEach((section) => {
+    const sharedSection = getSharedMetadataSection(payloadOrMetadata, section);
+    if (sharedSection) {
+      resolved[section] = { ...sharedSection };
+    }
+  });
+
+  return Object.keys(resolved).length > 0 ? { shared: resolved } : {};
+};
+
 export const getPreferredInterruptMetadata = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,
 ) => {

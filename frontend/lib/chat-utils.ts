@@ -5,7 +5,10 @@ import type {
   PendingRuntimeInterrupt,
   ResolvedRuntimeInterrupt,
 } from "@/lib/api/chat-utils";
-import { withoutSharedSessionBinding } from "@/lib/sharedMetadata";
+import {
+  pickSharedMetadataSections,
+  withoutSharedSessionBinding,
+} from "@/lib/sharedMetadata";
 
 export const isSameBlockList = (
   left: MessageBlock[] = [],
@@ -243,16 +246,9 @@ export const sortSessionsByLastActive = (
 const normalizeSessionForPersistence = (
   session: AgentSession,
 ): AgentSession => {
-  const persistedMetadata: Record<string, unknown> = {};
-  const sharedModel = getSharedModelSelection(session.metadata);
-  if (sharedModel) {
-    persistedMetadata.shared = {
-      model: {
-        providerID: sharedModel.providerID,
-        modelID: sharedModel.modelID,
-      },
-    };
-  }
+  const persistedMetadata = pickSharedMetadataSections(session.metadata, [
+    "model",
+  ]);
 
   return {
     agentId: session.agentId,

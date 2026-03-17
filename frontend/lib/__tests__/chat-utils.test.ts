@@ -216,6 +216,10 @@ describe("chat store utils", () => {
           providerID: "openai",
           modelID: "gpt-5",
         },
+        session: {
+          provider: "opencode",
+          id: "upstream-session-1",
+        },
       },
     };
     newest.externalSessionRef = {
