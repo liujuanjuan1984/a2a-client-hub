@@ -77,7 +77,7 @@ describe("chat store utils", () => {
     });
   });
 
-  it("injects generic external session metadata for bound sessions", () => {
+  it("builds neutral session binding intent for bound sessions", () => {
     const session = createAgentSession("agent-3");
     session.metadata = { locale: "zh-CN" };
     session.externalSessionRef = {
@@ -90,8 +90,41 @@ describe("chat store utils", () => {
       conversationId: "conversation:abc",
       metadata: {
         locale: "zh-CN",
+      },
+      sessionBinding: {
         provider: "opencode",
         externalSessionId: "ses-upstream-1",
+      },
+    });
+  });
+
+  it("strips binding-shaped metadata and only keeps neutral session binding intent", () => {
+    const session = createAgentSession("agent-3");
+    session.metadata = {
+      locale: "zh-CN",
+      provider: "legacy",
+      externalSessionId: "legacy-sid",
+      shared: {
+        session: {
+          id: "legacy-sid",
+          provider: "legacy",
+        },
+      },
+    };
+    session.externalSessionRef = {
+      provider: "OpenCode",
+      externalSessionId: "ses-upstream-2",
+    };
+
+    expect(buildInvokePayload("hello", session, "conversation:def")).toEqual({
+      query: "hello",
+      conversationId: "conversation:def",
+      metadata: {
+        locale: "zh-CN",
+      },
+      sessionBinding: {
+        provider: "opencode",
+        externalSessionId: "ses-upstream-2",
       },
     });
   });
@@ -176,7 +209,15 @@ describe("chat store utils", () => {
     newest.lastActiveAt = "2026-02-14T12:00:00.000Z";
     newest.source = "manual";
     newest.contextId = "ctx-1";
-    newest.metadata = { locale: "zh-CN" };
+    newest.metadata = {
+      locale: "zh-CN",
+      shared: {
+        model: {
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+      },
+    };
     newest.externalSessionRef = {
       provider: "opencode",
       externalSessionId: "ses-upstream-1",
@@ -215,7 +256,14 @@ describe("chat store utils", () => {
     expect(persisted.newest.transport).toBe("http_json");
     expect(persisted.newest.source).toBeNull();
     expect(persisted.newest.contextId).toBeNull();
-    expect(persisted.newest.metadata).toEqual({});
+    expect(persisted.newest.metadata).toEqual({
+      shared: {
+        model: {
+          providerID: "openai",
+          modelID: "gpt-5",
+        },
+      },
+    });
     expect(persisted.newest.externalSessionRef).toBeNull();
     expect(persisted.newest.lastReceivedSequence).toBeUndefined();
     expect(persisted.newest.lastUserMessageId).toBeUndefined();

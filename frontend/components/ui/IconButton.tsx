@@ -20,6 +20,8 @@ type IconButtonProps = Omit<PressableProps, "accessibilityLabel"> & {
   variant?: IconButtonVariant;
   size?: IconButtonSize;
   loading?: boolean;
+  iconColor?: string;
+  iconSize?: number;
 };
 
 export function IconButton({
@@ -30,6 +32,8 @@ export function IconButton({
   disabled,
   className,
   accessibilityLabel,
+  iconColor,
+  iconSize,
   ...props
 }: IconButtonProps) {
   const variants: Record<IconButtonVariant, string> = {
@@ -75,12 +79,15 @@ export function IconButton({
       {...props}
     >
       {loading ? (
-        <ActivityIndicator size="small" color={iconColors[variant]} />
+        <ActivityIndicator
+          size="small"
+          color={iconColor || iconColors[variant]}
+        />
       ) : (
         <Ionicons
           name={icon}
-          size={iconSizes[size]}
-          color={iconColors[variant]}
+          size={iconSize || iconSizes[size]}
+          color={iconColor || iconColors[variant]}
         />
       )}
     </Pressable>

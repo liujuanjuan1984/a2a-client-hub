@@ -109,7 +109,10 @@ class A2AProviderDiscoveryRequest(BaseModel):
 
 
 class OpenCodeCapabilityResponse(BaseModel):
-    supported: bool = Field(..., description="Whether the OpenCode discovery extension is supported by the agent")
+    supported: bool = Field(
+        ...,
+        description="Whether the OpenCode discovery extension is supported by the agent",
+    )
 
 
 __all__ = [

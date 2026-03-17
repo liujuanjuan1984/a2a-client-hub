@@ -1,5 +1,6 @@
 import { fireEvent, render } from "@testing-library/react-native";
 import React from "react";
+import { TextInput } from "react-native";
 
 import { ChatComposer } from "../ChatComposer";
 
@@ -9,6 +10,7 @@ jest.mock("@expo/vector-icons", () => ({
 
 describe("ChatComposer clear button", () => {
   const mockProps = {
+    supportsOpencodeDiscovery: true,
     pendingInterrupt: null,
     showShortcutManager: false,
     onOpenShortcutManager: jest.fn(),
@@ -76,5 +78,31 @@ describe("ChatComposer clear button", () => {
     );
 
     expect(getByText("openai / gpt-5")).toBeTruthy();
+  });
+
+  it("hides model picker when capability is unsupported", () => {
+    const { queryByLabelText } = render(
+      <ChatComposer {...mockProps} supportsOpencodeDiscovery={false} />,
+    );
+
+    expect(queryByLabelText("Choose model")).toBeNull();
+  });
+
+  it("hides only the model picker while keeping other actions available on focus", () => {
+    const { getByLabelText, queryByLabelText, UNSAFE_getByType } = render(
+      <ChatComposer
+        {...mockProps}
+        input="hello"
+        showScrollToBottom
+        onScrollToBottom={jest.fn()}
+      />,
+    );
+
+    fireEvent(UNSAFE_getByType(TextInput), "focus");
+
+    expect(queryByLabelText("Choose model")).toBeNull();
+    expect(getByLabelText("Open shortcut manager")).toBeTruthy();
+    expect(getByLabelText("Clear input")).toBeTruthy();
+    expect(getByLabelText("Scroll to bottom")).toBeTruthy();
   });
 });

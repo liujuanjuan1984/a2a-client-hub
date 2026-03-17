@@ -11,7 +11,10 @@ import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
+import { createWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
+import { createProxyAllowlistEntry } from "@/lib/api/adminProxyAllowlist";
 import { createHubAgentAdmin } from "@/lib/api/hubA2aAgentsAdmin";
+import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
@@ -57,7 +60,31 @@ export function AdminHubAgentNewScreen() {
 
     setSaving(true);
     try {
-      const created = await createHubAgentAdmin(buildPayload());
+      const payload = buildPayload();
+      const result = await createWithAdminAutoAllowlist({
+        isAdmin,
+        cardUrl: payload.card_url,
+        create: () => createHubAgentAdmin(payload),
+        confirmAddHost: (host) =>
+          confirmAction({
+            title: "Host not allowlisted",
+            message: `The card URL host "${host}" is not in the proxy allowlist. Add it automatically and continue creating the agent?`,
+            confirmLabel: "Add and Continue",
+            cancelLabel: "Exit Create",
+          }),
+        addHostToAllowlist: async (host) => {
+          await createProxyAllowlistEntry({ host_pattern: host });
+        },
+        onCancelCreate: async () => {
+          allowNextNavigation();
+          backOrHome(router, "/admin/hub-a2a");
+        },
+      });
+      if (result.status === "cancelled") {
+        return;
+      }
+
+      const created = result.value;
       queryClient.invalidateQueries({ queryKey: queryKeys.admin.hubAgents() });
       toast.success("Shared agent created", created.name);
       allowNextNavigation();
@@ -71,6 +98,7 @@ export function AdminHubAgentNewScreen() {
   }, [
     allowNextNavigation,
     buildPayload,
+    isAdmin,
     queryClient,
     router,
     saving,

@@ -51,6 +51,20 @@ class ResolvedInterruptCallbackExtension:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedSessionBindingExtension:
+    uri: str
+    required: bool
+    provider: str
+    metadata_field: str
+    behavior: str
+    supported_metadata: tuple[str, ...]
+    provider_private_metadata: tuple[str, ...]
+    shared_workspace_across_consumers: bool | None
+    tenant_isolation: str | None
+    legacy_uri_used: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedProviderDiscoveryExtension:
     uri: str
     required: bool
@@ -67,4 +81,5 @@ __all__ = [
     "ResolvedProviderDiscoveryExtension",
     "ResolvedExtension",
     "ResolvedInterruptCallbackExtension",
+    "ResolvedSessionBindingExtension",
 ]

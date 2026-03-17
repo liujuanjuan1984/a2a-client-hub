@@ -102,9 +102,11 @@ export const useShortcutsQuery = () => {
     if (!agentId) {
       return shortcuts.filter((item) => item.agentId === null);
     }
-    return shortcuts.filter(
-      (item) => item.agentId === null || item.agentId === agentId,
+    const agentSpecificShortcuts = shortcuts.filter(
+      (item) => item.agentId === agentId,
     );
+    const systemShortcuts = shortcuts.filter((item) => item.agentId === null);
+    return [...agentSpecificShortcuts, ...systemShortcuts];
   };
 
   return {

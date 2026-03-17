@@ -290,18 +290,26 @@ export function useChatScreenController({
       setSupportsOpencodeDiscovery(false);
       return;
     }
+    let cancelled = false;
     const checkCapability = async () => {
       try {
         const capability = await getOpencodeDiscoveryCapability({
           source: agent.source as "personal" | "shared",
           agentId: activeAgentId,
         });
-        setSupportsOpencodeDiscovery(capability.supported);
-      } catch (e) {
-        setSupportsOpencodeDiscovery(false);
+        if (!cancelled) {
+          setSupportsOpencodeDiscovery(capability.supported);
+        }
+      } catch {
+        if (!cancelled) {
+          setSupportsOpencodeDiscovery(true);
+        }
       }
     };
     checkCapability();
+    return () => {
+      cancelled = true;
+    };
   }, [activeAgentId, agent?.source]);
 
   useEffect(() => {

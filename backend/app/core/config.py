@@ -538,6 +538,11 @@ class Settings(BaseSettings):
         alias="A2A_CLIENT_IDLE_TIMEOUT",
         description="Seconds of inactivity after which cached A2A HTTP clients are re-created (<=0 disables).",
     )
+    a2a_client_maintenance_interval: float = Field(
+        default=0.0,
+        alias="A2A_CLIENT_MAINTENANCE_INTERVAL",
+        description="Seconds between background A2A client idle cleanup runs (<=0 derives from idle timeout).",
+    )
     a2a_schedule_agent_concurrency_limit: int = Field(
         default=3,
         alias="A2A_SCHEDULE_AGENT_CONCURRENCY_LIMIT",

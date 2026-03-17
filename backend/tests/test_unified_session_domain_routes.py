@@ -269,6 +269,10 @@ async def test_continue_includes_opencode_session_metadata(
         assert payload.get("metadata", {}).get("provider") == "opencode"
         assert payload.get("metadata", {}).get("externalSessionId") == "ses_upstream_1"
         assert payload.get("metadata", {}).get("contextId") == "ctx-bound-1"
+        assert payload.get("metadata", {}).get("shared", {}).get("session") == {
+            "id": "ses_upstream_1",
+            "provider": "opencode",
+        }
 
 
 async def test_invalid_conversation_id_returns_400(

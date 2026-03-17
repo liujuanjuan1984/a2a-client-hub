@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Switch, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
+import { CopyButton } from "@/components/ui/CopyButton";
 import {
   type IntervalTimePoint,
   type ScheduledJob,
@@ -25,9 +26,9 @@ const getCardTone = (job: ScheduledJob, isReallyRunning: boolean) => {
   if (!job.enabled) {
     return {
       container: "opacity-80",
-      title: "text-slate-500",
-      text: "text-slate-600",
-      prompt: "text-slate-600",
+      title: "text-slate-300",
+      text: "text-slate-400",
+      prompt: "text-slate-400",
       statusText: "DISABLED",
       iconColor: "#475569",
       switchTrack: { false: "#1E293B", true: "#334155" },
@@ -102,6 +103,7 @@ export function ScheduledJobCard({
   const [deleting, setDeleting] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
   const canMarkFailed = isReallyRunning;
+  const hasPrompt = Boolean(job.prompt?.trim());
 
   const openExecutionSession = (execution: ScheduledJobExecution) => {
     if (!execution.conversation_id) return;
@@ -205,7 +207,7 @@ export function ScheduledJobCard({
           />
         </View>
 
-        {promptExpanded && (
+        {promptExpanded && hasPrompt && (
           <View className="mt-4 pt-4 border-t border-white/5">
             <Text className={`text-[11px] leading-5 ${tone.prompt}`}>
               {job.prompt}
@@ -232,6 +234,16 @@ export function ScheduledJobCard({
             iconLeft={promptExpanded ? "chevron-up" : "chevron-down"}
             onPress={() => setPromptExpanded(!promptExpanded)}
           />
+          {hasPrompt ? (
+            <CopyButton
+              value={job.prompt}
+              successMessage="Prompt copied to clipboard."
+              accessibilityLabel="Copy prompt"
+              variant="ghost"
+              size="xs"
+              iconColor={tone.iconColor}
+            />
+          ) : null}
           <Button
             label={executionsOpen ? "Hide" : "History"}
             size="xs"
@@ -281,44 +293,49 @@ export function ScheduledJobCard({
               </Text>
             ) : (
               <>
-                {executions.map((execution) => (
-                  <View
-                    key={execution.id}
-                    className="mb-2 rounded-xl bg-black/20 p-3"
-                  >
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-[10px] font-medium text-slate-500">
-                        {formatLocalDateTime(
-                          execution.finished_at ??
-                            execution.started_at ??
-                            execution.scheduled_for,
-                          timeZone,
-                        )}
-                      </Text>
-                      <View className="rounded px-1 py-0.5 bg-black/20">
-                        <Text
-                          className={`text-[9px] font-bold ${executionStatusColor[execution.status]}`}
-                        >
-                          {execution.status.toUpperCase()}
-                        </Text>
+                {executions.map((execution) => {
+                  const errorMessage = execution.error_message?.trim();
+
+                  return (
+                    <View
+                      key={execution.id}
+                      className="mb-2 rounded-xl bg-black/20 p-3"
+                    >
+                      <View className="flex-row items-center justify-between gap-3">
+                        <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                          <View className="rounded bg-black/20 px-1 py-0.5">
+                            <Text
+                              className={`text-[9px] font-bold ${executionStatusColor[execution.status]}`}
+                            >
+                              {execution.status.toUpperCase()}
+                            </Text>
+                          </View>
+                          <Text className="flex-1 text-[10px] font-medium text-slate-500">
+                            {formatLocalDateTime(
+                              execution.finished_at ??
+                                execution.started_at ??
+                                execution.scheduled_for,
+                              timeZone,
+                            )}
+                          </Text>
+                        </View>
+                        {execution.conversation_id ? (
+                          <Button
+                            label="Open Session"
+                            size="xs"
+                            variant="secondary"
+                            onPress={() => openExecutionSession(execution)}
+                          />
+                        ) : null}
                       </View>
+                      {errorMessage ? (
+                        <Text className="mt-2 text-[11px] font-normal leading-4 text-red-400/80">
+                          {errorMessage}
+                        </Text>
+                      ) : null}
                     </View>
-                    {execution.error_message ? (
-                      <Text className="mt-2 text-[11px] font-normal text-red-400/80">
-                        {execution.error_message}
-                      </Text>
-                    ) : null}
-                    {execution.conversation_id ? (
-                      <Button
-                        className="mt-3 self-start"
-                        label="Open Session"
-                        size="xs"
-                        variant="secondary"
-                        onPress={() => openExecutionSession(execution)}
-                      />
-                    ) : null}
-                  </View>
-                ))}
+                  );
+                })}
 
                 {executionsHasMore ? (
                   <Button

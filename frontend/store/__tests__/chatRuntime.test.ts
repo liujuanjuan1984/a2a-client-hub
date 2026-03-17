@@ -52,6 +52,22 @@ const mockedListSessionMessagesPage =
 const mockedChatConnectionService = chatConnectionService as jest.Mocked<
   typeof chatConnectionService
 >;
+const { invokeAgent } = require("@/lib/api/a2aAgents") as {
+  invokeAgent: jest.Mock;
+};
+const { invokeHubAgent } = require("@/lib/api/hubA2aAgentsUser") as {
+  invokeHubAgent: jest.Mock;
+};
+const { ApiRequestError } = require("@/lib/api/client") as {
+  ApiRequestError: new (
+    message: string,
+    status: number,
+    options?: {
+      errorCode?: string | null;
+      upstreamError?: Record<string, unknown> | null;
+    },
+  ) => Error;
+};
 
 const flushPromises = async () => {
   await Promise.resolve();
@@ -618,13 +634,15 @@ describe("executeChatRuntime empty-content recovery", () => {
           status: { state: "input-required" },
           final: false,
           metadata: {
-            interrupt: {
-              request_id: "perm-1",
-              type: "permission",
-              phase: "asked",
-              details: {
-                permission: "read",
-                patterns: ["/repo/.env"],
+            shared: {
+              interrupt: {
+                request_id: "perm-1",
+                type: "permission",
+                phase: "asked",
+                details: {
+                  permission: "read",
+                  patterns: ["/repo/.env"],
+                },
               },
             },
           },
@@ -733,11 +751,13 @@ describe("executeChatRuntime empty-content recovery", () => {
           status: { state: "working" },
           final: false,
           metadata: {
-            interrupt: {
-              request_id: "q-other",
-              type: "question",
-              phase: "resolved",
-              resolution: "rejected",
+            shared: {
+              interrupt: {
+                request_id: "q-other",
+                type: "question",
+                phase: "resolved",
+                resolution: "rejected",
+              },
             },
           },
         });
@@ -746,11 +766,13 @@ describe("executeChatRuntime empty-content recovery", () => {
           status: { state: "working" },
           final: false,
           metadata: {
-            interrupt: {
-              request_id: "perm-1",
-              type: "permission",
-              phase: "resolved",
-              resolution: "replied",
+            shared: {
+              interrupt: {
+                request_id: "perm-1",
+                type: "permission",
+                phase: "resolved",
+                resolution: "replied",
+              },
             },
           },
         });
@@ -787,5 +809,173 @@ describe("executeChatRuntime empty-content recovery", () => {
         resolution: "replied",
       },
     );
+  });
+});
+
+describe("executeChatRuntime failure handling", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    queryClient.clear();
+    clearAllConversationMessages();
+  });
+
+  it("marks JSON fallback business failures as message errors with structured code", async () => {
+    const conversationId = "conv-json-error-1";
+    const agentId = "agent-json-error-1";
+    const userMessageId = "user-json-error-1";
+    const agentMessageId = "agent-json-error-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T09:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T09:00:01.000Z",
+      status: "streaming",
+    });
+
+    invokeAgent.mockResolvedValueOnce({
+      success: false,
+      error: "Upstream agent is unavailable.",
+      error_code: "agent_unavailable",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    const agentMessage = getConversationMessages(conversationId).find(
+      (message) => message.id === agentMessageId,
+    );
+
+    expect(state.sessions[conversationId]?.streamState).toBe("error");
+    expect(state.sessions[conversationId]?.lastStreamError).toBe(
+      "Upstream agent is unavailable.",
+    );
+    expect(agentMessage).toMatchObject({
+      status: "error",
+      content: "",
+      errorCode: "agent_unavailable",
+      errorMessage: "Upstream agent is unavailable.",
+    });
+  });
+
+  it("marks JSON fallback request exceptions as message errors with API error code", async () => {
+    const conversationId = "conv-json-error-2";
+    const agentId = "agent-json-error-2";
+    const userMessageId = "user-json-error-2";
+    const agentMessageId = "agent-json-error-2";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T09:10:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T09:10:01.000Z",
+      status: "streaming",
+    });
+
+    const apiError = new ApiRequestError("Request failed [timeout]", 504, {
+      errorCode: "timeout",
+    });
+    invokeHubAgent.mockRejectedValueOnce(apiError);
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "shared",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    const agentMessage = getConversationMessages(conversationId).find(
+      (message) => message.id === agentMessageId,
+    );
+
+    expect(state.sessions[conversationId]?.streamState).toBe("error");
+    expect(agentMessage).toMatchObject({
+      status: "error",
+      content: "",
+      errorCode: "timeout",
+      errorMessage: "Request failed [timeout]",
+    });
   });
 });

@@ -128,8 +128,10 @@ def create_opencode_provider_discovery_router(
         response.headers["Cache-Control"] = "no-store"
         runtime = await _get_runtime(db, current_user, agent_id)
 
-        from app.integrations.a2a_extensions.opencode_provider_discovery import resolve_opencode_provider_discovery
         from app.integrations.a2a_extensions.errors import A2AExtensionNotSupportedError
+        from app.integrations.a2a_extensions.opencode_provider_discovery import (
+            resolve_opencode_provider_discovery,
+        )
 
         try:
             resolve_opencode_provider_discovery(runtime.resolved)

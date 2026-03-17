@@ -1210,7 +1210,7 @@ async def test_send_ws_error_ignores_closed_socket_runtime_error() -> None:
 
 @pytest.mark.asyncio
 async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
-    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.1)
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithDelayedEvents(
             [
@@ -1221,7 +1221,7 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
                 ),
                 {"kind": "status-update", "final": True},
             ],
-            delay_seconds=0.05,
+            delay_seconds=0.5,
         ),
         resolved=object(),
         query="hello",
@@ -1230,8 +1230,8 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
         validate_message=lambda _: [],
         logger=logging.getLogger(__name__),
         log_extra={},
-        idle_timeout_seconds=0.02,
-        total_timeout_seconds=0.2,
+        idle_timeout_seconds=0.2,
+        total_timeout_seconds=2.0,
     )
     assert result.success is True
     assert result.finish_reason == StreamFinishReason.SUCCESS
@@ -1446,7 +1446,11 @@ def test_extract_binding_hints_from_serialized_event():
             "contextId": "ctx-1",
             "metadata": {
                 "provider": "OpenCode",
-                "externalSessionId": "upstream-1",
+                "shared": {
+                    "session": {
+                        "id": "upstream-1",
+                    }
+                },
             },
         }
     )
@@ -1462,7 +1466,11 @@ def test_extract_binding_hints_from_invoke_result_merges_raw_payload():
                 "contextId": "ctx-from-raw",
                 "metadata": {
                     "provider": "opencode",
-                    "externalSessionId": "raw-upstream",
+                    "shared": {
+                        "session": {
+                            "id": "raw-upstream",
+                        }
+                    },
                 },
             }
 
@@ -1493,17 +1501,37 @@ def test_extract_binding_hints_ignores_session_id_aliases():
     )
     assert context_id is None
     assert metadata["provider"] == "opencode"
-    assert "externalSessionId" not in metadata
 
 
-def test_extract_binding_hints_extracts_canonical_external_session_id():
+def test_extract_binding_hints_falls_back_to_legacy_root_session_metadata():
+    context_id, metadata = (
+        a2a_invoke_service.extract_binding_hints_from_serialized_event(
+            {
+                "contextId": "ctx-legacy",
+                "metadata": {
+                    "provider": "OpenCode",
+                    "externalSessionId": "legacy-upstream-1",
+                },
+            }
+        )
+    )
+    assert context_id == "ctx-legacy"
+    assert metadata["provider"] == "opencode"
+    assert metadata["externalSessionId"] == "legacy-upstream-1"
+
+
+def test_extract_binding_hints_extracts_canonical_shared_session_id():
     context_id, metadata = a2a_invoke_service.extract_binding_hints_from_invoke_result(
         {
             "success": True,
             "content": "ok",
             "metadata": {
                 "provider": "OpenCode",
-                "externalSessionId": "nested-upstream-session",
+                "shared": {
+                    "session": {
+                        "id": "nested-upstream-session",
+                    }
+                },
             },
         }
     )
@@ -1830,13 +1858,15 @@ def test_extract_usage_hints_from_serialized_event():
             "kind": "status-update",
             "final": True,
             "metadata": {
-                "usage": {
-                    "input_tokens": 120,
-                    "outputTokens": "30",
-                    "total_tokens": 150,
-                    "reasoning_tokens": 12,
-                    "cache_tokens": 6,
-                    "cost": "0.0125",
+                "shared": {
+                    "usage": {
+                        "input_tokens": 120,
+                        "outputTokens": "30",
+                        "total_tokens": 150,
+                        "reasoning_tokens": 12,
+                        "cache_tokens": 6,
+                        "cost": "0.0125",
+                    },
                 },
             },
         }
@@ -1856,11 +1886,13 @@ def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
         def model_dump(self, **kwargs):  # noqa: ARG002
             return {
                 "metadata": {
-                    "usage": {
-                        "input_tokens": 66,
-                        "output_tokens": 11,
-                        "total_tokens": 77,
-                        "cost": 0.0077,
+                    "shared": {
+                        "usage": {
+                            "input_tokens": 66,
+                            "output_tokens": 11,
+                            "total_tokens": 77,
+                            "cost": 0.0077,
+                        },
                     },
                 }
             }
@@ -1868,11 +1900,13 @@ def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
     usage = a2a_invoke_service.extract_usage_hints_from_invoke_result(
         {
             "metadata": {
-                "usage": {
-                    "input_tokens": 1,
-                    "output_tokens": 1,
-                    "total_tokens": 2,
-                    "cost": 0.0002,
+                "shared": {
+                    "usage": {
+                        "input_tokens": 1,
+                        "output_tokens": 1,
+                        "total_tokens": 2,
+                        "cost": 0.0002,
+                    },
                 },
             },
             "raw": _RawPayload(),
@@ -1883,6 +1917,27 @@ def test_extract_usage_hints_from_invoke_result_prefers_raw_payload():
         "output_tokens": 11,
         "total_tokens": 77,
         "cost": 0.0077,
+    }
+
+
+def test_extract_usage_hints_from_serialized_event_falls_back_to_legacy_metadata():
+    usage = a2a_invoke_service.extract_usage_hints_from_serialized_event(
+        {
+            "kind": "status-update",
+            "final": True,
+            "metadata": {
+                "usage": {
+                    "input_tokens": 9,
+                    "output_tokens": 3,
+                    "total_tokens": 12,
+                },
+            },
+        }
+    )
+    assert usage == {
+        "input_tokens": 9,
+        "output_tokens": 3,
+        "total_tokens": 12,
     }
 
 

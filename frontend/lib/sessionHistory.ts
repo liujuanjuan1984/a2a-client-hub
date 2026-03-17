@@ -96,7 +96,11 @@ export const mapSessionMessagesToChatMessages = (
     const blockContent = projectPrimaryTextContent(blocks);
     const normalizedContent =
       blockContent.trim().length > 0 ? blockContent : "";
-    if (normalizedContent.trim().length === 0 && !keepEmptyMessages) {
+    if (
+      normalizedContent.trim().length === 0 &&
+      blocks.length === 0 &&
+      !keepEmptyMessages
+    ) {
       return;
     }
     mapped.push({

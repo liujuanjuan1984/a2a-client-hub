@@ -115,6 +115,33 @@ describe("ChatMessageItem interaction", () => {
     expect(screen.getByText("Streaming...")).toBeTruthy();
   });
 
+  it("copies message content on long press", async () => {
+    const message = buildAgentMessage({
+      role: "user",
+      content: "Copy via long press",
+    });
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent(screen.getByText("Copy via long press"), "onLongPress");
+    });
+
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
+      "Copy via long press",
+    );
+    expect(toast.success).toHaveBeenCalledWith(
+      "Copied",
+      "Message copied to clipboard.",
+    );
+  });
+
   it("does not show empty fallback while agent message is streaming without content", () => {
     const message = buildAgentMessage({
       content: "",
@@ -132,5 +159,29 @@ describe("ChatMessageItem interaction", () => {
 
     expect(screen.queryByText("Content unavailable.")).toBeNull();
     expect(screen.getByText("Streaming...")).toBeTruthy();
+  });
+
+  it("renders a structured upstream error banner without empty fallback", () => {
+    const message = buildAgentMessage({
+      content: "",
+      status: "error",
+      errorCode: "agent_unavailable",
+      errorMessage: "Upstream agent is unavailable.",
+      blocks: [],
+    });
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+        sessionStreamState="error"
+      />,
+    );
+
+    expect(screen.queryByText("Content unavailable.")).toBeNull();
+    expect(
+      screen.getByText("当前无法连接到上游 Agent，请稍后重试。"),
+    ).toBeTruthy();
   });
 });

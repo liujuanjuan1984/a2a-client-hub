@@ -49,6 +49,25 @@ describe("agentCatalogCache", () => {
     ]);
   });
 
+  it("drops validation state when the agent card identity changes", () => {
+    const previous = [
+      buildAgent({
+        id: "agent-1",
+        status: "success",
+        lastCheckedAt: "2026-02-12T01:02:03.000Z",
+      }),
+    ];
+
+    const next = [
+      buildAgent({
+        id: "agent-1",
+        cardUrl: "https://example.com/agent-1-updated.json",
+      }),
+    ];
+
+    expect(mergeTransientAgentState(next, previous)).toEqual(next);
+  });
+
   it("updates a specific agent in catalog", () => {
     const catalog = [
       buildAgent({ id: "agent-1" }),
@@ -67,7 +86,11 @@ describe("agentCatalogCache", () => {
 
   it("upserts agent and preserves transient status from previous record", () => {
     const catalog = [
-      buildAgent({ id: "agent-1", status: "success", lastError: "old" }),
+      buildAgent({
+        id: "agent-1",
+        status: "success",
+        lastError: "old",
+      }),
       buildAgent({ id: "agent-2" }),
     ];
 
@@ -84,6 +107,32 @@ describe("agentCatalogCache", () => {
       lastError: "old",
     });
     expect(updated).toHaveLength(2);
+  });
+
+  it("drops transient validation state on upsert when card identity changes", () => {
+    const catalog = [
+      buildAgent({
+        id: "agent-1",
+        status: "success",
+        lastCheckedAt: "2026-02-12T01:02:03.000Z",
+      }),
+    ];
+
+    const updated = upsertAgentInCatalog(
+      catalog,
+      buildAgent({
+        id: "agent-1",
+        cardUrl: "https://example.com/agent-1-updated.json",
+      }),
+      "agent-1",
+    );
+
+    expect(updated[0]).toMatchObject({
+      id: "agent-1",
+      cardUrl: "https://example.com/agent-1-updated.json",
+      status: "idle",
+      lastCheckedAt: undefined,
+    });
   });
 
   it("removes agent from catalog", () => {

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from a2a.types import AgentCard
+
 import app.core.config
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
@@ -14,6 +16,9 @@ from app.integrations.a2a_client.errors import (
 )
 from app.integrations.a2a_client.validators import (
     validate_agent_card as validate_agent_card_payload,
+)
+from app.integrations.a2a_extensions.session_query_diagnostics import (
+    diagnose_session_query,
 )
 from app.schemas.a2a_agent_card import A2AAgentCardValidationResponse
 
@@ -49,10 +54,27 @@ async def fetch_and_validate_agent_card(
 
     card_payload = card.model_dump(exclude_none=True)
     validation_errors = validate_agent_card_payload(card_payload)
-    success = not validation_errors
-    message = (
-        "Agent card validated" if success else "Agent card validation issues detected"
+    diagnostics_card: AgentCard | None = None
+    try:
+        diagnostics_card = AgentCard.model_validate(card_payload)
+    except Exception:  # noqa: BLE001
+        diagnostics_card = None
+
+    session_query = (
+        diagnose_session_query(diagnostics_card)
+        if diagnostics_card is not None
+        else None
     )
+    if session_query and session_query.status == "invalid" and session_query.error:
+        validation_errors.append(session_query.error)
+
+    success = not validation_errors
+    if success:
+        message = "Agent card validated"
+    elif session_query and session_query.status == "invalid" and session_query.error:
+        message = f"Shared session query contract is invalid: {session_query.error}"
+    else:
+        message = "Agent card validation issues detected"
 
     response_kwargs: dict[str, Any] = {
         "success": success,
@@ -60,6 +82,7 @@ async def fetch_and_validate_agent_card(
         "card_name": card_payload.get("name"),
         "card_description": card_payload.get("description"),
         "card": card_payload,
+        "shared_session_query": session_query,
     }
     if app.core.config.settings.debug:
         response_kwargs["validation_errors"] = validation_errors

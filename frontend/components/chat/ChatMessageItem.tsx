@@ -1,21 +1,49 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
-import React, { useCallback } from "react";
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  Text,
-  View,
-} from "react-native";
+import React, { useCallback, useMemo } from "react";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 import { MessageBlock, MessageContentFallback } from "./MessageBlock";
+import { CopyButton } from "../ui/CopyButton";
 
 import {
   type ChatMessage,
   type MessageBlock as MessageBlockType,
 } from "@/lib/api/chat-utils";
-import { toast } from "@/lib/toast";
+import { copyTextToClipboard, isCopyableText } from "@/lib/clipboard";
+
+const AGENT_CONNECTIVITY_ERROR_CODES = new Set([
+  "agent_unavailable",
+  "timeout",
+]);
+
+const STREAM_FAILURE_ERROR_CODES = new Set([
+  "stream_error",
+  "stream_closed",
+  "upstream_stream_error",
+]);
+
+const resolveErrorBannerText = (message: ChatMessage): string => {
+  const normalizedErrorCode =
+    typeof message.errorCode === "string" ? message.errorCode.trim() : "";
+
+  if (AGENT_CONNECTIVITY_ERROR_CODES.has(normalizedErrorCode)) {
+    return "当前无法连接到上游 Agent，请稍后重试。";
+  }
+
+  if (normalizedErrorCode === "outbound_not_allowed") {
+    return "当前配置不允许访问该上游 Agent。";
+  }
+
+  if (STREAM_FAILURE_ERROR_CODES.has(normalizedErrorCode)) {
+    return "流响应异常，请重试。";
+  }
+
+  if (typeof message.errorMessage === "string" && message.errorMessage.trim()) {
+    return message.errorMessage.trim();
+  }
+
+  return "流响应异常，请重试。";
+};
 
 export function ChatMessageItem({
   message,
@@ -57,37 +85,18 @@ export function ChatMessageItem({
     [],
   );
 
-  const handleCopyPayload = useCallback(async (text: string) => {
-    if (Platform.OS === "web" && typeof navigator !== "undefined") {
-      if (navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(text);
-          return;
-        } catch {
-          // Fall back to Expo clipboard API when browser clipboard write is blocked.
-        }
+  const textToCopy = useMemo(() => {
+    let text = message.content;
+    if (message.role === "agent" && message.blocks?.length) {
+      const blockContent = message.blocks
+        .map((b) => `[${b.type}]\n${b.content}`)
+        .join("\n\n");
+      if (blockContent) {
+        text = `${blockContent}\n\n${text}`;
       }
     }
-    await Clipboard.setStringAsync(text);
-  }, []);
-
-  const handleCopyMessage = useCallback(async () => {
-    try {
-      let textToCopy = message.content;
-      if (message.role === "agent" && message.blocks?.length) {
-        const blockContent = message.blocks
-          .map((b) => `[${b.type}]\n${b.content}`)
-          .join("\n\n");
-        if (blockContent) {
-          textToCopy = `${blockContent}\n\n${textToCopy}`;
-        }
-      }
-      await handleCopyPayload(textToCopy.trim());
-      toast.success("Copied", "Message copied to clipboard.");
-    } catch {
-      toast.error("Copy failed", "Could not copy message.");
-    }
-  }, [handleCopyPayload, message]);
+    return text.trim();
+  }, [message]);
 
   const renderableBlocks = deriveRenderableBlocks(message);
   const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
@@ -97,12 +106,52 @@ export function ChatMessageItem({
     message.status === "streaming" &&
     !hasBlocks &&
     !hasPlainContent;
+  const suppressFallbackWhileError =
+    message.role === "agent" &&
+    message.status === "error" &&
+    !hasBlocks &&
+    !hasPlainContent;
+  const shouldRenderMessageFallback =
+    !suppressFallbackWhileStreaming && !suppressFallbackWhileError;
   const canRetry =
     isLastMessage &&
     message.role === "agent" &&
     sessionStreamState &&
     ["error", "recoverable"].includes(sessionStreamState);
+  const canCopyMessage = isCopyableText(textToCopy);
   const userCopyButtonPositionClass = "right-0";
+  let messageBody: React.ReactNode = null;
+  if (hasBlocks) {
+    messageBody = renderableBlocks.map((block, blockIndex) => (
+      <MessageBlock
+        key={block.id || `${message.id}:${blockIndex}`}
+        block={block}
+        messageId={message.id}
+        blockIndex={blockIndex}
+        role={message.role}
+        onLayoutChangeStart={onLayoutChangeStart}
+        onLoadBlockContent={onLoadBlockContent}
+      />
+    ));
+  } else if (shouldRenderMessageFallback) {
+    messageBody = (
+      <MessageContentFallback
+        hasPlainContent={hasPlainContent}
+        content={message.content}
+        messageId={message.id}
+        role={message.role}
+      />
+    );
+  }
+
+  const handleLongPressCopy = useCallback(async () => {
+    if (!canCopyMessage) return;
+
+    await copyTextToClipboard(textToCopy, {
+      successMessage: "Message copied to clipboard.",
+      errorMessage: "Could not copy message.",
+    });
+  }, [canCopyMessage, textToCopy]);
 
   return (
     <View
@@ -110,9 +159,9 @@ export function ChatMessageItem({
         message.role === "user" ? "items-end" : "items-start"
       }`}
     >
-      <View className="max-w-[94%] relative">
+      <View className="max-w-[94%] relative group">
         <Pressable
-          onLongPress={handleCopyMessage}
+          onLongPress={canCopyMessage ? handleLongPressCopy : undefined}
           delayLongPress={500}
           className={`px-4 py-3 rounded-2xl shadow-sm ${
             message.role === "user"
@@ -122,26 +171,7 @@ export function ChatMessageItem({
                 : "bg-slate-900"
           }`}
         >
-          {hasBlocks
-            ? renderableBlocks.map((block, blockIndex) => (
-                <MessageBlock
-                  key={block.id || `${message.id}:${blockIndex}`}
-                  block={block}
-                  messageId={message.id}
-                  blockIndex={blockIndex}
-                  role={message.role}
-                  onLayoutChangeStart={onLayoutChangeStart}
-                  onLoadBlockContent={onLoadBlockContent}
-                />
-              ))
-            : !suppressFallbackWhileStreaming && (
-                <MessageContentFallback
-                  hasPlainContent={hasPlainContent}
-                  content={message.content}
-                  messageId={message.id}
-                  role={message.role}
-                />
-              )}
+          {messageBody}
           {message.status === "streaming" ? (
             <View className="mt-2 flex-row items-center gap-2">
               <ActivityIndicator size="small" color="#34D399" />
@@ -150,15 +180,29 @@ export function ChatMessageItem({
               </Text>
             </View>
           ) : null}
+          {message.status === "error" ? (
+            <View className="mt-2 flex-row items-center gap-1.5 p-2 bg-red-500/10 rounded border border-red-500/20">
+              <Ionicons name="warning-outline" size={14} color="#EF4444" />
+              <Text className="text-[12px] font-medium text-red-400">
+                {resolveErrorBannerText(message)}
+              </Text>
+            </View>
+          ) : null}
         </Pressable>
-        <Pressable
-          className={`absolute bottom-2 ${userCopyButtonPositionClass} rounded-lg px-2 py-2 opacity-30`}
-          onPress={handleCopyMessage}
-          accessibilityRole="button"
-          accessibilityLabel="Copy message"
+        <View
+          className={`absolute bottom-1 ${userCopyButtonPositionClass} opacity-30`}
         >
-          <Ionicons name="copy-outline" size={16} color="#FFFFFF" />
-        </Pressable>
+          <CopyButton
+            value={textToCopy}
+            successMessage="Message copied to clipboard."
+            errorMessage="Could not copy message."
+            accessibilityLabel="Copy message"
+            variant="ghost"
+            size="sm"
+            iconColor="#FFFFFF"
+            disabled={!canCopyMessage}
+          />
+        </View>
       </View>
       {canRetry && (
         <Pressable

@@ -20,12 +20,15 @@ import {
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { type AgentAuthType } from "@/lib/agentAuth";
 import { AGENT_ERROR_MESSAGES } from "@/lib/agentCatalogCache";
+import { createWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
+import { createProxyAllowlistEntry } from "@/lib/api/adminProxyAllowlist";
 import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
 import { toast } from "@/lib/toast";
 import { type AgentHeader } from "@/store/agents";
+import { useSessionStore } from "@/store/session";
 
 const authTypes: { label: string; value: AgentAuthType }[] = [
   { label: "No Auth", value: "none" },
@@ -91,6 +94,7 @@ const buildSnapshot = (value: {
 
 export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
   const router = useRouter();
+  const isAdmin = Boolean(useSessionStore((state) => state.user?.is_superuser));
   const { data: agents = [], isFetched: hasFetchedAgents } =
     useAgentsCatalogQuery(true);
   const createAgentMutation = useCreateAgentMutation();
@@ -294,6 +298,7 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     if (!validate()) {
       return;
     }
+    blurActiveElement();
     setSaveStatus("saving");
     const payload = {
       name: name.trim(),
@@ -310,7 +315,30 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       if (agentId && agent) {
         await updateAgentMutation.mutateAsync({ id: agentId, payload });
       } else {
-        await createAgentMutation.mutateAsync(payload);
+        const result = await createWithAdminAutoAllowlist({
+          isAdmin,
+          cardUrl: payload.cardUrl,
+          create: () => createAgentMutation.mutateAsync(payload),
+          confirmAddHost: (host) =>
+            confirmAction({
+              title: "Host not allowlisted",
+              message: `The card URL host "${host}" is not in the proxy allowlist. Add it automatically and continue creating the agent?`,
+              confirmLabel: "Add and Continue",
+              cancelLabel: "Exit Create",
+            }),
+          addHostToAllowlist: async (host) => {
+            await createProxyAllowlistEntry({ host_pattern: host });
+          },
+          onCancelCreate: async () => {
+            allowNextNavigation();
+            goBackOrHome();
+          },
+        });
+
+        if (result.status === "cancelled") {
+          setSaveStatus("idle");
+          return;
+        }
       }
       initialSnapshotRef.current = buildSnapshot({
         name: payload.name,

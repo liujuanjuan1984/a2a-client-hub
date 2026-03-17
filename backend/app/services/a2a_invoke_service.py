@@ -527,6 +527,9 @@ class A2AInvokeService:
 
     @classmethod
     def _extract_error_code_from_exception(cls, exc: BaseException) -> str | None:
+        if isinstance(exc, asyncio.TimeoutError):
+            return "timeout"
+
         candidate = getattr(exc, "error_code", None)
         normalized = cls._normalize_error_code(candidate)
         if normalized is not None:
