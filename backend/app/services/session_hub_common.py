@@ -235,20 +235,33 @@ def build_interrupt_lifecycle_message_id(
     )
 
 
-def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
+def build_interrupt_lifecycle_message_code(event: dict[str, Any]) -> str:
     interrupt_type = str(event.get("type") or "")
     phase = str(event.get("phase") or "")
     if phase == "resolved":
         if interrupt_type == "permission":
-            return "Authorization request was handled. Agent resumed."
+            return "permission_resolved"
         if event.get("resolution") == "rejected":
-            return "Question request was rejected. Interrupt closed."
+            return "question_rejected"
+        return "question_answer_received"
+    if interrupt_type == "permission":
+        return "permission_requested"
+    return "question_requested"
+
+
+def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
+    message_code = build_interrupt_lifecycle_message_code(event)
+    if message_code == "permission_resolved":
+        return "Authorization request was handled. Agent resumed."
+    if message_code == "question_rejected":
+        return "Question request was rejected. Interrupt closed."
+    if message_code == "question_answer_received":
         return "Question answer received. Agent resumed."
 
     details = event.get("details")
     if not isinstance(details, dict):
         details = {}
-    if interrupt_type == "permission":
+    if message_code == "permission_requested":
         display_message = normalize_non_empty_text(
             details.get("display_message") or details.get("displayMessage")
         )

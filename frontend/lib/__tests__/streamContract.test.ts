@@ -12,6 +12,14 @@ import {
   type StreamBlockUpdate,
 } from "@/lib/api/chat-utils";
 
+const interruptLifecycleMessageCases =
+  require("../../../docs/contracts/interrupt-lifecycle-message-cases.json") as {
+    name: string;
+    code: string;
+    event: Record<string, unknown>;
+    content: string;
+  }[];
+
 const buildBlockUpdatePayload = (input: {
   blockType: "text" | "reasoning" | "tool_call" | "interrupt_event";
   delta: string;
@@ -178,52 +186,83 @@ describe("block-based stream parser and reducer", () => {
     expect(projectPrimaryTextContent(blocks)).toBe("");
   });
 
-  it("prefers richer permission display text when building interrupt_event blocks", () => {
-    const update = buildInterruptEventBlockUpdate({
-      messageId: "msg-interrupt-rich-permission",
-      interrupt: {
-        requestId: "perm-rich-1",
-        type: "permission",
-        phase: "asked",
-        details: {
-          permission: "approval",
-          patterns: ["/repo/.env"],
-          displayMessage: "Agent wants to read the environment file.",
-        },
-      },
-    });
-
-    expect(update.delta).toBe(
-      "Agent wants to read the environment file.\nTargets: /repo/.env",
-    );
-  });
-
-  it("keeps question descriptions when building interrupt_event blocks", () => {
-    const update = buildInterruptEventBlockUpdate({
-      messageId: "msg-interrupt-rich-question",
-      interrupt: {
-        requestId: "q-rich-1",
+  it("matches the shared interrupt lifecycle message contract cases", () => {
+    const toRuntimeInterrupt = (
+      event: Record<string, unknown>,
+    ): Parameters<typeof buildInterruptEventBlockUpdate>[0]["interrupt"] => {
+      const details =
+        event.details && typeof event.details === "object"
+          ? (event.details as Record<string, unknown>)
+          : {};
+      if (event.phase === "resolved") {
+        return {
+          requestId: String(event.request_id),
+          type: event.type === "permission" ? "permission" : "question",
+          phase: "resolved",
+          resolution: event.resolution === "rejected" ? "rejected" : "replied",
+        };
+      }
+      if (event.type === "permission") {
+        return {
+          requestId: String(event.request_id),
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission:
+              typeof details.permission === "string"
+                ? details.permission
+                : null,
+            patterns: Array.isArray(details.patterns)
+              ? details.patterns.filter(
+                  (item): item is string => typeof item === "string",
+                )
+              : [],
+            displayMessage:
+              typeof details.display_message === "string"
+                ? details.display_message
+                : typeof details.displayMessage === "string"
+                  ? details.displayMessage
+                  : null,
+          },
+        };
+      }
+      return {
+        requestId: String(event.request_id),
         type: "question",
         phase: "asked",
         details: {
-          displayMessage: "Please confirm how the agent should continue.",
-          questions: [
-            {
-              header: "Approval",
-              question: "Proceed with deployment?",
-              description: "This will update the production service.",
-              options: [{ label: "Yes", value: "yes", description: null }],
-            },
-          ],
+          displayMessage:
+            typeof details.display_message === "string"
+              ? details.display_message
+              : typeof details.displayMessage === "string"
+                ? details.displayMessage
+                : null,
+          questions: Array.isArray(details.questions)
+            ? details.questions.map((question) => {
+                const item = question as Record<string, unknown>;
+                return {
+                  header: typeof item.header === "string" ? item.header : null,
+                  question: String(item.question ?? ""),
+                  description:
+                    typeof item.description === "string"
+                      ? item.description
+                      : null,
+                  options: [],
+                };
+              })
+            : [],
         },
-      },
-    });
+      };
+    };
 
-    expect(update.delta).toBe(
-      "Please confirm how the agent should continue.\n" +
-        "Question: Proceed with deployment?\n" +
-        "Details: This will update the production service.",
-    );
+    interruptLifecycleMessageCases.forEach((testCase) => {
+      const update = buildInterruptEventBlockUpdate({
+        messageId: `msg-${testCase.name}`,
+        interrupt: toRuntimeInterrupt(testCase.event),
+      });
+
+      expect(update.delta).toBe(testCase.content);
+    });
   });
 
   it("supports overwrite semantics when append=false or final_snapshot arrives", () => {

@@ -500,21 +500,48 @@ const extractRuntimeInterrupt = (
   return null;
 };
 
-const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
+const buildInterruptEventMessageCode = (
+  interrupt: RuntimeInterrupt,
+):
+  | "permission_requested"
+  | "permission_resolved"
+  | "question_requested"
+  | "question_answer_received"
+  | "question_rejected" => {
   if (interrupt.phase === "resolved") {
     if (interrupt.type === "permission") {
-      return "Authorization request was handled. Agent resumed.";
+      return "permission_resolved";
     }
     if (interrupt.resolution === "rejected") {
-      return "Question request was rejected. Interrupt closed.";
+      return "question_rejected";
     }
+    return "question_answer_received";
+  }
+  if (interrupt.type === "permission") {
+    return "permission_requested";
+  }
+  return "question_requested";
+};
+
+const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
+  const messageCode = buildInterruptEventMessageCode(interrupt);
+  if (messageCode === "permission_resolved") {
+    return "Authorization request was handled. Agent resumed.";
+  }
+  if (messageCode === "question_rejected") {
+    return "Question request was rejected. Interrupt closed.";
+  }
+  if (messageCode === "question_answer_received") {
     return "Question answer received. Agent resumed.";
   }
 
-  if (interrupt.type === "permission") {
-    const displayMessage = interrupt.details.displayMessage?.trim() || null;
-    const permission = interrupt.details.permission?.trim() || "unknown";
-    const patterns = interrupt.details.patterns ?? [];
+  const askedInterrupt = interrupt as PendingRuntimeInterrupt;
+
+  if (messageCode === "permission_requested") {
+    const displayMessage =
+      askedInterrupt.details.displayMessage?.trim() || null;
+    const permission = askedInterrupt.details.permission?.trim() || "unknown";
+    const patterns = askedInterrupt.details.patterns ?? [];
     const baseMessage =
       displayMessage || `Agent requested authorization: ${permission}.`;
     if (patterns.length > 0) {
@@ -523,9 +550,9 @@ const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
     return baseMessage;
   }
 
-  const displayMessage = interrupt.details.displayMessage?.trim() || null;
-  const questionEntries = (interrupt.details.questions ?? [])
-    .map((question) => {
+  const displayMessage = askedInterrupt.details.displayMessage?.trim() || null;
+  const questionEntries = (askedInterrupt.details.questions ?? [])
+    .map((question: InterruptQuestion) => {
       const prompt = question.question.trim();
       if (!prompt) {
         return null;
@@ -556,10 +583,11 @@ const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
     return `Agent requested additional input: ${entry.prompt}`;
   }
   if (questionEntries.length > 1) {
-    const lines = questionEntries.map((entry) =>
-      entry.description
-        ? `- ${entry.prompt} (${entry.description})`
-        : `- ${entry.prompt}`,
+    const lines = questionEntries.map(
+      (entry: { prompt: string; description: string | null }) =>
+        entry.description
+          ? `- ${entry.prompt} (${entry.description})`
+          : `- ${entry.prompt}`,
     );
     if (displayMessage) {
       return `${displayMessage}\n${lines.join("\n")}`;
