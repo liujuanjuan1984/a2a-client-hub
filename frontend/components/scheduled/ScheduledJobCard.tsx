@@ -293,44 +293,49 @@ export function ScheduledJobCard({
               </Text>
             ) : (
               <>
-                {executions.map((execution) => (
-                  <View
-                    key={execution.id}
-                    className="mb-2 rounded-xl bg-black/20 p-3"
-                  >
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-[10px] font-medium text-slate-500">
-                        {formatLocalDateTime(
-                          execution.finished_at ??
-                            execution.started_at ??
-                            execution.scheduled_for,
-                          timeZone,
-                        )}
-                      </Text>
-                      <View className="rounded px-1 py-0.5 bg-black/20">
-                        <Text
-                          className={`text-[9px] font-bold ${executionStatusColor[execution.status]}`}
-                        >
-                          {execution.status.toUpperCase()}
-                        </Text>
+                {executions.map((execution) => {
+                  const errorMessage = execution.error_message?.trim();
+
+                  return (
+                    <View
+                      key={execution.id}
+                      className="mb-2 rounded-xl bg-black/20 p-3"
+                    >
+                      <View className="flex-row items-center justify-between gap-3">
+                        <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                          <View className="rounded bg-black/20 px-1 py-0.5">
+                            <Text
+                              className={`text-[9px] font-bold ${executionStatusColor[execution.status]}`}
+                            >
+                              {execution.status.toUpperCase()}
+                            </Text>
+                          </View>
+                          <Text className="flex-1 text-[10px] font-medium text-slate-500">
+                            {formatLocalDateTime(
+                              execution.finished_at ??
+                                execution.started_at ??
+                                execution.scheduled_for,
+                              timeZone,
+                            )}
+                          </Text>
+                        </View>
+                        {execution.conversation_id ? (
+                          <Button
+                            label="Open Session"
+                            size="xs"
+                            variant="secondary"
+                            onPress={() => openExecutionSession(execution)}
+                          />
+                        ) : null}
                       </View>
+                      {errorMessage ? (
+                        <Text className="mt-2 text-[11px] font-normal leading-4 text-red-400/80">
+                          {errorMessage}
+                        </Text>
+                      ) : null}
                     </View>
-                    {execution.error_message ? (
-                      <Text className="mt-2 text-[11px] font-normal text-red-400/80">
-                        {execution.error_message}
-                      </Text>
-                    ) : null}
-                    {execution.conversation_id ? (
-                      <Button
-                        className="mt-3 self-start"
-                        label="Open Session"
-                        size="xs"
-                        variant="secondary"
-                        onPress={() => openExecutionSession(execution)}
-                      />
-                    ) : null}
-                  </View>
-                ))}
+                  );
+                })}
 
                 {executionsHasMore ? (
                   <Button

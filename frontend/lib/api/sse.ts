@@ -39,8 +39,48 @@ export type SSEOptions = {
 const DEFAULT_IDLE_TIMEOUT_MS = 45_000;
 const isUnauthorizedStatusCode = (status: number) => status === 401;
 
+export class SSEStreamError extends Error {
+  errorCode: string | null;
+
+  constructor(message: string, errorCode: string | null = null) {
+    super(message);
+    this.name = "SSEStreamError";
+    this.errorCode = errorCode;
+    Object.setPrototypeOf(this, SSEStreamError.prototype);
+  }
+}
+
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const normalizeErrorCode = (value: unknown): string | null =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+const parseSseError = (data: string): SSEStreamError => {
+  const fallbackMessage = data || "Stream error";
+
+  try {
+    const parsed = JSON.parse(data) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return new SSEStreamError(fallbackMessage);
+    }
+
+    const record = parsed as Record<string, unknown>;
+    const message =
+      typeof record.message === "string" && record.message.trim().length > 0
+        ? record.message
+        : typeof record.error === "string" && record.error.trim().length > 0
+          ? record.error
+          : fallbackMessage;
+
+    return new SSEStreamError(
+      message,
+      normalizeErrorCode(record.error_code ?? record.errorCode),
+    );
+  } catch {
+    return new SSEStreamError(fallbackMessage);
+  }
+};
 
 const findSseBoundary = (
   buffer: string,
@@ -299,7 +339,7 @@ const consumeSseStream = async (
       const event = parseSseEvent(rawEvent);
 
       if (event.eventType === "error") {
-        throw new Error(event.data || "Stream error");
+        throw parseSseError(event.data);
       }
 
       handlers.onEvent?.(event);

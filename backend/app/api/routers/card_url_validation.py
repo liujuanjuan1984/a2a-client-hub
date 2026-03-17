@@ -42,7 +42,10 @@ def normalize_card_url(
             ) from exc
         raise HTTPException(
             status_code=403,
-            detail="Card URL host is not allowed",
+            detail={
+                "error_code": "card_url_host_not_allowed",
+                "message": "Card URL host is not allowed",
+            },
         ) from exc
     return trimmed
 

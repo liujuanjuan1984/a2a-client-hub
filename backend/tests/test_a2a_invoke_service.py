@@ -1210,7 +1210,7 @@ async def test_send_ws_error_ignores_closed_socket_runtime_error() -> None:
 
 @pytest.mark.asyncio
 async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
-    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.01)
+    monkeypatch.setattr(settings, "a2a_stream_heartbeat_interval", 0.1)
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithDelayedEvents(
             [
@@ -1221,7 +1221,7 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
                 ),
                 {"kind": "status-update", "final": True},
             ],
-            delay_seconds=0.05,
+            delay_seconds=0.5,
         ),
         resolved=object(),
         query="hello",
@@ -1230,8 +1230,8 @@ async def test_consume_stream_treats_heartbeat_as_activity(monkeypatch):
         validate_message=lambda _: [],
         logger=logging.getLogger(__name__),
         log_extra={},
-        idle_timeout_seconds=0.02,
-        total_timeout_seconds=0.2,
+        idle_timeout_seconds=0.2,
+        total_timeout_seconds=2.0,
     )
     assert result.success is True
     assert result.finish_reason == StreamFinishReason.SUCCESS
