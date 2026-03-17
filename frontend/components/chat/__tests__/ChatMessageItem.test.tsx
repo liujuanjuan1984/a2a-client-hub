@@ -186,7 +186,7 @@ describe("ChatMessageItem interaction", () => {
     );
   });
 
-  it("falls back to block content without internal block prefixes", async () => {
+  it("does not copy block-only agent messages when normalized content is empty", async () => {
     const message = buildAgentMessage({
       content: "",
       blocks: [
@@ -221,12 +221,8 @@ describe("ChatMessageItem interaction", () => {
       fireEvent.press(screen.getByLabelText("Copy message"));
     });
 
-    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
-      'Primary text\n\n{"tool":"search"}',
-    );
-    expect(Clipboard.setStringAsync).not.toHaveBeenCalledWith(
-      expect.stringContaining("[tool_call]"),
-    );
+    expect(Clipboard.setStringAsync).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("does not show empty fallback while agent message is streaming without content", () => {

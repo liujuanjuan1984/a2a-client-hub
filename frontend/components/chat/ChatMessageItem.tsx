@@ -86,21 +86,8 @@ export function ChatMessageItem({
   );
 
   const textToCopy = useMemo(() => {
-    const normalizedContent = message.content.trim();
-    if (normalizedContent) {
-      return normalizedContent;
-    }
-
-    if (message.role !== "agent" || !message.blocks?.length) {
-      return "";
-    }
-
-    return message.blocks
-      .map((block) => block.content.trim())
-      .filter(Boolean)
-      .join("\n\n")
-      .trim();
-  }, [message.blocks, message.content, message.role]);
+    return message.content.trim();
+  }, [message.content]);
 
   const renderableBlocks = deriveRenderableBlocks(message);
   const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;
