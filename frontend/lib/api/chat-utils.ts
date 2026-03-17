@@ -512,24 +512,62 @@ const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
   }
 
   if (interrupt.type === "permission") {
+    const displayMessage = interrupt.details.displayMessage?.trim() || null;
     const permission = interrupt.details.permission?.trim() || "unknown";
     const patterns = interrupt.details.patterns ?? [];
+    const baseMessage =
+      displayMessage || `Agent requested authorization: ${permission}.`;
     if (patterns.length > 0) {
-      return `Agent requested authorization: ${permission}.\nTargets: ${patterns.join(", ")}`;
+      return `${baseMessage}\nTargets: ${patterns.join(", ")}`;
     }
-    return `Agent requested authorization: ${permission}.`;
+    return baseMessage;
   }
 
-  const questionLines = (interrupt.details.questions ?? [])
-    .map((question) => question.question.trim())
-    .filter((question) => question.length > 0);
-  if (questionLines.length === 1) {
-    return `Agent requested additional input: ${questionLines[0]}`;
+  const displayMessage = interrupt.details.displayMessage?.trim() || null;
+  const questionEntries = (interrupt.details.questions ?? [])
+    .map((question) => {
+      const prompt = question.question.trim();
+      if (!prompt) {
+        return null;
+      }
+      const description = question.description?.trim() || null;
+      return { prompt, description };
+    })
+    .filter(
+      (
+        question,
+      ): question is {
+        prompt: string;
+        description: string | null;
+      } => Boolean(question),
+    );
+  if (questionEntries.length === 1) {
+    const entry = questionEntries[0];
+    if (displayMessage) {
+      const lines = [displayMessage, `Question: ${entry.prompt}`];
+      if (entry.description) {
+        lines.push(`Details: ${entry.description}`);
+      }
+      return lines.join("\n");
+    }
+    if (entry.description) {
+      return `Agent requested additional input: ${entry.prompt}\nDetails: ${entry.description}`;
+    }
+    return `Agent requested additional input: ${entry.prompt}`;
   }
-  if (questionLines.length > 1) {
-    return `Agent requested additional input:\n${questionLines
-      .map((question) => `- ${question}`)
-      .join("\n")}`;
+  if (questionEntries.length > 1) {
+    const lines = questionEntries.map((entry) =>
+      entry.description
+        ? `- ${entry.prompt} (${entry.description})`
+        : `- ${entry.prompt}`,
+    );
+    if (displayMessage) {
+      return `${displayMessage}\n${lines.join("\n")}`;
+    }
+    return `Agent requested additional input:\n${lines.join("\n")}`;
+  }
+  if (displayMessage) {
+    return displayMessage;
   }
   return "Agent requested additional input.";
 };

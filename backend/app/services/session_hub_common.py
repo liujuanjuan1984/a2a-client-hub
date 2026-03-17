@@ -249,6 +249,9 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
     if not isinstance(details, dict):
         details = {}
     if interrupt_type == "permission":
+        display_message = normalize_non_empty_text(
+            details.get("display_message") or details.get("displayMessage")
+        )
         permission = normalize_non_empty_text(details.get("permission")) or "unknown"
         patterns = details.get("patterns")
         normalized_patterns = (
@@ -256,12 +259,12 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
             if isinstance(patterns, list)
             else []
         )
+        base_message = (
+            display_message or f"Agent requested authorization: {permission}."
+        )
         if normalized_patterns:
-            return (
-                f"Agent requested authorization: {permission}.\n"
-                f"Targets: {', '.join(normalized_patterns)}"
-            )
-        return f"Agent requested authorization: {permission}."
+            return f"{base_message}\nTargets: {', '.join(normalized_patterns)}"
+        return base_message
 
     questions = details.get("questions")
     normalized_questions = (
@@ -269,16 +272,40 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
         if isinstance(questions, list)
         else []
     )
-    question_lines = [
-        normalize_non_empty_text(item.get("question")) for item in normalized_questions
-    ]
-    question_lines = [item for item in question_lines if item]
-    if len(question_lines) == 1:
-        return f"Agent requested additional input: {question_lines[0]}"
-    if len(question_lines) > 1:
-        return "Agent requested additional input:\n" + "\n".join(
-            f"- {question}" for question in question_lines
+    display_message = normalize_non_empty_text(
+        details.get("display_message") or details.get("displayMessage")
+    )
+    question_entries: list[tuple[str, str | None]] = []
+    for item in normalized_questions:
+        question = normalize_non_empty_text(item.get("question"))
+        if not question:
+            continue
+        question_entries.append(
+            (question, normalize_non_empty_text(item.get("description")))
         )
+    if len(question_entries) == 1:
+        question, description = question_entries[0]
+        if display_message:
+            lines = [display_message, f"Question: {question}"]
+            if description:
+                lines.append(f"Details: {description}")
+            return "\n".join(lines)
+        if description:
+            return (
+                f"Agent requested additional input: {question}\n"
+                f"Details: {description}"
+            )
+        return f"Agent requested additional input: {question}"
+    if len(question_entries) > 1:
+        lines = [
+            f"- {question}{f' ({description})' if description else ''}"
+            for question, description in question_entries
+        ]
+        if display_message:
+            return f"{display_message}\n" + "\n".join(lines)
+        return "Agent requested additional input:\n" + "\n".join(lines)
+    if display_message:
+        return display_message
     return "Agent requested additional input."
 
 

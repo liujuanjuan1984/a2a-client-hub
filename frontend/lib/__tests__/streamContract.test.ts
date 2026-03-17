@@ -178,6 +178,54 @@ describe("block-based stream parser and reducer", () => {
     expect(projectPrimaryTextContent(blocks)).toBe("");
   });
 
+  it("prefers richer permission display text when building interrupt_event blocks", () => {
+    const update = buildInterruptEventBlockUpdate({
+      messageId: "msg-interrupt-rich-permission",
+      interrupt: {
+        requestId: "perm-rich-1",
+        type: "permission",
+        phase: "asked",
+        details: {
+          permission: "approval",
+          patterns: ["/repo/.env"],
+          displayMessage: "Agent wants to read the environment file.",
+        },
+      },
+    });
+
+    expect(update.delta).toBe(
+      "Agent wants to read the environment file.\nTargets: /repo/.env",
+    );
+  });
+
+  it("keeps question descriptions when building interrupt_event blocks", () => {
+    const update = buildInterruptEventBlockUpdate({
+      messageId: "msg-interrupt-rich-question",
+      interrupt: {
+        requestId: "q-rich-1",
+        type: "question",
+        phase: "asked",
+        details: {
+          displayMessage: "Please confirm how the agent should continue.",
+          questions: [
+            {
+              header: "Approval",
+              question: "Proceed with deployment?",
+              description: "This will update the production service.",
+              options: [{ label: "Yes", value: "yes", description: null }],
+            },
+          ],
+        },
+      },
+    });
+
+    expect(update.delta).toBe(
+      "Please confirm how the agent should continue.\n" +
+        "Question: Proceed with deployment?\n" +
+        "Details: This will update the production service.",
+    );
+  });
+
   it("supports overwrite semantics when append=false or final_snapshot arrives", () => {
     let blocks: MessageBlock[] | undefined;
     blocks = applyStreamBlockUpdate(
