@@ -253,17 +253,29 @@ const pickRawString = (
   return null;
 };
 
+const resolveNestedValue = (
+  source: Record<string, unknown> | null,
+  path: string[],
+): unknown => {
+  if (!source) return null;
+  let current: unknown = source;
+  for (const key of path) {
+    const record = asRecord(current);
+    if (!record) {
+      return null;
+    }
+    current = record[key];
+  }
+  return current;
+};
+
 const pickNestedRawString = (
   source: Record<string, unknown> | null,
   paths: string[][],
 ): string | null => {
   if (!source) return null;
   for (const path of paths) {
-    let current: unknown = source;
-    for (const key of path) {
-      const record = asRecord(current);
-      current = record ? record[key] : null;
-    }
+    const current = resolveNestedValue(source, path);
     if (typeof current === "string") {
       const trimmed = current.trim();
       if (trimmed) {
@@ -280,11 +292,7 @@ const pickFirstArray = (
 ): unknown[] => {
   if (!source) return [];
   for (const path of paths) {
-    let current: unknown = source;
-    for (const key of path) {
-      const record = asRecord(current);
-      current = record ? record[key] : null;
-    }
+    const current = resolveNestedValue(source, path);
     if (Array.isArray(current)) {
       return current;
     }

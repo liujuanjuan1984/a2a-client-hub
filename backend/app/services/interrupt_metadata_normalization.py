@@ -16,13 +16,21 @@ def _pick_non_empty_text(payload: dict[str, Any], keys: Iterable[str]) -> str | 
     return None
 
 
+def _resolve_nested_value(payload: dict[str, Any], path: Sequence[str]) -> Any:
+    current: Any = payload
+    for key in path:
+        record = as_dict(current)
+        if not record:
+            return None
+        current = record.get(key)
+    return current
+
+
 def _pick_nested_non_empty_text(
     payload: dict[str, Any], paths: Sequence[Sequence[str]]
 ) -> str | None:
     for path in paths:
-        current: Any = payload
-        for key in path:
-            current = as_dict(current).get(key) if as_dict(current) else None
+        current = _resolve_nested_value(payload, path)
         value = normalize_non_empty_text(current)
         if value:
             return value
@@ -33,9 +41,7 @@ def _pick_first_list(
     payload: dict[str, Any], paths: Sequence[Sequence[str]]
 ) -> list[Any]:
     for path in paths:
-        current: Any = payload
-        for key in path:
-            current = as_dict(current).get(key) if as_dict(current) else None
+        current = _resolve_nested_value(payload, path)
         if isinstance(current, list):
             return current
     return []
