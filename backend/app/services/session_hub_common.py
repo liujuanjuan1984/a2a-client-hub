@@ -176,7 +176,13 @@ def derive_session_title_from_query(query: str) -> str | None:
 
 def normalize_block_type(raw_type: str | None) -> str:
     normalized = (raw_type or "").strip().lower()
-    if normalized in {"text", "reasoning", "tool_call", "system_error"}:
+    if normalized in {
+        "text",
+        "reasoning",
+        "tool_call",
+        "interrupt_event",
+        "system_error",
+    }:
         return normalized
     return "text"
 

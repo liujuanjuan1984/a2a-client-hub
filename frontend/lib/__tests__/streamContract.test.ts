@@ -1,6 +1,7 @@
 import {
   applyLoadedBlockDetail,
   applyStreamBlockUpdate,
+  buildInterruptEventBlockUpdate,
   extractSessionMeta,
   extractRuntimeStatus,
   extractRuntimeStatusEvent,
@@ -12,7 +13,7 @@ import {
 } from "@/lib/api/chat-utils";
 
 const buildBlockUpdatePayload = (input: {
-  blockType: "text" | "reasoning" | "tool_call";
+  blockType: "text" | "reasoning" | "tool_call" | "interrupt_event";
   delta: string;
   artifactId: string;
   taskId?: string;
@@ -149,6 +150,32 @@ describe("block-based stream parser and reducer", () => {
     );
 
     expect(projectPrimaryTextContent(blocks)).toBe("Hello world");
+  });
+
+  it("keeps interrupt_event blocks out of projected message content", () => {
+    const blocks = applyStreamBlockUpdate(
+      undefined,
+      buildInterruptEventBlockUpdate({
+        messageId: "msg-interrupt-1",
+        interrupt: {
+          requestId: "perm-1",
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission: "read",
+            patterns: ["/repo/.env"],
+            displayMessage: null,
+          },
+        },
+      }),
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks?.[0]?.type).toBe("interrupt_event");
+    expect(blocks?.[0]?.content).toBe(
+      "Agent requested authorization: read.\nTargets: /repo/.env",
+    );
+    expect(projectPrimaryTextContent(blocks)).toBe("");
   });
 
   it("supports overwrite semantics when append=false or final_snapshot arrives", () => {
@@ -324,6 +351,38 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.eventId).toBe("evt-shared");
     expect(parsed?.seq).toBe(10);
     expect(parsed?.source).toBe("tool_part_update");
+  });
+
+  it("parses interrupt_event blocks carried in artifact metadata", () => {
+    const parsed = extractStreamBlockUpdate({
+      kind: "artifact-update",
+      message_id: "msg-interrupt-2",
+      event_id: "evt-interrupt-2",
+      seq: 8,
+      append: false,
+      artifact: {
+        artifact_id: "artifact-interrupt-2",
+        parts: [
+          {
+            kind: "text",
+            text: "Agent requested additional input: Proceed?",
+          },
+        ],
+        metadata: {
+          block_type: "interrupt_event",
+          source: "interrupt_lifecycle",
+        },
+      },
+    });
+
+    expect(parsed).toMatchObject({
+      blockType: "interrupt_event",
+      delta: "Agent requested additional input: Proceed?",
+      messageId: "msg-interrupt-2",
+      source: "interrupt_lifecycle",
+      append: false,
+      done: false,
+    });
   });
 
   it("parses tool_call blocks carried in data parts", () => {

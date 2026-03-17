@@ -758,6 +758,95 @@ async def test_messages_query_fills_visible_page_when_interrupt_lifecycle_exists
     assert payload["items"][1]["blocks"][0]["content"] == "world"
 
 
+async def test_messages_query_keeps_interrupt_event_blocks_inline_on_agent_message(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session, user_id=user.id, suffix="interrupt-inline-blocks"
+    )
+
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Interrupt Inline Blocks",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+
+    agent_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        status="done",
+    )
+    async_db_session.add(agent_message)
+    await async_db_session.flush()
+
+    async_db_session.add_all(
+        [
+            AgentMessageBlock(
+                user_id=user.id,
+                message_id=agent_message.id,
+                block_seq=1,
+                block_type="text",
+                content="Checking access",
+                is_finished=True,
+                source="stream",
+            ),
+            AgentMessageBlock(
+                user_id=user.id,
+                message_id=agent_message.id,
+                block_seq=2,
+                block_type="interrupt_event",
+                content="Agent requested authorization: read.\nTargets: /repo/.env",
+                is_finished=True,
+                source="interrupt_lifecycle",
+            ),
+            AgentMessageBlock(
+                user_id=user.id,
+                message_id=agent_message.id,
+                block_seq=3,
+                block_type="text",
+                content="Resuming execution",
+                is_finished=True,
+                source="stream",
+            ),
+        ]
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.post(
+            f"/me/conversations/{session.id}/messages:query",
+            json={"limit": 8},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert len(payload["items"]) == 1
+    returned_message = payload["items"][0]
+    assert returned_message["role"] == "agent"
+    assert [block["type"] for block in returned_message["blocks"]] == [
+        "text",
+        "interrupt_event",
+        "text",
+    ]
+    assert returned_message["blocks"][1]["content"].startswith(
+        "Agent requested authorization: read."
+    )
+
+
 async def test_messages_query_keeps_non_interrupt_system_messages(
     async_db_session,
     async_session_maker,

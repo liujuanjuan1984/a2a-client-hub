@@ -658,7 +658,7 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
 async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_events(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, object] = {}
+    captured_calls: list[tuple[str, object]] = []
 
     class _DummySession:
         async def scalar(self, *_args, **_kwargs):  # noqa: ANN001
@@ -671,12 +671,17 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
         async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
             return None
 
-    async def fake_record_interrupt_lifecycle_event(
-        db,  # noqa: ARG001
-        **kwargs,
-    ) -> UUID | None:
-        captured.update(kwargs)
-        return uuid4()
+    async def fake_append_agent_message_block_updates(
+        _db, **kwargs  # noqa: ANN001
+    ) -> list[object]:
+        captured_calls.append(("flush", kwargs))
+        return [object()]
+
+    async def fake_append_agent_message_block_update(
+        _db, **kwargs  # noqa: ANN001
+    ) -> object:
+        captured_calls.append(("interrupt", kwargs))
+        return object()
 
     async def fake_commit_safely(_db):  # noqa: ANN001
         return None
@@ -688,12 +693,18 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
     )
     monkeypatch.setattr(
         invoke_route_runner.session_hub_service,
-        "record_interrupt_lifecycle_event_by_local_session_id",
-        fake_record_interrupt_lifecycle_event,
+        "append_agent_message_block_updates",
+        fake_append_agent_message_block_updates,
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "append_agent_message_block_update",
+        fake_append_agent_message_block_update,
     )
     monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
 
     local_session_id = uuid4()
+    agent_message_id = uuid4()
     state = invoke_route_runner._InvokeState(
         local_session_id=local_session_id,
         local_source="manual",
@@ -701,6 +712,23 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
         metadata={},
         stream_identity={},
         stream_usage={},
+        message_refs={
+            "user_message_id": str(uuid4()),
+            "agent_message_id": str(agent_message_id),
+        },
+        next_event_seq=3,
+        chunk_buffer=[
+            {
+                "seq": 2,
+                "block_type": "text",
+                "content": "partial",
+                "append": True,
+                "is_finished": False,
+                "event_id": "evt-partial",
+                "source": "stream",
+            }
+        ],
+        current_block_type="text",
     )
     on_event, _ = invoke_route_runner._build_consume_stream_callbacks(
         state=state,
@@ -732,16 +760,28 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
         }
     )
 
-    assert captured["local_session_id"] == local_session_id
-    assert captured["event"] == {
-        "request_id": "perm-1",
-        "type": "permission",
-        "phase": "asked",
-        "details": {
-            "permission": "read",
-            "patterns": ["/repo/.env"],
-        },
-    }
+    assert captured_calls[0][0] == "flush"
+    flushed_updates = captured_calls[0][1]
+    assert isinstance(flushed_updates, dict)
+    assert flushed_updates["agent_message_id"] == agent_message_id
+    assert flushed_updates["updates"][0]["content"] == "partial"
+
+    assert captured_calls[1][0] == "interrupt"
+    interrupt_call = captured_calls[1][1]
+    assert isinstance(interrupt_call, dict)
+    assert interrupt_call["agent_message_id"] == agent_message_id
+    assert interrupt_call["seq"] == 3
+    assert interrupt_call["block_type"] == "interrupt_event"
+    assert interrupt_call["append"] is False
+    assert interrupt_call["is_finished"] is True
+    assert interrupt_call["source"] == "interrupt_lifecycle"
+    assert (
+        interrupt_call["content"]
+        == "Agent requested authorization: read.\nTargets: /repo/.env"
+    )
+    assert state.chunk_buffer == []
+    assert state.persisted_block_count == 2
+    assert state.next_event_seq == 4
 
 
 def test_resolve_invoke_idempotency_key_hashes_overlong_value() -> None:
@@ -1120,10 +1160,10 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     updates = captured["updates"]
     assert isinstance(updates, list)
     assert len(updates) == 1
-    assert updates[0]["seq"] == 9
+    assert updates[0]["seq"] == 3
     assert updates[0]["append"] is False
     assert updates[0]["is_finished"] is True
-    assert state.next_event_seq == 10
+    assert state.next_event_seq == 4
     assert state.persisted_block_count == 1
     assert state.chunk_buffer == []
     assert event_payload["message_id"] == str(state.message_refs["agent_message_id"])

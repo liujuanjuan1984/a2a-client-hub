@@ -577,6 +577,118 @@ describe("executeChatRuntime empty-content recovery", () => {
     expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
   });
 
+  it("inserts interrupt_event blocks inline during stream status updates", async () => {
+    const conversationId = "conv-stream-interrupt-block-1";
+    const agentId = "agent-interrupt-block-1";
+    const userMessageId = "user-msg-interrupt-block-1";
+    const agentMessageId = "agent-msg-interrupt-block-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T06:30:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T06:30:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    let interruptBlockSnapshot:
+      | {
+          type?: string;
+          content?: string;
+        }
+      | undefined;
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "input-required" },
+          final: false,
+          metadata: {
+            shared: {
+              interrupt: {
+                request_id: "perm-inline-1",
+                type: "permission",
+                phase: "asked",
+                details: {
+                  permission: "read",
+                  patterns: ["/repo/.env"],
+                },
+              },
+            },
+          },
+        });
+
+        const agentMessage = getConversationMessages(conversationId).find(
+          (message) => message.id === agentMessageId,
+        );
+        interruptBlockSnapshot = agentMessage?.blocks?.[0];
+
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(interruptBlockSnapshot).toMatchObject({
+      type: "interrupt_event",
+      content: "Agent requested authorization: read.\nTargets: /repo/.env",
+    });
+    expect(state.sessions[conversationId]?.pendingInterrupt).toBeNull();
+  });
+
   it("keeps pending interrupt until a matching resolved event arrives", async () => {
     const conversationId = "conv-interrupt-pending-1";
     const agentId = "agent-interrupt-1";
