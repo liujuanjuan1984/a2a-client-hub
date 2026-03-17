@@ -59,6 +59,50 @@ describe("ChatMessageItem interaction", () => {
     jest.clearAllMocks();
   });
 
+  it("copies normalized agent content without duplicating block text", async () => {
+    const message = buildAgentMessage({
+      content: "Agent response",
+      blocks: [
+        {
+          id: "block-1",
+          type: "text",
+          content: "Agent response",
+          isFinished: true,
+          createdAt: "2026-02-24T00:00:00.000Z",
+          updatedAt: "2026-02-24T00:00:00.000Z",
+        },
+        {
+          id: "block-2",
+          type: "reasoning",
+          content: "Internal reasoning",
+          isFinished: true,
+          createdAt: "2026-02-24T00:00:01.000Z",
+          updatedAt: "2026-02-24T00:00:01.000Z",
+        },
+      ],
+    });
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Copy message"));
+    });
+
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith("Agent response");
+    expect(Clipboard.setStringAsync).not.toHaveBeenCalledWith(
+      expect.stringContaining("[text]"),
+    );
+    expect(Clipboard.setStringAsync).not.toHaveBeenCalledWith(
+      expect.stringContaining("Internal reasoning"),
+    );
+  });
+
   it("copies message content to clipboard on copy button press", async () => {
     const message = buildAgentMessage({
       role: "user",
@@ -139,6 +183,49 @@ describe("ChatMessageItem interaction", () => {
     expect(toast.success).toHaveBeenCalledWith(
       "Copied",
       "Message copied to clipboard.",
+    );
+  });
+
+  it("falls back to block content without internal block prefixes", async () => {
+    const message = buildAgentMessage({
+      content: "",
+      blocks: [
+        {
+          id: "block-1",
+          type: "text",
+          content: "Primary text",
+          isFinished: true,
+          createdAt: "2026-02-24T00:00:00.000Z",
+          updatedAt: "2026-02-24T00:00:00.000Z",
+        },
+        {
+          id: "block-2",
+          type: "tool_call",
+          content: '{"tool":"search"}',
+          isFinished: true,
+          createdAt: "2026-02-24T00:00:01.000Z",
+          updatedAt: "2026-02-24T00:00:01.000Z",
+        },
+      ],
+    });
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Copy message"));
+    });
+
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
+      'Primary text\n\n{"tool":"search"}',
+    );
+    expect(Clipboard.setStringAsync).not.toHaveBeenCalledWith(
+      expect.stringContaining("[tool_call]"),
     );
   });
 
