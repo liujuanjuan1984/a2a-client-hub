@@ -28,7 +28,6 @@ from app.integrations.a2a_extensions.errors import (
 from app.schemas.a2a_extension import (
     A2AExtensionResponse,
     A2AProviderDiscoveryRequest,
-    OpenCodeCapabilityResponse,
 )
 from app.utils.logging_redaction import redact_url_for_logging
 
@@ -112,32 +111,6 @@ def create_opencode_provider_discovery_router(
         if response.success or status_code == status.HTTP_200_OK:
             return response
         return JSONResponse(status_code=status_code, content=response.model_dump())
-
-    @router.get(
-        "/{agent_id}/extensions/opencode/capability",
-        response_model=OpenCodeCapabilityResponse,
-        status_code=status.HTTP_200_OK,
-    )
-    async def get_opencode_capability(
-        *,
-        agent_id: UUID,
-        response: Response,
-        db: AsyncSession = Depends(get_async_db),
-        current_user: User = Depends(get_current_user),
-    ) -> OpenCodeCapabilityResponse:
-        response.headers["Cache-Control"] = "no-store"
-        runtime = await _get_runtime(db, current_user, agent_id)
-
-        from app.integrations.a2a_extensions.errors import A2AExtensionNotSupportedError
-        from app.integrations.a2a_extensions.opencode_provider_discovery import (
-            resolve_opencode_provider_discovery,
-        )
-
-        try:
-            resolve_opencode_provider_discovery(runtime.resolved)
-            return OpenCodeCapabilityResponse(supported=True)
-        except A2AExtensionNotSupportedError:
-            return OpenCodeCapabilityResponse(supported=False)
 
     @router.post(
         "/{agent_id}/extensions/opencode/providers:list",

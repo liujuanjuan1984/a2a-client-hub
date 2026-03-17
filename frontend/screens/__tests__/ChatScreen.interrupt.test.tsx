@@ -287,9 +287,9 @@ jest.mock("@/hooks/useChatHistoryQuery", () => ({
   useSessionHistoryQuery: () => mockSessionHistoryState,
 }));
 
-jest.mock("@/hooks/useOpencodeCapabilityQuery", () => ({
-  useOpencodeCapabilityQuery: () => ({
-    capabilityStatus: "supported",
+jest.mock("@/hooks/useExtensionCapabilitiesQuery", () => ({
+  useExtensionCapabilitiesQuery: () => ({
+    modelSelectionStatus: "supported",
     canShowModelPicker: true,
   }),
 }));

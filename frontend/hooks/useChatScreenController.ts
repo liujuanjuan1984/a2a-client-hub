@@ -17,9 +17,9 @@ import {
 } from "@/hooks/useAgentsCatalogQuery";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
 import {
-  type OpencodeCapabilityStatus,
-  useOpencodeCapabilityQuery,
-} from "@/hooks/useOpencodeCapabilityQuery";
+  type GenericCapabilityStatus,
+  useExtensionCapabilitiesQuery,
+} from "@/hooks/useExtensionCapabilitiesQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import {
   A2AExtensionCallError,
@@ -159,14 +159,14 @@ export function useChatScreenController({
   const pendingInterrupt = session?.pendingInterrupt ?? null;
   const lastResolvedInterrupt = session?.lastResolvedInterrupt ?? null;
   const selectedModel = getSharedModelSelection(session?.metadata);
-  const opencodeCapabilityQuery = useOpencodeCapabilityQuery({
+  const extensionCapabilitiesQuery = useExtensionCapabilitiesQuery({
     agentId: activeAgentId,
     source: agent?.source,
   });
-  const opencodeCapabilityStatus: OpencodeCapabilityStatus =
+  const modelSelectionStatus: GenericCapabilityStatus =
     !activeAgentId || !agent?.source
       ? "unsupported"
-      : opencodeCapabilityQuery.capabilityStatus;
+      : extensionCapabilitiesQuery.modelSelectionStatus;
   const pendingQuestionCount =
     pendingInterrupt?.type === "question"
       ? (pendingInterrupt.details.questions?.length ?? 0)
@@ -977,7 +977,7 @@ export function useChatScreenController({
     conversationId,
     session,
     sessionSource,
-    opencodeCapabilityStatus,
+    modelSelectionStatus,
     selectedModel,
     messages,
     historyLoading,

@@ -896,7 +896,7 @@ async def test_hub_opencode_provider_discovery_routes_use_hub_runtime(
 
 
 @pytest.mark.asyncio
-async def test_hub_opencode_capability_route_returns_supported_true(
+async def test_hub_extension_capabilities_route_returns_model_selection_true(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
@@ -920,22 +920,22 @@ async def test_hub_opencode_capability_route_returns_supported_true(
     )
 
     async with create_test_client(
-        hub_provider_discovery_router.router,
+        hub_extension_router.router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
         response = await user_client.get(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/capability"
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/capabilities"
         )
 
     assert response.status_code == 200
-    assert response.json() == {"supported": True}
+    assert response.json() == {"modelSelection": True}
     assert response.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.asyncio
-async def test_hub_opencode_capability_route_returns_supported_false_for_unsupported_agent(
+async def test_hub_extension_capabilities_route_returns_model_selection_false_for_unsupported_agent(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
@@ -964,17 +964,17 @@ async def test_hub_opencode_capability_route_returns_supported_false_for_unsuppo
     )
 
     async with create_test_client(
-        hub_provider_discovery_router.router,
+        hub_extension_router.router,
         async_session_maker=async_session_maker,
         current_user=user,
         base_prefix=settings.api_v1_prefix,
     ) as user_client:
         response = await user_client.get(
-            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/opencode/capability"
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/capabilities"
         )
 
     assert response.status_code == 200
-    assert response.json() == {"supported": False}
+    assert response.json() == {"modelSelection": False}
     assert response.headers["cache-control"] == "no-store"
 
 

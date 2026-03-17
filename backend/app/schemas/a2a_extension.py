@@ -108,15 +108,19 @@ class A2AProviderDiscoveryRequest(BaseModel):
     )
 
 
-class OpenCodeCapabilityResponse(BaseModel):
-    supported: bool = Field(
+class A2AExtensionCapabilitiesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    model_selection: bool = Field(
         ...,
-        description="Whether the OpenCode discovery extension is supported by the agent",
+        alias="modelSelection",
+        description="Whether the agent supports generic chat model selection",
     )
 
 
 __all__ = [
     "A2AExtensionPromptAsyncRequest",
+    "A2AExtensionCapabilitiesResponse",
     "A2AExtensionPermissionReplyRequest",
     "A2AExtensionQueryPagination",
     "A2AExtensionQueryResponse",
@@ -126,5 +130,4 @@ __all__ = [
     "A2AExtensionQuestionReplyRequest",
     "A2AExtensionResponse",
     "A2AProviderDiscoveryRequest",
-    "OpenCodeCapabilityResponse",
 ]

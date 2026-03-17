@@ -86,6 +86,18 @@ const buildInterruptPath = (
   return `${base}/extensions/interrupts/${suffix}`;
 };
 
+const buildExtensionPath = (
+  source: ExtensionAgentSource,
+  agentId: string,
+  suffix: string,
+) => {
+  const base =
+    source === "shared"
+      ? `/a2a/agents/${encodeURIComponent(agentId)}`
+      : `/me/a2a/agents/${encodeURIComponent(agentId)}`;
+  return `${base}/extensions/${suffix}`;
+};
+
 const buildSessionPath = (
   source: ExtensionAgentSource,
   agentId: string,
@@ -102,13 +114,7 @@ const buildOpencodeDiscoveryPath = (
   source: ExtensionAgentSource,
   agentId: string,
   suffix: string,
-) => {
-  const base =
-    source === "shared"
-      ? `/a2a/agents/${encodeURIComponent(agentId)}`
-      : `/me/a2a/agents/${encodeURIComponent(agentId)}`;
-  return `${base}/extensions/opencode/${suffix}`;
-};
+) => buildExtensionPath(source, agentId, `opencode/${suffix}`);
 
 const assertInterruptAckResult = (
   response: A2AExtensionResponse,
@@ -285,12 +291,12 @@ const asModelItems = (value: unknown): OpencodeModelSummary[] => {
   );
 };
 
-export const getOpencodeDiscoveryCapability = async (input: {
+export const getExtensionCapabilities = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
-}): Promise<{ supported: boolean }> => {
-  const response = await apiRequest<{ supported: boolean }>(
-    buildOpencodeDiscoveryPath(input.source, input.agentId, "capability"),
+}): Promise<{ modelSelection: boolean }> => {
+  const response = await apiRequest<{ modelSelection: boolean }>(
+    buildExtensionPath(input.source, input.agentId, "capabilities"),
     {
       method: "GET",
     },

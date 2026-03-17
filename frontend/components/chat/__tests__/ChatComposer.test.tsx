@@ -10,7 +10,7 @@ jest.mock("@expo/vector-icons", () => ({
 
 describe("ChatComposer clear button", () => {
   const mockProps = {
-    opencodeCapabilityStatus: "supported" as const,
+    modelSelectionStatus: "supported" as const,
     pendingInterrupt: null,
     showShortcutManager: false,
     onOpenShortcutManager: jest.fn(),
@@ -82,7 +82,7 @@ describe("ChatComposer clear button", () => {
 
   it("hides model picker when capability is unsupported", () => {
     const { queryByLabelText } = render(
-      <ChatComposer {...mockProps} opencodeCapabilityStatus="unsupported" />,
+      <ChatComposer {...mockProps} modelSelectionStatus="unsupported" />,
     );
 
     expect(queryByLabelText("Choose model")).toBeNull();
@@ -90,7 +90,7 @@ describe("ChatComposer clear button", () => {
 
   it("keeps model picker visible when capability is still unknown", () => {
     const { getByA11yHint, getByLabelText } = render(
-      <ChatComposer {...mockProps} opencodeCapabilityStatus="unknown" />,
+      <ChatComposer {...mockProps} modelSelectionStatus="unknown" />,
     );
 
     expect(getByLabelText("Choose model")).toBeTruthy();

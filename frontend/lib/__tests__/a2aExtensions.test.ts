@@ -1,7 +1,7 @@
 import {
   A2AExtensionCallError,
   assertExtensionSuccess,
-  getOpencodeDiscoveryCapability,
+  getExtensionCapabilities,
   listOpencodeModels,
   listOpencodeProviders,
   promptSessionAsync,
@@ -166,23 +166,23 @@ describe("assertExtensionSuccess", () => {
     expect(result.connected).toEqual(["openai"]);
   });
 
-  it("calls capability endpoint and returns support flag", async () => {
+  it("calls generic extension capabilities endpoint and returns support flags", async () => {
     mockedApiRequest.mockResolvedValue({
-      supported: false,
+      modelSelection: false,
     });
 
-    const result = await getOpencodeDiscoveryCapability({
+    const result = await getExtensionCapabilities({
       source: "shared",
       agentId: "agent-1",
     });
 
     expect(mockedApiRequest).toHaveBeenCalledWith(
-      "/a2a/agents/agent-1/extensions/opencode/capability",
+      "/a2a/agents/agent-1/extensions/capabilities",
       {
         method: "GET",
       },
     );
-    expect(result).toEqual({ supported: false });
+    expect(result).toEqual({ modelSelection: false });
   });
 
   it("calls model discovery endpoint with provider filter", async () => {

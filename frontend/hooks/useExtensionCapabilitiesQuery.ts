@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { getOpencodeDiscoveryCapability } from "@/lib/api/a2aExtensions";
+import { getExtensionCapabilities } from "@/lib/api/a2aExtensions";
 import { queryKeys } from "@/lib/queryKeys";
 import { type AgentSource } from "@/store/agents";
 
-export type OpencodeCapabilityStatus = "unknown" | "supported" | "unsupported";
+export type GenericCapabilityStatus = "unknown" | "supported" | "unsupported";
 
-export const useOpencodeCapabilityQuery = ({
+export const useExtensionCapabilitiesQuery = ({
   agentId,
   source,
   enabled = true,
@@ -22,13 +22,13 @@ export const useOpencodeCapabilityQuery = ({
     enabled: enabled && Boolean(resolvedAgentId && resolvedSource),
     queryKey:
       resolvedAgentId && resolvedSource
-        ? queryKeys.agents.opencodeCapability({
+        ? queryKeys.agents.extensionCapabilities({
             agentId: resolvedAgentId,
             source: resolvedSource,
           })
-        : (["agents", "opencode-capability", "idle"] as const),
+        : (["agents", "extension-capabilities", "idle"] as const),
     queryFn: async () =>
-      await getOpencodeDiscoveryCapability({
+      await getExtensionCapabilities({
         source: resolvedSource as AgentSource,
         agentId: resolvedAgentId as string,
       }),
@@ -37,16 +37,16 @@ export const useOpencodeCapabilityQuery = ({
     refetchOnReconnect: true,
   });
 
-  const capabilityStatus: OpencodeCapabilityStatus =
-    query.data?.supported === true
+  const modelSelectionStatus: GenericCapabilityStatus =
+    query.data?.modelSelection === true
       ? "supported"
-      : query.data?.supported === false
+      : query.data?.modelSelection === false
         ? "unsupported"
         : "unknown";
 
   return {
     ...query,
-    capabilityStatus,
-    canShowModelPicker: capabilityStatus !== "unsupported",
+    modelSelectionStatus,
+    canShowModelPicker: modelSelectionStatus !== "unsupported",
   };
 };
