@@ -554,7 +554,40 @@ describe("block-based stream parser and reducer", () => {
         details: {
           permission: "read",
           patterns: ["/repo/.env"],
+          displayMessage: null,
         },
+      },
+    });
+  });
+
+  it("parses richer permission interrupt display text from nested metadata", () => {
+    const payload = {
+      kind: "status-update",
+      status: { state: "input-required" },
+      metadata: {
+        shared: {
+          interrupt: {
+            request_id: "perm-2",
+            type: "permission",
+            details: {
+              permission: "approval",
+              patterns: ["/repo/.env"],
+              request: {
+                description: "Agent wants to read the environment file.",
+              },
+            },
+          },
+        },
+      },
+    };
+    expect(extractRuntimeStatusEvent(payload)?.interrupt).toEqual({
+      requestId: "perm-2",
+      type: "permission",
+      phase: "asked",
+      details: {
+        permission: "approval",
+        patterns: ["/repo/.env"],
+        displayMessage: "Agent wants to read the environment file.",
       },
     });
   });
@@ -589,14 +622,58 @@ describe("block-based stream parser and reducer", () => {
         type: "question",
         phase: "asked",
         details: {
+          displayMessage: null,
           questions: [
             {
               header: "Confirm",
               question: "Proceed?",
+              description: null,
               options: [{ label: "Yes", value: "yes", description: null }],
             },
           ],
         },
+      },
+    });
+  });
+
+  it("parses richer question interrupt metadata from nested fields", () => {
+    const payload = {
+      kind: "status-update",
+      status: { state: "input-required" },
+      metadata: {
+        shared: {
+          interrupt: {
+            request_id: "q-2",
+            type: "question",
+            details: {
+              description: "Please confirm how the agent should continue.",
+              questions: [
+                {
+                  title: "Approval",
+                  prompt: "Proceed with deployment?",
+                  description: "This will update the production service.",
+                  options: [{ label: "Yes", value: "yes" }],
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    expect(extractRuntimeStatusEvent(payload)?.interrupt).toEqual({
+      requestId: "q-2",
+      type: "question",
+      phase: "asked",
+      details: {
+        displayMessage: "Please confirm how the agent should continue.",
+        questions: [
+          {
+            header: "Approval",
+            question: "Proceed with deployment?",
+            description: "This will update the production service.",
+            options: [{ label: "Yes", value: "yes", description: null }],
+          },
+        ],
       },
     });
   });
@@ -680,6 +757,7 @@ describe("block-based stream parser and reducer", () => {
       details: {
         permission: "read",
         patterns: ["/repo/.env"],
+        displayMessage: null,
       },
     });
   });

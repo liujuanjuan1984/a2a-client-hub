@@ -60,6 +60,7 @@ export type InterruptQuestionOption = {
 
 export type InterruptQuestion = {
   header: string | null;
+  description?: string | null;
   question: string;
   options: InterruptQuestionOption[];
 };
@@ -74,6 +75,7 @@ export type PendingRuntimeInterrupt = RuntimeInterruptBase & {
   details: {
     permission?: string | null;
     patterns?: string[];
+    displayMessage?: string | null;
     questions?: InterruptQuestion[];
   };
 };
@@ -251,6 +253,71 @@ const pickRawString = (
   return null;
 };
 
+const pickNestedRawString = (
+  source: Record<string, unknown> | null,
+  paths: string[][],
+): string | null => {
+  if (!source) return null;
+  for (const path of paths) {
+    let current: unknown = source;
+    for (const key of path) {
+      const record = asRecord(current);
+      current = record ? record[key] : null;
+    }
+    if (typeof current === "string") {
+      const trimmed = current.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  return null;
+};
+
+const pickFirstArray = (
+  source: Record<string, unknown> | null,
+  paths: string[][],
+): unknown[] => {
+  if (!source) return [];
+  for (const path of paths) {
+    let current: unknown = source;
+    for (const key of path) {
+      const record = asRecord(current);
+      current = record ? record[key] : null;
+    }
+    if (Array.isArray(current)) {
+      return current;
+    }
+  }
+  return [];
+};
+
+const extractInterruptDisplayMessage = (
+  details: Record<string, unknown> | null,
+): string | null =>
+  pickRawString(details, [
+    "displayMessage",
+    "display_message",
+    "message",
+    "description",
+    "prompt",
+    "reason",
+    "request",
+    "context",
+  ]) ??
+  pickNestedRawString(details, [
+    ["request", "message"],
+    ["request", "description"],
+    ["request", "prompt"],
+    ["request", "reason"],
+    ["context", "message"],
+    ["context", "description"],
+    ["context", "prompt"],
+    ["context", "reason"],
+    ["prompt", "message"],
+    ["prompt", "description"],
+  ]);
+
 const pickInteger = (
   source: Record<string, unknown> | null,
   keys: string[],
@@ -302,16 +369,53 @@ const parseInterruptQuestion = (value: unknown): InterruptQuestion | null => {
   if (!question) {
     return null;
   }
-  const prompt = pickString(question, ["question"]);
+  const prompt =
+    pickString(question, ["question", "prompt", "message"]) ??
+    pickNestedRawString(question, [
+      ["request", "question"],
+      ["request", "prompt"],
+      ["request", "message"],
+      ["context", "question"],
+      ["context", "prompt"],
+      ["context", "message"],
+      ["prompt", "question"],
+      ["prompt", "message"],
+    ]);
   if (!prompt) {
     return null;
   }
-  const rawOptions = Array.isArray(question.options) ? question.options : [];
+  const rawOptions = pickFirstArray(question, [
+    ["options"],
+    ["request", "options"],
+    ["context", "options"],
+    ["prompt", "options"],
+  ]);
   const options = rawOptions
     .map(parseInterruptQuestionOption)
     .filter((item): item is InterruptQuestionOption => Boolean(item));
   return {
-    header: pickRawString(question, ["header"]) ?? null,
+    header:
+      pickRawString(question, ["header", "title"]) ??
+      pickNestedRawString(question, [
+        ["request", "header"],
+        ["request", "title"],
+        ["context", "header"],
+        ["context", "title"],
+      ]) ??
+      null,
+    description:
+      pickRawString(question, [
+        "description",
+        "hint",
+        "help_text",
+        "helpText",
+      ]) ??
+      pickNestedRawString(question, [
+        ["request", "description"],
+        ["context", "description"],
+        ["prompt", "description"],
+      ]) ??
+      null,
     question: prompt,
     options,
   };
@@ -362,13 +466,16 @@ const extractRuntimeInterrupt = (
       details: {
         permission: pickRawString(details, ["permission"]) ?? null,
         patterns: coerceStringArray(details?.patterns) ?? [],
+        displayMessage: extractInterruptDisplayMessage(details),
       },
     };
   }
   if (interruptType === "question") {
-    const rawQuestions = Array.isArray(details?.questions)
-      ? details.questions
-      : [];
+    const rawQuestions = pickFirstArray(details, [
+      ["questions"],
+      ["request", "questions"],
+      ["context", "questions"],
+    ]);
     const questions = rawQuestions
       .map(parseInterruptQuestion)
       .filter((item): item is InterruptQuestion => Boolean(item));
@@ -377,6 +484,7 @@ const extractRuntimeInterrupt = (
       type: "question",
       phase: "asked",
       details: {
+        displayMessage: extractInterruptDisplayMessage(details),
         questions,
       },
     };
