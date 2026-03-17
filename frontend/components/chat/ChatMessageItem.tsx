@@ -86,17 +86,8 @@ export function ChatMessageItem({
   );
 
   const textToCopy = useMemo(() => {
-    let text = message.content;
-    if (message.role === "agent" && message.blocks?.length) {
-      const blockContent = message.blocks
-        .map((b) => `[${b.type}]\n${b.content}`)
-        .join("\n\n");
-      if (blockContent) {
-        text = `${blockContent}\n\n${text}`;
-      }
-    }
-    return text.trim();
-  }, [message]);
+    return message.content.trim();
+  }, [message.content]);
 
   const renderableBlocks = deriveRenderableBlocks(message);
   const hasBlocks = message.role === "agent" && renderableBlocks.length > 0;

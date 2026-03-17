@@ -28,6 +28,7 @@ import {
   replyQuestionInterrupt,
 } from "@/lib/api/a2aExtensions";
 import {
+  applyLoadedBlockDetail,
   type ChatMessage,
   type ResolvedRuntimeInterrupt,
 } from "@/lib/api/chat-utils";
@@ -915,31 +916,13 @@ export function useChatScreenController({
         updateConversationMessageWithUpdater(
           conversationId,
           resolvedMessageId,
-          (message) => {
-            const nextBlocks = (message.blocks ?? []).map((item) =>
-              item.id === resolvedBlockId
-                ? {
-                    ...item,
-                    type:
-                      typeof blockDetail.type === "string" &&
-                      blockDetail.type.trim().length > 0
-                        ? blockDetail.type
-                        : item.type,
-                    content:
-                      typeof blockDetail.content === "string"
-                        ? blockDetail.content
-                        : "",
-                    isFinished:
-                      typeof blockDetail.isFinished === "boolean"
-                        ? blockDetail.isFinished
-                        : item.isFinished,
-                  }
-                : item,
-            );
-            return {
-              blocks: nextBlocks,
-            };
-          },
+          (message) =>
+            applyLoadedBlockDetail(message, {
+              blockId: resolvedBlockId,
+              type: blockDetail.type,
+              content: blockDetail.content,
+              isFinished: blockDetail.isFinished,
+            }),
         );
         return true;
       } catch (error) {

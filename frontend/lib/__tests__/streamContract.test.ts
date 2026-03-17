@@ -1,4 +1,5 @@
 import {
+  applyLoadedBlockDetail,
   applyStreamBlockUpdate,
   extractSessionMeta,
   extractRuntimeStatus,
@@ -182,6 +183,84 @@ describe("block-based stream parser and reducer", () => {
 
     expect(blocks).toHaveLength(1);
     expect(blocks?.[0]?.content).toBe("reset");
+  });
+
+  it("syncs message content when loading text block details", () => {
+    const message = {
+      content: "",
+      blocks: [
+        {
+          id: "block-1",
+          type: "text",
+          content: "",
+          isFinished: false,
+          createdAt: "2026-03-17T10:00:00.000Z",
+          updatedAt: "2026-03-17T10:00:00.000Z",
+        },
+        {
+          id: "block-2",
+          type: "reasoning",
+          content: "plan",
+          isFinished: true,
+          createdAt: "2026-03-17T10:00:01.000Z",
+          updatedAt: "2026-03-17T10:00:01.000Z",
+        },
+      ],
+    };
+
+    const next = applyLoadedBlockDetail(message, {
+      blockId: "block-1",
+      type: "text",
+      content: "Loaded text",
+      isFinished: true,
+    });
+
+    expect(next.content).toBe("Loaded text");
+    expect(next.blocks?.[0]).toMatchObject({
+      id: "block-1",
+      type: "text",
+      content: "Loaded text",
+      isFinished: true,
+    });
+  });
+
+  it("preserves existing content when loading non-text block details", () => {
+    const message = {
+      content: "Visible text",
+      blocks: [
+        {
+          id: "block-1",
+          type: "text",
+          content: "Visible text",
+          isFinished: true,
+          createdAt: "2026-03-17T10:00:00.000Z",
+          updatedAt: "2026-03-17T10:00:00.000Z",
+        },
+        {
+          id: "block-2",
+          type: "tool_call",
+          content: "",
+          isFinished: false,
+          createdAt: "2026-03-17T10:00:01.000Z",
+          updatedAt: "2026-03-17T10:00:01.000Z",
+        },
+      ],
+    };
+
+    const next = applyLoadedBlockDetail(message, {
+      blockId: "block-2",
+      type: "tool_call",
+      content: '{"tool":"search"}',
+      isFinished: true,
+    });
+
+    expect(next.content).toBe("Visible text");
+    expect(next.blocks?.[1]).toMatchObject({
+      id: "block-2",
+      type: "tool_call",
+      content: '{"tool":"search"}',
+      isFinished: true,
+    });
   });
 
   it("parses block_type from canonical metadata", () => {
