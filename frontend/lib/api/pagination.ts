@@ -21,7 +21,7 @@ type NextPageFallbackOptions<T> = {
   size: number;
 };
 
-export const inferNextPage = (
+const inferNextPage = (
   pagination: unknown,
 ): { nextPage?: number; currentPage?: number } => {
   if (!pagination || typeof pagination !== "object") {

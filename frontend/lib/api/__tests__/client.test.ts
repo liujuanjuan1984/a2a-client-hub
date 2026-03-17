@@ -39,7 +39,6 @@ describe("api client auth refresh flow", () => {
     const resetAuthBoundState = jest.fn();
     jest.doMock("@/lib/resetClientState", () => ({
       resetAuthBoundState,
-      resetClientState: jest.fn(),
     }));
 
     const client =

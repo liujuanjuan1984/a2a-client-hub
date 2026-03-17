@@ -17,14 +17,14 @@ const pickString = (
   return null;
 };
 
-export const getMetadataRecord = (
+const getMetadataRecord = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,
 ) => {
   const metadata = asRecord(payloadOrMetadata?.metadata);
   return metadata ?? payloadOrMetadata ?? null;
 };
 
-export const getSharedMetadataSection = (
+const getSharedMetadataSection = (
   payloadOrMetadata: Record<string, unknown> | null | undefined,
   section: "interrupt" | "model" | "session" | "stream" | "usage",
 ) => {
