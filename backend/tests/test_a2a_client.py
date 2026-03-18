@@ -503,7 +503,7 @@ async def test_gateway_get_client_does_not_run_cleanup_inline(
 
 
 @pytest.mark.asyncio
-async def test_gateway_fetch_agent_card_detail_can_use_temporary_client(
+async def test_gateway_fetch_agent_card_detail_can_use_supplied_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gateway = gateway_module.A2AGateway(
@@ -516,10 +516,11 @@ async def test_gateway_fetch_agent_card_detail_can_use_temporary_client(
     fake_card = SimpleNamespace(name="Temp Card")
     fake_client = SimpleNamespace(
         get_agent_card=AsyncMock(return_value=fake_card),
-        close=AsyncMock(),
     )
-    create_client_mock = Mock(return_value=fake_client)
-    monkeypatch.setattr(gateway, "_create_client", create_client_mock)
+    get_client_mock = AsyncMock(
+        side_effect=AssertionError("shared client not expected")
+    )
+    monkeypatch.setattr(gateway, "_get_client", get_client_mock)
 
     resolved = SimpleNamespace(
         url="http://example-agent.internal:24020",
@@ -529,16 +530,13 @@ async def test_gateway_fetch_agent_card_detail_can_use_temporary_client(
 
     result = await gateway.fetch_agent_card_detail(
         resolved=resolved,
-        use_temporary_client=True,
-        card_fetch_timeout=5.0,
+        client=fake_client,
         raise_on_failure=True,
     )
 
     assert result is fake_card
-    create_client_mock.assert_called_once_with(resolved, card_fetch_timeout=5.0)
     fake_client.get_agent_card.assert_awaited_once()
-    fake_client.close.assert_awaited_once()
-    assert gateway._clients == {}
+    get_client_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -572,6 +570,45 @@ async def test_gateway_fetch_agent_card_detail_invalidates_shared_client_on_rese
     assert result is None
     get_client_mock.assert_awaited_once_with(resolved)
     invalidate_mock.assert_awaited_once_with(resolved)
+
+
+@pytest.mark.asyncio
+async def test_gateway_fetch_agent_card_detail_does_not_invalidate_external_client_on_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={},
+        name="TestAgent",
+    )
+    fake_client = SimpleNamespace(
+        get_agent_card=AsyncMock(
+            side_effect=A2AClientResetRequiredError("reset required")
+        )
+    )
+    invalidate_mock = AsyncMock()
+    get_client_mock = AsyncMock(
+        side_effect=AssertionError("shared client not expected")
+    )
+    monkeypatch.setattr(gateway, "_invalidate_client", invalidate_mock)
+    monkeypatch.setattr(gateway, "_get_client", get_client_mock)
+
+    result = await gateway.fetch_agent_card_detail(
+        resolved=resolved,
+        client=fake_client,
+    )
+
+    assert result is None
+    fake_client.get_agent_card.assert_awaited_once()
+    invalidate_mock.assert_not_awaited()
+    get_client_mock.assert_not_awaited()
 
 
 @pytest.mark.asyncio

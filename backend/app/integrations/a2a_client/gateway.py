@@ -454,18 +454,10 @@ class A2AGateway:
         resolved: "ResolvedAgent",
         client: Optional[A2AClient] = None,
         raise_on_failure: bool = False,
-        use_temporary_client: bool = False,
-        card_fetch_timeout: float | None = None,
     ) -> Optional["AgentCard"]:
-        owns_client = False
+        uses_shared_client = client is None
         if client is not None:
             client_instance = client
-        elif use_temporary_client:
-            client_instance = self._create_client(
-                resolved,
-                card_fetch_timeout=card_fetch_timeout,
-            )
-            owns_client = True
         else:
             client_instance = await self._get_client(resolved)
         start_time = time.monotonic()
@@ -485,7 +477,7 @@ class A2AGateway:
                 raise
             return None
         except A2AClientResetRequiredError as exc:
-            if not owns_client:
+            if uses_shared_client:
                 await self._invalidate_client(resolved)
             elapsed = time.monotonic() - start_time
             logger.warning(
@@ -523,9 +515,6 @@ class A2AGateway:
                 },
             )
             return card
-        finally:
-            if owns_client:
-                await await_cancel_safe(client_instance.close())
 
     def _create_client(
         self,

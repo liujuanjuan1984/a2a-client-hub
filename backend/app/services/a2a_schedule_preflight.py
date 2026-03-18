@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 @dataclass
 class ScheduleAgentCardPreflightSnapshot:
     client: "A2AClient"
-    agent_card: Any
 
 
 @asynccontextmanager
@@ -41,14 +40,13 @@ async def open_schedule_agent_card_preflight_snapshot(
         card_fetch_timeout=5.0,
     )
     try:
-        agent_card = await gateway.fetch_agent_card_detail(
+        await gateway.fetch_agent_card_detail(
             resolved=runtime.resolved,
             client=client,
             raise_on_failure=True,
         )
         yield ScheduleAgentCardPreflightSnapshot(
             client=client,
-            agent_card=agent_card,
         )
     finally:
         await await_cancel_safe(client.close())
