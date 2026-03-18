@@ -451,10 +451,21 @@ class A2AGateway:
         resolved: "ResolvedAgent",
         client: Optional[A2AClient] = None,
         raise_on_failure: bool = False,
+        use_temporary_client: bool = False,
+        card_fetch_timeout: float | None = None,
     ) -> Optional["AgentCard"]:
-        client_instance = client or await self._get_client(resolved)
+        owns_client = False
+        if client is not None:
+            client_instance = client
+        elif use_temporary_client:
+            client_instance = self._create_client(
+                resolved,
+                card_fetch_timeout=card_fetch_timeout,
+            )
+            owns_client = True
+        else:
+            client_instance = await self._get_client(resolved)
         start_time = time.monotonic()
-
         try:
             card = await client_instance.get_agent_card()
         except A2AOutboundNotAllowedError as exc:
@@ -497,17 +508,40 @@ class A2AGateway:
             if raise_on_failure:
                 raise
             return None
+        else:
+            elapsed = time.monotonic() - start_time
+            logger.info(
+                "Fetched A2A agent card detail",
+                extra={
+                    "agent_name": resolved.name,
+                    "card_name": getattr(card, "name", None),
+                    "elapsed_seconds": round(elapsed, 3),
+                },
+            )
+            return card
+        finally:
+            if owns_client:
+                await await_cancel_safe(client_instance.close())
 
-        elapsed = time.monotonic() - start_time
-        logger.info(
-            "Fetched A2A agent card detail",
-            extra={
-                "agent_name": resolved.name,
-                "card_name": getattr(card, "name", None),
-                "elapsed_seconds": round(elapsed, 3),
-            },
+    def _create_client(
+        self,
+        resolved: "ResolvedAgent",
+        *,
+        card_fetch_timeout: float | None = None,
+    ) -> A2AClient:
+        timeout = httpx.Timeout(self.settings.default_timeout)
+        return A2AClient(
+            resolved.url,
+            timeout=timeout,
+            use_client_preference=self.settings.use_client_preference,
+            interceptors=self._build_interceptors(resolved),
+            default_headers=resolved.headers,
+            card_fetch_timeout=(
+                self.settings.card_fetch_timeout
+                if card_fetch_timeout is None
+                else card_fetch_timeout
+            ),
         )
-        return card
 
     async def shutdown(self) -> None:
         await self.stop_maintenance()
@@ -539,15 +573,7 @@ class A2AGateway:
                 )
                 return cached.client
 
-            timeout = httpx.Timeout(self.settings.default_timeout)
-            client = A2AClient(
-                resolved.url,
-                timeout=timeout,
-                use_client_preference=self.settings.use_client_preference,
-                interceptors=self._build_interceptors(resolved),
-                default_headers=resolved.headers,
-                card_fetch_timeout=self.settings.card_fetch_timeout,
-            )
+            client = self._create_client(resolved)
             self._clients[cache_key] = CachedClientEntry(
                 client=client, last_used=time.monotonic()
             )

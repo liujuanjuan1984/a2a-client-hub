@@ -502,6 +502,45 @@ async def test_gateway_get_client_does_not_run_cleanup_inline(
 
 
 @pytest.mark.asyncio
+async def test_gateway_fetch_agent_card_detail_can_use_temporary_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    fake_card = SimpleNamespace(name="Temp Card")
+    fake_client = SimpleNamespace(
+        get_agent_card=AsyncMock(return_value=fake_card),
+        close=AsyncMock(),
+    )
+    create_client_mock = Mock(return_value=fake_client)
+    monkeypatch.setattr(gateway, "_create_client", create_client_mock)
+
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={},
+        name="TestAgent",
+    )
+
+    result = await gateway.fetch_agent_card_detail(
+        resolved=resolved,
+        use_temporary_client=True,
+        card_fetch_timeout=5.0,
+        raise_on_failure=True,
+    )
+
+    assert result is fake_card
+    create_client_mock.assert_called_once_with(resolved, card_fetch_timeout=5.0)
+    fake_client.get_agent_card.assert_awaited_once()
+    fake_client.close.assert_awaited_once()
+    assert gateway._clients == {}
+
+
+@pytest.mark.asyncio
 async def test_gateway_maintenance_loop_runs_cleanup() -> None:
     gateway = gateway_module.A2AGateway(
         A2ASettings(

@@ -86,7 +86,11 @@ def _mock_runtime_builder():
     async def _build(_db, user_id, agent_id):  # noqa: ARG001
         return SimpleNamespace(
             agent=SimpleNamespace(enabled=True),
-            resolved=SimpleNamespace(name="Schedule Agent"),
+            resolved=SimpleNamespace(
+                name="Schedule Agent",
+                url="https://example.com/schedule-agent",
+                headers={},
+            ),
         )
 
     return SimpleNamespace(build=_build)
@@ -134,7 +138,10 @@ def _mock_gateway_stream(*, events, first_event_delay: float = 0.0):
                 await asyncio.sleep(first_event_delay)
             yield event
 
-    return SimpleNamespace(stream=_stream)
+    return SimpleNamespace(
+        stream=_stream,
+        fetch_agent_card_detail=AsyncMock(return_value=object()),
+    )
 
 
 async def test_claim_next_pending_execution_obeys_agent_concurrency_limit(
@@ -780,7 +787,12 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
 
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
-        lambda: SimpleNamespace(gateway=SimpleNamespace(stream=_stream)),
+        lambda: SimpleNamespace(
+            gateway=SimpleNamespace(
+                stream=_stream,
+                fetch_agent_card_detail=AsyncMock(return_value=object()),
+            )
+        ),
     )
 
     run_id = await _mark_task_claimed(async_db_session, task=task)
@@ -904,7 +916,12 @@ async def test_execute_claimed_task_persists_structured_agent_unavailable_error(
 
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
-        lambda: SimpleNamespace(gateway=SimpleNamespace(stream=_stream)),
+        lambda: SimpleNamespace(
+            gateway=SimpleNamespace(
+                stream=_stream,
+                fetch_agent_card_detail=AsyncMock(return_value=object()),
+            )
+        ),
     )
 
     run_id = await _mark_task_claimed(async_db_session, task=task)
@@ -922,6 +939,68 @@ async def test_execute_claimed_task_persists_structured_agent_unavailable_error(
     assert execution.status == A2AScheduleExecution.STATUS_FAILED
     assert execution.error_code == "agent_unavailable"
     assert execution.error_message == "Agent card unavailable"
+
+
+async def test_execute_claimed_task_fails_fast_when_preflight_card_fetch_fails(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="preflight-down",
+    )
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=utc_now(),
+    )
+    task_id = task.id
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        _mock_runtime_builder(),
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.get_a2a_service",
+        lambda: SimpleNamespace(
+            gateway=SimpleNamespace(
+                fetch_agent_card_detail=AsyncMock(
+                    side_effect=A2AAgentUnavailableError("Agent card unavailable")
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._ensure_task_session",
+        AsyncMock(side_effect=AssertionError("session should not be created")),
+    )
+    run_background_invoke_mock = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.run_background_invoke",
+        run_background_invoke_mock,
+    )
+
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        execution = await check_db.scalar(
+            select(A2AScheduleExecution)
+            .where(A2AScheduleExecution.task_id == task_id)
+            .order_by(A2AScheduleExecution.started_at.desc())
+        )
+
+    assert execution is not None
+    assert execution.status == A2AScheduleExecution.STATUS_FAILED
+    assert execution.conversation_id is None
+    assert execution.error_code == "agent_unavailable"
+    assert execution.error_message == "Agent card unavailable"
+    run_background_invoke_mock.assert_not_awaited()
 
 
 async def test_execute_claimed_task_binds_external_session_identity_when_present(
@@ -1212,7 +1291,11 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_mi
     )
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
-        lambda: SimpleNamespace(gateway=SimpleNamespace()),
+        lambda: SimpleNamespace(
+            gateway=SimpleNamespace(
+                fetch_agent_card_detail=AsyncMock(return_value=object())
+            )
+        ),
     )
 
     async def _fake_run_background_invoke(**_kwargs):
@@ -1283,7 +1366,11 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_lo
     )
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
-        lambda: SimpleNamespace(gateway=SimpleNamespace()),
+        lambda: SimpleNamespace(
+            gateway=SimpleNamespace(
+                fetch_agent_card_detail=AsyncMock(return_value=object())
+            )
+        ),
     )
 
     async def _fake_run_background_invoke(**_kwargs):

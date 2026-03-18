@@ -28,6 +28,7 @@ from app.db.transaction import commit_safely, rollback_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services.a2a_runtime import a2a_runtime_builder
+from app.services.a2a_schedule_preflight import run_schedule_availability_preflight
 from app.services.a2a_schedule_runtime_summary import (
     derive_schedule_recovery_timeouts,
 )
@@ -430,6 +431,11 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
             if not bool(getattr(runtime.agent, "enabled", True)):
                 raise RuntimeError("Target A2A agent is disabled")
+            gateway = get_a2a_service().gateway
+            await run_schedule_availability_preflight(
+                gateway=gateway,
+                runtime=runtime,
+            )
             thread, is_new = await _ensure_task_session(
                 db=db,
                 task=task,
@@ -450,7 +456,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             try:
                 invoke_result = await run_background_invoke(
                     db=db,
-                    gateway=get_a2a_service().gateway,
+                    gateway=gateway,
                     runtime=runtime,
                     user_id=task.user_id,
                     agent_id=task.agent_id,
