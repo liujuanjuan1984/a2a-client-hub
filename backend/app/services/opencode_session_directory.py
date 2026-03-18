@@ -19,17 +19,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.secret_vault import hub_a2a_secret_vault, user_llm_secret_vault
+from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
 from app.db.transaction import commit_safely
+from app.integrations.a2a_client.service import ResolvedAgent
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 from app.services.a2a_agents import a2a_agent_service
-from app.services.a2a_runtime import a2a_runtime_builder
+from app.services.a2a_runtime import A2ARuntimeValidationError
 from app.services.hub_a2a_agents import hub_a2a_agent_service
-from app.services.hub_a2a_runtime import hub_a2a_runtime_builder
+from app.services.hub_a2a_runtime import HubA2ARuntimeValidationError
+from app.services.runtime_auth import build_resolved_runtime_agent
 
 logger = get_logger(__name__)
 OPENCODE_PROVIDER = "opencode"
@@ -181,6 +185,15 @@ class _AgentRef:
     agent_name: str
     agent_source: str  # personal/shared
     agent_url: str
+    auth_type: str
+    auth_header: str | None
+    auth_scheme: str | None
+    extra_headers: dict[str, str] | None
+
+
+@dataclass(frozen=True)
+class _DirectoryRuntime:
+    resolved: ResolvedAgent
 
 
 class OpencodeSessionDirectoryService:
@@ -216,13 +229,15 @@ class OpencodeSessionDirectoryService:
         refreshed_agents = 0
         partial_failures = 0
         if agents_to_refresh:
-            # AsyncSession cannot be shared across concurrent tasks safely.
-            # Build runtimes sequentially (DB-bound), then refresh upstream concurrently.
+            credentials_by_agent_id = await self._load_credentials_by_agent_id(
+                db, agents=agents_to_refresh
+            )
             runtime_targets: list[tuple[_AgentRef, Any]] = []
             for agent in agents_to_refresh:
                 try:
-                    runtime = await self._build_runtime(
-                        db, user_id=user_id, agent=agent
+                    runtime = self._build_runtime_from_prefetched(
+                        agent=agent,
+                        credential=credentials_by_agent_id.get(agent.agent_id),
                     )
                 except Exception as exc:  # noqa: BLE001
                     partial_failures += 1
@@ -412,6 +427,10 @@ class OpencodeSessionDirectoryService:
                 agent_name=record.agent.name,
                 agent_source="personal",
                 agent_url=record.agent.card_url,
+                auth_type=record.agent.auth_type,
+                auth_header=record.agent.auth_header,
+                auth_scheme=record.agent.auth_scheme,
+                extra_headers=record.agent.extra_headers,
             )
             for record in personal_records
             if record.agent.enabled
@@ -425,6 +444,10 @@ class OpencodeSessionDirectoryService:
                 agent_name=agent.name,
                 agent_source="shared",
                 agent_url=agent.card_url,
+                auth_type=agent.auth_type,
+                auth_header=agent.auth_header,
+                auth_scheme=agent.auth_scheme,
+                extra_headers=agent.extra_headers,
             )
             for agent in hub_agents
         ]
@@ -450,6 +473,25 @@ class OpencodeSessionDirectoryService:
         result = await db.execute(stmt)
         entries = list(result.scalars().all())
         return {(e.agent_source, e.agent_id): e for e in entries}
+
+    async def _load_credentials_by_agent_id(
+        self,
+        db: AsyncSession,
+        *,
+        agents: List[_AgentRef],
+    ) -> dict[UUID, A2AAgentCredential]:
+        bearer_agent_ids = [
+            agent.agent_id for agent in agents if agent.auth_type == "bearer"
+        ]
+        if not bearer_agent_ids:
+            return {}
+
+        stmt = select(A2AAgentCredential).where(
+            A2AAgentCredential.agent_id.in_(bearer_agent_ids)
+        )
+        result = await db.execute(stmt)
+        credentials = list(result.scalars().all())
+        return {credential.agent_id: credential for credential in credentials}
 
     async def _write_cache_entry(
         self,
@@ -491,16 +533,31 @@ class OpencodeSessionDirectoryService:
         )
         return True
 
-    async def _build_runtime(
-        self, db: AsyncSession, *, user_id: UUID, agent: _AgentRef
-    ) -> Any:
+    def _build_runtime_from_prefetched(
+        self,
+        *,
+        agent: _AgentRef,
+        credential: A2AAgentCredential | None,
+    ) -> _DirectoryRuntime:
         if agent.agent_source == "shared":
-            return await hub_a2a_runtime_builder.build(
-                db, user_id=user_id, agent_id=agent.agent_id
-            )
-        return await a2a_runtime_builder.build(
-            db, user_id=user_id, agent_id=agent.agent_id
+            validation_error_cls = HubA2ARuntimeValidationError
+            vault = hub_a2a_secret_vault
+        else:
+            validation_error_cls = A2ARuntimeValidationError
+            vault = user_llm_secret_vault
+
+        resolved, _ = build_resolved_runtime_agent(
+            name=agent.agent_name,
+            card_url=agent.agent_url,
+            extra_headers=agent.extra_headers,
+            auth_type=agent.auth_type,
+            auth_header=agent.auth_header,
+            auth_scheme=agent.auth_scheme,
+            credential=credential,
+            vault=vault,
+            validation_error_cls=validation_error_cls,
         )
+        return _DirectoryRuntime(resolved=resolved)
 
     async def _upsert_cache_entry(
         self,
