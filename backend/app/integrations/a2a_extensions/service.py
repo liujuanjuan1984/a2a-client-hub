@@ -13,11 +13,17 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
 )
+from app.integrations.a2a_extensions.interrupt_callback import (
+    resolve_interrupt_callback,
+)
 from app.integrations.a2a_extensions.interrupt_extension_service import (
     InterruptExtensionService,
 )
 from app.integrations.a2a_extensions.opencode_discovery_service import (
     OpencodeDiscoveryService,
+)
+from app.integrations.a2a_extensions.opencode_provider_discovery import (
+    resolve_opencode_provider_discovery,
 )
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.session_binding import resolve_session_binding
@@ -31,7 +37,11 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
 from app.integrations.a2a_extensions.shared_support import (
     A2AExtensionSupport,
 )
-from app.integrations.a2a_extensions.types import ResolvedSessionBindingExtension
+from app.integrations.a2a_extensions.types import (
+    ResolvedInterruptCallbackExtension,
+    ResolvedProviderDiscoveryExtension,
+    ResolvedSessionBindingExtension,
+)
 from app.services.a2a_runtime import A2ARuntime
 
 logger = get_logger(__name__)
@@ -63,9 +73,27 @@ class SessionBindingCapabilitySnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class InterruptCallbackCapabilitySnapshot:
+    status: Literal["supported", "unsupported", "invalid"]
+    ext: ResolvedInterruptCallbackExtension | None = None
+    jsonrpc_url: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderDiscoveryCapabilitySnapshot:
+    status: Literal["supported", "unsupported", "invalid"]
+    ext: ResolvedProviderDiscoveryExtension | None = None
+    jsonrpc_url: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedCapabilitySnapshot:
     session_query: SessionQueryCapabilitySnapshot
     session_binding: SessionBindingCapabilitySnapshot
+    interrupt_callback: InterruptCallbackCapabilitySnapshot
+    provider_discovery: ProviderDiscoveryCapabilitySnapshot
 
 
 @dataclass(slots=True)
@@ -158,6 +186,54 @@ class A2AExtensionsService:
             },
         )
 
+    def _build_interrupt_callback_snapshot(
+        self, card: Any
+    ) -> InterruptCallbackCapabilitySnapshot:
+        try:
+            ext = resolve_interrupt_callback(card)
+        except A2AExtensionNotSupportedError as exc:
+            return InterruptCallbackCapabilitySnapshot(
+                status="unsupported",
+                error=str(exc),
+            )
+        except A2AExtensionContractError as exc:
+            return InterruptCallbackCapabilitySnapshot(
+                status="invalid",
+                error=str(exc),
+            )
+
+        return InterruptCallbackCapabilitySnapshot(
+            status="supported",
+            ext=ext,
+            jsonrpc_url=self._support.ensure_outbound_allowed(
+                ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+            ),
+        )
+
+    def _build_provider_discovery_snapshot(
+        self, card: Any
+    ) -> ProviderDiscoveryCapabilitySnapshot:
+        try:
+            ext = resolve_opencode_provider_discovery(card)
+        except A2AExtensionNotSupportedError as exc:
+            return ProviderDiscoveryCapabilitySnapshot(
+                status="unsupported",
+                error=str(exc),
+            )
+        except A2AExtensionContractError as exc:
+            return ProviderDiscoveryCapabilitySnapshot(
+                status="invalid",
+                error=str(exc),
+            )
+
+        return ProviderDiscoveryCapabilitySnapshot(
+            status="supported",
+            ext=ext,
+            jsonrpc_url=self._support.ensure_outbound_allowed(
+                ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+            ),
+        )
+
     async def resolve_capability_snapshot(
         self,
         *,
@@ -174,6 +250,8 @@ class A2AExtensionsService:
         snapshot = ResolvedCapabilitySnapshot(
             session_query=self._build_session_query_snapshot(card),
             session_binding=self._build_session_binding_snapshot(card),
+            interrupt_callback=self._build_interrupt_callback_snapshot(card),
+            provider_discovery=self._build_provider_discovery_snapshot(card),
         )
         async with self._capability_snapshot_cache_lock:
             self._capability_snapshot_cache[cache_key] = _CapabilitySnapshotCacheEntry(
@@ -194,6 +272,34 @@ class A2AExtensionsService:
             )
         raise A2AExtensionNotSupportedError(
             snapshot.error or "Shared session query extension not supported by Hub"
+        )
+
+    @staticmethod
+    def _require_interrupt_callback_capability(
+        snapshot: InterruptCallbackCapabilitySnapshot,
+    ) -> tuple[ResolvedInterruptCallbackExtension, str]:
+        if snapshot.ext is not None and snapshot.jsonrpc_url is not None:
+            return snapshot.ext, snapshot.jsonrpc_url
+        if snapshot.status == "invalid":
+            raise A2AExtensionContractError(
+                snapshot.error or "Shared interrupt callback contract is invalid"
+            )
+        raise A2AExtensionNotSupportedError(
+            snapshot.error or "Shared interrupt callback extension not found"
+        )
+
+    @staticmethod
+    def _require_provider_discovery_capability(
+        snapshot: ProviderDiscoveryCapabilitySnapshot,
+    ) -> tuple[ResolvedProviderDiscoveryExtension, str]:
+        if snapshot.ext is not None and snapshot.jsonrpc_url is not None:
+            return snapshot.ext, snapshot.jsonrpc_url
+        if snapshot.status == "invalid":
+            raise A2AExtensionContractError(
+                snapshot.error or "Provider discovery contract is invalid"
+            )
+        raise A2AExtensionNotSupportedError(
+            snapshot.error or "Provider discovery extension not found"
         )
 
     async def resolve_session_binding(
@@ -304,8 +410,14 @@ class A2AExtensionsService:
         runtime: A2ARuntime,
         session_metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        ext, jsonrpc_url = self._require_provider_discovery_capability(
+            snapshot.provider_discovery
+        )
         return await self._opencode_discovery.list_model_providers(
             runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
             session_metadata=session_metadata,
         )
 
@@ -316,8 +428,14 @@ class A2AExtensionsService:
         provider_id: str | None = None,
         session_metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        ext, jsonrpc_url = self._require_provider_discovery_capability(
+            snapshot.provider_discovery
+        )
         return await self._opencode_discovery.list_models(
             runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
             provider_id=provider_id,
             session_metadata=session_metadata,
         )
@@ -330,11 +448,26 @@ class A2AExtensionsService:
         reply: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        return await self._interrupt_extensions.reply_permission_interrupt(
-            runtime=runtime,
+        (
+            resolved_request_id,
+            resolved_reply,
+            normalized_metadata,
+        ) = self._interrupt_extensions.prepare_reply_permission_interrupt(
             request_id=request_id,
             reply=reply,
             metadata=metadata,
+        )
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        ext, jsonrpc_url = self._require_interrupt_callback_capability(
+            snapshot.interrupt_callback
+        )
+        return await self._interrupt_extensions.reply_permission_interrupt(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            request_id=resolved_request_id,
+            reply=resolved_reply,
+            metadata=normalized_metadata,
         )
 
     async def reply_question_interrupt(
@@ -345,11 +478,26 @@ class A2AExtensionsService:
         answers: list[list[str]],
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        return await self._interrupt_extensions.reply_question_interrupt(
-            runtime=runtime,
+        (
+            resolved_request_id,
+            resolved_answers,
+            normalized_metadata,
+        ) = self._interrupt_extensions.prepare_reply_question_interrupt(
             request_id=request_id,
             answers=answers,
             metadata=metadata,
+        )
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        ext, jsonrpc_url = self._require_interrupt_callback_capability(
+            snapshot.interrupt_callback
+        )
+        return await self._interrupt_extensions.reply_question_interrupt(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            request_id=resolved_request_id,
+            answers=resolved_answers,
+            metadata=normalized_metadata,
         )
 
     async def reject_question_interrupt(
@@ -359,10 +507,23 @@ class A2AExtensionsService:
         request_id: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        return await self._interrupt_extensions.reject_question_interrupt(
-            runtime=runtime,
+        (
+            resolved_request_id,
+            normalized_metadata,
+        ) = self._interrupt_extensions.prepare_reject_question_interrupt(
             request_id=request_id,
             metadata=metadata,
+        )
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        ext, jsonrpc_url = self._require_interrupt_callback_capability(
+            snapshot.interrupt_callback
+        )
+        return await self._interrupt_extensions.reject_question_interrupt(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            request_id=resolved_request_id,
+            metadata=normalized_metadata,
         )
 
 
@@ -388,6 +549,8 @@ async def shutdown_a2a_extensions_service() -> None:
 __all__ = [
     "A2AExtensionsService",
     "ExtensionCallResult",
+    "InterruptCallbackCapabilitySnapshot",
+    "ProviderDiscoveryCapabilitySnapshot",
     "ResolvedCapabilitySnapshot",
     "SessionBindingCapabilitySnapshot",
     "SessionQueryCapabilitySnapshot",

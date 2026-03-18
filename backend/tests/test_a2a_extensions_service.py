@@ -8,6 +8,8 @@ from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
     ExtensionCallResult,
+    InterruptCallbackCapabilitySnapshot,
+    ProviderDiscoveryCapabilitySnapshot,
     ResolvedCapabilitySnapshot,
     SessionBindingCapabilitySnapshot,
     SessionQueryCapabilitySnapshot,
@@ -19,6 +21,7 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
     ResolvedSessionQueryRuntimeCapability,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    PROVIDER_DISCOVERY_URI,
     SHARED_INTERRUPT_CALLBACK_URI,
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
@@ -30,6 +33,7 @@ from app.integrations.a2a_extensions.types import (
     PageSizePagination,
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
+    ResolvedProviderDiscoveryExtension,
     ResultEnvelopeMapping,
 )
 
@@ -62,6 +66,51 @@ def _binding_snapshot(
         ext=ext,
         error=error,
         meta=meta or {},
+    )
+
+
+def _interrupt_snapshot(
+    *,
+    status: str = "unsupported",
+    ext: ResolvedInterruptCallbackExtension | None = None,
+    jsonrpc_url: str | None = None,
+    error: str | None = None,
+) -> InterruptCallbackCapabilitySnapshot:
+    return InterruptCallbackCapabilitySnapshot(
+        status=status,
+        ext=ext,
+        jsonrpc_url=jsonrpc_url,
+        error=error,
+    )
+
+
+def _provider_discovery_snapshot(
+    *,
+    status: str = "unsupported",
+    ext: ResolvedProviderDiscoveryExtension | None = None,
+    jsonrpc_url: str | None = None,
+    error: str | None = None,
+) -> ProviderDiscoveryCapabilitySnapshot:
+    return ProviderDiscoveryCapabilitySnapshot(
+        status=status,
+        ext=ext,
+        jsonrpc_url=jsonrpc_url,
+        error=error,
+    )
+
+
+def _capability_snapshot(
+    *,
+    session_query: SessionQueryCapabilitySnapshot,
+    session_binding: SessionBindingCapabilitySnapshot | None = None,
+    interrupt_callback: InterruptCallbackCapabilitySnapshot | None = None,
+    provider_discovery: ProviderDiscoveryCapabilitySnapshot | None = None,
+) -> ResolvedCapabilitySnapshot:
+    return ResolvedCapabilitySnapshot(
+        session_query=session_query,
+        session_binding=session_binding or _binding_snapshot(status="unsupported"),
+        interrupt_callback=interrupt_callback or _interrupt_snapshot(),
+        provider_discovery=provider_discovery or _provider_discovery_snapshot(),
     )
 
 
@@ -106,6 +155,23 @@ def _interrupt_extension_fixture() -> ResolvedInterruptCallbackExtension:
             "reply_permission": None,
             "reply_question": None,
             "reject_question": None,
+        },
+        business_code_map={},
+    )
+
+
+def _provider_discovery_extension_fixture() -> ResolvedProviderDiscoveryExtension:
+    return ResolvedProviderDiscoveryExtension(
+        uri=PROVIDER_DISCOVERY_URI,
+        required=False,
+        provider="opencode",
+        metadata_namespace="opencode",
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={
+            "list_providers": "providers.list",
+            "list_models": "models.list",
         },
         business_code_map={},
     )
@@ -338,7 +404,7 @@ async def test_continue_session_returns_canonical_binding_metadata(
 
     async def _fake_snapshot(*, runtime):
         assert runtime is not None
-        return ResolvedCapabilitySnapshot(
+        return _capability_snapshot(
             session_query=_session_query_snapshot(ext),
             session_binding=_binding_snapshot(
                 status="supported",
@@ -398,7 +464,7 @@ async def test_continue_session_keeps_legacy_binding_metadata_in_fallback_mode(
 
     async def _fake_snapshot(*, runtime):
         assert runtime is not None
-        return ResolvedCapabilitySnapshot(
+        return _capability_snapshot(
             session_query=_session_query_snapshot(ext),
             session_binding=_binding_snapshot(
                 status="unsupported",
@@ -528,7 +594,7 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
 
     async def _fake_snapshot(*, runtime):
         assert runtime is not None
-        return ResolvedCapabilitySnapshot(
+        return _capability_snapshot(
             session_query=_session_query_snapshot(ext),
             session_binding=_binding_snapshot(status="unsupported"),
         )
@@ -679,7 +745,7 @@ async def test_prompt_session_async_forwards_request_and_metadata(
 
     async def _fake_snapshot(*, runtime):
         assert runtime is not None
-        return ResolvedCapabilitySnapshot(
+        return _capability_snapshot(
             session_query=_session_query_snapshot(ext),
             session_binding=_binding_snapshot(status="unsupported"),
         )
@@ -750,7 +816,7 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
 
     async def _fake_snapshot(*, runtime):
         assert runtime is not None
-        return ResolvedCapabilitySnapshot(
+        return _capability_snapshot(
             session_query=_session_query_snapshot(ext),
             session_binding=_binding_snapshot(status="unsupported"),
         )
@@ -828,11 +894,20 @@ async def test_reply_permission_interrupt_uses_request_id_and_reply_contract(
         business_code_map={-32004: "interrupt_request_not_found"},
     )
 
-    async def _fake_resolve(_runtime):
-        return ext, "https://example.com/jsonrpc"
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_callback=_interrupt_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
 
     async def _fake_invoke(**kwargs):
         assert kwargs["method_key"] == "reply_permission"
+        assert kwargs["jsonrpc_url"] == "https://example.com/jsonrpc"
         assert kwargs["params"] == {"request_id": "perm-1", "reply": "once"}
         return ExtensionCallResult(
             success=True,
@@ -840,9 +915,7 @@ async def test_reply_permission_interrupt_uses_request_id_and_reply_contract(
             meta={"request_id": "perm-1"},
         )
 
-    monkeypatch.setattr(
-        service._interrupt_extensions, "resolve_extension", _fake_resolve
-    )
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
 
     result = await service.reply_permission_interrupt(
@@ -887,11 +960,20 @@ async def test_reply_permission_interrupt_forwards_metadata(
         business_code_map={-32004: "interrupt_request_not_found"},
     )
 
-    async def _fake_resolve(_runtime):
-        return ext, "https://example.com/jsonrpc"
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_callback=_interrupt_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
 
     async def _fake_invoke(**kwargs):
         assert kwargs["method_key"] == "reply_permission"
+        assert kwargs["jsonrpc_url"] == "https://example.com/jsonrpc"
         assert kwargs["params"] == {
             "request_id": "perm-1",
             "reply": "once",
@@ -903,9 +985,7 @@ async def test_reply_permission_interrupt_forwards_metadata(
             meta={"request_id": "perm-1"},
         )
 
-    monkeypatch.setattr(
-        service._interrupt_extensions, "resolve_extension", _fake_resolve
-    )
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
 
     result = await service.reply_permission_interrupt(
@@ -951,11 +1031,20 @@ async def test_reject_question_interrupt_uses_request_id(
         business_code_map={-32004: "interrupt_request_not_found"},
     )
 
-    async def _fake_resolve(_runtime):
-        return ext, "https://example.com/jsonrpc"
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_callback=_interrupt_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
 
     async def _fake_invoke(**kwargs):
         assert kwargs["method_key"] == "reject_question"
+        assert kwargs["jsonrpc_url"] == "https://example.com/jsonrpc"
         assert kwargs["params"] == {"request_id": "q-1"}
         return ExtensionCallResult(
             success=True,
@@ -963,9 +1052,7 @@ async def test_reject_question_interrupt_uses_request_id(
             meta={"request_id": "q-1"},
         )
 
-    monkeypatch.setattr(
-        service._interrupt_extensions, "resolve_extension", _fake_resolve
-    )
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
 
     result = await service.reject_question_interrupt(runtime=runtime, request_id="q-1")
@@ -982,15 +1069,21 @@ async def test_reply_permission_interrupt_returns_method_not_supported_if_missin
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
 
-    async def _fake_resolve(_runtime):
-        return _interrupt_extension_fixture(), "https://example.com/jsonrpc"
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_callback=_interrupt_snapshot(
+                status="supported",
+                ext=_interrupt_extension_fixture(),
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
 
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(
-        service._interrupt_extensions, "resolve_extension", _fake_resolve
-    )
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.reply_permission_interrupt(
@@ -1025,15 +1118,21 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
         business_code_map=ext.business_code_map,
     )
 
-    async def _fake_resolve(_runtime):
-        return ext, "https://example.com/jsonrpc"
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_callback=_interrupt_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
 
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(
-        service._interrupt_extensions, "resolve_extension", _fake_resolve
-    )
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
 
     result = await service.reply_question_interrupt(
@@ -1044,3 +1143,145 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
     assert result.success is False
     assert result.error_code == "method_not_supported"
     assert result.meta["extension_uri"] == SHARED_INTERRUPT_CALLBACK_URI
+
+
+@pytest.mark.asyncio
+async def test_list_model_providers_uses_resolved_provider_discovery_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = _provider_discovery_extension_fixture()
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            provider_discovery=_provider_discovery_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "list_providers"
+        assert kwargs["jsonrpc_url"] == "https://example.com/jsonrpc"
+        assert kwargs["params"] == {
+            "metadata": {"opencode": {"directory": "/workspace"}}
+        }
+        return ExtensionCallResult(success=True, result={"items": []}, meta={})
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._opencode_discovery, "invoke_method", _fake_invoke)
+
+    result = await service.list_model_providers(
+        runtime=runtime,
+        session_metadata={"opencode": {"directory": "/workspace"}},
+    )
+
+    assert result.success is True
+    assert result.result == {"items": []}
+
+
+@pytest.mark.asyncio
+async def test_provider_and_interrupt_share_single_card_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    fetch_calls = 0
+    fake_card = SimpleNamespace(
+        url="https://example.com",
+        additionalInterfaces=[
+            SimpleNamespace(transport="jsonrpc", url="https://example.com/jsonrpc")
+        ],
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri=SHARED_SESSION_QUERY_URI,
+                    required=False,
+                    params={
+                        "provider": "opencode",
+                        "methods": {
+                            "list_sessions": "shared.sessions.list",
+                            "get_session_messages": "shared.sessions.messages.list",
+                            "prompt_async": "shared.sessions.prompt_async",
+                        },
+                        "pagination": {
+                            "mode": "limit",
+                            "default_limit": 20,
+                            "max_limit": 100,
+                            "params": ["limit", "offset"],
+                        },
+                    },
+                ),
+                SimpleNamespace(
+                    uri=PROVIDER_DISCOVERY_URI,
+                    required=False,
+                    params={
+                        "methods": {
+                            "list_providers": "providers.list",
+                            "list_models": "models.list",
+                        }
+                    },
+                ),
+                SimpleNamespace(
+                    uri=SHARED_INTERRUPT_CALLBACK_URI,
+                    required=False,
+                    params={
+                        "methods": {
+                            "reply_permission": "shared.permission.reply",
+                            "reply_question": "shared.question.reply",
+                            "reject_question": "shared.question.reject",
+                        }
+                    },
+                ),
+            ]
+        ),
+    )
+
+    async def _fake_fetch_card(_runtime):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return fake_card
+
+    async def _fake_provider_invoke(**kwargs):
+        assert kwargs["method_key"] == "list_providers"
+        return ExtensionCallResult(success=True, result={"items": []}, meta={})
+
+    async def _fake_interrupt_invoke(**kwargs):
+        assert kwargs["method_key"] == "reply_permission"
+        return ExtensionCallResult(
+            success=True,
+            result={"ok": True, "request_id": "perm-1"},
+            meta={"request_id": "perm-1"},
+        )
+
+    monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
+    monkeypatch.setattr(
+        service._opencode_discovery, "invoke_method", _fake_provider_invoke
+    )
+    monkeypatch.setattr(
+        service._interrupt_extensions, "invoke_method", _fake_interrupt_invoke
+    )
+
+    providers = await service.list_model_providers(runtime=runtime)
+    interrupt = await service.reply_permission_interrupt(
+        runtime=runtime,
+        request_id="perm-1",
+        reply="once",
+    )
+
+    assert providers.success is True
+    assert interrupt.success is True
+    assert fetch_calls == 1
