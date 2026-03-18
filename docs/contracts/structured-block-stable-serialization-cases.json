@@ -46,6 +46,11 @@
     "expected": "7"
   },
   {
+    "name": "keeps_empty_object_values",
+    "value": {},
+    "expected": "{}"
+  },
+  {
     "name": "returns_null_for_null_values",
     "value": null,
     "expected": null
