@@ -33,6 +33,21 @@ const formatDuration = (seconds: number | null | undefined): string | null => {
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 };
 
+const formatDurationBetween = (
+  startedAt: string | null | undefined,
+  finishedAt: string | null | undefined,
+): string | null => {
+  if (!startedAt || !finishedAt) return null;
+  const startedMs = new Date(startedAt).getTime();
+  const finishedMs = new Date(finishedAt).getTime();
+  if (!Number.isFinite(startedMs) || !Number.isFinite(finishedMs)) {
+    return null;
+  }
+  return formatDuration(
+    Math.max(Math.floor((finishedMs - startedMs) / 1000), 0),
+  );
+};
+
 const getCardTone = (job: ScheduledJob, isReallyRunning: boolean) => {
   if (!job.enabled) {
     return {
@@ -365,6 +380,27 @@ export function ScheduledJobCard({
               <>
                 {executions.map((execution) => {
                   const errorMessage = execution.error_message?.trim();
+                  const scheduledAt = formatLocalDateTime(
+                    execution.scheduled_for,
+                    timeZone,
+                  );
+                  const startedAt = formatLocalDateTime(
+                    execution.started_at,
+                    timeZone,
+                  );
+                  const finishedAt = formatLocalDateTime(
+                    execution.finished_at,
+                    timeZone,
+                  );
+                  const lastHeartbeatAt = formatLocalDateTime(
+                    execution.last_heartbeat_at,
+                    timeZone,
+                  );
+                  const duration = formatDurationBetween(
+                    execution.started_at,
+                    execution.finished_at,
+                  );
+                  const hasFinishedAt = Boolean(execution.finished_at);
 
                   return (
                     <View
@@ -403,6 +439,31 @@ export function ScheduledJobCard({
                           {errorMessage}
                         </Text>
                       ) : null}
+                      <View className="mt-2 gap-1">
+                        <Text className="text-[10px] font-medium text-slate-500">
+                          Scheduled: {scheduledAt ?? "-"}
+                        </Text>
+                        {startedAt ? (
+                          <Text className="text-[10px] font-medium text-slate-500">
+                            Started: {startedAt}
+                          </Text>
+                        ) : null}
+                        {finishedAt ? (
+                          <Text className="text-[10px] font-medium text-slate-500">
+                            Finished: {finishedAt}
+                          </Text>
+                        ) : null}
+                        {duration ? (
+                          <Text className="text-[10px] font-medium text-slate-500">
+                            Duration: {duration}
+                          </Text>
+                        ) : null}
+                        {!hasFinishedAt && lastHeartbeatAt ? (
+                          <Text className="text-[10px] font-medium text-slate-500">
+                            Last heartbeat: {lastHeartbeatAt}
+                          </Text>
+                        ) : null}
+                      </View>
                     </View>
                   );
                 })}

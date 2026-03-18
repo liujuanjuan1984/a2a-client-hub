@@ -270,6 +270,8 @@ describe("ScheduledJobCard visuals", () => {
       id: "execution-1",
       status: "success" as const,
       scheduled_for: "2026-02-23T10:00:00Z",
+      started_at: "2026-02-23T10:00:00Z",
+      finished_at: "2026-02-23T10:02:00Z",
       conversation_id: "conversation-1",
     };
     let root: any;
@@ -287,6 +289,7 @@ describe("ScheduledJobCard visuals", () => {
 
     expect(JSON.stringify(root.toJSON())).toContain("SUCCESS");
     expect(JSON.stringify(root.toJSON())).toContain("Open Session");
+    expect(JSON.stringify(root.toJSON())).toContain("Duration:");
     expect(JSON.stringify(root.toJSON())).not.toContain("upstream timeout");
   });
 
@@ -325,6 +328,42 @@ describe("ScheduledJobCard visuals", () => {
 
     expect(getByText("FAILED")).toBeTruthy();
     expect(getByText(errorMessage)).toBeTruthy();
+  });
+
+  it("shows heartbeat timing for running execution history rows", () => {
+    const job = {
+      id: "7c",
+      name: "Running History Job",
+      enabled: true,
+      status_summary: {
+        state: "running",
+        manual_intervention_recommended: false,
+      },
+      last_run_status: "success" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const { getAllByText, getByText } = render(
+      <ScheduledJobCard
+        {...defaultProps}
+        job={job as any}
+        executions={
+          [
+            {
+              id: "execution-3",
+              status: "running" as const,
+              scheduled_for: "2026-02-23T10:00:00Z",
+              started_at: "2026-02-23T10:00:00Z",
+              last_heartbeat_at: "2026-02-23T10:01:00Z",
+            },
+          ] as any
+        }
+        executionsOpen
+      />,
+    );
+
+    expect(getAllByText("RUNNING").length).toBeGreaterThanOrEqual(1);
+    expect(getByText(/Last heartbeat:/)).toBeTruthy();
   });
 });
 
