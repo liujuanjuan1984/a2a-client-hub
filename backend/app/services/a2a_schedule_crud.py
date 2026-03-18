@@ -148,8 +148,7 @@ class A2AScheduleCrudService:
         db.add(task)
         await commit_safely(db)
         await db.refresh(task)
-        setattr(task, "is_running", False)
-        return task
+        return await self._projection.set_task_running_projection(db, task=task)
 
     @map_retryable_db_errors("Schedule task update")
     async def update_task(
@@ -382,8 +381,7 @@ class A2AScheduleCrudService:
 
         await commit_safely(db)
         await db.refresh(task)
-        setattr(task, "is_running", False)
-        return task
+        return await self._projection.set_task_running_projection(db, task=task)
 
     @staticmethod
     def build_manual_failure_reason(

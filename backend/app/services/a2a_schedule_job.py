@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import math
 import time
 from datetime import timedelta
 from uuid import uuid4
@@ -29,6 +28,9 @@ from app.db.transaction import commit_safely, rollback_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services.a2a_runtime import a2a_runtime_builder
+from app.services.a2a_schedule_runtime_summary import (
+    derive_schedule_recovery_timeouts,
+)
 from app.services.a2a_schedule_service import (
     A2A_SCHEDULE_SOURCE,
     A2AScheduleConflictError,
@@ -88,27 +90,7 @@ def _execution_metadata(
 
 
 def _derive_recovery_timeouts() -> tuple[int, int]:
-    """Derive heartbeat stale and hard timeout from invoke timeout.
-
-    Keep a single source of truth for run lifetime (`invoke_timeout`) to avoid
-    configuration drift. Heartbeat stale timeout is internally derived from
-    heartbeat interval and clamped by invoke timeout.
-    """
-
-    invoke_timeout_seconds = max(
-        int(math.ceil(float(settings.a2a_schedule_task_invoke_timeout))),
-        1,
-    )
-    heartbeat_interval_seconds = max(
-        float(settings.a2a_schedule_run_heartbeat_interval_seconds),
-        0.1,
-    )
-    heartbeat_stale_seconds = max(
-        int(math.ceil(heartbeat_interval_seconds * 3)),
-        30,
-    )
-    heartbeat_stale_seconds = min(heartbeat_stale_seconds, invoke_timeout_seconds)
-    return heartbeat_stale_seconds, invoke_timeout_seconds
+    return derive_schedule_recovery_timeouts()
 
 
 async def _touch_schedule_run_heartbeat(*, claim: ClaimedA2AScheduleTask) -> bool:

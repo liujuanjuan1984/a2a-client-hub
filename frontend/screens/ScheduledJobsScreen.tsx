@@ -52,6 +52,16 @@ export function ScheduledJobsScreen() {
     return [...jobs].sort((a, b) => {
       if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
 
+      const aNeedsAttention = Boolean(
+        a.status_summary?.manual_intervention_recommended,
+      );
+      const bNeedsAttention = Boolean(
+        b.status_summary?.manual_intervention_recommended,
+      );
+      if (aNeedsAttention !== bNeedsAttention) {
+        return aNeedsAttention ? -1 : 1;
+      }
+
       if (a.enabled && b.enabled) {
         const ar = Boolean(a.is_running);
         const br = Boolean(b.is_running);
@@ -133,7 +143,12 @@ export function ScheduledJobsScreen() {
           onMarkFailed={async () => {
             try {
               await markJobFailed(job);
-              toast.success("Job updated", "Marked running task as failed.");
+              toast.success(
+                "Run stopped",
+                job.status_summary?.manual_intervention_recommended
+                  ? "Marked the stalled run as failed."
+                  : "Marked the running task as failed.",
+              );
             } catch (error) {
               const message =
                 error instanceof Error ? error.message : "Update failed.";

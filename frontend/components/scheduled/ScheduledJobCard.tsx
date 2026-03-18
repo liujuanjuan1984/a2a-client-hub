@@ -22,6 +22,17 @@ const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
   failed: "text-red-400",
 };
 
+const formatDuration = (seconds: number | null | undefined): string | null => {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+  if (seconds < 60) return `${Math.max(Math.floor(seconds), 1)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+};
+
 const getCardTone = (job: ScheduledJob, isReallyRunning: boolean) => {
   if (!job.enabled) {
     return {
@@ -54,6 +65,44 @@ const getCardTone = (job: ScheduledJob, isReallyRunning: boolean) => {
     iconColor: "#FFFFFF",
     switchTrack: { false: "#0F172A", true: "#FACC15" },
   };
+};
+
+const buildStatusHint = (job: ScheduledJob): string | null => {
+  const summary = job.status_summary;
+  if (!summary) return null;
+
+  if (summary.state === "running" && summary.manual_intervention_recommended) {
+    const lastHeartbeatAt = formatLocalDateTime(
+      summary.last_heartbeat_at,
+      job.schedule_timezone,
+    );
+    return lastHeartbeatAt
+      ? `No heartbeat since ${lastHeartbeatAt}. Review this run before it blocks later schedules.`
+      : "This run has not reported a recent heartbeat. Review whether it should be stopped.";
+  }
+
+  if (summary.state === "running") {
+    const runningFor = formatDuration(summary.running_duration_seconds);
+    return runningFor
+      ? `Run in progress for ${runningFor}.`
+      : "Run in progress.";
+  }
+
+  if (summary.state === "recent_failed") {
+    const failureMessage = summary.recent_failure_message?.trim();
+    if (failureMessage) {
+      return `Last run failed: ${failureMessage}`;
+    }
+    const lastFinishedAt = formatLocalDateTime(
+      summary.last_finished_at,
+      job.schedule_timezone,
+    );
+    return lastFinishedAt
+      ? `Last run failed at ${lastFinishedAt}.`
+      : "Last run failed.";
+  }
+
+  return null;
 };
 
 type ScheduledJobCardProps = {
@@ -104,6 +153,15 @@ export function ScheduledJobCard({
   const [promptExpanded, setPromptExpanded] = useState(false);
   const canMarkFailed = isReallyRunning;
   const hasPrompt = Boolean(job.prompt?.trim());
+  const summary = job.status_summary;
+  const needsAttention =
+    summary?.state === "running" && summary.manual_intervention_recommended;
+  const statusHint = buildStatusHint(job);
+  const stopTitle = needsAttention ? "Stop stalled job?" : "Stop running job?";
+  const stopMessage = needsAttention
+    ? "This run has not reported a recent heartbeat. Mark it as failed if it looks stuck or needs manual recovery."
+    : "This will mark the current run as failed and stop the active schedule execution.";
+  const stopConfirmLabel = needsAttention ? "Stop stalled run" : "Stop run";
 
   const openExecutionSession = (execution: ScheduledJobExecution) => {
     if (!execution.conversation_id) return;
@@ -123,10 +181,9 @@ export function ScheduledJobCard({
   const handleMarkFailed = async () => {
     if (!onMarkFailed || markingFailed || !canMarkFailed) return;
     const confirmed = await confirmAction({
-      title: "Stop running job?",
-      message:
-        "This will mark the running job as failed to release resources or recover from abnormal states.",
-      confirmLabel: "Stop Running",
+      title: stopTitle,
+      message: stopMessage,
+      confirmLabel: stopConfirmLabel,
       cancelLabel: "Cancel",
       isDestructive: true,
     });
@@ -186,6 +243,19 @@ export function ScheduledJobCard({
               {job.next_run_at_local ??
                 formatLocalDateTime(job.next_run_at_utc, timeZone)}
             </Text>
+            {statusHint ? (
+              <Text
+                className={`mt-1 text-[11px] font-medium leading-4 ${
+                  needsAttention
+                    ? "text-amber-300"
+                    : summary?.state === "recent_failed"
+                      ? "text-red-300"
+                      : "text-slate-400"
+                }`}
+              >
+                {statusHint}
+              </Text>
+            ) : null}
           </View>
           <Switch
             value={job.enabled}
@@ -256,7 +326,7 @@ export function ScheduledJobCard({
         <View className="flex-row items-center gap-2">
           {canMarkFailed ? (
             <Button
-              label="Stop"
+              label={needsAttention ? "Stop stalled run" : "Stop run"}
               size="xs"
               variant="danger"
               className="bg-red-500/40"

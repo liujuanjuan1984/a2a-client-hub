@@ -124,16 +124,20 @@ async def test_schedule_routes_crud_and_toggle(
         assert created["name"] == "Morning digest"
         assert created["enabled"] is True
         assert created["consecutive_failures"] == 0
+        assert created["status_summary"]["state"] == "idle"
+        assert created["status_summary"]["manual_intervention_recommended"] is False
 
         list_resp = await client.get(
             "/me/a2a/schedules", params={"page": 1, "size": 20}
         )
         assert list_resp.status_code == 200
         assert list_resp.json()["pagination"]["total"] >= 1
+        assert list_resp.json()["items"][0]["status_summary"]["state"] == "idle"
 
         get_resp = await client.get(f"/me/a2a/schedules/{task_id}")
         assert get_resp.status_code == 200
         assert get_resp.json()["id"] == task_id
+        assert get_resp.json()["status_summary"]["state"] == "idle"
 
         update_resp = await client.patch(
             f"/me/a2a/schedules/{task_id}",
@@ -372,6 +376,11 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
         assert payload["last_run_status"] == "failed"
         assert payload["is_running"] is False
         assert payload["last_run_at"] is not None
+        assert payload["status_summary"]["state"] == "recent_failed"
+        assert (
+            payload["status_summary"]["recent_failure_message"]
+            == "Stopped by user as failed"
+        )
 
         await async_db_session.refresh(task)
         failures_after_first_call = task.consecutive_failures
@@ -396,6 +405,55 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
         assert second_resp.status_code == 200
         await async_db_session.refresh(task)
         assert task.consecutive_failures == failures_after_first_call
+
+
+async def test_schedule_get_exposes_attention_summary_for_stale_running_execution(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="summary")
+
+    task = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        timezone_str=user.timezone or "UTC",
+        name="Summary task",
+        agent_id=agent.id,
+        prompt="ping",
+        cycle_type="daily",
+        time_point={"time": "09:00"},
+        enabled=True,
+    )
+    started_at = utc_now() - timedelta(minutes=10)
+    last_heartbeat_at = utc_now() - timedelta(minutes=3)
+    async_db_session.add(
+        A2AScheduleExecution(
+            user_id=user.id,
+            task_id=task.id,
+            run_id=uuid4(),
+            scheduled_for=started_at,
+            started_at=started_at,
+            last_heartbeat_at=last_heartbeat_at,
+            status=A2AScheduleExecution.STATUS_RUNNING,
+        )
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        response = await client.get(f"/me/a2a/schedules/{task.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status_summary"]["state"] == "running"
+    assert payload["status_summary"]["manual_intervention_recommended"] is True
+    assert payload["status_summary"]["last_heartbeat_at"] is not None
+    assert payload["status_summary"]["heartbeat_stale_after_seconds"] == 90
 
 
 async def test_schedule_mark_failed_sequential_reschedules_next_run(

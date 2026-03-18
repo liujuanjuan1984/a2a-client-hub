@@ -48,8 +48,21 @@ export type ScheduledJob = {
   next_run_at_local?: string | null;
   last_run_at?: string | null;
   last_run_status?: "idle" | "success" | "failed" | null;
+  status_summary: ScheduledJobStatusSummary;
   created_at: string;
   updated_at: string;
+};
+
+export type ScheduledJobStatusSummary = {
+  state: "idle" | "running" | "recent_failed";
+  manual_intervention_recommended: boolean;
+  running_started_at?: string | null;
+  running_duration_seconds?: number | null;
+  last_heartbeat_at?: string | null;
+  heartbeat_age_seconds?: number | null;
+  heartbeat_stale_after_seconds?: number | null;
+  recent_failure_message?: string | null;
+  last_finished_at?: string | null;
 };
 
 export type ScheduledJobExecution = {

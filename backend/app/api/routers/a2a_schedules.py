@@ -16,6 +16,7 @@ from app.schemas.a2a_schedule import (
     A2AScheduleExecutionListResponse,
     A2AScheduleExecutionResponse,
     A2AScheduleManualFailRequest,
+    A2AScheduleStatusSummary,
     A2AScheduleTaskCreate,
     A2AScheduleTaskListResponse,
     A2AScheduleTaskResponse,
@@ -105,6 +106,9 @@ def _build_task_response(
         last_run_at=task.last_run_at,
         last_run_status=task.last_run_status,
         consecutive_failures=int(task.consecutive_failures or 0),
+        status_summary=A2AScheduleStatusSummary.model_validate(
+            getattr(task, "status_summary", {"state": "idle"})
+        ),
         created_at=task.created_at,
         updated_at=task.updated_at,
     )
