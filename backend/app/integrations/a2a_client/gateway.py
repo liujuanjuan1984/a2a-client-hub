@@ -624,12 +624,6 @@ class A2AGateway:
             return []
         return [StaticHeaderInterceptor(resolved.headers)]
 
-    @staticmethod
-    def _build_cache_key(
-        resolved: "ResolvedAgent",
-    ) -> tuple[str, tuple[tuple[str, str], ...]]:
-        return A2AClientRegistry.build_cache_key(resolved)
-
     def get_lifecycle_snapshot(self) -> A2AGatewayLifecycleSnapshot:
         clients = self._client_registry.clients
         client_snapshots = tuple(

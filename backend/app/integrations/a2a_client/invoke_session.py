@@ -58,10 +58,6 @@ class A2AInvokeSession:
     ownership: InvokeSessionOwnership
 
     @property
-    def resolved(self) -> "ResolvedAgent":
-        return self.snapshot.resolved
-
-    @property
     def is_shared(self) -> bool:
         return self.ownership == InvokeSessionOwnership.SHARED
 

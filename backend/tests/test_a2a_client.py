@@ -751,7 +751,7 @@ async def test_gateway_invalidate_client_schedules_background_close() -> None:
         headers={},
         name="TestAgent",
     )
-    cache_key = gateway._build_cache_key(resolved)
+    cache_key = registry_module.A2AClientRegistry.build_cache_key(resolved)
     gateway._client_registry.clients[cache_key] = registry_module.CachedClientEntry(
         client=fake_client,
         last_used=time.monotonic(),
