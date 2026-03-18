@@ -1,12 +1,11 @@
-"""Unified gateway that manages A2A client lifecycle and retries."""
+"""Unified gateway facade for A2A invokes and session orchestration."""
 
 from __future__ import annotations
 
 import asyncio
 import time
-from contextlib import suppress
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from contextlib import asynccontextmanager, suppress
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, Optional
 
 import httpx
 from a2a.client import ClientCallInterceptor
@@ -20,14 +19,19 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
     A2AOutboundNotAllowedError,
 )
+from app.integrations.a2a_client.invoke_session import (
+    A2AInvokeSession,
+    AgentResolutionPolicy,
+)
 from app.integrations.a2a_client.lifecycle import (
     A2AGatewayLifecycleSnapshot,
     AsyncResourceReaper,
 )
 from app.integrations.a2a_client.metrics import a2a_metrics
-from app.utils.async_cleanup import await_cancel_safe
+from app.integrations.a2a_client.registry import A2AClientRegistry
+from app.integrations.a2a_client.resolution import A2AResolutionService
+from app.integrations.a2a_client.session_factory import A2AInvokeSessionFactory
 from app.utils.logging_redaction import (
-    redact_headers_for_logging,
     redact_url_for_logging,
 )
 
@@ -39,22 +43,29 @@ if TYPE_CHECKING:  # pragma: no cover - import for typing only
 logger = get_logger(__name__)
 
 
-@dataclass
-class CachedClientEntry:
-    client: A2AClient
-    last_used: float
-
-
 class A2AGateway:
-    """Centralized coordinator for A2A HTTP clients and retries."""
+    """Facade that coordinates A2A invokes on top of smaller collaborators."""
 
     def __init__(self, settings: A2ASettings) -> None:
         self.settings = settings
-        self._clients: Dict[
-            tuple[str, tuple[tuple[str, str], ...]], CachedClientEntry
-        ] = {}
-        self._client_lock = asyncio.Lock()
         self._close_reaper = AsyncResourceReaper()
+        self._client_registry = A2AClientRegistry(
+            settings=settings,
+            close_reaper=self._close_reaper,
+            client_builder=self._create_client,
+        )
+        self._resolution_service = A2AResolutionService()
+        self._session_factory = A2AInvokeSessionFactory(
+            resolution_service=self._resolution_service,
+            shared_client_getter=lambda resolved: self._get_client(resolved),
+            shared_client_invalidator=lambda resolved: self._invalidate_client(
+                resolved
+            ),
+            ephemeral_client_builder=lambda resolved, **kwargs: self._create_client(
+                resolved,
+                **kwargs,
+            ),
+        )
         self._maintenance_lock = asyncio.Lock()
         self._maintenance_task: asyncio.Task[None] | None = None
 
@@ -68,7 +79,6 @@ class A2AGateway:
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         timeout_seconds = float(max(timeout or self.settings.default_timeout, 1.0))
-        client = await self._get_client(resolved)
         start_time = time.monotonic()
 
         query_meta = summarize_query(query)
@@ -83,138 +93,141 @@ class A2AGateway:
             },
         )
 
-        call_task = asyncio.create_task(
-            client.call_agent(
-                query,
-                context_id=context_id,
-                metadata=metadata,
-            )
-        )
-        watchdog_task: Optional[asyncio.Task[Any]] = None
-        if self.settings.invoke_watchdog_interval > 0:
-            watchdog_task = asyncio.create_task(
-                self._watch_pending_invoke(
-                    resolved=resolved,
-                    payload={
-                        "query_meta": query_meta,
-                        "timeout_seconds": timeout_seconds,
-                    },
-                    start_time=start_time,
+        async with self.open_invoke_session(
+            resolved=resolved,
+            policy=AgentResolutionPolicy.CACHED_SHARED,
+        ) as session:
+            call_task = asyncio.create_task(
+                session.client.call_agent(
+                    query,
+                    context_id=context_id,
+                    metadata=metadata,
                 )
             )
-
-        try:
-            result = await asyncio.wait_for(call_task, timeout=timeout_seconds)
-        except asyncio.CancelledError:
-            elapsed = time.monotonic() - start_time
-            logger.warning(
-                "A2A invoke cancelled",
-                extra={
+            watchdog_task: Optional[asyncio.Task[Any]] = None
+            if self.settings.invoke_watchdog_interval > 0:
+                watchdog_task = asyncio.create_task(
+                    self._watch_pending_invoke(
+                        resolved=resolved,
+                        payload={
+                            "query_meta": query_meta,
+                            "timeout_seconds": timeout_seconds,
+                        },
+                        start_time=start_time,
+                    )
+                )
+            try:
+                result = await asyncio.wait_for(call_task, timeout=timeout_seconds)
+            except asyncio.CancelledError:
+                elapsed = time.monotonic() - start_time
+                logger.warning(
+                    "A2A invoke cancelled",
+                    extra={
+                        "agent_name": resolved.name,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "query_meta": query_meta,
+                    },
+                )
+                call_task.cancel()
+                raise
+            except A2AClientResetRequiredError as exc:
+                await self._handle_client_reset(resolved=resolved, session=session)
+                elapsed = time.monotonic() - start_time
+                logger.error(
+                    "A2A client reset required",
+                    extra={
+                        "agent_name": resolved.name,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "error": str(exc),
+                    },
+                )
+                a2a_metrics.record_call(
+                    resolved.name,
+                    success=False,
+                    error_code="client_reset",
+                )
+                return {
+                    "success": False,
                     "agent_name": resolved.name,
-                    "elapsed_seconds": round(elapsed, 3),
-                    "query_meta": query_meta,
-                },
-            )
-            call_task.cancel()
-            raise
-        except A2AClientResetRequiredError as exc:
-            await self._invalidate_client(resolved)
-            elapsed = time.monotonic() - start_time
-            logger.error(
-                "A2A client reset required",
-                extra={
-                    "agent_name": resolved.name,
-                    "elapsed_seconds": round(elapsed, 3),
+                    "agent_url": resolved.url,
                     "error": str(exc),
-                },
-            )
-            a2a_metrics.record_call(
-                resolved.name,
-                success=False,
-                error_code="client_reset",
-            )
-            return {
-                "success": False,
-                "agent_name": resolved.name,
-                "agent_url": resolved.url,
-                "error": str(exc),
-                "error_code": "client_reset",
-            }
-        except A2AOutboundNotAllowedError as exc:
-            elapsed = time.monotonic() - start_time
-            logger.error(
-                "A2A outbound target blocked",
-                extra={
+                    "error_code": "client_reset",
+                }
+            except A2AOutboundNotAllowedError as exc:
+                elapsed = time.monotonic() - start_time
+                logger.error(
+                    "A2A outbound target blocked",
+                    extra={
+                        "agent_name": resolved.name,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "error": str(exc),
+                    },
+                )
+                a2a_metrics.record_call(
+                    resolved.name,
+                    success=False,
+                    error_code="outbound_not_allowed",
+                )
+                return {
+                    "success": False,
                     "agent_name": resolved.name,
-                    "elapsed_seconds": round(elapsed, 3),
+                    "agent_url": resolved.url,
+                    "error": "Outbound A2A URL is not allowed",
+                    "error_code": "outbound_not_allowed",
+                }
+            except A2AAgentUnavailableError as exc:
+                elapsed = time.monotonic() - start_time
+                logger.error(
+                    "A2A unavailable",
+                    extra={
+                        "agent_name": resolved.name,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "error": str(exc),
+                    },
+                )
+                a2a_metrics.record_call(
+                    resolved.name,
+                    success=False,
+                    error_code="agent_unavailable",
+                )
+                return {
+                    "success": False,
+                    "agent_name": resolved.name,
+                    "agent_url": resolved.url,
                     "error": str(exc),
-                },
-            )
-            a2a_metrics.record_call(
-                resolved.name,
-                success=False,
-                error_code="outbound_not_allowed",
-            )
-            return {
-                "success": False,
-                "agent_name": resolved.name,
-                "agent_url": resolved.url,
-                "error": "Outbound A2A URL is not allowed",
-                "error_code": "outbound_not_allowed",
-            }
-        except A2AAgentUnavailableError as exc:
-            elapsed = time.monotonic() - start_time
-            logger.error(
-                "A2A unavailable",
-                extra={
-                    "agent_name": resolved.name,
-                    "elapsed_seconds": round(elapsed, 3),
-                    "error": str(exc),
-                },
-            )
-            a2a_metrics.record_call(
-                resolved.name,
-                success=False,
-                error_code="agent_unavailable",
-            )
-            return {
-                "success": False,
-                "agent_name": resolved.name,
-                "agent_url": resolved.url,
-                "error": str(exc),
-                "error_code": "agent_unavailable",
-            }
-        except asyncio.TimeoutError:
-            elapsed = time.monotonic() - start_time
-            call_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await call_task
-            logger.error(
-                "A2A timeout",
-                extra={
-                    "agent_name": resolved.name,
-                    "timeout_seconds": timeout_seconds,
-                    "elapsed_seconds": round(elapsed, 3),
-                    "query_meta": query_meta,
-                },
-            )
-            a2a_metrics.record_call(
-                resolved.name,
-                success=False,
-                error_code="timeout",
-            )
-            return {
-                "success": False,
-                "agent_name": resolved.name,
-                "agent_url": resolved.url,
-                "error": f"A2A agent timed out after {elapsed:.1f}s",
-                "error_code": "timeout",
-            }
-        finally:
-            if watchdog_task:
-                watchdog_task.cancel()
+                    "error_code": "agent_unavailable",
+                }
+            except asyncio.TimeoutError:
+                elapsed = time.monotonic() - start_time
+                call_task.cancel()
                 with suppress(asyncio.CancelledError):
-                    await watchdog_task
+                    await call_task
+                logger.error(
+                    "A2A timeout",
+                    extra={
+                        "agent_name": resolved.name,
+                        "timeout_seconds": timeout_seconds,
+                        "elapsed_seconds": round(elapsed, 3),
+                        "query_meta": query_meta,
+                    },
+                )
+                a2a_metrics.record_call(
+                    resolved.name,
+                    success=False,
+                    error_code="timeout",
+                )
+                return {
+                    "success": False,
+                    "agent_name": resolved.name,
+                    "agent_url": resolved.url,
+                    "error": f"A2A agent timed out after {elapsed:.1f}s",
+                    "error_code": "timeout",
+                }
+            finally:
+                if watchdog_task:
+                    watchdog_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await watchdog_task
 
         elapsed = time.monotonic() - start_time
         success = bool(result.get("success"))
@@ -241,7 +254,7 @@ class A2AGateway:
         query: str,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        client: Optional[A2AClient] = None,
+        session: Optional[A2AInvokeSession] = None,
     ):
         logger.info(
             "A2A stream",
@@ -252,15 +265,31 @@ class A2AGateway:
             },
         )
 
-        client_instance = (
-            client if client is not None else await self._get_client(resolved)
-        )
-        async for payload in client_instance.stream_agent(
-            query,
-            context_id=context_id,
-            metadata=metadata,
-        ):
-            yield payload
+        if session is not None:
+            async for payload in session.client.stream_agent(
+                query,
+                context_id=context_id,
+                metadata=metadata,
+            ):
+                yield payload
+            return
+
+        async with self.open_invoke_session(
+            resolved=resolved,
+            policy=AgentResolutionPolicy.CACHED_SHARED,
+        ) as shared_session:
+            try:
+                async for payload in shared_session.client.stream_agent(
+                    query,
+                    context_id=context_id,
+                    metadata=metadata,
+                ):
+                    yield payload
+            except A2AClientResetRequiredError:
+                await self._handle_client_reset(
+                    resolved=resolved, session=shared_session
+                )
+                raise
 
     async def cancel_task(
         self,
@@ -280,7 +309,6 @@ class A2AGateway:
                 "error_code": "invalid_task_id",
             }
 
-        client = await self._get_client(resolved)
         start_time = time.monotonic()
         logger.info(
             "A2A task cancel",
@@ -291,10 +319,14 @@ class A2AGateway:
             },
         )
         try:
-            result = await client.cancel_task(
-                normalized_task_id,
-                metadata=metadata,
-            )
+            async with self.open_invoke_session(
+                resolved=resolved,
+                policy=AgentResolutionPolicy.CACHED_SHARED,
+            ) as session:
+                result = await session.client.cancel_task(
+                    normalized_task_id,
+                    metadata=metadata,
+                )
         except A2AClientResetRequiredError as exc:
             await self._invalidate_client(resolved)
             elapsed = time.monotonic() - start_time
@@ -448,21 +480,46 @@ class A2AGateway:
         except asyncio.CancelledError:
             raise
 
+    @asynccontextmanager
+    async def open_invoke_session(
+        self,
+        *,
+        resolved: "ResolvedAgent",
+        policy: AgentResolutionPolicy = AgentResolutionPolicy.CACHED_SHARED,
+        card_fetch_timeout: float | None = None,
+    ) -> AsyncIterator[A2AInvokeSession]:
+        """Open an invoke session with explicit shared or ephemeral semantics."""
+
+        async with self._session_factory.open_session(
+            resolved=resolved,
+            policy=policy,
+            card_fetch_timeout=card_fetch_timeout,
+        ) as session:
+            try:
+                yield session
+            except A2AClientResetRequiredError:
+                await self._session_factory.handle_client_reset(
+                    resolved=resolved,
+                    session=session,
+                )
+                raise
+
     async def fetch_agent_card_detail(
         self,
         *,
         resolved: "ResolvedAgent",
-        client: Optional[A2AClient] = None,
         raise_on_failure: bool = False,
+        policy: AgentResolutionPolicy = AgentResolutionPolicy.CACHED_SHARED,
+        card_fetch_timeout: float | None = None,
     ) -> Optional["AgentCard"]:
-        uses_shared_client = client is None
-        if client is not None:
-            client_instance = client
-        else:
-            client_instance = await self._get_client(resolved)
         start_time = time.monotonic()
         try:
-            card = await client_instance.get_agent_card()
+            async with self.open_invoke_session(
+                resolved=resolved,
+                policy=policy,
+                card_fetch_timeout=card_fetch_timeout,
+            ) as session:
+                card = session.snapshot.agent_card
         except A2AOutboundNotAllowedError as exc:
             elapsed = time.monotonic() - start_time
             logger.warning(
@@ -477,8 +534,6 @@ class A2AGateway:
                 raise
             return None
         except A2AClientResetRequiredError as exc:
-            if uses_shared_client:
-                await self._invalidate_client(resolved)
             elapsed = time.monotonic() - start_time
             logger.warning(
                 "A2A card fetch requires client reset",
@@ -516,6 +571,17 @@ class A2AGateway:
             )
             return card
 
+    async def _handle_client_reset(
+        self,
+        *,
+        resolved: "ResolvedAgent",
+        session: A2AInvokeSession,
+    ) -> None:
+        await self._session_factory.handle_client_reset(
+            resolved=resolved,
+            session=session,
+        )
+
     def _create_client(
         self,
         resolved: "ResolvedAgent",
@@ -536,103 +602,20 @@ class A2AGateway:
             ),
         )
 
-    def create_temporary_client(
-        self,
-        *,
-        resolved: "ResolvedAgent",
-        card_fetch_timeout: float | None = None,
-    ) -> A2AClient:
-        """Build an uncached client for one-off preflight and invoke flows."""
-
-        return self._create_client(
-            resolved,
-            card_fetch_timeout=card_fetch_timeout,
-        )
-
     async def shutdown(self) -> None:
         await self.stop_maintenance()
-        async with self._client_lock:
-            entries = list(self._clients.values())
-            self._clients.clear()
-        for entry in entries:
-            try:
-                await await_cancel_safe(entry.client.close())
-            except Exception:  # pragma: no cover - defensive cleanup
-                logger.debug(
-                    "Failed to close A2A client during shutdown", exc_info=True
-                )
+        await self._client_registry.shutdown()
         await self._close_reaper.drain()
 
     async def _get_client(self, resolved: "ResolvedAgent") -> A2AClient:
         await self.start_maintenance()
-        cache_key = self._build_cache_key(resolved)
-        async with self._client_lock:
-            cached = self._clients.get(cache_key)
-            if cached:
-                cached.last_used = time.monotonic()
-                logger.debug(
-                    "Reusing cached A2A client",
-                    extra={
-                        "agent_name": resolved.name,
-                        "headers": redact_headers_for_logging(resolved.headers),
-                    },
-                )
-                return cached.client
-
-            client = self._create_client(resolved)
-            self._clients[cache_key] = CachedClientEntry(
-                client=client, last_used=time.monotonic()
-            )
-            logger.info(
-                "Created new A2A client",
-                extra={
-                    "agent_name": resolved.name,
-                    "headers": redact_headers_for_logging(resolved.headers),
-                },
-            )
-            return client
+        return await self._client_registry.get_client(resolved)
 
     async def _cleanup_idle_clients(self) -> None:
-        idle_timeout = max(self.settings.client_idle_timeout, 0.0)
-        if idle_timeout <= 0:
-            return
-        now = time.monotonic()
-        to_close: list[A2AClient] = []
-        async with self._client_lock:
-            stale_keys: list[tuple[str, tuple[tuple[str, str], ...]]] = []
-            for key, entry in self._clients.items():
-                if now - entry.last_used <= idle_timeout:
-                    continue
-                if entry.client.is_busy():
-                    entry.last_used = now
-                    continue
-                stale_keys.append(key)
-            for key in stale_keys:
-                entry = self._clients.pop(key, None)
-                if entry:
-                    to_close.append(entry.client)
-        for client in to_close:
-            self._schedule_client_close(
-                client,
-                failure_log="Failed to close idle A2A client",
-                success_log="Evicted idle A2A client",
-            )
+        await self._client_registry.cleanup_idle_clients()
 
     async def _invalidate_client(self, resolved: "ResolvedAgent") -> None:
-        cache_key = self._build_cache_key(resolved)
-        async with self._client_lock:
-            entry = self._clients.pop(cache_key, None)
-        if not entry:
-            return
-        self._schedule_client_close(
-            entry.client,
-            failure_log="Failed to close invalidated A2A client",
-            success_log="Invalidated A2A client",
-            extra={
-                "agent_name": resolved.name,
-                "headers": redact_headers_for_logging(resolved.headers),
-            },
-        )
+        await self._client_registry.invalidate_client(resolved)
 
     def _build_interceptors(
         self, resolved: "ResolvedAgent"
@@ -641,35 +624,14 @@ class A2AGateway:
             return []
         return [StaticHeaderInterceptor(resolved.headers)]
 
-    @staticmethod
-    def _build_cache_key(
-        resolved: "ResolvedAgent",
-    ) -> tuple[str, tuple[tuple[str, str], ...]]:
-        headers_tuple = tuple(sorted(resolved.headers.items()))
-        return resolved.url, headers_tuple
-
-    def _schedule_client_close(
-        self,
-        client: A2AClient,
-        *,
-        failure_log: str,
-        success_log: str,
-        extra: dict[str, Any] | None = None,
-    ) -> None:
-        self._close_reaper.schedule(
-            client.close(),
-            failure_log=failure_log,
-            success_log=success_log,
-            extra=extra,
-        )
-
     def get_lifecycle_snapshot(self) -> A2AGatewayLifecycleSnapshot:
+        clients = self._client_registry.clients
         client_snapshots = tuple(
-            entry.client.get_lifecycle_snapshot() for entry in self._clients.values()
+            entry.client.get_lifecycle_snapshot() for entry in clients.values()
         )
         busy_clients = sum(1 for snapshot in client_snapshots if snapshot.busy)
         return A2AGatewayLifecycleSnapshot(
-            cached_clients=len(self._clients),
+            cached_clients=len(clients),
             busy_clients=busy_clients,
             reaper=self._close_reaper.snapshot(),
             client_snapshots=client_snapshots,

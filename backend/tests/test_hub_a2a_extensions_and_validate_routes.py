@@ -46,9 +46,21 @@ class _FakeGateway:
         self.card_calls: list[Dict[str, Any]] = []
         self.card_payload = _valid_card_payload()
 
-    async def fetch_agent_card_detail(self, *, resolved, raise_on_failure: bool):
+    async def fetch_agent_card_detail(
+        self,
+        *,
+        resolved,
+        raise_on_failure: bool,
+        policy=None,
+        card_fetch_timeout=None,
+    ):
         self.card_calls.append(
-            {"resolved": resolved, "raise_on_failure": raise_on_failure}
+            {
+                "resolved": resolved,
+                "raise_on_failure": raise_on_failure,
+                "policy": policy,
+                "card_fetch_timeout": card_fetch_timeout,
+            }
         )
         return _FakeCard(self.card_payload)
 

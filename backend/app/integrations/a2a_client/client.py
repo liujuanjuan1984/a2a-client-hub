@@ -479,6 +479,17 @@ class A2AClient:
             )
             return card
 
+    async def get_agent_resolution(self) -> tuple[AgentCard, Any]:
+        """Return the current Agent Card and resolved peer descriptor."""
+
+        card = await self.get_agent_card()
+        if self._peer_descriptor is None:
+            raise A2AAgentUnavailableError(
+                f"A2A agent '{redact_url_for_logging(self.agent_url)}' has no "
+                "resolved peer descriptor"
+            )
+        return card, self._peer_descriptor
+
     def _resolve_negotiated_transport_target(
         self, card: AgentCard
     ) -> tuple[TransportProtocol | str | None, str | None, list[str]]:
