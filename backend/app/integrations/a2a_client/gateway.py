@@ -1,11 +1,10 @@
-"""Unified gateway that manages A2A client lifecycle and retries."""
+"""Unified gateway facade for A2A invokes and session orchestration."""
 
 from __future__ import annotations
 
 import asyncio
 import time
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, Optional
 
 import httpx
@@ -23,21 +22,21 @@ from app.integrations.a2a_client.errors import (
 from app.integrations.a2a_client.invoke_session import (
     A2AInvokeSession,
     AgentResolutionPolicy,
-    AgentSnapshotSource,
-    InvokeSessionOwnership,
-    ResolvedAgentSnapshot,
 )
 from app.integrations.a2a_client.lifecycle import (
     A2AGatewayLifecycleSnapshot,
     AsyncResourceReaper,
 )
 from app.integrations.a2a_client.metrics import a2a_metrics
-from app.utils.async_cleanup import await_cancel_safe
+from app.integrations.a2a_client.registry import (
+    A2AClientRegistry,
+    CachedClientEntry,
+)
+from app.integrations.a2a_client.resolution import A2AResolutionService
+from app.integrations.a2a_client.session_factory import A2AInvokeSessionFactory
 from app.utils.logging_redaction import (
-    redact_headers_for_logging,
     redact_url_for_logging,
 )
-from app.utils.timezone_util import utc_now
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from a2a.types import AgentCard
@@ -47,22 +46,30 @@ if TYPE_CHECKING:  # pragma: no cover - import for typing only
 logger = get_logger(__name__)
 
 
-@dataclass
-class CachedClientEntry:
-    client: A2AClient
-    last_used: float
-
-
 class A2AGateway:
-    """Centralized coordinator for A2A HTTP clients and retries."""
+    """Facade that coordinates A2A invokes on top of smaller collaborators."""
 
     def __init__(self, settings: A2ASettings) -> None:
         self.settings = settings
-        self._clients: Dict[
-            tuple[str, tuple[tuple[str, str], ...]], CachedClientEntry
-        ] = {}
-        self._client_lock = asyncio.Lock()
         self._close_reaper = AsyncResourceReaper()
+        self._client_registry = A2AClientRegistry(
+            settings=settings,
+            close_reaper=self._close_reaper,
+            client_builder=self._create_client,
+        )
+        self._resolution_service = A2AResolutionService()
+        self._session_factory = A2AInvokeSessionFactory(
+            resolution_service=self._resolution_service,
+            shared_client_getter=lambda resolved: self._get_client(resolved),
+            shared_client_invalidator=lambda resolved: self._invalidate_client(
+                resolved
+            ),
+            ephemeral_client_builder=lambda resolved, **kwargs: self._create_client(
+                resolved,
+                **kwargs,
+            ),
+        )
+        self._clients = self._client_registry.clients
         self._maintenance_lock = asyncio.Lock()
         self._maintenance_task: asyncio.Task[None] | None = None
 
@@ -487,45 +494,19 @@ class A2AGateway:
     ) -> AsyncIterator[A2AInvokeSession]:
         """Open an invoke session with explicit shared or ephemeral semantics."""
 
-        uses_shared_client = policy == AgentResolutionPolicy.CACHED_SHARED
-        client = (
-            await self._get_client(resolved)
-            if uses_shared_client
-            else self._create_client(
-                resolved,
-                card_fetch_timeout=card_fetch_timeout,
-            )
-        )
-        try:
-            agent_card, peer_descriptor = await client.get_agent_resolution()
-            yield A2AInvokeSession(
-                client=client,
-                snapshot=ResolvedAgentSnapshot(
+        async with self._session_factory.open_session(
+            resolved=resolved,
+            policy=policy,
+            card_fetch_timeout=card_fetch_timeout,
+        ) as session:
+            try:
+                yield session
+            except A2AClientResetRequiredError:
+                await self._session_factory.handle_client_reset(
                     resolved=resolved,
-                    agent_card=agent_card,
-                    peer_descriptor=peer_descriptor,
-                    resolved_at=utc_now(),
-                    source=(
-                        AgentSnapshotSource.SHARED_CACHE
-                        if uses_shared_client
-                        else AgentSnapshotSource.FRESH_FETCH
-                    ),
-                    card_fetch_timeout=card_fetch_timeout,
-                ),
-                policy=policy,
-                ownership=(
-                    InvokeSessionOwnership.SHARED
-                    if uses_shared_client
-                    else InvokeSessionOwnership.EPHEMERAL
-                ),
-            )
-        except A2AClientResetRequiredError:
-            if uses_shared_client:
-                await self._invalidate_client(resolved)
-            raise
-        finally:
-            if not uses_shared_client:
-                await await_cancel_safe(client.close())
+                    session=session,
+                )
+                raise
 
     async def fetch_agent_card_detail(
         self,
@@ -600,8 +581,10 @@ class A2AGateway:
         resolved: "ResolvedAgent",
         session: A2AInvokeSession,
     ) -> None:
-        if session.is_shared:
-            await self._invalidate_client(resolved)
+        await self._session_factory.handle_client_reset(
+            resolved=resolved,
+            session=session,
+        )
 
     def _create_client(
         self,
@@ -625,88 +608,18 @@ class A2AGateway:
 
     async def shutdown(self) -> None:
         await self.stop_maintenance()
-        async with self._client_lock:
-            entries = list(self._clients.values())
-            self._clients.clear()
-        for entry in entries:
-            try:
-                await await_cancel_safe(entry.client.close())
-            except Exception:  # pragma: no cover - defensive cleanup
-                logger.debug(
-                    "Failed to close A2A client during shutdown", exc_info=True
-                )
+        await self._client_registry.shutdown()
         await self._close_reaper.drain()
 
     async def _get_client(self, resolved: "ResolvedAgent") -> A2AClient:
         await self.start_maintenance()
-        cache_key = self._build_cache_key(resolved)
-        async with self._client_lock:
-            cached = self._clients.get(cache_key)
-            if cached:
-                cached.last_used = time.monotonic()
-                logger.debug(
-                    "Reusing cached A2A client",
-                    extra={
-                        "agent_name": resolved.name,
-                        "headers": redact_headers_for_logging(resolved.headers),
-                    },
-                )
-                return cached.client
-
-            client = self._create_client(resolved)
-            self._clients[cache_key] = CachedClientEntry(
-                client=client, last_used=time.monotonic()
-            )
-            logger.info(
-                "Created new A2A client",
-                extra={
-                    "agent_name": resolved.name,
-                    "headers": redact_headers_for_logging(resolved.headers),
-                },
-            )
-            return client
+        return await self._client_registry.get_client(resolved)
 
     async def _cleanup_idle_clients(self) -> None:
-        idle_timeout = max(self.settings.client_idle_timeout, 0.0)
-        if idle_timeout <= 0:
-            return
-        now = time.monotonic()
-        to_close: list[A2AClient] = []
-        async with self._client_lock:
-            stale_keys: list[tuple[str, tuple[tuple[str, str], ...]]] = []
-            for key, entry in self._clients.items():
-                if now - entry.last_used <= idle_timeout:
-                    continue
-                if entry.client.is_busy():
-                    entry.last_used = now
-                    continue
-                stale_keys.append(key)
-            for key in stale_keys:
-                entry = self._clients.pop(key, None)
-                if entry:
-                    to_close.append(entry.client)
-        for client in to_close:
-            self._schedule_client_close(
-                client,
-                failure_log="Failed to close idle A2A client",
-                success_log="Evicted idle A2A client",
-            )
+        await self._client_registry.cleanup_idle_clients()
 
     async def _invalidate_client(self, resolved: "ResolvedAgent") -> None:
-        cache_key = self._build_cache_key(resolved)
-        async with self._client_lock:
-            entry = self._clients.pop(cache_key, None)
-        if not entry:
-            return
-        self._schedule_client_close(
-            entry.client,
-            failure_log="Failed to close invalidated A2A client",
-            success_log="Invalidated A2A client",
-            extra={
-                "agent_name": resolved.name,
-                "headers": redact_headers_for_logging(resolved.headers),
-            },
-        )
+        await self._client_registry.invalidate_client(resolved)
 
     def _build_interceptors(
         self, resolved: "ResolvedAgent"
@@ -719,23 +632,7 @@ class A2AGateway:
     def _build_cache_key(
         resolved: "ResolvedAgent",
     ) -> tuple[str, tuple[tuple[str, str], ...]]:
-        headers_tuple = tuple(sorted(resolved.headers.items()))
-        return resolved.url, headers_tuple
-
-    def _schedule_client_close(
-        self,
-        client: A2AClient,
-        *,
-        failure_log: str,
-        success_log: str,
-        extra: dict[str, Any] | None = None,
-    ) -> None:
-        self._close_reaper.schedule(
-            client.close(),
-            failure_log=failure_log,
-            success_log=success_log,
-            extra=extra,
-        )
+        return A2AClientRegistry.build_cache_key(resolved)
 
     def get_lifecycle_snapshot(self) -> A2AGatewayLifecycleSnapshot:
         client_snapshots = tuple(
@@ -794,4 +691,4 @@ class A2AGateway:
         return min(max(idle_timeout / 2, 1.0), 60.0)
 
 
-__all__ = ["A2AGateway"]
+__all__ = ["A2AGateway", "CachedClientEntry"]
