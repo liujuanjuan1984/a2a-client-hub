@@ -37,12 +37,6 @@ class A2AProxyService:
         return not cls._is_initialized or (current_time - cls._last_refresh > cls._ttl)
 
     @classmethod
-    def invalidate_cache(cls) -> None:
-        """Mark the process-local cache as stale without dropping the snapshot."""
-
-        cls._last_refresh = 0
-
-    @classmethod
     def get_effective_allowed_hosts_sync(cls) -> List[str]:
         """
         Get the effective allowed hosts synchronously from cache.
