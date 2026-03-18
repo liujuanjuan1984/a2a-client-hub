@@ -95,6 +95,7 @@ from app.db.models.base import Base
 for module_path in [
     "app.db.models.a2a_agent",
     "app.db.models.a2a_agent_credential",
+    "app.db.models.a2a_proxy_allowlist",
     "app.db.models.hub_a2a_agent_allowlist",
     "app.db.models.external_session_directory_cache",
     "app.db.models.a2a_schedule_task",
