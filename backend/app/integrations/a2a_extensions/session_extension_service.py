@@ -1,26 +1,14 @@
 from __future__ import annotations
 
-import asyncio
-import time
-from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
 
 from pydantic import ValidationError
 
-from app.integrations.a2a_extensions.errors import (
-    A2AExtensionContractError,
-    A2AExtensionNotSupportedError,
-)
+from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
-from app.integrations.a2a_extensions.session_binding import resolve_session_binding
-from app.integrations.a2a_extensions.session_query_runtime_selection import (
-    ResolvedSessionQueryRuntimeCapability,
-    resolve_runtime_session_query,
-)
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
-    ResolvedSessionBindingExtension,
     ResultEnvelopeMapping,
 )
 from app.schemas.a2a_extension import A2AExtensionQueryResult
@@ -28,62 +16,38 @@ from app.services.a2a_runtime import A2ARuntime
 from app.services.a2a_shared_metadata import merge_preferred_session_binding_metadata
 
 _MISSING = object()
-_SESSION_QUERY_CACHE_TTL_SECONDS = 300.0
-
-
-@dataclass(slots=True)
-class _SessionQueryCacheEntry:
-    capability: ResolvedSessionQueryRuntimeCapability
-    expires_at: float
 
 
 class SessionExtensionService:
     def __init__(self, support: A2AExtensionSupport) -> None:
         self._support = support
-        self._cache_lock = asyncio.Lock()
-        self._cache: dict[
-            tuple[str, tuple[tuple[str, str], ...]],
-            _SessionQueryCacheEntry,
-        ] = {}
 
-    async def shutdown(self) -> None:
-        async with self._cache_lock:
-            self._cache.clear()
-
-    @staticmethod
-    def _cache_key(runtime: A2ARuntime) -> tuple[str, tuple[tuple[str, str], ...]]:
-        resolved_headers = getattr(runtime.resolved, "headers", {}) or {}
-        return runtime.resolved.url, tuple(sorted(resolved_headers.items()))
-
-    async def resolve_session_binding_capability(
+    def prepare_prompt_session_async(
         self,
-        runtime: A2ARuntime,
-    ) -> tuple[ResolvedSessionBindingExtension | None, Dict[str, Any]]:
-        card = await self._support.fetch_card(runtime)
-        try:
-            ext = resolve_session_binding(card)
-        except A2AExtensionNotSupportedError:
-            return None, {
-                "session_binding_declared": False,
-                "session_binding_mode": "compat_fallback",
-                "session_binding_fallback_used": True,
-            }
-        except A2AExtensionContractError as exc:
-            return None, {
-                "session_binding_declared": True,
-                "session_binding_mode": "compat_fallback",
-                "session_binding_fallback_used": True,
-                "session_binding_contract_error": str(exc),
-            }
+        *,
+        session_id: str,
+        request_payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, Dict[str, Any]]:
+        resolved_session_id = (session_id or "").strip()
+        if not resolved_session_id:
+            raise ValueError("session_id is required")
 
-        return ext, {
-            "session_binding_declared": True,
-            "session_binding_uri": ext.uri,
-            "session_binding_mode": (
-                "compat_fallback" if ext.legacy_uri_used else "declared_contract"
-            ),
-            "session_binding_fallback_used": ext.legacy_uri_used,
+        if not isinstance(request_payload, dict):
+            raise ValueError("request must be an object")
+
+        parts = request_payload.get("parts")
+        if not isinstance(parts, list) or len(parts) == 0:
+            raise ValueError("request.parts must be a non-empty array")
+
+        params: Dict[str, Any] = {
+            "session_id": resolved_session_id,
+            "request": dict(request_payload),
         }
+        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
+        return resolved_session_id, params
 
     @staticmethod
     def _normalize_envelope(
@@ -297,42 +261,6 @@ class SessionExtensionService:
             meta.update(meta_extra)
         return meta
 
-    async def resolve_extension(
-        self, runtime: A2ARuntime
-    ) -> tuple[ResolvedExtension, str, Dict[str, Any]]:
-        cache_key = self._cache_key(runtime)
-        now = time.monotonic()
-
-        async with self._cache_lock:
-            cached = self._cache.get(cache_key)
-            capability = (
-                cached.capability
-                if cached is not None and cached.expires_at > now
-                else None
-            )
-
-        if capability is None:
-            card = await self._support.fetch_card(runtime)
-            capability = resolve_runtime_session_query(card)
-            async with self._cache_lock:
-                self._cache[cache_key] = _SessionQueryCacheEntry(
-                    capability=capability,
-                    expires_at=now + _SESSION_QUERY_CACHE_TTL_SECONDS,
-                )
-
-        ext = capability.ext
-        jsonrpc_url = self._support.ensure_outbound_allowed(
-            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
-        )
-        return (
-            ext,
-            jsonrpc_url,
-            {
-                "session_query_contract_mode": capability.contract_mode,
-                "session_query_selection_mode": capability.selection_mode,
-            },
-        )
-
     async def invoke_method(
         self,
         *,
@@ -414,12 +342,16 @@ class SessionExtensionService:
         self,
         *,
         runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
         page: int,
         size: Optional[int],
         query: Optional[Dict[str, Any]],
         include_raw: bool = False,
     ) -> ExtensionCallResult:
-        ext, jsonrpc_url, selection_meta = await self.resolve_extension(runtime)
+        jsonrpc_url = self._support.ensure_outbound_allowed(
+            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+        )
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -474,6 +406,8 @@ class SessionExtensionService:
         self,
         *,
         runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
         session_id: str,
         page: int,
         size: Optional[int],
@@ -484,7 +418,9 @@ class SessionExtensionService:
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        ext, jsonrpc_url, selection_meta = await self.resolve_extension(runtime)
+        jsonrpc_url = self._support.ensure_outbound_allowed(
+            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+        )
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -546,13 +482,18 @@ class SessionExtensionService:
         self,
         *,
         runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        binding_meta: Dict[str, Any],
         session_id: str,
     ) -> ExtensionCallResult:
         resolved_session_id = (session_id or "").strip()
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        ext, jsonrpc_url, selection_meta = await self.resolve_extension(runtime)
+        jsonrpc_url = self._support.ensure_outbound_allowed(
+            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+        )
 
         validation = await self.invoke_method(
             runtime=runtime,
@@ -577,9 +518,6 @@ class SessionExtensionService:
             return validation
 
         meta = dict(validation.meta or {})
-        _binding_ext, binding_meta = await self.resolve_session_binding_capability(
-            runtime
-        )
         meta.update(
             {
                 "binding_mode": "contextId+metadata",
@@ -610,30 +548,21 @@ class SessionExtensionService:
         self,
         *,
         runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
         session_id: str,
         request_payload: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        resolved_session_id = (session_id or "").strip()
-        if not resolved_session_id:
-            raise ValueError("session_id is required")
+        resolved_session_id, params = self.prepare_prompt_session_async(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
 
-        if not isinstance(request_payload, dict):
-            raise ValueError("request must be an object")
-
-        parts = request_payload.get("parts")
-        if not isinstance(parts, list) or len(parts) == 0:
-            raise ValueError("request.parts must be a non-empty array")
-
-        params: Dict[str, Any] = {
-            "session_id": resolved_session_id,
-            "request": dict(request_payload),
-        }
-        normalized_metadata = self._support.normalize_extension_metadata(metadata)
-        if normalized_metadata is not None:
-            params["metadata"] = normalized_metadata
-
-        ext, jsonrpc_url, selection_meta = await self.resolve_extension(runtime)
+        jsonrpc_url = self._support.ensure_outbound_allowed(
+            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+        )
         return await self.invoke_method(
             runtime=runtime,
             ext=ext,

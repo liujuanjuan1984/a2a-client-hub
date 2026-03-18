@@ -8,9 +8,15 @@ from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
     ExtensionCallResult,
+    ResolvedCapabilitySnapshot,
+    SessionBindingCapabilitySnapshot,
+    SessionQueryCapabilitySnapshot,
 )
 from app.integrations.a2a_extensions.session_extension_service import (
     SessionExtensionService,
+)
+from app.integrations.a2a_extensions.session_query_runtime_selection import (
+    ResolvedSessionQueryRuntimeCapability,
 )
 from app.integrations.a2a_extensions.shared_contract import (
     SHARED_INTERRUPT_CALLBACK_URI,
@@ -26,6 +32,37 @@ from app.integrations.a2a_extensions.types import (
     ResolvedInterruptCallbackExtension,
     ResultEnvelopeMapping,
 )
+
+
+def _session_query_snapshot(
+    ext: ResolvedExtension,
+    *,
+    contract_mode: str = "canonical",
+    selection_mode: str = "canonical_parser",
+) -> SessionQueryCapabilitySnapshot:
+    return SessionQueryCapabilitySnapshot(
+        status="supported",
+        capability=ResolvedSessionQueryRuntimeCapability(
+            ext=ext,
+            contract_mode=contract_mode,
+            selection_mode=selection_mode,
+        ),
+    )
+
+
+def _binding_snapshot(
+    *,
+    status: str = "supported",
+    ext=None,
+    error: str | None = None,
+    meta: dict | None = None,
+) -> SessionBindingCapabilitySnapshot:
+    return SessionBindingCapabilitySnapshot(
+        status=status,
+        ext=ext,
+        error=error,
+        meta=meta or {},
+    )
 
 
 def _resolved_extension(*, supports_offset: bool = False) -> ResolvedExtension:
@@ -292,16 +329,6 @@ async def test_continue_session_returns_canonical_binding_metadata(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
 
-    async def _fake_resolve(_runtime):
-        return (
-            ext,
-            "https://example.com/jsonrpc",
-            {
-                "session_query_contract_mode": "canonical",
-                "session_query_selection_mode": "canonical_parser",
-            },
-        )
-
     async def _fake_invoke(**kwargs):
         assert kwargs["method_key"] == "get_session_messages"
         assert kwargs["params"]["session_id"] == "ses_123"
@@ -309,20 +336,27 @@ async def test_continue_session_returns_canonical_binding_metadata(
         assert kwargs["params"]["limit"] == 1
         return ExtensionCallResult(success=True, result={"items": []}, meta={})
 
-    async def _fake_binding_capability(_runtime):
-        return None, {
-            "session_binding_declared": True,
-            "session_binding_uri": SHARED_SESSION_BINDING_URI,
-            "session_binding_mode": "declared_contract",
-            "session_binding_fallback_used": False,
-        }
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return ResolvedCapabilitySnapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(
+                status="supported",
+                meta={
+                    "session_binding_declared": True,
+                    "session_binding_uri": SHARED_SESSION_BINDING_URI,
+                    "session_binding_mode": "declared_contract",
+                    "session_binding_fallback_used": False,
+                },
+            ),
+        )
 
-    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
     monkeypatch.setattr(
-        service._session_extensions,
-        "resolve_session_binding_capability",
-        _fake_binding_capability,
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
     )
 
     result = await service.continue_session(
@@ -359,32 +393,29 @@ async def test_continue_session_keeps_legacy_binding_metadata_in_fallback_mode(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
 
-    async def _fake_resolve(_runtime):
-        return (
-            ext,
-            "https://example.com/jsonrpc",
-            {
-                "session_query_contract_mode": "canonical",
-                "session_query_selection_mode": "canonical_parser",
-            },
-        )
-
     async def _fake_invoke(**kwargs):
         return ExtensionCallResult(success=True, result={"items": []}, meta={})
 
-    async def _fake_binding_capability(_runtime):
-        return None, {
-            "session_binding_declared": False,
-            "session_binding_mode": "compat_fallback",
-            "session_binding_fallback_used": True,
-        }
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return ResolvedCapabilitySnapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(
+                status="unsupported",
+                meta={
+                    "session_binding_declared": False,
+                    "session_binding_mode": "compat_fallback",
+                    "session_binding_fallback_used": True,
+                },
+            ),
+        )
 
-    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
     monkeypatch.setattr(
-        service._session_extensions,
-        "resolve_session_binding_capability",
-        _fake_binding_capability,
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
     )
 
     result = await service.continue_session(runtime=runtime, session_id="ses_legacy")
@@ -409,6 +440,83 @@ async def test_continue_session_keeps_legacy_binding_metadata_in_fallback_mode(
 
 
 @pytest.mark.asyncio
+async def test_continue_session_fetches_card_once_for_query_and_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    fetch_calls = 0
+    fake_card = SimpleNamespace(
+        url="https://example.com/jsonrpc",
+        capabilities=SimpleNamespace(
+            extensions=[
+                SimpleNamespace(
+                    uri=SHARED_SESSION_QUERY_URI,
+                    required=False,
+                    params={
+                        "provider": "opencode",
+                        "methods": {
+                            "list_sessions": "shared.sessions.list",
+                            "get_session_messages": "shared.sessions.messages.list",
+                        },
+                        "pagination": {
+                            "mode": "limit",
+                            "default_limit": 20,
+                            "max_limit": 100,
+                            "params": ["limit", "offset"],
+                        },
+                        "result_envelope": {
+                            "raw": True,
+                            "items": True,
+                            "pagination": True,
+                        },
+                    },
+                ),
+                SimpleNamespace(
+                    uri=SHARED_SESSION_BINDING_URI,
+                    required=False,
+                    params={
+                        "provider": "opencode",
+                        "metadata_field": SHARED_SESSION_ID_FIELD,
+                        "behavior": "prefer_metadata_binding_else_create_session",
+                    },
+                ),
+            ]
+        ),
+    )
+
+    async def _fake_fetch_card(_runtime):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return fake_card
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "get_session_messages"
+        return ExtensionCallResult(
+            success=True,
+            result={"items": []},
+            meta=dict(kwargs.get("selection_meta") or {}),
+        )
+
+    monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
+
+    result = await service.continue_session(runtime=runtime, session_id="ses_once")
+
+    assert result.success is True
+    assert result.meta["session_binding_mode"] == "declared_contract"
+    assert result.meta["session_query_selection_mode"] == "canonical_parser"
+    assert fetch_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -418,21 +526,23 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
 
-    async def _fake_resolve(_runtime):
-        return (
-            ext,
-            "https://example.com/jsonrpc",
-            {
-                "session_query_contract_mode": "canonical",
-                "session_query_selection_mode": "canonical_parser",
-            },
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return ResolvedCapabilitySnapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
         )
 
     async def _never_invoke(**_kwargs):
         raise AssertionError("Upstream call should be short-circuited")
 
-    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(service._session_extensions, "invoke_method", _never_invoke)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
 
     result = await service.get_session_messages(
         runtime=runtime,
@@ -567,14 +677,11 @@ async def test_prompt_session_async_forwards_request_and_metadata(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
 
-    async def _fake_resolve(_runtime):
-        return (
-            ext,
-            "https://example.com/jsonrpc",
-            {
-                "session_query_contract_mode": "canonical",
-                "session_query_selection_mode": "canonical_parser",
-            },
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return ResolvedCapabilitySnapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
         )
 
     async def _fake_invoke(**kwargs):
@@ -595,8 +702,13 @@ async def test_prompt_session_async_forwards_request_and_metadata(
             meta={"session_id": "ses_123"},
         )
 
-    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
 
     result = await service.prompt_session_async(
         runtime=runtime,
@@ -636,21 +748,23 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
         result_envelope=ext.result_envelope,
     )
 
-    async def _fake_resolve(_runtime):
-        return (
-            ext,
-            "https://example.com/jsonrpc",
-            {
-                "session_query_contract_mode": "canonical",
-                "session_query_selection_mode": "canonical_parser",
-            },
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return ResolvedCapabilitySnapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
         )
 
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
 
-    monkeypatch.setattr(service._session_extensions, "resolve_extension", _fake_resolve)
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
     monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
 
     result = await service.prompt_session_async(
         runtime=runtime,

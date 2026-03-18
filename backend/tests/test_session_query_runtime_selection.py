@@ -9,17 +9,18 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
-from app.integrations.a2a_extensions.session_extension_service import (
-    SessionExtensionService,
+from app.integrations.a2a_extensions.service import (
+    A2AExtensionsService,
 )
 from app.integrations.a2a_extensions.session_query_runtime_selection import (
     resolve_runtime_session_query,
 )
 from app.integrations.a2a_extensions.shared_contract import (
     LEGACY_SHARED_SESSION_QUERY_URI,
+    SHARED_SESSION_BINDING_URI,
+    SHARED_SESSION_ID_FIELD,
     SHARED_SESSION_QUERY_URI,
 )
-from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 
 
 def _base_card_payload() -> dict:
@@ -39,9 +40,10 @@ def _build_card(
     *,
     uri: str = SHARED_SESSION_QUERY_URI,
     pagination: dict | None = None,
+    with_binding: bool = False,
 ) -> AgentCard:
     payload = _base_card_payload()
-    payload["capabilities"]["extensions"] = [
+    extensions = [
         {
             "uri": uri,
             "params": {
@@ -60,6 +62,18 @@ def _build_card(
             },
         }
     ]
+    if with_binding:
+        extensions.append(
+            {
+                "uri": SHARED_SESSION_BINDING_URI,
+                "params": {
+                    "provider": "opencode",
+                    "metadata_field": SHARED_SESSION_ID_FIELD,
+                    "behavior": "prefer_metadata_binding_else_create_session",
+                },
+            }
+        )
+    payload["capabilities"]["extensions"] = extensions
     return AgentCard.model_validate(payload)
 
 
@@ -99,17 +113,17 @@ def test_resolve_runtime_session_query_rejects_invalid_contract() -> None:
 
 
 @pytest.mark.asyncio
-async def test_session_extension_service_resolve_extension_uses_runtime_cache(
+async def test_resolve_capability_snapshot_uses_runtime_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    service = SessionExtensionService(A2AExtensionSupport())
+    service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(
             url="https://example.com/.well-known/agent-card.json",
             headers={"Authorization": "Bearer token"},
         )
     )
-    fake_card = _build_card()
+    fake_card = _build_card(with_binding=True)
     fetch_calls = 0
 
     async def _fake_fetch_card(_runtime):
@@ -118,20 +132,76 @@ async def test_session_extension_service_resolve_extension_uses_runtime_cache(
         return fake_card
 
     monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
-    monkeypatch.setattr(
-        service._support,
-        "ensure_outbound_allowed",
-        lambda url, *, purpose: url,
-    )
 
-    first = await service.resolve_extension(runtime=runtime)
-    second = await service.resolve_extension(runtime=runtime)
+    first = await service.resolve_capability_snapshot(runtime=runtime)
+    second = await service.resolve_capability_snapshot(runtime=runtime)
 
-    assert first[0] == second[0]
-    assert first[1] == second[1]
-    assert first[2] == {
+    assert first == second
+    assert first.session_query.status == "supported"
+    assert first.session_query.selection_meta == {
         "session_query_contract_mode": "canonical",
         "session_query_selection_mode": "canonical_parser",
     }
-    assert second[2] == first[2]
+    assert first.session_binding.status == "supported"
+    assert fetch_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_capability_snapshot_caches_unsupported_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    fetch_calls = 0
+
+    async def _fake_fetch_card(_runtime):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return _build_card()
+
+    monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
+
+    first = await service.resolve_capability_snapshot(runtime=runtime)
+    second = await service.resolve_capability_snapshot(runtime=runtime)
+
+    assert first.session_binding.status == "unsupported"
+    assert first.session_binding.meta == {
+        "session_binding_declared": False,
+        "session_binding_mode": "compat_fallback",
+        "session_binding_fallback_used": True,
+    }
+    assert second == first
+    assert fetch_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_capability_snapshot_caches_invalid_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    fetch_calls = 0
+
+    async def _fake_fetch_card(_runtime):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return _build_card(
+            pagination={
+                "mode": "page_size",
+                "default_size": 20,
+            }
+        )
+
+    monkeypatch.setattr(service._support, "fetch_card", _fake_fetch_card)
+
+    first = await service.resolve_capability_snapshot(runtime=runtime)
+    second = await service.resolve_capability_snapshot(runtime=runtime)
+
+    assert first.session_query.status == "invalid"
+    assert "pagination.max_size" in str(first.session_query.error)
+    assert second == first
     assert fetch_calls == 1
