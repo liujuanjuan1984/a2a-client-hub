@@ -89,7 +89,7 @@ async def app_lifespan(_: FastAPI):
         async def _refresh_proxy_cache() -> None:
             # Initialise A2A proxy allowlist cache.
             async with AsyncSessionLocal() as db:
-                await a2a_proxy_service.refresh_cache(db)
+                await a2a_proxy_service.prime_cache(db)
 
         await _run_startup_step(
             name="a2a_proxy_allowlist_cache_init",
