@@ -876,6 +876,7 @@ async def run_background_invoke(
         "response_content": response_content,
         "error": outcome.error_message,
         "error_code": state.persisted_error_code or outcome.error_code,
+        "internal_error_message": outcome.internal_error_message,
         "conversation_id": (
             state.message_refs.get("conversation_id") if state.message_refs else None
         ),

@@ -318,6 +318,7 @@ describe("ScheduledJobCard visuals", () => {
               id: "execution-2",
               status: "failed" as const,
               scheduled_for: "2026-02-23T10:00:00Z",
+              error_code: "agent_unavailable",
               error_message: ` ${errorMessage} `,
             },
           ] as any
@@ -328,6 +329,28 @@ describe("ScheduledJobCard visuals", () => {
 
     expect(getByText("FAILED")).toBeTruthy();
     expect(getByText(errorMessage)).toBeTruthy();
+    expect(getByText("Agent unavailable")).toBeTruthy();
+  });
+
+  it("renders recent failure hint with structured error code label", () => {
+    const job = {
+      id: "7d",
+      name: "History Job",
+      enabled: true,
+      status_summary: {
+        state: "recent_failed",
+        manual_intervention_recommended: false,
+        recent_failure_error_code: "outbound_not_allowed",
+      },
+      last_run_status: "failed" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const { getByText } = render(
+      <ScheduledJobCard {...defaultProps} job={job as any} />,
+    );
+
+    expect(getByText(/Outbound blocked/)).toBeTruthy();
   });
 
   it("shows heartbeat timing for running execution history rows", () => {

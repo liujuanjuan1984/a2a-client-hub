@@ -69,10 +69,12 @@ def build_schedule_status_summary(
             "heartbeat_age_seconds": heartbeat_age_seconds,
             "heartbeat_stale_after_seconds": heartbeat_stale_seconds,
             "recent_failure_message": None,
+            "recent_failure_error_code": None,
             "last_finished_at": None,
         }
 
     recent_failure_message = None
+    recent_failure_error_code = None
     last_finished_at = None
     if latest_execution is not None:
         last_finished_at = (
@@ -86,9 +88,16 @@ def build_schedule_status_summary(
             recent_failure_message = (
                 latest_execution.error_message or ""
             ).strip() or None
+            recent_failure_error_code = (
+                latest_execution.error_code or ""
+            ).strip() or None
+
+    has_recent_failure = (
+        recent_failure_message is not None or recent_failure_error_code is not None
+    )
 
     return {
-        "state": ("recent_failed" if recent_failure_message is not None else "idle"),
+        "state": ("recent_failed" if has_recent_failure else "idle"),
         "manual_intervention_recommended": False,
         "running_started_at": None,
         "running_duration_seconds": None,
@@ -96,6 +105,7 @@ def build_schedule_status_summary(
         "heartbeat_age_seconds": None,
         "heartbeat_stale_after_seconds": heartbeat_stale_seconds,
         "recent_failure_message": recent_failure_message,
+        "recent_failure_error_code": recent_failure_error_code,
         "last_finished_at": last_finished_at,
     }
 

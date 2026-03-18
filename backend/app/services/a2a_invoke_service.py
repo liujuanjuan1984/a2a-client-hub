@@ -99,6 +99,7 @@ class StreamOutcome:
     elapsed_seconds: float
     idle_seconds: float
     terminal_event_seen: bool
+    internal_error_message: str | None = None
 
 
 StreamFinalizedCallbackFn = Callable[[StreamOutcome], Any]
@@ -567,6 +568,14 @@ class A2AInvokeService:
         if not cls._ERROR_CODE_PATTERN.fullmatch(candidate):
             return None
         return candidate
+
+    @staticmethod
+    def _extract_internal_error_message(exc: BaseException) -> str | None:
+        detail = getattr(exc, "detail", None)
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        message = str(exc).strip()
+        return message or None
 
     async def _iter_stream_events_with_heartbeat(
         self,
@@ -1136,6 +1145,7 @@ class A2AInvokeService:
                         elapsed_seconds=time.monotonic() - started_at,
                         idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                         terminal_event_seen=False,
+                        internal_error_message=timeout_message,
                     )
                     await self._call_callback(on_error, timeout_message)
                     await self._call_callback(
@@ -1183,6 +1193,7 @@ class A2AInvokeService:
                         elapsed_seconds=time.monotonic() - started_at,
                         idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                         terminal_event_seen=False,
+                        internal_error_message=timeout_message,
                     )
                     await self._call_callback(on_error, timeout_message)
                     await self._call_callback(
@@ -1321,6 +1332,7 @@ class A2AInvokeService:
                 elapsed_seconds=time.monotonic() - started_at,
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=False,
+                internal_error_message=self._extract_internal_error_message(exc),
             )
             await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
             await self._call_callback(

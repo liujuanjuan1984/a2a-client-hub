@@ -98,6 +98,7 @@ class A2AScheduleExecutionResponse(BaseModel):
     finished_at: Optional[datetime] = None
     last_heartbeat_at: Optional[datetime] = None
     error_message: Optional[str] = None
+    error_code: Optional[str] = None
     response_content: Optional[str] = None
     conversation_id: Optional[UUID] = None
     user_message_id: Optional[UUID] = None
@@ -116,6 +117,7 @@ class A2AScheduleStatusSummary(BaseModel):
     heartbeat_age_seconds: Optional[int] = None
     heartbeat_stale_after_seconds: Optional[int] = None
     recent_failure_message: Optional[str] = None
+    recent_failure_error_code: Optional[str] = None
     last_finished_at: Optional[datetime] = None
 
 

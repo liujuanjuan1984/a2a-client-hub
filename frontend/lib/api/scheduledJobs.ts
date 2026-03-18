@@ -62,6 +62,7 @@ export type ScheduledJobStatusSummary = {
   heartbeat_age_seconds?: number | null;
   heartbeat_stale_after_seconds?: number | null;
   recent_failure_message?: string | null;
+  recent_failure_error_code?: string | null;
   last_finished_at?: string | null;
 };
 
@@ -74,6 +75,7 @@ export type ScheduledJobExecution = {
   last_heartbeat_at?: string | null;
   finished_at?: string | null;
   error_message?: string | null;
+  error_code?: string | null;
   response_content?: string | null;
   conversation_id?: string | null;
   user_message_id?: string | null;

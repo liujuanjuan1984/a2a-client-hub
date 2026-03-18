@@ -25,6 +25,7 @@ from app.services.a2a_schedule_time import A2AScheduleTimeHelper
 from app.utils.timezone_util import ensure_utc, utc_now
 
 _MANUAL_FAILURE_MESSAGE = "Stopped by user as failed"
+_MANUAL_FAILURE_ERROR_CODE = "manual_failed"
 
 
 class A2AScheduleCrudService:
@@ -351,6 +352,7 @@ class A2AScheduleCrudService:
             execution.finished_at = now_utc
         execution.status = A2AScheduleExecution.STATUS_FAILED
         execution.error_message = manual_error_message
+        execution.error_code = _MANUAL_FAILURE_ERROR_CODE
         if execution.conversation_id is None:
             execution.conversation_id = task.conversation_id
 

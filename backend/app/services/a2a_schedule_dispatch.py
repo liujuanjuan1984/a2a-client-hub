@@ -289,6 +289,7 @@ class A2AScheduleDispatchService:
             stale_predicates.append(A2AScheduleExecution.started_at <= hard_cutoff)
 
         error_message = "Execution marked as failed by recovery: stale running task exceeded timeout"
+        error_code = "timeout"
         recovered_count = 0
         while True:
             await self._support.apply_skip_locked_write_timeouts(db)
@@ -355,6 +356,7 @@ class A2AScheduleDispatchService:
             execution.status = A2AScheduleExecution.STATUS_FAILED
             execution.finished_at = now_utc
             execution.error_message = error_message
+            execution.error_code = error_code
             if execution.conversation_id is None:
                 execution.conversation_id = task.conversation_id
 
@@ -383,6 +385,7 @@ class A2AScheduleDispatchService:
         conversation_id: UUID | None = None,
         response_content: str | None = None,
         error_message: str | None = None,
+        error_code: str | None = None,
         user_message_id: UUID | None = None,
         agent_message_id: UUID | None = None,
     ) -> bool:
@@ -432,6 +435,7 @@ class A2AScheduleDispatchService:
         execution.conversation_id = conversation_id
         execution.response_content = response_content
         execution.error_message = error_message
+        execution.error_code = error_code
         execution.user_message_id = user_message_id
         execution.agent_message_id = agent_message_id
         self._projection.apply_task_terminal_projection(

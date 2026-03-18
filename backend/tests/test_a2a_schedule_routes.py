@@ -381,6 +381,7 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
             payload["status_summary"]["recent_failure_message"]
             == "Stopped by user as failed"
         )
+        assert payload["status_summary"]["recent_failure_error_code"] == "manual_failed"
 
         await async_db_session.refresh(task)
         failures_after_first_call = task.consecutive_failures
@@ -396,6 +397,7 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
         assert execution is not None
         assert execution.status == A2AScheduleExecution.STATUS_FAILED
         assert execution.finished_at is not None
+        assert execution.error_code == "manual_failed"
         assert execution.error_message == "Stopped by user as failed"
 
         second_resp = await client.post(
@@ -405,6 +407,57 @@ async def test_schedule_mark_failed_transitions_running_task_and_is_idempotent(
         assert second_resp.status_code == 200
         await async_db_session.refresh(task)
         assert task.consecutive_failures == failures_after_first_call
+
+
+async def test_schedule_execution_history_exposes_structured_error_code(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="history")
+
+    task = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        timezone_str=user.timezone or "UTC",
+        name="History task",
+        agent_id=agent.id,
+        prompt="ping",
+        cycle_type="daily",
+        time_point={"time": "09:00"},
+        enabled=True,
+    )
+    finished_at = utc_now()
+    async_db_session.add(
+        A2AScheduleExecution(
+            user_id=user.id,
+            task_id=task.id,
+            run_id=uuid4(),
+            scheduled_for=finished_at,
+            started_at=finished_at,
+            finished_at=finished_at,
+            status=A2AScheduleExecution.STATUS_FAILED,
+            error_code="agent_unavailable",
+            error_message="Agent card unavailable",
+        )
+    )
+    await async_db_session.commit()
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        resp = await client.get(
+            f"/me/a2a/schedules/{task.id}/executions",
+            params={"page": 1, "size": 20},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["items"][0]["error_code"] == "agent_unavailable"
+    assert payload["items"][0]["error_message"] == "Agent card unavailable"
 
 
 async def test_schedule_get_exposes_attention_summary_for_stale_running_execution(

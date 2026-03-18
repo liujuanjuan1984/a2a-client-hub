@@ -20,6 +20,7 @@ from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely as real_commit_safely
+from app.integrations.a2a_client.errors import A2AAgentUnavailableError
 from app.services.a2a_schedule_job import (
     _derive_recovery_timeouts,
     _execute_claimed_task,
@@ -799,6 +800,8 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
     assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
     assert execution is not None
     assert execution.status == A2AScheduleExecution.STATUS_FAILED
+    assert execution.error_code == "timeout"
+    assert execution.error_message == "A2A stream total timeout after 0.0s"
     assert execution.response_content == "partial response"
     assert execution.agent_message_id is not None
 
@@ -873,6 +876,52 @@ async def test_execute_claimed_task_runtime_failure_does_not_create_conversation
     assert last_exec is not None
     assert last_exec.status == A2AScheduleExecution.STATUS_FAILED
     assert last_exec.conversation_id is None
+
+
+async def test_execute_claimed_task_persists_structured_agent_unavailable_error(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="down")
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=utc_now(),
+    )
+    task_id = task.id
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        _mock_runtime_builder(),
+    )
+
+    async def _stream(**_kwargs):
+        raise A2AAgentUnavailableError("Agent card unavailable")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.get_a2a_service",
+        lambda: SimpleNamespace(gateway=SimpleNamespace(stream=_stream)),
+    )
+
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
+    await async_db_session.rollback()
+
+    async with async_session_maker() as check_db:
+        execution = await check_db.scalar(
+            select(A2AScheduleExecution)
+            .where(A2AScheduleExecution.task_id == task_id)
+            .order_by(A2AScheduleExecution.started_at.desc())
+        )
+
+    assert execution is not None
+    assert execution.status == A2AScheduleExecution.STATUS_FAILED
+    assert execution.error_code == "agent_unavailable"
+    assert execution.error_message == "Agent card unavailable"
 
 
 async def test_execute_claimed_task_binds_external_session_identity_when_present(

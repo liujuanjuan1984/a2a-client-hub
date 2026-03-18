@@ -96,6 +96,11 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
         nullable=True,
         comment="Failure reason if execution did not succeed",
     )
+    error_code = Column(
+        String(96),
+        nullable=True,
+        comment="Structured failure code if execution did not succeed",
+    )
     response_content = Column(
         Text,
         nullable=True,

@@ -22,6 +22,30 @@ const executionStatusColor: Record<ScheduledJobExecution["status"], string> = {
   failed: "text-red-400",
 };
 
+const knownExecutionErrorLabels: Record<string, string> = {
+  agent_unavailable: "Agent unavailable",
+  outbound_not_allowed: "Outbound blocked",
+  timeout: "Timeout",
+  peer_protocol_error: "Peer protocol error",
+  manual_failed: "Stopped manually",
+};
+
+const formatExecutionErrorCode = (
+  errorCode: string | null | undefined,
+): string | null => {
+  if (!errorCode) return null;
+  const normalized = errorCode.trim().toLowerCase();
+  if (!normalized) return null;
+  if (knownExecutionErrorLabels[normalized]) {
+    return knownExecutionErrorLabels[normalized];
+  }
+  return normalized
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
 const formatDuration = (seconds: number | null | undefined): string | null => {
   if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
     return null;
@@ -105,8 +129,16 @@ const buildStatusHint = (job: ScheduledJob): string | null => {
 
   if (summary.state === "recent_failed") {
     const failureMessage = summary.recent_failure_message?.trim();
+    const failureCodeLabel = formatExecutionErrorCode(
+      summary.recent_failure_error_code,
+    );
     if (failureMessage) {
-      return `Last run failed: ${failureMessage}`;
+      return failureCodeLabel
+        ? `Last run failed (${failureCodeLabel}): ${failureMessage}`
+        : `Last run failed: ${failureMessage}`;
+    }
+    if (failureCodeLabel) {
+      return `Last run failed (${failureCodeLabel}).`;
     }
     const lastFinishedAt = formatLocalDateTime(
       summary.last_finished_at,
@@ -380,6 +412,9 @@ export function ScheduledJobCard({
               <>
                 {executions.map((execution) => {
                   const errorMessage = execution.error_message?.trim();
+                  const errorCodeLabel = formatExecutionErrorCode(
+                    execution.error_code,
+                  );
                   const scheduledAt = formatLocalDateTime(
                     execution.scheduled_for,
                     timeZone,
@@ -439,6 +474,13 @@ export function ScheduledJobCard({
                         <Text className="mt-2 text-[11px] font-normal leading-4 text-red-400/80">
                           {errorMessage}
                         </Text>
+                      ) : null}
+                      {errorCodeLabel ? (
+                        <View className="mt-2 self-start rounded bg-red-500/10 px-2 py-1">
+                          <Text className="text-[10px] font-semibold text-red-300">
+                            {errorCodeLabel}
+                          </Text>
+                        </View>
                       ) : null}
                       <View className="mt-2 gap-1">
                         <Text className="text-[10px] font-medium text-slate-500">
