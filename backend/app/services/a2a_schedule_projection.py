@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.services.a2a_schedule_common import A2AScheduleValidationError
+from app.services.a2a_schedule_runtime_summary import build_schedule_status_summary
 from app.services.a2a_schedule_support import A2AScheduleSupport
 from app.services.a2a_schedule_time import A2AScheduleTimeHelper
 from app.utils.timezone_util import ensure_utc
@@ -52,7 +53,7 @@ class A2AScheduleProjectionService:
             stmt = stmt.with_for_update(nowait=True)
         return await db.scalar(stmt)
 
-    async def set_task_running_projection(
+    async def set_task_status_projection(
         self,
         db: AsyncSession,
         *,
@@ -64,9 +65,54 @@ class A2AScheduleProjectionService:
             user_id=task.user_id,
         )
         setattr(task, "is_running", running_execution is not None)
+        latest_execution = await self._get_latest_execution(
+            db,
+            task_id=task.id,
+            user_id=task.user_id,
+        )
+        setattr(
+            task,
+            "status_summary",
+            build_schedule_status_summary(
+                running_execution=running_execution,
+                latest_execution=latest_execution,
+            ),
+        )
         return task
 
-    async def set_tasks_running_projection(
+    async def list_tasks_with_status_summary(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        page: int,
+        size: int,
+    ) -> tuple[list[A2AScheduleTask], int]:
+        offset = (page - 1) * size
+        stmt = (
+            select(A2AScheduleTask)
+            .where(
+                A2AScheduleTask.user_id == user_id,
+                A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.delete_requested_at.is_(None),
+            )
+            .order_by(A2AScheduleTask.created_at.desc())
+            .offset(offset)
+            .limit(size)
+        )
+        rows = await db.execute(stmt)
+        items = list(rows.scalars().all())
+        await self.attach_tasks_status_projection(db, tasks=items)
+
+        count_stmt = select(func.count(A2AScheduleTask.id)).where(
+            A2AScheduleTask.user_id == user_id,
+            A2AScheduleTask.deleted_at.is_(None),
+            A2AScheduleTask.delete_requested_at.is_(None),
+        )
+        total = int(await db.scalar(count_stmt) or 0)
+        return items, total
+
+    async def attach_tasks_status_projection(
         self,
         db: AsyncSession,
         *,
@@ -76,21 +122,40 @@ class A2AScheduleProjectionService:
             return
 
         task_ids = [task.id for task in tasks]
-        running_task_ids = set(
-            (
+        running_executions = {
+            execution.task_id: execution
+            for execution in (
                 await db.scalars(
-                    select(A2AScheduleExecution.task_id)
+                    select(A2AScheduleExecution)
                     .where(
                         A2AScheduleExecution.task_id.in_(task_ids),
+                        A2AScheduleExecution.user_id == tasks[0].user_id,
                         A2AScheduleExecution.status
                         == A2AScheduleExecution.STATUS_RUNNING,
                     )
-                    .distinct()
+                    .order_by(
+                        A2AScheduleExecution.started_at.asc(),
+                        A2AScheduleExecution.id.asc(),
+                    )
                 )
             ).all()
+        }
+        latest_executions = await self._get_latest_executions_for_tasks(
+            db,
+            user_id=tasks[0].user_id,
+            task_ids=task_ids,
         )
         for task in tasks:
-            setattr(task, "is_running", task.id in running_task_ids)
+            running_execution = running_executions.get(task.id)
+            setattr(task, "is_running", running_execution is not None)
+            setattr(
+                task,
+                "status_summary",
+                build_schedule_status_summary(
+                    running_execution=running_execution,
+                    latest_execution=latest_executions.get(task.id),
+                ),
+            )
 
     async def list_executions(
         self,
@@ -126,6 +191,75 @@ class A2AScheduleProjectionService:
         )
         total = int(await db.scalar(count_stmt) or 0)
         return items, total
+
+    async def _get_latest_execution(
+        self,
+        db: AsyncSession,
+        *,
+        task_id: UUID,
+        user_id: UUID,
+    ) -> A2AScheduleExecution | None:
+        stmt = (
+            select(A2AScheduleExecution)
+            .where(
+                A2AScheduleExecution.user_id == user_id,
+                A2AScheduleExecution.task_id == task_id,
+            )
+            .order_by(
+                func.coalesce(
+                    A2AScheduleExecution.started_at,
+                    A2AScheduleExecution.scheduled_for,
+                ).desc(),
+                A2AScheduleExecution.id.desc(),
+            )
+            .limit(1)
+        )
+        return await db.scalar(stmt)
+
+    async def _get_latest_executions_for_tasks(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        task_ids: list[UUID],
+    ) -> dict[UUID, A2AScheduleExecution]:
+        if not task_ids:
+            return {}
+
+        ranked_executions = (
+            select(
+                A2AScheduleExecution.id.label("execution_id"),
+                A2AScheduleExecution.task_id.label("task_id"),
+                func.row_number()
+                .over(
+                    partition_by=A2AScheduleExecution.task_id,
+                    order_by=(
+                        func.coalesce(
+                            A2AScheduleExecution.started_at,
+                            A2AScheduleExecution.scheduled_for,
+                        ).desc(),
+                        A2AScheduleExecution.id.desc(),
+                    ),
+                )
+                .label("row_number"),
+            )
+            .where(
+                A2AScheduleExecution.user_id == user_id,
+                A2AScheduleExecution.task_id.in_(task_ids),
+            )
+            .subquery()
+        )
+        stmt = (
+            select(A2AScheduleExecution)
+            .join(
+                ranked_executions,
+                ranked_executions.c.execution_id == A2AScheduleExecution.id,
+            )
+            .where(ranked_executions.c.row_number == 1)
+        )
+        return {
+            execution.task_id: execution for execution in (await db.scalars(stmt)).all()
+        }
 
     def apply_task_terminal_projection(
         self,

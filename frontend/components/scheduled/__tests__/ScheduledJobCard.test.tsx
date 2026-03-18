@@ -60,6 +60,11 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: true,
       is_running: true,
+      status_summary: {
+        state: "running",
+        manual_intervention_recommended: false,
+        running_duration_seconds: 90,
+      },
       last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
@@ -78,6 +83,10 @@ describe("ScheduledJobCard visuals", () => {
       id: "2",
       name: "Job",
       enabled: false,
+      status_summary: {
+        state: "recent_failed",
+        manual_intervention_recommended: false,
+      },
       last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
@@ -97,6 +106,10 @@ describe("ScheduledJobCard visuals", () => {
       id: "3",
       name: "Job",
       enabled: true,
+      status_summary: {
+        state: "idle",
+        manual_intervention_recommended: false,
+      },
       last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
@@ -116,6 +129,10 @@ describe("ScheduledJobCard visuals", () => {
       name: "Job",
       enabled: true,
       is_running: true,
+      status_summary: {
+        state: "running",
+        manual_intervention_recommended: false,
+      },
       last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
@@ -125,7 +142,7 @@ describe("ScheduledJobCard visuals", () => {
       root = create(<ScheduledJobCard {...defaultProps} job={job as any} />);
     });
     const tree = root.toJSON();
-    expect(JSON.stringify(tree)).toContain("Stop");
+    expect(JSON.stringify(tree)).toContain("Stop run");
     expect(JSON.stringify(tree)).not.toContain("Edit");
     expect(JSON.stringify(tree)).not.toContain("Delete");
   });
@@ -135,6 +152,10 @@ describe("ScheduledJobCard visuals", () => {
       id: "5",
       name: "Job",
       enabled: true,
+      status_summary: {
+        state: "idle",
+        manual_intervention_recommended: false,
+      },
       last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
@@ -147,6 +168,29 @@ describe("ScheduledJobCard visuals", () => {
     expect(JSON.stringify(tree)).not.toContain("Stop");
   });
 
+  it("shows an attention hint and stalled stop label when heartbeat is stale", () => {
+    const job = {
+      id: "5a",
+      name: "Job",
+      enabled: true,
+      is_running: true,
+      status_summary: {
+        state: "running",
+        manual_intervention_recommended: true,
+        last_heartbeat_at: "2026-02-23T09:00:00Z",
+      },
+      last_run_status: "success" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const { getByText } = render(
+      <ScheduledJobCard {...defaultProps} job={job as any} />,
+    );
+
+    expect(getByText(/No heartbeat since/)).toBeTruthy();
+    expect(getByText("Stop stalled run")).toBeTruthy();
+  });
+
   it("toggles prompt expansion with More/Less labels", () => {
     const job = {
       id: "6",
@@ -155,6 +199,10 @@ describe("ScheduledJobCard visuals", () => {
       prompt: "Scheduled prompt text",
       cycle_type: "daily" as const,
       time_point: { time: "09:00" },
+      status_summary: {
+        state: "idle",
+        manual_intervention_recommended: false,
+      },
       last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
@@ -190,6 +238,10 @@ describe("ScheduledJobCard visuals", () => {
         start_at_local: "2026-02-23T18:00",
         start_at_utc: "2026-02-23T10:00:00Z",
       },
+      status_summary: {
+        state: "idle",
+        manual_intervention_recommended: false,
+      },
       last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
@@ -206,6 +258,10 @@ describe("ScheduledJobCard visuals", () => {
       id: "7a",
       name: "History Job",
       enabled: true,
+      status_summary: {
+        state: "idle",
+        manual_intervention_recommended: false,
+      },
       last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
@@ -214,6 +270,8 @@ describe("ScheduledJobCard visuals", () => {
       id: "execution-1",
       status: "success" as const,
       scheduled_for: "2026-02-23T10:00:00Z",
+      started_at: "2026-02-23T10:00:00Z",
+      finished_at: "2026-02-23T10:02:00Z",
       conversation_id: "conversation-1",
     };
     let root: any;
@@ -231,6 +289,7 @@ describe("ScheduledJobCard visuals", () => {
 
     expect(JSON.stringify(root.toJSON())).toContain("SUCCESS");
     expect(JSON.stringify(root.toJSON())).toContain("Open Session");
+    expect(JSON.stringify(root.toJSON())).toContain("Duration:");
     expect(JSON.stringify(root.toJSON())).not.toContain("upstream timeout");
   });
 
@@ -239,6 +298,11 @@ describe("ScheduledJobCard visuals", () => {
       id: "7b",
       name: "History Job",
       enabled: true,
+      status_summary: {
+        state: "recent_failed",
+        manual_intervention_recommended: false,
+        recent_failure_message: "upstream timeout",
+      },
       last_run_status: "failed" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
@@ -254,6 +318,7 @@ describe("ScheduledJobCard visuals", () => {
               id: "execution-2",
               status: "failed" as const,
               scheduled_for: "2026-02-23T10:00:00Z",
+              error_code: "agent_unavailable",
               error_message: ` ${errorMessage} `,
             },
           ] as any
@@ -264,6 +329,64 @@ describe("ScheduledJobCard visuals", () => {
 
     expect(getByText("FAILED")).toBeTruthy();
     expect(getByText(errorMessage)).toBeTruthy();
+    expect(getByText("Agent unavailable")).toBeTruthy();
+  });
+
+  it("renders recent failure hint with structured error code label", () => {
+    const job = {
+      id: "7d",
+      name: "History Job",
+      enabled: true,
+      status_summary: {
+        state: "recent_failed",
+        manual_intervention_recommended: false,
+        recent_failure_error_code: "outbound_not_allowed",
+      },
+      last_run_status: "failed" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const { getByText } = render(
+      <ScheduledJobCard {...defaultProps} job={job as any} />,
+    );
+
+    expect(getByText(/Outbound blocked/)).toBeTruthy();
+  });
+
+  it("shows heartbeat timing for running execution history rows", () => {
+    const job = {
+      id: "7c",
+      name: "Running History Job",
+      enabled: true,
+      status_summary: {
+        state: "running",
+        manual_intervention_recommended: false,
+      },
+      last_run_status: "success" as const,
+      next_run_at_utc: "2026-02-23T10:00:00Z",
+      schedule_timezone: "UTC",
+    };
+    const { getAllByText, getByText } = render(
+      <ScheduledJobCard
+        {...defaultProps}
+        job={job as any}
+        executions={
+          [
+            {
+              id: "execution-3",
+              status: "running" as const,
+              scheduled_for: "2026-02-23T10:00:00Z",
+              started_at: "2026-02-23T10:00:00Z",
+              last_heartbeat_at: "2026-02-23T10:01:00Z",
+            },
+          ] as any
+        }
+        executionsOpen
+      />,
+    );
+
+    expect(getAllByText("RUNNING").length).toBeGreaterThanOrEqual(1);
+    expect(getByText(/Last heartbeat:/)).toBeTruthy();
   });
 });
 
@@ -293,6 +416,10 @@ describe("ScheduledJobCard interactions", () => {
       id: "8",
       name: "Job",
       enabled: true,
+      status_summary: {
+        state: "idle",
+        manual_intervention_recommended: false,
+      },
       last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
@@ -316,6 +443,10 @@ describe("ScheduledJobCard interactions", () => {
       prompt: "Prompt ready to copy",
       cycle_type: "daily" as const,
       time_point: { time: "09:00" },
+      status_summary: {
+        state: "idle",
+        manual_intervention_recommended: false,
+      },
       last_run_status: "success" as const,
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",

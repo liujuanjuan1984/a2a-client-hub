@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -25,6 +25,7 @@ from app.services.a2a_schedule_time import A2AScheduleTimeHelper
 from app.utils.timezone_util import ensure_utc, utc_now
 
 _MANUAL_FAILURE_MESSAGE = "Stopped by user as failed"
+_MANUAL_FAILURE_ERROR_CODE = "manual_failed"
 
 
 class A2AScheduleCrudService:
@@ -50,29 +51,12 @@ class A2AScheduleCrudService:
         page: int,
         size: int,
     ) -> tuple[list[A2AScheduleTask], int]:
-        offset = (page - 1) * size
-        stmt = (
-            select(A2AScheduleTask)
-            .where(
-                A2AScheduleTask.user_id == user_id,
-                A2AScheduleTask.deleted_at.is_(None),
-                A2AScheduleTask.delete_requested_at.is_(None),
-            )
-            .order_by(A2AScheduleTask.created_at.desc())
-            .offset(offset)
-            .limit(size)
+        return await self._projection.list_tasks_with_status_summary(
+            db,
+            user_id=user_id,
+            page=page,
+            size=size,
         )
-        rows = await db.execute(stmt)
-        items = list(rows.scalars().all())
-        await self._projection.set_tasks_running_projection(db, tasks=items)
-
-        count_stmt = select(func.count(A2AScheduleTask.id)).where(
-            A2AScheduleTask.user_id == user_id,
-            A2AScheduleTask.deleted_at.is_(None),
-            A2AScheduleTask.delete_requested_at.is_(None),
-        )
-        total = int(await db.scalar(count_stmt) or 0)
-        return items, total
 
     @map_retryable_db_errors("Schedule task read")
     async def get_task(
@@ -83,7 +67,7 @@ class A2AScheduleCrudService:
         task_id: UUID,
     ) -> A2AScheduleTask:
         task = await self._support.get_task(db, user_id=user_id, task_id=task_id)
-        return await self._projection.set_task_running_projection(db, task=task)
+        return await self._projection.set_task_status_projection(db, task=task)
 
     @map_retryable_db_errors("Schedule task creation")
     async def create_task(
@@ -148,8 +132,7 @@ class A2AScheduleCrudService:
         db.add(task)
         await commit_safely(db)
         await db.refresh(task)
-        setattr(task, "is_running", False)
-        return task
+        return await self._projection.set_task_status_projection(db, task=task)
 
     @map_retryable_db_errors("Schedule task update")
     async def update_task(
@@ -288,7 +271,7 @@ class A2AScheduleCrudService:
 
         await commit_safely(db)
         await db.refresh(task)
-        return await self._projection.set_task_running_projection(db, task=task)
+        return await self._projection.set_task_status_projection(db, task=task)
 
     @map_retryable_db_errors("Schedule task deletion")
     async def delete_task(
@@ -360,7 +343,7 @@ class A2AScheduleCrudService:
         )
         if execution is None:
             if task.last_run_status == A2AScheduleTask.STATUS_FAILED:
-                return await self._projection.set_task_running_projection(db, task=task)
+                return await self._projection.set_task_status_projection(db, task=task)
             raise A2AScheduleValidationError(
                 "Only running tasks can be manually marked as failed"
             )
@@ -369,6 +352,7 @@ class A2AScheduleCrudService:
             execution.finished_at = now_utc
         execution.status = A2AScheduleExecution.STATUS_FAILED
         execution.error_message = manual_error_message
+        execution.error_code = _MANUAL_FAILURE_ERROR_CODE
         if execution.conversation_id is None:
             execution.conversation_id = task.conversation_id
 
@@ -382,8 +366,7 @@ class A2AScheduleCrudService:
 
         await commit_safely(db)
         await db.refresh(task)
-        setattr(task, "is_running", False)
-        return task
+        return await self._projection.set_task_status_projection(db, task=task)
 
     @staticmethod
     def build_manual_failure_reason(

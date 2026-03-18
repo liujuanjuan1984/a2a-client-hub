@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import math
 import time
 from datetime import timedelta
 from uuid import uuid4
@@ -29,6 +28,12 @@ from app.db.transaction import commit_safely, rollback_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services.a2a_runtime import a2a_runtime_builder
+from app.services.a2a_schedule_preflight import (
+    open_schedule_agent_card_preflight_snapshot,
+)
+from app.services.a2a_schedule_runtime_summary import (
+    derive_schedule_recovery_timeouts,
+)
 from app.services.a2a_schedule_service import (
     A2A_SCHEDULE_SOURCE,
     A2AScheduleConflictError,
@@ -39,6 +44,7 @@ from app.services.invoke_route_runner import run_background_invoke
 from app.services.ops_metrics import ops_metrics
 from app.services.scheduler import get_scheduler
 from app.utils.async_cleanup import await_cancel_safe_suppressed
+from app.utils.session_identity import normalize_non_empty_text
 from app.utils.timezone_util import utc_now
 
 logger = get_logger(__name__)
@@ -87,28 +93,41 @@ def _execution_metadata(
     }
 
 
+def _normalize_schedule_error_code(value: object) -> str | None:
+    normalized = normalize_non_empty_text(value)
+    if normalized is None:
+        return None
+    return normalized.replace("-", "_").lower()
+
+
+def _resolve_schedule_failure_details(
+    *,
+    invoke_result: dict[str, object] | None = None,
+    exc: BaseException | None = None,
+) -> tuple[str | None, str | None]:
+    if invoke_result is not None:
+        error_code = _normalize_schedule_error_code(invoke_result.get("error_code"))
+        internal_error_message = normalize_non_empty_text(
+            invoke_result.get("internal_error_message")
+        )
+        public_error_message = normalize_non_empty_text(invoke_result.get("error"))
+        response_content = normalize_non_empty_text(
+            invoke_result.get("response_content")
+        )
+        return (
+            error_code,
+            internal_error_message or public_error_message or response_content,
+        )
+
+    if exc is None:
+        return None, None
+
+    error_code = _normalize_schedule_error_code(getattr(exc, "error_code", None))
+    return error_code, normalize_non_empty_text(str(exc))
+
+
 def _derive_recovery_timeouts() -> tuple[int, int]:
-    """Derive heartbeat stale and hard timeout from invoke timeout.
-
-    Keep a single source of truth for run lifetime (`invoke_timeout`) to avoid
-    configuration drift. Heartbeat stale timeout is internally derived from
-    heartbeat interval and clamped by invoke timeout.
-    """
-
-    invoke_timeout_seconds = max(
-        int(math.ceil(float(settings.a2a_schedule_task_invoke_timeout))),
-        1,
-    )
-    heartbeat_interval_seconds = max(
-        float(settings.a2a_schedule_run_heartbeat_interval_seconds),
-        0.1,
-    )
-    heartbeat_stale_seconds = max(
-        int(math.ceil(heartbeat_interval_seconds * 3)),
-        30,
-    )
-    heartbeat_stale_seconds = min(heartbeat_stale_seconds, invoke_timeout_seconds)
-    return heartbeat_stale_seconds, invoke_timeout_seconds
+    return derive_schedule_recovery_timeouts()
 
 
 async def _touch_schedule_run_heartbeat(*, claim: ClaimedA2AScheduleTask) -> bool:
@@ -414,50 +433,56 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             )
             if not bool(getattr(runtime.agent, "enabled", True)):
                 raise RuntimeError("Target A2A agent is disabled")
-            thread, is_new = await _ensure_task_session(
-                db=db,
-                task=task,
-            )
-            execution.conversation_id = thread.id
-            await commit_safely(db)
-            heartbeat_task = asyncio.create_task(
-                _schedule_run_heartbeat_loop(
-                    claim=claim,
-                    stop_event=heartbeat_stop_event,
-                )
-            )
-            invoke_payload = A2AAgentInvokeRequest(
-                query=task.prompt,
-                conversationId=str(thread.id),
-                metadata=metadata,
-            )
-            try:
-                invoke_result = await run_background_invoke(
+            gateway = get_a2a_service().gateway
+            async with open_schedule_agent_card_preflight_snapshot(
+                gateway=gateway,
+                runtime=runtime,
+            ) as preflight_snapshot:
+                thread, is_new = await _ensure_task_session(
                     db=db,
-                    gateway=get_a2a_service().gateway,
-                    runtime=runtime,
-                    user_id=task.user_id,
-                    agent_id=task.agent_id,
-                    agent_source="personal",
-                    payload=invoke_payload,
-                    validate_message=lambda _payload: [],
-                    logger=logger,
-                    log_extra={
-                        "schedule_task_id": str(task.id),
-                        "schedule_execution_id": str(execution.id),
-                        "run_id": str(claim.run_id),
-                        "phase": "invoke",
-                        "agent_id": str(task.agent_id),
-                        "user_id": str(task.user_id),
-                    },
-                    total_timeout_seconds=settings.a2a_schedule_task_invoke_timeout,
-                    idle_timeout_seconds=settings.a2a_schedule_task_stream_idle_timeout,
+                    task=task,
                 )
-            finally:
-                heartbeat_stop_event.set()
-                if heartbeat_task is not None:
-                    with contextlib.suppress(Exception):
-                        await heartbeat_task
+                execution.conversation_id = thread.id
+                await commit_safely(db)
+                heartbeat_task = asyncio.create_task(
+                    _schedule_run_heartbeat_loop(
+                        claim=claim,
+                        stop_event=heartbeat_stop_event,
+                    )
+                )
+                invoke_payload = A2AAgentInvokeRequest(
+                    query=task.prompt,
+                    conversationId=str(thread.id),
+                    metadata=metadata,
+                )
+                try:
+                    invoke_result = await run_background_invoke(
+                        db=db,
+                        gateway=gateway,
+                        runtime=runtime,
+                        user_id=task.user_id,
+                        agent_id=task.agent_id,
+                        agent_source="personal",
+                        payload=invoke_payload,
+                        validate_message=lambda _payload: [],
+                        logger=logger,
+                        log_extra={
+                            "schedule_task_id": str(task.id),
+                            "schedule_execution_id": str(execution.id),
+                            "run_id": str(claim.run_id),
+                            "phase": "invoke",
+                            "agent_id": str(task.agent_id),
+                            "user_id": str(task.user_id),
+                        },
+                        total_timeout_seconds=settings.a2a_schedule_task_invoke_timeout,
+                        idle_timeout_seconds=settings.a2a_schedule_task_stream_idle_timeout,
+                        client=preflight_snapshot.client,
+                    )
+                finally:
+                    heartbeat_stop_event.set()
+                    if heartbeat_task is not None:
+                        with contextlib.suppress(Exception):
+                            await heartbeat_task
             success = bool(invoke_result.get("success"))
             response_content = str(invoke_result.get("response_content") or "")
             message_refs = invoke_result.get("message_refs") or {}
@@ -481,15 +506,14 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 if success
                 else A2AScheduleTask.STATUS_FAILED
             )
-            execution_error_message = (
-                None
-                if success
-                else (
-                    response_content[:2000]
-                    or str(invoke_result.get("error") or "")[:2000]
-                    or None
+            execution_error_code = None
+            execution_error_message = None
+            if not success:
+                execution_error_code, execution_error_message = (
+                    _resolve_schedule_failure_details(invoke_result=invoke_result)
                 )
-            )
+                if execution_error_message is not None:
+                    execution_error_message = execution_error_message[:2000]
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
@@ -501,6 +525,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     conversation_id=resolved_conversation_id,
                     response_content=response_content,
                     error_message=execution_error_message,
+                    error_code=execution_error_code,
                     user_message_id=message_refs.get("user_message_id"),
                     agent_message_id=message_refs.get("agent_message_id"),
                 )
@@ -551,7 +576,10 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
 
         except Exception as exc:  # pragma: no cover - defensive path
             finished_at = utc_now()
-            failure_message = str(exc)[:2000]
+            failure_error_code, failure_message = _resolve_schedule_failure_details(
+                exc=exc
+            )
+            failure_message = (failure_message or "Schedule execution failed")[:2000]
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
@@ -575,6 +603,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         else failure_message
                     ),
                     error_message=failure_message,
+                    error_code=failure_error_code,
                     user_message_id=(
                         execution.user_message_id if execution is not None else None
                     ),

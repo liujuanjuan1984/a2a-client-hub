@@ -804,6 +804,7 @@ async def run_background_invoke(
     *,
     db: AsyncSession,
     gateway: Any,
+    client: Any | None = None,
     runtime: Any,
     user_id: UUID,
     agent_id: UUID,
@@ -851,6 +852,7 @@ async def run_background_invoke(
     try:
         outcome = await a2a_invoke_service.consume_stream(
             gateway=gateway,
+            client=client,
             resolved=runtime.resolved,
             query=payload.query,
             context_id=payload.context_id,
@@ -876,6 +878,7 @@ async def run_background_invoke(
         "response_content": response_content,
         "error": outcome.error_message,
         "error_code": state.persisted_error_code or outcome.error_code,
+        "internal_error_message": outcome.internal_error_message,
         "conversation_id": (
             state.message_refs.get("conversation_id") if state.message_refs else None
         ),

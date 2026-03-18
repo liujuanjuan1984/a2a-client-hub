@@ -20,6 +20,7 @@ A2AScheduleCycleType = Literal[
 A2AScheduleRunStatus = Literal["idle", "success", "failed"]
 A2AScheduleExecutionStatus = Literal["pending", "running", "success", "failed"]
 A2AScheduleConversationPolicy = Literal["new_each_run", "reuse_single"]
+A2AScheduleStatusSummaryState = Literal["idle", "running", "recent_failed"]
 
 
 class A2AScheduleTaskBase(BaseModel):
@@ -69,6 +70,7 @@ class A2AScheduleTaskResponse(A2AScheduleTaskBase):
     last_run_at: Optional[datetime] = None
     last_run_status: A2AScheduleRunStatus = "idle"
     consecutive_failures: int = 0
+    status_summary: "A2AScheduleStatusSummary"
     created_at: datetime
     updated_at: datetime
 
@@ -96,6 +98,7 @@ class A2AScheduleExecutionResponse(BaseModel):
     finished_at: Optional[datetime] = None
     last_heartbeat_at: Optional[datetime] = None
     error_message: Optional[str] = None
+    error_code: Optional[str] = None
     response_content: Optional[str] = None
     conversation_id: Optional[UUID] = None
     user_message_id: Optional[UUID] = None
@@ -103,6 +106,19 @@ class A2AScheduleExecutionResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class A2AScheduleStatusSummary(BaseModel):
+    state: A2AScheduleStatusSummaryState
+    manual_intervention_recommended: bool = False
+    running_started_at: Optional[datetime] = None
+    running_duration_seconds: Optional[int] = None
+    last_heartbeat_at: Optional[datetime] = None
+    heartbeat_age_seconds: Optional[int] = None
+    heartbeat_stale_after_seconds: Optional[int] = None
+    recent_failure_message: Optional[str] = None
+    recent_failure_error_code: Optional[str] = None
+    last_finished_at: Optional[datetime] = None
 
 
 class A2AScheduleExecutionListMeta(BaseModel):
@@ -136,6 +152,8 @@ __all__ = [
     "A2AScheduleExecutionListResponse",
     "A2AScheduleExecutionResponse",
     "A2AScheduleManualFailRequest",
+    "A2AScheduleStatusSummary",
+    "A2AScheduleStatusSummaryState",
     "A2AScheduleTaskCreate",
     "A2AScheduleTaskListMeta",
     "A2AScheduleTaskListResponse",

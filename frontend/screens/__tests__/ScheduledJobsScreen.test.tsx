@@ -92,6 +92,10 @@ describe("ScheduledJobsScreen sorting", () => {
         id: "1",
         enabled: false,
         last_run_status: "failed",
+        status_summary: {
+          state: "recent_failed",
+          manual_intervention_recommended: false,
+        },
         next_run_at_utc: "2026-02-23T10:00:00Z",
         schedule_timezone: "UTC",
       },
@@ -100,12 +104,21 @@ describe("ScheduledJobsScreen sorting", () => {
         enabled: true,
         is_running: true,
         last_run_status: "success",
+        status_summary: {
+          state: "running",
+          manual_intervention_recommended: false,
+        },
         next_run_at_utc: "2026-02-23T11:00:00Z",
         schedule_timezone: "UTC",
       },
       {
         id: "3",
         enabled: true,
+        is_running: true,
+        status_summary: {
+          state: "running",
+          manual_intervention_recommended: true,
+        },
         last_run_status: "success",
         next_run_at_utc: "2026-02-23T09:00:00Z",
         schedule_timezone: "UTC",
@@ -114,6 +127,10 @@ describe("ScheduledJobsScreen sorting", () => {
         id: "4",
         enabled: true,
         last_run_status: "success",
+        status_summary: {
+          state: "idle",
+          manual_intervention_recommended: false,
+        },
         next_run_at_utc: "2026-02-23T12:00:00Z",
         schedule_timezone: "UTC",
       },
@@ -122,6 +139,10 @@ describe("ScheduledJobsScreen sorting", () => {
         enabled: false,
         is_running: true,
         last_run_status: "failed",
+        status_summary: {
+          state: "running",
+          manual_intervention_recommended: true,
+        },
         next_run_at_utc: "2026-02-23T08:00:00Z",
         schedule_timezone: "UTC",
       },
@@ -132,11 +153,11 @@ describe("ScheduledJobsScreen sorting", () => {
     });
 
     expect(mockRenderedCards.map((j) => j.id)).toEqual([
-      "2",
       "3",
+      "2",
       "4",
-      "1",
       "5",
+      "1",
     ]);
   });
 });
