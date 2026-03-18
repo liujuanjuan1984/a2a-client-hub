@@ -8,16 +8,16 @@ if TYPE_CHECKING:
     from app.integrations.a2a_client.gateway import A2AGateway
 
 
-async def run_schedule_availability_preflight(
+async def run_schedule_agent_card_preflight(
     *,
     gateway: "A2AGateway",
     runtime: Any,
 ) -> None:
-    """Probe downstream availability before starting a scheduled invoke.
+    """Run a narrow Agent Card preflight before a scheduled invoke.
 
-    This keeps schedule preflight deliberately narrow: fetch the latest agent
-    card, re-resolve transport compatibility, and fail fast when metadata is no
-    longer reachable or compatible.
+    This is intentionally not a full upstream health check. It only confirms
+    that the latest Agent Card is reachable within a short timeout and that the
+    current client can still resolve a compatible transport from that card.
     """
 
     await gateway.fetch_agent_card_detail(
@@ -28,4 +28,4 @@ async def run_schedule_availability_preflight(
     )
 
 
-__all__ = ["run_schedule_availability_preflight"]
+__all__ = ["run_schedule_agent_card_preflight"]

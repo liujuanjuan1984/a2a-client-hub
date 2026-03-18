@@ -481,10 +481,12 @@ class A2AGateway:
             if raise_on_failure:
                 raise
             return None
-        except A2AAgentUnavailableError as exc:
+        except A2AClientResetRequiredError as exc:
+            if not owns_client:
+                await self._invalidate_client(resolved)
             elapsed = time.monotonic() - start_time
             logger.warning(
-                "A2A card fetch failed",
+                "A2A card fetch requires client reset",
                 extra={
                     "agent_name": resolved.name,
                     "error": str(exc),
@@ -494,11 +496,10 @@ class A2AGateway:
             if raise_on_failure:
                 raise
             return None
-        except A2AClientResetRequiredError as exc:
-            await self._invalidate_client(resolved)
+        except A2AAgentUnavailableError as exc:
             elapsed = time.monotonic() - start_time
             logger.warning(
-                "A2A card fetch requires client reset",
+                "A2A card fetch failed",
                 extra={
                     "agent_name": resolved.name,
                     "error": str(exc),

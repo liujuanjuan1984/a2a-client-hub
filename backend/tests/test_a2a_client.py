@@ -28,6 +28,7 @@ from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
 from app.integrations.a2a_client.config import A2ASettings
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
+    A2AClientResetRequiredError,
     A2AOutboundNotAllowedError,
     A2APeerProtocolError,
 )
@@ -538,6 +539,39 @@ async def test_gateway_fetch_agent_card_detail_can_use_temporary_client(
     fake_client.get_agent_card.assert_awaited_once()
     fake_client.close.assert_awaited_once()
     assert gateway._clients == {}
+
+
+@pytest.mark.asyncio
+async def test_gateway_fetch_agent_card_detail_invalidates_shared_client_on_reset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={},
+        name="TestAgent",
+    )
+    fake_client = SimpleNamespace(
+        get_agent_card=AsyncMock(
+            side_effect=A2AClientResetRequiredError("reset required")
+        )
+    )
+    get_client_mock = AsyncMock(return_value=fake_client)
+    invalidate_mock = AsyncMock()
+    monkeypatch.setattr(gateway, "_get_client", get_client_mock)
+    monkeypatch.setattr(gateway, "_invalidate_client", invalidate_mock)
+
+    result = await gateway.fetch_agent_card_detail(resolved=resolved)
+
+    assert result is None
+    get_client_mock.assert_awaited_once_with(resolved)
+    invalidate_mock.assert_awaited_once_with(resolved)
 
 
 @pytest.mark.asyncio
