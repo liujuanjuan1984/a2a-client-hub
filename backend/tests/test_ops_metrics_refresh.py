@@ -1,3 +1,8 @@
+import sqlite3
+
+from sqlalchemy import event
+from sqlalchemy.pool import QueuePool
+
 from app.services.ops_metrics import ops_metrics
 from app.services.ops_metrics_refresh import refresh_db_pool_checked_out
 
@@ -38,3 +43,26 @@ def test_db_pool_metric_handlers_track_checkout_and_checkin_only() -> None:
     assert ops_metrics.snapshot()["db_pool_checked_out"] == 0
     assert not hasattr(session_module, "_pool_close")
     assert not hasattr(session_module, "_pool_invalidate")
+
+
+def test_db_pool_metric_handlers_do_not_double_decrement_after_invalidate() -> None:
+    from app.db import session as session_module
+
+    pool = QueuePool(lambda: sqlite3.connect(":memory:"))
+    event.listen(pool, "checkout", session_module._pool_checkout)
+    event.listen(pool, "checkin", session_module._pool_checkin)
+
+    ops_metrics.set_db_pool_checked_out(0)
+
+    try:
+        connection = pool.connect()
+        assert ops_metrics.snapshot()["db_pool_checked_out"] == 1
+
+        connection.invalidate()
+        connection.close()
+
+        assert ops_metrics.snapshot()["db_pool_checked_out"] == 0
+    finally:
+        event.remove(pool, "checkout", session_module._pool_checkout)
+        event.remove(pool, "checkin", session_module._pool_checkin)
+        pool.dispose()
