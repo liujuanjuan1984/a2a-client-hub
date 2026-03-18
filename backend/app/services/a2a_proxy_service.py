@@ -101,7 +101,7 @@ class A2AProxyService:
             if not cls._is_initialized:
                 cls._cached_allowed_hosts = cls._dedupe_allowed_hosts(allowed_hosts)
                 cls._is_initialized = True
-            cls._last_refresh = time.time()
+                cls._last_refresh = time.time()
             return
 
         cls._cached_allowed_hosts = cls._dedupe_allowed_hosts(allowed_hosts)

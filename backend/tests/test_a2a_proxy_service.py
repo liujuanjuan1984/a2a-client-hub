@@ -130,3 +130,23 @@ async def test_admin_allowlist_write_refreshes_current_process_cache(
         "settings.example.com",
         "db.example.com",
     ]
+
+
+@pytest.mark.asyncio
+async def test_failed_refresh_keeps_existing_snapshot_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["settings.example.com"])
+    A2AProxyService._cached_allowed_hosts = ["cached.example.com"]
+    A2AProxyService._last_refresh = 0
+    A2AProxyService._is_initialized = True
+
+    async def execute(_stmt):
+        raise RuntimeError("db unavailable")
+
+    db = SimpleNamespace(execute=execute)
+
+    cached_hosts = await a2a_proxy_service.get_effective_allowed_hosts(db)
+
+    assert cached_hosts == ["cached.example.com"]
+    assert A2AProxyService._last_refresh == 0
