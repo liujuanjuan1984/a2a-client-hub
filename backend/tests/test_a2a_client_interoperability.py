@@ -608,6 +608,84 @@ async def test_jsonrpc_slash_stream_message_maps_application_json_method_not_fou
 
 
 @pytest.mark.asyncio
+async def test_jsonrpc_slash_get_task_maps_method_not_found_to_unsupported_operation() -> (
+    None
+):
+    descriptor = SimpleNamespace(
+        selected_transport="JSONRPC",
+        selected_url="http://example-agent.internal:24020/jsonrpc",
+        supports_streaming=True,
+        card=Mock(),
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": "task-get-1",
+                "error": {
+                    "code": -32601,
+                    "message": "Unknown method: tasks/get",
+                },
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        adapter = client_module.JsonRpcSlashAdapter(
+            descriptor,
+            http_client=http_client,
+        )
+
+        with pytest.raises(client_module.A2AUnsupportedOperationError):
+            await adapter.get_task("task-1", history_length=2)
+
+
+@pytest.mark.asyncio
+async def test_jsonrpc_pascal_get_task_uses_pascal_method_and_history_length() -> None:
+    captured: dict[str, object] = {}
+    descriptor = SimpleNamespace(
+        selected_transport="JSONRPC",
+        selected_url="http://example-agent.internal:24020/jsonrpc",
+        supports_streaming=True,
+        card=Mock(),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": captured["body"]["id"],
+                "result": {"id": "task-1", "status": {"state": "working"}},
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        adapter = client_module.JsonRpcPascalAdapter(
+            descriptor,
+            http_client=http_client,
+        )
+
+        result = await adapter.get_task(
+            "task-1",
+            history_length=5,
+            metadata={"trace_id": "trace-1"},
+        )
+
+    assert result["id"] == "task-1"
+    assert captured["body"]["method"] == "GetTask"
+    assert captured["body"]["params"] == {
+        "id": "task-1",
+        "historyLength": 5,
+        "metadata": {"trace_id": "trace-1"},
+    }
+
+
+@pytest.mark.asyncio
 async def test_stream_agent_falls_back_to_pascal_jsonrpc_streaming_for_http_json_preferred_peer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -743,6 +821,48 @@ async def test_sdk_http_json_adapter_send_message_uses_sdk_transport_defaults(
         TransportProtocol.jsonrpc,
         TransportProtocol.http_json,
     ]
+    await adapter.close()
+
+
+@pytest.mark.asyncio
+async def test_sdk_http_json_adapter_get_task_forwards_history_length_and_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeFactory:
+        def __init__(self, *, config, consumers) -> None:
+            captured["config"] = config
+            captured["consumers"] = consumers
+
+        def create(self, *_args, **_kwargs):
+            class FakeClient:
+                async def get_task(self, request):
+                    captured["request"] = request
+                    return {"id": request.id, "history_length": request.history_length}
+
+                async def close(self) -> None:
+                    return None
+
+            return FakeClient()
+
+    monkeypatch.setattr(sdk_module, "ClientFactory", FakeFactory)
+
+    adapter = SDKA2AAdapter(
+        SimpleNamespace(card=Mock(), selected_transport="HTTP+JSON"),
+        transport_http_client=AsyncMock(),
+    )
+
+    result = await adapter.get_task(
+        "task-1",
+        history_length=7,
+        metadata={"trace_id": "trace-1"},
+    )
+
+    assert result == {"id": "task-1", "history_length": 7}
+    assert captured["request"].id == "task-1"
+    assert captured["request"].history_length == 7
+    assert captured["request"].metadata == {"trace_id": "trace-1"}
     await adapter.close()
 
 

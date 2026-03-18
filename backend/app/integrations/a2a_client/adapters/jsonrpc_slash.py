@@ -12,6 +12,8 @@ from a2a.client import ClientCallInterceptor
 from a2a.types import (
     CancelTaskRequest,
     CancelTaskResponse,
+    GetTaskRequest,
+    GetTaskResponse,
     MessageSendConfiguration,
     MessageSendParams,
     SendMessageRequest,
@@ -19,6 +21,7 @@ from a2a.types import (
     SendStreamingMessageRequest,
     SendStreamingMessageResponse,
     TaskIdParams,
+    TaskQueryParams,
 )
 from httpx_sse import aconnect_sse
 from pydantic import ValidationError
@@ -40,6 +43,7 @@ JSONRPC_SLASH_DIALECT = "jsonrpc_slash"
 
 _METHOD_SEND_MESSAGE = "message/send"
 _METHOD_SEND_STREAMING_MESSAGE = "message/stream"
+_METHOD_GET_TASK = "tasks/get"
 _METHOD_CANCEL_TASK = "tasks/cancel"
 
 
@@ -101,6 +105,33 @@ class JsonRpcSlashAdapter(A2AAdapter):
         ):
             yield payload
 
+    async def get_task(
+        self,
+        task_id: str,
+        *,
+        history_length: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        params = TaskQueryParams(
+            id=task_id,
+            history_length=history_length,
+            metadata=metadata,
+        )
+        rpc_request = GetTaskRequest(
+            params=params,
+            id=str(uuid4()),
+        )
+        try:
+            return await self._send_rpc(
+                method=_METHOD_GET_TASK,
+                payload=rpc_request.model_dump(mode="json", exclude_none=True),
+                response_model=GetTaskResponse,
+            )
+        except A2APeerProtocolError as exc:
+            if exc.code == -32601:
+                raise A2AUnsupportedOperationError(str(exc)) from exc
+            raise
+
     async def cancel_task(
         self,
         task_id: str,
@@ -119,7 +150,7 @@ class JsonRpcSlashAdapter(A2AAdapter):
                 response_model=CancelTaskResponse,
             )
         except A2APeerProtocolError as exc:
-            if exc.rpc_code == -32601:
+            if exc.code == -32601:
                 raise A2AUnsupportedOperationError(str(exc)) from exc
             raise
 

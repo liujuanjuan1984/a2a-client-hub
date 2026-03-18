@@ -31,6 +31,7 @@ from app.integrations.a2a_client.invoke_session import (
     AgentResolutionPolicy,
     InvokeSessionOwnership,
 )
+from app.integrations.a2a_client.service import A2AService
 
 
 @pytest.mark.asyncio
@@ -847,3 +848,136 @@ async def test_cancel_task_rejects_blank_task_id() -> None:
 
     assert result["success"] is False
     assert result["error_code"] == "invalid_task_id"
+
+
+@pytest.mark.asyncio
+async def test_get_task_returns_success_for_valid_request() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_task_with_fallback = AsyncMock(return_value={"id": "task-1"})
+
+    result = await a2a_client.get_task(" task-1 ", history_length=3)
+
+    assert result["success"] is True
+    assert result["task_id"] == "task-1"
+    assert result["task"] == {"id": "task-1"}
+    a2a_client._get_task_with_fallback.assert_awaited_once_with(
+        "task-1",
+        history_length=3,
+        metadata=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_task_maps_http_status_error_codes() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_task_with_fallback = AsyncMock(
+        side_effect=A2AClientHTTPError(404, "Task not found")
+    )
+
+    result = await a2a_client.get_task("task-missing")
+
+    assert result["success"] is False
+    assert result["error_code"] == "task_not_found"
+
+
+@pytest.mark.asyncio
+async def test_get_task_maps_unsupported_operation_errors() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_task_with_fallback = AsyncMock(
+        side_effect=client_module.A2AUnsupportedOperationError("GetTask not supported")
+    )
+
+    result = await a2a_client.get_task("task-unsupported")
+
+    assert result["success"] is False
+    assert result["error_code"] == "unsupported_operation"
+
+
+@pytest.mark.asyncio
+async def test_get_task_rejects_blank_task_id() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+
+    result = await a2a_client.get_task("  ")
+
+    assert result["success"] is False
+    assert result["error_code"] == "invalid_task_id"
+
+
+@pytest.mark.asyncio
+async def test_gateway_get_task_returns_success_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={},
+        name="TestAgent",
+    )
+    session_client = SimpleNamespace(
+        get_task=AsyncMock(
+            return_value={
+                "success": True,
+                "task": {"id": "task-1"},
+                "task_id": "task-1",
+            }
+        )
+    )
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_open_invoke_session(**_kwargs):
+        yield SimpleNamespace(client=session_client)
+
+    monkeypatch.setattr(gateway, "open_invoke_session", fake_open_invoke_session)
+
+    result = await gateway.get_task(
+        resolved=resolved,
+        task_id="task-1",
+        history_length=2,
+    )
+
+    assert result["success"] is True
+    assert result["task"] == {"id": "task-1"}
+    session_client.get_task.assert_awaited_once_with(
+        "task-1",
+        history_length=2,
+        metadata=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_service_get_task_forwards_to_gateway() -> None:
+    settings = A2ASettings(default_timeout=10.0, use_client_preference=False)
+    service = A2AService(settings)
+    service.gateway = SimpleNamespace(
+        get_task=AsyncMock(return_value={"success": True, "task": {"id": "task-1"}})
+    )
+    resolved = SimpleNamespace(
+        name="TestAgent",
+        url="http://example-agent.internal:24020",
+        description=None,
+        metadata={},
+        headers={},
+    )
+
+    result = await service.get_task(
+        resolved=resolved,
+        task_id="task-1",
+        history_length=4,
+        metadata={"trace_id": "trace-1"},
+    )
+
+    assert result["success"] is True
+    service.gateway.get_task.assert_awaited_once_with(
+        resolved=resolved,
+        task_id="task-1",
+        history_length=4,
+        metadata={"trace_id": "trace-1"},
+    )
