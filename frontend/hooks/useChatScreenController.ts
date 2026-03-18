@@ -5,8 +5,6 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
-  TextInput,
-  TextInputKeyPressEventData,
 } from "react-native";
 
 import { PAGE_TOP_OFFSET } from "@/components/layout/spacing";
@@ -15,33 +13,18 @@ import {
   useAgentsCatalogQuery,
   useValidateAgentMutation,
 } from "@/hooks/useAgentsCatalogQuery";
+import { useChatBlockDetailController } from "@/hooks/useChatBlockDetailController";
+import { useChatComposerController } from "@/hooks/useChatComposerController";
 import { useSessionHistoryQuery } from "@/hooks/useChatHistoryQuery";
+import { useChatInterruptController } from "@/hooks/useChatInterruptController";
 import {
   type GenericCapabilityStatus,
   useExtensionCapabilitiesQuery,
 } from "@/hooks/useExtensionCapabilitiesQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
-import {
-  A2AExtensionCallError,
-  rejectQuestionInterrupt,
-  replyPermissionInterrupt,
-  replyQuestionInterrupt,
-} from "@/lib/api/a2aExtensions";
-import {
-  applyLoadedBlockDetail,
-  type ChatMessage,
-  type ResolvedRuntimeInterrupt,
-} from "@/lib/api/chat-utils";
-import { ApiRequestError } from "@/lib/api/client";
-import { continueSession, querySessionMessageBlocks } from "@/lib/api/sessions";
-import {
-  getSharedModelSelection,
-  type SharedModelSelection,
-} from "@/lib/chat-utils";
-import {
-  getConversationMessages,
-  updateConversationMessageWithUpdater,
-} from "@/lib/chatHistoryCache";
+import type { ChatMessage } from "@/lib/api/chat-utils";
+import { continueSession } from "@/lib/api/sessions";
+import { getSharedModelSelection } from "@/lib/chat-utils";
 import {
   getAnchoredOffsetAfterContentResize,
   shouldShowScrollToBottom,
@@ -53,15 +36,6 @@ import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
 import { useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
-
-type WebTextInputKeyPressEvent =
-  NativeSyntheticEvent<TextInputKeyPressEventData> & {
-    nativeEvent: TextInputKeyPressEventData & {
-      shiftKey?: boolean;
-      isComposing?: boolean;
-    };
-    preventDefault?: () => void;
-  };
 
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
@@ -100,25 +74,15 @@ export function useChatScreenController({
     conversationId ? state.sessions[conversationId] : undefined,
   );
 
-  const [input, setInput] = useState("");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [showSessionPicker, setShowSessionPicker] = useState(false);
   const suppressAutoScrollRef = useRef(false);
   const shouldStickToBottomRef = useRef(true);
   const forceScrollToBottomRef = useRef(false);
   const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const [showDetails, setShowDetails] = useState(false);
-  const [showShortcutManager, setShowShortcutManager] = useState(false);
-  const [showSessionPicker, setShowSessionPicker] = useState(false);
-  const [showModelPicker, setShowModelPicker] = useState(false);
-  const [interruptAction, setInterruptAction] = useState<string | null>(null);
-  const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
-  const handledResolvedInterruptKeysRef = useRef<Set<string>>(new Set());
-  const locallyAcknowledgedResolvedInterruptKeysRef = useRef<Set<string>>(
-    new Set(),
-  );
-  const mountedAtRef = useRef(Date.now());
 
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const scrollOffsetRef = useRef(0);
@@ -132,12 +96,7 @@ export function useChatScreenController({
     contentHeight: number;
   } | null>(null);
   const loadingEarlierRef = useRef(false);
-  const blockDetailInFlightRef = useRef<Set<string>>(new Set());
-  const inputRef = useRef<TextInput>(null);
   const isInitialLoadRef = useRef(true);
-  const minInputHeight = 44;
-  const maxInputHeight = 128;
-  const [inputHeight, setInputHeight] = useState(minInputHeight);
   const historyPaused = session?.streamState === "streaming";
 
   const sessionHistoryQuery = useSessionHistoryQuery({
@@ -173,83 +132,6 @@ export function useChatScreenController({
       ? (pendingInterrupt.details.questions?.length ?? 0)
       : 0;
 
-  const buildInterruptErrorMessage = useCallback((error: unknown) => {
-    if (error instanceof ApiRequestError) {
-      const codeSuffix = error.errorCode ? ` [${error.errorCode}]` : "";
-      const upstreamMessage =
-        error.upstreamError &&
-        typeof error.upstreamError === "object" &&
-        typeof error.upstreamError.message === "string"
-          ? error.upstreamError.message
-          : null;
-
-      return upstreamMessage
-        ? `${error.message}${codeSuffix}：${upstreamMessage}`
-        : `${error.message}${codeSuffix}`;
-    }
-
-    if (error instanceof A2AExtensionCallError) {
-      if (error.errorCode === "session_forbidden") {
-        return error.message;
-      }
-      if (error.errorCode && !error.message.includes(error.errorCode)) {
-        return `${error.message}: ${error.errorCode}`;
-      }
-      return error.message;
-    }
-    return error instanceof Error
-      ? error.message
-      : "Interrupt callback failed.";
-  }, []);
-
-  const buildResolvedInterruptKey = useCallback(
-    (interrupt: ResolvedRuntimeInterrupt | null) =>
-      interrupt
-        ? `${interrupt.requestId}:${interrupt.type}:${interrupt.resolution}`
-        : "",
-    [],
-  );
-
-  const acknowledgeLocalInterruptResolution = useCallback(
-    (
-      requestId: string,
-      interruptType: "permission" | "question",
-      resolution: "replied" | "rejected",
-    ) => {
-      locallyAcknowledgedResolvedInterruptKeysRef.current.add(
-        buildResolvedInterruptKey({
-          requestId,
-          type: interruptType,
-          phase: "resolved",
-          resolution,
-        }),
-      );
-    },
-    [buildResolvedInterruptKey],
-  );
-
-  const buildResolvedInterruptFeedback = useCallback(
-    (interrupt: ResolvedRuntimeInterrupt) => {
-      if (interrupt.type === "permission") {
-        return {
-          title: "Interrupt resolved",
-          message: "Authorization request was handled.",
-        };
-      }
-      if (interrupt.resolution === "rejected") {
-        return {
-          title: "Interrupt resolved",
-          message: "Question request was rejected and the interrupt is closed.",
-        };
-      }
-      return {
-        title: "Interrupt resolved",
-        message: "Question answer received. Agent resumed.",
-      };
-    },
-    [],
-  );
-
   const clearScrollSettleTimer = useCallback(() => {
     if (scrollSettleTimerRef.current) {
       clearTimeout(scrollSettleTimerRef.current);
@@ -268,7 +150,6 @@ export function useChatScreenController({
         forceScrollToBottomRef.current = false;
       }, SEND_SCROLL_SETTLE_MS);
     } catch {
-      // Test runtimes may not provide NativeTiming-backed timers.
       scrollSettleTimerRef.current = null;
       scrollToBottom(false);
       forceScrollToBottomRef.current = false;
@@ -289,36 +170,67 @@ export function useChatScreenController({
     [clearScrollSettleTimer, scheduleScrollSettleTimer, scrollToBottom],
   );
 
+  const handleSendScrollIntent = useCallback(() => {
+    forceScrollToBottomRef.current = true;
+    shouldStickToBottomRef.current = true;
+    scheduleStickToBottom(true);
+  }, [scheduleStickToBottom]);
+
+  const {
+    interruptAction,
+    questionAnswers,
+    handlePermissionReply,
+    handleQuestionAnswerChange,
+    handleQuestionOptionPick,
+    handleQuestionReply,
+    handleQuestionReject,
+  } = useChatInterruptController({
+    activeAgentId,
+    agentSource: agent?.source,
+    conversationId,
+    pendingInterrupt,
+    lastResolvedInterrupt,
+    pendingQuestionCount,
+    clearPendingInterrupt,
+  });
+
+  const {
+    inputRef,
+    input,
+    inputHeight,
+    maxInputHeight,
+    showShortcutManager,
+    showModelPicker,
+    openShortcutManager,
+    closeShortcutManager,
+    openModelPicker,
+    closeModelPicker,
+    handleModelSelect,
+    clearModelSelection,
+    handleUseShortcut,
+    handleInputChange,
+    handleContentSizeChange,
+    handleKeyPress,
+    handleSend,
+  } = useChatComposerController({
+    activeAgentId,
+    conversationId,
+    agentSource: agent?.source,
+    pendingInterruptActive: Boolean(pendingInterrupt),
+    ensureSession,
+    sendMessage,
+    setSharedModelSelection,
+    onAfterSend: handleSendScrollIntent,
+  });
+
+  const { handleLoadBlockContent } =
+    useChatBlockDetailController(conversationId);
+
   useEffect(() => {
     if (activeAgentId && conversationId) {
       ensureSession(conversationId, activeAgentId);
     }
   }, [activeAgentId, conversationId, ensureSession]);
-
-  useEffect(() => {
-    if (!lastResolvedInterrupt) {
-      return;
-    }
-    const observedAt = Date.parse(lastResolvedInterrupt.observedAt);
-    if (Number.isFinite(observedAt) && observedAt < mountedAtRef.current) {
-      return;
-    }
-    const key = buildResolvedInterruptKey(lastResolvedInterrupt);
-    if (!key || handledResolvedInterruptKeysRef.current.has(key)) {
-      return;
-    }
-    handledResolvedInterruptKeysRef.current.add(key);
-    if (locallyAcknowledgedResolvedInterruptKeysRef.current.has(key)) {
-      locallyAcknowledgedResolvedInterruptKeysRef.current.delete(key);
-      return;
-    }
-    const feedback = buildResolvedInterruptFeedback(lastResolvedInterrupt);
-    toast.success(feedback.title, feedback.message);
-  }, [
-    buildResolvedInterruptFeedback,
-    buildResolvedInterruptKey,
-    lastResolvedInterrupt,
-  ]);
 
   useEffect(() => {
     if (!conversationId || !activeAgentId) return;
@@ -386,23 +298,6 @@ export function useChatScreenController({
     conversationId,
     router,
     sessionSource,
-  ]);
-
-  useEffect(() => {
-    if (!pendingInterrupt || pendingInterrupt.type !== "question") {
-      setQuestionAnswers([]);
-      return;
-    }
-    setQuestionAnswers((current) =>
-      Array.from(
-        { length: pendingQuestionCount },
-        (_, index) => current[index] ?? "",
-      ),
-    );
-  }, [
-    pendingInterrupt?.requestId,
-    pendingInterrupt?.type,
-    pendingQuestionCount,
   ]);
 
   useEffect(() => {
@@ -546,201 +441,7 @@ export function useChatScreenController({
     }
   }, [activeAgentId, agent, validateAgentMutation]);
 
-  const handleSend = useCallback(() => {
-    if (!activeAgentId || !conversationId || !agent) {
-      return;
-    }
-    if (pendingInterrupt) {
-      toast.info(
-        "Action required",
-        "Please resolve the interactive action card before sending a new message.",
-      );
-      return;
-    }
-    if (!input.trim()) {
-      return;
-    }
-    forceScrollToBottomRef.current = true;
-    shouldStickToBottomRef.current = true;
-    sendMessage(conversationId, activeAgentId, input, agent.source);
-    setInput("");
-    setInputHeight(minInputHeight);
-    scheduleStickToBottom(true);
-  }, [
-    activeAgentId,
-    agent,
-    conversationId,
-    input,
-    pendingInterrupt,
-    scheduleStickToBottom,
-    sendMessage,
-  ]);
-
-  const runInterruptAction = useCallback(
-    async (
-      actionKey: string,
-      executor: () => Promise<void>,
-      successMessage: string,
-    ) => {
-      setInterruptAction(actionKey);
-      try {
-        await executor();
-        toast.success("Action submitted", successMessage);
-      } catch (error) {
-        toast.error(
-          "Interrupt callback failed",
-          buildInterruptErrorMessage(error),
-        );
-      } finally {
-        setInterruptAction(null);
-      }
-    },
-    [buildInterruptErrorMessage],
-  );
-
-  const handlePermissionReply = useCallback(
-    (reply: "once" | "always" | "reject") => {
-      if (!activeAgentId || !conversationId || !pendingInterrupt || !agent) {
-        return;
-      }
-      if (pendingInterrupt.type !== "permission") {
-        return;
-      }
-      const requestId = pendingInterrupt.requestId;
-      runInterruptAction(
-        `permission:${reply}`,
-        async () => {
-          await replyPermissionInterrupt({
-            source: agent.source,
-            agentId: activeAgentId,
-            requestId,
-            reply,
-          });
-          acknowledgeLocalInterruptResolution(
-            requestId,
-            "permission",
-            "replied",
-          );
-          clearPendingInterrupt(conversationId, requestId);
-        },
-        "Permission reply delivered to upstream.",
-      ).catch(() => undefined);
-    },
-    [
-      activeAgentId,
-      agent,
-      acknowledgeLocalInterruptResolution,
-      clearPendingInterrupt,
-      conversationId,
-      pendingInterrupt,
-      runInterruptAction,
-    ],
-  );
-
-  const handleQuestionAnswerChange = useCallback(
-    (index: number, value: string) => {
-      setQuestionAnswers((current) => {
-        const next = [...current];
-        next[index] = value;
-        return next;
-      });
-    },
-    [],
-  );
-
-  const handleQuestionOptionPick = useCallback(
-    (index: number, value: string) => {
-      setQuestionAnswers((current) => {
-        const next = [...current];
-        next[index] = value;
-        return next;
-      });
-    },
-    [],
-  );
-
-  const handleQuestionReply = useCallback(() => {
-    if (!activeAgentId || !conversationId || !pendingInterrupt || !agent) {
-      return;
-    }
-    if (pendingInterrupt.type !== "question") {
-      return;
-    }
-    const questions = pendingInterrupt.details.questions ?? [];
-    const normalizedAnswers = questions.map((_, index) => {
-      const answer = questionAnswers[index]?.trim() ?? "";
-      return answer ? [answer] : [];
-    });
-    if (normalizedAnswers.some((group) => group.length === 0)) {
-      toast.error("Missing answer", "Please answer all questions first.");
-      return;
-    }
-    const requestId = pendingInterrupt.requestId;
-    runInterruptAction(
-      "question:reply",
-      async () => {
-        await replyQuestionInterrupt({
-          source: agent.source,
-          agentId: activeAgentId,
-          requestId,
-          answers: normalizedAnswers,
-        });
-        acknowledgeLocalInterruptResolution(requestId, "question", "replied");
-        clearPendingInterrupt(conversationId, requestId);
-      },
-      "Question answers delivered to upstream.",
-    ).catch(() => undefined);
-  }, [
-    activeAgentId,
-    agent,
-    acknowledgeLocalInterruptResolution,
-    clearPendingInterrupt,
-    conversationId,
-    pendingInterrupt,
-    questionAnswers,
-    runInterruptAction,
-  ]);
-
-  const handleQuestionReject = useCallback(() => {
-    if (!activeAgentId || !conversationId || !pendingInterrupt || !agent) {
-      return;
-    }
-    if (pendingInterrupt.type !== "question") {
-      return;
-    }
-    const requestId = pendingInterrupt.requestId;
-    runInterruptAction(
-      "question:reject",
-      async () => {
-        await rejectQuestionInterrupt({
-          source: agent.source,
-          agentId: activeAgentId,
-          requestId,
-        });
-        acknowledgeLocalInterruptResolution(requestId, "question", "rejected");
-        clearPendingInterrupt(conversationId, requestId);
-      },
-      "Question request rejected.",
-    ).catch(() => undefined);
-  }, [
-    activeAgentId,
-    agent,
-    acknowledgeLocalInterruptResolution,
-    clearPendingInterrupt,
-    conversationId,
-    pendingInterrupt,
-    runInterruptAction,
-  ]);
-
   useEffect(() => () => clearScrollSettleTimer(), [clearScrollSettleTimer]);
-
-  const openShortcutManager = useCallback(() => {
-    setShowShortcutManager(true);
-  }, []);
-
-  const closeShortcutManager = useCallback(() => {
-    setShowShortcutManager(false);
-  }, []);
 
   const openSessionPicker = useCallback(() => {
     setShowSessionPicker(true);
@@ -750,91 +451,14 @@ export function useChatScreenController({
     setShowSessionPicker(false);
   }, []);
 
-  const openModelPicker = useCallback(() => {
-    setShowModelPicker(true);
-  }, []);
-
-  const closeModelPicker = useCallback(() => {
-    setShowModelPicker(false);
-  }, []);
-
-  const handleModelSelect = useCallback(
-    (selection: SharedModelSelection) => {
-      if (!conversationId || !activeAgentId) {
-        return;
-      }
-      ensureSession(conversationId, activeAgentId);
-      setSharedModelSelection(conversationId, activeAgentId, selection);
-      toast.success(
-        "Model updated",
-        `${selection.providerID} / ${selection.modelID}`,
-      );
-    },
-    [activeAgentId, conversationId, ensureSession, setSharedModelSelection],
-  );
-
-  const clearModelSelection = useCallback(() => {
-    if (!conversationId || !activeAgentId) {
-      return;
-    }
-    ensureSession(conversationId, activeAgentId);
-    setSharedModelSelection(conversationId, activeAgentId, null);
-    toast.success("Model updated", "Using server default model.");
-  }, [activeAgentId, conversationId, ensureSession, setSharedModelSelection]);
-
-  const handleUseShortcut = useCallback(
-    (prompt: string) => {
-      setInput(prompt);
-      closeShortcutManager();
-      inputRef.current?.focus();
-    },
-    [closeShortcutManager],
-  );
-
-  const handleInputChange = useCallback(
-    (value: string) => {
-      setInput(value);
-      if (!value) {
-        setInputHeight(minInputHeight);
-      }
-    },
-    [minInputHeight],
-  );
-
-  const handleContentSizeChange = useCallback(
-    (height: number) => {
-      const nextHeight = Math.min(
-        maxInputHeight,
-        Math.max(minInputHeight, Math.ceil(height)),
-      );
-      setInputHeight((prev) => (prev === nextHeight ? prev : nextHeight));
-    },
-    [maxInputHeight, minInputHeight],
-  );
-
-  const handleKeyPress = useCallback(
-    (e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
-      const webEvent = e as WebTextInputKeyPressEvent;
-      if (
-        Platform.OS === "web" &&
-        webEvent.nativeEvent.key === "Enter" &&
-        !webEvent.nativeEvent.shiftKey &&
-        !webEvent.nativeEvent.isComposing
-      ) {
-        webEvent.preventDefault?.();
-        handleSend();
-      }
-    },
-    [handleSend],
-  );
-
   const handleRetry = useCallback(() => {
     if (
       !conversationId ||
       !activeAgentId ||
       session?.streamState === "streaming"
-    )
+    ) {
       return;
+    }
     const runRetry = async () => {
       try {
         if (session?.streamState === "recoverable") {
@@ -865,77 +489,6 @@ export function useChatScreenController({
     resumeMessage,
     session?.streamState,
   ]);
-
-  const handleLoadBlockContent = useCallback(
-    async (messageId: string, blockId: string): Promise<boolean> => {
-      if (!conversationId) {
-        return false;
-      }
-      const resolvedMessageId = messageId.trim();
-      const resolvedBlockId = blockId.trim();
-      if (!resolvedMessageId || !resolvedBlockId) {
-        return false;
-      }
-
-      const latestMessage = getConversationMessages(conversationId).find(
-        (item) => item.id === resolvedMessageId,
-      );
-      const latestBlock = latestMessage?.blocks?.find(
-        (item) => item.id === resolvedBlockId,
-      );
-      if (latestBlock && latestBlock.content.length > 0) {
-        return true;
-      }
-
-      const inFlightKey = `${conversationId}:${resolvedBlockId}`;
-      if (blockDetailInFlightRef.current.has(inFlightKey)) {
-        return false;
-      }
-      blockDetailInFlightRef.current.add(inFlightKey);
-
-      try {
-        const response = await querySessionMessageBlocks(conversationId, {
-          blockIds: [resolvedBlockId],
-        });
-        const blockDetail = response.items.find(
-          (item) => item.id.trim() === resolvedBlockId,
-        );
-        if (!blockDetail) {
-          toast.error("Load block failed", "Block content unavailable.");
-          return false;
-        }
-        const detailMessageId =
-          typeof blockDetail.messageId === "string"
-            ? blockDetail.messageId.trim()
-            : "";
-        if (!detailMessageId || detailMessageId !== resolvedMessageId) {
-          toast.error("Load block failed", "Block ownership mismatch.");
-          return false;
-        }
-
-        updateConversationMessageWithUpdater(
-          conversationId,
-          resolvedMessageId,
-          (message) =>
-            applyLoadedBlockDetail(message, {
-              blockId: resolvedBlockId,
-              type: blockDetail.type,
-              content: blockDetail.content,
-              isFinished: blockDetail.isFinished,
-            }),
-        );
-        return true;
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Load block failed.";
-        toast.error("Load block failed", message);
-        return false;
-      } finally {
-        blockDetailInFlightRef.current.delete(inFlightKey);
-      }
-    },
-    [conversationId],
-  );
 
   const toggleDetails = useCallback(() => {
     setShowDetails((current) => !current);
