@@ -1,6 +1,5 @@
 import type { A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
 import {
-  ApiRequestError,
   isAuthorizationFailureError,
   isAuthFailureError,
 } from "@/lib/api/client";
@@ -25,19 +24,6 @@ const extractStructuredErrorCode = (error: unknown): string | null => {
 
   const record = error as Record<string, unknown>;
   return normalizeErrorCode(record.errorCode ?? record.error_code);
-};
-
-export const isSessionNotFoundCancellationError = (error: unknown): boolean => {
-  if (!(error instanceof ApiRequestError)) {
-    return false;
-  }
-  if (error.errorCode === "session_not_found") {
-    return true;
-  }
-  if (error.status !== 404) {
-    return false;
-  }
-  return error.message.includes("session_not_found");
 };
 
 type SseTransportParams = {

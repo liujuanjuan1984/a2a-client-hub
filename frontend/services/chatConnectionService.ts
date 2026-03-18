@@ -6,15 +6,13 @@ import {
   type SessionCancelResult,
   cancelSession as cancelSessionApi,
 } from "@/lib/api/sessions";
+import { isSessionNotFoundCancellationError } from "@/services/chatConnectionCancellation";
 import {
   type TransportParams,
   type WsConnection,
 } from "@/services/chatTransportCommon";
 import { ChatTransportHealth } from "@/services/chatTransportHealth";
-import {
-  isSessionNotFoundCancellationError,
-  trySseTransport,
-} from "@/services/chatTransportSse";
+import { trySseTransport } from "@/services/chatTransportSse";
 import { tryWebSocketTransport } from "@/services/chatTransportWs";
 
 class ChatConnectionService {
