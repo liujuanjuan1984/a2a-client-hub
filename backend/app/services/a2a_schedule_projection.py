@@ -53,7 +53,7 @@ class A2AScheduleProjectionService:
             stmt = stmt.with_for_update(nowait=True)
         return await db.scalar(stmt)
 
-    async def set_task_running_projection(
+    async def set_task_status_projection(
         self,
         db: AsyncSession,
         *,
@@ -80,7 +80,39 @@ class A2AScheduleProjectionService:
         )
         return task
 
-    async def set_tasks_running_projection(
+    async def list_tasks_with_status_summary(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        page: int,
+        size: int,
+    ) -> tuple[list[A2AScheduleTask], int]:
+        offset = (page - 1) * size
+        stmt = (
+            select(A2AScheduleTask)
+            .where(
+                A2AScheduleTask.user_id == user_id,
+                A2AScheduleTask.deleted_at.is_(None),
+                A2AScheduleTask.delete_requested_at.is_(None),
+            )
+            .order_by(A2AScheduleTask.created_at.desc())
+            .offset(offset)
+            .limit(size)
+        )
+        rows = await db.execute(stmt)
+        items = list(rows.scalars().all())
+        await self.attach_tasks_status_projection(db, tasks=items)
+
+        count_stmt = select(func.count(A2AScheduleTask.id)).where(
+            A2AScheduleTask.user_id == user_id,
+            A2AScheduleTask.deleted_at.is_(None),
+            A2AScheduleTask.delete_requested_at.is_(None),
+        )
+        total = int(await db.scalar(count_stmt) or 0)
+        return items, total
+
+    async def attach_tasks_status_projection(
         self,
         db: AsyncSession,
         *,
