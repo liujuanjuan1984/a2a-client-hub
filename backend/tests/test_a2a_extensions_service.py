@@ -293,7 +293,14 @@ async def test_continue_session_returns_canonical_binding_metadata(
     )
 
     async def _fake_resolve(_runtime):
-        return ext, "https://example.com/jsonrpc"
+        return (
+            ext,
+            "https://example.com/jsonrpc",
+            {
+                "session_query_contract_mode": "canonical",
+                "session_query_selection_mode": "canonical_parser",
+            },
+        )
 
     async def _fake_invoke(**kwargs):
         assert kwargs["method_key"] == "get_session_messages"
@@ -353,7 +360,14 @@ async def test_continue_session_keeps_legacy_binding_metadata_in_fallback_mode(
     )
 
     async def _fake_resolve(_runtime):
-        return ext, "https://example.com/jsonrpc"
+        return (
+            ext,
+            "https://example.com/jsonrpc",
+            {
+                "session_query_contract_mode": "canonical",
+                "session_query_selection_mode": "canonical_parser",
+            },
+        )
 
     async def _fake_invoke(**kwargs):
         return ExtensionCallResult(success=True, result={"items": []}, meta={})
@@ -405,7 +419,14 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
     )
 
     async def _fake_resolve(_runtime):
-        return ext, "https://example.com/jsonrpc"
+        return (
+            ext,
+            "https://example.com/jsonrpc",
+            {
+                "session_query_contract_mode": "canonical",
+                "session_query_selection_mode": "canonical_parser",
+            },
+        )
 
     async def _never_invoke(**_kwargs):
         raise AssertionError("Upstream call should be short-circuited")
@@ -547,7 +568,14 @@ async def test_prompt_session_async_forwards_request_and_metadata(
     )
 
     async def _fake_resolve(_runtime):
-        return ext, "https://example.com/jsonrpc"
+        return (
+            ext,
+            "https://example.com/jsonrpc",
+            {
+                "session_query_contract_mode": "canonical",
+                "session_query_selection_mode": "canonical_parser",
+            },
+        )
 
     async def _fake_invoke(**kwargs):
         assert kwargs["method_key"] == "prompt_async"
@@ -609,7 +637,14 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     )
 
     async def _fake_resolve(_runtime):
-        return ext, "https://example.com/jsonrpc"
+        return (
+            ext,
+            "https://example.com/jsonrpc",
+            {
+                "session_query_contract_mode": "canonical",
+                "session_query_selection_mode": "canonical_parser",
+            },
+        )
 
     async def _unexpected_remote_call(**_kwargs):
         raise AssertionError("method should be short-circuited as unsupported")
@@ -624,7 +659,11 @@ async def test_prompt_session_async_returns_method_not_supported_if_missing(
     )
     assert result.success is False
     assert result.error_code == "method_not_supported"
-    assert result.meta == {"extension_uri": SHARED_SESSION_QUERY_URI}
+    assert result.meta == {
+        "extension_uri": SHARED_SESSION_QUERY_URI,
+        "session_query_contract_mode": "canonical",
+        "session_query_selection_mode": "canonical_parser",
+    }
 
 
 @pytest.mark.asyncio

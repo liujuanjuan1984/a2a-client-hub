@@ -50,6 +50,7 @@ class A2AExtensionsService:
 
     async def shutdown(self) -> None:
         await self._support.shutdown()
+        await self._session_extensions.shutdown()
         async with self._session_binding_cache_lock:
             self._session_binding_cache.clear()
 

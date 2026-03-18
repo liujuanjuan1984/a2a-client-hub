@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import time
+from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
 
 from pydantic import ValidationError
@@ -10,7 +13,10 @@ from app.integrations.a2a_extensions.errors import (
 )
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.session_binding import resolve_session_binding
-from app.integrations.a2a_extensions.session_query import resolve_session_query
+from app.integrations.a2a_extensions.session_query_runtime_selection import (
+    ResolvedSessionQueryRuntimeCapability,
+    resolve_runtime_session_query,
+)
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
@@ -22,11 +28,32 @@ from app.services.a2a_runtime import A2ARuntime
 from app.services.a2a_shared_metadata import merge_preferred_session_binding_metadata
 
 _MISSING = object()
+_SESSION_QUERY_CACHE_TTL_SECONDS = 300.0
+
+
+@dataclass(slots=True)
+class _SessionQueryCacheEntry:
+    capability: ResolvedSessionQueryRuntimeCapability
+    expires_at: float
 
 
 class SessionExtensionService:
     def __init__(self, support: A2AExtensionSupport) -> None:
         self._support = support
+        self._cache_lock = asyncio.Lock()
+        self._cache: dict[
+            tuple[str, tuple[tuple[str, str], ...]],
+            _SessionQueryCacheEntry,
+        ] = {}
+
+    async def shutdown(self) -> None:
+        async with self._cache_lock:
+            self._cache.clear()
+
+    @staticmethod
+    def _cache_key(runtime: A2ARuntime) -> tuple[str, tuple[tuple[str, str], ...]]:
+        resolved_headers = getattr(runtime.resolved, "headers", {}) or {}
+        return runtime.resolved.url, tuple(sorted(resolved_headers.items()))
 
     async def resolve_session_binding_capability(
         self,
@@ -250,6 +277,7 @@ class SessionExtensionService:
         ext: ResolvedExtension,
         page: int,
         size: int,
+        selection_meta: Optional[Dict[str, Any]] = None,
         meta_extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         meta = {
@@ -263,19 +291,47 @@ class SessionExtensionService:
             "max_size": ext.pagination.max_size,
             "default_size": ext.pagination.default_size,
         }
+        if selection_meta:
+            meta.update(selection_meta)
         if meta_extra:
             meta.update(meta_extra)
         return meta
 
     async def resolve_extension(
         self, runtime: A2ARuntime
-    ) -> tuple[ResolvedExtension, str]:
-        card = await self._support.fetch_card(runtime)
-        ext = resolve_session_query(card)
+    ) -> tuple[ResolvedExtension, str, Dict[str, Any]]:
+        cache_key = self._cache_key(runtime)
+        now = time.monotonic()
+
+        async with self._cache_lock:
+            cached = self._cache.get(cache_key)
+            capability = (
+                cached.capability
+                if cached is not None and cached.expires_at > now
+                else None
+            )
+
+        if capability is None:
+            card = await self._support.fetch_card(runtime)
+            capability = resolve_runtime_session_query(card)
+            async with self._cache_lock:
+                self._cache[cache_key] = _SessionQueryCacheEntry(
+                    capability=capability,
+                    expires_at=now + _SESSION_QUERY_CACHE_TTL_SECONDS,
+                )
+
+        ext = capability.ext
         jsonrpc_url = self._support.ensure_outbound_allowed(
             ext.jsonrpc.url, purpose="JSON-RPC interface URL"
         )
-        return ext, jsonrpc_url
+        return (
+            ext,
+            jsonrpc_url,
+            {
+                "session_query_contract_mode": capability.contract_mode,
+                "session_query_selection_mode": capability.selection_mode,
+            },
+        )
 
     async def invoke_method(
         self,
@@ -283,6 +339,7 @@ class SessionExtensionService:
         runtime: A2ARuntime,
         ext: ResolvedExtension,
         jsonrpc_url: str,
+        selection_meta: Optional[Dict[str, Any]],
         method_key: str,
         params: Dict[str, Any],
         page: int,
@@ -293,13 +350,16 @@ class SessionExtensionService:
     ) -> ExtensionCallResult:
         method_name = ext.methods.get(method_key)
         if not method_name:
+            meta = {"extension_uri": ext.uri}
+            if selection_meta:
+                meta.update(selection_meta)
             return ExtensionCallResult(
                 success=False,
                 error_code="method_not_supported",
                 upstream_error={
                     "message": f"Method {method_key} is not supported by upstream"
                 },
-                meta={"extension_uri": ext.uri},
+                meta=meta,
             )
 
         resp = await self._support.perform_jsonrpc_call(
@@ -313,6 +373,7 @@ class SessionExtensionService:
             ext=ext,
             page=page,
             size=size,
+            selection_meta=selection_meta,
             meta_extra=meta_extra,
         )
 
@@ -358,7 +419,7 @@ class SessionExtensionService:
         query: Optional[Dict[str, Any]],
         include_raw: bool = False,
     ) -> ExtensionCallResult:
-        ext, jsonrpc_url = await self.resolve_extension(runtime)
+        ext, jsonrpc_url, selection_meta = await self.resolve_extension(runtime)
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -383,6 +444,7 @@ class SessionExtensionService:
                     ext=ext,
                     page=resolved_page,
                     size=resolved_size,
+                    selection_meta=selection_meta,
                     meta_extra={"short_circuit_reason": "limit_without_offset"},
                 ),
             )
@@ -400,6 +462,7 @@ class SessionExtensionService:
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
+            selection_meta=selection_meta,
             method_key="list_sessions",
             params=params,
             page=resolved_page,
@@ -421,7 +484,7 @@ class SessionExtensionService:
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        ext, jsonrpc_url = await self.resolve_extension(runtime)
+        ext, jsonrpc_url, selection_meta = await self.resolve_extension(runtime)
 
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
@@ -446,6 +509,7 @@ class SessionExtensionService:
                     ext=ext,
                     page=resolved_page,
                     size=resolved_size,
+                    selection_meta=selection_meta,
                     meta_extra={
                         "session_id": resolved_session_id,
                         "short_circuit_reason": "limit_without_offset",
@@ -469,6 +533,7 @@ class SessionExtensionService:
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
+            selection_meta=selection_meta,
             method_key="get_session_messages",
             params=params,
             page=resolved_page,
@@ -487,12 +552,13 @@ class SessionExtensionService:
         if not resolved_session_id:
             raise ValueError("session_id is required")
 
-        ext, jsonrpc_url = await self.resolve_extension(runtime)
+        ext, jsonrpc_url, selection_meta = await self.resolve_extension(runtime)
 
         validation = await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
+            selection_meta=selection_meta,
             method_key="get_session_messages",
             params={
                 "session_id": resolved_session_id,
@@ -567,11 +633,12 @@ class SessionExtensionService:
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
 
-        ext, jsonrpc_url = await self.resolve_extension(runtime)
+        ext, jsonrpc_url, selection_meta = await self.resolve_extension(runtime)
         return await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
+            selection_meta=selection_meta,
             method_key="prompt_async",
             params=params,
             page=1,
