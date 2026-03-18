@@ -61,7 +61,7 @@ def extract_stream_text_from_parts(parts: Any) -> str:
     return "".join(collected)
 
 
-def _serialize_stream_data_value(value: Any) -> str | None:
+def serialize_stream_data_value(value: Any) -> str | None:
     if value is None:
         return None
     try:
@@ -88,7 +88,7 @@ def extract_stream_data_from_parts(parts: Any) -> str:
         )
         if normalized_kind != "data" and "data" not in part:
             continue
-        serialized = _serialize_stream_data_value(part.get("data"))
+        serialized = serialize_stream_data_value(part.get("data"))
         if serialized:
             collected.append(serialized)
     return "\n".join(collected)
