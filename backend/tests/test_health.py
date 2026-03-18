@@ -8,6 +8,9 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.main import app
 from app.services import health as health_service
+from app.services.ops_metrics import ops_metrics
+
+_REAL_CHECK_DATABASE = health_service._check_database
 
 
 @pytest.fixture(autouse=True)
@@ -79,3 +82,40 @@ def test_health_endpoint_database_failure_returns_503(
     assert response.status_code == 503
     data = response.json()
     assert data["status"] == "unhealthy"
+
+
+@pytest.mark.asyncio
+async def test_check_database_refreshes_db_pool_checked_out_metric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeSession:
+        async def execute(self, *_args: object, **_kwargs: object) -> object:
+            return object()
+
+    class _FakeSessionContext:
+        async def __aenter__(self) -> _FakeSession:
+            return _FakeSession()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    class _FakePool:
+        def checkedout(self) -> int:
+            return 2
+
+    ops_metrics.set_db_pool_checked_out(9)
+    monkeypatch.setattr(health_service, "AsyncSessionLocal", _FakeSessionContext)
+    monkeypatch.setattr(
+        health_service,
+        "async_engine",
+        type(
+            "_FakeEngineWrapper",
+            (),
+            {"sync_engine": type("_FakeSyncEngine", (), {"pool": _FakePool()})()},
+        )(),
+    )
+
+    result = await _REAL_CHECK_DATABASE()
+
+    assert result["status"] == "healthy"
+    assert ops_metrics.snapshot()["db_pool_checked_out"] == 2

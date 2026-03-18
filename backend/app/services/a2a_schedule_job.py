@@ -42,6 +42,7 @@ from app.services.a2a_schedule_service import (
 )
 from app.services.invoke_route_runner import run_background_invoke
 from app.services.ops_metrics import ops_metrics
+from app.services.ops_metrics_refresh import refresh_db_pool_checked_out
 from app.services.scheduler import get_scheduler
 from app.utils.async_cleanup import await_cancel_safe_suppressed
 from app.utils.session_identity import normalize_non_empty_text
@@ -317,6 +318,7 @@ async def _refresh_ops_metrics() -> None:
             except Exception:
                 # pg_stat_activity may be unavailable depending on DB permissions.
                 pass
+        refresh_db_pool_checked_out(async_engine.sync_engine.pool)
     except Exception as exc:
         if not _is_db_connectivity_issue(exc):
             raise

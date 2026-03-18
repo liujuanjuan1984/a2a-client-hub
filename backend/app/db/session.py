@@ -45,16 +45,6 @@ def _pool_checkin(*_args) -> None:
     ops_metrics.decrement_db_pool_checked_out()
 
 
-@event.listens_for(_pool, "close")
-def _pool_close(*_args) -> None:
-    ops_metrics.decrement_db_pool_checked_out()
-
-
-@event.listens_for(_pool, "invalidate")
-def _pool_invalidate(*_args) -> None:
-    ops_metrics.decrement_db_pool_checked_out()
-
-
 AsyncSessionLocal = async_sessionmaker(
     async_engine,
     expire_on_commit=False,
