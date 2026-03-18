@@ -34,6 +34,16 @@ class A2AAdapter(ABC):
         """Produce normalized or raw streaming payloads."""
 
     @abstractmethod
+    async def get_task(
+        self,
+        task_id: str,
+        *,
+        history_length: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        """Fetch a downstream task snapshot."""
+
+    @abstractmethod
     async def cancel_task(
         self,
         task_id: str,

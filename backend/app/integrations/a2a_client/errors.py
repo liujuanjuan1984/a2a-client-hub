@@ -26,9 +26,13 @@ class A2AUnsupportedBindingError(A2AAgentUnavailableError):
 class A2AUnsupportedOperationError(A2AAgentUnavailableError):
     """Raised when a peer does not implement an optional operation."""
 
+    error_code = "unsupported_operation"
+
 
 class A2AStreamingNotSupportedError(A2AUnsupportedOperationError):
     """Raised when the selected adapter cannot stream for this peer."""
+
+    error_code = "streaming_not_supported"
 
 
 class A2APeerProtocolError(A2AAgentUnavailableError):

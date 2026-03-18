@@ -17,7 +17,7 @@ from a2a.client import (
     Consumer,
 )
 from a2a.client.errors import A2AClientJSONRPCError
-from a2a.types import TaskIdParams, TransportProtocol
+from a2a.types import TaskIdParams, TaskQueryParams, TransportProtocol
 
 from app.integrations.a2a_client.adapters.base import A2AAdapter
 from app.integrations.a2a_client.errors import A2APeerProtocolError
@@ -127,6 +127,26 @@ class SDKA2AAdapter(A2AAdapter):
             try:
                 async for payload in client.send_message(build_a2a_message(request)):
                     yield payload
+            except A2AClientJSONRPCError as exc:
+                raise _map_protocol_error(exc) from exc
+
+    async def get_task(
+        self,
+        task_id: str,
+        *,
+        history_length: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        async with self._operation_usage(), self._transport_usage():
+            client = await self._get_client(streaming=False)
+            try:
+                return await client.get_task(
+                    TaskQueryParams(
+                        id=task_id,
+                        history_length=history_length,
+                        metadata=metadata,
+                    )
+                )
             except A2AClientJSONRPCError as exc:
                 raise _map_protocol_error(exc) from exc
 

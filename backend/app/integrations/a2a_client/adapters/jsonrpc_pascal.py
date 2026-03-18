@@ -28,6 +28,7 @@ JSONRPC_PASCAL_DIALECT = "jsonrpc_pascal"
 
 _METHOD_SEND_MESSAGE = "SendMessage"
 _METHOD_SEND_STREAMING_MESSAGE = "SendStreamingMessage"
+_METHOD_GET_TASK = "GetTask"
 _METHOD_CANCEL_TASK = "CancelTask"
 _FINAL_STATUS_STATES = {
     "completed",
@@ -84,6 +85,25 @@ class JsonRpcPascalAdapter(A2AAdapter):
         ):
             yield payload
 
+    async def get_task(
+        self,
+        task_id: str,
+        *,
+        history_length: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        params: dict[str, Any] = {"id": task_id}
+        if history_length is not None:
+            params["historyLength"] = history_length
+        if metadata:
+            params["metadata"] = metadata
+        try:
+            return await self._send_rpc(_METHOD_GET_TASK, params=params)
+        except A2APeerProtocolError as exc:
+            if exc.code == -32601:
+                raise A2AUnsupportedOperationError(str(exc)) from exc
+            raise
+
     async def cancel_task(
         self,
         task_id: str,
@@ -96,7 +116,7 @@ class JsonRpcPascalAdapter(A2AAdapter):
         try:
             return await self._send_rpc(_METHOD_CANCEL_TASK, params=params)
         except A2APeerProtocolError as exc:
-            if exc.rpc_code == -32601:
+            if exc.code == -32601:
                 raise A2AUnsupportedOperationError(str(exc)) from exc
             raise
 

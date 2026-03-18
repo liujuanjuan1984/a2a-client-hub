@@ -83,6 +83,30 @@ class A2AService:
             metadata=metadata,
         )
 
+    async def get_task(
+        self,
+        *,
+        resolved: ResolvedAgent,
+        task_id: str,
+        history_length: int | None = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        logger.info(
+            "Fetching task via A2A service",
+            extra={
+                "agent_name": resolved.name,
+                "agent_url": redact_url_for_logging(resolved.url),
+                "task_id": task_id,
+                "history_length": history_length,
+            },
+        )
+        return await self.gateway.get_task(
+            resolved=resolved,
+            task_id=task_id,
+            history_length=history_length,
+            metadata=metadata,
+        )
+
 
 _service_instance: Optional[A2AService] = None
 

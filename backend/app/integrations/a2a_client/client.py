@@ -44,6 +44,7 @@ from app.integrations.a2a_client.errors import (
     A2AOutboundNotAllowedError,
     A2APeerProtocolError,
     A2AUnsupportedBindingError,
+    A2AUnsupportedOperationError,
 )
 from app.integrations.a2a_client.http_clients import (
     SharedSDKTransportInvalidatedError,
@@ -358,6 +359,14 @@ class A2AClient:
                     "error": str(exc),
                     "error_code": getattr(exc, "error_code", "cancel_failed"),
                 }
+            except A2AUnsupportedOperationError as exc:
+                return {
+                    "success": False,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                    "error_code": getattr(exc, "error_code", "unsupported_operation"),
+                }
             except Exception as exc:  # noqa: BLE001
                 http_error = _unwrap_httpx_error(exc)
                 if http_error and _should_reset_http_error(http_error):
@@ -373,6 +382,96 @@ class A2AClient:
                     "task_id": normalized_task_id,
                     "error": str(exc),
                     "error_code": "cancel_failed",
+                }
+
+    async def get_task(
+        self,
+        task_id: str,
+        *,
+        history_length: int | None = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Fetch one upstream A2A task by task id."""
+
+        async with self._request_usage():
+            normalized_task_id = task_id.strip() if isinstance(task_id, str) else ""
+            if not normalized_task_id:
+                return {
+                    "success": False,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "error": "Task id is required.",
+                    "error_code": "invalid_task_id",
+                }
+
+            try:
+                task = await self._get_task_with_fallback(
+                    normalized_task_id,
+                    history_length=history_length,
+                    metadata=metadata,
+                )
+                logger.info(
+                    "Fetched A2A task %s for %s",
+                    normalized_task_id,
+                    redact_url_for_logging(self.agent_url),
+                )
+                return {
+                    "success": True,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "task": task,
+                }
+            except A2AClientHTTPError as exc:
+                status_code = getattr(exc, "status_code", None)
+                error_code = "task_query_failed"
+                if status_code == 404:
+                    error_code = "task_not_found"
+                elif status_code in {400, 405, 409, 501}:
+                    error_code = "unsupported_operation"
+                logger.warning(
+                    "Failed to fetch A2A task %s for %s",
+                    normalized_task_id,
+                    redact_url_for_logging(self.agent_url),
+                    extra={"status_code": status_code},
+                )
+                return {
+                    "success": False,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                    "error_code": error_code,
+                }
+            except A2APeerProtocolError as exc:
+                return {
+                    "success": False,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                    "error_code": getattr(exc, "error_code", "task_query_failed"),
+                }
+            except A2AUnsupportedOperationError as exc:
+                return {
+                    "success": False,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                    "error_code": getattr(exc, "error_code", "unsupported_operation"),
+                }
+            except Exception as exc:  # noqa: BLE001
+                http_error = _unwrap_httpx_error(exc)
+                if http_error and _should_reset_http_error(http_error):
+                    raise A2AClientResetRequiredError(str(http_error)) from exc
+                logger.exception(
+                    "Failed to fetch A2A task %s for %s",
+                    normalized_task_id,
+                    redact_url_for_logging(self.agent_url),
+                )
+                return {
+                    "success": False,
+                    "agent_url": self.agent_url,
+                    "task_id": normalized_task_id,
+                    "error": str(exc),
+                    "error_code": "task_query_failed",
                 }
 
     async def get_agent_card(self) -> AgentCard:
@@ -668,6 +767,21 @@ class A2AClient:
     ) -> Any:
         return await self._invoke_with_jsonrpc_fallback(
             callback=lambda adapter: adapter.cancel_task(task_id, metadata=metadata)
+        )
+
+    async def _get_task_with_fallback(
+        self,
+        task_id: str,
+        *,
+        history_length: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        return await self._invoke_with_jsonrpc_fallback(
+            callback=lambda adapter: adapter.get_task(
+                task_id,
+                history_length=history_length,
+                metadata=metadata,
+            )
         )
 
     async def _invoke_with_jsonrpc_fallback(self, *, callback) -> Any:
