@@ -1069,6 +1069,7 @@ class A2AInvokeService:
         self,
         *,
         gateway: Any,
+        client: Any | None = None,
         resolved: Any,
         query: str,
         context_id: str | None,
@@ -1094,6 +1095,7 @@ class A2AInvokeService:
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
         stream_iter = self._iter_stream_events_with_heartbeat(
             gateway.stream(
+                client=client,
                 resolved=resolved,
                 query=query,
                 context_id=context_id,

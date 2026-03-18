@@ -241,6 +241,7 @@ class A2AGateway:
         query: str,
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        client: Optional[A2AClient] = None,
     ):
         logger.info(
             "A2A stream",
@@ -251,8 +252,10 @@ class A2AGateway:
             },
         )
 
-        client = await self._get_client(resolved)
-        async for payload in client.stream_agent(
+        client_instance = (
+            client if client is not None else await self._get_client(resolved)
+        )
+        async for payload in client_instance.stream_agent(
             query,
             context_id=context_id,
             metadata=metadata,
@@ -542,6 +545,19 @@ class A2AGateway:
                 if card_fetch_timeout is None
                 else card_fetch_timeout
             ),
+        )
+
+    def create_temporary_client(
+        self,
+        *,
+        resolved: "ResolvedAgent",
+        card_fetch_timeout: float | None = None,
+    ) -> A2AClient:
+        """Build an uncached client for one-off preflight and invoke flows."""
+
+        return self._create_client(
+            resolved,
+            card_fetch_timeout=card_fetch_timeout,
         )
 
     async def shutdown(self) -> None:

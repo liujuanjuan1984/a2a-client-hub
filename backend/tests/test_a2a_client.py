@@ -575,6 +575,49 @@ async def test_gateway_fetch_agent_card_detail_invalidates_shared_client_on_rese
 
 
 @pytest.mark.asyncio
+async def test_gateway_stream_uses_supplied_client_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={},
+        name="TestAgent",
+    )
+
+    async def _stream_agent(query: str, *, context_id=None, metadata=None):
+        assert query == "hello"
+        assert context_id == "ctx-1"
+        assert metadata == {"origin": "schedule"}
+        yield {"kind": "message", "content": "ok"}
+
+    supplied_client = SimpleNamespace(stream_agent=_stream_agent)
+    get_client_mock = AsyncMock(
+        side_effect=AssertionError("shared client not expected")
+    )
+    monkeypatch.setattr(gateway, "_get_client", get_client_mock)
+
+    payloads = []
+    async for payload in gateway.stream(
+        resolved=resolved,
+        query="hello",
+        context_id="ctx-1",
+        metadata={"origin": "schedule"},
+        client=supplied_client,
+    ):
+        payloads.append(payload)
+
+    assert payloads == [{"kind": "message", "content": "ok"}]
+    get_client_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_gateway_maintenance_loop_runs_cleanup() -> None:
     gateway = gateway_module.A2AGateway(
         A2ASettings(

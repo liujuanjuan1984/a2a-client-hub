@@ -28,7 +28,9 @@ from app.db.transaction import commit_safely, rollback_safely
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services.a2a_runtime import a2a_runtime_builder
-from app.services.a2a_schedule_preflight import run_schedule_agent_card_preflight
+from app.services.a2a_schedule_preflight import (
+    open_schedule_agent_card_preflight_snapshot,
+)
 from app.services.a2a_schedule_runtime_summary import (
     derive_schedule_recovery_timeouts,
 )
@@ -432,54 +434,55 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             if not bool(getattr(runtime.agent, "enabled", True)):
                 raise RuntimeError("Target A2A agent is disabled")
             gateway = get_a2a_service().gateway
-            await run_schedule_agent_card_preflight(
+            async with open_schedule_agent_card_preflight_snapshot(
                 gateway=gateway,
                 runtime=runtime,
-            )
-            thread, is_new = await _ensure_task_session(
-                db=db,
-                task=task,
-            )
-            execution.conversation_id = thread.id
-            await commit_safely(db)
-            heartbeat_task = asyncio.create_task(
-                _schedule_run_heartbeat_loop(
-                    claim=claim,
-                    stop_event=heartbeat_stop_event,
-                )
-            )
-            invoke_payload = A2AAgentInvokeRequest(
-                query=task.prompt,
-                conversationId=str(thread.id),
-                metadata=metadata,
-            )
-            try:
-                invoke_result = await run_background_invoke(
+            ) as preflight_snapshot:
+                thread, is_new = await _ensure_task_session(
                     db=db,
-                    gateway=gateway,
-                    runtime=runtime,
-                    user_id=task.user_id,
-                    agent_id=task.agent_id,
-                    agent_source="personal",
-                    payload=invoke_payload,
-                    validate_message=lambda _payload: [],
-                    logger=logger,
-                    log_extra={
-                        "schedule_task_id": str(task.id),
-                        "schedule_execution_id": str(execution.id),
-                        "run_id": str(claim.run_id),
-                        "phase": "invoke",
-                        "agent_id": str(task.agent_id),
-                        "user_id": str(task.user_id),
-                    },
-                    total_timeout_seconds=settings.a2a_schedule_task_invoke_timeout,
-                    idle_timeout_seconds=settings.a2a_schedule_task_stream_idle_timeout,
+                    task=task,
                 )
-            finally:
-                heartbeat_stop_event.set()
-                if heartbeat_task is not None:
-                    with contextlib.suppress(Exception):
-                        await heartbeat_task
+                execution.conversation_id = thread.id
+                await commit_safely(db)
+                heartbeat_task = asyncio.create_task(
+                    _schedule_run_heartbeat_loop(
+                        claim=claim,
+                        stop_event=heartbeat_stop_event,
+                    )
+                )
+                invoke_payload = A2AAgentInvokeRequest(
+                    query=task.prompt,
+                    conversationId=str(thread.id),
+                    metadata=metadata,
+                )
+                try:
+                    invoke_result = await run_background_invoke(
+                        db=db,
+                        gateway=gateway,
+                        runtime=runtime,
+                        user_id=task.user_id,
+                        agent_id=task.agent_id,
+                        agent_source="personal",
+                        payload=invoke_payload,
+                        validate_message=lambda _payload: [],
+                        logger=logger,
+                        log_extra={
+                            "schedule_task_id": str(task.id),
+                            "schedule_execution_id": str(execution.id),
+                            "run_id": str(claim.run_id),
+                            "phase": "invoke",
+                            "agent_id": str(task.agent_id),
+                            "user_id": str(task.user_id),
+                        },
+                        total_timeout_seconds=settings.a2a_schedule_task_invoke_timeout,
+                        idle_timeout_seconds=settings.a2a_schedule_task_stream_idle_timeout,
+                        client=preflight_snapshot.client,
+                    )
+                finally:
+                    heartbeat_stop_event.set()
+                    if heartbeat_task is not None:
+                        with contextlib.suppress(Exception):
+                            await heartbeat_task
             success = bool(invoke_result.get("success"))
             response_content = str(invoke_result.get("response_content") or "")
             message_refs = invoke_result.get("message_refs") or {}
