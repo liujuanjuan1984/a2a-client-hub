@@ -384,23 +384,24 @@ export function ScheduledJobCard({
                     execution.scheduled_for,
                     timeZone,
                   );
-                  const startedAt = formatLocalDateTime(
-                    execution.started_at,
-                    timeZone,
-                  );
-                  const finishedAt = formatLocalDateTime(
-                    execution.finished_at,
-                    timeZone,
-                  );
-                  const lastHeartbeatAt = formatLocalDateTime(
+                  const hasStartedAt = Boolean(execution.started_at);
+                  const startedAt = hasStartedAt
+                    ? formatLocalDateTime(execution.started_at, timeZone)
+                    : null;
+                  const hasFinishedAt = Boolean(execution.finished_at);
+                  const finishedAt = hasFinishedAt
+                    ? formatLocalDateTime(execution.finished_at, timeZone)
+                    : null;
+                  const hasLastHeartbeatAt = Boolean(
                     execution.last_heartbeat_at,
-                    timeZone,
                   );
+                  const lastHeartbeatAt = hasLastHeartbeatAt
+                    ? formatLocalDateTime(execution.last_heartbeat_at, timeZone)
+                    : null;
                   const duration = formatDurationBetween(
                     execution.started_at,
                     execution.finished_at,
                   );
-                  const hasFinishedAt = Boolean(execution.finished_at);
 
                   return (
                     <View
