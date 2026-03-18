@@ -21,6 +21,7 @@ from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely as real_commit_safely
 from app.services.a2a_schedule_job import (
+    _derive_recovery_timeouts,
     _execute_claimed_task,
     _refresh_ops_metrics,
     _schedule_run_heartbeat_loop,
@@ -1974,6 +1975,28 @@ async def test_dispatch_due_a2a_schedules_reraises_non_connectivity_errors(
         await dispatch_due_a2a_schedules(batch_size=1)
 
 
+async def test_derive_recovery_timeouts_clamps_heartbeat_stale_to_invoke_timeout(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "a2a_schedule_task_invoke_timeout",
+        45.0,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        settings,
+        "a2a_schedule_run_heartbeat_interval_seconds",
+        20.0,
+        raising=False,
+    )
+
+    heartbeat_timeout_seconds, hard_timeout_seconds = _derive_recovery_timeouts()
+
+    assert heartbeat_timeout_seconds == 45
+    assert hard_timeout_seconds == 45
+
+
 async def test_dispatch_due_a2a_schedules_passes_heartbeat_and_hard_timeout(
     async_db_session,  # noqa: ARG001
     monkeypatch,
@@ -2018,6 +2041,54 @@ async def test_dispatch_due_a2a_schedules_passes_heartbeat_and_hard_timeout(
     call_kwargs = recover_mock.await_args.kwargs
     assert call_kwargs["timeout_seconds"] == 60
     assert call_kwargs["hard_timeout_seconds"] == 200
+    assert ensure_workers_mock.await_count == 1
+    assert refresh_metrics_mock.await_count == 1
+
+
+async def test_dispatch_due_a2a_schedules_clamps_stale_timeout_to_invoke_timeout(
+    async_db_session,  # noqa: ARG001
+    monkeypatch,
+) -> None:
+    ensure_workers_mock = AsyncMock()
+    refresh_metrics_mock = AsyncMock()
+    recover_mock = AsyncMock(return_value=0)
+    enqueue_mock = AsyncMock(return_value=0)
+
+    monkeypatch.setattr(
+        settings,
+        "a2a_schedule_task_invoke_timeout",
+        45.0,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        settings,
+        "a2a_schedule_run_heartbeat_interval_seconds",
+        20.0,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        ensure_workers_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        refresh_metrics_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        recover_mock,
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        enqueue_mock,
+    )
+
+    await dispatch_due_a2a_schedules(batch_size=1)
+
+    assert recover_mock.await_count == 1
+    call_kwargs = recover_mock.await_args.kwargs
+    assert call_kwargs["timeout_seconds"] == 45
+    assert call_kwargs["hard_timeout_seconds"] == 45
     assert ensure_workers_mock.await_count == 1
     assert refresh_metrics_mock.await_count == 1
 
