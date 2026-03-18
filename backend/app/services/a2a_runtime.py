@@ -53,9 +53,7 @@ class A2ARuntimeBuilder:
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
         credential = None
         if agent.auth_type == "bearer":
-            credential = await self._get_credential(
-                db, user_id=user_id, agent_id=agent.id
-            )
+            credential = await self._get_credential(db, agent_id=agent.id)
         return self.build_from_agent(agent=agent, credential=credential)
 
     def build_from_agent(
@@ -116,7 +114,7 @@ class A2ARuntimeBuilder:
         return agent
 
     async def _get_credential(
-        self, db: AsyncSession, *, user_id: UUID, agent_id: UUID
+        self, db: AsyncSession, *, agent_id: UUID
     ) -> Optional[A2AAgentCredential]:
         stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
         return await db.scalar(stmt)

@@ -230,7 +230,7 @@ class OpencodeSessionDirectoryService:
             credentials_by_agent_id = await self._load_credentials_by_agent_id(
                 db, agents=agents_to_refresh
             )
-            runtime_targets: list[tuple[_AgentRef, Any]] = []
+            runtime_targets: list[tuple[_AgentRef, _DirectoryRuntime]] = []
             for agent in agents_to_refresh:
                 try:
                     runtime = self._build_runtime_from_prefetched(
@@ -254,7 +254,7 @@ class OpencodeSessionDirectoryService:
             concurrency = max(1, int(settings.opencode_sessions_refresh_concurrency))
             sem = asyncio.Semaphore(concurrency)
 
-            async def _fetch_one(agent: _AgentRef, runtime: Any):
+            async def _fetch_one(agent: _AgentRef, runtime: _DirectoryRuntime):
                 async with sem:
                     try:
                         result = await get_a2a_extensions_service().list_sessions(
@@ -536,7 +536,7 @@ class OpencodeSessionDirectoryService:
         *,
         agent: _AgentRef,
         credential: A2AAgentCredential | None,
-    ) -> Any:
+    ) -> _DirectoryRuntime:
         if agent.agent_source == "shared":
             resolved, _ = hub_a2a_runtime_builder.resolve_prefetched(
                 name=agent.agent_name,
