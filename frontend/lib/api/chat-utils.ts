@@ -187,7 +187,9 @@ const sortSerializableValue = (value: unknown): unknown => {
   return value;
 };
 
-const serializeDataPartValue = (value: unknown): string | null => {
+export const serializeStructuredStreamData = (
+  value: unknown,
+): string | null => {
   if (value === undefined || value === null) {
     return null;
   }
@@ -215,7 +217,7 @@ const extractDataFromParts = (parts: unknown[]) =>
       if (normalizedKind !== "data" && !("data" in typed)) {
         return null;
       }
-      return serializeDataPartValue(typed.data);
+      return serializeStructuredStreamData(typed.data);
     })
     .filter((item): item is string => Boolean(item))
     .join("\n");

@@ -1,0 +1,53 @@
+[
+  {
+    "name": "sorts_nested_object_keys_and_keeps_array_order",
+    "value": {
+      "tool": "read",
+      "status": "pending",
+      "input": {
+        "path": "/repo/file.txt",
+        "options": {
+          "follow_symlinks": false,
+          "encoding": "utf-8"
+        }
+      },
+      "args": [
+        {
+          "z": 2,
+          "a": 1
+        },
+        "keep-order"
+      ]
+    },
+    "expected": "{\"args\":[{\"a\":1,\"z\":2},\"keep-order\"],\"input\":{\"options\":{\"encoding\":\"utf-8\",\"follow_symlinks\":false},\"path\":\"/repo/file.txt\"},\"status\":\"pending\",\"tool\":\"read\"}"
+  },
+  {
+    "name": "preserves_unicode_and_compact_json",
+    "value": {
+      "message": "你好",
+      "emoji": "🙂",
+      "count": 2
+    },
+    "expected": "{\"count\":2,\"emoji\":\"🙂\",\"message\":\"你好\"}"
+  },
+  {
+    "name": "keeps_primitive_values",
+    "value": "plain-text",
+    "expected": "\"plain-text\""
+  },
+  {
+    "name": "keeps_boolean_values",
+    "value": true,
+    "expected": "true"
+  },
+  {
+    "name": "keeps_numeric_values",
+    "value": 7,
+    "expected": "7"
+  },
+  {
+    "name": "returns_null_for_null_values",
+    "value": null,
+    "expected": null
+  }
+]
