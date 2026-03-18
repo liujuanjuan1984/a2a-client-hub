@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from app.integrations.a2a_extensions.interrupt_callback import (
-    resolve_interrupt_callback,
-)
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import ResolvedInterruptCallbackExtension
@@ -15,15 +12,46 @@ class InterruptExtensionService:
     def __init__(self, support: A2AExtensionSupport) -> None:
         self._support = support
 
-    async def resolve_extension(
-        self, runtime: A2ARuntime
-    ) -> tuple[ResolvedInterruptCallbackExtension, str]:
-        card = await self._support.fetch_card(runtime)
-        ext = resolve_interrupt_callback(card)
-        jsonrpc_url = self._support.ensure_outbound_allowed(
-            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
-        )
-        return ext, jsonrpc_url
+    def prepare_reply_permission_interrupt(
+        self,
+        *,
+        request_id: str,
+        reply: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, str, Optional[Dict[str, Any]]]:
+        resolved_request_id = (request_id or "").strip()
+        if not resolved_request_id:
+            raise ValueError("request_id is required")
+        resolved_reply = (reply or "").strip().lower()
+        if resolved_reply not in {"once", "always", "reject"}:
+            raise ValueError("reply must be one of: once, always, reject")
+        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        return resolved_request_id, resolved_reply, normalized_metadata
+
+    def prepare_reply_question_interrupt(
+        self,
+        *,
+        request_id: str,
+        answers: list[list[str]],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, list[list[str]], Optional[Dict[str, Any]]]:
+        resolved_request_id = (request_id or "").strip()
+        if not resolved_request_id:
+            raise ValueError("request_id is required")
+        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        return resolved_request_id, answers, normalized_metadata
+
+    def prepare_reject_question_interrupt(
+        self,
+        *,
+        request_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, Optional[Dict[str, Any]]]:
+        resolved_request_id = (request_id or "").strip()
+        if not resolved_request_id:
+            raise ValueError("request_id is required")
+        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        return resolved_request_id, normalized_metadata
 
     async def invoke_method(
         self,
@@ -83,19 +111,22 @@ class InterruptExtensionService:
         self,
         *,
         runtime: A2ARuntime,
+        ext: ResolvedInterruptCallbackExtension,
+        jsonrpc_url: str,
         request_id: str,
         reply: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        resolved_request_id = (request_id or "").strip()
-        if not resolved_request_id:
-            raise ValueError("request_id is required")
-        resolved_reply = (reply or "").strip().lower()
-        if resolved_reply not in {"once", "always", "reject"}:
-            raise ValueError("reply must be one of: once, always, reject")
-        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        (
+            resolved_request_id,
+            resolved_reply,
+            normalized_metadata,
+        ) = self.prepare_reply_permission_interrupt(
+            request_id=request_id,
+            reply=reply,
+            metadata=metadata,
+        )
 
-        ext, jsonrpc_url = await self.resolve_extension(runtime)
         params: Dict[str, Any] = {
             "request_id": resolved_request_id,
             "reply": resolved_reply,
@@ -115,19 +146,25 @@ class InterruptExtensionService:
         self,
         *,
         runtime: A2ARuntime,
+        ext: ResolvedInterruptCallbackExtension,
+        jsonrpc_url: str,
         request_id: str,
         answers: list[list[str]],
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        resolved_request_id = (request_id or "").strip()
-        if not resolved_request_id:
-            raise ValueError("request_id is required")
-        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        (
+            resolved_request_id,
+            resolved_answers,
+            normalized_metadata,
+        ) = self.prepare_reply_question_interrupt(
+            request_id=request_id,
+            answers=answers,
+            metadata=metadata,
+        )
 
-        ext, jsonrpc_url = await self.resolve_extension(runtime)
         params: Dict[str, Any] = {
             "request_id": resolved_request_id,
-            "answers": answers,
+            "answers": resolved_answers,
         }
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata
@@ -144,15 +181,19 @@ class InterruptExtensionService:
         self,
         *,
         runtime: A2ARuntime,
+        ext: ResolvedInterruptCallbackExtension,
+        jsonrpc_url: str,
         request_id: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ExtensionCallResult:
-        resolved_request_id = (request_id or "").strip()
-        if not resolved_request_id:
-            raise ValueError("request_id is required")
-        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        (
+            resolved_request_id,
+            normalized_metadata,
+        ) = self.prepare_reject_question_interrupt(
+            request_id=request_id,
+            metadata=metadata,
+        )
 
-        ext, jsonrpc_url = await self.resolve_extension(runtime)
         params: Dict[str, Any] = {"request_id": resolved_request_id}
         if normalized_metadata is not None:
             params["metadata"] = normalized_metadata

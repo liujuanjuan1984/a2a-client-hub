@@ -98,19 +98,16 @@ async def test_list_model_providers_extracts_provider_private_metadata() -> None
         business_code_map={},
     )
 
-    async def fake_resolve_extension(_runtime):
-        assert _runtime is runtime
-        return ext, ext.jsonrpc.url
-
     async def fake_invoke_method(**kwargs):
         captured.update(kwargs)
         return {"ok": True}
 
-    service.resolve_extension = fake_resolve_extension  # type: ignore[method-assign]
     service.invoke_method = fake_invoke_method  # type: ignore[method-assign]
 
     result = await service.list_model_providers(
         runtime=runtime,
+        ext=ext,
+        jsonrpc_url=ext.jsonrpc.url,
         session_metadata={
             "shared": {"model": {"providerID": "openai", "modelID": "gpt-5"}},
             "opencode": {"directory": "/workspace"},
@@ -138,19 +135,16 @@ async def test_list_models_omits_provider_private_metadata_when_unavailable() ->
         business_code_map={},
     )
 
-    async def fake_resolve_extension(_runtime):
-        assert _runtime is runtime
-        return ext, ext.jsonrpc.url
-
     async def fake_invoke_method(**kwargs):
         captured.update(kwargs)
         return {"ok": True}
 
-    service.resolve_extension = fake_resolve_extension  # type: ignore[method-assign]
     service.invoke_method = fake_invoke_method  # type: ignore[method-assign]
 
     result = await service.list_models(
         runtime=runtime,
+        ext=ext,
+        jsonrpc_url=ext.jsonrpc.url,
         provider_id="openai",
         session_metadata={
             "shared": {"model": {"providerID": "openai", "modelID": "gpt-5"}}

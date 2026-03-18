@@ -19,8 +19,8 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    LEGACY_SHARED_SESSION_QUERY_URI,
     SHARED_SESSION_QUERY_URI,
-    SUPPORTED_SESSION_QUERY_URIS,
 )
 from app.integrations.a2a_extensions.types import (
     PageSizePagination,
@@ -125,21 +125,44 @@ def _resolve_result_envelope(value: Any) -> Optional[ResultEnvelopeMapping]:
     )
 
 
-def resolve_session_query(card: AgentCard) -> ResolvedExtension:
-    """Resolve the shared session query extension from an Agent Card."""
-
+def _find_session_query_extension(
+    card: AgentCard,
+    *,
+    allow_legacy_uri: bool,
+) -> Any:
     capabilities = getattr(card, "capabilities", None)
     extensions = getattr(capabilities, "extensions", None) if capabilities else None
     if not extensions:
         raise A2AExtensionNotSupportedError("Agent does not declare any extensions")
 
-    ext = None
     for candidate in extensions:
-        if getattr(candidate, "uri", None) in SUPPORTED_SESSION_QUERY_URIS:
-            ext = candidate
-            break
-    if ext is None:
-        raise A2AExtensionNotSupportedError("Shared session query extension not found")
+        uri = getattr(candidate, "uri", None)
+        if uri == SHARED_SESSION_QUERY_URI:
+            return candidate
+        if allow_legacy_uri and uri == LEGACY_SHARED_SESSION_QUERY_URI:
+            return candidate
+    raise A2AExtensionNotSupportedError("Shared session query extension not found")
+
+
+def _uses_legacy_limit_fields(pagination: Dict[str, Any]) -> bool:
+    return bool(
+        pagination.get("mode") == "limit"
+        and (
+            "default_size" in pagination
+            or "max_size" in pagination
+            or "page" in pagination.get("params", [])
+        )
+    )
+
+
+def _resolve_extension(
+    card: AgentCard,
+    *,
+    allow_legacy_uri: bool,
+    allow_legacy_limit_fields: bool,
+    variant: str,
+) -> ResolvedExtension:
+    ext = _find_session_query_extension(card, allow_legacy_uri=allow_legacy_uri)
 
     required = bool(getattr(ext, "required", False))
     params: Dict[str, Any] = as_dict(getattr(ext, "params", None))
@@ -164,6 +187,21 @@ def resolve_session_query(card: AgentCard) -> ResolvedExtension:
 
     pagination = as_dict(params.get("pagination"))
     mode = require_str(pagination.get("mode"), field="pagination.mode")
+    uses_legacy_limit_fields = _uses_legacy_limit_fields(pagination)
+    is_legacy_variant = (
+        getattr(ext, "uri", None) == LEGACY_SHARED_SESSION_QUERY_URI
+        or uses_legacy_limit_fields
+    )
+
+    if variant == "legacy" and not is_legacy_variant:
+        raise A2AExtensionNotSupportedError(
+            "Shared session query legacy variant not found"
+        )
+    if variant == "canonical" and is_legacy_variant:
+        raise A2AExtensionContractError(
+            "Shared session query legacy variants must use the explicit legacy resolver"
+        )
+
     if mode == "page_size":
         default_size = _resolve_pagination_size(
             pagination,
@@ -180,13 +218,13 @@ def resolve_session_query(card: AgentCard) -> ResolvedExtension:
             pagination,
             mode=mode,
             field="default_limit",
-            legacy_field="default_size",
+            legacy_field="default_size" if allow_legacy_limit_fields else None,
         )
         max_size = _resolve_pagination_size(
             pagination,
             mode=mode,
             field="max_limit",
-            legacy_field="max_size",
+            legacy_field="max_size" if allow_legacy_limit_fields else None,
         )
     else:
         raise A2AExtensionContractError(
@@ -223,4 +261,41 @@ def resolve_session_query(card: AgentCard) -> ResolvedExtension:
     )
 
 
-__all__ = ["resolve_session_query"]
+def resolve_session_query(card: AgentCard) -> ResolvedExtension:
+    """Resolve the shared session query extension from an Agent Card."""
+
+    return _resolve_extension(
+        card,
+        allow_legacy_uri=True,
+        allow_legacy_limit_fields=True,
+        variant="generic",
+    )
+
+
+def resolve_canonical_session_query(card: AgentCard) -> ResolvedExtension:
+    """Resolve the canonical shared session query contract only."""
+
+    return _resolve_extension(
+        card,
+        allow_legacy_uri=False,
+        allow_legacy_limit_fields=False,
+        variant="canonical",
+    )
+
+
+def resolve_legacy_session_query(card: AgentCard) -> ResolvedExtension:
+    """Resolve a legacy shared session query variant explicitly."""
+
+    return _resolve_extension(
+        card,
+        allow_legacy_uri=True,
+        allow_legacy_limit_fields=True,
+        variant="legacy",
+    )
+
+
+__all__ = [
+    "resolve_canonical_session_query",
+    "resolve_legacy_session_query",
+    "resolve_session_query",
+]

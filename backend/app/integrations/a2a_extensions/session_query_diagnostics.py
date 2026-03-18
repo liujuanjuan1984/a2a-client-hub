@@ -8,7 +8,10 @@ from a2a.types import AgentCard
 
 from app.integrations.a2a_extensions.contract_utils import as_dict
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
-from app.integrations.a2a_extensions.session_query import resolve_session_query
+from app.integrations.a2a_extensions.session_query import (
+    resolve_canonical_session_query,
+    resolve_legacy_session_query,
+)
 from app.integrations.a2a_extensions.shared_contract import (
     LEGACY_SHARED_SESSION_QUERY_URI,
     SUPPORTED_SESSION_QUERY_URIS,
@@ -64,7 +67,12 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
     )
 
     try:
-        resolved = resolve_session_query(card)
+        resolver = (
+            resolve_legacy_session_query
+            if uses_legacy_uri or uses_legacy_contract_fields
+            else resolve_canonical_session_query
+        )
+        resolved = resolver(card)
     except A2AExtensionContractError as exc:
         return SharedSessionQueryDiagnostic(
             declared=True,
