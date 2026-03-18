@@ -9,11 +9,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.logging import get_logger
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, async_engine
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.metrics import a2a_metrics
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
 from app.services.ops_metrics import ops_metrics
+from app.services.ops_metrics_refresh import refresh_db_pool_checked_out
 from app.utils.timezone_util import utc_now_iso
 
 HealthStatus = Literal["healthy", "degraded", "unhealthy"]
@@ -48,6 +49,7 @@ async def _check_database() -> Dict[str, Any]:
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
+        refresh_db_pool_checked_out(async_engine.sync_engine.pool)
         return _format_result(
             "database",
             "healthy",

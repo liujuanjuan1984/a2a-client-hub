@@ -5,7 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -2378,3 +2378,43 @@ async def test_refresh_ops_metrics_skips_when_db_connection_refused(
         "Skip schedule ops metrics refresh due to database connectivity issue."
         in caplog.text
     )
+
+
+async def test_refresh_ops_metrics_refreshes_db_pool_checked_out(
+    monkeypatch,
+) -> None:
+    class _HealthySession:
+        async def scalar(self, statement):
+            statement_sql = str(statement)
+            if "pg_stat_activity" in statement_sql:
+                return 1
+            return 2
+
+    class _HealthySessionContext:
+        async def __aenter__(self):
+            return _HealthySession()
+
+        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+            return False
+
+    fake_pool = object()
+    refresh_mock = Mock()
+
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.AsyncSessionLocal",
+        lambda: _HealthySessionContext(),
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.async_engine",
+        SimpleNamespace(sync_engine=SimpleNamespace(pool=fake_pool)),
+    )
+    monkeypatch.setattr(
+        "app.services.a2a_schedule_job.refresh_db_pool_checked_out",
+        refresh_mock,
+    )
+
+    await _refresh_ops_metrics()
+
+    assert ops_metrics.snapshot()["schedule_running_task_count"] == 2
+    assert ops_metrics.snapshot()["db_idle_in_tx_count"] == 1
+    refresh_mock.assert_called_once_with(fake_pool)
