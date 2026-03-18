@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID
@@ -20,58 +18,78 @@ from app.db.locking import (
     RetryableDbLockError,
     RetryableDbQueryTimeoutError,
 )
-from app.db.models.agent_message import AgentMessage
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
 from app.integrations.a2a_extensions import get_a2a_extensions_service
-from app.integrations.a2a_extensions.errors import (
-    A2AExtensionContractError,
-    A2AExtensionNotSupportedError,
-    A2AExtensionUpstreamError,
-)
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
     A2AAgentInvokeResponse,
-    A2AAgentInvokeSessionBinding,
 )
 from app.schemas.ws_ticket import WsTicketResponse
+from app.services import invoke_guard as invoke_guard_module
 from app.services.a2a_invoke_service import StreamOutcome, a2a_invoke_service
-from app.services.a2a_shared_metadata import (
-    apply_invoke_session_binding_metadata,
-    strip_session_binding_metadata,
+from app.services.invoke_guard import build_invoke_guard_key as _build_invoke_guard_key
+from app.services.invoke_guard import guard_inflight_invoke as _guard_inflight_invoke
+from app.services.invoke_guard import release_invoke_guard as _release_invoke_guard_impl
+from app.services.invoke_guard import (
+    try_acquire_invoke_guard as _try_acquire_invoke_guard_impl,
+)
+from app.services.invoke_recovery import (
+    build_rebound_invoke_payload as _build_rebound_invoke_payload,
+)
+from app.services.invoke_recovery import (
+    finalize_outbound_invoke_payload as _finalize_outbound_invoke_payload_impl,
+)
+from app.services.invoke_recovery import (
+    resolve_session_binding_outbound_mode as _resolve_session_binding_outbound_mode_impl,
 )
 from app.services.invoke_session_binding import (
     is_recoverable_invoke_session_error,
     merge_invoke_binding_state,
     normalize_invoke_binding_state,
-    resolve_invoke_session_binding_hint,
     status_code_for_invoke_session_error,
     ws_error_code_for_invoke_session_error,
     ws_error_code_for_recovery_failed,
+)
+from app.services.invoke_stream_persistence import coerce_uuid as _coerce_uuid
+from app.services.invoke_stream_persistence import (
+    ensure_local_message_headers as ensure_local_message_headers_impl,
+)
+from app.services.invoke_stream_persistence import (
+    flush_stream_buffer as flush_stream_buffer_impl,
+)
+from app.services.invoke_stream_persistence import (
+    is_interrupt_requested as _is_interrupt_requested,
+)
+from app.services.invoke_stream_persistence import (
+    persist_interrupt_lifecycle_event as persist_interrupt_lifecycle_event_impl,
+)
+from app.services.invoke_stream_persistence import (
+    persist_local_outcome as persist_local_outcome_impl,
+)
+from app.services.invoke_stream_persistence import (
+    persist_stream_block_update as persist_stream_block_update_impl,
+)
+from app.services.invoke_stream_persistence import (
+    persist_synthetic_final_block_if_needed as persist_synthetic_final_block_if_needed_impl,
+)
+from app.services.invoke_stream_persistence import (
+    resolve_invoke_idempotency_key as _resolve_invoke_idempotency_key_impl,
 )
 from app.services.session_hub import session_hub_service
 from app.services.session_hub_common import build_interrupt_lifecycle_message_content
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
-from app.utils.idempotency_key import normalize_idempotency_key
-from app.utils.payload_extract import (
-    as_dict,
-    extract_context_id,
-    extract_provider_and_external_session_id,
-)
 from app.utils.session_identity import normalize_non_empty_text
 
 AgentSource = Literal["personal", "shared"]
 
-_invoke_inflight_guard = asyncio.Lock()
-_invoke_inflight_keys: dict[str, int] = {}
+_invoke_inflight_keys = invoke_guard_module._invoke_inflight_keys
 
 _SESSION_NOT_FOUND_RETRY_LIMIT = 1
 _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE = (
     "Failed to recover conversation session. Please retry."
 )
-_STREAM_METADATA_SCHEMA_VERSION = 1
-_STREAM_BLOCK_FLUSH_CHUNK_LIMIT = 20
 
 
 @dataclass
@@ -96,106 +114,6 @@ class _InvokeState:
     persisted_block_count: int = 0
     chunk_buffer: list[dict[str, Any]] = field(default_factory=list)
     current_block_type: str | None = None
-
-
-@dataclass(frozen=True)
-class _PersistedStreamError:
-    message: str
-    error_code: str | None = None
-
-    def as_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {"message": self.message}
-        if self.error_code:
-            payload["error_code"] = self.error_code
-        return payload
-
-
-@dataclass(frozen=True)
-class _PersistedStreamEnvelope:
-    finish_reason: str
-    error: _PersistedStreamError | None = None
-    schema_version: int = _STREAM_METADATA_SCHEMA_VERSION
-
-    def as_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "schema_version": self.schema_version,
-            "finish_reason": self.finish_reason,
-        }
-        if self.error is not None:
-            payload["error"] = self.error.as_dict()
-        return payload
-
-
-def _normalize_query_for_invoke_guard(query: str) -> str:
-    return " ".join(query.split())
-
-
-def _is_interrupt_requested(payload: A2AAgentInvokeRequest) -> bool:
-    metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
-    extensions = metadata.get("extensions")
-    if not isinstance(extensions, dict):
-        return False
-    return extensions.get("interrupt") is True
-
-
-def _build_invoke_guard_key(
-    *,
-    user_id: UUID,
-    agent_id: UUID,
-    agent_source: AgentSource,
-    payload: A2AAgentInvokeRequest,
-) -> str | None:
-    conversation_id = (
-        payload.conversation_id.strip()
-        if isinstance(payload.conversation_id, str)
-        else ""
-    )
-    context_id = (
-        payload.context_id.strip() if isinstance(payload.context_id, str) else ""
-    )
-    if not conversation_id and not context_id:
-        return None
-    normalized_query = _normalize_query_for_invoke_guard(payload.query)
-    return (
-        f"{user_id}:{agent_source}:{agent_id}:{conversation_id}:{context_id}:"
-        f"{normalized_query}"
-    )
-
-
-@asynccontextmanager
-async def _guard_inflight_invoke(
-    guard_key: str | None,
-):
-    if not guard_key:
-        yield
-        return
-
-    acquired = await _try_acquire_invoke_guard(guard_key)
-    if not acquired:
-        raise ValueError("invoke_inflight")
-
-    try:
-        yield
-    finally:
-        await _release_invoke_guard(guard_key)
-
-
-async def _try_acquire_invoke_guard(guard_key: str) -> bool:
-    async with _invoke_inflight_guard:
-        active_count = _invoke_inflight_keys.get(guard_key, 0)
-        if active_count > 0:
-            return False
-        _invoke_inflight_keys[guard_key] = 1
-        return True
-
-
-async def _release_invoke_guard(guard_key: str) -> None:
-    async with _invoke_inflight_guard:
-        remaining = _invoke_inflight_keys.get(guard_key, 0) - 1
-        if remaining <= 0:
-            _invoke_inflight_keys.pop(guard_key, None)
-        else:
-            _invoke_inflight_keys[guard_key] = remaining
 
 
 async def _prepare_state(
@@ -394,72 +312,6 @@ def _collect_stream_hints(
         state.stream_usage = usage_hints
 
 
-def _build_stream_metadata_from_outcome(
-    *,
-    state: _InvokeState,
-    outcome: StreamOutcome,
-    response_metadata: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    final_metadata = dict(response_metadata or {})
-    if state.stream_identity:
-        final_metadata.update(state.stream_identity)
-    if state.stream_usage:
-        final_metadata["usage"] = dict(state.stream_usage)
-    normalized_error_message = normalize_non_empty_text(outcome.error_message)
-    stream_error = None
-    if not outcome.success and (normalized_error_message or outcome.error_code):
-        stream_error = _PersistedStreamError(
-            message=normalized_error_message or str(outcome.error_code or ""),
-            error_code=outcome.error_code,
-        )
-    stream_envelope = _PersistedStreamEnvelope(
-        finish_reason=outcome.finish_reason.value,
-        error=stream_error,
-    )
-    final_metadata["stream"] = stream_envelope.as_dict()
-    return final_metadata
-
-
-def _resolve_invoke_idempotency_key(
-    *,
-    state: _InvokeState,
-    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
-) -> str | None:
-    metadata_run_id = None
-    if isinstance(state.metadata, dict):
-        raw_run_id = state.metadata.get("run_id")
-        if isinstance(raw_run_id, str):
-            metadata_run_id = normalize_non_empty_text(raw_run_id)
-    if metadata_run_id:
-        return normalize_idempotency_key(f"run:{metadata_run_id}:{transport}")
-
-    normalized_user_message_id = normalize_non_empty_text(state.user_message_id)
-    if normalized_user_message_id:
-        return normalize_idempotency_key(
-            f"user:{normalized_user_message_id}:{transport}"
-        )
-    return None
-
-
-def _coerce_uuid(value: Any) -> UUID | None:
-    if isinstance(value, UUID):
-        return value
-    if isinstance(value, str):
-        try:
-            return UUID(value.strip())
-        except (ValueError, TypeError):
-            return None
-    return None
-
-
-def _resolve_agent_message_id(state: _InvokeState) -> UUID | None:
-    if isinstance(state.message_refs, dict):
-        from_refs = _coerce_uuid(state.message_refs.get("agent_message_id"))
-        if from_refs is not None:
-            return from_refs
-    return _coerce_uuid(state.agent_message_id)
-
-
 def _normalize_optional_message_id(value: str | None) -> str | None:
     if not isinstance(value, str):
         return None
@@ -470,6 +322,52 @@ def _normalize_optional_message_id(value: str | None) -> str | None:
     if resolved is None:
         raise ValueError("invalid_message_id")
     return str(resolved)
+
+
+def _resolve_invoke_idempotency_key(
+    *,
+    state: _InvokeState,
+    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
+) -> str | None:
+    return _resolve_invoke_idempotency_key_impl(state=state, transport=transport)
+
+
+async def _resolve_session_binding_outbound_mode(
+    *,
+    runtime: Any,
+    logger: Any,
+    log_extra: dict[str, Any],
+) -> bool:
+    return await _resolve_session_binding_outbound_mode_impl(
+        runtime=runtime,
+        logger=logger,
+        log_extra=log_extra,
+        extensions_service_getter=get_a2a_extensions_service,
+    )
+
+
+async def _try_acquire_invoke_guard(guard_key: str) -> bool:
+    return await _try_acquire_invoke_guard_impl(guard_key)
+
+
+async def _release_invoke_guard(guard_key: str) -> None:
+    await _release_invoke_guard_impl(guard_key)
+
+
+async def _finalize_outbound_invoke_payload(
+    *,
+    payload: A2AAgentInvokeRequest,
+    runtime: Any,
+    logger: Any,
+    log_extra: dict[str, Any],
+) -> A2AAgentInvokeRequest:
+    return await _finalize_outbound_invoke_payload_impl(
+        payload=payload,
+        runtime=runtime,
+        logger=logger,
+        log_extra=log_extra,
+        resolve_outbound_mode=_resolve_session_binding_outbound_mode,
+    )
 
 
 def _resolve_agent_status_from_outcome(outcome: StreamOutcome) -> str:
@@ -484,53 +382,6 @@ def _resolve_agent_status_from_outcome(outcome: StreamOutcome) -> str:
     return "error"
 
 
-def _rewrite_stream_event_contract(
-    event_payload: dict[str, Any],
-    *,
-    local_message_id: str,
-    event_id: str | None = None,
-    seq: int | None = None,
-) -> None:
-    if event_payload.get("kind") != "artifact-update":
-        return
-    event_payload.pop("messageId", None)
-    event_payload.pop("eventId", None)
-    event_payload.pop("eventSeq", None)
-    event_payload.pop("sequence", None)
-    event_payload["message_id"] = local_message_id
-    if event_id:
-        event_payload["event_id"] = event_id
-    if isinstance(seq, int) and seq > 0:
-        event_payload["seq"] = seq
-
-    artifact = event_payload.get("artifact")
-    if isinstance(artifact, dict):
-        artifact.pop("messageId", None)
-        artifact.pop("eventId", None)
-        artifact.pop("eventSeq", None)
-        artifact.pop("sequence", None)
-        artifact["message_id"] = local_message_id
-        if event_id:
-            artifact["event_id"] = event_id
-        if isinstance(seq, int) and seq > 0:
-            artifact["seq"] = seq
-
-
-def _resolve_stream_event_id(
-    *,
-    stream_block: dict[str, Any],
-    local_message_id: str,
-    seq: int,
-) -> str:
-    raw_event_id = stream_block.get("event_id")
-    normalized_event_id = normalize_non_empty_text(
-        raw_event_id if isinstance(raw_event_id, str) else None
-    )
-    if normalized_event_id:
-        return normalized_event_id
-    return f"{local_message_id}:{seq}"
-
-
 async def _ensure_local_message_headers(
     *,
     state: _InvokeState,
@@ -541,55 +392,18 @@ async def _ensure_local_message_headers(
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
 ) -> None:
-    if state.local_session_id is None or state.local_source is None:
-        return
-    existing_agent_id = (
-        _coerce_uuid(state.message_refs.get("agent_message_id"))
-        if isinstance(state.message_refs, dict)
-        else None
-    )
-    existing_user_id = (
-        _coerce_uuid(state.message_refs.get("user_message_id"))
-        if isinstance(state.message_refs, dict)
-        else None
-    )
-    if existing_agent_id is not None and existing_user_id is not None:
-        return
-
-    idempotency_key = state.idempotency_key or _resolve_invoke_idempotency_key(
+    await ensure_local_message_headers_impl(
         state=state,
+        user_id=user_id,
+        agent_id=agent_id,
+        agent_source=agent_source,
+        query=query,
         transport=transport,
+        stream_enabled=stream_enabled,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
+        session_hub=session_hub_service,
     )
-    state.idempotency_key = idempotency_key
-    async with AsyncSessionLocal() as persist_db:
-        if not hasattr(persist_db, "scalar"):
-            return
-        refs = await session_hub_service.ensure_local_invoke_message_headers_by_local_session_id(
-            persist_db,
-            local_session_id=state.local_session_id,
-            source=state.local_source,
-            user_id=user_id,
-            agent_id=agent_id,
-            agent_source=agent_source,
-            query=query,
-            context_id=state.context_id,
-            invoke_metadata=state.metadata,
-            extra_metadata={"transport": transport, "stream": stream_enabled},
-            idempotency_key=idempotency_key,
-            user_message_id=_coerce_uuid(state.user_message_id),
-            agent_message_id=_coerce_uuid(state.agent_message_id),
-        )
-        await commit_safely(persist_db)
-    if refs:
-        state.message_refs = refs
-        if state.user_message_id is None:
-            resolved_user_message_id = _coerce_uuid(refs.get("user_message_id"))
-            if resolved_user_message_id is not None:
-                state.user_message_id = str(resolved_user_message_id)
-        if state.agent_message_id is None:
-            resolved_agent_message_id = _coerce_uuid(refs.get("agent_message_id"))
-            if resolved_agent_message_id is not None:
-                state.agent_message_id = str(resolved_agent_message_id)
 
 
 async def _persist_stream_block_update(
@@ -603,67 +417,39 @@ async def _persist_stream_block_update(
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
 ) -> None:
-    stream_block = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
-        event_payload
-    )
-    if stream_block is None:
-        return
-    await _ensure_local_message_headers(
+    async def _ensure_headers_adapter(**kwargs: Any) -> None:
+        await _ensure_local_message_headers(
+            state=kwargs["state"],
+            user_id=kwargs["user_id"],
+            agent_id=kwargs["agent_id"],
+            agent_source=kwargs["agent_source"],
+            query=kwargs["query"],
+            transport=kwargs["transport"],
+            stream_enabled=kwargs["stream_enabled"],
+        )
+
+    async def _flush_buffer_adapter(**kwargs: Any) -> None:
+        await _flush_stream_buffer(
+            state=kwargs["state"],
+            user_id=kwargs["user_id"],
+        )
+
+    await persist_stream_block_update_impl(
         state=state,
+        event_payload=event_payload,
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
+        stream_service=a2a_invoke_service,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
+        session_hub=session_hub_service,
+        ensure_headers_fn=_ensure_headers_adapter,
+        flush_buffer_fn=_flush_buffer_adapter,
     )
-    agent_message_id = _resolve_agent_message_id(state)
-    if agent_message_id is None:
-        return
-    local_message_id = str(agent_message_id)
-    raw_seq = stream_block.get("seq")
-    resolved_seq = raw_seq if isinstance(raw_seq, int) and raw_seq > 0 else None
-    if resolved_seq is None:
-        resolved_seq = state.next_event_seq
-    persist_seq = state.next_event_seq if state.next_event_seq > 0 else 1
-    state.next_event_seq = persist_seq + 1
-    resolved_event_id = _resolve_stream_event_id(
-        stream_block=stream_block,
-        local_message_id=local_message_id,
-        seq=resolved_seq,
-    )
-    _rewrite_stream_event_contract(
-        event_payload,
-        local_message_id=local_message_id,
-        event_id=resolved_event_id,
-        seq=resolved_seq,
-    )
-
-    block_type = str(stream_block.get("block_type") or "text")
-    is_finished = bool(stream_block.get("is_finished", False))
-
-    if state.current_block_type is not None and state.current_block_type != block_type:
-        await _flush_stream_buffer(state=state, user_id=user_id)
-
-    state.current_block_type = block_type
-    state.chunk_buffer.append(
-        {
-            "seq": persist_seq,
-            "block_type": block_type,
-            "content": str(stream_block.get("content") or ""),
-            "append": bool(stream_block.get("append", True)),
-            "is_finished": is_finished,
-            "event_id": resolved_event_id,
-            "source": (
-                str(stream_block.get("source"))
-                if isinstance(stream_block.get("source"), str)
-                else None
-            ),
-        }
-    )
-
-    if is_finished or len(state.chunk_buffer) >= _STREAM_BLOCK_FLUSH_CHUNK_LIMIT:
-        await _flush_stream_buffer(state=state, user_id=user_id)
 
 
 async def _persist_interrupt_lifecycle_event(
@@ -677,53 +463,40 @@ async def _persist_interrupt_lifecycle_event(
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
 ) -> None:
-    if state.local_session_id is None:
-        return
-    interrupt_event = (
-        a2a_invoke_service.extract_interrupt_lifecycle_from_serialized_event(
-            event_payload
+    async def _ensure_headers_adapter(**kwargs: Any) -> None:
+        await _ensure_local_message_headers(
+            state=kwargs["state"],
+            user_id=kwargs["user_id"],
+            agent_id=kwargs["agent_id"],
+            agent_source=kwargs["agent_source"],
+            query=kwargs["query"],
+            transport=kwargs["transport"],
+            stream_enabled=kwargs["stream_enabled"],
         )
-    )
-    if interrupt_event is None:
-        return
-    await _ensure_local_message_headers(
+
+    async def _flush_buffer_adapter(**kwargs: Any) -> None:
+        await _flush_stream_buffer(
+            state=kwargs["state"],
+            user_id=kwargs["user_id"],
+        )
+
+    await persist_interrupt_lifecycle_event_impl(
         state=state,
+        event_payload=event_payload,
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
+        stream_service=a2a_invoke_service,
+        build_interrupt_message_content=build_interrupt_lifecycle_message_content,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
+        session_hub=session_hub_service,
+        ensure_headers_fn=_ensure_headers_adapter,
+        flush_buffer_fn=_flush_buffer_adapter,
     )
-    agent_message_id = _resolve_agent_message_id(state)
-    if agent_message_id is None:
-        return
-    await _flush_stream_buffer(state=state, user_id=user_id)
-    persist_seq = state.next_event_seq if state.next_event_seq > 0 else 1
-    interrupt_event_id = (
-        f"interrupt:{agent_message_id}:"
-        f"{interrupt_event['request_id']}:{interrupt_event['phase']}"
-    )
-    async with AsyncSessionLocal() as persist_db:
-        if not hasattr(persist_db, "scalar"):
-            return
-        persisted_block = await session_hub_service.append_agent_message_block_update(
-            persist_db,
-            user_id=user_id,
-            agent_message_id=agent_message_id,
-            seq=persist_seq,
-            block_type="interrupt_event",
-            content=build_interrupt_lifecycle_message_content(interrupt_event),
-            append=False,
-            is_finished=True,
-            event_id=interrupt_event_id,
-            source="interrupt_lifecycle",
-        )
-        if persisted_block is None:
-            return
-        await commit_safely(persist_db)
-    state.next_event_seq = persist_seq + 1
-    state.persisted_block_count += 1
 
 
 async def _flush_stream_buffer(
@@ -731,43 +504,13 @@ async def _flush_stream_buffer(
     state: _InvokeState,
     user_id: UUID,
 ) -> None:
-    if not state.chunk_buffer:
-        return
-
-    agent_message_id = _resolve_agent_message_id(state)
-    if agent_message_id is None:
-        return
-
-    async with AsyncSessionLocal() as persist_db:
-        if not hasattr(persist_db, "scalar"):
-            return
-
-        from sqlalchemy import and_, select
-
-        agent_message = await persist_db.scalar(
-            select(AgentMessage).where(
-                and_(
-                    AgentMessage.id == agent_message_id,
-                    AgentMessage.user_id == user_id,
-                    AgentMessage.sender == "agent",
-                )
-            )
-        )
-        if agent_message is None:
-            return
-
-        persisted_blocks = await session_hub_service.append_agent_message_block_updates(
-            persist_db,
-            user_id=user_id,
-            agent_message_id=agent_message_id,
-            updates=state.chunk_buffer,
-            agent_message=agent_message,
-        )
-        if not persisted_blocks:
-            return
-        await commit_safely(persist_db)
-        state.persisted_block_count += len(persisted_blocks)
-        state.chunk_buffer = []
+    await flush_stream_buffer_impl(
+        state=state,
+        user_id=user_id,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
+        session_hub=session_hub_service,
+    )
 
 
 async def _persist_local_outcome(
@@ -782,63 +525,40 @@ async def _persist_local_outcome(
     stream_enabled: bool,
     response_metadata: dict[str, Any] | None = None,
 ) -> None:
-    if state.local_session_id is None or state.local_source is None:
-        return
-    await _ensure_local_message_headers(
+    async def _ensure_headers_adapter(**kwargs: Any) -> None:
+        await _ensure_local_message_headers(
+            state=kwargs["state"],
+            user_id=kwargs["user_id"],
+            agent_id=kwargs["agent_id"],
+            agent_source=kwargs["agent_source"],
+            query=kwargs["query"],
+            transport=kwargs["transport"],
+            stream_enabled=kwargs["stream_enabled"],
+        )
+
+    async def _persist_final_block_adapter(**kwargs: Any) -> None:
+        await _persist_synthetic_final_block_if_needed(
+            state=kwargs["state"],
+            outcome=kwargs["outcome"],
+            user_id=kwargs["user_id"],
+        )
+
+    await persist_local_outcome_impl(
         state=state,
+        outcome=outcome,
         user_id=user_id,
         agent_id=agent_id,
         agent_source=agent_source,
         query=query,
         transport=transport,
         stream_enabled=stream_enabled,
-    )
-    await _persist_synthetic_final_block_if_needed(
-        state=state,
-        outcome=outcome,
-        user_id=user_id,
-    )
-    persisted_content = outcome.final_text or str(outcome.error_message or "")
-    metadata_payload = _build_stream_metadata_from_outcome(
-        state=state,
-        outcome=outcome,
         response_metadata=response_metadata,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
+        session_hub=session_hub_service,
+        ensure_headers_fn=_ensure_headers_adapter,
+        persist_final_block_fn=_persist_final_block_adapter,
     )
-    idempotency_key = state.idempotency_key or _resolve_invoke_idempotency_key(
-        state=state,
-        transport=transport,
-    )
-    state.idempotency_key = idempotency_key
-    async with AsyncSessionLocal() as persist_db:
-        message_refs = (
-            await session_hub_service.record_local_invoke_messages_by_local_session_id(
-                persist_db,
-                local_session_id=state.local_session_id,
-                source=state.local_source,
-                user_id=user_id,
-                agent_id=agent_id,
-                agent_source=agent_source,
-                query=query,
-                response_content=persisted_content,
-                success=outcome.success,
-                context_id=state.context_id,
-                invoke_metadata=state.metadata,
-                extra_metadata={"transport": transport, "stream": stream_enabled},
-                response_metadata=metadata_payload,
-                idempotency_key=idempotency_key,
-                agent_status=_resolve_agent_status_from_outcome(outcome),
-                finish_reason=outcome.finish_reason.value,
-                error_code=outcome.error_code,
-                user_message_id=_coerce_uuid(state.user_message_id),
-                agent_message_id=_coerce_uuid(state.agent_message_id),
-            )
-        )
-        await commit_safely(persist_db)
-    state.message_refs = message_refs
-    state.persisted_success = outcome.success
-    state.persisted_response_content = persisted_content
-    state.persisted_error_code = outcome.error_code
-    state.persisted_finish_reason = outcome.finish_reason.value
 
 
 async def _persist_synthetic_final_block_if_needed(
@@ -847,41 +567,14 @@ async def _persist_synthetic_final_block_if_needed(
     outcome: StreamOutcome,
     user_id: UUID,
 ) -> None:
-    if not isinstance(outcome.final_text, str) or not outcome.final_text:
-        return
-    if state.local_session_id is None or state.local_source is None:
-        return
-    agent_message_id = _resolve_agent_message_id(state)
-    if agent_message_id is None:
-        return
-    async with AsyncSessionLocal() as persist_db:
-        if not hasattr(persist_db, "scalar"):
-            return
-        has_blocks = await session_hub_service.has_agent_message_blocks(
-            persist_db,
-            user_id=user_id,
-            agent_message_id=agent_message_id,
-        )
-        if has_blocks:
-            return
-        resolved_seq = state.next_event_seq if state.next_event_seq > 0 else 1
-        persisted_block = await session_hub_service.append_agent_message_block_update(
-            persist_db,
-            user_id=user_id,
-            agent_message_id=agent_message_id,
-            seq=resolved_seq,
-            block_type="text",
-            content=outcome.final_text,
-            append=False,
-            is_finished=True,
-            event_id=None,
-            source="finalize_snapshot",
-        )
-        if persisted_block is None:
-            return
-        await commit_safely(persist_db)
-        state.next_event_seq = max(state.next_event_seq, resolved_seq + 1)
-        state.persisted_block_count += 1
+    await persist_synthetic_final_block_if_needed_impl(
+        state=state,
+        outcome=outcome,
+        user_id=user_id,
+        session_factory=AsyncSessionLocal,
+        commit_fn=commit_safely,
+        session_hub=session_hub_service,
+    )
 
 
 def _build_consume_stream_callbacks(
@@ -938,193 +631,6 @@ def _build_consume_stream_callbacks(
             await _unregister_inflight_invoke(state=state, user_id=user_id)
 
     return on_event, on_finalized
-
-
-def _extract_rebound_continue_binding_fields(
-    *,
-    continue_payload: dict[str, Any],
-) -> tuple[str | None, str | None, str | None]:
-    """Resolve provider/context binding from the continue payload metadata."""
-    continue_payload_dict = as_dict(continue_payload)
-    continue_metadata = as_dict(continue_payload_dict.get("metadata"))
-
-    provider, external_session_id = extract_provider_and_external_session_id(
-        continue_metadata
-    )
-    context_id = extract_context_id(continue_metadata)
-
-    return provider, external_session_id, context_id
-
-
-def _build_rebound_invoke_payload(
-    *,
-    payload: A2AAgentInvokeRequest,
-    continue_payload: dict[str, Any],
-) -> A2AAgentInvokeRequest:
-    (
-        provider,
-        external_session_id,
-        context_id,
-    ) = _extract_rebound_continue_binding_fields(continue_payload=continue_payload)
-    conversation_id = continue_payload.get("conversationId")
-
-    normalized_provider = provider.lower() if provider else None
-    normalized_external_session_id = external_session_id or None
-    next_metadata = strip_session_binding_metadata(payload.metadata or {})
-    next_context_id = normalize_non_empty_text(context_id) or payload.context_id
-    next_conversation_id = (
-        normalize_non_empty_text(conversation_id) or payload.conversation_id
-    )
-    next_session_binding = None
-    if normalized_provider or normalized_external_session_id:
-        next_session_binding = A2AAgentInvokeSessionBinding(
-            provider=normalized_provider,
-            external_session_id=normalized_external_session_id,
-        )
-
-    return payload.model_copy(
-        update={
-            "conversation_id": next_conversation_id,
-            "context_id": next_context_id,
-            "metadata": next_metadata,
-            "session_binding": next_session_binding,
-        },
-    )
-
-
-def _log_session_binding_warning(
-    *,
-    logger: Any,
-    message: str,
-    log_extra: dict[str, Any],
-    extra: dict[str, Any] | None = None,
-) -> None:
-    log_warning = getattr(logger, "warning", None) or getattr(logger, "info", None)
-    if not callable(log_warning):
-        return
-    merged_extra = dict(log_extra)
-    if extra:
-        merged_extra.update(extra)
-    log_warning(message, extra=merged_extra)
-
-
-async def _resolve_session_binding_outbound_mode(
-    *,
-    runtime: Any,
-    logger: Any,
-    log_extra: dict[str, Any],
-) -> bool:
-    try:
-        ext = await get_a2a_extensions_service().resolve_session_binding(
-            runtime=runtime
-        )
-    except A2AExtensionNotSupportedError:
-        return True
-    except A2AExtensionUpstreamError as exc:
-        _log_session_binding_warning(
-            logger=logger,
-            message=(
-                "Session binding capability resolution failed upstream; "
-                "using compatibility fallback"
-            ),
-            log_extra=log_extra,
-            extra={
-                "session_binding_resolution_error": "upstream_fetch_failed",
-                "session_binding_resolution_detail": str(exc),
-                "session_binding_fallback_used": True,
-            },
-        )
-        return True
-    except AttributeError as exc:
-        _log_session_binding_warning(
-            logger=logger,
-            message=(
-                "Session binding capability resolution failed due to runtime shape; "
-                "using compatibility fallback"
-            ),
-            log_extra=log_extra,
-            extra={
-                "session_binding_resolution_error": "runtime_invalid",
-                "session_binding_resolution_detail": str(exc),
-                "session_binding_fallback_used": True,
-            },
-        )
-        return True
-    except A2AExtensionContractError as exc:
-        _log_session_binding_warning(
-            logger=logger,
-            message=(
-                "Session binding capability contract invalid; "
-                "using compatibility fallback"
-            ),
-            log_extra=log_extra,
-            extra={
-                "session_binding_resolution_error": "contract_invalid",
-                "session_binding_contract_error": str(exc),
-                "session_binding_fallback_used": True,
-            },
-        )
-        return True
-
-    return ext.legacy_uri_used
-
-
-async def _finalize_outbound_invoke_payload(
-    *,
-    payload: A2AAgentInvokeRequest,
-    runtime: Any,
-    logger: Any,
-    log_extra: dict[str, Any],
-) -> A2AAgentInvokeRequest:
-    provider, external_session_id = resolve_invoke_session_binding_hint(
-        session_binding=payload.session_binding,
-        metadata=payload.metadata,
-    )
-    cleaned_metadata = strip_session_binding_metadata(payload.metadata or {})
-    if provider and not external_session_id:
-        _log_session_binding_warning(
-            logger=logger,
-            message=(
-                "Discarding incomplete session binding intent without external "
-                "session id"
-            ),
-            log_extra=log_extra,
-            extra={
-                "session_binding_discarded": True,
-                "session_binding_discard_reason": "missing_external_session_id",
-                "session_binding_provider": provider,
-                "session_binding_source": (
-                    "session_binding_intent"
-                    if payload.session_binding is not None
-                    else "legacy_metadata"
-                ),
-            },
-        )
-        provider = None
-    if not provider and not external_session_id:
-        if (
-            cleaned_metadata == (payload.metadata or {})
-            and payload.session_binding is None
-        ):
-            return payload
-        return payload.model_copy(
-            update={"metadata": cleaned_metadata, "session_binding": None}
-        )
-
-    include_legacy_root = await _resolve_session_binding_outbound_mode(
-        runtime=runtime,
-        logger=logger,
-        log_extra=log_extra,
-    )
-    next_metadata = apply_invoke_session_binding_metadata(
-        cleaned_metadata,
-        provider=provider,
-        external_session_id=external_session_id,
-        include_legacy_root=include_legacy_root,
-    )
-    return payload.model_copy(
-        update={"metadata": next_metadata, "session_binding": None}
-    )
 
 
 async def run_http_invoke_with_session_recovery(
