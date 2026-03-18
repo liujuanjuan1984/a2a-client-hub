@@ -56,7 +56,15 @@ class A2ARuntimeBuilder:
             credential = await self._get_credential(
                 db, user_id=user_id, agent_id=agent.id
             )
-        resolved, token_last4 = build_resolved_runtime_agent(
+        return self.build_from_agent(agent=agent, credential=credential)
+
+    def build_from_agent(
+        self,
+        *,
+        agent: A2AAgent,
+        credential: Optional[A2AAgentCredential],
+    ) -> A2ARuntime:
+        resolved, token_last4 = self.resolve_prefetched(
             name=agent.name,
             card_url=agent.card_url,
             extra_headers=agent.extra_headers,
@@ -64,11 +72,32 @@ class A2ARuntimeBuilder:
             auth_header=agent.auth_header,
             auth_scheme=agent.auth_scheme,
             credential=credential,
-            vault=self._vault,
-            validation_error_cls=A2ARuntimeValidationError,
         )
 
         return A2ARuntime(agent=agent, resolved=resolved, token_last4=token_last4)
+
+    def resolve_prefetched(
+        self,
+        *,
+        name: str,
+        card_url: str,
+        extra_headers: dict[str, str] | None,
+        auth_type: str,
+        auth_header: str | None,
+        auth_scheme: str | None,
+        credential: Optional[A2AAgentCredential],
+    ) -> tuple[ResolvedAgent, Optional[str]]:
+        return build_resolved_runtime_agent(
+            name=name,
+            card_url=card_url,
+            extra_headers=extra_headers,
+            auth_type=auth_type,
+            auth_header=auth_header,
+            auth_scheme=auth_scheme,
+            credential=credential,
+            vault=self._vault,
+            validation_error_cls=A2ARuntimeValidationError,
+        )
 
     async def _get_agent(
         self, db: AsyncSession, *, user_id: UUID, agent_id: UUID

@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.secret_vault import hub_a2a_secret_vault, user_llm_secret_vault
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
@@ -30,10 +29,9 @@ from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 from app.services.a2a_agents import a2a_agent_service
-from app.services.a2a_runtime import A2ARuntimeValidationError
+from app.services.a2a_runtime import a2a_runtime_builder
 from app.services.hub_a2a_agents import hub_a2a_agent_service
-from app.services.hub_a2a_runtime import HubA2ARuntimeValidationError
-from app.services.runtime_auth import build_resolved_runtime_agent
+from app.services.hub_a2a_runtime import hub_a2a_runtime_builder
 
 logger = get_logger(__name__)
 OPENCODE_PROVIDER = "opencode"
@@ -538,15 +536,19 @@ class OpencodeSessionDirectoryService:
         *,
         agent: _AgentRef,
         credential: A2AAgentCredential | None,
-    ) -> _DirectoryRuntime:
+    ) -> Any:
         if agent.agent_source == "shared":
-            validation_error_cls = HubA2ARuntimeValidationError
-            vault = hub_a2a_secret_vault
-        else:
-            validation_error_cls = A2ARuntimeValidationError
-            vault = user_llm_secret_vault
-
-        resolved, _ = build_resolved_runtime_agent(
+            resolved, _ = hub_a2a_runtime_builder.resolve_prefetched(
+                name=agent.agent_name,
+                card_url=agent.agent_url,
+                extra_headers=agent.extra_headers,
+                auth_type=agent.auth_type,
+                auth_header=agent.auth_header,
+                auth_scheme=agent.auth_scheme,
+                credential=credential,
+            )
+            return _DirectoryRuntime(resolved=resolved)
+        resolved, _ = a2a_runtime_builder.resolve_prefetched(
             name=agent.agent_name,
             card_url=agent.agent_url,
             extra_headers=agent.extra_headers,
@@ -554,8 +556,6 @@ class OpencodeSessionDirectoryService:
             auth_header=agent.auth_header,
             auth_scheme=agent.auth_scheme,
             credential=credential,
-            vault=vault,
-            validation_error_cls=validation_error_cls,
         )
         return _DirectoryRuntime(resolved=resolved)
 

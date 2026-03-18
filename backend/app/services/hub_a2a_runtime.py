@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secret_vault import hub_a2a_secret_vault
+from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.integrations.a2a_client.service import ResolvedAgent
 from app.services.hub_a2a_agents import HubA2AAgentNotFoundError, hub_a2a_agent_service
@@ -59,7 +60,15 @@ class HubA2ARuntimeBuilder:
         credential = None
         if agent.auth_type == "bearer":
             credential = await self._get_credential(db, agent_id=agent.id)
-        resolved, _ = build_resolved_runtime_agent(
+        return self.build_from_agent(agent=agent, credential=credential)
+
+    def build_from_agent(
+        self,
+        *,
+        agent: A2AAgent,
+        credential: Optional[A2AAgentCredential],
+    ) -> HubA2ARuntime:
+        resolved, _ = self.resolve_prefetched(
             name=agent.name,
             card_url=agent.card_url,
             extra_headers=agent.extra_headers,
@@ -67,8 +76,6 @@ class HubA2ARuntimeBuilder:
             auth_header=agent.auth_header,
             auth_scheme=agent.auth_scheme,
             credential=credential,
-            vault=self._vault,
-            validation_error_cls=HubA2ARuntimeValidationError,
         )
 
         return HubA2ARuntime(
@@ -76,6 +83,29 @@ class HubA2ARuntimeBuilder:
             agent_name=agent.name,
             agent_url=agent.card_url,
             resolved=resolved,
+        )
+
+    def resolve_prefetched(
+        self,
+        *,
+        name: str,
+        card_url: str,
+        extra_headers: dict[str, str] | None,
+        auth_type: str,
+        auth_header: str | None,
+        auth_scheme: str | None,
+        credential: Optional[A2AAgentCredential],
+    ) -> tuple[ResolvedAgent, Optional[str]]:
+        return build_resolved_runtime_agent(
+            name=name,
+            card_url=card_url,
+            extra_headers=extra_headers,
+            auth_type=auth_type,
+            auth_header=auth_header,
+            auth_scheme=auth_scheme,
+            credential=credential,
+            vault=self._vault,
+            validation_error_cls=HubA2ARuntimeValidationError,
         )
 
     async def _get_credential(

@@ -424,7 +424,12 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
         conn, cursor, statement, parameters, context, executemany
     ):  # noqa: ARG001
         if statement.lstrip().upper().startswith("SELECT"):
-            select_statements.append(statement)
+            select_statements.append(statement.lower())
+
+    def _where_clause(statement: str) -> str:
+        if "where" not in statement:
+            return ""
+        return statement.split("where", 1)[1]
 
     async with create_test_client(
         opencode_session_directory.router,
@@ -449,4 +454,25 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
             )
 
     assert resp.status_code == 200
+    credential_batch_selects = [
+        stmt
+        for stmt in select_statements
+        if "a2a_agent_credentials" in stmt and " in (" in stmt
+    ]
+    per_agent_credential_selects = [
+        stmt
+        for stmt in select_statements
+        if "a2a_agent_credentials.agent_id =" in _where_clause(stmt)
+        and " in (" not in _where_clause(stmt)
+    ]
+    per_agent_agent_selects = [
+        stmt
+        for stmt in select_statements
+        if "a2a_agents.id =" in _where_clause(stmt)
+        and " in (" not in _where_clause(stmt)
+    ]
+
+    assert len(credential_batch_selects) == 1
+    assert per_agent_credential_selects == []
+    assert per_agent_agent_selects == []
     assert len(select_statements) <= 6
