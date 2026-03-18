@@ -28,10 +28,7 @@ from app.integrations.a2a_client.lifecycle import (
     AsyncResourceReaper,
 )
 from app.integrations.a2a_client.metrics import a2a_metrics
-from app.integrations.a2a_client.registry import (
-    A2AClientRegistry,
-    CachedClientEntry,
-)
+from app.integrations.a2a_client.registry import A2AClientRegistry
 from app.integrations.a2a_client.resolution import A2AResolutionService
 from app.integrations.a2a_client.session_factory import A2AInvokeSessionFactory
 from app.utils.logging_redaction import (
@@ -69,7 +66,6 @@ class A2AGateway:
                 **kwargs,
             ),
         )
-        self._clients = self._client_registry.clients
         self._maintenance_lock = asyncio.Lock()
         self._maintenance_task: asyncio.Task[None] | None = None
 
@@ -635,12 +631,13 @@ class A2AGateway:
         return A2AClientRegistry.build_cache_key(resolved)
 
     def get_lifecycle_snapshot(self) -> A2AGatewayLifecycleSnapshot:
+        clients = self._client_registry.clients
         client_snapshots = tuple(
-            entry.client.get_lifecycle_snapshot() for entry in self._clients.values()
+            entry.client.get_lifecycle_snapshot() for entry in clients.values()
         )
         busy_clients = sum(1 for snapshot in client_snapshots if snapshot.busy)
         return A2AGatewayLifecycleSnapshot(
-            cached_clients=len(self._clients),
+            cached_clients=len(clients),
             busy_clients=busy_clients,
             reaper=self._close_reaper.snapshot(),
             client_snapshots=client_snapshots,
@@ -691,4 +688,4 @@ class A2AGateway:
         return min(max(idle_timeout / 2, 1.0), 60.0)
 
 
-__all__ = ["A2AGateway", "CachedClientEntry"]
+__all__ = ["A2AGateway"]

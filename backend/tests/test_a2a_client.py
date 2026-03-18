@@ -19,6 +19,7 @@ from app.integrations.a2a_client import config as config_module
 from app.integrations.a2a_client import gateway as gateway_module
 from app.integrations.a2a_client import http_clients as shared_http_clients_module
 from app.integrations.a2a_client import lifecycle as lifecycle_module
+from app.integrations.a2a_client import registry as registry_module
 from app.integrations.a2a_client.adapters import sdk as sdk_module
 from app.integrations.a2a_client.adapters.sdk import (
     SDKA2AAdapter,
@@ -465,16 +466,18 @@ async def test_gateway_cleanup_idle_clients_skips_busy_clients() -> None:
         ),
     )
     cache_key = ("http://example-agent.internal:24020", ())
-    gateway._clients[cache_key] = gateway_module.CachedClientEntry(
+    gateway._client_registry.clients[cache_key] = registry_module.CachedClientEntry(
         client=busy_client,
         last_used=time.monotonic() - 30.0,
     )
 
     await gateway._cleanup_idle_clients()
 
-    assert cache_key in gateway._clients
+    assert cache_key in gateway._client_registry.clients
     busy_client.close.assert_not_awaited()
-    assert gateway._clients[cache_key].last_used > time.monotonic() - 2.0
+    assert (
+        gateway._client_registry.clients[cache_key].last_used > time.monotonic() - 2.0
+    )
 
 
 @pytest.mark.asyncio
@@ -749,14 +752,14 @@ async def test_gateway_invalidate_client_schedules_background_close() -> None:
         name="TestAgent",
     )
     cache_key = gateway._build_cache_key(resolved)
-    gateway._clients[cache_key] = gateway_module.CachedClientEntry(
+    gateway._client_registry.clients[cache_key] = registry_module.CachedClientEntry(
         client=fake_client,
         last_used=time.monotonic(),
     )
 
     await asyncio.wait_for(gateway._invalidate_client(resolved), timeout=0.1)
 
-    assert cache_key not in gateway._clients
+    assert cache_key not in gateway._client_registry.clients
     await asyncio.wait_for(close_started.wait(), timeout=0.1)
     assert gateway.get_lifecycle_snapshot().reaper.pending_tasks == 1
 
