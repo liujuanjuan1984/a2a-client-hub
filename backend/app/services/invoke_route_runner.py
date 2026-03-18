@@ -804,7 +804,7 @@ async def run_background_invoke(
     *,
     db: AsyncSession,
     gateway: Any,
-    client: Any | None = None,
+    invoke_session: Any | None = None,
     runtime: Any,
     user_id: UUID,
     agent_id: UUID,
@@ -852,7 +852,7 @@ async def run_background_invoke(
     try:
         outcome = await a2a_invoke_service.consume_stream(
             gateway=gateway,
-            client=client,
+            invoke_session=invoke_session,
             resolved=runtime.resolved,
             query=payload.query,
             context_id=payload.context_id,

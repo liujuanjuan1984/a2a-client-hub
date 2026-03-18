@@ -29,7 +29,7 @@ from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services.a2a_runtime import a2a_runtime_builder
 from app.services.a2a_schedule_preflight import (
-    open_schedule_agent_card_preflight_snapshot,
+    open_schedule_invoke_session,
 )
 from app.services.a2a_schedule_runtime_summary import (
     derive_schedule_recovery_timeouts,
@@ -434,10 +434,10 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             if not bool(getattr(runtime.agent, "enabled", True)):
                 raise RuntimeError("Target A2A agent is disabled")
             gateway = get_a2a_service().gateway
-            async with open_schedule_agent_card_preflight_snapshot(
+            async with open_schedule_invoke_session(
                 gateway=gateway,
                 runtime=runtime,
-            ) as preflight_snapshot:
+            ) as invoke_session:
                 thread, is_new = await _ensure_task_session(
                     db=db,
                     task=task,
@@ -476,7 +476,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         },
                         total_timeout_seconds=settings.a2a_schedule_task_invoke_timeout,
                         idle_timeout_seconds=settings.a2a_schedule_task_stream_idle_timeout,
-                        client=preflight_snapshot.client,
+                        invoke_session=invoke_session,
                     )
                 finally:
                     heartbeat_stop_event.set()

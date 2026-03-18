@@ -36,6 +36,10 @@ from app.integrations.a2a_client.http_clients import (
     SharedSDKTransportInvalidatedError,
     SharedSDKTransportLease,
 )
+from app.integrations.a2a_client.invoke_session import (
+    AgentResolutionPolicy,
+    InvokeSessionOwnership,
+)
 from app.utils.outbound_url import OutboundURLNotAllowedError
 
 
@@ -503,7 +507,7 @@ async def test_gateway_get_client_does_not_run_cleanup_inline(
 
 
 @pytest.mark.asyncio
-async def test_gateway_fetch_agent_card_detail_can_use_supplied_client(
+async def test_gateway_fetch_agent_card_detail_uses_fresh_probe_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gateway = gateway_module.A2AGateway(
@@ -513,14 +517,14 @@ async def test_gateway_fetch_agent_card_detail_can_use_supplied_client(
             client_idle_timeout=1.0,
         )
     )
-    fake_card = SimpleNamespace(name="Temp Card")
-    fake_client = SimpleNamespace(
-        get_agent_card=AsyncMock(return_value=fake_card),
+    fake_card = SimpleNamespace(name="Probe Card")
+    fake_peer_descriptor = SimpleNamespace(selected_url="http://example-agent.internal")
+    temporary_client = SimpleNamespace(
+        get_agent_resolution=AsyncMock(return_value=(fake_card, fake_peer_descriptor)),
+        close=AsyncMock(),
     )
-    get_client_mock = AsyncMock(
-        side_effect=AssertionError("shared client not expected")
-    )
-    monkeypatch.setattr(gateway, "_get_client", get_client_mock)
+    create_client_mock = Mock(return_value=temporary_client)
+    monkeypatch.setattr(gateway, "_create_client", create_client_mock)
 
     resolved = SimpleNamespace(
         url="http://example-agent.internal:24020",
@@ -530,13 +534,15 @@ async def test_gateway_fetch_agent_card_detail_can_use_supplied_client(
 
     result = await gateway.fetch_agent_card_detail(
         resolved=resolved,
-        client=fake_client,
         raise_on_failure=True,
+        policy=AgentResolutionPolicy.FRESH_PROBE,
+        card_fetch_timeout=5.0,
     )
 
     assert result is fake_card
-    fake_client.get_agent_card.assert_awaited_once()
-    get_client_mock.assert_not_awaited()
+    create_client_mock.assert_called_once_with(resolved, card_fetch_timeout=5.0)
+    temporary_client.get_agent_resolution.assert_awaited_once()
+    temporary_client.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -555,12 +561,12 @@ async def test_gateway_fetch_agent_card_detail_invalidates_shared_client_on_rese
         headers={},
         name="TestAgent",
     )
-    fake_client = SimpleNamespace(
-        get_agent_card=AsyncMock(
+    shared_client = SimpleNamespace(
+        get_agent_resolution=AsyncMock(
             side_effect=A2AClientResetRequiredError("reset required")
         )
     )
-    get_client_mock = AsyncMock(return_value=fake_client)
+    get_client_mock = AsyncMock(return_value=shared_client)
     invalidate_mock = AsyncMock()
     monkeypatch.setattr(gateway, "_get_client", get_client_mock)
     monkeypatch.setattr(gateway, "_invalidate_client", invalidate_mock)
@@ -573,7 +579,7 @@ async def test_gateway_fetch_agent_card_detail_invalidates_shared_client_on_rese
 
 
 @pytest.mark.asyncio
-async def test_gateway_fetch_agent_card_detail_does_not_invalidate_external_client_on_reset(
+async def test_gateway_fetch_agent_card_detail_does_not_invalidate_fresh_probe_on_reset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gateway = gateway_module.A2AGateway(
@@ -588,31 +594,31 @@ async def test_gateway_fetch_agent_card_detail_does_not_invalidate_external_clie
         headers={},
         name="TestAgent",
     )
-    fake_client = SimpleNamespace(
-        get_agent_card=AsyncMock(
+    temporary_client = SimpleNamespace(
+        get_agent_resolution=AsyncMock(
             side_effect=A2AClientResetRequiredError("reset required")
-        )
+        ),
+        close=AsyncMock(),
     )
     invalidate_mock = AsyncMock()
-    get_client_mock = AsyncMock(
-        side_effect=AssertionError("shared client not expected")
-    )
+    create_client_mock = Mock(return_value=temporary_client)
     monkeypatch.setattr(gateway, "_invalidate_client", invalidate_mock)
-    monkeypatch.setattr(gateway, "_get_client", get_client_mock)
+    monkeypatch.setattr(gateway, "_create_client", create_client_mock)
 
     result = await gateway.fetch_agent_card_detail(
         resolved=resolved,
-        client=fake_client,
+        policy=AgentResolutionPolicy.FRESH_PROBE,
     )
 
     assert result is None
-    fake_client.get_agent_card.assert_awaited_once()
+    temporary_client.get_agent_resolution.assert_awaited_once()
+    temporary_client.close.assert_awaited_once()
     invalidate_mock.assert_not_awaited()
-    get_client_mock.assert_not_awaited()
+    create_client_mock.assert_called_once_with(resolved, card_fetch_timeout=None)
 
 
 @pytest.mark.asyncio
-async def test_gateway_stream_uses_supplied_client_snapshot(
+async def test_gateway_open_invoke_session_reuses_shared_client_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     gateway = gateway_module.A2AGateway(
@@ -628,29 +634,72 @@ async def test_gateway_stream_uses_supplied_client_snapshot(
         name="TestAgent",
     )
 
-    async def _stream_agent(query: str, *, context_id=None, metadata=None):
-        assert query == "hello"
-        assert context_id == "ctx-1"
-        assert metadata == {"origin": "schedule"}
-        yield {"kind": "message", "content": "ok"}
+    fake_peer_descriptor = SimpleNamespace(selected_url="http://example-agent.internal")
+    shared_client = SimpleNamespace(
+        get_agent_resolution=AsyncMock(
+            return_value=(SimpleNamespace(name="Shared Card"), fake_peer_descriptor)
+        )
+    )
+    get_client_mock = AsyncMock(return_value=shared_client)
+    monkeypatch.setattr(gateway, "_get_client", get_client_mock)
 
-    supplied_client = SimpleNamespace(stream_agent=_stream_agent)
+    async with gateway.open_invoke_session(
+        resolved=resolved,
+        policy=AgentResolutionPolicy.CACHED_SHARED,
+    ) as session:
+        assert session.client is shared_client
+        assert session.ownership == InvokeSessionOwnership.SHARED
+        assert session.policy == AgentResolutionPolicy.CACHED_SHARED
+        assert session.snapshot.peer_descriptor is fake_peer_descriptor
+
+    get_client_mock.assert_awaited_once_with(resolved)
+    shared_client.get_agent_resolution.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_gateway_open_invoke_session_uses_fresh_snapshot_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={},
+        name="TestAgent",
+    )
+    fake_peer_descriptor = SimpleNamespace(selected_url="http://example-agent.internal")
+    temporary_client = SimpleNamespace(
+        get_agent_resolution=AsyncMock(
+            return_value=(SimpleNamespace(name="Fresh Card"), fake_peer_descriptor)
+        ),
+        close=AsyncMock(),
+    )
+    create_client_mock = Mock(return_value=temporary_client)
     get_client_mock = AsyncMock(
         side_effect=AssertionError("shared client not expected")
     )
+    monkeypatch.setattr(gateway, "_create_client", create_client_mock)
     monkeypatch.setattr(gateway, "_get_client", get_client_mock)
 
-    payloads = []
-    async for payload in gateway.stream(
+    async with gateway.open_invoke_session(
         resolved=resolved,
-        query="hello",
-        context_id="ctx-1",
-        metadata={"origin": "schedule"},
-        client=supplied_client,
-    ):
-        payloads.append(payload)
+        policy=AgentResolutionPolicy.FRESH_SNAPSHOT,
+        card_fetch_timeout=5.0,
+    ) as session:
+        assert session.client is temporary_client
+        assert session.ownership == InvokeSessionOwnership.EPHEMERAL
+        assert session.policy == AgentResolutionPolicy.FRESH_SNAPSHOT
+        assert session.snapshot.card_fetch_timeout == 5.0
+        assert session.snapshot.peer_descriptor is fake_peer_descriptor
 
-    assert payloads == [{"kind": "message", "content": "ok"}]
+    create_client_mock.assert_called_once_with(resolved, card_fetch_timeout=5.0)
+    temporary_client.get_agent_resolution.assert_awaited_once()
+    temporary_client.close.assert_awaited_once()
     get_client_mock.assert_not_awaited()
 
 

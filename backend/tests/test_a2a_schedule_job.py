@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -140,10 +141,20 @@ def _mock_gateway_stream(*, events, first_event_delay: float = 0.0):
                 await asyncio.sleep(first_event_delay)
             yield event
 
+    @asynccontextmanager
+    async def _open_invoke_session(**_kwargs):
+        try:
+            yield SimpleNamespace(
+                client=preflight_client,
+                policy=SimpleNamespace(value="fresh_snapshot"),
+                is_shared=False,
+            )
+        finally:
+            await preflight_client.close()
+
     return SimpleNamespace(
         stream=_stream,
-        fetch_agent_card_detail=AsyncMock(return_value=object()),
-        create_temporary_client=lambda **_kwargs: preflight_client,
+        open_invoke_session=_open_invoke_session,
     )
 
 
@@ -789,13 +800,24 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
         yield {"kind": "status-update", "final": True}
 
     preflight_client = SimpleNamespace(close=AsyncMock())
+
+    @asynccontextmanager
+    async def _open_invoke_session(**_kwargs):
+        try:
+            yield SimpleNamespace(
+                client=preflight_client,
+                policy=SimpleNamespace(value="fresh_snapshot"),
+                is_shared=False,
+            )
+        finally:
+            await preflight_client.close()
+
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
                 stream=_stream,
-                fetch_agent_card_detail=AsyncMock(return_value=object()),
-                create_temporary_client=lambda **_kwargs: preflight_client,
+                open_invoke_session=_open_invoke_session,
             )
         ),
     )
@@ -920,13 +942,24 @@ async def test_execute_claimed_task_persists_structured_agent_unavailable_error(
         yield  # pragma: no cover
 
     preflight_client = SimpleNamespace(close=AsyncMock())
+
+    @asynccontextmanager
+    async def _open_invoke_session(**_kwargs):
+        try:
+            yield SimpleNamespace(
+                client=preflight_client,
+                policy=SimpleNamespace(value="fresh_snapshot"),
+                is_shared=False,
+            )
+        finally:
+            await preflight_client.close()
+
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
                 stream=_stream,
-                fetch_agent_card_detail=AsyncMock(return_value=object()),
-                create_temporary_client=lambda **_kwargs: preflight_client,
+                open_invoke_session=_open_invoke_session,
             )
         ),
     )
@@ -971,16 +1004,17 @@ async def test_execute_claimed_task_fails_fast_when_preflight_card_fetch_fails(
         "app.services.a2a_schedule_job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
+
+    @asynccontextmanager
+    async def _open_invoke_session(**_kwargs):
+        raise A2AAgentUnavailableError("Agent card unavailable")
+        yield  # pragma: no cover
+
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
-                create_temporary_client=lambda **_kwargs: SimpleNamespace(
-                    close=AsyncMock()
-                ),
-                fetch_agent_card_detail=AsyncMock(
-                    side_effect=A2AAgentUnavailableError("Agent card unavailable")
-                ),
+                open_invoke_session=_open_invoke_session,
             )
         ),
     )
@@ -1036,7 +1070,6 @@ async def test_execute_claimed_task_reuses_preflight_client_for_invoke(
     )
 
     preflight_client = SimpleNamespace(close=AsyncMock())
-    fetch_agent_card_detail_mock = AsyncMock(return_value=object())
     run_background_invoke_mock = AsyncMock(
         return_value={
             "success": True,
@@ -1046,10 +1079,19 @@ async def test_execute_claimed_task_reuses_preflight_client_for_invoke(
             "context_id": None,
         }
     )
-    gateway = SimpleNamespace(
-        create_temporary_client=lambda **_kwargs: preflight_client,
-        fetch_agent_card_detail=fetch_agent_card_detail_mock,
-    )
+
+    @asynccontextmanager
+    async def _open_invoke_session(**_kwargs):
+        try:
+            yield SimpleNamespace(
+                client=preflight_client,
+                policy=SimpleNamespace(value="fresh_snapshot"),
+                is_shared=False,
+            )
+        finally:
+            await preflight_client.close()
+
+    gateway = SimpleNamespace(open_invoke_session=_open_invoke_session)
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(gateway=gateway),
@@ -1062,10 +1104,10 @@ async def test_execute_claimed_task_reuses_preflight_client_for_invoke(
     run_id = await _mark_task_claimed(async_db_session, task=task)
     await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
 
-    fetch_agent_card_detail_mock.assert_awaited_once()
-    assert fetch_agent_card_detail_mock.await_args.kwargs["client"] is preflight_client
     run_background_invoke_mock.assert_awaited_once()
-    assert run_background_invoke_mock.await_args.kwargs["client"] is preflight_client
+    invoke_session = run_background_invoke_mock.await_args.kwargs["invoke_session"]
+    assert invoke_session.client is preflight_client
+    assert invoke_session.policy.value == "fresh_snapshot"
     preflight_client.close.assert_awaited_once()
 
 
@@ -1355,14 +1397,20 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_mi
         "app.services.a2a_schedule_job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
+
+    @asynccontextmanager
+    async def _open_invoke_session(**_kwargs):
+        yield SimpleNamespace(
+            client=SimpleNamespace(close=AsyncMock()),
+            policy=SimpleNamespace(value="fresh_snapshot"),
+            is_shared=False,
+        )
+
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
-                create_temporary_client=lambda **_kwargs: SimpleNamespace(
-                    close=AsyncMock()
-                ),
-                fetch_agent_card_detail=AsyncMock(return_value=object()),
+                open_invoke_session=_open_invoke_session,
             )
         ),
     )
@@ -1433,14 +1481,20 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_lo
         "app.services.a2a_schedule_job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
+
+    @asynccontextmanager
+    async def _open_invoke_session(**_kwargs):
+        yield SimpleNamespace(
+            client=SimpleNamespace(close=AsyncMock()),
+            policy=SimpleNamespace(value="fresh_snapshot"),
+            is_shared=False,
+        )
+
     monkeypatch.setattr(
         "app.services.a2a_schedule_job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
-                create_temporary_client=lambda **_kwargs: SimpleNamespace(
-                    close=AsyncMock()
-                ),
-                fetch_agent_card_detail=AsyncMock(return_value=object()),
+                open_invoke_session=_open_invoke_session,
             )
         ),
     )

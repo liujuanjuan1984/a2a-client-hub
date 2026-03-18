@@ -14,6 +14,7 @@ from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
 )
+from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
 from app.integrations.a2a_client.validators import (
     validate_agent_card as validate_agent_card_payload,
 )
@@ -41,7 +42,9 @@ async def fetch_and_validate_agent_card(
 
     try:
         card = await gateway.fetch_agent_card_detail(
-            resolved=resolved, raise_on_failure=True
+            resolved=resolved,
+            raise_on_failure=True,
+            policy=AgentResolutionPolicy.FRESH_PROBE,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError):
         raise
