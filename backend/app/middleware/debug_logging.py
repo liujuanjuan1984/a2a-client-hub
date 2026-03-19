@@ -7,7 +7,7 @@ particularly useful for debugging agent chat interactions.
 
 import time
 import uuid
-from typing import Callable
+from typing import Callable, cast
 
 from fastapi import Request, Response
 from starlette.background import BackgroundTask
@@ -118,7 +118,7 @@ class DebugLoggingMiddleware(BaseHTTPMiddleware):
             if request.url.path == "/api/v1/agent/chat" and response.status_code == 200:
                 logger.debug("Streaming response initiated for session")
 
-            return response
+            return cast(Response, response)
 
         except Exception as exc:
             process_time = time.perf_counter() - start_time

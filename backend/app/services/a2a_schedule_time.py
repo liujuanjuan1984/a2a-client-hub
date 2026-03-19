@@ -87,14 +87,14 @@ class A2AScheduleTimeHelper:
             interval_start_at_local = self.normalize_interval_start_at_local(
                 time_point.get("start_at_local")
             )
-            normalized: dict[str, Any] = {"minutes": minutes}
+            normalized_interval: dict[str, Any] = {"minutes": minutes}
             if interval_start_at_local is not None:
-                normalized["start_at_local"] = interval_start_at_local
-                normalized["start_at_utc"] = self.to_utc_from_local_iso(
+                normalized_interval["start_at_local"] = interval_start_at_local
+                normalized_interval["start_at_utc"] = self.to_utc_from_local_iso(
                     interval_start_at_local,
                     timezone_str=timezone_str,
                 )
-            return normalized
+            return normalized_interval
         if cycle_type == A2AScheduleTask.CYCLE_SEQUENTIAL:
             minutes_raw = time_point.get("minutes", time_point.get("interval_minutes"))
             minutes = self.normalize_schedule_minutes(
@@ -110,10 +110,10 @@ class A2AScheduleTimeHelper:
             return {"minutes": minutes}
 
         hh, mm = self.parse_hhmm(time_point.get("time"))
-        normalized: dict[str, Any] = {"time": f"{hh:02d}:{mm:02d}"}
+        normalized_time_point: dict[str, Any] = {"time": f"{hh:02d}:{mm:02d}"}
 
         if cycle_type == A2AScheduleTask.CYCLE_DAILY:
-            return normalized
+            return normalized_time_point
 
         if cycle_type == A2AScheduleTask.CYCLE_WEEKLY:
             weekday = self.coerce_int(time_point.get("weekday"))
@@ -121,8 +121,8 @@ class A2AScheduleTimeHelper:
                 raise A2AScheduleValidationError(
                     "weekly time_point requires weekday in range 1..7 (1=Monday, 7=Sunday)"
                 )
-            normalized["weekday"] = weekday
-            return normalized
+            normalized_time_point["weekday"] = weekday
+            return normalized_time_point
 
         if cycle_type == A2AScheduleTask.CYCLE_MONTHLY:
             day = self.coerce_int(time_point.get("day"))
@@ -130,8 +130,8 @@ class A2AScheduleTimeHelper:
                 raise A2AScheduleValidationError(
                     "monthly time_point requires day in range 1..31"
                 )
-            normalized["day"] = day
-            return normalized
+            normalized_time_point["day"] = day
+            return normalized_time_point
 
         raise A2AScheduleValidationError("Unsupported cycle_type")
 

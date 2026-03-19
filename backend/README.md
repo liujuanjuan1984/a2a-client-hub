@@ -55,7 +55,9 @@ Current scope:
 - `backend/app/schemas/**/*.py`
 - `backend/app/core/**/*.py`
 - `backend/app/db/**/*.py`
+- `backend/app/middleware/debug_logging.py`
 - `backend/app/services/a2a_stream_diagnostics.py`
+- `backend/app/services/a2a_schedule_time.py`
 - `backend/app/services/interrupt_metadata_normalization.py`
 - `backend/app/services/invoke_guard.py`
 
