@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, Optional, cast
 from uuid import UUID
 
 from sqlalchemy import (
@@ -69,7 +69,7 @@ class Invitation(Base, TimestampMixin, SoftDeleteMixin):
         index=True,
         comment="Email address the invitation is bound to (lowercase)",
     )
-    status = Column(
+    status: Any = Column(
         Enum(
             InvitationStatus,
             name="invitation_status",
@@ -120,26 +120,28 @@ class Invitation(Base, TimestampMixin, SoftDeleteMixin):
     def mark_registered(self, user_id: UUID, *, reason: Optional[str] = None) -> None:
         """Mark invitation as successfully registered by a user."""
 
-        self.status = InvitationStatus.REGISTERED
-        self.target_user_id = user_id
-        self.registered_at = func.now()
+        setattr(self, "status", InvitationStatus.REGISTERED)
+        setattr(self, "target_user_id", user_id)
+        setattr(self, "registered_at", func.now())
         if reason:
-            self.memo = f"{self.memo}\n{reason}" if self.memo else reason
+            memo = cast(str | None, self.memo)
+            setattr(self, "memo", f"{memo}\n{reason}" if memo else reason)
 
     def mark_revoked(self, *, reason: Optional[str] = None) -> None:
         """Soft delete and revoke the invitation."""
 
-        self.status = InvitationStatus.REVOKED
-        self.revoked_at = func.now()
+        setattr(self, "status", InvitationStatus.REVOKED)
+        setattr(self, "revoked_at", func.now())
         if reason:
-            self.memo = f"{self.memo}\n{reason}" if self.memo else reason
+            memo = cast(str | None, self.memo)
+            setattr(self, "memo", f"{memo}\n{reason}" if memo else reason)
         self.soft_delete()
 
     def mark_expired(self, timestamp: Optional[datetime] = None) -> None:
         """Mark invitation as expired without deleting it."""
 
-        self.status = InvitationStatus.EXPIRED
-        self.revoked_at = timestamp or func.now()
+        setattr(self, "status", InvitationStatus.EXPIRED)
+        setattr(self, "revoked_at", timestamp or func.now())
 
 
 __all__ = ["Invitation", "InvitationStatus"]

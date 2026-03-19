@@ -6,6 +6,7 @@ Supports multi-user mode with JWT authentication.
 """
 
 from datetime import datetime
+from typing import cast
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from sqlalchemy.sql import func
@@ -90,22 +91,23 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     def disable(self) -> None:
         """Disable the user account"""
 
-        self.disabled_at = func.now()
+        setattr(self, "disabled_at", func.now())
 
     def enable(self) -> None:
         """Enable the user account"""
-        self.disabled_at = None
+        setattr(self, "disabled_at", None)
 
     def is_locked(self, now: datetime | None = None) -> bool:
         """Check whether the user is temporarily locked due to failed logins."""
 
-        if self.locked_until is None:
+        locked_until = cast(datetime | None, self.locked_until)
+        if locked_until is None:
             return False
         reference = now or utc_now()
-        return self.locked_until > reference
+        return locked_until > reference
 
     def reset_login_state(self) -> None:
         """Clear accumulated failed login counters and lock state."""
 
-        self.failed_login_attempts = 0
-        self.locked_until = None
+        setattr(self, "failed_login_attempts", 0)
+        setattr(self, "locked_until", None)
