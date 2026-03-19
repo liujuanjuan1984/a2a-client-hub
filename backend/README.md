@@ -98,6 +98,7 @@ Current scope:
 - `backend/app/services/interrupt_metadata_normalization.py`
 - `backend/app/services/invoke_guard.py`
 - `backend/app/services/invoke_recovery.py`
+- `backend/app/services/invoke_route_runner.py`
 - `backend/app/services/opencode_session_directory.py`
 - `backend/app/services/runtime_auth.py`
 - `backend/app/services/scheduler.py`
