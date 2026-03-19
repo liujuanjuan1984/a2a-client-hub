@@ -577,6 +577,48 @@ async def test_hub_card_validate_success_for_allowlisted_user(
 
 
 @pytest.mark.asyncio
+async def test_hub_card_validate_returns_warning_for_empty_skills(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_validate_warn@example.com",
+        user_email="alice_validate_warn@example.com",
+        token="secret-token-validate-warn",
+    )
+
+    fake_gateway = _FakeGateway()
+    fake_gateway.card_payload["skills"] = []
+    monkeypatch.setattr(
+        hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
+    )
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/card:validate"
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["success"] is True
+    assert payload["message"] == "Agent card validated with warnings"
+    assert payload["validation_warnings"] == [
+        (
+            "Field 'skills' array is empty. Agent must have at least one skill "
+            "if it performs actions."
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_hub_card_validate_reports_shared_session_query_diagnostics(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

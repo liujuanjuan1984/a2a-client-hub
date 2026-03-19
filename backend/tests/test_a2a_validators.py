@@ -19,8 +19,9 @@ def valid_card_data():
 
 class TestValidateAgentCard:
     def test_valid_card(self, valid_card_data):
-        errors = validators.validate_agent_card(valid_card_data)
-        assert not errors
+        result = validators.validate_agent_card(valid_card_data)
+        assert not result.errors
+        assert not result.warnings
 
     @pytest.mark.parametrize(
         "missing_field",
@@ -38,8 +39,8 @@ class TestValidateAgentCard:
     def test_missing_required_field(self, valid_card_data, missing_field):
         card_data = valid_card_data.copy()
         del card_data[missing_field]
-        errors = validators.validate_agent_card(card_data)
-        assert f"Required field is missing: '{missing_field}'." in errors
+        result = validators.validate_agent_card(card_data)
+        assert f"Required field is missing: '{missing_field}'." in result.errors
 
     @pytest.mark.parametrize(
         "invalid_url",
@@ -48,45 +49,46 @@ class TestValidateAgentCard:
     def test_invalid_url(self, valid_card_data, invalid_url):
         card_data = valid_card_data.copy()
         card_data["url"] = invalid_url
-        errors = validators.validate_agent_card(card_data)
+        result = validators.validate_agent_card(card_data)
         assert (
             "Field 'url' must be an absolute URL starting with http:// or https://."
-            in errors
+            in result.errors
         )
 
     def test_invalid_capabilities_type(self, valid_card_data):
         card_data = valid_card_data.copy()
         card_data["capabilities"] = "not-an-object"
-        errors = validators.validate_agent_card(card_data)
-        assert "Field 'capabilities' must be an object." in errors
+        result = validators.validate_agent_card(card_data)
+        assert "Field 'capabilities' must be an object." in result.errors
 
     @pytest.mark.parametrize("field", ["defaultInputModes", "defaultOutputModes"])
     def test_invalid_modes_type_not_array(self, valid_card_data, field):
         card_data = valid_card_data.copy()
         card_data[field] = "not-a-list"
-        errors = validators.validate_agent_card(card_data)
-        assert f"Field '{field}' must be an array of strings." in errors
+        result = validators.validate_agent_card(card_data)
+        assert f"Field '{field}' must be an array of strings." in result.errors
 
     @pytest.mark.parametrize("field", ["defaultInputModes", "defaultOutputModes"])
     def test_invalid_modes_type_item_not_string(self, valid_card_data, field):
         card_data = valid_card_data.copy()
         card_data[field] = [123, "string"]
-        errors = validators.validate_agent_card(card_data)
-        assert f"All items in '{field}' must be strings." in errors
+        result = validators.validate_agent_card(card_data)
+        assert f"All items in '{field}' must be strings." in result.errors
 
     def test_invalid_skills_type(self, valid_card_data):
         card_data = valid_card_data.copy()
         card_data["skills"] = "not-a-list"
-        errors = validators.validate_agent_card(card_data)
-        assert "Field 'skills' must be an array of AgentSkill objects." in errors
+        result = validators.validate_agent_card(card_data)
+        assert "Field 'skills' must be an array of AgentSkill objects." in result.errors
 
     def test_empty_skills_array(self, valid_card_data):
         card_data = valid_card_data.copy()
         card_data["skills"] = []
-        errors = validators.validate_agent_card(card_data)
+        result = validators.validate_agent_card(card_data)
+        assert not result.errors
         assert (
             "Field 'skills' array is empty. Agent must have at least one skill if it performs actions."
-            in errors
+            in result.warnings
         )
 
 

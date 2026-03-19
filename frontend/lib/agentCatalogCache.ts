@@ -9,6 +9,7 @@ export const AGENT_ERROR_MESSAGES = {
 
 type ValidationResponseLike = {
   validation_errors?: unknown[] | null;
+  validation_warnings?: unknown[] | null;
   message?: unknown;
 };
 

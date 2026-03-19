@@ -19,7 +19,11 @@ class _DummyGateway:
 async def test_fetch_and_validate_agent_card_validation_errors_gated(monkeypatch):
     monkeypatch.setattr(
         "app.services.a2a_agent_card_validation.validate_agent_card_payload",
-        lambda payload: ["bad-card"],
+        lambda payload: type(
+            "_ValidationResult",
+            (),
+            {"errors": ["bad-card"], "warnings": []},
+        )(),
     )
 
     monkeypatch.setattr(settings, "debug", False)
@@ -33,6 +37,31 @@ async def test_fetch_and_validate_agent_card_validation_errors_gated(monkeypatch
         gateway=_DummyGateway(), resolved=object()
     )
     assert resp_debug.validation_errors == ["bad-card"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_and_validate_agent_card_exposes_warning_only_success(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.a2a_agent_card_validation.validate_agent_card_payload",
+        lambda payload: type(
+            "_ValidationResult",
+            (),
+            {
+                "errors": [],
+                "warnings": ["Field 'skills' array is empty."],
+            },
+        )(),
+    )
+
+    monkeypatch.setattr(settings, "debug", False)
+    resp = await fetch_and_validate_agent_card(
+        gateway=_DummyGateway(), resolved=object()
+    )
+
+    assert resp.success is True
+    assert resp.message == "Agent card validated with warnings"
+    assert resp.validation_errors is None
+    assert resp.validation_warnings == ["Field 'skills' array is empty."]
 
 
 @pytest.mark.asyncio

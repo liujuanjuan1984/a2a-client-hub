@@ -56,7 +56,9 @@ async def fetch_and_validate_agent_card(
         )
 
     card_payload = card.model_dump(exclude_none=True)
-    validation_errors = validate_agent_card_payload(card_payload)
+    validation_result = validate_agent_card_payload(card_payload)
+    validation_errors = list(validation_result.errors)
+    validation_warnings = list(validation_result.warnings)
     diagnostics_card: AgentCard | None = None
     try:
         diagnostics_card = AgentCard.model_validate(card_payload)
@@ -72,7 +74,9 @@ async def fetch_and_validate_agent_card(
         validation_errors.append(session_query.error)
 
     success = not validation_errors
-    if success:
+    if success and validation_warnings:
+        message = "Agent card validated with warnings"
+    elif success:
         message = "Agent card validated"
     elif session_query and session_query.status == "invalid" and session_query.error:
         message = f"Shared session query contract is invalid: {session_query.error}"
@@ -87,6 +91,8 @@ async def fetch_and_validate_agent_card(
         "card": card_payload,
         "shared_session_query": session_query,
     }
+    if validation_warnings:
+        response_kwargs["validation_warnings"] = validation_warnings
     if app.core.config.settings.debug:
         response_kwargs["validation_errors"] = validation_errors
 
