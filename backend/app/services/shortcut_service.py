@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Sequence, cast
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -124,17 +124,17 @@ def _normalize_order(value: int | None, *, default: int = 0) -> int:
 def _next_order(items: Sequence[ShortcutModel]) -> int:
     if not items:
         return 0
-    return max(item.sort_order for item in items) + 1
+    return max(cast(int, item.sort_order) for item in items) + 1
 
 
 def _shortcut_to_payload(shortcut: ShortcutModel) -> ShortcutResponse:
     return ShortcutResponse(
-        id=shortcut.id,
-        title=shortcut.title,
-        prompt=shortcut.prompt,
+        id=cast(UUID, shortcut.id),
+        title=cast(str, shortcut.title),
+        prompt=cast(str, shortcut.prompt),
         is_default=bool(shortcut.is_default),
         order=int(shortcut.sort_order),
-        agent_id=shortcut.agent_id,
+        agent_id=cast(UUID | None, shortcut.agent_id),
     )
 
 
@@ -254,11 +254,12 @@ class ShortcutService:
         if _is_default_shortcut_id(shortcut_id):
             raise ShortcutForbiddenError("Default shortcuts cannot be modified")
 
+        user_id = cast(UUID, user.id)
         shortcut = (
             await db.execute(
                 select(ShortcutModel).where(
                     ShortcutModel.id == shortcut_id,
-                    ShortcutModel.user_id == user.id,
+                    ShortcutModel.user_id == user_id,
                 )
             )
         ).scalar_one_or_none()
@@ -266,19 +267,23 @@ class ShortcutService:
         if shortcut is None:
             raise ShortcutNotFoundError("Shortcut not found")
 
-        if shortcut.is_default:
+        if cast(bool, shortcut.is_default):
             raise ShortcutForbiddenError("Default shortcuts cannot be modified")
 
         if title is not None:
-            shortcut.title = _normalize_title(title)
+            setattr(shortcut, "title", _normalize_title(title))
         if prompt is not None:
-            shortcut.prompt = _normalize_prompt(prompt)
+            setattr(shortcut, "prompt", _normalize_prompt(prompt))
         if order is not None:
-            shortcut.sort_order = _normalize_order(order, default=shortcut.sort_order)
+            setattr(
+                shortcut,
+                "sort_order",
+                _normalize_order(order, default=cast(int, shortcut.sort_order)),
+            )
         if clear_agent:
-            shortcut.agent_id = None
+            setattr(shortcut, "agent_id", None)
         elif agent_id is not None:
-            shortcut.agent_id = agent_id
+            setattr(shortcut, "agent_id", agent_id)
 
         await commit_safely(db)
         await db.refresh(shortcut)
@@ -294,11 +299,12 @@ class ShortcutService:
         if _is_default_shortcut_id(shortcut_id):
             raise ShortcutForbiddenError("Default shortcuts cannot be deleted")
 
+        user_id = cast(UUID, user.id)
         shortcut = (
             await db.execute(
                 select(ShortcutModel).where(
                     ShortcutModel.id == shortcut_id,
-                    ShortcutModel.user_id == user.id,
+                    ShortcutModel.user_id == user_id,
                 )
             )
         ).scalar_one_or_none()
@@ -306,7 +312,7 @@ class ShortcutService:
         if shortcut is None:
             raise ShortcutNotFoundError("Shortcut not found")
 
-        if shortcut.is_default:
+        if cast(bool, shortcut.is_default):
             raise ShortcutForbiddenError("Default shortcuts cannot be deleted")
 
         await db.delete(shortcut)
