@@ -4,7 +4,7 @@ REST endpoints for user-managed A2A agents.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, WebSocket, status
@@ -26,7 +26,9 @@ from app.integrations.a2a_client.types import ResolvedAgent
 from app.integrations.a2a_client.validators import validate_message
 from app.schemas.a2a_agent import (
     A2AAgentCreate,
+    A2AAgentListMeta,
     A2AAgentListResponse,
+    A2AAgentPagination,
     A2AAgentResponse,
     A2AAgentUpdate,
 )
@@ -108,28 +110,29 @@ async def list_agents(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=200, description="Page size"),
 ) -> A2AAgentListResponse:
+    current_user_id = cast(UUID, current_user.id)
     logger.info(
         "A2A agents list requested",
         extra={
-            "user_id": str(current_user.id),
+            "user_id": str(current_user_id),
             "page": page,
             "size": size,
         },
     )
-    items = await a2a_agent_service.list_agents(db, user_id=current_user.id)
+    items = await a2a_agent_service.list_agents(db, user_id=current_user_id)
     total = len(items)
     pages = (total + size - 1) // size if size else 0
     offset = (page - 1) * size
     page_items = items[offset : offset + size]
     return A2AAgentListResponse(
         items=[_build_response(item) for item in page_items],
-        pagination={
-            "page": page,
-            "size": size,
-            "total": total,
-            "pages": pages,
-        },
-        meta={},
+        pagination=A2AAgentPagination(
+            page=page,
+            size=size,
+            total=total,
+            pages=pages,
+        ),
+        meta=A2AAgentListMeta(),
     )
 
 
@@ -140,11 +143,12 @@ async def create_agent(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> Any:
+    current_user_id = cast(UUID, current_user.id)
     normalized_card_url = _normalize_card_url(payload.card_url)
     logger.info(
         "A2A agent create requested",
         extra={
-            "user_id": str(current_user.id),
+            "user_id": str(current_user_id),
             "agent_name": payload.name,
             "card_url": redact_url_for_logging(normalized_card_url),
             "auth_type": payload.auth_type,
@@ -156,7 +160,7 @@ async def create_agent(
     try:
         record = await a2a_agent_service.create_agent(
             db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             name=payload.name,
             card_url=normalized_card_url,
             auth_type=payload.auth_type,
@@ -180,13 +184,14 @@ async def update_agent(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> Any:
+    current_user_id = cast(UUID, current_user.id)
     normalized_card_url = (
         _normalize_card_url(payload.card_url) if payload.card_url is not None else None
     )
     logger.info(
         "A2A agent update requested",
         extra={
-            "user_id": str(current_user.id),
+            "user_id": str(current_user_id),
             "agent_id": str(agent_id),
             "agent_name": payload.name,
             "card_url": redact_url_for_logging(normalized_card_url),
@@ -203,7 +208,7 @@ async def update_agent(
     try:
         record = await a2a_agent_service.update_agent(
             db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             agent_id=agent_id,
             name=payload.name,
             card_url=normalized_card_url,
@@ -233,17 +238,18 @@ async def delete_agent(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
+    current_user_id = cast(UUID, current_user.id)
     logger.info(
         "A2A agent delete requested",
         extra={
-            "user_id": str(current_user.id),
+            "user_id": str(current_user_id),
             "agent_id": str(agent_id),
         },
     )
     try:
         await a2a_agent_service.delete_agent(
             db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             agent_id=agent_id,
         )
     except A2AAgentNotFoundError as exc:
@@ -263,9 +269,10 @@ async def validate_agent_card(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AAgentCardValidationResponse:
+    current_user_id = cast(UUID, current_user.id)
     try:
         runtime = await a2a_runtime_builder.build(
-            db, user_id=current_user.id, agent_id=agent_id
+            db, user_id=current_user_id, agent_id=agent_id
         )
     except A2ARuntimeNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -275,14 +282,14 @@ async def validate_agent_card(
     logger.info(
         "A2A agent card validation requested",
         extra={
-            "user_id": str(current_user.id),
+            "user_id": str(current_user_id),
             "agent_id": str(agent_id),
             "agent_url": redact_url_for_logging(runtime.resolved.url),
         },
     )
     try:
         return await fetch_and_validate_agent_card(
-            gateway=get_a2a_service().gateway,
+            gateway=cast(Any, get_a2a_service()).gateway,
             resolved=runtime.resolved,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
@@ -299,12 +306,13 @@ async def proxy_agent_card(
     payload: A2AAgentCardProxyRequest,
     current_user: User = Depends(get_current_user),
 ) -> A2AAgentCardValidationResponse:
+    current_user_id = cast(UUID, current_user.id)
     card_url = _normalize_card_url(payload.card_url)
     headers = _build_proxy_headers(payload)
     logger.info(
         "A2A agent card proxy requested",
         extra={
-            "user_id": str(current_user.id),
+            "user_id": str(current_user_id),
             "card_url": redact_url_for_logging(card_url),
             "auth_type": payload.auth_type,
             "extra_header_keys": sorted((payload.extra_headers or {}).keys()),
@@ -320,7 +328,7 @@ async def proxy_agent_card(
 
     try:
         return await fetch_and_validate_agent_card(
-            gateway=get_a2a_service().gateway,
+            gateway=cast(Any, get_a2a_service()).gateway,
             resolved=resolved,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
@@ -339,14 +347,15 @@ async def issue_invoke_ws_token(
     current_user: User = Depends(get_current_user),
 ) -> WsTicketResponse:
     """Issue a one-time WS ticket for agent invocation."""
+    current_user_id = cast(UUID, current_user.id)
     return await run_issue_ws_ticket_route(
         db=db,
-        user_id=current_user.id,
+        user_id=current_user_id,
         scope_type="me_a2a_agent",
         scope_id=agent_id,
         ensure_access=lambda: a2a_agent_service.get_agent(
             db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             agent_id=agent_id,
         ),
         not_found_errors=(A2AAgentNotFoundError,),
@@ -362,22 +371,23 @@ async def invoke_agent_ws(
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_ws_ticket_user_me),
-):
+) -> None:
     """
     WebSocket endpoint for A2A agent invocation with streaming responses.
 
     This endpoint accepts a WebSocket connection, waits for an invocation request,
     and then streams back events from the agent.
     """
+    current_user_id = cast(UUID, current_user.id)
     await run_ws_invoke_route(
         websocket=websocket,
         db=db,
-        user_id=current_user.id,
+        user_id=current_user_id,
         agent_id=agent_id,
         agent_source="personal",
-        gateway=get_a2a_service().gateway,
+        gateway=cast(Any, get_a2a_service()).gateway,
         runtime_builder=lambda: a2a_runtime_builder.build(
-            db, user_id=current_user.id, agent_id=agent_id
+            db, user_id=current_user_id, agent_id=agent_id
         ),
         runtime_not_found_errors=(A2ARuntimeNotFoundError,),
         runtime_not_found_message=lambda exc: str(exc),
@@ -387,7 +397,7 @@ async def invoke_agent_ws(
         logger=logger,
         invoke_log_message="A2A agent invoke WS requested",
         invoke_log_extra_builder=lambda payload, runtime: {
-            "user_id": str(current_user.id),
+            "user_id": str(current_user_id),
             "agent_id": str(agent_id),
             "agent_url": redact_url_for_logging(runtime.resolved.url),
             "query_meta": summarize_query(payload.query),
@@ -408,19 +418,20 @@ async def invoke_agent(
     response: Response,
     current_user: User = Depends(get_current_user),
     stream: bool = Query(False, description="Set to true for SSE streaming responses."),
-):
+) -> Any:
     response.headers["Cache-Control"] = "no-store"
     async with AsyncSessionLocal() as db:
+        current_user_id = cast(UUID, current_user.id)
         return await run_http_invoke_route(
             db=db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             agent_id=agent_id,
             agent_source="personal",
             payload=payload,
             stream=stream,
-            gateway=get_a2a_service().gateway,
+            gateway=cast(Any, get_a2a_service()).gateway,
             runtime_builder=lambda: a2a_runtime_builder.build(
-                db, user_id=current_user.id, agent_id=agent_id
+                db, user_id=current_user_id, agent_id=agent_id
             ),
             runtime_not_found_errors=(A2ARuntimeNotFoundError,),
             runtime_not_found_status_code=404,
@@ -430,7 +441,7 @@ async def invoke_agent(
             logger=logger,
             invoke_log_message="A2A agent invoke requested",
             invoke_log_extra_builder=lambda request, runtime: {
-                "user_id": str(current_user.id),
+                "user_id": str(current_user_id),
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "stream": stream,

@@ -8,7 +8,7 @@ This module centralises the route implementations to avoid drift.
 from __future__ import annotations
 
 import json
-from typing import Any, Awaitable, Callable, Dict, Optional, Type
+from typing import Any, Awaitable, Callable, Dict, Optional, Type, cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, status
@@ -89,8 +89,9 @@ def create_extension_capability_router(
         return f"{log_scope} {message}".strip()
 
     async def _get_runtime(db: AsyncSession, current_user: User, agent_id: UUID) -> Any:
+        current_user_id = cast(UUID, current_user.id)
         try:
-            return await build_runtime(db, user_id=current_user.id, agent_id=agent_id)
+            return await build_runtime(db, user_id=current_user_id, agent_id=agent_id)
         except runtime_not_found_error as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except runtime_validation_error as exc:
@@ -129,6 +130,9 @@ def create_extension_capability_router(
             content=payload.model_dump(),
         )
 
+    def _extensions_service() -> Any:
+        return cast(Any, get_a2a_extensions_service())
+
     @router.get(
         "/{agent_id}/extensions/capabilities",
         response_model=A2AExtensionCapabilitiesResponse,
@@ -154,7 +158,7 @@ def create_extension_capability_router(
         except A2AExtensionNotSupportedError:
             model_selection = False
 
-        return A2AExtensionCapabilitiesResponse(model_selection=model_selection)
+        return A2AExtensionCapabilitiesResponse(modelSelection=model_selection)
 
     @router.post(
         "/{agent_id}/extensions/models/providers:list",
@@ -183,7 +187,7 @@ def create_extension_capability_router(
             },
         )
         return await _run_extension_call(
-            get_a2a_extensions_service().list_model_providers(
+            _extensions_service().list_model_providers(
                 runtime=runtime,
                 session_metadata=payload.session_metadata,
             )
@@ -217,7 +221,7 @@ def create_extension_capability_router(
             },
         )
         return await _run_extension_call(
-            get_a2a_extensions_service().list_models(
+            _extensions_service().list_models(
                 runtime=runtime,
                 provider_id=payload.provider_id,
                 session_metadata=payload.session_metadata,
@@ -287,7 +291,7 @@ def create_extension_capability_router(
         query: Optional[str] = Query(
             None, description="Optional JSON object encoded as a string"
         ),
-    ) -> A2AExtensionResponse:
+    ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime(db, current_user, agent_id)
@@ -306,7 +310,7 @@ def create_extension_capability_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().list_sessions(
+            _extensions_service().list_sessions(
                 runtime=runtime,
                 page=page,
                 size=size,
@@ -327,7 +331,7 @@ def create_extension_capability_router(
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
-    ) -> A2AExtensionResponse:
+    ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime(db, current_user, agent_id)
@@ -342,7 +346,7 @@ def create_extension_capability_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().continue_session(
+            _extensions_service().continue_session(
                 runtime=runtime,
                 session_id=session_id,
             )
@@ -361,7 +365,7 @@ def create_extension_capability_router(
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
-    ) -> A2AExtensionResponse:
+    ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime(db, current_user, agent_id)
@@ -385,7 +389,7 @@ def create_extension_capability_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().prompt_session_async(
+            _extensions_service().prompt_session_async(
                 runtime=runtime,
                 session_id=session_id,
                 request_payload=payload.request,
@@ -405,7 +409,7 @@ def create_extension_capability_router(
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
-    ) -> A2AExtensionResponse:
+    ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime(db, current_user, agent_id)
@@ -421,7 +425,7 @@ def create_extension_capability_router(
             },
         )
         return await _run_extension_call(
-            get_a2a_extensions_service().reply_permission_interrupt(
+            _extensions_service().reply_permission_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
                 reply=payload.reply,
@@ -441,7 +445,7 @@ def create_extension_capability_router(
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
-    ) -> A2AExtensionResponse:
+    ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime(db, current_user, agent_id)
@@ -457,7 +461,7 @@ def create_extension_capability_router(
             },
         )
         return await _run_extension_call(
-            get_a2a_extensions_service().reply_question_interrupt(
+            _extensions_service().reply_question_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
                 answers=payload.answers,
@@ -477,7 +481,7 @@ def create_extension_capability_router(
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
-    ) -> A2AExtensionResponse:
+    ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime(db, current_user, agent_id)
@@ -492,7 +496,7 @@ def create_extension_capability_router(
             },
         )
         return await _run_extension_call(
-            get_a2a_extensions_service().reject_question_interrupt(
+            _extensions_service().reject_question_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
                 metadata=payload.metadata,
@@ -512,7 +516,7 @@ def create_extension_capability_router(
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
-    ) -> A2AExtensionResponse:
+    ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime(db, current_user, agent_id)
@@ -530,7 +534,7 @@ def create_extension_capability_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().list_sessions(
+            _extensions_service().list_sessions(
                 runtime=runtime,
                 page=payload.page,
                 size=payload.size,
@@ -563,7 +567,7 @@ def create_extension_capability_router(
         query: Optional[str] = Query(
             None, description="Optional JSON object encoded as a string"
         ),
-    ) -> A2AExtensionResponse:
+    ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime(db, current_user, agent_id)
@@ -583,7 +587,7 @@ def create_extension_capability_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().get_session_messages(
+            _extensions_service().get_session_messages(
                 runtime=runtime,
                 session_id=session_id,
                 page=page,
@@ -607,7 +611,7 @@ def create_extension_capability_router(
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
-    ) -> A2AExtensionResponse:
+    ) -> A2AExtensionResponse | JSONResponse:
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime(db, current_user, agent_id)
@@ -626,7 +630,7 @@ def create_extension_capability_router(
         )
 
         return await _run_extension_call(
-            get_a2a_extensions_service().get_session_messages(
+            _extensions_service().get_session_messages(
                 runtime=runtime,
                 session_id=session_id,
                 page=payload.page,
