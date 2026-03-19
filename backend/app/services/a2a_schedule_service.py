@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
+from datetime import datetime, timedelta
+from typing import Any, cast
 from uuid import UUID
 
+from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.logging import get_logger
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
+from app.db.session import AsyncSessionLocal
+from app.db.transaction import commit_safely
 from app.services.a2a_schedule_common import (
     A2A_MANUAL_SOURCE,
     A2A_SCHEDULE_SOURCE,
@@ -26,6 +33,13 @@ from app.services.a2a_schedule_dispatch import A2AScheduleDispatchService
 from app.services.a2a_schedule_projection import A2AScheduleProjectionService
 from app.services.a2a_schedule_support import A2AScheduleSupport
 from app.services.a2a_schedule_time import A2AScheduleTimeHelper
+from app.services.scheduler import get_scheduler
+from app.utils.timezone_util import ensure_utc, utc_now
+
+logger = get_logger(__name__)
+
+_A2A_SCHEDULE_EXECUTION_CLEANUP_JOB_ID = "a2a-schedule-execution-cleanup-daily"
+_A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE = 500
 
 
 class A2AScheduleService:
@@ -259,6 +273,58 @@ class A2AScheduleService:
             agent_message_id=agent_message_id,
         )
 
+    async def cleanup_terminal_executions(
+        self,
+        db: AsyncSession,
+        *,
+        now: datetime | None = None,
+        retention_days: int | None = None,
+        batch_size: int = _A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE,
+    ) -> int:
+        retention_window_days = (
+            settings.a2a_schedule_execution_retention_days
+            if retention_days is None
+            else int(retention_days)
+        )
+        limited_batch_size = max(int(batch_size), 0)
+        if retention_window_days <= 0 or limited_batch_size == 0:
+            return 0
+
+        await self._support.apply_default_write_timeouts(db)
+
+        now_utc = ensure_utc(now or utc_now())
+        cutoff = now_utc - timedelta(days=retention_window_days)
+        terminal_finished_at = func.coalesce(
+            A2AScheduleExecution.finished_at,
+            A2AScheduleExecution.started_at,
+            A2AScheduleExecution.scheduled_for,
+            A2AScheduleExecution.created_at,
+        )
+        stale_execution_ids = (
+            select(A2AScheduleExecution.id)
+            .where(
+                A2AScheduleExecution.status.in_(
+                    (
+                        A2AScheduleExecution.STATUS_SUCCESS,
+                        A2AScheduleExecution.STATUS_FAILED,
+                    )
+                ),
+                terminal_finished_at < cutoff,
+            )
+            .order_by(terminal_finished_at.asc(), A2AScheduleExecution.id.asc())
+            .limit(limited_batch_size)
+        )
+        stmt = delete(A2AScheduleExecution).where(
+            A2AScheduleExecution.id.in_(stale_execution_ids)
+        )
+        result = cast(CursorResult[Any], await db.execute(stmt))
+        deleted_count = int(result.rowcount or 0)
+        if deleted_count <= 0:
+            await db.rollback()
+            return 0
+        await commit_safely(db)
+        return deleted_count
+
     def format_local_datetime(
         self,
         value: datetime | None,
@@ -305,6 +371,36 @@ class A2AScheduleService:
 
 a2a_schedule_service = A2AScheduleService()
 
+
+async def cleanup_a2a_schedule_executions_job() -> None:
+    """Delete old terminal schedule execution history in bounded batches."""
+
+    async with AsyncSessionLocal() as db:
+        deleted = await a2a_schedule_service.cleanup_terminal_executions(db)
+
+    if deleted > 0:
+        logger.info("Cleaned up %d old schedule execution record(s).", deleted)
+
+
+def ensure_a2a_schedule_execution_cleanup_job() -> None:
+    """Register the daily schedule execution cleanup job."""
+
+    scheduler = get_scheduler()
+    if scheduler.get_job(_A2A_SCHEDULE_EXECUTION_CLEANUP_JOB_ID):
+        return
+
+    scheduler.add_job(
+        cleanup_a2a_schedule_executions_job,
+        trigger=CronTrigger(hour=3, minute=17),
+        id=_A2A_SCHEDULE_EXECUTION_CLEANUP_JOB_ID,
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    logger.info("Registered daily A2A schedule execution cleanup job.")
+
+
 __all__ = [
     "A2A_MANUAL_SOURCE",
     "A2A_SCHEDULE_SOURCE",
@@ -317,4 +413,6 @@ __all__ = [
     "A2AScheduleValidationError",
     "ClaimedA2AScheduleTask",
     "a2a_schedule_service",
+    "cleanup_a2a_schedule_executions_job",
+    "ensure_a2a_schedule_execution_cleanup_job",
 ]

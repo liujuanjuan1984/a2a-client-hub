@@ -578,6 +578,11 @@ class Settings(BaseSettings):
         alias="A2A_SCHEDULE_TASK_FAILURE_THRESHOLD",
         description="Consecutive failures before a scheduled task is automatically disabled.",
     )
+    a2a_schedule_execution_retention_days: int = Field(
+        default=30,
+        alias="A2A_SCHEDULE_EXECUTION_RETENTION_DAYS",
+        description="Number of days to retain terminal scheduled execution history before cleanup.",
+    )
     a2a_schedule_min_interval_minutes: int = Field(
         default=60,
         alias="A2A_SCHEDULE_MIN_INTERVAL_MINUTES",
