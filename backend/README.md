@@ -88,6 +88,7 @@ Current scope:
 - `backend/app/services/a2a_stream_diagnostics.py`
 - `backend/app/services/a2a_schedule_crud.py`
 - `backend/app/services/a2a_schedule_dispatch.py`
+- `backend/app/services/a2a_schedule_job.py`
 - `backend/app/services/a2a_schedule_projection.py`
 - `backend/app/services/a2a_schedule_runtime_summary.py`
 - `backend/app/services/a2a_schedule_time.py`
