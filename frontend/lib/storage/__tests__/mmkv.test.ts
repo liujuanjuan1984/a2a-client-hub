@@ -16,7 +16,23 @@ const loadWebStorageModule = (storage: {
   removeItem: jest.Mock;
 }) => {
   jest.resetModules();
-  (globalThis as { window?: unknown }).window = { localStorage: storage };
+  const sessionValues = new Map<string, string>();
+  const sessionStorage = {
+    getItem: jest.fn((key: string) => sessionValues.get(key) ?? null),
+    setItem: jest.fn((key: string, value: string) => {
+      sessionValues.set(key, value);
+    }),
+    removeItem: jest.fn((key: string) => {
+      sessionValues.delete(key);
+    }),
+  };
+  (globalThis as { window?: unknown }).window = {
+    localStorage: storage,
+    sessionStorage,
+  };
+  (globalThis as { crypto?: unknown }).crypto = {
+    randomUUID: jest.fn(() => "tab-123"),
+  };
 
   jest.doMock("react-native", () => ({
     Platform: { OS: "web" },
@@ -36,7 +52,10 @@ const loadWebStorageModule = (storage: {
     MMKV: jest.fn(),
   }));
 
-  return require("../mmkv") as typeof import("../mmkv");
+  return {
+    ...(require("../mmkv") as typeof import("../mmkv")),
+    sessionStorage,
+  };
 };
 
 const loadNativeStorageModule = (options: NativeModuleOptions = {}) => {
@@ -125,6 +144,7 @@ describe("mmkvStateStorage web quota recovery", () => {
     jest.resetModules();
     jest.clearAllMocks();
     delete (globalThis as { window?: unknown }).window;
+    delete (globalThis as { crypto?: unknown }).crypto;
   });
 
   it("reclaims legacy keys and retries when quota is exceeded", async () => {
@@ -208,6 +228,27 @@ describe("mmkvStateStorage web quota recovery", () => {
     );
     warnSpy.mockRestore();
   });
+
+  it("builds tab-scoped web persist keys for chat and agents state", () => {
+    const storage = {
+      getItem: jest.fn(),
+      setItem: jest.fn(),
+      removeItem: jest.fn(),
+    };
+    const { buildPersistStorageName, sessionStorage } =
+      loadWebStorageModule(storage);
+
+    expect(buildPersistStorageName("a2a-client-hub.chat", "web_tab")).toBe(
+      "a2a-client-hub.chat.tab-123",
+    );
+    expect(buildPersistStorageName("a2a-client-hub.agents", "web_tab")).toBe(
+      "a2a-client-hub.agents.tab-123",
+    );
+    expect(sessionStorage.setItem).toHaveBeenCalledWith(
+      "a2a-client-hub.tab-id",
+      "tab-123",
+    );
+  });
 });
 
 describe("mmkvStateStorage native resilience", () => {
@@ -215,6 +256,7 @@ describe("mmkvStateStorage native resilience", () => {
     jest.resetModules();
     jest.clearAllMocks();
     delete (globalThis as { window?: unknown }).window;
+    delete (globalThis as { crypto?: unknown }).crypto;
   });
 
   it("separates key families into dedicated MMKV instances", async () => {

@@ -2,7 +2,7 @@ import { type Href } from "expo-router";
 
 import { blurActiveElement } from "@/lib/focus";
 
-export type BackOrHomeRouter = {
+type BackOrHomeRouter = {
   canGoBack: () => boolean;
   back: () => void;
   replace: (href: Href) => void;
