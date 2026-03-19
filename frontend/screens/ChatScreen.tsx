@@ -85,7 +85,7 @@ export function ChatScreen({
         visible={controller.showShortcutManager}
         onClose={controller.closeShortcutManager}
         onUseShortcut={controller.handleUseShortcut}
-        initialPrompt={controller.input}
+        initialPrompt={controller.shortcutManagerInitialPrompt}
         agentId={controller.activeAgentId}
       />
 
@@ -116,7 +116,12 @@ export function ChatScreen({
         selectedModel={controller.selectedModel}
         onOpenModelPicker={controller.openModelPicker}
         inputRef={controller.inputRef}
-        input={controller.input}
+        inputResetKey={controller.inputResetKey}
+        inputDefaultValue={controller.inputDefaultValue}
+        hasInput={controller.hasInput}
+        hasSendableInput={controller.hasSendableInput}
+        maxInputChars={controller.maxInputChars}
+        onClearInput={controller.clearInput}
         onInputChange={controller.handleInputChange}
         onContentSizeChange={controller.handleContentSizeChange}
         inputHeight={controller.inputHeight}

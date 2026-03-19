@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   NativeSyntheticEvent,
   Platform,
@@ -39,6 +39,8 @@ type UseChatComposerControllerParams = {
   onAfterSend: () => void;
 };
 
+const CHAT_COMPOSER_MAX_CHARS = 50_000;
+
 export function useChatComposerController({
   activeAgentId,
   conversationId,
@@ -50,12 +52,64 @@ export function useChatComposerController({
   onAfterSend,
 }: UseChatComposerControllerParams) {
   const inputRef = useRef<TextInput>(null);
-  const [input, setInput] = useState("");
+  const draftInputRef = useRef("");
+  const focusInputAfterResetRef = useRef(false);
+  const maxLengthToastShownRef = useRef(false);
+  const [inputResetKey, setInputResetKey] = useState(0);
+  const [inputDefaultValue, setInputDefaultValue] = useState("");
+  const [hasInput, setHasInput] = useState(false);
+  const [hasSendableInput, setHasSendableInput] = useState(false);
+  const [shortcutManagerInitialPrompt, setShortcutManagerInitialPrompt] =
+    useState("");
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const minInputHeight = 44;
   const maxInputHeight = 128;
   const [inputHeight, setInputHeight] = useState(minInputHeight);
+
+  useEffect(() => {
+    if (!focusInputAfterResetRef.current) {
+      return;
+    }
+    focusInputAfterResetRef.current = false;
+    inputRef.current?.focus();
+  }, [inputResetKey]);
+
+  const updateInputFlags = useCallback((value: string) => {
+    const nextHasInput = value.length > 0;
+    const nextHasSendableInput = value.trim().length > 0;
+    setHasInput((current) =>
+      current === nextHasInput ? current : nextHasInput,
+    );
+    setHasSendableInput((current) =>
+      current === nextHasSendableInput ? current : nextHasSendableInput,
+    );
+  }, []);
+
+  const replaceInput = useCallback(
+    (
+      value: string,
+      options?: {
+        focus?: boolean;
+        resetHeight?: boolean;
+      },
+    ) => {
+      draftInputRef.current = value;
+      updateInputFlags(value);
+      setInputDefaultValue(value);
+      setInputResetKey((current) => current + 1);
+      if (options?.resetHeight || !value) {
+        setInputHeight(minInputHeight);
+      }
+      if (value.length < CHAT_COMPOSER_MAX_CHARS) {
+        maxLengthToastShownRef.current = false;
+      }
+      if (options?.focus) {
+        focusInputAfterResetRef.current = true;
+      }
+    },
+    [minInputHeight, updateInputFlags],
+  );
 
   const handleSend = useCallback(() => {
     if (!activeAgentId || !conversationId || !agentSource) {
@@ -68,26 +122,26 @@ export function useChatComposerController({
       );
       return;
     }
+    const input = draftInputRef.current;
     if (!input.trim()) {
       return;
     }
 
     sendMessage(conversationId, activeAgentId, input, agentSource);
-    setInput("");
-    setInputHeight(minInputHeight);
+    replaceInput("", { resetHeight: true });
     onAfterSend();
   }, [
     activeAgentId,
     agentSource,
     conversationId,
-    input,
-    minInputHeight,
     onAfterSend,
     pendingInterruptActive,
+    replaceInput,
     sendMessage,
   ]);
 
   const openShortcutManager = useCallback(() => {
+    setShortcutManagerInitialPrompt(draftInputRef.current);
     setShowShortcutManager(true);
   }, []);
 
@@ -129,21 +183,39 @@ export function useChatComposerController({
 
   const handleUseShortcut = useCallback(
     (prompt: string) => {
-      setInput(prompt);
+      replaceInput(prompt, { focus: true, resetHeight: true });
       closeShortcutManager();
-      inputRef.current?.focus();
     },
-    [closeShortcutManager],
+    [closeShortcutManager, replaceInput],
   );
+
+  const clearInput = useCallback(() => {
+    replaceInput("", { focus: true, resetHeight: true });
+  }, [replaceInput]);
 
   const handleInputChange = useCallback(
     (value: string) => {
-      setInput(value);
+      const previousValue = draftInputRef.current;
+      draftInputRef.current = value;
+      updateInputFlags(value);
       if (!value) {
         setInputHeight(minInputHeight);
       }
+      if (
+        value.length >= CHAT_COMPOSER_MAX_CHARS &&
+        previousValue.length < CHAT_COMPOSER_MAX_CHARS &&
+        !maxLengthToastShownRef.current
+      ) {
+        maxLengthToastShownRef.current = true;
+        toast.info(
+          "Message too long",
+          `Messages are limited to ${CHAT_COMPOSER_MAX_CHARS.toLocaleString()} characters.`,
+        );
+      } else if (value.length < CHAT_COMPOSER_MAX_CHARS) {
+        maxLengthToastShownRef.current = false;
+      }
     },
-    [minInputHeight],
+    [minInputHeight, updateInputFlags],
   );
 
   const handleContentSizeChange = useCallback(
@@ -175,7 +247,12 @@ export function useChatComposerController({
 
   return {
     inputRef,
-    input,
+    inputResetKey,
+    inputDefaultValue,
+    hasInput,
+    hasSendableInput,
+    maxInputChars: CHAT_COMPOSER_MAX_CHARS,
+    shortcutManagerInitialPrompt,
     inputHeight,
     maxInputHeight,
     showShortcutManager,
@@ -187,6 +264,7 @@ export function useChatComposerController({
     handleModelSelect,
     clearModelSelection,
     handleUseShortcut,
+    clearInput,
     handleInputChange,
     handleContentSizeChange,
     handleKeyPress,
