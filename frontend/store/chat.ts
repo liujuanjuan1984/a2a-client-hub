@@ -22,7 +22,10 @@ import {
   updateConversationMessage,
 } from "@/lib/chatHistoryCache";
 import { generateUuid } from "@/lib/id";
-import { createPersistStorage } from "@/lib/storage/mmkv";
+import {
+  buildPersistStorageName,
+  createPersistStorage,
+} from "@/lib/storage/mmkv";
 import { chatConnectionService } from "@/services/chatConnectionService";
 import { type AgentSource } from "@/store/agents";
 import { executeChatRuntime } from "@/store/chatRuntime";
@@ -549,11 +552,8 @@ export const useChatStore = create<ChatState>()(
       },
     }),
     {
-      name: "a2a-client-hub.chat",
-      storage: createPersistStorage({
-        baseKey: "a2a-client-hub.chat",
-        scope: "web_tab",
-      }),
+      name: buildPersistStorageName("a2a-client-hub.chat", "web_tab"),
+      storage: createPersistStorage(),
       partialize: (state) => ({
         sessions: buildPersistedSessions(state.sessions),
       }),

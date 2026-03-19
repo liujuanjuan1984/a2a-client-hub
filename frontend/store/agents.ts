@@ -3,7 +3,10 @@ import { persist } from "zustand/middleware";
 
 import { type AgentAuthType } from "@/lib/agentAuth";
 import { type HeaderEntryWithId } from "@/lib/agentHeaders";
-import { createPersistStorage } from "@/lib/storage/mmkv";
+import {
+  buildPersistStorageName,
+  createPersistStorage,
+} from "@/lib/storage/mmkv";
 
 export type AgentStatus = "idle" | "checking" | "success" | "error";
 
@@ -42,11 +45,8 @@ export const useAgentStore = create<AgentState>()(
       resetAgentUiState: () => set({ activeAgentId: null }),
     }),
     {
-      name: "a2a-client-hub.agents",
-      storage: createPersistStorage({
-        baseKey: "a2a-client-hub.agents",
-        scope: "web_tab",
-      }),
+      name: buildPersistStorageName("a2a-client-hub.agents", "web_tab"),
+      storage: createPersistStorage(),
       version: 2,
       migrate: (persistedState) => {
         const raw = (persistedState ?? {}) as {

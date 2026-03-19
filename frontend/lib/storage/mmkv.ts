@@ -291,20 +291,6 @@ export const buildPersistStorageName = (
   return tabId ? `${baseKey}.${tabId}` : baseKey;
 };
 
-const readWebStorageItem = (name: string) => {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return null;
-  }
-  return window.localStorage.getItem(name);
-};
-
-const removeWebStorageItem = (name: string) => {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-  window.localStorage.removeItem(name);
-};
-
 const setWebStorageWithQuotaRecovery = (
   storage: Storage,
   name: string,
@@ -371,7 +357,9 @@ const setWebStorageWithQuotaRecovery = (
 export const mmkvStateStorage: StateStorage = {
   getItem: async (name) => {
     if (isWeb) {
-      return readWebStorageItem(name);
+      return typeof window !== "undefined" && window.localStorage
+        ? window.localStorage.getItem(name)
+        : null;
     }
     const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
@@ -450,7 +438,9 @@ export const mmkvStateStorage: StateStorage = {
   },
   removeItem: async (name) => {
     if (isWeb) {
-      removeWebStorageItem(name);
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem(name);
+      }
       return;
     }
     const mmkv = await getMmkvInstance(getInstanceId(name));
@@ -477,61 +467,5 @@ export const mmkvStateStorage: StateStorage = {
   },
 };
 
-type PersistStorageOptions = {
-  baseKey?: string;
-  scope?: PersistScope;
-};
-
-const buildScopedStorage = (options?: PersistStorageOptions): StateStorage => {
-  const baseKey = options?.baseKey?.trim();
-  const scope = options?.scope ?? "shared";
-  const scopedBaseKey =
-    baseKey && scope === "web_tab"
-      ? buildPersistStorageName(baseKey, scope)
-      : null;
-
-  return {
-    getItem: async (name) => {
-      const value = await mmkvStateStorage.getItem(name);
-      if (
-        value !== null ||
-        !isWeb ||
-        scope !== "web_tab" ||
-        !baseKey ||
-        !scopedBaseKey
-      ) {
-        return value;
-      }
-      const legacyValue = readWebStorageItem(baseKey);
-      if (legacyValue === null) {
-        return null;
-      }
-      if (!isValidPersistedPayload(baseKey, legacyValue)) {
-        removeWebStorageItem(baseKey);
-        return null;
-      }
-      try {
-        await mmkvStateStorage.setItem(scopedBaseKey, legacyValue);
-      } catch {
-        // Keep fail-open migration behavior and still return the legacy value.
-      }
-      removeWebStorageItem(baseKey);
-      return legacyValue;
-    },
-    setItem: async (name, value) => {
-      await mmkvStateStorage.setItem(name, value);
-      if (isWeb && scope === "web_tab" && baseKey && name !== baseKey) {
-        removeWebStorageItem(baseKey);
-      }
-    },
-    removeItem: async (name) => {
-      await mmkvStateStorage.removeItem(name);
-      if (isWeb && scope === "web_tab" && baseKey && name !== baseKey) {
-        removeWebStorageItem(baseKey);
-      }
-    },
-  };
-};
-
-export const createPersistStorage = (options?: PersistStorageOptions) =>
-  createJSONStorage(() => buildScopedStorage(options));
+export const createPersistStorage = () =>
+  createJSONStorage(() => mmkvStateStorage);

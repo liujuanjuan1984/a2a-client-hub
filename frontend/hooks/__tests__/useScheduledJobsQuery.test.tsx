@@ -9,6 +9,7 @@ jest.mock("@/hooks/usePaginatedList", () => ({
 }));
 
 jest.mock("@/lib/storage/mmkv", () => ({
+  buildPersistStorageName: (key: string) => key,
   createPersistStorage: () => ({
     getItem: () => null,
     setItem: () => {},

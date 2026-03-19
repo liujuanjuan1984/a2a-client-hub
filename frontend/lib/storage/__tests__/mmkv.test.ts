@@ -249,44 +249,6 @@ describe("mmkvStateStorage web quota recovery", () => {
       "tab-123",
     );
   });
-
-  it("migrates a legacy chat key into the current tab-scoped key on first read", async () => {
-    const storageState = new Map<string, string>();
-    const storage = {
-      getItem: jest.fn((key: string) => storageState.get(key) ?? null),
-      setItem: jest.fn((key: string, value: string) => {
-        storageState.set(key, value);
-      }),
-      removeItem: jest.fn((key: string) => {
-        storageState.delete(key);
-      }),
-    };
-    const legacyPayload = JSON.stringify({
-      state: { sessions: {} },
-      version: 0,
-    });
-    storageState.set("a2a-client-hub.chat", legacyPayload);
-
-    const { createPersistStorage, buildPersistStorageName } =
-      loadWebStorageModule(storage);
-    const scopedKey = buildPersistStorageName("a2a-client-hub.chat", "web_tab");
-    const persistStorage = createPersistStorage({
-      baseKey: "a2a-client-hub.chat",
-      scope: "web_tab",
-    });
-    expect(persistStorage).toBeDefined();
-    if (!persistStorage) {
-      throw new Error("Expected persist storage to be created.");
-    }
-
-    await expect(persistStorage.getItem(scopedKey)).resolves.toEqual({
-      state: { sessions: {} },
-      version: 0,
-    });
-    expect(storage.setItem).toHaveBeenCalledWith(scopedKey, legacyPayload);
-    expect(storage.removeItem).toHaveBeenCalledWith("a2a-client-hub.chat");
-    expect(storageState.get(scopedKey)).toBe(legacyPayload);
-  });
 });
 
 describe("mmkvStateStorage native resilience", () => {
