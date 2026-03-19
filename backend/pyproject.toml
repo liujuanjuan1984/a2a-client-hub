@@ -130,6 +130,7 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = [
     "alembic.*",
+    "apscheduler.*",
     "passlib.*",
     "psycopg2.*",
 ]

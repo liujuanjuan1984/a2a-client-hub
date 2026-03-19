@@ -7,7 +7,7 @@ cd "${REPO_ROOT}"
 declare -a CANDIDATES=()
 declare -a OUTSIDE_SCOPE=()
 declare -A SEEN=()
-INCLUDE_REGEX=${MYPY_INCLUDE_REGEX:-^backend/app/((utils|schemas|core|db)/.*\.py|middleware/debug_logging\.py|services/(a2a_stream_diagnostics|interrupt_metadata_normalization|invoke_guard|a2a_schedule_time)\.py)$}
+INCLUDE_REGEX=${MYPY_INCLUDE_REGEX:-^backend/app/((utils|schemas|core|db)/.*\.py|middleware/debug_logging\.py|services/(a2a_stream_diagnostics|interrupt_metadata_normalization|invoke_guard|a2a_schedule_time|scheduler)\.py)$}
 
 normalize_path() {
   local path="$1"
