@@ -74,6 +74,7 @@ Current scope:
 - `backend/app/services/interrupt_metadata_normalization.py`
 - `backend/app/services/invoke_guard.py`
 - `backend/app/services/scheduler.py`
+- `backend/app/services/session_history_projection.py`
 - `backend/app/services/session_hub_common.py`
 - `backend/app/services/session_hub_support.py`
 - `backend/app/services/shortcut_service.py`
