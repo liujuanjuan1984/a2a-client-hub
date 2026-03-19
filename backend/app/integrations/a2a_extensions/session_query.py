@@ -28,6 +28,9 @@ from app.integrations.a2a_extensions.types import (
     ResultEnvelopeMapping,
 )
 
+_RESULT_ENVELOPE_KEYS = frozenset({"items", "pagination", "raw"})
+_OPENCODE_RESULT_ENVELOPE_EXTRA_KEYS = frozenset({"by_method"})
+
 
 def _resolve_pagination_size(
     pagination: Dict[str, Any],
@@ -90,7 +93,9 @@ def _resolve_result_envelope_field(value: Any, *, field: str, default: str) -> s
     raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
 
 
-def _resolve_result_envelope(value: Any) -> Optional[ResultEnvelopeMapping]:
+def _resolve_result_envelope(
+    value: Any, *, allowed_extra_keys: frozenset[str] = frozenset()
+) -> Optional[ResultEnvelopeMapping]:
     if value is None:
         return None
     if not isinstance(value, dict):
@@ -99,7 +104,9 @@ def _resolve_result_envelope(value: Any) -> Optional[ResultEnvelopeMapping]:
         )
 
     unknown_keys = sorted(
-        key for key in value.keys() if key not in {"items", "pagination", "raw"}
+        key
+        for key in value.keys()
+        if key not in _RESULT_ENVELOPE_KEYS and key not in allowed_extra_keys
     )
     if unknown_keys:
         raise A2AExtensionContractError(
@@ -237,10 +244,18 @@ def _resolve_extension(
     errors = as_dict(params.get("errors"))
     code_to_error = build_business_code_map(errors.get("business_codes"))
 
-    envelope_mapping = _resolve_result_envelope(params.get("result_envelope"))
+    resolved_uri = str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI))
+    envelope_mapping = _resolve_result_envelope(
+        params.get("result_envelope"),
+        allowed_extra_keys=(
+            _OPENCODE_RESULT_ENVELOPE_EXTRA_KEYS
+            if resolved_uri == SHARED_SESSION_QUERY_URI
+            else frozenset()
+        ),
+    )
 
     return ResolvedExtension(
-        uri=str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI)),
+        uri=resolved_uri,
         required=required,
         provider=provider,
         jsonrpc=resolve_jsonrpc_interface(card),

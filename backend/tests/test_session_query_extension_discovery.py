@@ -231,6 +231,43 @@ def test_resolve_accepts_result_envelope_field_aliases() -> None:
     )
 
 
+def test_resolve_accepts_result_envelope_by_method_for_opencode_extension() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": SHARED_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "provider": "opencode",
+                "methods": {
+                    "list_sessions": "opencode.sessions.list",
+                    "get_session_messages": "opencode.sessions.messages.list",
+                    "prompt_async": "opencode.sessions.prompt_async",
+                },
+                "pagination": {
+                    "mode": "limit",
+                    "default_limit": 20,
+                    "max_limit": 100,
+                    "params": ["limit"],
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {
+                    "by_method": {
+                        "opencode.sessions.list": {
+                            "fields": ["items"],
+                            "items_field": "items",
+                        }
+                    }
+                },
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    resolved = resolve_session_query(card)
+    assert resolved.result_envelope == ResultEnvelopeMapping()
+
+
 def test_resolve_rejects_result_envelope_unknown_keys() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [
