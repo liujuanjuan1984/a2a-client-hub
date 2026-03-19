@@ -130,6 +130,9 @@ Message id contract:
   `POST /me/conversations/{conversation_id}/blocks:query`.
 - `blocks:query` detail items include `messageId` and must match the target
   message before cache patching.
+- `tool_call` blocks may include a normalized `toolCall` view from backend
+  (`name`, `status`, `callId`, `arguments`, `result`, `error`); frontend should
+  render that stable field instead of parsing provider-private raw payloads.
 - Stream events are consumed via normalized snake_case fields (`message_id`, `event_id`, `seq`); missing upstream ids are tolerated with fallback keys, and weak fallback identity disables strict duplicate suppression (with throttled warning logs).
 - Invoke payloads should carry both `userMessageId` and `agentMessageId` (UUID).
 - Message status semantics are preserved from history payloads (`streaming`,

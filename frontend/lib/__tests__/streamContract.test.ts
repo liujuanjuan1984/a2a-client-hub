@@ -476,6 +476,12 @@ describe("block-based stream parser and reducer", () => {
     const parsed = extractStreamBlockUpdate({
       kind: "artifact-update",
       taskId: "task-10",
+      tool_call: {
+        name: "read",
+        status: "running",
+        callId: "call-1",
+        arguments: {},
+      },
       artifact: {
         artifactId: "task-10:stream",
         parts: [
@@ -509,6 +515,14 @@ describe("block-based stream parser and reducer", () => {
     expect(parsed?.messageId).toBe("msg-data");
     expect(parsed?.eventId).toBe("evt-data");
     expect(parsed?.seq).toBe(11);
+    expect(parsed?.toolCall).toEqual({
+      name: "read",
+      status: "running",
+      callId: "call-1",
+      arguments: {},
+      result: undefined,
+      error: undefined,
+    });
   });
 
   it("infers text block type when explicit metadata is missing", () => {

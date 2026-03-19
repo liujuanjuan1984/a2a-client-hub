@@ -12,6 +12,7 @@ from app.services.interrupt_metadata_normalization import (
     normalize_permission_interrupt_details,
     normalize_question_interrupt_details,
 )
+from app.services.tool_call_view import build_tool_call_view
 from app.utils.payload_extract import as_dict
 
 
@@ -225,7 +226,7 @@ def extract_stream_chunk_from_serialized_event(
         or _pick_int(shared_stream, ("sequence", "seq"))
     )
     source = extract_artifact_source(payload, artifact)
-    return {
+    stream_chunk: dict[str, Any] = {
         "event_id": event_id,
         "seq": seq,
         "message_id": message_id,
@@ -235,6 +236,14 @@ def extract_stream_chunk_from_serialized_event(
         "is_finished": resolved_is_finished,
         "source": source,
     }
+    if block_type == "tool_call":
+        tool_call = build_tool_call_view(
+            delta,
+            is_finished=resolved_is_finished,
+        )
+        if tool_call is not None:
+            stream_chunk["tool_call"] = tool_call
+    return stream_chunk
 
 
 def analyze_stream_chunk_contract(

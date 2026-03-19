@@ -57,15 +57,6 @@ class SessionMessagesQueryRequest(BaseModel):
     limit: int = Field(8, ge=1, le=50, description="Page size for timeline window")
 
 
-class SessionMessageBlockItem(BaseModel):
-    id: str
-    type: str
-    content: Optional[str] = None
-    is_finished: bool = Field(alias="isFinished")
-
-    model_config = {"populate_by_name": True}
-
-
 class SessionMessageItem(BaseModel):
     id: str
     role: Literal["user", "agent", "system"]
@@ -101,12 +92,34 @@ class SessionMessageBlocksQueryRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ToolCallViewItem(BaseModel):
+    name: Optional[str] = None
+    status: Literal["running", "success", "failed", "interrupted", "unknown"]
+    call_id: Optional[str] = Field(alias="callId", default=None)
+    arguments: Optional[Any] = None
+    result: Optional[Any] = None
+    error: Optional[Any] = None
+
+    model_config = {"populate_by_name": True}
+
+
+class SessionMessageBlockItem(BaseModel):
+    id: str
+    type: str
+    content: Optional[str] = None
+    is_finished: bool = Field(alias="isFinished")
+    tool_call: Optional[ToolCallViewItem] = Field(alias="toolCall", default=None)
+
+    model_config = {"populate_by_name": True}
+
+
 class SessionMessageBlockDetailItem(BaseModel):
     id: str
     message_id: str = Field(alias="messageId")
     type: str
     content: Optional[str] = None
     is_finished: bool = Field(alias="isFinished")
+    tool_call: Optional[ToolCallViewItem] = Field(alias="toolCall", default=None)
 
     model_config = {"populate_by_name": True}
 
@@ -147,6 +160,7 @@ __all__ = [
     "SessionMessageBlockDetailItem",
     "SessionMessageBlocksQueryRequest",
     "SessionMessageBlocksQueryResponse",
+    "ToolCallViewItem",
     "SessionMessageItem",
     "SessionMessagesPageInfo",
     "SessionMessagesQueryRequest",

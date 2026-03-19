@@ -249,7 +249,7 @@ class SessionQueryService:
                     "role": role,
                     "created_at": message.created_at,
                     "status": status,
-                    "blocks": render_blocks(raw_blocks),
+                    "blocks": render_blocks(raw_blocks, message_status=status),
                 }
             )
 
@@ -287,7 +287,7 @@ class SessionQueryService:
             return [], False
 
         stmt = (
-            select(AgentMessageBlock)
+            select(AgentMessageBlock, AgentMessage.status)
             .join(AgentMessage, AgentMessage.id == AgentMessageBlock.message_id)
             .where(
                 and_(
@@ -298,12 +298,24 @@ class SessionQueryService:
                 )
             )
         )
-        blocks = list((await db.scalars(stmt)).all())
-        by_id = {cast(UUID, block.id): block for block in blocks}
+        rows = list((await db.execute(stmt)).all())
+        by_id = {
+            cast(UUID, block.id): (
+                block,
+                cast(str | None, status),
+            )
+            for block, status in rows
+        }
         if any(block_id not in by_id for block_id in ordered_ids):
             raise ValueError("block_not_found")
 
-        items = [render_block_detail_item(by_id[block_id]) for block_id in ordered_ids]
+        items = [
+            render_block_detail_item(
+                by_id[block_id][0],
+                message_status=by_id[block_id][1],
+            )
+            for block_id in ordered_ids
+        ]
         return items, False
 
     async def continue_session(

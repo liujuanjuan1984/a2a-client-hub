@@ -192,4 +192,39 @@ describe("session history mapping", () => {
     expect(mapped[0]?.blocks?.[0]?.type).toBe("reasoning");
     expect(mapped[0]?.content).toBe("");
   });
+
+  it("preserves normalized toolCall metadata from session payload", () => {
+    const mapped = mapSessionMessagesToChatMessages([
+      {
+        id: "tool-msg-1",
+        role: "agent",
+        created_at: "2026-03-19T00:00:00.000Z",
+        blocks: [
+          {
+            id: "tool-block-1",
+            type: "tool_call",
+            content: "",
+            isFinished: true,
+            toolCall: {
+              name: "bash",
+              status: "success",
+              callId: "call-1",
+              arguments: { command: "pwd" },
+            },
+          },
+        ],
+      },
+    ]);
+
+    expect(mapped[0]?.blocks?.[0]).toMatchObject({
+      id: "tool-block-1",
+      type: "tool_call",
+      toolCall: {
+        name: "bash",
+        status: "success",
+        callId: "call-1",
+        arguments: { command: "pwd" },
+      },
+    });
+  });
 });

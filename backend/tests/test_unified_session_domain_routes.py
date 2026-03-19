@@ -399,6 +399,95 @@ async def test_blocks_query_rejects_cross_conversation_block(
         assert resp.json()["detail"] == "block_not_found"
 
 
+async def test_tool_call_blocks_expose_normalized_tool_call_view(
+    async_db_session,
+    async_session_maker,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="tool-call")
+    now = utc_now()
+
+    session = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=agent.id,
+        agent_source="personal",
+        title="Tool Call Thread",
+        last_active_at=now,
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(session)
+    await async_db_session.flush()
+
+    agent_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        conversation_id=session.id,
+        status="error",
+    )
+    async_db_session.add(agent_message)
+    await async_db_session.flush()
+
+    tool_block = AgentMessageBlock(
+        user_id=user.id,
+        message_id=agent_message.id,
+        block_seq=1,
+        block_type="tool_call",
+        content=(
+            '{"call_id":"call-1","tool":"bash","status":"failed",'
+            '"input":{"command":"pwd"},"error":{"message":"boom"}}'
+        ),
+        is_finished=True,
+        source="stream",
+    )
+    async_db_session.add(tool_block)
+    await async_db_session.commit()
+
+    async with create_test_client(
+        me_sessions.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        messages_resp = await client.post(
+            f"/me/conversations/{session.id}/messages:query",
+            json={"limit": 8},
+        )
+        assert messages_resp.status_code == 200
+        message_blocks = messages_resp.json()["items"][0]["blocks"]
+        assert message_blocks[0]["type"] == "tool_call"
+        assert message_blocks[0]["content"] == ""
+        assert message_blocks[0]["toolCall"] == {
+            "name": "bash",
+            "status": "failed",
+            "callId": "call-1",
+            "arguments": {"command": "pwd"},
+            "result": None,
+            "error": {"message": "boom"},
+        }
+
+        detail_resp = await client.post(
+            f"/me/conversations/{session.id}/blocks:query",
+            json={"blockIds": [str(tool_block.id)]},
+        )
+        assert detail_resp.status_code == 200
+        detail_item = detail_resp.json()["items"][0]
+        assert detail_item["id"] == str(tool_block.id)
+        assert detail_item["messageId"] == str(agent_message.id)
+        assert detail_item["content"] == (
+            '{"call_id":"call-1","tool":"bash","status":"failed",'
+            '"input":{"command":"pwd"},"error":{"message":"boom"}}'
+        )
+        assert detail_item["toolCall"] == {
+            "name": "bash",
+            "status": "failed",
+            "callId": "call-1",
+            "arguments": {"command": "pwd"},
+            "result": None,
+            "error": {"message": "boom"},
+        }
+
+
 async def test_legacy_timeline_and_blocks_routes_are_removed(
     async_db_session,
     async_session_maker,

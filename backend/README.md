@@ -233,6 +233,9 @@ Message query contract boundary:
   (`user`/`agent`/`system`).
 - `messages:query` keeps full `content` for `text` blocks; `reasoning`/`tool_call`
   block `content` is fetched via `blocks:query` on demand.
+- `tool_call` blocks also expose a normalized `toolCall` view (`name`, `status`,
+  `callId`, `arguments`, `result`, `error`) so frontend rendering does not need
+  to parse provider-private payload shapes directly.
 - `blocks:query` returns per-block `messageId` so clients can validate cache
   injection ownership before patching local message state.
 - For streaming `artifact-update`, upstream `message_id/event_id` are treated as

@@ -2,6 +2,7 @@ import {
   type ChatMessage,
   type ChatRole,
   type MessageBlock,
+  type ToolCallView,
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
 
@@ -15,6 +16,7 @@ export type SessionMessageItem = {
     type: string;
     content?: string | null;
     isFinished: boolean;
+    toolCall?: ToolCallView | null;
   }[];
 };
 
@@ -69,7 +71,7 @@ const mapBlocks = (item: SessionMessageItem): MessageBlock[] => {
       typeof block.id === "string" && block.id.trim()
         ? block.id
         : `${item.id}:${index + 1}`;
-    return {
+    const mappedBlock: MessageBlock = {
       id: blockId,
       type: block.type,
       content: typeof block.content === "string" ? block.content : "",
@@ -77,6 +79,10 @@ const mapBlocks = (item: SessionMessageItem): MessageBlock[] => {
       createdAt,
       updatedAt: createdAt,
     };
+    if (block.toolCall) {
+      mappedBlock.toolCall = block.toolCall;
+    }
+    return mappedBlock;
   });
 };
 

@@ -104,6 +104,7 @@ describe("MessageBlock and MessageContentFallback", () => {
         messageId="msg-2"
         blockIndex={3}
         role="agent"
+        messageStatus="streaming"
       />,
     );
 
@@ -113,6 +114,7 @@ describe("MessageBlock and MessageContentFallback", () => {
         block,
         fallbackBlockId: "msg-2:3",
         messageId: "msg-2",
+        messageStatus: "streaming",
         isFirst: false,
       }),
     );
