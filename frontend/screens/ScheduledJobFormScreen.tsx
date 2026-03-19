@@ -15,7 +15,6 @@ import {
   getScheduledJob,
   type ScheduledJobPayload,
   type ScheduleCycleType,
-  type ScheduleTimePoint,
   updateScheduledJob,
 } from "@/lib/api/scheduledJobs";
 import {
@@ -26,6 +25,11 @@ import { blurActiveElement } from "@/lib/focus";
 import { backOrHome } from "@/lib/navigation";
 import { queryKeys } from "@/lib/queryKeys";
 import { scheduledJobsHref } from "@/lib/routes";
+import {
+  normalizeScheduleMinutes,
+  normalizeScheduledJobTimePoint,
+  normalizeTimePoint,
+} from "@/lib/scheduleTimePoints";
 import { toast } from "@/lib/toast";
 import { useSessionStore } from "@/store/session";
 
@@ -51,59 +55,6 @@ const isValidHHMM = (value: string) => {
   return true;
 };
 
-const normalizeScheduleMinutes = (value: number) => {
-  const clamped = Math.max(5, Math.min(1440, value));
-  return clamped;
-};
-
-const normalizeTimePoint = (
-  cycleType: ScheduleCycleType,
-  timePoint: unknown,
-) => {
-  const current = (timePoint ?? {}) as ScheduleTimePoint;
-  if (cycleType === "sequential") {
-    const minutes = (current as { minutes?: unknown })?.minutes;
-    return {
-      minutes:
-        typeof minutes === "number" && Number.isFinite(minutes)
-          ? normalizeScheduleMinutes(minutes)
-          : 10,
-    };
-  }
-  if (cycleType === "interval") {
-    const minutes = (current as { minutes?: unknown })?.minutes;
-    const startAtLocal = (current as { start_at_local?: unknown })
-      ?.start_at_local;
-    return {
-      minutes:
-        typeof minutes === "number" && Number.isFinite(minutes)
-          ? normalizeScheduleMinutes(minutes)
-          : 10,
-      ...(typeof startAtLocal === "string" && startAtLocal.trim()
-        ? { start_at_local: startAtLocal.trim() }
-        : {}),
-    };
-  }
-  if (cycleType === "weekly") {
-    const weekday = (current as { weekday?: unknown })?.weekday;
-    const time = (current as { time?: unknown })?.time;
-    return {
-      weekday: typeof weekday === "number" ? weekday : 1,
-      time: typeof time === "string" ? time : "07:00",
-    };
-  }
-  if (cycleType === "monthly") {
-    const day = (current as { day?: unknown })?.day;
-    const time = (current as { time?: unknown })?.time;
-    return {
-      day: typeof day === "number" ? Math.max(1, Math.min(31, day)) : 1,
-      time: typeof time === "string" ? time : "07:00",
-    };
-  }
-  const time = (current as { time?: unknown })?.time;
-  return { time: typeof time === "string" ? time : "07:00" };
-};
-
 type Snapshot = {
   name: string;
   agent_id: string;
@@ -120,7 +71,7 @@ const buildSnapshot = (form: ScheduledJobPayload): Snapshot => ({
   agent_id: form.agent_id,
   prompt: form.prompt.trim(),
   cycle_type: form.cycle_type,
-  time_point: normalizeTimePoint(form.cycle_type, form.time_point),
+  time_point: normalizeScheduledJobTimePoint(form.cycle_type, form.time_point),
   enabled: form.enabled,
   schedule_timezone: form.schedule_timezone,
   conversation_policy: form.conversation_policy,
@@ -192,7 +143,10 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
           agent_id: found.agent_id,
           prompt: found.prompt,
           cycle_type: found.cycle_type,
-          time_point: normalizeTimePoint(found.cycle_type, found.time_point),
+          time_point: normalizeScheduledJobTimePoint(
+            found.cycle_type,
+            found.time_point,
+          ),
           schedule_timezone: found.schedule_timezone || scheduleTimeZone,
           enabled: found.enabled,
           conversation_policy: found.conversation_policy || "new_each_run",
@@ -248,6 +202,11 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
   const { allowNextNavigation } = usePreventRemoveWhenDirty({ dirty });
 
   const validateForm = () => {
+    const rawTimePoint =
+      form.time_point && typeof form.time_point === "object"
+        ? (form.time_point as Record<string, unknown>)
+        : {};
+
     if (!form.name.trim()) {
       toast.error("Validation failed", "Job name is required.");
       return false;
@@ -261,7 +220,7 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       return false;
     }
     if (form.cycle_type === "daily") {
-      const time = (form.time_point as { time?: unknown })?.time;
+      const time = rawTimePoint.time;
       if (typeof time !== "string" || !time.trim()) {
         toast.error("Validation failed", "Time is required.");
         return false;
@@ -272,8 +231,8 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       }
     }
     if (form.cycle_type === "weekly") {
-      const weekday = (form.time_point as { weekday?: unknown })?.weekday;
-      const time = (form.time_point as { time?: unknown })?.time;
+      const weekday = rawTimePoint.weekday;
+      const time = rawTimePoint.time;
       if (typeof weekday !== "number") {
         toast.error("Validation failed", "Weekday is required.");
         return false;
@@ -292,21 +251,19 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       }
     }
     if (form.cycle_type === "sequential") {
-      const minutes = (form.time_point as { minutes?: unknown })?.minutes;
+      const minutes = rawTimePoint.minutes;
       if (typeof minutes !== "number" || !Number.isFinite(minutes)) {
         toast.error("Validation failed", "Sequential minutes is required.");
         return false;
       }
     }
     if (form.cycle_type === "interval") {
-      const minutes = (form.time_point as { minutes?: unknown })?.minutes;
+      const minutes = rawTimePoint.minutes;
+      const rawStartAt = rawTimePoint.start_at_local;
       if (typeof minutes !== "number" || !Number.isFinite(minutes)) {
         toast.error("Validation failed", "Interval minutes is required.");
         return false;
       }
-
-      const rawStartAt = (form.time_point as { start_at_local?: unknown })
-        ?.start_at_local;
       if (typeof rawStartAt === "string" && rawStartAt.trim()) {
         if (!localDateTimeInputToUtcIso(rawStartAt)) {
           toast.error(
@@ -318,8 +275,8 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
       }
     }
     if (form.cycle_type === "monthly") {
-      const day = (form.time_point as { day?: unknown })?.day;
-      const time = (form.time_point as { time?: unknown })?.time;
+      const day = rawTimePoint.day;
+      const time = rawTimePoint.time;
       if (typeof day !== "number") {
         toast.error("Validation failed", "Day of month is required.");
         return false;
@@ -350,28 +307,32 @@ export function ScheduledJobFormScreen({ jobId }: { jobId?: string }) {
 
     setSaving(true);
     try {
+      let normalizedTimePoint = normalizeScheduledJobTimePoint(
+        form.cycle_type,
+        form.time_point,
+      );
+      if (form.cycle_type === "interval") {
+        const intervalTimePoint = normalizeTimePoint(
+          "interval",
+          form.time_point,
+        );
+        const normalizedStartAtLocal = localDateTimeInputToUtcIso(
+          intervalTimePoint.start_at_local ?? "",
+        );
+        normalizedTimePoint = {
+          minutes: normalizeScheduleMinutes(intervalTimePoint.minutes),
+          ...(normalizedStartAtLocal
+            ? { start_at_local: normalizedStartAtLocal }
+            : {}),
+        };
+      }
       const normalized: ScheduledJobPayload = {
         ...form,
         name: form.name.trim(),
         prompt: form.prompt.trim(),
         schedule_timezone: effectiveScheduleTimeZone,
-        time_point: normalizeTimePoint(form.cycle_type, form.time_point) as any,
+        time_point: normalizedTimePoint,
       };
-      if (normalized.cycle_type === "interval") {
-        const rawStartAt = (form.time_point as { start_at_local?: unknown })
-          ?.start_at_local;
-        const normalizedStartAtLocal = localDateTimeInputToUtcIso(
-          typeof rawStartAt === "string" ? rawStartAt : "",
-        );
-        normalized.time_point = {
-          minutes: normalizeScheduleMinutes(
-            Number((normalized.time_point as any)?.minutes),
-          ),
-          ...(normalizedStartAtLocal
-            ? { start_at_local: normalizedStartAtLocal }
-            : {}),
-        } as any;
-      }
 
       if (editing && normalizedJobId) {
         await updateScheduledJob(normalizedJobId, normalized);

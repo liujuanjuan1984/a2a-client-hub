@@ -45,7 +45,7 @@ const resolveErrorBannerText = (message: ChatMessage): string => {
   return "流响应异常，请重试。";
 };
 
-export function ChatMessageItem({
+export const ChatMessageItem = React.memo(function ChatMessageItem({
   message,
   isLastMessage,
   sessionStreamState,
@@ -209,4 +209,6 @@ export function ChatMessageItem({
       )}
     </View>
   );
-}
+});
+
+ChatMessageItem.displayName = "ChatMessageItem";
