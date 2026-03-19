@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Modal, Pressable, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
@@ -13,6 +13,12 @@ import {
 import { type SharedModelSelection } from "@/lib/chat-utils";
 import { type AgentSource } from "@/store/agents";
 
+const PROVIDER_LIST_CONTENT_CONTAINER_STYLE = {
+  paddingRight: 8,
+  paddingBottom: 8,
+};
+const MODEL_LIST_CONTENT_CONTAINER_STYLE = { paddingBottom: 24 };
+
 const resolveDiscoveryError = (error: unknown) => {
   if (error instanceof A2AExtensionCallError) {
     if (error.errorCode === "not_supported") {
@@ -23,7 +29,7 @@ const resolveDiscoveryError = (error: unknown) => {
   return error instanceof Error ? error.message : "Model discovery failed.";
 };
 
-function ProviderChip({
+const ProviderChip = React.memo(function ProviderChip({
   item,
   active,
   onPress,
@@ -47,9 +53,10 @@ function ProviderChip({
       </Text>
     </Pressable>
   );
-}
+});
+ProviderChip.displayName = "ProviderChip";
 
-function ModelRow({
+const ModelRow = React.memo(function ModelRow({
   item,
   active,
   onPress,
@@ -75,7 +82,8 @@ function ModelRow({
       <Text className="mt-1 text-[11px] text-slate-400">{item.model_id}</Text>
     </Pressable>
   );
-}
+});
+ModelRow.displayName = "ModelRow";
 
 export function ModelPickerModal({
   visible,
@@ -104,6 +112,14 @@ export function ModelPickerModal({
   const [modelError, setModelError] = useState<string | null>(null);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
     null,
+  );
+  const providerKeyExtractor = useCallback(
+    (item: ModelProviderSummary) => item.provider_id,
+    [],
+  );
+  const modelKeyExtractor = useCallback(
+    (item: ModelSummary) => `${item.provider_id}:${item.model_id}`,
+    [],
   );
 
   useEffect(() => {
@@ -187,6 +203,63 @@ export function ModelPickerModal({
       cancelled = true;
     };
   }, [agentId, selectedProviderId, sessionMetadata, source, visible]);
+  const handleClearModelSelection = useCallback(() => {
+    onClearModelSelection();
+    onClose();
+  }, [onClearModelSelection, onClose]);
+  const renderProviderItem = useCallback(
+    ({ item }: { item: ModelProviderSummary }) => (
+      <ProviderChip
+        item={item}
+        active={item.provider_id === selectedProviderId}
+        onPress={() => setSelectedProviderId(item.provider_id)}
+      />
+    ),
+    [selectedProviderId],
+  );
+  const renderModelItem = useCallback(
+    ({ item }: { item: ModelSummary }) => (
+      <ModelRow
+        item={item}
+        active={
+          selectedModel?.providerID === item.provider_id &&
+          selectedModel?.modelID === item.model_id
+        }
+        onPress={() => {
+          onSelectModel({
+            providerID: item.provider_id,
+            modelID: item.model_id,
+          });
+          onClose();
+        }}
+      />
+    ),
+    [onClose, onSelectModel, selectedModel?.modelID, selectedModel?.providerID],
+  );
+  const providerList = useMemo(
+    () => (
+      <FlatList
+        horizontal
+        data={providers}
+        keyExtractor={providerKeyExtractor}
+        renderItem={renderProviderItem}
+        contentContainerStyle={PROVIDER_LIST_CONTENT_CONTAINER_STYLE}
+        showsHorizontalScrollIndicator={false}
+      />
+    ),
+    [providerKeyExtractor, providers, renderProviderItem],
+  );
+  const modelList = useMemo(
+    () => (
+      <FlatList
+        data={models}
+        keyExtractor={modelKeyExtractor}
+        renderItem={renderModelItem}
+        contentContainerStyle={MODEL_LIST_CONTENT_CONTAINER_STYLE}
+      />
+    ),
+    [modelKeyExtractor, models, renderModelItem],
+  );
 
   return (
     <Modal
@@ -235,10 +308,7 @@ export function ModelPickerModal({
               label="Use Default"
               size="xs"
               variant="secondary"
-              onPress={() => {
-                onClearModelSelection();
-                onClose();
-              }}
+              onPress={handleClearModelSelection}
             />
           </View>
 
@@ -254,20 +324,7 @@ export function ModelPickerModal({
               <Text className="text-amber-100">{providerError}</Text>
             </View>
           ) : (
-            <FlatList
-              horizontal
-              data={providers}
-              keyExtractor={(item) => item.provider_id}
-              renderItem={({ item }) => (
-                <ProviderChip
-                  item={item}
-                  active={item.provider_id === selectedProviderId}
-                  onPress={() => setSelectedProviderId(item.provider_id)}
-                />
-              )}
-              contentContainerStyle={{ paddingRight: 8, paddingBottom: 8 }}
-              showsHorizontalScrollIndicator={false}
-            />
+            providerList
           )}
 
           <View className="mb-2 mt-4 flex-row items-center justify-between">
@@ -294,27 +351,7 @@ export function ModelPickerModal({
               <Text className="text-slate-400">No models available.</Text>
             </View>
           ) : (
-            <FlatList
-              data={models}
-              keyExtractor={(item) => `${item.provider_id}:${item.model_id}`}
-              renderItem={({ item }) => (
-                <ModelRow
-                  item={item}
-                  active={
-                    selectedModel?.providerID === item.provider_id &&
-                    selectedModel?.modelID === item.model_id
-                  }
-                  onPress={() => {
-                    onSelectModel({
-                      providerID: item.provider_id,
-                      modelID: item.model_id,
-                    });
-                    onClose();
-                  }}
-                />
-              )}
-              contentContainerStyle={{ paddingBottom: 24 }}
-            />
+            modelList
           )}
         </View>
       </View>

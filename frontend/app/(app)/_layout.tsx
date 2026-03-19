@@ -1,7 +1,8 @@
-import { Redirect, Stack } from "expo-router";
+import { Redirect, Stack, type ErrorBoundaryProps } from "expo-router";
 import { useEffect } from "react";
 import { AppState, type AppStateStatus, Text, View } from "react-native";
 
+import { AppRouteErrorBoundary } from "@/components/ui/AppRouteErrorBoundary";
 import { Button } from "@/components/ui/Button";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
 import { useAgentsCatalogQuery } from "@/hooks/useAgentsCatalogQuery";
@@ -9,6 +10,10 @@ import { useMe } from "@/hooks/useAuth";
 import { ApiRequestError } from "@/lib/api/client";
 import { useChatStore } from "@/store/chat";
 import { useSessionStore } from "@/store/session";
+
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <AppRouteErrorBoundary {...props} />;
+}
 
 export default function AppLayout() {
   const token = useSessionStore((state) => state.token);

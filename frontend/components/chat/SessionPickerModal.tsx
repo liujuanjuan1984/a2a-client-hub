@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useCallback, useMemo } from "react";
 import { FlatList, Modal, Pressable, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
@@ -8,7 +8,9 @@ import { type SessionListItem } from "@/lib/api/sessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 import { useChatStore } from "@/store/chat";
 
-function SessionItem({
+const LIST_CONTENT_CONTAINER_STYLE = { paddingBottom: 24 };
+
+const SessionItem = React.memo(function SessionItem({
   item,
   isActive,
   onSelect,
@@ -48,7 +50,9 @@ function SessionItem({
       </View>
     </Pressable>
   );
-}
+});
+
+SessionItem.displayName = "SessionItem";
 
 export function SessionPickerModal({
   visible,
@@ -70,6 +74,10 @@ export function SessionPickerModal({
     typeof agentId === "string" && agentId.trim().length > 0
       ? agentId.trim()
       : null;
+  const keyExtractor = useCallback(
+    (item: SessionListItem) => item.conversationId,
+    [],
+  );
 
   const {
     items: agentSessions,
@@ -82,6 +90,39 @@ export function SessionPickerModal({
     enabled: visible && Boolean(normalizedAgentId),
     size: 50,
   });
+  const handleSelectSession = useCallback(
+    (id: string) => {
+      onSelect(id);
+      onClose();
+    },
+    [onClose, onSelect],
+  );
+  const handleCreateSession = useCallback(() => {
+    handleSelectSession(generateConversationId());
+  }, [generateConversationId, handleSelectSession]);
+  const handleEndReached = useCallback(() => {
+    if (!hasMore || loadingMore) return;
+    loadMore().catch(() => undefined);
+  }, [hasMore, loadMore, loadingMore]);
+  const renderSessionItem = useCallback(
+    ({ item }: { item: SessionListItem }) => (
+      <SessionItem
+        item={item}
+        isActive={item.conversationId === currentConversationId}
+        onSelect={handleSelectSession}
+      />
+    ),
+    [currentConversationId, handleSelectSession],
+  );
+  const listFooterComponent = useMemo(
+    () =>
+      loadingMore ? (
+        <View className="py-3 items-center">
+          <Text className="text-[11px] text-slate-500">Loading…</Text>
+        </View>
+      ) : null,
+    [loadingMore],
+  );
 
   return (
     <Modal
@@ -113,10 +154,7 @@ export function SessionPickerModal({
             className="mb-4"
             label="New Session"
             iconLeft="add"
-            onPress={() => {
-              onSelect(generateConversationId());
-              onClose();
-            }}
+            onPress={handleCreateSession}
           />
           {!normalizedAgentId ? (
             <View className="py-8 items-center">
@@ -133,30 +171,12 @@ export function SessionPickerModal({
           ) : (
             <FlatList
               data={agentSessions}
-              keyExtractor={(item) => item.conversationId}
-              renderItem={({ item }) => (
-                <SessionItem
-                  item={item}
-                  isActive={item.conversationId === currentConversationId}
-                  onSelect={(id) => {
-                    onSelect(id);
-                    onClose();
-                  }}
-                />
-              )}
+              keyExtractor={keyExtractor}
+              renderItem={renderSessionItem}
               onEndReachedThreshold={0.4}
-              onEndReached={() => {
-                if (!hasMore || loadingMore) return;
-                loadMore().catch(() => undefined);
-              }}
-              contentContainerStyle={{ paddingBottom: 24 }}
-              ListFooterComponent={
-                loadingMore ? (
-                  <View className="py-3 items-center">
-                    <Text className="text-[11px] text-slate-500">Loading…</Text>
-                  </View>
-                ) : null
-              }
+              onEndReached={handleEndReached}
+              contentContainerStyle={LIST_CONTENT_CONTAINER_STYLE}
+              ListFooterComponent={listFooterComponent}
             />
           )}
         </View>

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -22,6 +22,7 @@ import { type AgentSession } from "@/lib/chat-utils";
 const LIST_INITIAL_NUM_TO_RENDER = 16;
 const LIST_WINDOW_SIZE = 9;
 const LIST_MAX_TO_RENDER_PER_BATCH = 20;
+const LIST_CONTENT_CONTAINER_STYLE = { paddingBottom: 24 };
 
 export function ChatTimelinePanel({
   listRef,
@@ -70,6 +71,84 @@ export function ChatTimelinePanel({
   onQuestionReply: () => void;
   onQuestionReject: () => void;
 }) {
+  const keyExtractor = useCallback((item: ChatMessage) => item.id, []);
+  const renderMessageItem = useCallback(
+    ({ item, index }: { item: ChatMessage; index: number }) => (
+      <ChatMessageItem
+        message={item}
+        index={index}
+        isLastMessage={index === messages.length - 1}
+        sessionStreamState={session?.streamState}
+        onLayoutChangeStart={onCaptureContentSizeAnchor}
+        onLoadBlockContent={onLoadBlockContent}
+        onRetry={onRetry}
+      />
+    ),
+    [
+      messages.length,
+      onCaptureContentSizeAnchor,
+      onLoadBlockContent,
+      onRetry,
+      session?.streamState,
+    ],
+  );
+  const listHeaderComponent = useMemo(
+    () =>
+      typeof historyNextPage === "number" ? (
+        <View className="items-center">
+          <Button
+            className="mt-2"
+            label={historyLoadingMore ? "Loading..." : "Load earlier"}
+            size="sm"
+            variant="secondary"
+            loading={historyLoadingMore}
+            disabled={historyPaused}
+            onPress={onLoadEarlierHistory}
+          />
+        </View>
+      ) : null,
+    [historyLoadingMore, historyNextPage, historyPaused, onLoadEarlierHistory],
+  );
+  const listEmptyComponent = useMemo(
+    () => (
+      <View className="mt-12 items-center">
+        <Text className="text-sm text-muted">
+          {historyLoading
+            ? "Loading history..."
+            : historyError
+              ? historyError
+              : "No messages yet."}
+        </Text>
+      </View>
+    ),
+    [historyError, historyLoading],
+  );
+  const listFooterComponent = useMemo(
+    () =>
+      pendingInterrupt ? (
+        <InterruptActionCard
+          pendingInterrupt={pendingInterrupt}
+          interruptAction={interruptAction}
+          questionAnswers={questionAnswers}
+          onPermissionReply={onPermissionReply}
+          onQuestionAnswerChange={onQuestionAnswerChange}
+          onQuestionOptionPick={onQuestionOptionPick}
+          onQuestionReply={onQuestionReply}
+          onQuestionReject={onQuestionReject}
+        />
+      ) : null,
+    [
+      interruptAction,
+      onPermissionReply,
+      onQuestionAnswerChange,
+      onQuestionOptionPick,
+      onQuestionReject,
+      onQuestionReply,
+      pendingInterrupt,
+      questionAnswers,
+    ],
+  );
+
   return (
     <>
       {session?.streamState === "recoverable" ? (
@@ -94,19 +173,9 @@ export function ChatTimelinePanel({
         ref={listRef}
         className="mt-2 flex-1 px-2 sm:px-6"
         data={messages ?? []}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item, index }) => (
-          <ChatMessageItem
-            message={item}
-            index={index}
-            isLastMessage={index === messages.length - 1}
-            sessionStreamState={session?.streamState}
-            onLayoutChangeStart={onCaptureContentSizeAnchor}
-            onLoadBlockContent={onLoadBlockContent}
-            onRetry={onRetry}
-          />
-        )}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        keyExtractor={keyExtractor}
+        renderItem={renderMessageItem}
+        contentContainerStyle={LIST_CONTENT_CONTAINER_STYLE}
         keyboardShouldPersistTaps="handled"
         initialNumToRender={LIST_INITIAL_NUM_TO_RENDER}
         maxToRenderPerBatch={LIST_MAX_TO_RENDER_PER_BATCH}
@@ -116,46 +185,9 @@ export function ChatTimelinePanel({
         onContentSizeChange={onListContentSizeChange}
         onScroll={onListScroll}
         scrollEventThrottle={16}
-        ListHeaderComponent={
-          typeof historyNextPage === "number" ? (
-            <View className="items-center">
-              <Button
-                className="mt-2"
-                label={historyLoadingMore ? "Loading..." : "Load earlier"}
-                size="sm"
-                variant="secondary"
-                loading={historyLoadingMore}
-                disabled={historyPaused}
-                onPress={onLoadEarlierHistory}
-              />
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          <View className="mt-12 items-center">
-            <Text className="text-sm text-muted">
-              {historyLoading
-                ? "Loading history..."
-                : historyError
-                  ? historyError
-                  : "No messages yet."}
-            </Text>
-          </View>
-        }
-        ListFooterComponent={
-          pendingInterrupt ? (
-            <InterruptActionCard
-              pendingInterrupt={pendingInterrupt}
-              interruptAction={interruptAction}
-              questionAnswers={questionAnswers}
-              onPermissionReply={onPermissionReply}
-              onQuestionAnswerChange={onQuestionAnswerChange}
-              onQuestionOptionPick={onQuestionOptionPick}
-              onQuestionReply={onQuestionReply}
-              onQuestionReject={onQuestionReject}
-            />
-          ) : null
-        }
+        ListHeaderComponent={listHeaderComponent}
+        ListEmptyComponent={listEmptyComponent}
+        ListFooterComponent={listFooterComponent}
       />
     </>
   );

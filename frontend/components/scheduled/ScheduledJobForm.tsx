@@ -5,12 +5,16 @@ import { Button } from "@/components/ui/Button";
 import {
   type ScheduleCycleType,
   type ScheduledJobPayload,
-  type ScheduleTimePoint,
 } from "@/lib/api/scheduledJobs";
 import {
   formatDateTimeLocalInputValue,
   getNextTopOfHourLocalInputValue,
 } from "@/lib/datetime";
+import {
+  getIntervalStartAtLocal,
+  normalizeTimePoint,
+  patchTimePoint,
+} from "@/lib/scheduleTimePoints";
 
 type AgentOption = {
   id: string;
@@ -42,11 +46,7 @@ export function ScheduledJobForm({
   timeZone,
   isRunning = false,
 }: ScheduledJobFormProps) {
-  const intervalStartAt = (() => {
-    const startAt = (form.time_point as { start_at_local?: unknown })
-      ?.start_at_local;
-    return typeof startAt === "string" ? startAt : "";
-  })();
+  const intervalStartAt = getIntervalStartAtLocal(form.time_point);
   const [startAtInputValue, setStartAtInputValue] = useState(() =>
     formatDateTimeLocalInputValue(intervalStartAt, timeZone),
   );
@@ -87,43 +87,17 @@ export function ScheduledJobForm({
   ];
 
   const ensureTimePoint = (nextCycle: ScheduleCycleType) => {
-    const current = form.time_point as ScheduleTimePoint;
-    if (nextCycle === "daily") {
-      const time = (current as { time?: unknown })?.time;
-      return { time: typeof time === "string" ? time : "07:00" };
-    }
-    if (nextCycle === "weekly") {
-      const time = (current as { time?: unknown })?.time;
-      const weekday = (current as { weekday?: unknown })?.weekday;
-      return {
-        weekday: typeof weekday === "number" ? weekday : 1,
-        time: typeof time === "string" ? time : "07:00",
-      };
-    }
     if (nextCycle === "interval") {
-      const minutes = (current as { minutes?: unknown })?.minutes;
-      const startAt = (current as { start_at_local?: unknown })?.start_at_local;
-      const resolvedStartAt =
-        typeof startAt === "string" && startAt.trim()
-          ? startAt.trim()
-          : getNextTopOfHourLocalInputValue(timeZone);
+      const nextTimePoint = normalizeTimePoint("interval", form.time_point);
+      if (typeof nextTimePoint.start_at_local === "string") {
+        return nextTimePoint;
+      }
       return {
-        minutes: typeof minutes === "number" ? minutes : 10,
-        start_at_local: resolvedStartAt,
+        ...nextTimePoint,
+        start_at_local: getNextTopOfHourLocalInputValue(timeZone),
       };
     }
-    if (nextCycle === "sequential") {
-      const minutes = (current as { minutes?: unknown })?.minutes;
-      return {
-        minutes: typeof minutes === "number" ? minutes : 10,
-      };
-    }
-    const time = (current as { time?: unknown })?.time;
-    const day = (current as { day?: unknown })?.day;
-    return {
-      day: typeof day === "number" ? day : 1,
-      time: typeof time === "string" ? time : "07:00",
-    };
+    return normalizeTimePoint(nextCycle, form.time_point);
   };
 
   const isCurrentlyRunning = Boolean(isRunning);
@@ -218,9 +192,11 @@ export function ScheduledJobForm({
           {renderLabel("Weekday")}
           <View className="mt-2 flex-row flex-wrap gap-2">
             {weekdayOptions.map((option) => {
-              const selected =
-                (form.time_point as { weekday?: number })?.weekday ===
-                option.value;
+              const weeklyTimePoint = normalizeTimePoint(
+                "weekly",
+                form.time_point,
+              );
+              const selected = weeklyTimePoint.weekday === option.value;
               return (
                 <Pressable
                   key={option.value}
@@ -231,10 +207,9 @@ export function ScheduledJobForm({
                   }`}
                   onPress={() =>
                     onChange({
-                      time_point: {
-                        ...(form.time_point as any),
+                      time_point: patchTimePoint("weekly", form.time_point, {
                         weekday: option.value,
-                      },
+                      }),
                     })
                   }
                 >
@@ -255,7 +230,7 @@ export function ScheduledJobForm({
           {renderLabel("Day of Month")}
           <TextInput
             className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
-            value={String((form.time_point as any)?.day ?? "")}
+            value={String(normalizeTimePoint("monthly", form.time_point).day)}
             onChangeText={(value) => {
               if (!value.trim()) {
                 return;
@@ -266,10 +241,9 @@ export function ScheduledJobForm({
               }
               const clamped = Math.max(1, Math.min(31, parsed));
               onChange({
-                time_point: {
-                  ...(form.time_point as any),
+                time_point: patchTimePoint("monthly", form.time_point, {
                   day: clamped,
-                },
+                }),
               });
             }}
             placeholder="1"
@@ -288,7 +262,11 @@ export function ScheduledJobForm({
           )}
           <TextInput
             className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
-            value={String((form.time_point as any)?.minutes ?? "")}
+            value={String(
+              form.cycle_type === "interval"
+                ? normalizeTimePoint("interval", form.time_point).minutes
+                : normalizeTimePoint("sequential", form.time_point).minutes,
+            )}
             onChangeText={(value) => {
               if (!value.trim()) {
                 return;
@@ -297,19 +275,15 @@ export function ScheduledJobForm({
               if (!Number.isFinite(parsed)) {
                 return;
               }
-              const intervalStartAt = (form.time_point as any)?.start_at_local;
-              const nextTimePoint: Record<string, unknown> = {
-                minutes: parsed,
-              };
-              if (
-                form.cycle_type === "interval" &&
-                typeof intervalStartAt === "string" &&
-                intervalStartAt.trim()
-              ) {
-                nextTimePoint.start_at_local = intervalStartAt;
-              }
               onChange({
-                time_point: nextTimePoint as any,
+                time_point:
+                  form.cycle_type === "interval"
+                    ? patchTimePoint("interval", form.time_point, {
+                        minutes: parsed,
+                      })
+                    : patchTimePoint("sequential", form.time_point, {
+                        minutes: parsed,
+                      }),
               });
             }}
             placeholder="10"
@@ -325,9 +299,7 @@ export function ScheduledJobForm({
                 onChangeText={(value) => {
                   isEditingStartAtRef.current = true;
                   setStartAtInputValue(value);
-                  const next = {
-                    ...(form.time_point as any),
-                  };
+                  const next = normalizeTimePoint("interval", form.time_point);
                   if (value.trim()) {
                     next.start_at_local = value.trim();
                   } else {
@@ -352,10 +324,25 @@ export function ScheduledJobForm({
           {renderLabel("Time (HH:MM)")}
           <TextInput
             className="mt-2 rounded-xl bg-black/40 px-3 py-2 text-sm text-white"
-            value={String((form.time_point as any)?.time ?? "")}
+            value={String(
+              form.cycle_type === "daily"
+                ? normalizeTimePoint("daily", form.time_point).time
+                : form.cycle_type === "weekly"
+                  ? normalizeTimePoint("weekly", form.time_point).time
+                  : normalizeTimePoint("monthly", form.time_point).time,
+            )}
             onChangeText={(value) =>
               onChange({
-                time_point: { ...(form.time_point as any), time: value },
+                time_point:
+                  form.cycle_type === "daily"
+                    ? patchTimePoint("daily", form.time_point, { time: value })
+                    : form.cycle_type === "weekly"
+                      ? patchTimePoint("weekly", form.time_point, {
+                          time: value,
+                        })
+                      : patchTimePoint("monthly", form.time_point, {
+                          time: value,
+                        }),
               })
             }
             placeholder="07:00"
