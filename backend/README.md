@@ -97,6 +97,7 @@ Current scope:
 - `backend/app/services/hub_a2a_runtime.py`
 - `backend/app/services/interrupt_metadata_normalization.py`
 - `backend/app/services/invoke_guard.py`
+- `backend/app/services/invoke_recovery.py`
 - `backend/app/services/runtime_auth.py`
 - `backend/app/services/scheduler.py`
 - `backend/app/services/session_history_projection.py`

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import (
@@ -66,7 +66,7 @@ def build_rebound_invoke_payload(
     if normalized_provider or normalized_external_session_id:
         next_session_binding = A2AAgentInvokeSessionBinding(
             provider=normalized_provider,
-            external_session_id=normalized_external_session_id,
+            externalSessionId=normalized_external_session_id,
         )
 
     return payload.model_copy(
@@ -153,7 +153,7 @@ async def resolve_session_binding_outbound_mode(
         )
         return True
 
-    return ext.legacy_uri_used
+    return cast(bool, ext.legacy_uri_used)
 
 
 async def finalize_outbound_invoke_payload(
