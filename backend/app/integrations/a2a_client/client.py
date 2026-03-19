@@ -60,6 +60,9 @@ from app.integrations.a2a_client.selection import (
     build_peer_descriptor,
     normalize_transport_label,
 )
+from app.integrations.a2a_error_contract import (
+    build_upstream_error_details_from_protocol_error,
+)
 from app.services.a2a_proxy_service import a2a_proxy_service
 from app.utils.async_cleanup import await_cancel_safe
 from app.utils.logging_redaction import redact_url_for_logging
@@ -264,10 +267,38 @@ class A2AClient:
                     "Blocking invocation to %s failed",
                     redact_url_for_logging(self.agent_url),
                 )
+                error_details = (
+                    build_upstream_error_details_from_protocol_error(exc)
+                    if isinstance(exc, A2APeerProtocolError)
+                    else None
+                )
                 return {
                     "success": False,
                     "agent_url": self.agent_url,
                     "error": str(exc),
+                    "error_code": (
+                        error_details.error_code
+                        if error_details is not None
+                        else getattr(exc, "error_code", None)
+                    ),
+                    "source": (
+                        error_details.source if error_details is not None else None
+                    ),
+                    "jsonrpc_code": (
+                        error_details.jsonrpc_code
+                        if error_details is not None
+                        else None
+                    ),
+                    "missing_params": (
+                        list(error_details.missing_params or [])
+                        if error_details is not None
+                        else None
+                    ),
+                    "upstream_error": (
+                        error_details.upstream_error
+                        if error_details is not None
+                        else None
+                    ),
                 }
 
     async def stream_agent(

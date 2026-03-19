@@ -22,6 +22,9 @@ from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from app.integrations.a2a_client.errors import A2APeerProtocolError
+from app.integrations.a2a_error_contract import (
+    build_upstream_error_details_from_protocol_error,
+)
 from app.services.a2a_payload_analysis import (
     PayloadAnalysis,
 )
@@ -101,6 +104,10 @@ class StreamOutcome:
     idle_seconds: float
     terminal_event_seen: bool
     internal_error_message: str | None = None
+    source: str | None = None
+    jsonrpc_code: int | None = None
+    missing_params: tuple[dict[str, Any], ...] | None = None
+    upstream_error: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -767,34 +774,25 @@ class A2AInvokeService:
         cls,
         exc: BaseException,
     ) -> StreamErrorPayload:
-        error_code = (
-            cls._extract_error_code_from_exception(exc) or cls._STREAM_ERROR_CODE
-        )
         if not isinstance(exc, A2APeerProtocolError):
             return StreamErrorPayload(
                 message=cls._STREAM_ERROR_MESSAGE,
-                error_code=error_code,
+                error_code=(
+                    cls._extract_error_code_from_exception(exc)
+                    or cls._STREAM_ERROR_CODE
+                ),
             )
-
-        upstream_message = str(exc).strip() or None
-        missing_params = cls._extract_missing_params(
-            data=exc.data,
-            message=upstream_message,
+        error_details = build_upstream_error_details_from_protocol_error(
+            exc,
+            default_error_code=cls._STREAM_ERROR_CODE,
         )
-        upstream_error: dict[str, Any] = {}
-        if upstream_message:
-            upstream_error["message"] = upstream_message
-        sanitized_data = cls._sanitize_upstream_error_data(exc.data)
-        if sanitized_data is not None:
-            upstream_error["data"] = sanitized_data
-
         return StreamErrorPayload(
             message=cls._STREAM_ERROR_MESSAGE,
-            error_code=error_code,
-            source="upstream_a2a",
-            jsonrpc_code=exc.code if isinstance(exc.code, int) else None,
-            missing_params=tuple(missing_params) or None,
-            upstream_error=upstream_error or None,
+            error_code=error_details.error_code,
+            source=error_details.source,
+            jsonrpc_code=error_details.jsonrpc_code,
+            missing_params=error_details.missing_params,
+            upstream_error=error_details.upstream_error,
         )
 
     @staticmethod
@@ -1024,6 +1022,10 @@ class A2AInvokeService:
                     elapsed_seconds=time.monotonic() - started_at,
                     idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                     terminal_event_seen=False,
+                    source=error_payload.source,
+                    jsonrpc_code=error_payload.jsonrpc_code,
+                    missing_params=error_payload.missing_params,
+                    upstream_error=error_payload.upstream_error,
                 )
                 await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
                 yield (
@@ -1262,6 +1264,10 @@ class A2AInvokeService:
                 elapsed_seconds=time.monotonic() - started_at,
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=False,
+                source=error_payload.source,
+                jsonrpc_code=error_payload.jsonrpc_code,
+                missing_params=error_payload.missing_params,
+                upstream_error=error_payload.upstream_error,
             )
             await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
             await self._call_callback(on_error_metadata, error_payload.as_event_data())
@@ -1556,6 +1562,10 @@ class A2AInvokeService:
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=False,
                 internal_error_message=self._extract_internal_error_message(exc),
+                source=error_payload.source,
+                jsonrpc_code=error_payload.jsonrpc_code,
+                missing_params=error_payload.missing_params,
+                upstream_error=error_payload.upstream_error,
             )
             await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
             await self._call_callback(on_error_metadata, error_payload.as_event_data())

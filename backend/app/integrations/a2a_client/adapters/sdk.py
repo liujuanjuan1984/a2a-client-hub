@@ -30,6 +30,7 @@ from app.integrations.a2a_client.http_clients import (
 from app.integrations.a2a_client.lifecycle import AdapterLifecycleSnapshot
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 from app.integrations.a2a_client.selection import build_a2a_message
+from app.integrations.a2a_error_contract import build_protocol_error_from_jsonrpc_error
 from app.utils.async_cleanup import await_cancel_safe
 
 SDK_DIALECT = "sdk"
@@ -278,19 +279,13 @@ class SDKA2AAdapter(A2AAdapter):
 
 def _map_protocol_error(exc: A2AClientJSONRPCError) -> A2APeerProtocolError:
     error = getattr(exc, "error", None)
-    code = getattr(error, "code", None)
-    message = getattr(error, "message", None) or str(exc)
-    data = getattr(error, "data", None)
-    return A2APeerProtocolError(
-        message=message,
-        error_code=_normalize_protocol_error_code(code=code, message=message),
-        rpc_code=code if isinstance(code, int) else None,
-        data=data,
+    payload = {
+        "code": getattr(error, "code", None),
+        "message": getattr(error, "message", None) or str(exc),
+        "data": getattr(error, "data", None),
+    }
+    return build_protocol_error_from_jsonrpc_error(
+        payload,
+        fallback_message=str(exc),
+        http_status=None,
     )
-
-
-def _normalize_protocol_error_code(*, code: Any, message: str) -> str:
-    if code == -32601:
-        return "method_not_found"
-    candidate = str(message).strip().replace("-", "_").replace(" ", "_").lower()
-    return candidate or "peer_protocol_error"

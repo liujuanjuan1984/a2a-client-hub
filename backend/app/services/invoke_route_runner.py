@@ -798,6 +798,10 @@ async def run_http_invoke(
         content=content,
         error=error,
         error_code=error_code,
+        source=outcome.source,
+        jsonrpc_code=outcome.jsonrpc_code,
+        missing_params=list(outcome.missing_params or []) or None,
+        upstream_error=outcome.upstream_error,
         agent_name=runtime.resolved.name,
         agent_url=runtime.resolved.url,
     )
@@ -881,6 +885,10 @@ async def run_background_invoke(
         "response_content": response_content,
         "error": outcome.error_message,
         "error_code": state.persisted_error_code or outcome.error_code,
+        "source": outcome.source,
+        "jsonrpc_code": outcome.jsonrpc_code,
+        "missing_params": list(outcome.missing_params or []) or None,
+        "upstream_error": outcome.upstream_error,
         "internal_error_message": outcome.internal_error_message,
         "conversation_id": (
             state.message_refs.get("conversation_id") if state.message_refs else None

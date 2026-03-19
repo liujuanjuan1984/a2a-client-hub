@@ -39,4 +39,9 @@ export interface ApiErrorResponse {
   detail?: string | ApiErrorDetail[];
   message?: string;
   error?: string;
+  error_code?: string | null;
+  source?: string | null;
+  jsonrpc_code?: number | null;
+  missing_params?: { name: string; required: boolean }[] | null;
+  upstream_error?: Record<string, unknown> | null;
 }

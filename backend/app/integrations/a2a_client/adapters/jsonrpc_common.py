@@ -9,8 +9,9 @@ from uuid import uuid4
 from a2a.client import ClientCallInterceptor
 
 from app.integrations.a2a_client.errors import A2APeerProtocolError
-
-JSONRPC_METHOD_NOT_FOUND_CODE = -32601
+from app.integrations.a2a_error_contract import (
+    build_protocol_error_from_jsonrpc_error as build_shared_protocol_error,
+)
 
 
 def build_jsonrpc_payload(*, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -43,26 +44,15 @@ async def apply_jsonrpc_interceptors(
     return final_payload, final_http_kwargs
 
 
-def normalize_jsonrpc_error_code(*, code: Any, message: str) -> str:
-    if code == JSONRPC_METHOD_NOT_FOUND_CODE:
-        return "method_not_found"
-    candidate = str(message).strip().replace("-", "_").replace(" ", "_").lower()
-    return candidate or "peer_protocol_error"
-
-
 def build_protocol_error_from_jsonrpc_error(
     error: dict[str, Any],
     *,
     fallback_message: str,
     http_status: int | None,
 ) -> A2APeerProtocolError:
-    code = error.get("code")
-    message = error.get("message") or fallback_message
-    return A2APeerProtocolError(
-        message=str(message),
-        error_code=normalize_jsonrpc_error_code(code=code, message=str(message)),
-        rpc_code=code if isinstance(code, int) else None,
-        data=error.get("data"),
+    return build_shared_protocol_error(
+        error,
+        fallback_message=fallback_message,
         http_status=http_status,
     )
 

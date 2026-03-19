@@ -551,6 +551,83 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
+async def test_run_http_invoke_returns_structured_error_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Gateway:
+        async def stream(self, **kwargs):  # noqa: ARG002
+            if False:
+                yield {}
+
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+
+    async def fake_consume_stream(**kwargs):  # noqa: ARG001
+        return StreamOutcome(
+            success=False,
+            finish_reason=StreamFinishReason.UPSTREAM_ERROR,
+            final_text="",
+            error_message="Upstream streaming failed",
+            error_code="invalid_params",
+            elapsed_seconds=0.1,
+            idle_seconds=0.0,
+            terminal_event_seen=False,
+            source="upstream_a2a",
+            jsonrpc_code=-32602,
+            missing_params=({"name": "project_id", "required": True},),
+            upstream_error={"message": "project_id required"},
+        )
+
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service,
+        "consume_stream",
+        fake_consume_stream,
+    )
+
+    async def fake_prepare_state(**kwargs):  # noqa: ARG001
+        return invoke_route_runner._InvokeState(
+            local_session_id=None,
+            local_source=None,
+            context_id=None,
+            metadata={},
+            stream_identity={},
+            stream_usage={},
+        )
+
+    monkeypatch.setattr(invoke_route_runner, "_prepare_state", fake_prepare_state)
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(uuid4()),
+            "metadata": {},
+        }
+    )
+
+    response = await invoke_route_runner.run_http_invoke(
+        db=object(),
+        gateway=_Gateway(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert response.success is False
+    assert response.error_code == "invalid_params"
+    assert response.source == "upstream_a2a"
+    assert response.jsonrpc_code == -32602
+    assert response.missing_params == [{"name": "project_id", "required": True}]
+    assert response.upstream_error == {"message": "project_id required"}
+
+
+@pytest.mark.asyncio
 async def test_build_consume_stream_callbacks_persists_outcome_content_and_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

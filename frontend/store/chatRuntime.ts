@@ -211,6 +211,10 @@ const buildApiErrorDetails = (error: unknown) => ({
     error instanceof ApiRequestError
       ? normalizeErrorCode(error.errorCode)
       : null,
+  source: error instanceof ApiRequestError ? error.source : null,
+  jsonrpcCode: error instanceof ApiRequestError ? error.jsonrpcCode : null,
+  missingParams: error instanceof ApiRequestError ? error.missingParams : null,
+  upstreamError: error instanceof ApiRequestError ? error.upstreamError : null,
 });
 
 const streamWarnThrottleMs = 15_000;
@@ -1022,6 +1026,10 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           errorText: message,
           details: {
             errorCode: normalizeErrorCode(response.error_code),
+            source: response.source ?? null,
+            jsonrpcCode: response.jsonrpc_code ?? null,
+            missingParams: response.missing_params ?? null,
+            upstreamError: response.upstream_error ?? null,
           },
         });
         return;
@@ -1035,10 +1043,23 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       });
       markSessionIdle();
     } catch (error) {
-      const { message, errorCode } = buildApiErrorDetails(error);
+      const {
+        message,
+        errorCode,
+        source,
+        jsonrpcCode,
+        missingParams,
+        upstreamError,
+      } = buildApiErrorDetails(error);
       finalizeStreamingFailure({
         errorText: message,
-        details: { errorCode },
+        details: {
+          errorCode,
+          source,
+          jsonrpcCode,
+          missingParams,
+          upstreamError,
+        },
       });
     }
   };
