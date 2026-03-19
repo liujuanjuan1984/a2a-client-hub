@@ -3,6 +3,9 @@
 This document provides a high-level architecture map and minimal API examples
 for local development and integration testing.
 
+For the broader cross-cutting documentation map, see
+[`docs/README.md`](README.md).
+
 ## System Overview
 
 `a2a-client-hub` is a client hub for user-managed and admin-managed A2A agents.
