@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, cast
 
 import httpx
 from a2a.types import AgentCard
@@ -69,7 +69,8 @@ class A2AExtensionSupport:
     async def fetch_card(self, runtime: A2ARuntime) -> AgentCard:
         self.ensure_outbound_allowed(runtime.resolved.url, purpose="Agent card URL")
         try:
-            card = await get_a2a_service().gateway.fetch_agent_card_detail(
+            service = cast(Any, get_a2a_service())
+            card = await service.gateway.fetch_agent_card_detail(
                 resolved=runtime.resolved,
                 raise_on_failure=True,
             )
@@ -85,7 +86,7 @@ class A2AExtensionSupport:
                 error_code="agent_unavailable",
                 upstream_error={"message": "Agent card unavailable"},
             )
-        return card
+        return cast(AgentCard, card)
 
     def ensure_outbound_allowed(self, url: str, *, purpose: str) -> str:
         try:
@@ -199,7 +200,7 @@ class A2AExtensionSupport:
         raw_type = data.get("type")
         if not isinstance(raw_type, str):
             return None
-        normalized = []
+        normalized: list[str] = []
         pending_sep = False
         for ch in raw_type.strip().lower():
             if ch.isalnum():

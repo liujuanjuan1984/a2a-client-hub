@@ -6,7 +6,7 @@ Supports JWT-based user authentication.
 
 import re
 from dataclasses import dataclass
-from typing import AsyncGenerator
+from typing import AsyncGenerator, cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, WebSocket, WebSocketException, status
@@ -200,9 +200,10 @@ async def get_ws_ticket_user(
                 scope_type=scope_type,
                 scope_id=scope_id,
             )
+            consumed_user_id = cast(UUID, consumed.user_id)
             user = await auth_handler.get_active_user(
                 db,
-                user_id=consumed.user_id,
+                user_id=consumed_user_id,
             )
             websocket.state.selected_subprotocol = (
                 protocol_selection.accepted_subprotocol

@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, AsyncContextManager, cast
 
 import httpx
 from a2a.client import (
@@ -52,11 +52,11 @@ class _NonClosingAsyncClientProxy:
         self._http_client = http_client
 
     @property
-    def headers(self):  # pragma: no cover - simple delegation
+    def headers(self) -> httpx.Headers:  # pragma: no cover - simple delegation
         return self._http_client.headers
 
     @property
-    def timeout(self):  # pragma: no cover - simple delegation
+    def timeout(self) -> httpx.Timeout:  # pragma: no cover - simple delegation
         return self._http_client.timeout
 
     @property
@@ -161,7 +161,6 @@ class SDKA2AAdapter(A2AAdapter):
             try:
                 return await client.cancel_task(
                     TaskIdParams(id=task_id),
-                    metadata=metadata,
                 )
             except A2AClientJSONRPCError as exc:
                 raise _map_protocol_error(exc) from exc
@@ -189,7 +188,13 @@ class SDKA2AAdapter(A2AAdapter):
         try:
             for entry in entries:
                 try:
-                    await await_cancel_safe(entry.client.close())
+                    close_result = getattr(entry.client, "close", None)
+                    if callable(close_result):
+                        await await_cancel_safe(close_result())
+                        continue
+                    aclose_result = getattr(entry.client, "aclose", None)
+                    if callable(aclose_result):
+                        await await_cancel_safe(aclose_result())
                 except Exception:
                     continue
         finally:
@@ -229,7 +234,7 @@ class SDKA2AAdapter(A2AAdapter):
             config = ClientConfig(
                 streaming=streaming,
                 polling=False,
-                httpx_client=self._sdk_http_client,
+                httpx_client=cast(httpx.AsyncClient, self._sdk_http_client),
                 use_client_preference=self._use_client_preference,
                 supported_transports=list(self._supported_transports),
             )
@@ -242,7 +247,7 @@ class SDKA2AAdapter(A2AAdapter):
             self._clients[streaming] = _SDKClientEntry(config=config, client=client)
             return client
 
-    def _transport_usage(self):
+    def _transport_usage(self) -> AsyncContextManager[None]:
         return use_shared_sdk_transport_http_client(self._shared_transport_lease)
 
     @asynccontextmanager

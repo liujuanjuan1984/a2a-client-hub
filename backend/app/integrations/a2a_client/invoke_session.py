@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from a2a.types import AgentCard
 
     from app.integrations.a2a_client.client import A2AClient
-    from app.integrations.a2a_client.service import ResolvedAgent
+    from app.integrations.a2a_client.types import ResolvedAgent
 
 
 class AgentResolutionPolicy(str, Enum):

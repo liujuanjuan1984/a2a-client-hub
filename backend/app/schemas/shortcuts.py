@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, List
+from typing import Any, List
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.pagination import ListResponse, Pagination
 
-_MAX_TITLE_LENGTH: ClassVar[int] = 120
-_MAX_PROMPT_LENGTH: ClassVar[int] = 4000
+_MAX_TITLE_LENGTH = 120
+_MAX_PROMPT_LENGTH = 4000
 
 
 def _strip_text(value: Any) -> str | None:

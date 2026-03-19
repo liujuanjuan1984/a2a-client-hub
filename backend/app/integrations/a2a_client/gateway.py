@@ -38,7 +38,7 @@ from app.utils.logging_redaction import (
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from a2a.types import AgentCard
 
-    from .service import ResolvedAgent
+    from .types import ResolvedAgent
 
 logger = get_logger(__name__)
 
@@ -255,7 +255,7 @@ class A2AGateway:
         context_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         session: Optional[A2AInvokeSession] = None,
-    ):
+    ) -> AsyncIterator[Dict[str, Any]]:
         logger.info(
             "A2A stream",
             extra={

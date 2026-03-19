@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
-from typing import Any, Optional, Type
+from typing import Any, Optional, Type, cast
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -84,7 +84,7 @@ def encrypt_bearer_token(
         raise validation_error_cls("Credential encryption key is missing")
 
     try:
-        return vault.encrypt(token.strip())
+        return cast(tuple[str, str], vault.encrypt(token.strip()))
     except SecretVaultNotConfiguredError as exc:
         raise validation_error_cls(str(exc)) from exc
 
@@ -96,7 +96,7 @@ async def get_agent_credential(
 ) -> Optional[A2AAgentCredential]:
     """Fetch credential for an agent."""
     stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
-    return await db.scalar(stmt)
+    return cast(A2AAgentCredential | None, await db.scalar(stmt))
 
 
 async def delete_agent_credentials(
@@ -139,9 +139,9 @@ async def upsert_agent_credential(
         )
         db.add(credential)
     else:
-        credential.encrypted_token = encrypted_value
-        credential.token_last4 = last4
-        credential.created_by_user_id = user_id
+        setattr(credential, "encrypted_token", encrypted_value)
+        setattr(credential, "token_last4", last4)
+        setattr(credential, "created_by_user_id", user_id)
 
     return last4
 

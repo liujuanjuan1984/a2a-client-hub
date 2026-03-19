@@ -2,8 +2,9 @@
 
 import importlib
 import inspect
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, Awaitable, Callable, Dict
+from typing import Any, Awaitable, Callable, Dict, cast
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, status
@@ -65,7 +66,7 @@ async def _shutdown_runtime_components() -> None:
 
 
 @asynccontextmanager
-async def app_lifespan(_: FastAPI):
+async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         init_global_http_client()
         start_scheduler()
@@ -73,7 +74,7 @@ async def app_lifespan(_: FastAPI):
         ensure_ws_ticket_cleanup_job()
 
         async def _init_a2a_service() -> None:
-            service = get_a2a_service()
+            service = cast(Any, get_a2a_service())
             await service.gateway.start_maintenance()
 
         await _run_startup_step(
@@ -125,8 +126,11 @@ app.add_middleware(
 )
 
 # Register global error handlers.
-app.add_exception_handler(HTTPException, http_exception_handler)
-app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(HTTPException, cast(Any, http_exception_handler))
+app.add_exception_handler(
+    RequestValidationError,
+    cast(Any, validation_exception_handler),
+)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 # Compress JSON payloads to reduce response time on low-bandwidth clients

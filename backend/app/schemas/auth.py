@@ -53,7 +53,7 @@ class RegisterRequest(BaseModel):
     @field_validator("timezone")
     @classmethod
     def validate_timezone(cls, value: Optional[str]) -> Optional[str]:
-        if value in (None, ""):
+        if not isinstance(value, str) or value == "":
             return None
         try:
             ZoneInfo(value)

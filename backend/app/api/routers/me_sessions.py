@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from typing import cast
+from uuid import UUID
+
 from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,9 +57,10 @@ async def list_unified_sessions(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> SessionListResponse:
+    current_user_id = cast(UUID, current_user.id)
     items, extra, db_mutated = await session_hub_service.list_sessions(
         db,
-        user_id=current_user.id,
+        user_id=current_user_id,
         page=payload.page,
         size=payload.size,
         source=payload.source,
@@ -81,10 +85,11 @@ async def list_unified_session_messages(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> SessionMessagesQueryResponse:
+    current_user_id = cast(UUID, current_user.id)
     try:
         items, extra, db_mutated = await session_hub_service.list_messages(
             db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             conversation_id=conversation_id,
             before=payload.before,
             limit=payload.limit,
@@ -116,10 +121,11 @@ async def list_unified_session_message_blocks(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> SessionMessageBlocksQueryResponse:
+    current_user_id = cast(UUID, current_user.id)
     try:
         items, db_mutated = await session_hub_service.list_message_blocks(
             db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             conversation_id=conversation_id,
             block_ids=payload.block_ids,
         )
@@ -141,10 +147,11 @@ async def continue_unified_session(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> SessionContinueResponse:
+    current_user_id = cast(UUID, current_user.id)
     try:
         payload, db_mutated = await session_hub_service.continue_session(
             db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             conversation_id=conversation_id,
         )
     except ValueError as exc:
@@ -165,10 +172,11 @@ async def cancel_unified_session(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> SessionCancelResponse:
+    current_user_id = cast(UUID, current_user.id)
     try:
         payload, db_mutated = await session_hub_service.cancel_session(
             db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             conversation_id=conversation_id,
         )
     except ValueError as exc:

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable, Literal, cast
 from uuid import UUID
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect, status
@@ -136,8 +137,8 @@ async def _prepare_state(
             agent_source=agent_source,
             conversation_id=payload.conversation_id,
         )
-        if local_session is not None and isinstance(local_session.id, UUID):
-            local_session_id = local_session.id
+        if local_session is not None:
+            local_session_id = cast(UUID, local_session.id)
         await commit_safely(prepare_db)
 
     resolved_context_id, resolved_invoke_metadata = normalize_invoke_binding_state(
@@ -665,7 +666,9 @@ async def run_http_invoke_with_session_recovery(
             logger=logger,
             log_extra=log_extra,
         )
-        if stream or response.success:
+        if isinstance(response, StreamingResponse):
+            return response
+        if response.success:
             return response
         if not is_recoverable_invoke_session_error(response.error_code):
             return response
@@ -989,8 +992,8 @@ async def run_ws_invoke_with_session_recovery(
             if isinstance(raw_message, str):
                 stream_error_message = raw_message
 
-        def _send_recovery_failed_error() -> None:
-            return a2a_invoke_service.send_ws_error(
+        async def _send_recovery_failed_error() -> None:
+            await a2a_invoke_service.send_ws_error(
                 websocket=websocket,
                 message=stream_error_message
                 or _SESSION_NOT_FOUND_RECOVERY_EXHAUSTED_MESSAGE,
@@ -1265,7 +1268,7 @@ async def run_http_invoke_route(
         if isinstance(response, StreamingResponse):
             original_iterator = response.body_iterator
 
-            async def guarded_iterator():
+            async def guarded_iterator() -> AsyncIterator[Any]:
                 try:
                     async for chunk in original_iterator:
                         yield chunk
@@ -1313,7 +1316,7 @@ async def run_http_invoke_route(
             if isinstance(response, StreamingResponse):
                 original_iterator = response.body_iterator
 
-                async def guarded_iterator_no_inflight():
+                async def guarded_iterator_no_inflight() -> AsyncIterator[Any]:
                     try:
                         async for chunk in original_iterator:
                             yield chunk

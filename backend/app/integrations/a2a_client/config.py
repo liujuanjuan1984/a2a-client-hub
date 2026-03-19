@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -17,7 +18,7 @@ class A2ASettings:
     client_maintenance_interval: float = 0.0
 
 
-def load_settings(raw_settings) -> A2ASettings:
+def load_settings(raw_settings: Any) -> A2ASettings:
     """Load ``A2ASettings`` from the global ``app.core.config.settings`` object."""
 
     return A2ASettings(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, status
@@ -14,6 +16,7 @@ from app.db.models.user import User
 from app.handlers import invitations as invitation_handler
 from app.schemas.invitations import (
     InvitationCreateRequest,
+    InvitationListMeta,
     InvitationListResponse,
     InvitationLookupResponse,
     InvitationResponse,
@@ -28,8 +31,12 @@ router = StrictAPIRouter(prefix="/invitations", tags=["invitations"])
 def _serialize_invitation_with_creator(
     invitation: Invitation,
 ) -> InvitationWithCreatorResponse:
-    creator_email = invitation.creator.email if invitation.creator else None
-    creator_name = invitation.creator.name if invitation.creator else None
+    creator_email = (
+        cast(str, invitation.creator.email) if invitation.creator is not None else None
+    )
+    creator_name = (
+        cast(str, invitation.creator.name) if invitation.creator is not None else None
+    )
     base = InvitationWithCreatorResponse.model_validate(invitation)
     return base.model_copy(
         update={
@@ -50,9 +57,10 @@ async def create_invitation(
     db: AsyncSession = Depends(get_async_db),
 ) -> InvitationResponse:
     try:
+        current_admin_id = cast(UUID, current_admin.id)
         result = await invitation_handler.create_invitation(
             db,
-            creator_user_id=current_admin.id,
+            creator_user_id=current_admin_id,
             target_email=request.email,
             memo=request.memo,
         )
@@ -80,9 +88,10 @@ async def list_my_invitations(
     db: AsyncSession = Depends(get_async_db),
 ) -> InvitationListResponse:
     offset = compute_offset(page=page, size=size)
+    current_user_id = cast(UUID, current_user.id)
     invitations, total = await invitation_handler.list_created_invitations_with_total(
         db,
-        creator_user_id=current_user.id,
+        creator_user_id=current_user_id,
         offset=offset,
         limit=size,
     )
@@ -92,10 +101,11 @@ async def list_my_invitations(
     return InvitationListResponse(
         items=items,
         pagination=build_pagination_meta(total=total, page=page, size=size),
-        meta={
-            "scope": "created",
-            "creator_user_id": current_user.id,
-        },
+        meta=InvitationListMeta(
+            scope="created",
+            creator_user_id=current_user_id,
+            target_email=None,
+        ),
     )
 
 
@@ -107,12 +117,13 @@ async def list_invitations_for_me(
     db: AsyncSession = Depends(get_async_db),
 ) -> InvitationWithCreatorListResponse:
     offset = compute_offset(page=page, size=size)
+    current_user_email = cast(str, current_user.email)
     (
         invitations,
         total,
     ) = await invitation_handler.list_invitations_targeting_user_with_total(
         db,
-        user_email=current_user.email,
+        user_email=current_user_email,
         offset=offset,
         limit=size,
     )
@@ -122,10 +133,11 @@ async def list_invitations_for_me(
     return InvitationWithCreatorListResponse(
         items=items,
         pagination=build_pagination_meta(total=total, page=page, size=size),
-        meta={
-            "scope": "invited",
-            "target_email": current_user.email,
-        },
+        meta=InvitationListMeta(
+            scope="invited",
+            creator_user_id=None,
+            target_email=current_user_email,
+        ),
     )
 
 
@@ -138,7 +150,9 @@ async def revoke_invitation(
     invitation = await db.get(Invitation, invitation_id)
     if invitation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    if invitation.creator_user_id != current_user.id:
+    creator_user_id = cast(UUID, invitation.creator_user_id)
+    current_user_id = cast(UUID, current_user.id)
+    if creator_user_id != current_user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot revoke invitations created by other users",
@@ -148,7 +162,8 @@ async def revoke_invitation(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only pending invitations can be revoked",
         )
-    if invitation.deleted_at is not None:
+    deleted_at = cast(datetime | None, invitation.deleted_at)
+    if deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invitation already revoked",
@@ -170,7 +185,9 @@ async def restore_invitation(
     invitation = await db.get(Invitation, invitation_id)
     if invitation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    if invitation.creator_user_id != current_user.id:
+    creator_user_id = cast(UUID, invitation.creator_user_id)
+    current_user_id = cast(UUID, current_user.id)
+    if creator_user_id != current_user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot restore invitations created by other users",
@@ -196,20 +213,25 @@ async def lookup_invitation(
     except invitation_handler.InvitationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
-    if invitation.deleted_at is not None:
+    deleted_at = cast(datetime | None, invitation.deleted_at)
+    if deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     if invitation.status != InvitationStatus.PENDING:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
-    creator_email = invitation.creator.email if invitation.creator else None
-    creator_name = invitation.creator.name if invitation.creator else None
+    creator_email = (
+        cast(str, invitation.creator.email) if invitation.creator is not None else None
+    )
+    creator_name = (
+        cast(str, invitation.creator.name) if invitation.creator is not None else None
+    )
 
     return InvitationLookupResponse(
-        code=invitation.code,
-        target_email=invitation.target_email,
+        code=cast(str, invitation.code),
+        target_email=cast(str, invitation.target_email),
         status=invitation.status.value,
         creator_email=creator_email,
         creator_name=creator_name,
-        memo=invitation.memo,
+        memo=cast(str | None, invitation.memo),
     )

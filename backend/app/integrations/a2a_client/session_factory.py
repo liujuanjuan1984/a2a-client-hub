@@ -18,7 +18,7 @@ from app.utils.async_cleanup import await_cancel_safe
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from app.integrations.a2a_client.client import A2AClient
 
-    from .service import ResolvedAgent
+    from .types import ResolvedAgent
 
 
 class A2AInvokeSessionFactory:

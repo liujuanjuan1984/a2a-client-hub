@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import secrets
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from datetime import datetime
+from typing import Any, List, Optional, cast
 from uuid import UUID
 
 from sqlalchemy import and_, func, select
@@ -78,7 +79,7 @@ class InvitationCreateResult:
 async def create_invitation(
     db: AsyncSession,
     *,
-    creator_user_id,
+    creator_user_id: UUID,
     target_email: str,
     memo: Optional[str] = None,
 ) -> InvitationCreateResult:
@@ -109,10 +110,11 @@ async def create_invitation(
 
         # Update memo if new one provided
         if memo:
-            existing_revoked.memo = (
-                f"{existing_revoked.memo}\nNew memo: {memo}"
-                if existing_revoked.memo
-                else memo
+            existing_memo = cast(str | None, existing_revoked.memo)
+            setattr(
+                existing_revoked,
+                "memo",
+                f"{existing_memo}\nNew memo: {memo}" if existing_memo else memo,
             )
 
         logger.info(
@@ -197,7 +199,11 @@ async def validate_invitation_for_registration(
     invitation = (
         await db.execute(select(Invitation).where(Invitation.code == code))
     ).scalar_one_or_none()
-    if invitation is None or invitation.deleted_at is not None:
+    if invitation is None:
+        raise InvitationUsageError("Invitation is invalid or revoked")
+
+    deleted_at = cast(datetime | None, invitation.deleted_at)
+    if deleted_at is not None:
         raise InvitationUsageError("Invitation is invalid or revoked")
 
     if invitation.status != InvitationStatus.PENDING:
@@ -206,9 +212,10 @@ async def validate_invitation_for_registration(
     if invitation.target_email != normalized_email:
         raise InvitationUsageError("Invitation does not match the provided email")
 
-    if invitation.expires_at is not None:
+    expires_at = cast(datetime | None, invitation.expires_at)
+    if expires_at is not None:
         now = await db.scalar(select(func.now()))
-        if now >= invitation.expires_at:
+        if now is not None and now >= expires_at:
             invitation.mark_expired()
             await commit_safely(db)
             raise InvitationUsageError("Invitation has expired")
@@ -220,7 +227,7 @@ async def mark_invitation_registered(
     db: AsyncSession,
     *,
     invitation: Invitation,
-    user_id,
+    user_id: UUID,
     memo: Optional[str] = None,
 ) -> None:
     invitation.mark_registered(user_id, reason=memo)
@@ -265,14 +272,19 @@ async def restore_invitation(
         raise InvitationError("Only revoked invitations can be restored")
 
     # Restore status and clear revocation markers
-    invitation.status = InvitationStatus.PENDING
-    invitation.deleted_at = None  # Clear soft delete
-    invitation.revoked_at = None  # Clear revocation timestamp
+    setattr(invitation, "status", InvitationStatus.PENDING)
+    setattr(invitation, "deleted_at", None)
+    setattr(invitation, "revoked_at", None)
     if reason:
-        invitation.memo = (
-            f"{invitation.memo}\nRestored: {reason}"
-            if invitation.memo
-            else f"Restored: {reason}"
+        existing_memo = cast(str | None, invitation.memo)
+        setattr(
+            invitation,
+            "memo",
+            (
+                f"{existing_memo}\nRestored: {reason}"
+                if existing_memo
+                else f"Restored: {reason}"
+            ),
         )
 
     await commit_safely(db)
@@ -296,7 +308,7 @@ async def revoke_other_invitations_for_email(
     db: AsyncSession,
     *,
     email: str,
-    exclude_invitation_id,
+    exclude_invitation_id: UUID,
     memo: str,
 ) -> List[Invitation]:
     normalized_email = _normalize_email(email)
@@ -334,7 +346,7 @@ async def revoke_other_invitations_for_email(
 async def list_created_invitations_with_total(
     db: AsyncSession,
     *,
-    creator_user_id,
+    creator_user_id: UUID,
     offset: int = 0,
     limit: int = 100,
 ) -> tuple[List[Invitation], int]:
@@ -364,7 +376,7 @@ async def list_invitations_targeting_user_with_total(
 async def ensure_invitation_unique_for_creator(
     db: AsyncSession,
     *,
-    creator_user_id,
+    creator_user_id: UUID,
     target_email: str,
 ) -> None:
     normalized_email = _normalize_email(target_email)

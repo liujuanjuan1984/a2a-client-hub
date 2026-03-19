@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Tuple, Type
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
-from app.integrations.a2a_client.service import ResolvedAgent
+from app.integrations.a2a_client.types import ResolvedAgent
 from app.utils.auth_headers import build_auth_header_pair
 
 

@@ -82,7 +82,7 @@ repos:
     hooks:
       - id: backend-mypy-changed
         name: backend mypy (changed files only)
-        entry: env MYPY_INCLUDE_REGEX='^backend/app/utils/.*\.py$' bash backend/scripts/mypy_changed.sh
+        entry: env MYPY_INCLUDE_REGEX='^backend/app/.*\.py$' bash backend/scripts/mypy_changed.sh
         language: system
         files: ^backend/.*\.py$
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, status
@@ -18,6 +18,8 @@ from app.schemas.hub_a2a_agent import (
     HubA2AAgentAdminListResponse,
     HubA2AAgentAdminResponse,
     HubA2AAgentAdminUpdate,
+    HubA2AAgentListMeta,
+    HubA2AAgentPagination,
     HubA2AAllowlistAddRequest,
     HubA2AAllowlistEntryResponse,
     HubA2AAllowlistListResponse,
@@ -26,6 +28,7 @@ from app.schemas.hub_a2a_agent import (
 from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.hub_a2a_agents import (
     HubA2AAgentNotFoundError,
+    HubA2AAgentRecord,
     HubA2AAgentValidationError,
     HubA2AAllowlistConflictError,
     HubA2AUserNotFoundError,
@@ -37,7 +40,7 @@ router = StrictAPIRouter(prefix="/admin/a2a/agents", tags=["admin-a2a"])
 logger = get_logger(__name__)
 
 
-def _build_admin_response(record) -> HubA2AAgentAdminResponse:
+def _build_admin_response(record: HubA2AAgentRecord) -> HubA2AAgentAdminResponse:
     agent = record.agent
     payload: dict[str, Any] = {
         "id": agent.id,
@@ -75,8 +78,13 @@ async def list_hub_agents_admin(
     page_items = items[offset : offset + size]
     return HubA2AAgentAdminListResponse(
         items=[_build_admin_response(item) for item in page_items],
-        pagination={"page": page, "size": size, "total": total, "pages": pages},
-        meta={},
+        pagination=HubA2AAgentPagination(
+            page=page,
+            size=size,
+            total=total,
+            pages=pages,
+        ),
+        meta=HubA2AAgentListMeta(),
     )
 
 
@@ -92,6 +100,7 @@ async def create_hub_agent_admin(
     db: AsyncSession = Depends(get_async_db),
     current_admin: User = Depends(get_current_admin_user),
 ) -> HubA2AAgentAdminResponse:
+    current_admin_id = cast(UUID, current_admin.id)
     response.headers["Cache-Control"] = "no-store"
     normalized_card_url = normalize_card_url(
         payload.card_url,
@@ -100,7 +109,7 @@ async def create_hub_agent_admin(
     logger.info(
         "Hub A2A agent create requested (admin)",
         extra={
-            "admin_user_id": str(current_admin.id),
+            "admin_user_id": str(current_admin_id),
             "agent_name": payload.name,
             "card_url": redact_url_for_logging(normalized_card_url),
             "availability_policy": payload.availability_policy,
@@ -113,7 +122,7 @@ async def create_hub_agent_admin(
     try:
         record = await hub_a2a_agent_service.create_agent_admin(
             db,
-            admin_user_id=current_admin.id,
+            admin_user_id=current_admin_id,
             name=payload.name,
             card_url=normalized_card_url,
             availability_policy=payload.availability_policy,
@@ -153,6 +162,7 @@ async def update_hub_agent_admin(
     db: AsyncSession = Depends(get_async_db),
     current_admin: User = Depends(get_current_admin_user),
 ) -> HubA2AAgentAdminResponse:
+    current_admin_id = cast(UUID, current_admin.id)
     response.headers["Cache-Control"] = "no-store"
     normalized_card_url = (
         normalize_card_url(
@@ -165,7 +175,7 @@ async def update_hub_agent_admin(
     logger.info(
         "Hub A2A agent update requested (admin)",
         extra={
-            "admin_user_id": str(current_admin.id),
+            "admin_user_id": str(current_admin_id),
             "agent_id": str(agent_id),
             "agent_name": payload.name,
             "card_url": redact_url_for_logging(normalized_card_url),
@@ -184,7 +194,7 @@ async def update_hub_agent_admin(
     try:
         record = await hub_a2a_agent_service.update_agent_admin(
             db,
-            admin_user_id=current_admin.id,
+            admin_user_id=current_admin_id,
             agent_id=agent_id,
             name=payload.name,
             card_url=normalized_card_url,
@@ -215,9 +225,10 @@ async def delete_hub_agent_admin(
     db: AsyncSession = Depends(get_async_db),
     current_admin: User = Depends(get_current_admin_user),
 ) -> Response:
+    current_admin_id = cast(UUID, current_admin.id)
     try:
         await hub_a2a_agent_service.delete_agent_admin(
-            db, admin_user_id=current_admin.id, agent_id=agent_id
+            db, admin_user_id=current_admin_id, agent_id=agent_id
         )
     except HubA2AAgentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -244,13 +255,13 @@ async def list_hub_agent_allowlist_admin(
     return HubA2AAllowlistListResponse(
         items=[
             HubA2AAllowlistEntryResponse(
-                id=item.entry.id,
-                agent_id=item.entry.agent_id,
-                user_id=item.entry.user_id,
+                id=cast(UUID, item.entry.id),
+                agent_id=cast(UUID, item.entry.agent_id),
+                user_id=cast(UUID, item.entry.user_id),
                 user_email=item.user_email,
                 user_name=item.user_name,
-                created_by_user_id=item.entry.created_by_user_id,
-                created_at=item.entry.created_at,
+                created_by_user_id=cast(UUID, item.entry.created_by_user_id),
+                created_at=cast(Any, item.entry.created_at),
             )
             for item in records
         ]
@@ -270,11 +281,12 @@ async def add_hub_agent_allowlist_admin(
     db: AsyncSession = Depends(get_async_db),
     current_admin: User = Depends(get_current_admin_user),
 ) -> HubA2AAllowlistEntryResponse:
+    current_admin_id = cast(UUID, current_admin.id)
     response.headers["Cache-Control"] = "no-store"
     logger.info(
         "Hub A2A agent allowlist add requested (admin)",
         extra={
-            "admin_user_id": str(current_admin.id),
+            "admin_user_id": str(current_admin_id),
             "agent_id": str(agent_id),
             "user_id": str(payload.user_id) if payload.user_id else None,
             "email": (payload.email or "").strip().lower() if payload.email else None,
@@ -283,7 +295,7 @@ async def add_hub_agent_allowlist_admin(
     try:
         record = await hub_a2a_agent_service.add_allowlist_entry_admin(
             db,
-            admin_user_id=current_admin.id,
+            admin_user_id=current_admin_id,
             agent_id=agent_id,
             user_id=payload.user_id,
             email=payload.email,
@@ -297,13 +309,13 @@ async def add_hub_agent_allowlist_admin(
     except HubA2AAgentValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return HubA2AAllowlistEntryResponse(
-        id=record.entry.id,
-        agent_id=record.entry.agent_id,
-        user_id=record.entry.user_id,
+        id=cast(UUID, record.entry.id),
+        agent_id=cast(UUID, record.entry.agent_id),
+        user_id=cast(UUID, record.entry.user_id),
         user_email=record.user_email,
         user_name=record.user_name,
-        created_by_user_id=record.entry.created_by_user_id,
-        created_at=record.entry.created_at,
+        created_by_user_id=cast(UUID, record.entry.created_by_user_id),
+        created_at=cast(Any, record.entry.created_at),
     )
 
 
@@ -320,11 +332,12 @@ async def replace_hub_agent_allowlist_admin(
     db: AsyncSession = Depends(get_async_db),
     current_admin: User = Depends(get_current_admin_user),
 ) -> HubA2AAllowlistListResponse:
+    current_admin_id = cast(UUID, current_admin.id)
     response.headers["Cache-Control"] = "no-store"
     logger.info(
         "Hub A2A agent allowlist replace requested (admin)",
         extra={
-            "admin_user_id": str(current_admin.id),
+            "admin_user_id": str(current_admin_id),
             "agent_id": str(agent_id),
             "entries_count": len(payload.entries),
         },
@@ -332,7 +345,7 @@ async def replace_hub_agent_allowlist_admin(
     try:
         records = await hub_a2a_agent_service.replace_allowlist_entries_admin(
             db,
-            admin_user_id=current_admin.id,
+            admin_user_id=current_admin_id,
             agent_id=agent_id,
             entries=[
                 {
@@ -352,13 +365,13 @@ async def replace_hub_agent_allowlist_admin(
     return HubA2AAllowlistListResponse(
         items=[
             HubA2AAllowlistEntryResponse(
-                id=item.entry.id,
-                agent_id=item.entry.agent_id,
-                user_id=item.entry.user_id,
+                id=cast(UUID, item.entry.id),
+                agent_id=cast(UUID, item.entry.agent_id),
+                user_id=cast(UUID, item.entry.user_id),
                 user_email=item.user_email,
                 user_name=item.user_name,
-                created_by_user_id=item.entry.created_by_user_id,
-                created_at=item.entry.created_at,
+                created_by_user_id=cast(UUID, item.entry.created_by_user_id),
+                created_at=cast(Any, item.entry.created_at),
             )
             for item in records
         ]

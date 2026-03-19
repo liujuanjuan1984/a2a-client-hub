@@ -4,7 +4,7 @@ This module contains JWT token handling, password hashing, and authentication ut
 """
 
 from datetime import timedelta
-from typing import Optional, Union, cast
+from typing import Any, Optional, Union, cast
 from uuid import UUID, uuid4
 
 import jwt
@@ -70,7 +70,7 @@ def verify_jwt_token(token: str, *, expected_type: str) -> Optional[str]:
             _jwt_verification_key(),
             algorithms=[settings.jwt_algorithm],
             issuer=settings.jwt_issuer,
-            options=options,
+            options=cast(Any, options),
         )
         if payload.get("typ") != expected_type:
             return None
@@ -93,7 +93,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         True if password matches, False otherwise
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    return cast(bool, pwd_context.verify(plain_password, hashed_password))
 
 
 def get_password_hash(password: str) -> str:
@@ -106,7 +106,7 @@ def get_password_hash(password: str) -> str:
     Returns:
         Hashed password string
     """
-    return pwd_context.hash(password)
+    return cast(str, pwd_context.hash(password))
 
 
 def validate_password_strength(password: str) -> tuple[bool, str]:

@@ -11,8 +11,8 @@ from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from dotenv import load_dotenv
-from pydantic import ConfigDict, Field, field_validator, model_validator
-from pydantic_settings import BaseSettings
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine.url import make_url
 
 load_dotenv(override=True)
@@ -616,7 +616,7 @@ class Settings(BaseSettings):
         description="Maximum concurrent upstream refreshes when updating cached OpenCode session listings.",
     )
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,
         extra="ignore",  # Ignore extra fields from environment
@@ -724,4 +724,4 @@ class Settings(BaseSettings):
 
 
 # Global settings instance
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

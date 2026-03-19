@@ -1,6 +1,6 @@
 """Global HTTP client for the A2A client hub."""
 
-from typing import Optional
+from typing import cast
 
 import httpx
 
@@ -10,7 +10,7 @@ from app.utils.async_cleanup import await_cancel_safe
 
 logger = get_logger(__name__)
 
-_global_http_client: Optional[httpx.AsyncClient] = None
+_global_http_client: httpx.AsyncClient | None = None
 
 
 def resolve_http_client_timeout(
@@ -63,7 +63,7 @@ def get_global_http_client() -> httpx.AsyncClient:
                 extra={"http_client_recreated": True},
             )
         init_global_http_client()
-    return _global_http_client
+    return cast(httpx.AsyncClient, _global_http_client)
 
 
 async def close_global_http_client() -> None:

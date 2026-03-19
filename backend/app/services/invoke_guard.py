@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import AsyncIterator, Literal
 from uuid import UUID
 
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
@@ -44,7 +44,7 @@ def build_invoke_guard_key(
 
 
 @asynccontextmanager
-async def guard_inflight_invoke(guard_key: str | None):
+async def guard_inflight_invoke(guard_key: str | None) -> AsyncIterator[None]:
     if not guard_key:
         yield
         return

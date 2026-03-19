@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+from collections.abc import AsyncIterator
 from datetime import timedelta
-from uuid import uuid4
+from typing import Any, cast
+from uuid import UUID, uuid4
 
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from sqlalchemy import and_, func, select, text, update
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -152,7 +155,8 @@ async def _touch_schedule_run_heartbeat(*, claim: ClaimedA2AScheduleTask) -> boo
             .values(last_heartbeat_at=observed_at)
         )
         result = await db.execute(stmt)
-        if int(result.rowcount or 0) <= 0:
+        rowcount = cast(int | None, getattr(result, "rowcount", None))
+        if int(rowcount or 0) <= 0:
             return False
         await commit_safely(db)
     return True
@@ -257,39 +261,44 @@ async def _schedule_run_heartbeat_loop(
 
 
 async def _ensure_task_session(
-    *, db, task: A2AScheduleTask
+    *, db: AsyncSession, task: A2AScheduleTask
 ) -> tuple[ConversationThread, bool]:
     now = utc_now()
+    task_conversation_policy = cast(str, task.conversation_policy)
+    task_conversation_id = cast(UUID | None, task.conversation_id)
+    task_user_id = cast(UUID, task.user_id)
+    task_agent_id = cast(UUID, task.agent_id)
+    task_name = cast(str, task.name)
 
     # Check conversation_policy
     if (
-        task.conversation_policy == A2AScheduleTask.POLICY_REUSE
-        and task.conversation_id
+        task_conversation_policy == A2AScheduleTask.POLICY_REUSE
+        and task_conversation_id
     ):
         stmt = select(ConversationThread).where(
-            ConversationThread.id == task.conversation_id
+            ConversationThread.id == task_conversation_id
         )
         existing_thread = await db.scalar(stmt)
         if (
             existing_thread
             and existing_thread.status != ConversationThread.STATUS_ARCHIVED
         ):
-            existing_thread.last_active_at = now
+            setattr(existing_thread, "last_active_at", now)
             return existing_thread, False
 
     thread = ConversationThread(
         id=uuid4(),
-        user_id=task.user_id,
+        user_id=task_user_id,
         source=ConversationThread.SOURCE_SCHEDULED,
-        agent_id=task.agent_id,
+        agent_id=task_agent_id,
         agent_source="personal",
-        title=f"[Scheduled] {task.name}",
+        title=f"[Scheduled] {task_name}",
         last_active_at=now,
         status=ConversationThread.STATUS_ACTIVE,
     )
     db.add(thread)
     await db.flush()
-    task.conversation_id = thread.id
+    setattr(task, "conversation_id", cast(UUID, thread.id))
     return thread, True
 
 
@@ -371,6 +380,13 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 },
             )
             return
+        task_id = cast(UUID, task.id)
+        task_user_id = cast(UUID, task.user_id)
+        task_agent_id = cast(UUID, task.agent_id)
+        task_prompt = cast(str, task.prompt)
+        task_conversation_id = cast(UUID | None, task.conversation_id)
+        cast(UUID, execution.id)
+        cast(UUID | None, execution.conversation_id)
         if execution.status != A2AScheduleExecution.STATUS_RUNNING:
             logger.info(
                 "Skip stale schedule claim task=%s run_id=%s because execution is no longer running",
@@ -389,12 +405,12 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
-                    task_id=task.id,
-                    user_id=task.user_id,
+                    task_id=task_id,
+                    user_id=task_user_id,
                     run_id=claim.run_id,
                     final_status=A2AScheduleTask.STATUS_FAILED,
                     finished_at=finished_at,
-                    conversation_id=task.conversation_id,
+                    conversation_id=task_conversation_id,
                     response_content=failure_message,
                     error_message=failure_message,
                 )
@@ -430,12 +446,12 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             metadata = _execution_metadata(task, str(execution.id), str(claim.run_id))
             runtime = await a2a_runtime_builder.build(
                 db,
-                user_id=task.user_id,
-                agent_id=task.agent_id,
+                user_id=task_user_id,
+                agent_id=task_agent_id,
             )
             if not bool(getattr(runtime.agent, "enabled", True)):
                 raise RuntimeError("Target A2A agent is disabled")
-            gateway = get_a2a_service().gateway
+            gateway = cast(Any, get_a2a_service()).gateway
             async with open_schedule_invoke_session(
                 gateway=gateway,
                 runtime=runtime,
@@ -444,7 +460,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     db=db,
                     task=task,
                 )
-                execution.conversation_id = thread.id
+                setattr(execution, "conversation_id", cast(UUID, thread.id))
                 await commit_safely(db)
                 heartbeat_task = asyncio.create_task(
                     _schedule_run_heartbeat_loop(
@@ -453,7 +469,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     )
                 )
                 invoke_payload = A2AAgentInvokeRequest(
-                    query=task.prompt,
+                    query=task_prompt,
                     conversationId=str(thread.id),
                     metadata=metadata,
                 )
@@ -462,8 +478,8 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         db=db,
                         gateway=gateway,
                         runtime=runtime,
-                        user_id=task.user_id,
-                        agent_id=task.agent_id,
+                        user_id=task_user_id,
+                        agent_id=task_agent_id,
                         agent_source="personal",
                         payload=invoke_payload,
                         validate_message=lambda _payload: [],
@@ -473,8 +489,8 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                             "schedule_execution_id": str(execution.id),
                             "run_id": str(claim.run_id),
                             "phase": "invoke",
-                            "agent_id": str(task.agent_id),
-                            "user_id": str(task.user_id),
+                            "agent_id": str(task_agent_id),
+                            "user_id": str(task_user_id),
                         },
                         total_timeout_seconds=settings.a2a_schedule_task_invoke_timeout,
                         idle_timeout_seconds=settings.a2a_schedule_task_stream_idle_timeout,
@@ -519,12 +535,12 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
-                    task_id=task.id,
-                    user_id=task.user_id,
+                    task_id=task_id,
+                    user_id=task_user_id,
                     run_id=claim.run_id,
                     final_status=final_status,
                     finished_at=finished_at,
-                    conversation_id=resolved_conversation_id,
+                    conversation_id=cast(UUID | None, resolved_conversation_id),
                     response_content=response_content,
                     error_message=execution_error_message,
                     error_code=execution_error_code,
@@ -563,10 +579,10 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 return
 
             if should_cleanup_ephemeral_thread and thread is not None:
-                execution.conversation_id = None
+                setattr(execution, "conversation_id", None)
                 await db.delete(thread)
-                if task.conversation_id == thread.id:
-                    task.conversation_id = None
+                if task_conversation_id == cast(UUID, thread.id):
+                    setattr(task, "conversation_id", None)
 
             if execution.started_at and execution.finished_at:
                 latency_ms = (
@@ -578,15 +594,19 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
 
         except Exception as exc:  # pragma: no cover - defensive path
             finished_at = utc_now()
-            failure_error_code, failure_message = _resolve_schedule_failure_details(
-                exc=exc
+            finalize_error_code: str | None
+            finalize_failure_message: str | None
+            finalize_error_code, finalize_failure_message = (
+                _resolve_schedule_failure_details(exc=exc)
             )
-            failure_message = (failure_message or "Schedule execution failed")[:2000]
+            finalize_failure_message = (
+                finalize_failure_message or "Schedule execution failed"
+            )[:2000]
             try:
                 finalized = await a2a_schedule_service.finalize_task_run(
                     db,
-                    task_id=task.id,
-                    user_id=task.user_id,
+                    task_id=task_id,
+                    user_id=task_user_id,
                     run_id=claim.run_id,
                     final_status=A2AScheduleTask.STATUS_FAILED,
                     finished_at=finished_at,
@@ -594,23 +614,27 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                         None
                         if thread and is_new
                         else (
-                            execution.conversation_id
+                            cast(UUID | None, execution.conversation_id)
                             if execution is not None
-                            else task.conversation_id
+                            else task_conversation_id
                         )
                     ),
                     response_content=(
-                        execution.response_content
+                        cast(str | None, execution.response_content)
                         if execution is not None and execution.response_content
-                        else failure_message
+                        else finalize_failure_message
                     ),
-                    error_message=failure_message,
-                    error_code=failure_error_code,
+                    error_message=finalize_failure_message,
+                    error_code=finalize_error_code,
                     user_message_id=(
-                        execution.user_message_id if execution is not None else None
+                        cast(UUID | None, execution.user_message_id)
+                        if execution is not None
+                        else None
                     ),
                     agent_message_id=(
-                        execution.agent_message_id if execution is not None else None
+                        cast(UUID | None, execution.agent_message_id)
+                        if execution is not None
+                        else None
                     ),
                 )
             except A2AScheduleConflictError:
@@ -644,9 +668,9 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 return
 
             if thread and is_new and execution is not None:
-                execution.conversation_id = None
-                if task.conversation_id == thread.id:
-                    task.conversation_id = None
+                setattr(execution, "conversation_id", None)
+                if task_conversation_id == cast(UUID, thread.id):
+                    setattr(task, "conversation_id", None)
                 await db.delete(thread)
             if execution is not None and execution.started_at:
                 latency_ms = (finished_at - execution.started_at).total_seconds() * 1000
@@ -661,16 +685,16 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                     commit_error,
                     exc_info=commit_error,
                 )
-            execution_id = str(execution.id) if execution is not None else "unknown"
+            execution_id_str = str(execution.id) if execution is not None else "unknown"
             logger.error(
                 "Scheduled A2A execution failed task=%s execution=%s err=%s",
                 task.id,
-                execution_id,
+                execution_id_str,
                 exc,
                 exc_info=exc,
                 extra={
                     "schedule_task_id": str(task.id),
-                    "schedule_execution_id": execution_id,
+                    "schedule_execution_id": execution_id_str,
                     "run_id": str(claim.run_id),
                     "phase": "finalize",
                 },
@@ -678,7 +702,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
 
 
 @contextlib.asynccontextmanager
-async def _try_hold_dispatch_leader_lock():
+async def _try_hold_dispatch_leader_lock() -> AsyncIterator[bool]:
     async with async_engine.connect() as lock_conn:
         dialect_name = getattr(getattr(lock_conn, "dialect", None), "name", None)
         if dialect_name != "postgresql":

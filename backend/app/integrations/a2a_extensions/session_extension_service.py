@@ -62,22 +62,22 @@ class SessionExtensionService:
             return None
 
         if isinstance(result, list):
-            envelope = {
+            normalized_envelope = {
                 "items": result,
                 "pagination": {"page": page, "size": size},
             }
             if include_raw:
-                envelope["raw"] = result
-            return SessionExtensionService._validate_query_result(envelope)
+                normalized_envelope["raw"] = result
+            return SessionExtensionService._validate_query_result(normalized_envelope)
 
         if not isinstance(result, dict):
-            envelope = {
+            normalized_envelope = {
                 "items": [],
                 "pagination": {"page": page, "size": size},
             }
             if include_raw:
-                envelope["raw"] = result
-            return SessionExtensionService._validate_query_result(envelope)
+                normalized_envelope["raw"] = result
+            return SessionExtensionService._validate_query_result(normalized_envelope)
 
         strict_result_envelope = result_envelope is not None
         mapping = result_envelope or ResultEnvelopeMapping()

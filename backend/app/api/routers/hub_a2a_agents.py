@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, WebSocket, status
@@ -26,6 +27,8 @@ from app.integrations.a2a_client.validators import validate_message
 from app.schemas.a2a_agent_card import A2AAgentCardValidationResponse
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.hub_a2a_agent import (
+    HubA2AAgentListMeta,
+    HubA2AAgentPagination,
     HubA2AAgentUserListResponse,
     HubA2AAgentUserResponse,
 )
@@ -56,8 +59,9 @@ async def list_hub_agents_for_user(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=200, description="Page size"),
 ) -> HubA2AAgentUserListResponse:
+    current_user_id = cast(UUID, current_user.id)
     items = await hub_a2a_agent_service.list_visible_agents_for_user(
-        db, user_id=current_user.id
+        db, user_id=current_user_id
     )
     total = len(items)
     pages = (total + size - 1) // size if size else 0
@@ -66,15 +70,20 @@ async def list_hub_agents_for_user(
     return HubA2AAgentUserListResponse(
         items=[
             HubA2AAgentUserResponse(
-                id=item.id,
-                name=item.name,
-                card_url=item.card_url,
-                tags=item.tags or [],
+                id=cast(UUID, item.id),
+                name=cast(str, item.name),
+                card_url=cast(str, item.card_url),
+                tags=cast(list[str], item.tags or []),
             )
             for item in page_items
         ],
-        pagination={"page": page, "size": size, "total": total, "pages": pages},
-        meta={},
+        pagination=HubA2AAgentPagination(
+            page=page,
+            size=size,
+            total=total,
+            pages=pages,
+        ),
+        meta=HubA2AAgentListMeta(),
     )
 
 
@@ -91,11 +100,12 @@ async def validate_hub_agent_card(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> A2AAgentCardValidationResponse:
+    current_user_id = cast(UUID, current_user.id)
     response.headers["Cache-Control"] = "no-store"
 
     try:
         runtime = await hub_a2a_runtime_builder.build(
-            db, user_id=current_user.id, agent_id=agent_id
+            db, user_id=current_user_id, agent_id=agent_id
         )
     except HubA2ARuntimeNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -105,14 +115,14 @@ async def validate_hub_agent_card(
     logger.info(
         "Hub A2A agent card validation requested",
         extra={
-            "user_id": str(current_user.id),
+            "user_id": str(current_user_id),
             "agent_id": str(agent_id),
             "agent_url": redact_url_for_logging(runtime.resolved.url),
         },
     )
     try:
         return await fetch_and_validate_agent_card(
-            gateway=get_a2a_service().gateway,
+            gateway=cast(Any, get_a2a_service()).gateway,
             resolved=runtime.resolved,
         )
     except (A2AAgentUnavailableError, A2AClientResetRequiredError) as exc:
@@ -131,19 +141,20 @@ async def invoke_hub_agent(
     response: Response,
     current_user: User = Depends(get_current_user),
     stream: bool = Query(False, description="Set to true for SSE streaming responses."),
-) -> A2AAgentInvokeResponse:
+) -> Any:
     response.headers["Cache-Control"] = "no-store"
     async with AsyncSessionLocal() as db:
+        current_user_id = cast(UUID, current_user.id)
         return await run_http_invoke_route(
             db=db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             agent_id=agent_id,
             agent_source="shared",
             payload=payload,
             stream=stream,
-            gateway=get_a2a_service().gateway,
+            gateway=cast(Any, get_a2a_service()).gateway,
             runtime_builder=lambda: hub_a2a_runtime_builder.build(
-                db, user_id=current_user.id, agent_id=agent_id
+                db, user_id=current_user_id, agent_id=agent_id
             ),
             runtime_not_found_errors=(HubA2ARuntimeNotFoundError,),
             runtime_not_found_status_code=404,
@@ -153,7 +164,7 @@ async def invoke_hub_agent(
             logger=logger,
             invoke_log_message="Hub A2A agent invoke requested",
             invoke_log_extra_builder=lambda request, runtime: {
-                "user_id": str(current_user.id),
+                "user_id": str(current_user_id),
                 "agent_id": str(agent_id),
                 "agent_url": redact_url_for_logging(runtime.resolved.url),
                 "stream": stream,
@@ -175,13 +186,14 @@ async def issue_hub_invoke_ws_token(
     current_user: User = Depends(get_current_user),
 ) -> WsTicketResponse:
     response.headers["Cache-Control"] = "no-store"
+    current_user_id = cast(UUID, current_user.id)
     return await run_issue_ws_ticket_route(
         db=db,
-        user_id=current_user.id,
+        user_id=current_user_id,
         scope_type="hub_a2a_agent",
         scope_id=agent_id,
         ensure_access=lambda: hub_a2a_agent_service.ensure_visible_for_user(
-            db, user_id=current_user.id, agent_id=agent_id
+            db, user_id=current_user_id, agent_id=agent_id
         ),
         not_found_errors=(HubA2AAgentNotFoundError,),
         not_found_status_code=404,
@@ -197,17 +209,18 @@ async def invoke_hub_agent_ws(
     agent_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_ws_ticket_user_hub),
-):
+) -> None:
     """WebSocket endpoint for hub agent invocation with streaming responses."""
+    current_user_id = cast(UUID, current_user.id)
     await run_ws_invoke_route(
         websocket=websocket,
         db=db,
-        user_id=current_user.id,
+        user_id=current_user_id,
         agent_id=agent_id,
         agent_source="shared",
-        gateway=get_a2a_service().gateway,
+        gateway=cast(Any, get_a2a_service()).gateway,
         runtime_builder=lambda: hub_a2a_runtime_builder.build(
-            db, user_id=current_user.id, agent_id=agent_id
+            db, user_id=current_user_id, agent_id=agent_id
         ),
         runtime_not_found_errors=(HubA2ARuntimeNotFoundError,),
         runtime_not_found_message="Agent is unavailable",
@@ -217,7 +230,7 @@ async def invoke_hub_agent_ws(
         logger=logger,
         invoke_log_message="Hub A2A agent invoke WS requested",
         invoke_log_extra_builder=lambda payload, runtime: {
-            "user_id": str(current_user.id),
+            "user_id": str(current_user_id),
             "agent_id": str(agent_id),
             "agent_url": redact_url_for_logging(runtime.resolved.url),
             "query_meta": summarize_query(payload.query),

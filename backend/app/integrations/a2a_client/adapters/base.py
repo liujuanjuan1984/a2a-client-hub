@@ -30,7 +30,7 @@ class A2AAdapter(ABC):
         """Execute a blocking invoke against the peer."""
 
     @abstractmethod
-    async def stream_message(self, request: A2AMessageRequest) -> AsyncIterator[Any]:
+    def stream_message(self, request: A2AMessageRequest) -> AsyncIterator[Any]:
         """Produce normalized or raw streaming payloads."""
 
     @abstractmethod

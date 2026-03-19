@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 from uuid import UUID
 
 from sqlalchemy import case, delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -26,7 +27,7 @@ async def create_agent_message(
     sender: str,
     conversation_id: UUID,
     sync_to_cardbox: bool = True,
-    **kwargs,
+    **kwargs: Any,
 ) -> AgentMessage:
     """Create a new agent message asynchronously."""
     try:
@@ -137,7 +138,7 @@ async def get_conversation_history(
 
 async def delete_agent_messages(db: AsyncSession, *, user_id: UUID) -> int:
     stmt = delete(AgentMessage).where(AgentMessage.user_id == user_id)
-    result = await db.execute(stmt)
+    result = cast(CursorResult[Any], await db.execute(stmt))
     return int(result.rowcount or 0)
 
 
@@ -148,7 +149,7 @@ async def delete_agent_messages_by_conversation(
         AgentMessage.user_id == user_id,
         AgentMessage.conversation_id == conversation_id,
     )
-    result = await db.execute(stmt)
+    result = cast(CursorResult[Any], await db.execute(stmt))
     return int(result.rowcount or 0)
 
 
@@ -163,7 +164,7 @@ async def commit_agent_messages(db: AsyncSession) -> None:
 
 
 async def update_agent_message(
-    db: AsyncSession, *, message: AgentMessage, **kwargs
+    db: AsyncSession, *, message: AgentMessage, **kwargs: Any
 ) -> Optional[AgentMessage]:
     """Update agent message fields."""
     try:

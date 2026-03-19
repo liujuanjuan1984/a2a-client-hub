@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -157,12 +157,14 @@ class A2AScheduleCrudService:
             db, user_id=user_id, task_id=task_id
         )
         timezone_value = self._time_helper.normalize_timezone_str(timezone_str)
+        task_id_value = cast(UUID, task.id)
+        task_user_id = cast(UUID, task.user_id)
 
         if (
             await self._projection.get_running_execution(
                 db,
-                task_id=task.id,
-                user_id=task.user_id,
+                task_id=task_id_value,
+                user_id=task_user_id,
             )
             is not None
         ):
@@ -170,25 +172,25 @@ class A2AScheduleCrudService:
                 "Task is currently running and cannot be edited."
             )
 
-        if enabled is True and not task.enabled:
+        if enabled is True and not cast(bool, task.enabled):
             await self._support.ensure_active_quota(
                 db, user_id=user_id, is_superuser=is_superuser
             )
 
         if name is not None:
-            task.name = self._time_helper.normalize_name(name)
+            setattr(task, "name", self._time_helper.normalize_name(name))
 
         if prompt is not None:
-            task.prompt = self._time_helper.normalize_prompt(prompt)
+            setattr(task, "prompt", self._time_helper.normalize_prompt(prompt))
 
         if agent_id is not None:
             await self._support.ensure_agent_owned(
                 db, user_id=user_id, agent_id=agent_id
             )
-            task.agent_id = agent_id
+            setattr(task, "agent_id", agent_id)
 
-        next_cycle_type = task.cycle_type
-        next_time_point = dict(task.time_point or {})
+        next_cycle_type = cast(str, task.cycle_type)
+        next_time_point = dict(cast(dict[str, Any] | None, task.time_point) or {})
 
         if cycle_type is not None:
             next_cycle_type = self._time_helper.normalize_cycle_type(cycle_type)
@@ -204,30 +206,36 @@ class A2AScheduleCrudService:
                 is_superuser=is_superuser,
                 timezone_str=timezone_value,
             )
-            task.cycle_type = next_cycle_type
-            task.time_point = normalized_point
+            setattr(task, "cycle_type", next_cycle_type)
+            setattr(task, "time_point", normalized_point)
 
         if enabled is not None:
-            task.enabled = enabled
+            setattr(task, "enabled", enabled)
 
         if conversation_policy is not None:
-            task.conversation_policy = self._time_helper.normalize_conversation_policy(
-                conversation_policy
+            setattr(
+                task,
+                "conversation_policy",
+                self._time_helper.normalize_conversation_policy(conversation_policy),
             )
 
         should_recompute = False
-        if task.enabled and (schedule_changed or enabled is True):
+        if cast(bool, task.enabled) and (schedule_changed or enabled is True):
             should_recompute = True
-        if not task.enabled:
-            task.next_run_at = None
+        if not cast(bool, task.enabled):
+            setattr(task, "next_run_at", None)
 
         if should_recompute:
-            task.next_run_at = self._time_helper.compute_next_run_at(
-                cycle_type=task.cycle_type,
-                time_point=dict(task.time_point or {}),
-                timezone_str=timezone_value,
-                after_utc=utc_now(),
-                is_superuser=is_superuser,
+            setattr(
+                task,
+                "next_run_at",
+                self._time_helper.compute_next_run_at(
+                    cycle_type=cast(str, task.cycle_type),
+                    time_point=dict(cast(dict[str, Any] | None, task.time_point) or {}),
+                    timezone_str=timezone_value,
+                    after_utc=utc_now(),
+                    is_superuser=is_superuser,
+                ),
             )
 
         await commit_safely(db)
@@ -251,23 +259,27 @@ class A2AScheduleCrudService:
         task = await self._support.get_task_for_update(
             db, user_id=user_id, task_id=task_id
         )
-        if enabled and not task.enabled:
+        if enabled and not cast(bool, task.enabled):
             await self._support.ensure_active_quota(
                 db, user_id=user_id, is_superuser=is_superuser
             )
 
-        task.enabled = enabled
+        setattr(task, "enabled", enabled)
         if enabled:
             timezone_value = self._time_helper.normalize_timezone_str(timezone_str)
-            task.next_run_at = self._time_helper.compute_next_run_at(
-                cycle_type=task.cycle_type,
-                time_point=dict(task.time_point or {}),
-                timezone_str=timezone_value,
-                after_utc=utc_now(),
-                is_superuser=is_superuser,
+            setattr(
+                task,
+                "next_run_at",
+                self._time_helper.compute_next_run_at(
+                    cycle_type=cast(str, task.cycle_type),
+                    time_point=dict(cast(dict[str, Any] | None, task.time_point) or {}),
+                    timezone_str=timezone_value,
+                    after_utc=utc_now(),
+                    is_superuser=is_superuser,
+                ),
             )
         else:
-            task.next_run_at = None
+            setattr(task, "next_run_at", None)
 
         await commit_safely(db)
         await db.refresh(task)
@@ -285,20 +297,22 @@ class A2AScheduleCrudService:
         task = await self._support.get_task_for_update(
             db, user_id=user_id, task_id=task_id
         )
+        task_id_value = cast(UUID, task.id)
+        task_user_id = cast(UUID, task.user_id)
         running_execution = await self._projection.get_running_execution(
             db,
-            task_id=task.id,
-            user_id=task.user_id,
+            task_id=task_id_value,
+            user_id=task_user_id,
         )
         if running_execution is not None:
-            task.delete_requested_at = utc_now()
-            task.enabled = False
-            task.next_run_at = None
+            setattr(task, "delete_requested_at", utc_now())
+            setattr(task, "enabled", False)
+            setattr(task, "next_run_at", None)
         else:
             task.soft_delete()
-            task.enabled = False
-            task.next_run_at = None
-            task.delete_requested_at = None
+            setattr(task, "enabled", False)
+            setattr(task, "next_run_at", None)
+            setattr(task, "delete_requested_at", None)
         await commit_safely(db)
 
     @map_retryable_db_errors("Schedule task manual fail")
@@ -331,30 +345,36 @@ class A2AScheduleCrudService:
             .with_for_update(nowait=True)
             .limit(1)
         )
-        task = await db.scalar(stmt)
+        task = cast(A2AScheduleTask | None, await db.scalar(stmt))
         if task is None:
             raise A2AScheduleNotFoundError("Schedule task not found")
 
+        task_id_value = cast(UUID, task.id)
+        task_user_id = cast(UUID, task.user_id)
         execution = await self._projection.get_running_execution(
             db,
-            task_id=task.id,
-            user_id=task.user_id,
+            task_id=task_id_value,
+            user_id=task_user_id,
             for_update=True,
         )
         if execution is None:
-            if task.last_run_status == A2AScheduleTask.STATUS_FAILED:
+            if cast(str, task.last_run_status) == A2AScheduleTask.STATUS_FAILED:
                 return await self._projection.set_task_status_projection(db, task=task)
             raise A2AScheduleValidationError(
                 "Only running tasks can be manually marked as failed"
             )
 
-        if execution.finished_at is None:
-            execution.finished_at = now_utc
-        execution.status = A2AScheduleExecution.STATUS_FAILED
-        execution.error_message = manual_error_message
-        execution.error_code = _MANUAL_FAILURE_ERROR_CODE
-        if execution.conversation_id is None:
-            execution.conversation_id = task.conversation_id
+        finished_at = cast(datetime | None, execution.finished_at)
+        if finished_at is None:
+            setattr(execution, "finished_at", now_utc)
+        setattr(execution, "status", A2AScheduleExecution.STATUS_FAILED)
+        setattr(execution, "error_message", manual_error_message)
+        setattr(execution, "error_code", _MANUAL_FAILURE_ERROR_CODE)
+        conversation_id = cast(UUID | None, execution.conversation_id)
+        if conversation_id is None:
+            setattr(
+                execution, "conversation_id", cast(UUID | None, task.conversation_id)
+            )
 
         threshold = max(int(settings.a2a_schedule_task_failure_threshold), 1)
         self._projection.apply_task_terminal_projection(

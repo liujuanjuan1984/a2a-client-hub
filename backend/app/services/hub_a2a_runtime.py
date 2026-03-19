@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -12,8 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.secret_vault import hub_a2a_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
-from app.integrations.a2a_client.service import ResolvedAgent
-from app.services.hub_a2a_agents import HubA2AAgentNotFoundError, hub_a2a_agent_service
+from app.integrations.a2a_client.types import ResolvedAgent
 from app.services.runtime_auth import build_resolved_runtime_agent
 
 
@@ -50,6 +49,11 @@ class HubA2ARuntimeBuilder:
         user_id: UUID,
         agent_id: UUID,
     ) -> HubA2ARuntime:
+        from app.services.hub_a2a_agents import (
+            HubA2AAgentNotFoundError,
+            hub_a2a_agent_service,
+        )
+
         try:
             agent = await hub_a2a_agent_service.ensure_visible_for_user(
                 db, user_id=user_id, agent_id=agent_id
@@ -59,7 +63,7 @@ class HubA2ARuntimeBuilder:
 
         credential = None
         if agent.auth_type == "bearer":
-            credential = await self._get_credential(db, agent_id=agent.id)
+            credential = await self._get_credential(db, agent_id=cast(UUID, agent.id))
         return self.build_from_agent(agent=agent, credential=credential)
 
     def build_from_agent(
@@ -69,19 +73,19 @@ class HubA2ARuntimeBuilder:
         credential: Optional[A2AAgentCredential],
     ) -> HubA2ARuntime:
         resolved, _ = self.resolve_prefetched(
-            name=agent.name,
-            card_url=agent.card_url,
-            extra_headers=agent.extra_headers,
-            auth_type=agent.auth_type,
-            auth_header=agent.auth_header,
-            auth_scheme=agent.auth_scheme,
+            name=cast(str, agent.name),
+            card_url=cast(str, agent.card_url),
+            extra_headers=cast(dict[str, str] | None, agent.extra_headers),
+            auth_type=cast(str, agent.auth_type),
+            auth_header=cast(str | None, agent.auth_header),
+            auth_scheme=cast(str | None, agent.auth_scheme),
             credential=credential,
         )
 
         return HubA2ARuntime(
-            agent_id=agent.id,
-            agent_name=agent.name,
-            agent_url=agent.card_url,
+            agent_id=cast(UUID, agent.id),
+            agent_name=cast(str, agent.name),
+            agent_url=cast(str, agent.card_url),
             resolved=resolved,
         )
 
@@ -112,7 +116,7 @@ class HubA2ARuntimeBuilder:
         self, db: AsyncSession, *, agent_id: UUID
     ) -> Optional[A2AAgentCredential]:
         stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
-        return await db.scalar(stmt)
+        return cast(A2AAgentCredential | None, await db.scalar(stmt))
 
 
 hub_a2a_runtime_builder = HubA2ARuntimeBuilder()

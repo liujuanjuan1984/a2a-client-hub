@@ -24,16 +24,6 @@ class _ScalarResult:
         return list(self._values)
 
 
-@pytest.fixture(autouse=True)
-def reset_proxy_service_state() -> None:
-    A2AProxyService._cached_allowed_hosts = []
-    A2AProxyService._last_refresh = 0
-    A2AProxyService._ttl = 60
-    A2AProxyService._is_initialized = False
-    A2AProxyService._refresh_lock = None
-    A2AProxyService._refresh_lock_loop = None
-
-
 @pytest.mark.asyncio
 async def test_get_effective_allowed_hosts_singleflights_expired_refresh(
     monkeypatch: pytest.MonkeyPatch,

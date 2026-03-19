@@ -190,7 +190,7 @@ def normalize_question_interrupt_details(details: dict[str, Any]) -> dict[str, A
         for normalized in (_normalize_question_entry(entry) for entry in questions)
         if normalized is not None
     ]
-    normalized = {"questions": normalized_questions}
+    normalized: dict[str, Any] = {"questions": normalized_questions}
     display_message = extract_interrupt_display_message(details)
     if display_message:
         normalized["display_message"] = display_message

@@ -35,9 +35,12 @@ class _FakeGateway:
         )
         return dict(self.invoke_response)
 
-    async def stream(self, *, resolved, query: str, context_id=None, metadata=None):
+    async def stream(
+        self, *, session=None, resolved, query: str, context_id=None, metadata=None
+    ):
         self.calls.append(
             {
+                "session": session,
                 "resolved": resolved,
                 "query": query,
                 "context_id": context_id,

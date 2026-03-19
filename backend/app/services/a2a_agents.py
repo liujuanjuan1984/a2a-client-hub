@@ -5,7 +5,7 @@ Service helpers for managing user-managed A2A agents and credentials.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -132,7 +132,7 @@ class A2AAgentService(AgentValidationMixin):
             token_last4 = await self._upsert_credential(
                 db,
                 user_id=user_id,
-                agent_id=agent.id,
+                agent_id=cast(UUID, agent.id),
                 token=token,
             )
 
@@ -159,38 +159,38 @@ class A2AAgentService(AgentValidationMixin):
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
 
         if name is not None:
-            agent.name = self._normalize_name(name)
+            setattr(agent, "name", self._normalize_name(name))
         if card_url is not None:
             normalized_url = self._normalize_card_url(card_url)
             await self._ensure_card_url_unique(
-                db, user_id, normalized_url, exclude_id=agent.id
+                db, user_id, normalized_url, exclude_id=cast(UUID | None, agent.id)
             )
-            agent.card_url = normalized_url
+            setattr(agent, "card_url", normalized_url)
 
         if enabled is not None:
-            agent.enabled = enabled
+            setattr(agent, "enabled", enabled)
 
         if tags is not None:
             normalized_tags = self._normalize_tags(tags)
-            agent.tags = normalized_tags or None
+            setattr(agent, "tags", normalized_tags or None)
 
         if extra_headers is not None:
             normalized_headers = self._normalize_headers(extra_headers)
-            agent.extra_headers = normalized_headers or None
+            setattr(agent, "extra_headers", normalized_headers or None)
 
         if auth_type is not None:
-            agent.auth_type = self._normalize_auth_type(auth_type)
+            setattr(agent, "auth_type", self._normalize_auth_type(auth_type))
 
         auth_header_value, auth_scheme_value = self._resolve_auth_fields(
-            agent.auth_type,
+            cast(str, agent.auth_type),
             auth_header,
             auth_scheme,
             existing=agent,
         )
-        agent.auth_header = auth_header_value
-        agent.auth_scheme = auth_scheme_value
+        setattr(agent, "auth_header", auth_header_value)
+        setattr(agent, "auth_scheme", auth_scheme_value)
 
-        if token is not None and agent.auth_type == "none":
+        if token is not None and cast(str, agent.auth_type) == "none":
             raise A2AAgentValidationError("Bearer token provided for auth_type=none")
 
         token_last4: Optional[str] = await self._sync_credentials(
@@ -209,7 +209,7 @@ class A2AAgentService(AgentValidationMixin):
     ) -> None:
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
         agent.soft_delete()
-        await delete_agent_credentials(db, agent_id=agent.id)
+        await delete_agent_credentials(db, agent_id=cast(UUID, agent.id))
         await commit_safely(db)
 
     # ----------------------
@@ -226,7 +226,7 @@ class A2AAgentService(AgentValidationMixin):
                 A2AAgent.deleted_at.is_(None),
             )
         )
-        agent = await db.scalar(stmt)
+        agent = cast(A2AAgent | None, await db.scalar(stmt))
         if agent is None:
             raise A2AAgentNotFoundError("A2A agent not found")
         return agent
@@ -260,23 +260,25 @@ class A2AAgentService(AgentValidationMixin):
         agent: A2AAgent,
         token: Optional[str],
     ) -> Optional[str]:
-        if agent.auth_type == "none":
-            await delete_agent_credentials(db, agent_id=agent.id)
+        auth_type = cast(str, agent.auth_type)
+        agent_id = cast(UUID, agent.id)
+        if auth_type == "none":
+            await delete_agent_credentials(db, agent_id=agent_id)
             return None
 
-        if agent.auth_type != "bearer":
+        if auth_type != "bearer":
             raise A2AAgentValidationError("Unsupported auth_type")
 
-        credential = await get_agent_credential(db, agent_id=agent.id)
+        credential = await get_agent_credential(db, agent_id=agent_id)
         if token is None:
             if credential is None:
                 raise A2AAgentValidationError("Bearer token is required")
-            return credential.token_last4
+            return cast(str | None, credential.token_last4)
 
         return await self._upsert_credential(
             db,
             user_id=user_id,
-            agent_id=agent.id,
+            agent_id=agent_id,
             token=token,
         )
 
@@ -302,8 +304,6 @@ class A2AAgentService(AgentValidationMixin):
             return []
         normalized: List[str] = []
         for tag in tags:
-            if tag is None:
-                continue
             value = str(tag).strip()
             if value:
                 normalized.append(value)
@@ -316,8 +316,6 @@ class A2AAgentService(AgentValidationMixin):
             raise A2AAgentValidationError("extra_headers must be a dictionary")
         normalized: Dict[str, str] = {}
         for key, value in headers.items():
-            if key is None:
-                continue
             header_key = str(key).strip()
             if not header_key:
                 raise A2AAgentValidationError("extra_headers contains empty key")

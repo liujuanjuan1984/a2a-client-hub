@@ -5,7 +5,7 @@ It focuses on safe discovery + contract validation + transport-specific invocati
 """
 
 
-def get_a2a_extensions_service():
+def get_a2a_extensions_service() -> object:
     from app.integrations.a2a_extensions.service import (
         get_a2a_extensions_service as _get,
     )

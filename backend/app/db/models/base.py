@@ -4,6 +4,7 @@ This module contains the base model classes and common mixins used across all mo
 It includes schema configuration for PostgreSQL 16 support.
 """
 
+from typing import cast
 from uuid import uuid4
 
 from sqlalchemy import Column, DateTime, ForeignKey
@@ -87,11 +88,11 @@ class SoftDeleteMixin:
 
     def soft_delete(self) -> None:
         """Mark the record as deleted"""
-        self.deleted_at = utc_now()
+        setattr(self, "deleted_at", utc_now())
 
     def restore(self) -> None:
         """Restore a soft deleted record"""
-        self.deleted_at = None
+        setattr(self, "deleted_at", cast(object, None))
 
 
 # Export all classes for easy importing

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -39,15 +39,18 @@ class ConversationIdentityService:
         resolved_external_id = normalize_non_empty_text(external_session_id)
         if not resolved_provider or not resolved_external_id:
             return None
-        return await db.scalar(
-            select(ConversationThread.id).where(
-                and_(
-                    ConversationThread.user_id == user_id,
-                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
-                    ConversationThread.external_provider == resolved_provider,
-                    ConversationThread.external_session_id == resolved_external_id,
+        return cast(
+            UUID | None,
+            await db.scalar(
+                select(ConversationThread.id).where(
+                    and_(
+                        ConversationThread.user_id == user_id,
+                        ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                        ConversationThread.external_provider == resolved_provider,
+                        ConversationThread.external_session_id == resolved_external_id,
+                    )
                 )
-            )
+            ),
         )
 
     async def bind_external_session(
@@ -100,42 +103,46 @@ class ConversationIdentityService:
         if not resolved_external_id:
             raise ValueError("external_session_id is required")
 
-        existing_by_external = await db.scalar(
-            select(ConversationThread).where(
-                and_(
-                    ConversationThread.user_id == user_id,
-                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
-                    ConversationThread.external_provider == resolved_provider,
-                    ConversationThread.external_session_id == resolved_external_id,
+        existing_by_external = cast(
+            ConversationThread | None,
+            await db.scalar(
+                select(ConversationThread).where(
+                    and_(
+                        ConversationThread.user_id == user_id,
+                        ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                        ConversationThread.external_provider == resolved_provider,
+                        ConversationThread.external_session_id == resolved_external_id,
+                    )
                 )
-            )
+            ),
         )
         if existing_by_external:
             mutated = False
-            if agent_id and existing_by_external.agent_id != agent_id:
-                existing_by_external.agent_id = agent_id
+            existing_agent_id = cast(UUID | None, existing_by_external.agent_id)
+            if agent_id and existing_agent_id != agent_id:
+                setattr(existing_by_external, "agent_id", agent_id)
                 mutated = True
-            if agent_source and existing_by_external.agent_source != agent_source:
-                existing_by_external.agent_source = agent_source
+            existing_agent_source = cast(str | None, existing_by_external.agent_source)
+            if agent_source and existing_agent_source != agent_source:
+                setattr(existing_by_external, "agent_source", agent_source)
                 mutated = True
             normalized_context_id = normalize_non_empty_text(context_id)
-            if (
-                normalized_context_id
-                and existing_by_external.context_id != normalized_context_id
-            ):
-                existing_by_external.context_id = normalized_context_id
+            existing_context_id = cast(str | None, existing_by_external.context_id)
+            if normalized_context_id and existing_context_id != normalized_context_id:
+                setattr(existing_by_external, "context_id", normalized_context_id)
                 mutated = True
-            if existing_by_external.title != title:
+            existing_title = cast(str, existing_by_external.title)
+            if existing_title != title:
                 normalized_title = ConversationThread.normalize_title(title)
                 if ConversationThread.is_placeholder_title(
-                    existing_by_external.title
+                    existing_title
                 ) and not ConversationThread.is_placeholder_title(normalized_title):
-                    existing_by_external.title = normalized_title
+                    setattr(existing_by_external, "title", normalized_title)
                     mutated = True
             if mutated:
-                existing_by_external.last_active_at = now
+                setattr(existing_by_external, "last_active_at", now)
             return ExternalBindingResult(
-                conversation_id=existing_by_external.id,
+                conversation_id=cast(UUID, existing_by_external.id),
                 mutated=mutated,
             )
 
@@ -156,27 +163,34 @@ class ConversationIdentityService:
                     )
                     db.add(thread)
                     await db.flush()
-                    resolved_conversation_id = thread.id
-                thread = await db.scalar(
-                    select(ConversationThread).where(
-                        and_(
-                            ConversationThread.id == resolved_conversation_id,
-                            ConversationThread.user_id == user_id,
-                            ConversationThread.status
-                            == ConversationThread.STATUS_ACTIVE,
+                    resolved_conversation_id = cast(UUID, thread.id)
+                persisted_thread = cast(
+                    ConversationThread | None,
+                    await db.scalar(
+                        select(ConversationThread).where(
+                            and_(
+                                ConversationThread.id == resolved_conversation_id,
+                                ConversationThread.user_id == user_id,
+                                ConversationThread.status
+                                == ConversationThread.STATUS_ACTIVE,
+                            )
                         )
-                    )
+                    ),
                 )
-                if thread is None:
+                if persisted_thread is None:
                     raise ValueError("session_not_found")
-                thread.external_provider = resolved_provider
-                thread.external_session_id = resolved_external_id
-                thread.context_id = normalize_non_empty_text(context_id)
+                setattr(persisted_thread, "external_provider", resolved_provider)
+                setattr(persisted_thread, "external_session_id", resolved_external_id)
+                setattr(
+                    persisted_thread,
+                    "context_id",
+                    normalize_non_empty_text(context_id),
+                )
                 if agent_id:
-                    thread.agent_id = agent_id
+                    setattr(persisted_thread, "agent_id", agent_id)
                 if agent_source:
-                    thread.agent_source = agent_source
-                thread.last_active_at = now
+                    setattr(persisted_thread, "agent_source", agent_source)
+                setattr(persisted_thread, "last_active_at", now)
                 await db.flush()
         except IntegrityError:
             rebound = await self.find_conversation_id_for_external(

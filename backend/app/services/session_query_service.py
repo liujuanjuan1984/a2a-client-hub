@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlalchemy import and_, case, func, or_, select
@@ -118,8 +118,14 @@ class SessionQueryService:
         items: list[dict[str, Any]] = []
 
         for thread in threads:
+            thread_source = cast(str | None, thread.source)
+            thread_title_raw = cast(str, thread.title)
+            thread_external_provider = cast(str | None, thread.external_provider)
+            thread_external_session_id = cast(str | None, thread.external_session_id)
+            thread_agent_id = cast(UUID | None, thread.agent_id)
+            thread_agent_source = cast(str | None, thread.agent_source)
             resolved_source = resolve_session_source(
-                thread_source=thread.source,
+                thread_source=thread_source,
                 fallback_source=None,
             )
             title_fallback = (
@@ -127,7 +133,7 @@ class SessionQueryService:
                 if resolved_source == "scheduled"
                 else "Manual Session"
             )
-            thread_title = thread.title if thread.title else title_fallback
+            thread_title = thread_title_raw if thread_title_raw else title_fallback
             if ConversationThread.is_placeholder_title(thread_title):
                 thread_title = (
                     "Session" if resolved_source == "manual" else title_fallback
@@ -136,12 +142,12 @@ class SessionQueryService:
                 {
                     "conversationId": str(thread.id),
                     "source": resolved_source,
-                    "external_provider": normalize_provider(thread.external_provider),
+                    "external_provider": normalize_provider(thread_external_provider),
                     "external_session_id": normalize_non_empty_text(
-                        thread.external_session_id
+                        thread_external_session_id
                     ),
-                    "agent_id": thread.agent_id,
-                    "agent_source": thread.agent_source or "personal",
+                    "agent_id": thread_agent_id,
+                    "agent_source": thread_agent_source or "personal",
                     "title": thread_title,
                     "last_active_at": thread.last_active_at,
                     "created_at": thread.created_at,
@@ -214,9 +220,7 @@ class SessionQueryService:
             rows = rows[:limit]
         messages = list(reversed(rows))
 
-        message_ids = [
-            message.id for message in messages if isinstance(message.id, UUID)
-        ]
+        message_ids = [cast(UUID, message.id) for message in messages]
         blocks_by_message_id: dict[UUID, list[AgentMessageBlock]] = {}
         if message_ids:
             blocks = await agent_message_block_handler.list_blocks_by_message_ids(
@@ -225,25 +229,23 @@ class SessionQueryService:
                 message_ids=message_ids,
             )
             for block in blocks:
-                if not isinstance(block.message_id, UUID):
-                    continue
-                blocks_by_message_id.setdefault(block.message_id, []).append(block)
+                block_message_id = cast(UUID, block.message_id)
+                blocks_by_message_id.setdefault(block_message_id, []).append(block)
 
         items: list[dict[str, Any]] = []
         next_before_cursor: str | None = None
         for message in messages:
+            message_id = cast(UUID, message.id)
             role = sender_to_role(getattr(message, "sender", ""))
-            raw_blocks = (
-                blocks_by_message_id.get(message.id, [])
-                if isinstance(message.id, UUID)
-                else []
+            raw_blocks: list[AgentMessageBlock] = blocks_by_message_id.get(
+                message_id, []
             )
             status = (
                 normalize_non_empty_text(getattr(message, "status", None)) or "done"
             )
             items.append(
                 {
-                    "id": str(message.id),
+                    "id": str(message_id),
                     "role": role,
                     "created_at": message.created_at,
                     "status": status,
@@ -297,11 +299,7 @@ class SessionQueryService:
             )
         )
         blocks = list((await db.scalars(stmt)).all())
-        by_id = {
-            block.id: block
-            for block in blocks
-            if isinstance(block.id, UUID) and isinstance(block.message_id, UUID)
-        }
+        by_id = {cast(UUID, block.id): block for block in blocks}
         if any(block_id not in by_id for block_id in ordered_ids):
             raise ValueError("block_not_found")
 
@@ -347,23 +345,30 @@ class SessionQueryService:
 
         resolved_provider = provider
         resolved_external_session_id = external_session_id
+        session_source = cast(str | None, session.source) if session else None
+        session_agent_source = (
+            cast(str | None, session.agent_source) if session else None
+        )
+        session_agent_id = cast(UUID | None, session.agent_id) if session else None
+        session_title = cast(str, session.title) if session else "Session"
 
         resolved_source = resolve_session_source(
-            thread_source=session.source if session else None,
+            thread_source=session_source,
             fallback_source=target.source,
         )
         resolved_conversation = resolved_conversation_id
         db_mutated = False
         if resolved_provider and resolved_external_session_id:
             resolved_agent_source: Literal["personal", "shared"] | None = None
-            if target.thread.agent_source in {"personal", "shared"}:
-                resolved_agent_source = target.thread.agent_source
-            elif (
-                session
-                and isinstance(session.agent_source, str)
-                and session.agent_source in {"personal", "shared"}
-            ):
-                resolved_agent_source = session.agent_source
+            target_agent_source = cast(str | None, target.thread.agent_source)
+            if target_agent_source in {"personal", "shared"}:
+                resolved_agent_source = cast(
+                    Literal["personal", "shared"], target_agent_source
+                )
+            elif session_agent_source in {"personal", "shared"}:
+                resolved_agent_source = cast(
+                    Literal["personal", "shared"], session_agent_source
+                )
             bind_result = (
                 await conversation_identity_service.bind_external_session_with_state(
                     db,
@@ -373,17 +378,11 @@ class SessionQueryService:
                     provider=resolved_provider,
                     external_session_id=resolved_external_session_id,
                     agent_id=(
-                        target.thread.agent_id
-                        if isinstance(target.thread.agent_id, UUID)
-                        else (
-                            session.agent_id
-                            if session and isinstance(session.agent_id, UUID)
-                            else None
-                        )
+                        cast(UUID | None, target.thread.agent_id) or session_agent_id
                     ),
                     agent_source=resolved_agent_source,
                     context_id=context_id,
-                    title=(session.title if session else "Session") or "Session",
+                    title=session_title or "Session",
                 )
             )
             resolved_conversation = bind_result.conversation_id

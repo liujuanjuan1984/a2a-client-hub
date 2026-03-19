@@ -338,7 +338,7 @@ class JsonRpcPascalAdapter(A2AAdapter):
                 error_code="peer_protocol_error",
             )
 
-        normalized = {
+        normalized: dict[str, Any] = {
             "kind": "status-update",
             "status": dict(status),
         }

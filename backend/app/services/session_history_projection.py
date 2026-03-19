@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -69,30 +69,35 @@ class SessionHistoryProjectionService:
         )
 
         local_session_id = (
-            target.thread.id
-            if target and isinstance(target.thread.id, UUID)
-            else normalized_conversation_id
+            cast(UUID, target.thread.id) if target else normalized_conversation_id
         )
 
         session = (
             target.thread
             if target
-            else await db.scalar(
-                select(ConversationThread).where(
-                    and_(
-                        ConversationThread.id == local_session_id,
-                        ConversationThread.user_id == user_id,
-                        ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+            else cast(
+                ConversationThread | None,
+                await db.scalar(
+                    select(ConversationThread).where(
+                        and_(
+                            ConversationThread.id == local_session_id,
+                            ConversationThread.user_id == user_id,
+                            ConversationThread.status
+                            == ConversationThread.STATUS_ACTIVE,
+                        )
                     )
-                )
+                ),
             )
         )
 
         if session is None:
-            existing_session_id = await db.scalar(
-                select(ConversationThread.id).where(
-                    ConversationThread.id == local_session_id
-                )
+            existing_session_id = cast(
+                UUID | None,
+                await db.scalar(
+                    select(ConversationThread.id).where(
+                        ConversationThread.id == local_session_id
+                    )
+                ),
             )
             if existing_session_id is not None:
                 raise ValueError("invalid_conversation_id")
@@ -121,17 +126,19 @@ class SessionHistoryProjectionService:
         else:
             raise ValueError("invalid_conversation_id")
 
-        session.agent_id = agent_id
-        session.agent_source = agent_source
-        session.last_active_at = utc_now()
+        setattr(session, "agent_id", agent_id)
+        setattr(session, "agent_source", agent_source)
+        setattr(session, "last_active_at", utc_now())
+        session_id = cast(UUID, session.id)
+        session_title = cast(str, session.title)
         if local_source == "manual":
             await self._support.ensure_local_conversation_thread(
                 db,
                 user_id=user_id,
-                conversation_id=session.id,
+                conversation_id=session_id,
                 agent_id=agent_id,
                 agent_source=agent_source,
-                title=session.title or "Session",
+                title=session_title or "Session",
                 source="manual",
             )
             return session, "manual"
@@ -186,24 +193,24 @@ class SessionHistoryProjectionService:
         if (
             source == "manual"
             and (session_title := derive_session_title_from_query(query))
-            and ConversationThread.is_placeholder_title(session.title)
+            and ConversationThread.is_placeholder_title(cast(str, session.title))
         ):
-            session.title = session_title
+            setattr(session, "title", session_title)
 
-        conversation_id: UUID = session.id
+        conversation_id: UUID = cast(UUID, session.id)
         if source == "manual":
             await self._support.ensure_local_conversation_thread(
                 db,
                 user_id=user_id,
-                conversation_id=session.id,
+                conversation_id=conversation_id,
                 agent_id=agent_id,
                 agent_source=agent_source,
-                title=session.title or "Session",
+                title=cast(str, session.title) or "Session",
                 source="manual",
             )
         if provider_from_invoke and external_session_id:
             invoke_title = derive_session_title_from_invoke_metadata(invoke_metadata)
-            bind_title = invoke_title if invoke_title else session.title
+            bind_title = invoke_title if invoke_title else cast(str, session.title)
             conversation_id = await conversation_identity_service.bind_external_session(
                 db,
                 user_id=user_id,
@@ -219,10 +226,16 @@ class SessionHistoryProjectionService:
         else:
             normalized_provider = normalize_provider(provider_from_invoke)
             normalized_context_id = normalize_non_empty_text(context_id)
-            if normalized_provider and session.external_provider != normalized_provider:
-                session.external_provider = normalized_provider
-            if normalized_context_id and session.context_id != normalized_context_id:
-                session.context_id = normalized_context_id
+            if (
+                normalized_provider
+                and cast(str | None, session.external_provider) != normalized_provider
+            ):
+                setattr(session, "external_provider", normalized_provider)
+            if (
+                normalized_context_id
+                and cast(str | None, session.context_id) != normalized_context_id
+            ):
+                setattr(session, "context_id", normalized_context_id)
 
         metadata["conversation_id"] = str(conversation_id)
         agent_metadata = dict(metadata)
@@ -311,20 +324,27 @@ class SessionHistoryProjectionService:
 
         if existing_user_message is None:
             try:
-                user_message = await agent_message_handler.create_agent_message(
-                    db,
-                    **(
-                        {"id": user_message_id}
-                        if isinstance(user_message_id, UUID)
-                        else {}
-                    ),
-                    user_id=user_id,
-                    sender="user",
-                    status="done",
-                    conversation_id=conversation_id,
-                    metadata=metadata,
-                    invoke_idempotency_key=normalized_idempotency_key,
-                )
+                if isinstance(user_message_id, UUID):
+                    user_message = await agent_message_handler.create_agent_message(
+                        db,
+                        id=user_message_id,
+                        user_id=user_id,
+                        sender="user",
+                        status="done",
+                        conversation_id=conversation_id,
+                        metadata=metadata,
+                        invoke_idempotency_key=normalized_idempotency_key,
+                    )
+                else:
+                    user_message = await agent_message_handler.create_agent_message(
+                        db,
+                        user_id=user_id,
+                        sender="user",
+                        status="done",
+                        conversation_id=conversation_id,
+                        metadata=metadata,
+                        invoke_idempotency_key=normalized_idempotency_key,
+                    )
             except agent_message_handler.AgentMessageCreationError as exc:
                 if isinstance(user_message_id, UUID) and is_agent_message_pk_violation(
                     exc
@@ -360,7 +380,11 @@ class SessionHistoryProjectionService:
             if isinstance(user_message_id, UUID) and user_message.id != user_message_id:
                 raise ValueError("message_id_conflict")
             if normalized_idempotency_key:
-                user_message.invoke_idempotency_key = normalized_idempotency_key
+                setattr(
+                    user_message,
+                    "invoke_idempotency_key",
+                    normalized_idempotency_key,
+                )
         await self._support.ensure_idempotent_user_query(
             db,
             user_id=user_id,
@@ -371,22 +395,31 @@ class SessionHistoryProjectionService:
 
         if existing_agent_message is None:
             try:
-                agent_message = await agent_message_handler.create_agent_message(
-                    db,
-                    **(
-                        {"id": agent_message_id}
-                        if isinstance(agent_message_id, UUID)
-                        else {}
-                    ),
-                    user_id=user_id,
-                    sender="agent",
-                    conversation_id=conversation_id,
-                    status=resolved_agent_status,
-                    finish_reason=resolved_finish_reason,
-                    error_code=resolved_error_code,
-                    metadata=agent_metadata,
-                    invoke_idempotency_key=normalized_idempotency_key,
-                )
+                if isinstance(agent_message_id, UUID):
+                    agent_message = await agent_message_handler.create_agent_message(
+                        db,
+                        id=agent_message_id,
+                        user_id=user_id,
+                        sender="agent",
+                        conversation_id=conversation_id,
+                        status=resolved_agent_status,
+                        finish_reason=resolved_finish_reason,
+                        error_code=resolved_error_code,
+                        metadata=agent_metadata,
+                        invoke_idempotency_key=normalized_idempotency_key,
+                    )
+                else:
+                    agent_message = await agent_message_handler.create_agent_message(
+                        db,
+                        user_id=user_id,
+                        sender="agent",
+                        conversation_id=conversation_id,
+                        status=resolved_agent_status,
+                        finish_reason=resolved_finish_reason,
+                        error_code=resolved_error_code,
+                        metadata=agent_metadata,
+                        invoke_idempotency_key=normalized_idempotency_key,
+                    )
             except agent_message_handler.AgentMessageCreationError as exc:
                 if isinstance(agent_message_id, UUID) and is_agent_message_pk_violation(
                     exc
@@ -416,22 +449,27 @@ class SessionHistoryProjectionService:
                     and recovered_agent_message.id != agent_message_id
                 ):
                     raise ValueError("message_id_conflict")
-                agent_message = await agent_message_handler.update_agent_message(
-                    db,
-                    message=recovered_agent_message,
-                    status=resolved_agent_status,
-                    finish_reason=resolved_finish_reason,
-                    error_code=resolved_error_code,
-                    message_metadata=agent_metadata,
-                    invoke_idempotency_key=normalized_idempotency_key,
+                updated_agent_message = (
+                    await agent_message_handler.update_agent_message(
+                        db,
+                        message=recovered_agent_message,
+                        status=resolved_agent_status,
+                        finish_reason=resolved_finish_reason,
+                        error_code=resolved_error_code,
+                        message_metadata=agent_metadata,
+                        invoke_idempotency_key=normalized_idempotency_key,
+                    )
                 )
+                if updated_agent_message is None:
+                    raise ValueError("message_update_failed")
+                agent_message = updated_agent_message
         else:
             if (
                 isinstance(agent_message_id, UUID)
                 and existing_agent_message.id != agent_message_id
             ):
                 raise ValueError("message_id_conflict")
-            agent_message = await agent_message_handler.update_agent_message(
+            updated_agent_message = await agent_message_handler.update_agent_message(
                 db,
                 message=existing_agent_message,
                 status=resolved_agent_status,
@@ -440,10 +478,13 @@ class SessionHistoryProjectionService:
                 message_metadata=agent_metadata,
                 invoke_idempotency_key=normalized_idempotency_key,
             )
+            if updated_agent_message is None:
+                raise ValueError("message_update_failed")
+            agent_message = updated_agent_message
         await self._support.upsert_single_text_block(
             db,
             user_id=user_id,
-            message_id=user_message.id,
+            message_id=cast(UUID, user_message.id),
             content=query,
             source="user_input",
         )
@@ -452,26 +493,31 @@ class SessionHistoryProjectionService:
                 await agent_message_block_handler.list_blocks_by_message_id(
                     db,
                     user_id=user_id,
-                    message_id=agent_message.id,
+                    message_id=cast(UUID, agent_message.id),
                 )
             )
             can_upsert_snapshot = not existing_agent_blocks or (
                 len(existing_agent_blocks) == 1
                 and int(existing_agent_blocks[0].block_seq) == 1
-                and normalize_block_type(existing_agent_blocks[0].block_type) == "text"
-                and normalize_non_empty_text(existing_agent_blocks[0].source)
+                and normalize_block_type(
+                    cast(str | None, existing_agent_blocks[0].block_type)
+                )
+                == "text"
+                and normalize_non_empty_text(
+                    cast(str | None, existing_agent_blocks[0].source)
+                )
                 in {"final_snapshot", "finalize_snapshot"}
             )
             if can_upsert_snapshot:
                 await self._support.upsert_single_text_block(
                     db,
                     user_id=user_id,
-                    message_id=agent_message.id,
+                    message_id=cast(UUID, agent_message.id),
                     content=response_content,
                     source="finalize_snapshot",
                 )
         target_session = session
-        if conversation_id != session.id:
+        if conversation_id != cast(UUID, session.id):
             rebound_session = await self._support.get_local_session_by_id(
                 db,
                 user_id=user_id,
@@ -479,11 +525,11 @@ class SessionHistoryProjectionService:
             )
             if rebound_session is not None:
                 target_session = rebound_session
-        target_session.last_active_at = utc_now()
+        setattr(target_session, "last_active_at", utc_now())
         return {
             "conversation_id": conversation_id,
-            "user_message_id": user_message.id,
-            "agent_message_id": agent_message.id,
+            "user_message_id": cast(UUID, user_message.id),
+            "agent_message_id": cast(UUID, agent_message.id),
         }
 
     async def record_local_invoke_messages_by_local_session_id(
@@ -566,27 +612,33 @@ class SessionHistoryProjectionService:
 
         normalized_idempotency_key = normalize_idempotency_key(idempotency_key)
         if normalized_idempotency_key:
-            existing_user_message = await db.scalar(
-                select(AgentMessage).where(
-                    and_(
-                        AgentMessage.user_id == user_id,
-                        AgentMessage.conversation_id == local_session_id,
-                        AgentMessage.sender.in_(["user", "automation"]),
-                        AgentMessage.invoke_idempotency_key
-                        == normalized_idempotency_key,
+            existing_user_message = cast(
+                AgentMessage | None,
+                await db.scalar(
+                    select(AgentMessage).where(
+                        and_(
+                            AgentMessage.user_id == user_id,
+                            AgentMessage.conversation_id == local_session_id,
+                            AgentMessage.sender.in_(["user", "automation"]),
+                            AgentMessage.invoke_idempotency_key
+                            == normalized_idempotency_key,
+                        )
                     )
-                )
+                ),
             )
-            existing_agent_message = await db.scalar(
-                select(AgentMessage).where(
-                    and_(
-                        AgentMessage.user_id == user_id,
-                        AgentMessage.conversation_id == local_session_id,
-                        AgentMessage.sender == "agent",
-                        AgentMessage.invoke_idempotency_key
-                        == normalized_idempotency_key,
+            existing_agent_message = cast(
+                AgentMessage | None,
+                await db.scalar(
+                    select(AgentMessage).where(
+                        and_(
+                            AgentMessage.user_id == user_id,
+                            AgentMessage.conversation_id == local_session_id,
+                            AgentMessage.sender == "agent",
+                            AgentMessage.invoke_idempotency_key
+                            == normalized_idempotency_key,
+                        )
                     )
-                )
+                ),
             )
             if existing_user_message and existing_agent_message:
                 if (
@@ -601,8 +653,8 @@ class SessionHistoryProjectionService:
                     raise ValueError("message_id_conflict")
                 return {
                     "conversation_id": local_session_id,
-                    "user_message_id": existing_user_message.id,
-                    "agent_message_id": existing_agent_message.id,
+                    "user_message_id": cast(UUID, existing_user_message.id),
+                    "agent_message_id": cast(UUID, existing_agent_message.id),
                 }
 
         return await self.record_local_invoke_messages(
@@ -644,7 +696,7 @@ class SessionHistoryProjectionService:
             return None
         return await self.record_interrupt_lifecycle_event(
             db,
-            conversation_id=session.id,
+            conversation_id=cast(UUID, session.id),
             user_id=user_id,
             event=event,
         )
@@ -686,20 +738,23 @@ class SessionHistoryProjectionService:
                 metadata=message_metadata,
             )
         else:
-            system_message = await agent_message_handler.update_agent_message(
+            updated_system_message = await agent_message_handler.update_agent_message(
                 db,
                 message=existing_message,
                 status="done",
                 message_metadata=message_metadata,
             )
+            if updated_system_message is None:
+                raise ValueError("message_update_failed")
+            system_message = updated_system_message
         await self._support.upsert_single_text_block(
             db,
             user_id=user_id,
-            message_id=system_message.id,
+            message_id=cast(UUID, system_message.id),
             content=build_interrupt_lifecycle_message_content(normalized_event),
             source="interrupt_lifecycle",
         )
-        return system_message.id
+        return cast(UUID, system_message.id)
 
     async def append_agent_message_block_update(
         self,
@@ -723,14 +778,17 @@ class SessionHistoryProjectionService:
             return None
         message = agent_message
         if message is None:
-            message = await db.scalar(
-                select(AgentMessage).where(
-                    and_(
-                        AgentMessage.id == agent_message_id,
-                        AgentMessage.user_id == user_id,
-                        AgentMessage.sender == "agent",
+            message = cast(
+                AgentMessage | None,
+                await db.scalar(
+                    select(AgentMessage).where(
+                        and_(
+                            AgentMessage.id == agent_message_id,
+                            AgentMessage.user_id == user_id,
+                            AgentMessage.sender == "agent",
+                        )
                     )
-                )
+                ),
             )
         if message is None:
             return None
@@ -771,28 +829,32 @@ class SessionHistoryProjectionService:
         if overwrite:
             if (
                 active_block is not None
-                and active_block.block_type == normalized_type
+                and cast(str | None, active_block.block_type) == normalized_type
                 and not bool(active_block.is_finished)
             ):
-                active_block.content = normalized_content
-                active_block.is_finished = bool(is_finished)
-                active_block.source = normalized_source or active_block.source
-                if active_block.start_event_seq is None:
-                    active_block.start_event_seq = seq
-                if (
-                    active_block.end_event_seq is None
-                    or seq >= active_block.end_event_seq
-                ):
-                    active_block.end_event_seq = seq
+                setattr(active_block, "content", normalized_content)
+                setattr(active_block, "is_finished", bool(is_finished))
+                setattr(
+                    active_block,
+                    "source",
+                    normalized_source or cast(str | None, active_block.source),
+                )
+                active_start_event_seq = cast(int | None, active_block.start_event_seq)
+                if active_start_event_seq is None:
+                    setattr(active_block, "start_event_seq", seq)
+                active_end_event_seq = cast(int | None, active_block.end_event_seq)
+                if active_end_event_seq is None or seq >= active_end_event_seq:
+                    setattr(active_block, "end_event_seq", seq)
                 normalized_event_id = normalize_non_empty_text(event_id)
-                if normalized_event_id and not active_block.start_event_id:
-                    active_block.start_event_id = normalized_event_id
+                active_start_event_id = cast(str | None, active_block.start_event_id)
+                if normalized_event_id and not active_start_event_id:
+                    setattr(active_block, "start_event_id", normalized_event_id)
                 if normalized_event_id:
-                    active_block.end_event_id = normalized_event_id
+                    setattr(active_block, "end_event_id", normalized_event_id)
                 persisted_block = active_block
             else:
                 if active_block is not None and not bool(active_block.is_finished):
-                    active_block.is_finished = True
+                    setattr(active_block, "is_finished", True)
                 next_block_seq = (
                     max(
                         cursor_state["last_block_seq"],
@@ -818,33 +880,35 @@ class SessionHistoryProjectionService:
         else:
             if (
                 active_block is not None
-                and active_block.block_type == normalized_type
+                and cast(str | None, active_block.block_type) == normalized_type
                 and not bool(active_block.is_finished)
             ):
-                current_content = (
-                    active_block.content
-                    if isinstance(active_block.content, str)
-                    else ""
+                current_content = cast(str | None, active_block.content) or ""
+                setattr(
+                    active_block, "content", f"{current_content}{normalized_content}"
                 )
-                active_block.content = f"{current_content}{normalized_content}"
-                active_block.is_finished = bool(is_finished)
-                active_block.source = normalized_source or active_block.source
-                if active_block.start_event_seq is None:
-                    active_block.start_event_seq = seq
-                if (
-                    active_block.end_event_seq is None
-                    or seq >= active_block.end_event_seq
-                ):
-                    active_block.end_event_seq = seq
+                setattr(active_block, "is_finished", bool(is_finished))
+                setattr(
+                    active_block,
+                    "source",
+                    normalized_source or cast(str | None, active_block.source),
+                )
+                active_start_event_seq = cast(int | None, active_block.start_event_seq)
+                if active_start_event_seq is None:
+                    setattr(active_block, "start_event_seq", seq)
+                active_end_event_seq = cast(int | None, active_block.end_event_seq)
+                if active_end_event_seq is None or seq >= active_end_event_seq:
+                    setattr(active_block, "end_event_seq", seq)
                 normalized_event_id = normalize_non_empty_text(event_id)
-                if normalized_event_id and not active_block.start_event_id:
-                    active_block.start_event_id = normalized_event_id
+                active_start_event_id = cast(str | None, active_block.start_event_id)
+                if normalized_event_id and not active_start_event_id:
+                    setattr(active_block, "start_event_id", normalized_event_id)
                 if normalized_event_id:
-                    active_block.end_event_id = normalized_event_id
+                    setattr(active_block, "end_event_id", normalized_event_id)
                 persisted_block = active_block
             else:
                 if active_block is not None and not bool(active_block.is_finished):
-                    active_block.is_finished = True
+                    setattr(active_block, "is_finished", True)
                 next_block_seq = (
                     max(
                         cursor_state["last_block_seq"],
@@ -882,7 +946,7 @@ class SessionHistoryProjectionService:
                 getattr(persisted_block, "block_seq", 0) or 0
             )
         write_block_cursor_state(message_metadata, cursor_state)
-        message.message_metadata = message_metadata
+        setattr(message, "message_metadata", message_metadata)
         await db.flush()
         return persisted_block
 
@@ -899,14 +963,17 @@ class SessionHistoryProjectionService:
             return []
         message = agent_message
         if message is None:
-            message = await db.scalar(
-                select(AgentMessage).where(
-                    and_(
-                        AgentMessage.id == agent_message_id,
-                        AgentMessage.user_id == user_id,
-                        AgentMessage.sender == "agent",
+            message = cast(
+                AgentMessage | None,
+                await db.scalar(
+                    select(AgentMessage).where(
+                        and_(
+                            AgentMessage.id == agent_message_id,
+                            AgentMessage.user_id == user_id,
+                            AgentMessage.sender == "agent",
+                        )
                     )
-                )
+                ),
             )
         if message is None:
             return []

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from app.core.config import settings
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
@@ -42,13 +42,12 @@ def build_schedule_status_summary(
     heartbeat_stale_seconds, _hard_timeout_seconds = derive_schedule_recovery_timeouts()
 
     if running_execution is not None:
-        started_at = ensure_utc(
-            running_execution.started_at or running_execution.scheduled_for
-        )
+        started_at_value = cast(datetime | None, running_execution.started_at)
+        scheduled_for = cast(datetime, running_execution.scheduled_for)
+        last_heartbeat_at = cast(datetime | None, running_execution.last_heartbeat_at)
+        started_at = ensure_utc(started_at_value or scheduled_for)
         heartbeat_at = ensure_utc(
-            running_execution.last_heartbeat_at
-            or running_execution.started_at
-            or running_execution.scheduled_for
+            last_heartbeat_at or started_at_value or scheduled_for
         )
         running_duration_seconds = max(
             int((now_utc - started_at).total_seconds()),
@@ -75,21 +74,21 @@ def build_schedule_status_summary(
 
     recent_failure_message = None
     recent_failure_error_code = None
-    last_finished_at = None
+    last_finished_at: datetime | None = None
     if latest_execution is not None:
-        last_finished_at = (
-            latest_execution.finished_at
-            or latest_execution.started_at
-            or latest_execution.scheduled_for
-        )
+        finished_at = cast(datetime | None, latest_execution.finished_at)
+        latest_started_at = cast(datetime | None, latest_execution.started_at)
+        scheduled_for = cast(datetime, latest_execution.scheduled_for)
+        last_finished_at = finished_at or latest_started_at or scheduled_for
         if last_finished_at is not None:
             last_finished_at = ensure_utc(last_finished_at)
-        if latest_execution.status == A2AScheduleExecution.STATUS_FAILED:
+        status = cast(str, latest_execution.status)
+        if status == A2AScheduleExecution.STATUS_FAILED:
             recent_failure_message = (
-                latest_execution.error_message or ""
+                cast(str | None, latest_execution.error_message) or ""
             ).strip() or None
             recent_failure_error_code = (
-                latest_execution.error_code or ""
+                cast(str | None, latest_execution.error_code) or ""
             ).strip() or None
 
     has_recent_failure = (

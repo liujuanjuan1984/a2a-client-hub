@@ -1,11 +1,7 @@
-"""
-Authentication API Router
+"""Authentication API router."""
 
-This module contains API endpoints for user authentication including registration and login.
-Supports multi-user mode with JWT authentication.
-"""
-
-from typing import Any, Dict
+from typing import Literal, cast
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import exists, select
@@ -43,6 +39,25 @@ router = StrictAPIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+CookieSameSite = Literal["lax", "strict", "none"]
+
+
+def _refresh_cookie_samesite() -> CookieSameSite:
+    return cast(CookieSameSite, settings.auth_refresh_cookie_samesite)
+
+
+def _serialize_user_response(
+    user: User, *, timezone: str | None = None
+) -> UserResponse:
+    timezone_value = timezone or cast(str, user.timezone) or "UTC"
+    return UserResponse(
+        id=cast(UUID, user.id),
+        email=cast(str, user.email),
+        name=cast(str, user.name),
+        is_superuser=cast(bool, user.is_superuser),
+        timezone=timezone_value,
+    )
+
 
 @router.post(
     "/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED
@@ -50,7 +65,7 @@ router = StrictAPIRouter(
 async def register_user(
     user_data: RegisterRequest,
     db: AsyncSession = Depends(get_async_db),
-) -> Dict[str, Any]:
+) -> RegisterResponse:
     """
     Register a new user
 
@@ -104,30 +119,30 @@ async def register_user(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     user = registration.user
+    user_id = cast(UUID, user.id)
+    user_email = cast(str, user.email)
 
     if invitation is not None:
         await invitation_handler.mark_invitation_registered(
             db,
             invitation=invitation,
-            user_id=user.id,
-            memo=f"Registered by {user.email}",
+            user_id=user_id,
+            memo=f"Registered by {user_email}",
         )
         await invitation_handler.revoke_other_invitations_for_email(
             db,
-            email=user.email,
-            exclude_invitation_id=invitation.id,
-            memo=f"Auto revoked after registration of {user.email}",
+            email=user_email,
+            exclude_invitation_id=cast(UUID, invitation.id),
+            memo=f"Auto revoked after registration of {user_email}",
         )
 
-    response = RegisterResponse(
-        id=str(user.id),
-        email=user.email,
-        name=user.name,
-        is_superuser=user.is_superuser,
+    return RegisterResponse(
+        id=user_id,
+        email=user_email,
+        name=cast(str, user.name),
+        is_superuser=cast(bool, user.is_superuser),
         timezone=registration.timezone,
     )
-
-    return response
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -175,9 +190,9 @@ async def login_user(
 
     await commit_safely(db)
 
-    token = create_user_access_token(user.id)
-    refresh_jwt = create_user_refresh_token(user.id)
-    timezone_value = user.timezone or "UTC"
+    user_id = cast(UUID, user.id)
+    token = create_user_access_token(user_id)
+    refresh_jwt = create_user_refresh_token(user_id)
 
     response.headers["Cache-Control"] = "no-store"
     response.set_cookie(
@@ -185,7 +200,7 @@ async def login_user(
         value=refresh_jwt,
         httponly=True,
         secure=settings.auth_refresh_cookie_secure,
-        samesite=settings.auth_refresh_cookie_samesite,
+        samesite=_refresh_cookie_samesite(),
         max_age=settings.jwt_refresh_token_ttl_seconds,
         path=settings.auth_refresh_cookie_path,
     )
@@ -194,13 +209,7 @@ async def login_user(
         access_token=token,
         token_type="bearer",
         expires_in=settings.jwt_access_token_ttl_seconds,
-        user=UserResponse(
-            id=user.id,
-            email=user.email,
-            name=user.name,
-            is_superuser=user.is_superuser,
-            timezone=timezone_value,
-        ),
+        user=_serialize_user_response(user),
     )
 
 
@@ -218,23 +227,24 @@ async def refresh_access_token(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing refresh token"
         )
 
-    user_id = verify_refresh_token(cookie)
-    if not user_id:
+    raw_user_id = verify_refresh_token(cookie)
+    if not raw_user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
         )
 
     try:
+        user_id = UUID(str(raw_user_id))
         user = await auth_handler.get_active_user(db, user_id=user_id)
-    except auth_handler.UserNotFoundError as exc:
+    except (TypeError, ValueError, auth_handler.UserNotFoundError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
+            detail="Invalid refresh token",
         ) from exc
 
-    access_token = create_user_access_token(user.id)
-    rotated_refresh = create_user_refresh_token(user.id)
-    timezone_value = user.timezone or "UTC"
+    persisted_user_id = cast(UUID, user.id)
+    access_token = create_user_access_token(persisted_user_id)
+    rotated_refresh = create_user_refresh_token(persisted_user_id)
 
     response.headers["Cache-Control"] = "no-store"
     response.set_cookie(
@@ -242,7 +252,7 @@ async def refresh_access_token(
         value=rotated_refresh,
         httponly=True,
         secure=settings.auth_refresh_cookie_secure,
-        samesite=settings.auth_refresh_cookie_samesite,
+        samesite=_refresh_cookie_samesite(),
         max_age=settings.jwt_refresh_token_ttl_seconds,
         path=settings.auth_refresh_cookie_path,
     )
@@ -251,13 +261,7 @@ async def refresh_access_token(
         access_token=access_token,
         token_type="bearer",
         expires_in=settings.jwt_access_token_ttl_seconds,
-        user=UserResponse(
-            id=user.id,
-            email=user.email,
-            name=user.name,
-            is_superuser=user.is_superuser,
-            timezone=timezone_value,
-        ),
+        user=_serialize_user_response(user),
     )
 
 
@@ -286,14 +290,7 @@ async def get_current_user_info(
         Current user information
     """
 
-    timezone_value = current_user.timezone or "UTC"
-    return UserResponse(
-        id=current_user.id,
-        email=current_user.email,
-        name=current_user.name,
-        is_superuser=current_user.is_superuser,
-        timezone=timezone_value,
-    )
+    return _serialize_user_response(current_user)
 
 
 @router.post("/password/change", response_model=PasswordChangeResponse)

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent_message import AgentMessage
+from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message_block as agent_message_block_handler
 from app.services.session_hub_common import (
@@ -30,20 +31,23 @@ class SessionHubSupport:
         user_id: UUID,
         local_session_id: UUID,
     ) -> ConversationThread | None:
-        return await db.scalar(
-            select(ConversationThread).where(
-                and_(
-                    ConversationThread.id == local_session_id,
-                    ConversationThread.user_id == user_id,
-                    ConversationThread.status == ConversationThread.STATUS_ACTIVE,
-                    ConversationThread.source.in_(
-                        [
-                            ConversationThread.SOURCE_MANUAL,
-                            ConversationThread.SOURCE_SCHEDULED,
-                        ]
-                    ),
+        return cast(
+            ConversationThread | None,
+            await db.scalar(
+                select(ConversationThread).where(
+                    and_(
+                        ConversationThread.id == local_session_id,
+                        ConversationThread.user_id == user_id,
+                        ConversationThread.status == ConversationThread.STATUS_ACTIVE,
+                        ConversationThread.source.in_(
+                            [
+                                ConversationThread.SOURCE_MANUAL,
+                                ConversationThread.SOURCE_SCHEDULED,
+                            ]
+                        ),
+                    )
                 )
-            )
+            ),
         )
 
     async def resolve_conversation_target(
@@ -87,24 +91,28 @@ class SessionHubSupport:
         )
         if existing:
             mutated = False
-            if agent_id and existing.agent_id != agent_id:
-                existing.agent_id = agent_id
+            existing_agent_id = cast(UUID | None, existing.agent_id)
+            if agent_id and existing_agent_id != agent_id:
+                setattr(existing, "agent_id", agent_id)
                 mutated = True
-            if agent_source and existing.agent_source != agent_source:
-                existing.agent_source = agent_source
+            existing_agent_source = cast(str | None, existing.agent_source)
+            if agent_source and existing_agent_source != agent_source:
+                setattr(existing, "agent_source", agent_source)
                 mutated = True
-            if title and existing.title != title:
-                existing.title = title
+            existing_title = cast(str, existing.title)
+            if title and existing_title != title:
+                setattr(existing, "title", title)
                 mutated = True
             expected_source = (
                 ConversationThread.SOURCE_MANUAL
                 if source == "manual"
                 else ConversationThread.SOURCE_SCHEDULED
             )
-            if existing.source != expected_source:
-                existing.source = expected_source
+            existing_source = cast(str, existing.source)
+            if existing_source != expected_source:
+                setattr(existing, "source", expected_source)
                 mutated = True
-            existing.last_active_at = utc_now()
+            setattr(existing, "last_active_at", utc_now())
             return mutated
 
         db.add(
@@ -148,7 +156,7 @@ class SessionHubSupport:
             .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
             .limit(1)
         )
-        return await db.scalar(stmt)
+        return cast(AgentMessage | None, await db.scalar(stmt))
 
     async def find_message_by_id_and_sender(
         self,
@@ -159,25 +167,28 @@ class SessionHubSupport:
         sender: str,
         conversation_id: UUID,
     ) -> AgentMessage | None:
-        message = await db.scalar(
-            select(AgentMessage).where(
-                and_(
-                    AgentMessage.id == message_id,
-                    AgentMessage.user_id == user_id,
+        message = cast(
+            AgentMessage | None,
+            await db.scalar(
+                select(AgentMessage).where(
+                    and_(
+                        AgentMessage.id == message_id,
+                        AgentMessage.user_id == user_id,
+                    )
                 )
-            )
+            ),
         )
         if message is None:
             return None
         normalized_sender = (sender or "").strip().lower()
-        message_sender = (message.sender or "").strip().lower()
+        message_sender = (cast(str, message.sender) or "").strip().lower()
         if normalized_sender == "user":
             is_user_sender = message_sender in {"user", "automation"}
             if not is_user_sender:
                 raise ValueError("message_id_conflict")
         elif message_sender != normalized_sender:
             raise ValueError("message_id_conflict")
-        if message.conversation_id != conversation_id:
+        if cast(UUID, message.conversation_id) != conversation_id:
             raise ValueError("message_id_conflict")
         return message
 
@@ -204,19 +215,17 @@ class SessionHubSupport:
                 await agent_message_block_handler.find_block_by_message_and_block_seq(
                     db,
                     user_id=user_id,
-                    message_id=user_message.id,
+                    message_id=cast(UUID, user_message.id),
                     block_seq=1,
                 )
             )
             if first_block is not None:
-                persisted_query = (
-                    first_block.content if isinstance(first_block.content, str) else ""
-                )
+                persisted_query = cast(str | None, first_block.content) or ""
                 if persisted_query != query:
                     raise ValueError("idempotency_conflict")
         if message_metadata.get("query_hash") != query_hash:
             message_metadata["query_hash"] = query_hash
-            user_message.message_metadata = message_metadata
+            setattr(user_message, "message_metadata", message_metadata)
             await db.flush()
 
     async def upsert_single_text_block(
@@ -227,7 +236,7 @@ class SessionHubSupport:
         message_id: UUID,
         content: str,
         source: str | None = None,
-    ):
+    ) -> AgentMessageBlock | None:
         existing = (
             await agent_message_block_handler.find_block_by_message_and_block_seq(
                 db,
@@ -253,11 +262,11 @@ class SessionHubSupport:
             )
             if existing is None:
                 return None
-        existing.block_type = "text"
-        existing.content = str(content or "")
-        existing.is_finished = True
+        setattr(existing, "block_type", "text")
+        setattr(existing, "content", str(content or ""))
+        setattr(existing, "is_finished", True)
         normalized_source = normalize_non_empty_text(source)
         if normalized_source:
-            existing.source = normalized_source
+            setattr(existing, "source", normalized_source)
         await db.flush()
         return existing
