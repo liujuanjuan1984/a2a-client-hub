@@ -40,6 +40,10 @@ logger = get_logger(__name__)
 
 _A2A_SCHEDULE_EXECUTION_CLEANUP_JOB_ID = "a2a-schedule-execution-cleanup-daily"
 _A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE = 500
+_TERMINAL_SCHEDULE_EXECUTION_STATUSES = (
+    A2AScheduleExecution.STATUS_SUCCESS,
+    A2AScheduleExecution.STATUS_FAILED,
+)
 
 
 class A2AScheduleService:
@@ -294,7 +298,7 @@ class A2AScheduleService:
 
         now_utc = ensure_utc(now or utc_now())
         cutoff = now_utc - timedelta(days=retention_window_days)
-        terminal_finished_at = func.coalesce(
+        legacy_terminal_started_at = func.coalesce(
             A2AScheduleExecution.finished_at,
             A2AScheduleExecution.started_at,
             A2AScheduleExecution.scheduled_for,
@@ -303,15 +307,14 @@ class A2AScheduleService:
         stale_execution_ids = (
             select(A2AScheduleExecution.id)
             .where(
-                A2AScheduleExecution.status.in_(
-                    (
-                        A2AScheduleExecution.STATUS_SUCCESS,
-                        A2AScheduleExecution.STATUS_FAILED,
-                    )
-                ),
-                terminal_finished_at < cutoff,
+                A2AScheduleExecution.status.in_(_TERMINAL_SCHEDULE_EXECUTION_STATUSES),
+                A2AScheduleExecution.finished_at.is_not(None),
+                A2AScheduleExecution.finished_at < cutoff,
             )
-            .order_by(terminal_finished_at.asc(), A2AScheduleExecution.id.asc())
+            .order_by(
+                A2AScheduleExecution.finished_at.asc(),
+                A2AScheduleExecution.id.asc(),
+            )
             .limit(limited_batch_size)
         )
         stmt = delete(A2AScheduleExecution).where(
@@ -319,11 +322,32 @@ class A2AScheduleService:
         )
         result = cast(CursorResult[Any], await db.execute(stmt))
         deleted_count = int(result.rowcount or 0)
-        if deleted_count <= 0:
+        if deleted_count > 0:
+            await commit_safely(db)
+            return deleted_count
+
+        await db.rollback()
+
+        legacy_stale_execution_ids = (
+            select(A2AScheduleExecution.id)
+            .where(
+                A2AScheduleExecution.status.in_(_TERMINAL_SCHEDULE_EXECUTION_STATUSES),
+                A2AScheduleExecution.finished_at.is_(None),
+                legacy_terminal_started_at < cutoff,
+            )
+            .order_by(legacy_terminal_started_at.asc(), A2AScheduleExecution.id.asc())
+            .limit(limited_batch_size)
+        )
+        legacy_stmt = delete(A2AScheduleExecution).where(
+            A2AScheduleExecution.id.in_(legacy_stale_execution_ids)
+        )
+        legacy_result = cast(CursorResult[Any], await db.execute(legacy_stmt))
+        legacy_deleted_count = int(legacy_result.rowcount or 0)
+        if legacy_deleted_count <= 0:
             await db.rollback()
             return 0
         await commit_safely(db)
-        return deleted_count
+        return legacy_deleted_count
 
     def format_local_datetime(
         self,
@@ -376,10 +400,26 @@ async def cleanup_a2a_schedule_executions_job() -> None:
     """Delete old terminal schedule execution history in bounded batches."""
 
     async with AsyncSessionLocal() as db:
-        deleted = await a2a_schedule_service.cleanup_terminal_executions(db)
+        total_deleted = 0
+        batches = 0
+        while True:
+            deleted = await a2a_schedule_service.cleanup_terminal_executions(
+                db,
+                batch_size=_A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE,
+            )
+            if deleted <= 0:
+                break
+            total_deleted += deleted
+            batches += 1
+            if deleted < _A2A_SCHEDULE_EXECUTION_CLEANUP_BATCH_SIZE:
+                break
 
-    if deleted > 0:
-        logger.info("Cleaned up %d old schedule execution record(s).", deleted)
+    if total_deleted > 0:
+        logger.info(
+            "Cleaned up %d old schedule execution record(s) across %d batch(es).",
+            total_deleted,
+            batches,
+        )
 
 
 def ensure_a2a_schedule_execution_cleanup_job() -> None:

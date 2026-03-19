@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -120,15 +121,21 @@ async def test_cleanup_terminal_executions_removes_only_old_terminal_rows(
         ]
     )
     await async_db_session.commit()
+    deleted_execution_ids = {old_success.id, old_failed_without_finished_at.id}
 
-    deleted_count = await a2a_schedule_service.cleanup_terminal_executions(
-        async_db_session,
-        now=now,
-        retention_days=30,
-        batch_size=10,
-    )
+    total_deleted = 0
+    while True:
+        deleted_count = await a2a_schedule_service.cleanup_terminal_executions(
+            async_db_session,
+            now=now,
+            retention_days=30,
+            batch_size=10,
+        )
+        if deleted_count <= 0:
+            break
+        total_deleted += deleted_count
 
-    assert deleted_count == 2
+    assert total_deleted == 2
 
     remaining = (
         await async_db_session.scalars(
@@ -141,10 +148,7 @@ async def test_cleanup_terminal_executions_removes_only_old_terminal_rows(
     assert A2AScheduleExecution.STATUS_RUNNING in remaining_statuses
     assert A2AScheduleExecution.STATUS_PENDING in remaining_statuses
     assert A2AScheduleExecution.STATUS_SUCCESS in remaining_statuses
-    assert all(
-        execution.id not in {old_success.id, old_failed_without_finished_at.id}
-        for execution in remaining
-    )
+    assert all(execution.id not in deleted_execution_ids for execution in remaining)
 
 
 @pytest.mark.asyncio
@@ -209,4 +213,36 @@ def test_ensure_schedule_execution_cleanup_job_is_idempotent(
     job = scheduler.jobs["a2a-schedule-execution-cleanup-daily"]
     assert (
         job["func"] is a2a_schedule_service_module.cleanup_a2a_schedule_executions_job
+    )
+
+
+@pytest.mark.asyncio
+async def test_cleanup_schedule_execution_job_drains_all_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cleanup_mock = AsyncMock(side_effect=[500, 500, 12])
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+    monkeypatch.setattr(
+        a2a_schedule_service_module,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        a2a_schedule_service_module.a2a_schedule_service,
+        "cleanup_terminal_executions",
+        cleanup_mock,
+    )
+
+    await a2a_schedule_service_module.cleanup_a2a_schedule_executions_job()
+
+    assert cleanup_mock.await_count == 3
+    assert all(
+        call.kwargs["batch_size"] == 500 for call in cleanup_mock.await_args_list
     )
