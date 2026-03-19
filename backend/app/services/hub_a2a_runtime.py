@@ -63,9 +63,7 @@ class HubA2ARuntimeBuilder:
 
         credential = None
         if agent.auth_type == "bearer":
-            credential = await self._get_credential(
-                db, agent_id=cast(UUID, agent.id)
-            )
+            credential = await self._get_credential(db, agent_id=cast(UUID, agent.id))
         return self.build_from_agent(agent=agent, credential=credential)
 
     def build_from_agent(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence, cast
 from uuid import UUID
 
 from sqlalchemy import and_, delete, select
@@ -174,7 +174,7 @@ class HubA2AAgentService(AgentValidationMixin):
             token_last4 = await self._upsert_credential(
                 db,
                 admin_user_id=admin_user_id,
-                agent_id=agent.id,
+                agent_id=cast(UUID, agent.id),
                 token=token,
             )
             has_credential = True
@@ -205,33 +205,37 @@ class HubA2AAgentService(AgentValidationMixin):
         agent = await self._get_agent(db, agent_id=agent_id)
 
         if name is not None:
-            agent.name = self._normalize_name(name)
+            setattr(agent, "name", self._normalize_name(name))
         if card_url is not None:
-            agent.card_url = self._normalize_card_url(card_url)
+            setattr(agent, "card_url", self._normalize_card_url(card_url))
         if availability_policy is not None:
-            agent.availability_policy = self._normalize_availability_policy(
-                availability_policy
+            setattr(
+                agent,
+                "availability_policy",
+                self._normalize_availability_policy(availability_policy),
             )
         if enabled is not None:
-            agent.enabled = bool(enabled)
+            setattr(agent, "enabled", bool(enabled))
         if tags is not None:
-            agent.tags = self._normalize_tags(tags) or None
+            setattr(agent, "tags", self._normalize_tags(tags) or None)
         if extra_headers is not None:
-            agent.extra_headers = self._normalize_headers(extra_headers) or None
+            setattr(
+                agent, "extra_headers", self._normalize_headers(extra_headers) or None
+            )
 
         if auth_type is not None:
-            agent.auth_type = self._normalize_auth_type(auth_type)
+            setattr(agent, "auth_type", self._normalize_auth_type(auth_type))
 
         auth_header_value, auth_scheme_value = self._resolve_auth_fields(
-            agent.auth_type,
+            cast(str, agent.auth_type),
             auth_header,
             auth_scheme,
             existing=agent,
         )
-        agent.auth_header = auth_header_value
-        agent.auth_scheme = auth_scheme_value
+        setattr(agent, "auth_header", auth_header_value)
+        setattr(agent, "auth_scheme", auth_scheme_value)
 
-        if token is not None and agent.auth_type == "none":
+        if token is not None and cast(str, agent.auth_type) == "none":
             raise HubA2AAgentValidationError("Bearer token provided for auth_type=none")
 
         token_last4, has_credential = await self._sync_credentials(
@@ -241,7 +245,7 @@ class HubA2AAgentService(AgentValidationMixin):
             token=token,
         )
 
-        agent.updated_by_user_id = admin_user_id
+        setattr(agent, "updated_by_user_id", admin_user_id)
         await commit_safely(db)
         await db.refresh(agent)
         return HubA2AAgentRecord(
@@ -255,13 +259,14 @@ class HubA2AAgentService(AgentValidationMixin):
     ) -> None:
         agent = await self._get_agent(db, agent_id=agent_id)
         agent.soft_delete()
-        agent.updated_by_user_id = admin_user_id
+        setattr(agent, "updated_by_user_id", admin_user_id)
         # Hub agents are admin-managed, and "delete" should also purge any stored
         # credential/allowlist rows to reduce long-term secret exposure.
-        await delete_agent_credentials(db, agent_id=agent.id)
+        agent_pk = cast(UUID, agent.id)
+        await delete_agent_credentials(db, agent_id=agent_pk)
         await db.execute(
             delete(HubA2AAgentAllowlistEntry).where(
-                HubA2AAgentAllowlistEntry.agent_id == agent.id
+                HubA2AAgentAllowlistEntry.agent_id == agent_pk
             )
         )
         await commit_safely(db)
@@ -313,12 +318,13 @@ class HubA2AAgentService(AgentValidationMixin):
                 A2AAgent.enabled.is_(True),
             )
         )
-        agent = await db.scalar(stmt)
+        agent = cast(A2AAgent | None, await db.scalar(stmt))
         if agent is None:
             raise HubA2AAgentNotFoundError("Hub A2A agent not found")
-        if agent.availability_policy == "public":
+        availability_policy = cast(str, agent.availability_policy)
+        if availability_policy == "public":
             return agent
-        if agent.availability_policy != "allowlist":
+        if availability_policy != "allowlist":
             raise HubA2AAgentNotFoundError("Hub A2A agent not found")
         allow_stmt = select(HubA2AAgentAllowlistEntry.id).where(
             and_(
@@ -344,7 +350,11 @@ class HubA2AAgentService(AgentValidationMixin):
         result = await db.execute(stmt)
         rows = result.all()
         return [
-            HubA2AAllowlistRecord(entry=row[0], user_email=row[1], user_name=row[2])
+            HubA2AAllowlistRecord(
+                entry=row[0],
+                user_email=cast(str | None, row[1]),
+                user_name=cast(str | None, row[2]),
+            )
             for row in rows
         ]
 
@@ -378,7 +388,9 @@ class HubA2AAgentService(AgentValidationMixin):
         await commit_safely(db)
         await db.refresh(entry)
         return HubA2AAllowlistRecord(
-            entry=entry, user_email=resolved_user.email, user_name=resolved_user.name
+            entry=entry,
+            user_email=cast(str | None, resolved_user.email),
+            user_name=cast(str | None, resolved_user.name),
         )
 
     async def remove_allowlist_entry_admin(
@@ -411,14 +423,19 @@ class HubA2AAgentService(AgentValidationMixin):
         resolved_users: list[User] = []
         seen_user_ids: set[UUID] = set()
         for item in entries:
+            raw_user_id = item.get("user_id")
+            resolved_user_id = raw_user_id if isinstance(raw_user_id, UUID) else None
+            raw_email = item.get("email")
+            resolved_email = raw_email if isinstance(raw_email, str) else None
             user = await self._resolve_user(
                 db,
-                user_id=item.get("user_id"),
-                email=item.get("email"),
+                user_id=resolved_user_id,
+                email=resolved_email,
             )
-            if user.id in seen_user_ids:
+            user_id_value = cast(UUID, user.id)
+            if user_id_value in seen_user_ids:
                 continue
-            seen_user_ids.add(user.id)
+            seen_user_ids.add(user_id_value)
             resolved_users.append(user)
 
         await db.execute(
@@ -430,7 +447,7 @@ class HubA2AAgentService(AgentValidationMixin):
             db.add(
                 HubA2AAgentAllowlistEntry(
                     agent_id=agent_id,
-                    user_id=user.id,
+                    user_id=cast(UUID, user.id),
                     created_by_user_id=admin_user_id,
                 )
             )
@@ -445,7 +462,7 @@ class HubA2AAgentService(AgentValidationMixin):
                 A2AAgent.deleted_at.is_(None),
             )
         )
-        agent = await db.scalar(stmt)
+        agent = cast(A2AAgent | None, await db.scalar(stmt))
         if agent is None:
             raise HubA2AAgentNotFoundError("Hub A2A agent not found")
         return agent
@@ -458,23 +475,25 @@ class HubA2AAgentService(AgentValidationMixin):
         agent: A2AAgent,
         token: Optional[str],
     ) -> tuple[Optional[str], bool]:
-        if agent.auth_type == "none":
-            await delete_agent_credentials(db, agent_id=agent.id)
+        auth_type = cast(str, agent.auth_type)
+        agent_id = cast(UUID, agent.id)
+        if auth_type == "none":
+            await delete_agent_credentials(db, agent_id=agent_id)
             return None, False
 
-        if agent.auth_type != "bearer":
+        if auth_type != "bearer":
             raise HubA2AAgentValidationError("Unsupported auth_type")
 
-        credential = await get_agent_credential(db, agent_id=agent.id)
+        credential = await get_agent_credential(db, agent_id=agent_id)
         if token is None:
             if credential is None:
                 raise HubA2AAgentValidationError("Bearer token is required")
-            return credential.token_last4, True
+            return cast(str | None, credential.token_last4), True
 
         last4 = await self._upsert_credential(
             db,
             admin_user_id=admin_user_id,
-            agent_id=agent.id,
+            agent_id=agent_id,
             token=token,
         )
         return last4, True
@@ -507,7 +526,7 @@ class HubA2AAgentService(AgentValidationMixin):
             stmt = select(User).where(
                 and_(User.email == trimmed, User.deleted_at.is_(None))
             )
-            user = await db.scalar(stmt)
+            user = cast(User | None, await db.scalar(stmt))
             if user is None:
                 raise HubA2AUserNotFoundError("User not found")
             return user
@@ -515,7 +534,7 @@ class HubA2AAgentService(AgentValidationMixin):
         stmt = select(User).where(
             and_(User.id == resolved_user_id, User.deleted_at.is_(None))
         )
-        user = await db.scalar(stmt)
+        user = cast(User | None, await db.scalar(stmt))
         if user is None:
             raise HubA2AUserNotFoundError("User not found")
         return user
@@ -532,8 +551,6 @@ class HubA2AAgentService(AgentValidationMixin):
         seen: set[str] = set()
         items: list[str] = []
         for raw in value:
-            if raw is None:
-                continue
             trimmed = str(raw).strip()
             if not trimmed:
                 continue
@@ -549,8 +566,6 @@ class HubA2AAgentService(AgentValidationMixin):
             return {}
         normalized: dict[str, str] = {}
         for key, header_value in value.items():
-            if key is None:
-                continue
             k = str(key).strip()
             if not k:
                 continue
