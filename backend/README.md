@@ -102,6 +102,7 @@ Current scope:
 - `backend/app/services/session_history_projection.py`
 - `backend/app/services/session_hub_common.py`
 - `backend/app/services/session_hub_support.py`
+- `backend/app/services/session_query_service.py`
 - `backend/app/services/shortcut_service.py`
 - `backend/app/services/ws_ticket_service.py`
 
