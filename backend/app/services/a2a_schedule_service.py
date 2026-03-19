@@ -277,6 +277,34 @@ class A2AScheduleService:
             agent_message_id=agent_message_id,
         )
 
+    async def _delete_terminal_execution_batch(
+        self,
+        db: AsyncSession,
+        *,
+        batch_size: int,
+        where_clauses: tuple[Any, ...],
+        order_by_clauses: tuple[Any, ...],
+    ) -> int:
+        stale_execution_ids = (
+            select(A2AScheduleExecution.id)
+            .where(
+                A2AScheduleExecution.status.in_(_TERMINAL_SCHEDULE_EXECUTION_STATUSES),
+                *where_clauses,
+            )
+            .order_by(*order_by_clauses)
+            .limit(batch_size)
+        )
+        stmt = delete(A2AScheduleExecution).where(
+            A2AScheduleExecution.id.in_(stale_execution_ids)
+        )
+        result = cast(CursorResult[Any], await db.execute(stmt))
+        deleted_count = int(result.rowcount or 0)
+        if deleted_count <= 0:
+            await db.rollback()
+            return 0
+        await commit_safely(db)
+        return deleted_count
+
     async def cleanup_terminal_executions(
         self,
         db: AsyncSession,
@@ -299,55 +327,37 @@ class A2AScheduleService:
         now_utc = ensure_utc(now or utc_now())
         cutoff = now_utc - timedelta(days=retention_window_days)
         legacy_terminal_started_at = func.coalesce(
-            A2AScheduleExecution.finished_at,
             A2AScheduleExecution.started_at,
             A2AScheduleExecution.scheduled_for,
             A2AScheduleExecution.created_at,
         )
-        stale_execution_ids = (
-            select(A2AScheduleExecution.id)
-            .where(
-                A2AScheduleExecution.status.in_(_TERMINAL_SCHEDULE_EXECUTION_STATUSES),
+        deleted_count = await self._delete_terminal_execution_batch(
+            db,
+            batch_size=limited_batch_size,
+            where_clauses=(
                 A2AScheduleExecution.finished_at.is_not(None),
                 A2AScheduleExecution.finished_at < cutoff,
-            )
-            .order_by(
+            ),
+            order_by_clauses=(
                 A2AScheduleExecution.finished_at.asc(),
                 A2AScheduleExecution.id.asc(),
-            )
-            .limit(limited_batch_size)
+            ),
         )
-        stmt = delete(A2AScheduleExecution).where(
-            A2AScheduleExecution.id.in_(stale_execution_ids)
-        )
-        result = cast(CursorResult[Any], await db.execute(stmt))
-        deleted_count = int(result.rowcount or 0)
         if deleted_count > 0:
-            await commit_safely(db)
             return deleted_count
 
-        await db.rollback()
-
-        legacy_stale_execution_ids = (
-            select(A2AScheduleExecution.id)
-            .where(
-                A2AScheduleExecution.status.in_(_TERMINAL_SCHEDULE_EXECUTION_STATUSES),
+        return await self._delete_terminal_execution_batch(
+            db,
+            batch_size=limited_batch_size,
+            where_clauses=(
                 A2AScheduleExecution.finished_at.is_(None),
                 legacy_terminal_started_at < cutoff,
-            )
-            .order_by(legacy_terminal_started_at.asc(), A2AScheduleExecution.id.asc())
-            .limit(limited_batch_size)
+            ),
+            order_by_clauses=(
+                legacy_terminal_started_at.asc(),
+                A2AScheduleExecution.id.asc(),
+            ),
         )
-        legacy_stmt = delete(A2AScheduleExecution).where(
-            A2AScheduleExecution.id.in_(legacy_stale_execution_ids)
-        )
-        legacy_result = cast(CursorResult[Any], await db.execute(legacy_stmt))
-        legacy_deleted_count = int(legacy_result.rowcount or 0)
-        if legacy_deleted_count <= 0:
-            await db.rollback()
-            return 0
-        await commit_safely(db)
-        return legacy_deleted_count
 
     def format_local_datetime(
         self,
