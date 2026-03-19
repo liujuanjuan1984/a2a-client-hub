@@ -24,7 +24,7 @@ const MMKV_INSTANCE_ID_MESSAGES = "a2a-messages-storage";
 
 const mmkvInstances: Record<string, MMKV> = {};
 
-export type PersistScope = "shared" | "web_tab";
+type PersistScope = "shared" | "web_tab";
 
 const bytesToHex = (bytes: Uint8Array) =>
   Array.from(bytes)
