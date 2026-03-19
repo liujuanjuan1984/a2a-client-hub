@@ -133,10 +133,9 @@ describe("chatTransportWs", () => {
     );
     expect(health.recordWsSuccess).toHaveBeenCalledTimes(1);
     expect(health.recordWsFailure).not.toHaveBeenCalled();
-    expect(callbacks.onStreamError).toHaveBeenCalledWith(
-      "WebSocket error",
-      "stream_error",
-    );
+    expect(callbacks.onStreamError).toHaveBeenCalledWith("WebSocket error", {
+      errorCode: "stream_error",
+    });
   });
 
   it("treats post-data idle timeout as a recoverable stream timeout", async () => {
@@ -176,7 +175,7 @@ describe("chatTransportWs", () => {
     await expect(transportPromise).resolves.toBe(true);
     expect(callbacks.onStreamError).toHaveBeenCalledWith(
       "WebSocket idle timeout after 45000ms",
-      "timeout",
+      { errorCode: "timeout" },
     );
     expect(health.recordWsFailure).not.toHaveBeenCalled();
   });

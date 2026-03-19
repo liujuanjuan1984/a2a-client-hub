@@ -227,6 +227,116 @@ describe("executeChatRuntime empty-content recovery", () => {
     expect(agentMessage?.content).toBe("Recovered response");
   });
 
+  it("stores structured stream errors from websocket error events", async () => {
+    const conversationId = "conv-stream-error-1";
+    const agentId = "agent-stream-error-1";
+    const userMessageId = "user-stream-error-1";
+    const agentMessageId = "agent-stream-error-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T07:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T07:00:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          event: "error",
+          data: {
+            message: "Upstream streaming failed",
+            error_code: "invalid_params",
+            source: "upstream_a2a",
+            jsonrpc_code: -32602,
+            missing_params: [
+              { name: "project_id", required: true },
+              { name: "channel_id", required: true },
+            ],
+            upstream_error: {
+              message: "project_id/channel_id required",
+            },
+          },
+        });
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    const agentMessage = getConversationMessages(conversationId).find(
+      (message) => message.id === agentMessageId,
+    );
+
+    expect(state.sessions[conversationId]?.streamState).toBe("error");
+    expect(state.sessions[conversationId]?.lastStreamError).toBe(
+      "缺少上游必需参数：project_id, channel_id",
+    );
+    expect(agentMessage).toMatchObject({
+      status: "error",
+      errorCode: "invalid_params",
+      errorMessage: "缺少上游必需参数：project_id, channel_id",
+      errorSource: "upstream_a2a",
+      jsonrpcCode: -32602,
+      missingParams: [
+        { name: "project_id", required: true },
+        { name: "channel_id", required: true },
+      ],
+      upstreamError: {
+        message: "project_id/channel_id required",
+      },
+    });
+  });
+
   it("renders compatible text chunks during stream without empty-content recovery", async () => {
     const conversationId = "conv-stream-compat-1";
     const agentId = "agent-compat-1";

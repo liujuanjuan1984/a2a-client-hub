@@ -25,6 +25,27 @@ export type ChatMessage = {
   blocks?: MessageBlock[];
   errorCode?: string | null;
   errorMessage?: string | null;
+  errorSource?: string | null;
+  jsonrpcCode?: number | null;
+  missingParams?: StreamMissingParam[] | null;
+  upstreamError?: Record<string, unknown> | null;
+};
+
+export type StreamMissingParam = {
+  name: string;
+  required: boolean;
+};
+
+export type StreamErrorDetails = {
+  errorCode: string | null;
+  source: string | null;
+  jsonrpcCode: number | null;
+  missingParams: StreamMissingParam[] | null;
+  upstreamError: Record<string, unknown> | null;
+};
+
+export type ParsedStreamError = StreamErrorDetails & {
+  message: string;
 };
 
 export type ToolCallView = {
@@ -266,6 +287,27 @@ const pickRawString = (
   return null;
 };
 
+const pickInt = (
+  source: Record<string, unknown> | null,
+  keys: string[],
+): number | null => {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "number" && Number.isInteger(value)) {
+      return value;
+    }
+    if (
+      typeof value === "string" &&
+      value.trim().length > 0 &&
+      /^-?\d+$/.test(value.trim())
+    ) {
+      return Number.parseInt(value.trim(), 10);
+    }
+  }
+  return null;
+};
+
 const resolveNestedValue = (
   source: Record<string, unknown> | null,
   path: string[],
@@ -311,6 +353,78 @@ const pickFirstArray = (
     }
   }
   return [];
+};
+
+const normalizeMissingParam = (value: unknown): StreamMissingParam | null => {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return {
+      name: value.trim(),
+      required: true,
+    };
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+  const name =
+    pickString(record, ["name", "field", "param", "id"]) ??
+    pickRawString(record, ["name", "field", "param", "id"]);
+  if (!name) {
+    return null;
+  }
+  return {
+    name,
+    required: typeof record.required === "boolean" ? record.required : true,
+  };
+};
+
+const coerceMissingParams = (value: unknown): StreamMissingParam[] | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const entries = Array.isArray(value) ? value : [value];
+  const normalized = entries
+    .map((entry) => normalizeMissingParam(entry))
+    .filter((entry): entry is StreamMissingParam => Boolean(entry));
+  if (!normalized.length) {
+    return null;
+  }
+  const unique = new Map<string, StreamMissingParam>();
+  normalized.forEach((entry) => {
+    if (!unique.has(entry.name)) {
+      unique.set(entry.name, entry);
+    }
+  });
+  return Array.from(unique.values());
+};
+
+export const extractStreamErrorDetails = (
+  data: Record<string, unknown>,
+  fallbackMessage = "Stream error.",
+): ParsedStreamError => {
+  const message =
+    pickString(data, ["message", "error"]) ??
+    pickRawString(data, ["message", "error"]) ??
+    fallbackMessage;
+  const upstreamError =
+    asRecord(data.upstream_error) ?? asRecord(data.upstreamError);
+  const missingParams =
+    coerceMissingParams(data.missing_params ?? data.missingParams) ??
+    coerceMissingParams(
+      resolveNestedValue(upstreamError, ["data", "missing_params"]),
+    ) ??
+    coerceMissingParams(
+      resolveNestedValue(upstreamError, ["data", "missingParams"]),
+    );
+
+  return {
+    message,
+    errorCode: pickString(data, ["error_code", "errorCode"]),
+    source: pickString(data, ["source"]),
+    jsonrpcCode: pickInt(data, ["jsonrpc_code", "jsonrpcCode"]),
+    missingParams,
+    upstreamError,
+  };
 };
 
 const extractInterruptDisplayMessage = (

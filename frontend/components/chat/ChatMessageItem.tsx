@@ -22,9 +22,21 @@ const STREAM_FAILURE_ERROR_CODES = new Set([
   "upstream_stream_error",
 ]);
 
+const formatMissingParamLabel = (message: ChatMessage): string | null => {
+  if (!message.missingParams?.length) {
+    return null;
+  }
+  return message.missingParams.map((item) => item.name).join(", ");
+};
+
 const resolveErrorBannerText = (message: ChatMessage): string => {
   const normalizedErrorCode =
     typeof message.errorCode === "string" ? message.errorCode.trim() : "";
+  const missingParamLabel = formatMissingParamLabel(message);
+
+  if (missingParamLabel) {
+    return `缺少上游必需参数：${missingParamLabel}`;
+  }
 
   if (AGENT_CONNECTIVITY_ERROR_CODES.has(normalizedErrorCode)) {
     return "当前无法连接到上游 Agent，请稍后重试。";
@@ -35,6 +47,15 @@ const resolveErrorBannerText = (message: ChatMessage): string => {
   }
 
   if (STREAM_FAILURE_ERROR_CODES.has(normalizedErrorCode)) {
+    if (
+      typeof message.errorMessage === "string" &&
+      message.errorMessage.trim() &&
+      (message.errorSource === "upstream_a2a" ||
+        message.jsonrpcCode != null ||
+        Boolean(message.upstreamError))
+    ) {
+      return message.errorMessage.trim();
+    }
     return "流响应异常，请重试。";
   }
 

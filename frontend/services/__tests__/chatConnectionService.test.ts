@@ -159,7 +159,7 @@ describe("chatConnectionService", () => {
 
       expect(callbacks.onStreamError).toHaveBeenCalledWith(
         "WebSocket closed unexpectedly",
-        "stream_closed",
+        { errorCode: "stream_closed" },
       );
     });
 
@@ -189,10 +189,9 @@ describe("chatConnectionService", () => {
         await p;
       } catch {}
 
-      expect(callbacks.onStreamError).toHaveBeenCalledWith(
-        "WebSocket error",
-        "stream_error",
-      );
+      expect(callbacks.onStreamError).toHaveBeenCalledWith("WebSocket error", {
+        errorCode: "stream_error",
+      });
     });
   });
 
@@ -201,7 +200,11 @@ describe("chatConnectionService", () => {
       fetchSSE.mockImplementationOnce(async (_url, handlers) => {
         handlers.onData?.({ kind: "chunk" });
         const error = Object.assign(new Error("Upstream streaming failed"), {
-          errorCode: "agent_unavailable",
+          errorCode: "invalid_params",
+          source: "upstream_a2a",
+          jsonrpcCode: -32602,
+          missingParams: [{ name: "project_id", required: true }],
+          upstreamError: { message: "project_id required" },
         });
         handlers.onError?.(error);
       });
@@ -223,7 +226,13 @@ describe("chatConnectionService", () => {
       expect(result).toBe(true);
       expect(callbacks.onStreamError).toHaveBeenCalledWith(
         "Upstream streaming failed",
-        "agent_unavailable",
+        {
+          errorCode: "invalid_params",
+          source: "upstream_a2a",
+          jsonrpcCode: -32602,
+          missingParams: [{ name: "project_id", required: true }],
+          upstreamError: { message: "project_id required" },
+        },
       );
     });
   });

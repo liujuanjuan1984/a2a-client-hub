@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 
 import type { A2AAgentInvokeRequest } from "@/lib/api/a2aAgents";
+import type { StreamErrorDetails } from "@/lib/api/chat-utils";
 import { ENV } from "@/lib/config";
 import type { AgentSource } from "@/store/agents";
 
@@ -22,7 +23,10 @@ export type WsCtor = new (
 export type StreamCallbacks = {
   onData: (data: Record<string, unknown>) => boolean | void;
   onDone: () => void;
-  onStreamError: (message: string, errorCode?: string | null) => void;
+  onStreamError: (
+    message: string,
+    details?: Partial<StreamErrorDetails>,
+  ) => void;
 };
 
 export type TransportParams = {

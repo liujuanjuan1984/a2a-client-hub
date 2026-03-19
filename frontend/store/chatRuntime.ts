@@ -3,10 +3,13 @@ import {
   applyStreamBlockUpdate,
   buildInterruptEventBlockUpdate,
   type ChatMessage,
+  extractStreamErrorDetails,
   extractRuntimeStatusEvent,
   extractSessionMeta,
   finalizeMessageBlocks,
   type PendingRuntimeInterrupt,
+  type StreamErrorDetails,
+  type StreamMissingParam,
   type RuntimeInterrupt,
   type StreamBlockUpdate,
   extractStreamBlockUpdate,
@@ -159,6 +162,48 @@ const buildApiErrorMessage = (error: unknown): string => {
 
 const normalizeErrorCode = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+const formatMissingParamLabel = (
+  missingParams: StreamMissingParam[] | null | undefined,
+) => {
+  if (!missingParams?.length) {
+    return null;
+  }
+  return missingParams.map((item) => item.name).join(", ");
+};
+
+const extractUpstreamErrorMessage = (
+  upstreamError: Record<string, unknown> | null | undefined,
+) => {
+  if (!upstreamError) {
+    return null;
+  }
+  const message = upstreamError.message;
+  return typeof message === "string" && message.trim().length > 0
+    ? message.trim()
+    : null;
+};
+
+const buildStreamErrorMessage = ({
+  errorText,
+  details,
+}: {
+  errorText: string;
+  details?: Partial<StreamErrorDetails>;
+}) => {
+  const missingParams = formatMissingParamLabel(details?.missingParams);
+  if (missingParams) {
+    return `缺少上游必需参数：${missingParams}`;
+  }
+  const upstreamMessage = extractUpstreamErrorMessage(details?.upstreamError);
+  if (
+    upstreamMessage &&
+    ["Upstream streaming failed", "Stream error."].includes(errorText.trim())
+  ) {
+    return upstreamMessage;
+  }
+  return errorText;
+};
 
 const buildApiErrorDetails = (error: unknown) => ({
   message: buildApiErrorMessage(error),
@@ -780,10 +825,10 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
 
   const finalizeStreamingFailure = ({
     errorText,
-    errorCode,
+    details,
   }: {
     errorText: string;
-    errorCode?: string | null;
+    details?: Partial<StreamErrorDetails>;
   }) => {
     if (terminalHandled) {
       return;
@@ -791,7 +836,11 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     terminalHandled = true;
     flushChunkBuffer();
 
-    const normalizedErrorCode = normalizeErrorCode(errorCode);
+    const normalizedErrorCode = normalizeErrorCode(details?.errorCode);
+    const normalizedErrorMessage = buildStreamErrorMessage({
+      errorText,
+      details,
+    });
 
     const currentMsg = getConversationMessages(conversationId).find(
       (m) => m.id === activeAgentMessageId,
@@ -801,12 +850,16 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       status: "error",
       content: currentMsg?.content ?? "",
       errorCode: normalizedErrorCode,
-      errorMessage: errorText,
+      errorMessage: normalizedErrorMessage,
+      errorSource: details?.source ?? null,
+      jsonrpcCode: details?.jsonrpcCode ?? null,
+      missingParams: details?.missingParams ?? null,
+      upstreamError: details?.upstreamError ?? null,
     });
 
     patchSession({
       streamState: "error",
-      lastStreamError: errorText,
+      lastStreamError: normalizedErrorMessage,
       pendingInterrupt: null,
     });
     warnStreamOnce(
@@ -815,15 +868,21 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       {
         conversationId,
         source: get().sessions[conversationId]?.source ?? null,
-        message: errorText,
+        message: normalizedErrorMessage,
         errorCode: normalizedErrorCode,
+        errorSource: details?.source ?? null,
+        jsonrpcCode: details?.jsonrpcCode ?? null,
+        missingParams: details?.missingParams ?? null,
         transport: get().sessions[conversationId]?.transport ?? "unknown",
       },
     );
   };
 
-  const appendStreamError = (errorText: string, errorCode?: string | null) => {
-    finalizeStreamingFailure({ errorText, errorCode });
+  const appendStreamError = (
+    errorText: string,
+    details?: Partial<StreamErrorDetails>,
+  ) => {
+    finalizeStreamingFailure({ errorText, details });
   };
 
   const completeStreamingMessage = () => {
@@ -897,27 +956,19 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       callbacks: {
         onData: (data) => {
           if (data.event === "error") {
-            const maybePayload = data.data as
-              | {
-                  message?: unknown;
-                  error_code?: unknown;
-                }
-              | undefined;
-            const rawErrorCode = maybePayload?.error_code;
-            const normalizedErrorCode =
-              typeof rawErrorCode === "string" ? rawErrorCode.trim() : "";
-            if (normalizedErrorCode === "session_not_found") {
+            const maybePayload =
+              data.data && typeof data.data === "object"
+                ? (data.data as Record<string, unknown>)
+                : {};
+            const details = extractStreamErrorDetails(maybePayload);
+            if (details.errorCode === "session_not_found") {
               console.info("[Chat Stream] recoverable error received", {
                 conversationId,
-                errorCode: normalizedErrorCode,
+                errorCode: details.errorCode,
               });
               return false;
             }
-            const message =
-              typeof maybePayload?.message === "string"
-                ? (maybePayload as { message: string }).message
-                : "Stream error.";
-            appendStreamError(message, normalizedErrorCode || null);
+            appendStreamError(details.message, details);
             return true;
           }
 
@@ -969,7 +1020,9 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           response.error || response.error_code || "Request failed.";
         finalizeStreamingFailure({
           errorText: message,
-          errorCode: normalizeErrorCode(response.error_code),
+          details: {
+            errorCode: normalizeErrorCode(response.error_code),
+          },
         });
         return;
       }
@@ -985,7 +1038,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       const { message, errorCode } = buildApiErrorDetails(error);
       finalizeStreamingFailure({
         errorText: message,
-        errorCode,
+        details: { errorCode },
       });
     }
   };
