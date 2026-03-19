@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from app.utils.logging_redaction import redact_sensitive_value
 
@@ -102,7 +102,7 @@ def _sanitize_log_sample(
 
 
 def build_artifact_update_log_sample(payload: dict[str, Any]) -> dict[str, Any]:
-    return _sanitize_log_sample(payload)
+    return cast(dict[str, Any], _sanitize_log_sample(payload))
 
 
 def build_validation_errors_log_sample(validation_errors: list[str]) -> list[str]:

@@ -7,7 +7,7 @@ cd "${REPO_ROOT}"
 declare -a CANDIDATES=()
 declare -a OUTSIDE_SCOPE=()
 declare -A SEEN=()
-INCLUDE_REGEX=${MYPY_INCLUDE_REGEX:-^backend/app/(utils|schemas)/.*\.py$}
+INCLUDE_REGEX=${MYPY_INCLUDE_REGEX:-^backend/app/((utils|schemas)/.*\.py|services/(a2a_stream_diagnostics|interrupt_metadata_normalization|invoke_guard)\.py)$}
 
 normalize_path() {
   local path="$1"
