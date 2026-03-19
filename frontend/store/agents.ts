@@ -43,7 +43,10 @@ export const useAgentStore = create<AgentState>()(
     }),
     {
       name: "a2a-client-hub.agents",
-      storage: createPersistStorage(),
+      storage: createPersistStorage({
+        baseKey: "a2a-client-hub.agents",
+        scope: "web_tab",
+      }),
       version: 2,
       migrate: (persistedState) => {
         const raw = (persistedState ?? {}) as {

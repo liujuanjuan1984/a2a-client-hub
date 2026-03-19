@@ -30,6 +30,7 @@ Server state and client state are intentionally separated:
 
 - Auth token remains memory-only and is recovered via refresh-cookie flow; it is not persisted in local storage.
 - Native MMKV persistence uses isolated instances by key family to reduce interference between high-volume and regular stores.
+- Web persisted UI state that is chat-local or tab-local uses tab-scoped storage keys to avoid cross-tab overwrite.
 - Persisted data is treated as disposable cache: invalid payloads are dropped instead of recovered.
 - High-volume chat payloads use bounded persistence strategy (compaction on web quota pressure).
 

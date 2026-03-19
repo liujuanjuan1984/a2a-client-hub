@@ -550,7 +550,10 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: "a2a-client-hub.chat",
-      storage: createPersistStorage(),
+      storage: createPersistStorage({
+        baseKey: "a2a-client-hub.chat",
+        scope: "web_tab",
+      }),
       partialize: (state) => ({
         sessions: buildPersistedSessions(state.sessions),
       }),

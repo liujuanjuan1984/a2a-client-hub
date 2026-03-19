@@ -10,7 +10,9 @@ const isExpoGo = Constants?.appOwnership === "expo";
 const isWeb = Platform.OS === "web";
 
 const MMKV_ENCRYPTION_KEY = "a2a-mmkv-encryption-key";
+const WEB_TAB_ID_KEY = "a2a-client-hub.tab-id";
 const CHAT_PERSIST_KEY = "a2a-client-hub.chat";
+const AGENTS_PERSIST_KEY = "a2a-client-hub.agents";
 const LEGACY_STORAGE_KEYS = [
   "a2a-client-hub.messages",
   "a2a-client-hub.shortcuts",
@@ -21,6 +23,8 @@ const MMKV_INSTANCE_ID_CHAT = "a2a-chat-storage";
 const MMKV_INSTANCE_ID_MESSAGES = "a2a-messages-storage";
 
 const mmkvInstances: Record<string, MMKV> = {};
+
+export type PersistScope = "shared" | "web_tab";
 
 const bytesToHex = (bytes: Uint8Array) =>
   Array.from(bytes)
@@ -40,6 +44,19 @@ const generateEncryptionKey = async () => {
 
 const shouldRunConsistencyCheck = (name: string) =>
   name.startsWith("a2a-client-hub.");
+
+const resolvePersistKeyFamily = (name: string) => {
+  if (name === CHAT_PERSIST_KEY || name.startsWith(`${CHAT_PERSIST_KEY}.`)) {
+    return CHAT_PERSIST_KEY;
+  }
+  if (
+    name === AGENTS_PERSIST_KEY ||
+    name.startsWith(`${AGENTS_PERSIST_KEY}.`)
+  ) {
+    return AGENTS_PERSIST_KEY;
+  }
+  return name;
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -75,7 +92,7 @@ const persistedPayloadValidators: Record<string, (value: unknown) => boolean> =
       }
       return isRecord(state.sessions);
     },
-    "a2a-client-hub.agents": (value) => {
+    [AGENTS_PERSIST_KEY]: (value) => {
       if (!isPersistEnvelopeShape(value)) {
         return false;
       }
@@ -101,7 +118,7 @@ const isValidPersistedPayload = (name: string, value: string): boolean => {
   }
   try {
     const parsed = JSON.parse(value) as unknown;
-    const validator = persistedPayloadValidators[name];
+    const validator = persistedPayloadValidators[resolvePersistKeyFamily(name)];
     if (!validator) {
       return true;
     }
@@ -115,7 +132,7 @@ const getInstanceId = (name: string) => {
   if (name.includes("messages")) {
     return MMKV_INSTANCE_ID_MESSAGES;
   }
-  if (name === CHAT_PERSIST_KEY || name.includes("chat")) {
+  if (name === CHAT_PERSIST_KEY || name.startsWith(`${CHAT_PERSIST_KEY}.`)) {
     return MMKV_INSTANCE_ID_CHAT;
   }
   return MMKV_INSTANCE_ID_DEFAULT;
@@ -231,6 +248,63 @@ const compactChatPersistPayload = (
   }
 };
 
+const generateWebTabId = () => {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    return bytesToHex(bytes);
+  }
+  return `tab-${Math.random().toString(16).slice(2)}`;
+};
+
+const getOrCreateWebTabId = () => {
+  if (
+    !isWeb ||
+    typeof window === "undefined" ||
+    typeof window.sessionStorage === "undefined"
+  ) {
+    return null;
+  }
+  const existing = window.sessionStorage.getItem(WEB_TAB_ID_KEY)?.trim();
+  if (existing) {
+    return existing;
+  }
+  const generated = generateWebTabId();
+  if (!generated) {
+    return null;
+  }
+  window.sessionStorage.setItem(WEB_TAB_ID_KEY, generated);
+  return generated;
+};
+
+export const buildPersistStorageName = (
+  baseKey: string,
+  scope: PersistScope = "shared",
+) => {
+  if (scope !== "web_tab" || !isWeb) {
+    return baseKey;
+  }
+  const tabId = getOrCreateWebTabId();
+  return tabId ? `${baseKey}.${tabId}` : baseKey;
+};
+
+const readWebStorageItem = (name: string) => {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return null;
+  }
+  return window.localStorage.getItem(name);
+};
+
+const removeWebStorageItem = (name: string) => {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  window.localStorage.removeItem(name);
+};
+
 const setWebStorageWithQuotaRecovery = (
   storage: Storage,
   name: string,
@@ -297,9 +371,7 @@ const setWebStorageWithQuotaRecovery = (
 export const mmkvStateStorage: StateStorage = {
   getItem: async (name) => {
     if (isWeb) {
-      return typeof window !== "undefined" && window.localStorage
-        ? window.localStorage.getItem(name)
-        : null;
+      return readWebStorageItem(name);
     }
     const mmkv = await getMmkvInstance(getInstanceId(name));
     if (mmkv) {
@@ -378,9 +450,7 @@ export const mmkvStateStorage: StateStorage = {
   },
   removeItem: async (name) => {
     if (isWeb) {
-      if (typeof window !== "undefined" && window.localStorage) {
-        window.localStorage.removeItem(name);
-      }
+      removeWebStorageItem(name);
       return;
     }
     const mmkv = await getMmkvInstance(getInstanceId(name));
@@ -407,5 +477,61 @@ export const mmkvStateStorage: StateStorage = {
   },
 };
 
-export const createPersistStorage = () =>
-  createJSONStorage(() => mmkvStateStorage);
+type PersistStorageOptions = {
+  baseKey?: string;
+  scope?: PersistScope;
+};
+
+const buildScopedStorage = (options?: PersistStorageOptions): StateStorage => {
+  const baseKey = options?.baseKey?.trim();
+  const scope = options?.scope ?? "shared";
+  const scopedBaseKey =
+    baseKey && scope === "web_tab"
+      ? buildPersistStorageName(baseKey, scope)
+      : null;
+
+  return {
+    getItem: async (name) => {
+      const value = await mmkvStateStorage.getItem(name);
+      if (
+        value !== null ||
+        !isWeb ||
+        scope !== "web_tab" ||
+        !baseKey ||
+        !scopedBaseKey
+      ) {
+        return value;
+      }
+      const legacyValue = readWebStorageItem(baseKey);
+      if (legacyValue === null) {
+        return null;
+      }
+      if (!isValidPersistedPayload(baseKey, legacyValue)) {
+        removeWebStorageItem(baseKey);
+        return null;
+      }
+      try {
+        await mmkvStateStorage.setItem(scopedBaseKey, legacyValue);
+      } catch {
+        // Keep fail-open migration behavior and still return the legacy value.
+      }
+      removeWebStorageItem(baseKey);
+      return legacyValue;
+    },
+    setItem: async (name, value) => {
+      await mmkvStateStorage.setItem(name, value);
+      if (isWeb && scope === "web_tab" && baseKey && name !== baseKey) {
+        removeWebStorageItem(baseKey);
+      }
+    },
+    removeItem: async (name) => {
+      await mmkvStateStorage.removeItem(name);
+      if (isWeb && scope === "web_tab" && baseKey && name !== baseKey) {
+        removeWebStorageItem(baseKey);
+      }
+    },
+  };
+};
+
+export const createPersistStorage = (options?: PersistStorageOptions) =>
+  createJSONStorage(() => buildScopedStorage(options));
