@@ -130,6 +130,7 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = [
     "alembic.*",
+    "passlib.*",
     "psycopg2.*",
 ]
 ignore_missing_imports = true

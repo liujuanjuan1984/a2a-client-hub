@@ -58,6 +58,7 @@ Current scope:
 - `backend/app/services/invoke_guard.py`
 - `backend/app/core/config.py`
 - `backend/app/core/http_client.py`
+- `backend/app/core/security.py`
 - `backend/app/db/session.py`
 
 Useful commands:
