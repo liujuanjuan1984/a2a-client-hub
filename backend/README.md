@@ -58,6 +58,8 @@ Current scope:
 - `backend/app/api/deps.py`
 - `backend/app/api/routers/auth.py`
 - `backend/app/api/routers/invitations.py`
+- `backend/app/handlers/agent_message.py`
+- `backend/app/handlers/agent_message_block.py`
 - `backend/app/handlers/auth.py`
 - `backend/app/handlers/invitations.py`
 - `backend/app/middleware/debug_logging.py`

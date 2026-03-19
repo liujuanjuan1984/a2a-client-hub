@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -81,7 +81,7 @@ async def find_block_by_message_and_block_seq(
         )
         .limit(1)
     )
-    return await db.scalar(stmt)
+    return cast(AgentMessageBlock | None, await db.scalar(stmt))
 
 
 async def find_last_block_for_message(
@@ -105,7 +105,7 @@ async def find_last_block_for_message(
         )
         .limit(1)
     )
-    return await db.scalar(stmt)
+    return cast(AgentMessageBlock | None, await db.scalar(stmt))
 
 
 async def create_block(
