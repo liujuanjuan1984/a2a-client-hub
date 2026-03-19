@@ -82,6 +82,7 @@ Current scope:
 - `backend/app/integrations/a2a_extensions/contract_utils.py`
 - `backend/app/integrations/a2a_extensions/session_extension_service.py`
 - `backend/app/integrations/a2a_extensions/shared_support.py`
+- `backend/app/services/a2a_agents.py`
 - `backend/app/services/a2a_invoke_service.py`
 - `backend/app/services/a2a_runtime.py`
 - `backend/app/services/a2a_stream_diagnostics.py`
