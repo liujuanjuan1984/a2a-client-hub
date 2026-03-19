@@ -9,6 +9,7 @@ export type A2AAgentCardValidationResponse = {
   card_description?: string | null;
   card?: Record<string, unknown> | null;
   validation_errors?: string[] | null;
+  validation_warnings?: string[] | null;
 };
 
 export type A2AAgentResponse = {

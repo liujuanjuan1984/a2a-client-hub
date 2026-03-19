@@ -300,6 +300,36 @@ describe("useAgentsCatalogQuery mutations", () => {
     expect(typeof cached?.[0]?.lastCheckedAt).toBe("string");
   });
 
+  it("keeps warning-only validation responses in success state", async () => {
+    queryClient.setQueryData(queryKeys.agents.catalog(), [
+      buildAgent({ id: "agent-1" }),
+    ]);
+
+    mocks.validateAgentCard.mockResolvedValue({
+      success: true,
+      message: "Agent card validated with warnings",
+      validation_warnings: ["Field 'skills' array is empty."],
+    });
+
+    const { result } = renderHook(() => useValidateAgentMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync("agent-1");
+    });
+
+    const cached = queryClient.getQueryData<AgentConfig[]>(
+      queryKeys.agents.catalog(),
+    );
+    expect(cached?.[0]).toMatchObject({
+      id: "agent-1",
+      status: "success",
+      lastError: undefined,
+    });
+    expect(typeof cached?.[0]?.lastCheckedAt).toBe("string");
+  });
+
   it("appends newly created agent to cache without full refetch", async () => {
     queryClient.setQueryData(queryKeys.agents.catalog(), [
       buildAgent({ id: "shared-1", source: "shared" }),

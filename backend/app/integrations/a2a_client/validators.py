@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 
-def validate_agent_card(card_data: dict[str, Any]) -> list[str]:
+@dataclass(slots=True)
+class AgentCardValidationResult:
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def validate_agent_card(card_data: dict[str, Any]) -> AgentCardValidationResult:
     """Validate the structure and fields of an agent card."""
-    errors: list[str] = []
+    result = AgentCardValidationResult()
 
     required_fields = frozenset(
         [
@@ -22,37 +29,41 @@ def validate_agent_card(card_data: dict[str, Any]) -> list[str]:
         ]
     )
 
-    for field in required_fields:
-        if field not in card_data:
-            errors.append(f"Required field is missing: '{field}'.")
+    for field_name in required_fields:
+        if field_name not in card_data:
+            result.errors.append(f"Required field is missing: '{field_name}'.")
 
     if "url" in card_data and not (
         card_data["url"].startswith("http://")
         or card_data["url"].startswith("https://")
     ):
-        errors.append(
+        result.errors.append(
             "Field 'url' must be an absolute URL starting with http:// or https://."
         )
 
     if "capabilities" in card_data and not isinstance(card_data["capabilities"], dict):
-        errors.append("Field 'capabilities' must be an object.")
+        result.errors.append("Field 'capabilities' must be an object.")
 
-    for field in ["defaultInputModes", "defaultOutputModes"]:
-        if field in card_data:
-            if not isinstance(card_data[field], list):
-                errors.append(f"Field '{field}' must be an array of strings.")
-            elif not all(isinstance(item, str) for item in card_data[field]):
-                errors.append(f"All items in '{field}' must be strings.")
+    for field_name in ["defaultInputModes", "defaultOutputModes"]:
+        if field_name in card_data:
+            if not isinstance(card_data[field_name], list):
+                result.errors.append(
+                    f"Field '{field_name}' must be an array of strings."
+                )
+            elif not all(isinstance(item, str) for item in card_data[field_name]):
+                result.errors.append(f"All items in '{field_name}' must be strings.")
 
     if "skills" in card_data:
         if not isinstance(card_data["skills"], list):
-            errors.append("Field 'skills' must be an array of AgentSkill objects.")
+            result.errors.append(
+                "Field 'skills' must be an array of AgentSkill objects."
+            )
         elif not card_data["skills"]:
-            errors.append(
+            result.warnings.append(
                 "Field 'skills' array is empty. Agent must have at least one skill if it performs actions."
             )
 
-    return errors
+    return result
 
 
 def _validate_task(data: dict[str, Any]) -> list[str]:
@@ -117,4 +128,4 @@ def validate_message(data: dict[str, Any]) -> list[str]:
     return [f"Unknown message kind received: '{kind}'."]
 
 
-__all__ = ["validate_agent_card", "validate_message"]
+__all__ = ["AgentCardValidationResult", "validate_agent_card", "validate_message"]

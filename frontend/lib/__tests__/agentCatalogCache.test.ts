@@ -172,4 +172,13 @@ describe("agentCatalogCache", () => {
       AGENT_ERROR_MESSAGES.connectionFailed,
     );
   });
+
+  it("does not treat warning-only validation payloads as error details", () => {
+    expect(
+      toValidationErrorMessage({
+        validation_warnings: ["empty skills"],
+        message: "Agent card validated with warnings",
+      }),
+    ).toBe("Agent card validated with warnings");
+  });
 });

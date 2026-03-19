@@ -57,9 +57,13 @@ class A2AAgentCardValidationResponse(BaseModel):
     validation_errors: Optional[List[str]] = Field(
         default=None, description="Detailed validation errors (only in debug mode)"
     )
+    validation_warnings: Optional[List[str]] = Field(
+        default=None,
+        description="Non-blocking validation warnings exposed to clients",
+    )
     shared_session_query: Optional[SharedSessionQueryDiagnostic] = Field(
         default=None,
-        description="接入期 shared session query extension 兼容诊断结果",
+        description="Shared session query extension compatibility diagnostics",
     )
 
 
