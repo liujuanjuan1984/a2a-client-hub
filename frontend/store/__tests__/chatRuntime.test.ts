@@ -399,6 +399,12 @@ describe("executeChatRuntime empty-content recovery", () => {
           message_id: agentMessageId,
           event_id: `${agentMessageId}:1`,
           seq: 1,
+          tool_call: {
+            name: "bash",
+            status: "running",
+            callId: "call-1",
+            arguments: { command: "pwd" },
+          },
           artifact: {
             artifactId: `${agentMessageId}:stream`,
             parts: [
@@ -432,7 +438,9 @@ describe("executeChatRuntime empty-content recovery", () => {
         renderedDuringStream =
           agentMessage?.status === "streaming" &&
           (agentMessage.blocks?.length ?? 0) > 0 &&
-          agentMessage?.blocks?.[0]?.type === "tool_call";
+          agentMessage?.blocks?.[0]?.type === "tool_call" &&
+          agentMessage?.blocks?.[0]?.toolCall?.name === "bash" &&
+          agentMessage?.blocks?.[0]?.toolCall?.status === "running";
 
         params.callbacks.onData({
           kind: "status-update",

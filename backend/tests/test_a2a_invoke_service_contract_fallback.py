@@ -130,3 +130,11 @@ def test_extract_stream_chunk_reads_tool_call_content_from_data_parts():
     assert chunk["message_id"] == "msg-data"
     assert chunk["event_id"] == "evt-data"
     assert chunk["seq"] == 8
+    assert chunk["tool_call"] == {
+        "name": "read",
+        "status": "running",
+        "callId": "call-1",
+        "arguments": {},
+        "result": None,
+        "error": None,
+    }

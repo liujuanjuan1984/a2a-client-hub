@@ -49,6 +49,7 @@ export type StreamBlockUpdate = {
   delta: string;
   append: boolean;
   done: boolean;
+  toolCall?: ToolCallView | null;
 };
 
 export type RuntimeStatusEvent = {
@@ -357,6 +358,32 @@ const pickInteger = (
     }
   }
   return null;
+};
+
+const extractToolCallView = (
+  source: Record<string, unknown> | null,
+): ToolCallView | null => {
+  if (!source) {
+    return null;
+  }
+  const status = pickString(source, ["status"]);
+  if (
+    status !== "running" &&
+    status !== "success" &&
+    status !== "failed" &&
+    status !== "interrupted" &&
+    status !== "unknown"
+  ) {
+    return null;
+  }
+  return {
+    name: pickRawString(source, ["name"]) ?? null,
+    status,
+    callId: pickRawString(source, ["callId", "call_id"]) ?? null,
+    arguments: source.arguments,
+    result: source.result,
+    error: source.error,
+  };
 };
 
 const normalizeRuntimeState = (state: string) => state.trim().toLowerCase();
@@ -812,6 +839,15 @@ export const extractStreamBlockUpdate = (
       pickString(metadata, ["role"]) ??
       pickString(rootMetadata, ["role"]),
   );
+  const toolCall =
+    blockType === "tool_call"
+      ? extractToolCallView(
+          asRecord(data.tool_call) ??
+            asRecord(data.toolCall) ??
+            asRecord(artifact?.tool_call) ??
+            asRecord(artifact?.toolCall),
+        )
+      : null;
 
   return {
     eventId,
@@ -826,6 +862,7 @@ export const extractStreamBlockUpdate = (
     delta,
     append,
     done,
+    toolCall,
   };
 };
 
@@ -847,6 +884,9 @@ export const applyStreamBlockUpdate = (
   ) {
     lastBlock.content += update.delta;
     lastBlock.isFinished = update.done;
+    if (update.toolCall !== undefined) {
+      lastBlock.toolCall = update.toolCall ?? null;
+    }
     lastBlock.updatedAt = now;
     return blocks;
   }
@@ -865,6 +905,11 @@ export const applyStreamBlockUpdate = (
         ...lastNextBlock,
         content: update.delta,
         isFinished: update.done,
+        ...(update.toolCall !== undefined
+          ? { toolCall: update.toolCall ?? null }
+          : lastNextBlock.toolCall !== undefined
+            ? { toolCall: lastNextBlock.toolCall ?? null }
+            : {}),
         updatedAt: now,
       };
       return nextBlocks;
@@ -881,6 +926,9 @@ export const applyStreamBlockUpdate = (
       type: update.blockType,
       content: update.delta,
       isFinished: update.done,
+      ...(update.toolCall !== undefined
+        ? { toolCall: update.toolCall ?? null }
+        : {}),
       createdAt: now,
       updatedAt: now,
     });
@@ -901,6 +949,9 @@ export const applyStreamBlockUpdate = (
     type: update.blockType,
     content: update.delta,
     isFinished: update.done,
+    ...(update.toolCall !== undefined
+      ? { toolCall: update.toolCall ?? null }
+      : {}),
     createdAt: now,
     updatedAt: now,
   });
