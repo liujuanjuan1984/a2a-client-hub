@@ -441,6 +441,7 @@ class A2AInvokeService:
     ) -> dict[str, Any]:
         from app.core.config import settings
 
+        resolved: Any
         if isinstance(event, tuple):
             resolved = event[1] if event[1] else event[0]
         else:
@@ -584,8 +585,12 @@ class A2AInvokeService:
         heartbeat_interval_seconds: float,
     ) -> AsyncIterator[StreamEvent | None]:
         stream_iter = stream.__aiter__()
+
+        async def _next_stream_event() -> StreamEvent:
+            return await stream_iter.__anext__()
+
         next_event_task: asyncio.Task[StreamEvent] = asyncio.create_task(
-            anext(stream_iter)
+            _next_stream_event()
         )
         try:
             while True:
@@ -605,7 +610,7 @@ class A2AInvokeService:
                 except StopAsyncIteration:
                     return
 
-                next_event_task = asyncio.create_task(anext(stream_iter))
+                next_event_task = asyncio.create_task(_next_stream_event())
                 yield event
         finally:
             if not next_event_task.done():
