@@ -7,7 +7,7 @@ cd "${REPO_ROOT}"
 declare -a CANDIDATES=()
 declare -a OUTSIDE_SCOPE=()
 declare -A SEEN=()
-INCLUDE_REGEX=${MYPY_INCLUDE_REGEX:-^backend/app/((utils|schemas|core|db)/.*\.py|api/deps\.py|api/routers/(auth|invitations)\.py|handlers/(agent_message|agent_message_block|auth|invitations)\.py|middleware/debug_logging\.py|services/(a2a_stream_diagnostics|a2a_schedule_projection|a2a_schedule_runtime_summary|a2a_schedule_time|interrupt_metadata_normalization|invoke_guard|scheduler|shortcut_service|ws_ticket_service)\.py)$}
+INCLUDE_REGEX=${MYPY_INCLUDE_REGEX:-^backend/app/((utils|schemas|core|db)/.*\.py|api/deps\.py|api/routers/(auth|invitations)\.py|handlers/(agent_message|agent_message_block|auth|invitations)\.py|middleware/debug_logging\.py|services/(a2a_stream_diagnostics|a2a_schedule_crud|a2a_schedule_projection|a2a_schedule_runtime_summary|a2a_schedule_time|interrupt_metadata_normalization|invoke_guard|scheduler|shortcut_service|ws_ticket_service)\.py)$}
 
 normalize_path() {
   local path="$1"
