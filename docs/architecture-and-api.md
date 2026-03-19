@@ -3,6 +3,9 @@
 This document provides a high-level architecture map and minimal API examples
 for local development and integration testing.
 
+For the broader cross-cutting documentation map, see
+[`docs/README.md`](README.md).
+
 ## System Overview
 
 `a2a-client-hub` is a client hub for user-managed and admin-managed A2A agents.
@@ -27,6 +30,14 @@ for local development and integration testing.
 - `app/integrations/`: outbound A2A clients/extensions
 - `app/db/models/`: SQLAlchemy models
 - `app/core/`: config, security, logging
+
+## Contract References
+
+For the Hub-consumed shared session query extension contract and reference
+payloads, see:
+
+- `docs/contracts/shared-session-query-canonical-contract.md`
+- `docs/contracts/shared-session-query-reference-payloads.json`
 
 ## API Base URL
 

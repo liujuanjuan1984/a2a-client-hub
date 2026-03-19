@@ -58,10 +58,10 @@ For production deployments:
 
 See [security baseline](security-baseline.md) for the full hardening checklist.
 
-## API Base URL
+## Related Environment Reference
 
-Frontend uses `EXPO_PUBLIC_API_BASE_URL`:
+Frontend API base URL configuration is documented in
+[`frontend/README.md`](../frontend/README.md) so the environment variable stays
+defined in one place:
 
-- Recommended (works on Web and Native): `https://<your-api-host>/api/v1`
-- Web-only (same-origin reverse proxy): `/api/v1`
-  - Native must use an absolute URL.
+- `EXPO_PUBLIC_API_BASE_URL`
