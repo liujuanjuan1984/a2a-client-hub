@@ -115,6 +115,9 @@ transactions and stuck scheduler runs:
     lock contention fails fast and retries on the next heartbeat cycle.
 - `A2A_SCHEDULE_TASK_STREAM_IDLE_TIMEOUT`
   - Upstream stream idle timeout. Recommended: 30-120 seconds.
+- `A2A_SCHEDULE_EXECUTION_RETENTION_DAYS`
+  - Retention window for terminal schedule execution history. Recommended:
+    14-30 days for small deployments unless you need a longer audit trail.
 - PostgreSQL `idle_in_transaction_session_timeout`
   - Set a database-level fallback (for example, 60s-300s) to prevent long
     `idle in transaction` sessions on exceptional paths.

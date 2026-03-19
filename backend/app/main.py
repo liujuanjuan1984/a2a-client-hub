@@ -31,6 +31,9 @@ from app.integrations.a2a_extensions import (
 from app.middleware.debug_logging import DebugLoggingMiddleware
 from app.services.a2a_proxy_service import a2a_proxy_service
 from app.services.a2a_schedule_job import ensure_a2a_schedule_job
+from app.services.a2a_schedule_service import (
+    ensure_a2a_schedule_execution_cleanup_job,
+)
 from app.services.health import run_health_checks
 from app.services.scheduler import shutdown_scheduler, start_scheduler
 from app.services.ws_ticket_service import ensure_ws_ticket_cleanup_job
@@ -71,6 +74,7 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
         init_global_http_client()
         start_scheduler()
         ensure_a2a_schedule_job()
+        ensure_a2a_schedule_execution_cleanup_job()
         ensure_ws_ticket_cleanup_job()
 
         async def _init_a2a_service() -> None:

@@ -30,9 +30,21 @@ class A2AScheduleExecution(Base, TimestampMixin, UserOwnedMixin):
             "created_at",
         ),
         Index(
+            "ix_a2a_schedule_executions_user_task_started",
+            "user_id",
+            "task_id",
+            "started_at",
+            "id",
+        ),
+        Index(
             "ix_a2a_schedule_executions_queue_poll",
             "status",
             "scheduled_for",
+        ),
+        Index(
+            "ix_a2a_schedule_executions_terminal_finished",
+            "finished_at",
+            postgresql_where=text("status IN ('success', 'failed')"),
         ),
         Index(
             "uq_a2a_schedule_executions_active_task",

@@ -9,7 +9,6 @@ from sqlalchemy import select
 
 from app.api.retry_after import DB_BUSY_RETRY_AFTER_SECONDS
 from app.api.routers import a2a_schedules
-from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.services.a2a_schedule_service import (
@@ -19,23 +18,11 @@ from app.services.a2a_schedule_service import (
 )
 from app.utils.timezone_util import utc_now
 from tests.api_utils import create_test_client
-from tests.utils import create_user
+from tests.utils import create_a2a_agent, create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
-
-async def _create_agent(async_db_session, *, user_id, suffix: str) -> A2AAgent:
-    agent = A2AAgent(
-        user_id=user_id,
-        name=f"Agent {suffix}",
-        card_url=f"https://example.com/{suffix}",
-        auth_type="none",
-        enabled=True,
-    )
-    async_db_session.add(agent)
-    await async_db_session.commit()
-    await async_db_session.refresh(agent)
-    return agent
+_create_agent = create_a2a_agent
 
 
 async def test_call_schedule_maps_db_lock_conflict_to_http_409() -> None:
