@@ -16,27 +16,11 @@ Thanks for contributing.
 
 ## Development Setup
 
-### Backend
+To avoid keeping multiple setup guides in sync, use:
 
-```bash
-cd backend
-uv sync --extra dev --locked
-cp .env.example .env
-uv run python scripts/setup_db_schema.py --create
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-cp .env.example .env
-npm run start
-```
-
-Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your environment.
+- [README.md](README.md) for repository-level quick start
+- [backend/README.md](backend/README.md) for backend local setup and runtime notes
+- [frontend/README.md](frontend/README.md) for frontend environment and behavior notes
 
 ## Validation Requirements
 

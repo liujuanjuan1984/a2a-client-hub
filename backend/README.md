@@ -81,6 +81,15 @@ Credentials:
 This backend supports querying upstream sessions and message history via a
 shared A2A Agent Card extension contract.
 
+Contract references:
+
+- Canonical contract:
+  [`docs/contracts/shared-session-query-canonical-contract.md`](../docs/contracts/shared-session-query-canonical-contract.md)
+- Reference payloads:
+  [`docs/contracts/shared-session-query-reference-payloads.json`](../docs/contracts/shared-session-query-reference-payloads.json)
+- Cross-cutting API examples:
+  [`docs/architecture-and-api.md`](../docs/architecture-and-api.md)
+
 Requirements:
 
 - Configure `A2A_PROXY_ALLOWED_HOSTS` to allow the downstream host(s).

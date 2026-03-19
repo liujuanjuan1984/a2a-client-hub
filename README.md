@@ -132,6 +132,7 @@ You can observe these via `/health` under `a2a.ops_metrics`:
 
 ## Key docs
 
+- Documentation index: [docs/README.md](docs/README.md)
 - Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Automation protocol: [AGENTS.md](AGENTS.md)
 - Backend details: [backend/README.md](backend/README.md)
