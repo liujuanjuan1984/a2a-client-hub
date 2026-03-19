@@ -100,6 +100,95 @@ def test_extract_interrupt_lifecycle_keeps_question_descriptions() -> None:
     }
 
 
+def test_extract_interrupt_lifecycle_ignores_codex_private_permission_details() -> None:
+    payload = {
+        "kind": "status-update",
+        "status": {"state": "input-required"},
+        "metadata": {
+            "shared": {
+                "interrupt": {
+                    "request_id": "perm-codex-1",
+                    "type": "permission",
+                    "details": {},
+                }
+            },
+            "codex": {
+                "interrupt": {
+                    "metadata": {
+                        "method": "execCommandApproval",
+                        "raw": {
+                            "request": {
+                                "description": "Agent wants to read the environment file."
+                            },
+                            "parsedCmd": [
+                                {
+                                    "cmd": "cat .env",
+                                    "path": "/repo/.env",
+                                    "type": "read",
+                                }
+                            ],
+                        },
+                    }
+                }
+            },
+        },
+    }
+
+    assert extract_interrupt_lifecycle_from_serialized_event(payload) == {
+        "request_id": "perm-codex-1",
+        "type": "permission",
+        "phase": "asked",
+        "details": {
+            "permission": None,
+            "patterns": [],
+        },
+    }
+
+
+def test_extract_interrupt_lifecycle_ignores_codex_private_question_details() -> None:
+    payload = {
+        "kind": "status-update",
+        "status": {"state": "input_required"},
+        "metadata": {
+            "shared": {
+                "interrupt": {
+                    "request_id": "q-codex-1",
+                    "type": "question",
+                    "details": {"questions": []},
+                }
+            },
+            "codex": {
+                "interrupt": {
+                    "metadata": {
+                        "method": "item/tool/requestUserInput",
+                        "raw": {
+                            "context": {
+                                "description": "Please confirm how the agent should continue."
+                            },
+                            "questions": [
+                                {
+                                    "header": "Deploy",
+                                    "question": "Proceed with deployment?",
+                                    "options": [{"label": "Yes", "value": "yes"}],
+                                }
+                            ],
+                        },
+                    }
+                }
+            },
+        },
+    }
+
+    assert extract_interrupt_lifecycle_from_serialized_event(payload) == {
+        "request_id": "q-codex-1",
+        "type": "question",
+        "phase": "asked",
+        "details": {
+            "questions": [],
+        },
+    }
+
+
 def test_normalize_interrupt_lifecycle_event_keeps_legacy_nested_permission_text() -> (
     None
 ):
