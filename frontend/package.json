@@ -75,10 +75,7 @@
     "typescript": "~5.9.2"
   },
   "overrides": {
-    "minimatch": "^10.2.2",
-    "markdown-it": "^12.3.2",
-    "flatted": "^3.4.1",
-    "undici": "^6.24.0"
+    "markdown-it": "^12.3.2"
   },
   "expo": {
     "install": {
