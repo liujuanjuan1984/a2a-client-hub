@@ -22,7 +22,7 @@ from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
     A2AClientResetRequiredError,
 )
-from app.integrations.a2a_client.service import ResolvedAgent
+from app.integrations.a2a_client.types import ResolvedAgent
 from app.integrations.a2a_client.validators import validate_message
 from app.schemas.a2a_agent import (
     A2AAgentCreate,
