@@ -70,6 +70,7 @@ Current scope:
 - `backend/app/services/a2a_schedule_runtime_summary.py`
 - `backend/app/services/a2a_schedule_time.py`
 - `backend/app/services/agent_common.py`
+- `backend/app/services/conversation_identity.py`
 - `backend/app/services/interrupt_metadata_normalization.py`
 - `backend/app/services/invoke_guard.py`
 - `backend/app/services/scheduler.py`
