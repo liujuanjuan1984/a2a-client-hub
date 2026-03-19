@@ -56,8 +56,13 @@ Current scope:
 - `backend/app/core/**/*.py`
 - `backend/app/db/**/*.py`
 - `backend/app/api/deps.py`
+- `backend/app/api/routers/admin_proxy_allowlist.py`
+- `backend/app/api/routers/a2a_schedules.py`
 - `backend/app/api/routers/auth.py`
 - `backend/app/api/routers/invitations.py`
+- `backend/app/api/routers/me_sessions.py`
+- `backend/app/api/routers/opencode_session_directory.py`
+- `backend/app/api/routers/shortcuts.py`
 - `backend/app/handlers/agent_message.py`
 - `backend/app/handlers/agent_message_block.py`
 - `backend/app/handlers/auth.py`

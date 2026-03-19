@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List
+from typing import List, cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -25,10 +25,10 @@ router = StrictAPIRouter(prefix="/admin/proxy/allowlist", tags=["admin"])
 async def list_proxy_allowlist(
     db: AsyncSession = Depends(get_async_db),
     _: User = Depends(get_current_admin_user),
-):
+) -> list[A2AProxyAllowlistResponse]:
     stmt = select(A2AProxyAllowlist).order_by(A2AProxyAllowlist.host_pattern)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    return cast(list[A2AProxyAllowlistResponse], result.scalars().all())
 
 
 @router.post(
@@ -38,7 +38,7 @@ async def create_proxy_allowlist_entry(
     payload: A2AProxyAllowlistCreate,
     db: AsyncSession = Depends(get_async_db),
     _: User = Depends(get_current_admin_user),
-):
+) -> A2AProxyAllowlistResponse:
     # Check if already exists
     stmt = select(A2AProxyAllowlist).where(
         A2AProxyAllowlist.host_pattern == payload.host_pattern
@@ -67,7 +67,7 @@ async def update_proxy_allowlist_entry(
     payload: A2AProxyAllowlistUpdate,
     db: AsyncSession = Depends(get_async_db),
     _: User = Depends(get_current_admin_user),
-):
+) -> A2AProxyAllowlistResponse:
     stmt = select(A2AProxyAllowlist).where(A2AProxyAllowlist.id == entry_id)
     result = await db.execute(stmt)
     entry = result.scalars().first()
@@ -106,10 +106,11 @@ async def delete_proxy_allowlist_entry(
     entry_id: UUID,
     db: AsyncSession = Depends(get_async_db),
     _: User = Depends(get_current_admin_user),
-):
+) -> None:
     stmt = delete(A2AProxyAllowlist).where(A2AProxyAllowlist.id == entry_id)
     result = await db.execute(stmt)
-    if result.rowcount == 0:
+    rowcount = cast(int | None, getattr(result, "rowcount", None))
+    if int(rowcount or 0) == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found"
         )

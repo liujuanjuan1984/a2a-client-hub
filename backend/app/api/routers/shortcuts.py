@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, status
@@ -64,10 +65,11 @@ async def list_shortcuts(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> ShortcutListResponse:
+    current_user_id = cast(UUID, current_user.id)
     try:
         items, total = await shortcuts_service.list_shortcuts(
             db=db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             agent_id=agent_id,
             page=page,
             size=size,
@@ -76,7 +78,7 @@ async def list_shortcuts(
         raise _list_shortcuts_error(
             exc,
             action="list",
-            user_id=current_user.id,
+            user_id=current_user_id,
         ) from exc
     return ShortcutListResponse(
         items=[ShortcutResponse.model_validate(item) for item in items],
@@ -95,10 +97,11 @@ async def create_shortcut(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> ShortcutResponse:
+    current_user_id = cast(UUID, current_user.id)
     try:
         shortcut = await shortcuts_service.create_shortcut(
             db=db,
-            user_id=current_user.id,
+            user_id=current_user_id,
             title=payload.title,
             prompt=payload.prompt,
             order=payload.order,
@@ -108,7 +111,7 @@ async def create_shortcut(
         raise _list_shortcuts_error(
             exc,
             action="create",
-            user_id=current_user.id,
+            user_id=current_user_id,
         ) from exc
     return shortcut
 
@@ -120,6 +123,7 @@ async def update_shortcut(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> ShortcutResponse:
+    current_user_id = cast(UUID, current_user.id)
     try:
         shortcut = await shortcuts_service.update_shortcut(
             db=db,
@@ -135,7 +139,7 @@ async def update_shortcut(
         raise _list_shortcuts_error(
             exc,
             action="update",
-            user_id=current_user.id,
+            user_id=current_user_id,
         ) from exc
     return shortcut
 
@@ -146,6 +150,7 @@ async def delete_shortcut(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
+    current_user_id = cast(UUID, current_user.id)
     try:
         await shortcuts_service.remove_shortcut(
             db=db,
@@ -156,6 +161,6 @@ async def delete_shortcut(
         raise _list_shortcuts_error(
             exc,
             action="delete",
-            user_id=current_user.id,
+            user_id=current_user_id,
         ) from exc
     return None
