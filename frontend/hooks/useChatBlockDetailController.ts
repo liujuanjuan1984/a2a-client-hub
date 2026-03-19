@@ -67,6 +67,7 @@ export function useChatBlockDetailController(conversationId?: string) {
               type: blockDetail.type,
               content: blockDetail.content,
               isFinished: blockDetail.isFinished,
+              toolCall: blockDetail.toolCall ?? null,
             }),
         );
         return true;

@@ -22,6 +22,7 @@ from app.services.interrupt_metadata_normalization import (
     normalize_permission_interrupt_details,
     normalize_question_interrupt_details,
 )
+from app.services.tool_call_view import build_tool_call_view
 from app.utils.session_identity import normalize_non_empty_text
 from app.utils.timezone_util import ensure_utc
 
@@ -350,36 +351,64 @@ def write_block_cursor_state(metadata: dict[str, Any], cursor: dict[str, int]) -
 
 def render_block_item(
     block: AgentMessageBlock,
+    *,
+    message_status: str | None = None,
 ) -> dict[str, Any]:
     block_content = cast(str | None, block.content)
     raw_content = block_content or ""
     block_type = normalize_block_type(cast(str | None, block.block_type))
+    tool_call = None
+    if block_type == "tool_call":
+        tool_call = build_tool_call_view(
+            raw_content,
+            is_finished=bool(block.is_finished),
+            message_status=message_status,
+        )
     if block_type in {"reasoning", "tool_call"}:
         raw_content = ""
-    return {
+    item = {
         "id": str(block.id),
         "type": block_type,
         "content": raw_content,
         "isFinished": bool(block.is_finished),
     }
+    if tool_call is not None:
+        item["toolCall"] = tool_call
+    return item
 
 
-def render_blocks(blocks: list[AgentMessageBlock]) -> list[dict[str, Any]]:
-    return [render_block_item(block) for block in blocks]
+def render_blocks(
+    blocks: list[AgentMessageBlock],
+    *,
+    message_status: str | None = None,
+) -> list[dict[str, Any]]:
+    return [render_block_item(block, message_status=message_status) for block in blocks]
 
 
 def render_block_detail_item(
     block: AgentMessageBlock,
+    *,
+    message_status: str | None = None,
 ) -> dict[str, Any]:
     block_content = cast(str | None, block.content)
     raw_content = block_content or ""
-    return {
+    block_type = normalize_block_type(cast(str | None, block.block_type))
+    item = {
         "id": str(block.id),
         "messageId": str(block.message_id),
-        "type": normalize_block_type(cast(str | None, block.block_type)),
+        "type": block_type,
         "content": raw_content,
         "isFinished": bool(block.is_finished),
     }
+    if block_type == "tool_call":
+        tool_call = build_tool_call_view(
+            raw_content,
+            is_finished=bool(block.is_finished),
+            message_status=message_status,
+        )
+        if tool_call is not None:
+            item["toolCall"] = tool_call
+    return item
 
 
 def dedupe_uuid_list_keep_order(values: list[UUID]) -> list[UUID]:

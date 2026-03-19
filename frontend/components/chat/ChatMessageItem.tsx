@@ -120,6 +120,7 @@ export function ChatMessageItem({
         messageId={message.id}
         blockIndex={blockIndex}
         role={message.role}
+        messageStatus={message.status}
         onLayoutChangeStart={onLayoutChangeStart}
         onLoadBlockContent={onLoadBlockContent}
       />

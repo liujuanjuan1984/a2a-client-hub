@@ -17,6 +17,7 @@ export interface MessageBlockProps {
   messageId: string;
   blockIndex: number;
   role: ChatMessage["role"];
+  messageStatus?: ChatMessage["status"];
   onLayoutChangeStart?: () => void;
   onLoadBlockContent?: (messageId: string, blockId: string) => Promise<boolean>;
 }
@@ -26,6 +27,7 @@ export function MessageBlock({
   messageId,
   blockIndex,
   role,
+  messageStatus,
   onLayoutChangeStart,
   onLoadBlockContent,
 }: MessageBlockProps) {
@@ -50,6 +52,7 @@ export function MessageBlock({
           block={block}
           fallbackBlockId={blockId}
           messageId={messageId}
+          messageStatus={messageStatus}
           onLayoutChangeStart={onLayoutChangeStart}
           onLoadBlockContent={onLoadBlockContent}
           isFirst={isFirst}
