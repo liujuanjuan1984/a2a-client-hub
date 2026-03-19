@@ -5,29 +5,16 @@ from uuid import uuid4
 
 import pytest
 
-from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_job import _execute_claimed_task
 from app.utils.timezone_util import utc_now
-from tests.utils import create_user
+from tests.utils import create_a2a_agent, create_schedule_task, create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
-
-async def _create_agent(session, *, user_id, suffix: str) -> A2AAgent:
-    agent = A2AAgent(
-        user_id=user_id,
-        name=f"Agent {suffix}",
-        card_url=f"https://example.com/{suffix}",
-        auth_type="none",
-        enabled=True,
-    )
-    session.add(agent)
-    await session.commit()
-    await session.refresh(agent)
-    return agent
+_create_agent = create_a2a_agent
 
 
 async def _create_schedule_task(
@@ -38,22 +25,14 @@ async def _create_schedule_task(
     conversation_id=None,
     policy=A2AScheduleTask.POLICY_NEW,
 ) -> A2AScheduleTask:
-    task = A2AScheduleTask(
+    return await create_schedule_task(
+        session,
         user_id=user_id,
-        name="Test schedule",
         agent_id=agent_id,
-        prompt="hello",
-        cycle_type=A2AScheduleTask.CYCLE_DAILY,
-        time_point={"time": "09:00"},
-        enabled=True,
         next_run_at=utc_now(),
         conversation_id=conversation_id,
         conversation_policy=policy,
     )
-    session.add(task)
-    await session.commit()
-    await session.refresh(task)
-    return task
 
 
 def _mock_runtime_builder():

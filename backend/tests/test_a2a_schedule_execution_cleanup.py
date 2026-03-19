@@ -7,47 +7,34 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
-from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.services import a2a_schedule_service as a2a_schedule_service_module
 from app.services.a2a_schedule_service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
-from tests.utils import create_user
+from tests.utils import create_a2a_agent, create_schedule_task, create_user
 
 pytestmark = pytest.mark.integration
 
 
 async def _create_agent(async_db_session, *, user_id):
-    agent = A2AAgent(
+    return await create_a2a_agent(
+        async_db_session,
         user_id=user_id,
+        suffix="cleanup-agent",
         name="Cleanup Agent",
         card_url="https://example.com/cleanup-agent",
-        auth_type="none",
-        enabled=True,
     )
-    async_db_session.add(agent)
-    await async_db_session.commit()
-    await async_db_session.refresh(agent)
-    return agent
 
 
 async def _create_task(async_db_session, *, user_id, agent_id):
-    task = A2AScheduleTask(
+    return await create_schedule_task(
+        async_db_session,
         user_id=user_id,
-        name="Cleanup Task",
         agent_id=agent_id,
+        name="Cleanup Task",
         prompt="cleanup",
-        cycle_type=A2AScheduleTask.CYCLE_DAILY,
-        time_point={"time": "09:00"},
-        enabled=True,
         next_run_at=utc_now(),
-        consecutive_failures=0,
     )
-    async_db_session.add(task)
-    await async_db_session.commit()
-    await async_db_session.refresh(task)
-    return task
 
 
 @pytest.mark.asyncio
