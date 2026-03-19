@@ -270,17 +270,6 @@ def analyze_stream_chunk_contract(
     return None, "invalid_artifact_update_shape"
 
 
-def _extract_provider_interrupt_context(payload: dict[str, Any]) -> dict[str, Any]:
-    metadata = as_dict(payload.get("metadata"))
-    context: dict[str, Any] = {}
-
-    codex_metadata = as_dict(metadata.get("codex"))
-    codex_interrupt = as_dict(codex_metadata.get("interrupt"))
-    if codex_interrupt:
-        context["codex"] = codex_interrupt
-    return context
-
-
 def extract_interrupt_lifecycle_from_serialized_event(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
@@ -322,16 +311,9 @@ def extract_interrupt_lifecycle_from_serialized_event(
         return payload_event
 
     details = as_dict(interrupt.get("details")) or {}
-    provider_context = _extract_provider_interrupt_context(payload)
     if interrupt_type == "permission":
-        payload_event["details"] = normalize_permission_interrupt_details(
-            details,
-            provider_context=as_dict(provider_context.get("codex")) or None,
-        )
+        payload_event["details"] = normalize_permission_interrupt_details(details)
         return payload_event
 
-    payload_event["details"] = normalize_question_interrupt_details(
-        details,
-        provider_context=as_dict(provider_context.get("codex")) or None,
-    )
+    payload_event["details"] = normalize_question_interrupt_details(details)
     return payload_event

@@ -100,9 +100,7 @@ def test_extract_interrupt_lifecycle_keeps_question_descriptions() -> None:
     }
 
 
-def test_extract_interrupt_lifecycle_falls_back_to_codex_private_permission_details() -> (
-    None
-):
+def test_extract_interrupt_lifecycle_ignores_codex_private_permission_details() -> None:
     payload = {
         "kind": "status-update",
         "status": {"state": "input-required"},
@@ -142,15 +140,12 @@ def test_extract_interrupt_lifecycle_falls_back_to_codex_private_permission_deta
         "phase": "asked",
         "details": {
             "permission": None,
-            "patterns": ["/repo/.env"],
-            "display_message": "Agent wants to read the environment file.",
+            "patterns": [],
         },
     }
 
 
-def test_extract_interrupt_lifecycle_falls_back_to_codex_private_question_details() -> (
-    None
-):
+def test_extract_interrupt_lifecycle_ignores_codex_private_question_details() -> None:
     payload = {
         "kind": "status-update",
         "status": {"state": "input_required"},
@@ -189,21 +184,7 @@ def test_extract_interrupt_lifecycle_falls_back_to_codex_private_question_detail
         "type": "question",
         "phase": "asked",
         "details": {
-            "display_message": "Please confirm how the agent should continue.",
-            "questions": [
-                {
-                    "header": "Deploy",
-                    "question": "Proceed with deployment?",
-                    "description": None,
-                    "options": [
-                        {
-                            "label": "Yes",
-                            "description": None,
-                            "value": "yes",
-                        }
-                    ],
-                }
-            ],
+            "questions": [],
         },
     }
 
