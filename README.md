@@ -138,6 +138,8 @@ You can observe these via `/health` under `a2a.ops_metrics`:
 - Frontend details: [frontend/README.md](frontend/README.md)
 - Authentication conventions: [docs/authentication.md](docs/authentication.md)
 - Production security baseline: [docs/security-baseline.md](docs/security-baseline.md)
+- Shared session query contract:
+  [docs/contracts/shared-session-query-canonical-contract.md](docs/contracts/shared-session-query-canonical-contract.md)
 - Architecture and API examples:
   [docs/architecture-and-api.md](docs/architecture-and-api.md)
 

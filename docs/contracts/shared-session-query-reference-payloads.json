@@ -1,0 +1,164 @@
+{
+  "version": 1,
+  "extension_uri": "urn:opencode-a2a:session-query/v1",
+  "cases": [
+    {
+      "name": "canonical_page_size_extension",
+      "description": "Canonical page_size contract with default top-level envelope mapping.",
+      "extension": {
+        "uri": "urn:opencode-a2a:session-query/v1",
+        "params": {
+          "provider": "opencode",
+          "methods": {
+            "list_sessions": "shared.sessions.list",
+            "get_session_messages": "shared.sessions.messages.list",
+            "prompt_async": "shared.sessions.prompt_async"
+          },
+          "pagination": {
+            "mode": "page_size",
+            "default_size": 20,
+            "max_size": 100,
+            "params": [
+              "page",
+              "size"
+            ]
+          },
+          "errors": {
+            "business_codes": {
+              "SESSION_NOT_FOUND": -32001,
+              "UPSTREAM_UNREACHABLE": -32002
+            }
+          },
+          "result_envelope": {
+            "items": true,
+            "pagination": true,
+            "raw": true
+          }
+        }
+      }
+    },
+    {
+      "name": "canonical_limit_extension",
+      "description": "Canonical limit contract with explicit limit-only pagination.",
+      "extension": {
+        "uri": "urn:opencode-a2a:session-query/v1",
+        "params": {
+          "provider": "opencode",
+          "methods": {
+            "list_sessions": "opencode.sessions.list",
+            "get_session_messages": "opencode.sessions.messages.list"
+          },
+          "pagination": {
+            "mode": "limit",
+            "default_limit": 20,
+            "max_limit": 100,
+            "params": [
+              "limit"
+            ]
+          },
+          "result_envelope": {
+            "items": true,
+            "pagination": true,
+            "raw": true
+          }
+        }
+      }
+    },
+    {
+      "name": "canonical_alias_mapping_extension",
+      "description": "Canonical contract using explicit field-path aliases for the result envelope.",
+      "extension": {
+        "uri": "urn:opencode-a2a:session-query/v1",
+        "params": {
+          "provider": "opencode",
+          "methods": {
+            "list_sessions": "shared.sessions.list",
+            "get_session_messages": "shared.sessions.messages.list"
+          },
+          "pagination": {
+            "mode": "page_size",
+            "default_size": 20,
+            "max_size": 100,
+            "params": [
+              "page",
+              "size"
+            ]
+          },
+          "result_envelope": {
+            "items": "payload.sessions",
+            "pagination": "payload.page_info",
+            "raw": "payload"
+          }
+        }
+      },
+      "runtime_result": {
+        "payload": {
+          "sessions": [
+            {
+              "id": "sess-1",
+              "title": "One"
+            }
+          ],
+          "page_info": {
+            "page": 1,
+            "size": 20,
+            "total": 1,
+            "pages": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "canonical_query_response_shape",
+      "description": "Default top-level query response shape consumed by Hub.",
+      "runtime_result": {
+        "items": [
+          {
+            "id": "sess-1",
+            "title": "One"
+          }
+        ],
+        "pagination": {
+          "page": 1,
+          "size": 20,
+          "total": 1,
+          "pages": 1
+        },
+        "raw": [
+          {
+            "id": "sess-1",
+            "title": "One"
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid_unknown_result_envelope_key",
+      "description": "Invalid contract because result_envelope contains an unknown key.",
+      "extension": {
+        "uri": "urn:opencode-a2a:session-query/v1",
+        "params": {
+          "provider": "opencode",
+          "methods": {
+            "list_sessions": "shared.sessions.list",
+            "get_session_messages": "shared.sessions.messages.list"
+          },
+          "pagination": {
+            "mode": "page_size",
+            "default_size": 20,
+            "max_size": 100,
+            "params": [
+              "page",
+              "size"
+            ]
+          },
+          "result_envelope": {
+            "items": true,
+            "unknown": "payload.unknown"
+          }
+        }
+      },
+      "expected_validation_error": "Extension result_envelope contains unsupported keys"
+    }
+  ]
+}

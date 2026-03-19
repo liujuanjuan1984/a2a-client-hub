@@ -28,6 +28,14 @@ for local development and integration testing.
 - `app/db/models/`: SQLAlchemy models
 - `app/core/`: config, security, logging
 
+## Contract References
+
+For the Hub-consumed shared session query extension contract and reference
+payloads, see:
+
+- `docs/contracts/shared-session-query-canonical-contract.md`
+- `docs/contracts/shared-session-query-reference-payloads.json`
+
 ## API Base URL
 
 Default local backend base URL:
