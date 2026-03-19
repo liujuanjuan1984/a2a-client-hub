@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.secret_vault import hub_a2a_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
-from app.integrations.a2a_client.service import ResolvedAgent
+from app.integrations.a2a_client.types import ResolvedAgent
 from app.services.hub_a2a_agents import HubA2AAgentNotFoundError, hub_a2a_agent_service
 from app.services.runtime_auth import build_resolved_runtime_agent
 

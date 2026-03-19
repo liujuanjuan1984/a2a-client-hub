@@ -25,7 +25,7 @@ from app.schemas.a2a_agent_card import A2AAgentCardValidationResponse
 
 if TYPE_CHECKING:
     from app.integrations.a2a_client.gateway import A2AGateway
-    from app.integrations.a2a_client.service import ResolvedAgent
+    from app.integrations.a2a_client.types import ResolvedAgent
 
 
 async def fetch_and_validate_agent_card(

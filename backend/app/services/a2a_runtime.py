@@ -5,7 +5,7 @@ Runtime helpers for building A2A invocation context from user-managed agents.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, cast
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
-from app.integrations.a2a_client.service import ResolvedAgent
+from app.integrations.a2a_client.types import ResolvedAgent
 from app.services.runtime_auth import build_resolved_runtime_agent
 
 
@@ -53,7 +53,7 @@ class A2ARuntimeBuilder:
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
         credential = None
         if agent.auth_type == "bearer":
-            credential = await self._get_credential(db, agent_id=agent.id)
+            credential = await self._get_credential(db, agent_id=cast(UUID, agent.id))
         return self.build_from_agent(agent=agent, credential=credential)
 
     def build_from_agent(
@@ -63,12 +63,12 @@ class A2ARuntimeBuilder:
         credential: Optional[A2AAgentCredential],
     ) -> A2ARuntime:
         resolved, token_last4 = self.resolve_prefetched(
-            name=agent.name,
-            card_url=agent.card_url,
-            extra_headers=agent.extra_headers,
-            auth_type=agent.auth_type,
-            auth_header=agent.auth_header,
-            auth_scheme=agent.auth_scheme,
+            name=cast(str, agent.name),
+            card_url=cast(str, agent.card_url),
+            extra_headers=cast(dict[str, str] | None, agent.extra_headers),
+            auth_type=cast(str, agent.auth_type),
+            auth_header=cast(str | None, agent.auth_header),
+            auth_scheme=cast(str | None, agent.auth_scheme),
             credential=credential,
         )
 
@@ -108,7 +108,7 @@ class A2ARuntimeBuilder:
                 A2AAgent.deleted_at.is_(None),
             )
         )
-        agent = await db.scalar(stmt)
+        agent = cast(A2AAgent | None, await db.scalar(stmt))
         if agent is None:
             raise A2ARuntimeNotFoundError("A2A agent not found")
         return agent
@@ -117,7 +117,7 @@ class A2ARuntimeBuilder:
         self, db: AsyncSession, *, agent_id: UUID
     ) -> Optional[A2AAgentCredential]:
         stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
-        return await db.scalar(stmt)
+        return cast(A2AAgentCredential | None, await db.scalar(stmt))
 
 
 a2a_runtime_builder = A2ARuntimeBuilder()

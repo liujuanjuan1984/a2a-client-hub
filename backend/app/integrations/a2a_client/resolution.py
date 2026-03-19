@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.integrations.a2a_client.invoke_session import (
     AgentSnapshotSource,
     ResolvedAgentSnapshot,
@@ -15,8 +17,8 @@ class A2AResolutionService:
     async def resolve_snapshot(
         self,
         *,
-        client,
-        resolved,
+        client: Any,
+        resolved: Any,
         source: AgentSnapshotSource,
         card_fetch_timeout: float | None,
     ) -> ResolvedAgentSnapshot:

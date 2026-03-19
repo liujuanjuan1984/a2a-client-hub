@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from a2a.types import AgentCard, Message, Part, Role, TextPart
@@ -84,7 +84,7 @@ def build_a2a_message(request: A2AMessageRequest) -> Message:
         getattr(Role, "USER", None) or getattr(Role, "user", None) or Role("user")
     )
     resolved_context_id = request.context_id or str(uuid4())
-    parts: list[Part] = [TextPart(text=request.query)]
+    parts: list[Part] = [cast(Part, TextPart(text=request.query))]
     return Message(
         message_id=str(uuid4()),
         role=raw_role,

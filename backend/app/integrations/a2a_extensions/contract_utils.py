@@ -42,7 +42,7 @@ def require_int(value: Any, *, field: str) -> int:
 
 
 def normalize_error_token(name: str, *, code_value: int) -> str:
-    normalized = []
+    normalized: list[str] = []
     pending_sep = False
     for ch in name.strip().lower():
         if ch.isalnum():

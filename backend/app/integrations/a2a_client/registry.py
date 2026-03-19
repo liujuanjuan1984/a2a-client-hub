@@ -15,7 +15,7 @@ from app.utils.async_cleanup import await_cancel_safe
 from app.utils.logging_redaction import redact_headers_for_logging
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
-    from .service import ResolvedAgent
+    from .types import ResolvedAgent
 
 logger = get_logger(__name__)
 
@@ -88,17 +88,19 @@ class A2AClientRegistry:
         to_close: list[A2AClient] = []
         async with self._client_lock:
             stale_keys: list[tuple[str, tuple[tuple[str, str], ...]]] = []
-            for key, entry in self._clients.items():
-                if now - entry.last_used <= idle_timeout:
+            for key, cached_entry in self._clients.items():
+                if now - cached_entry.last_used <= idle_timeout:
                     continue
-                if entry.client.is_busy():
-                    entry.last_used = now
+                if cached_entry.client.is_busy():
+                    cached_entry.last_used = now
                     continue
                 stale_keys.append(key)
             for key in stale_keys:
-                entry = self._clients.pop(key, None)
-                if entry:
-                    to_close.append(entry.client)
+                stale_entry: CachedClientEntry | None = self._clients.get(key)
+                if stale_entry is not None:
+                    self._clients.pop(key)
+                if stale_entry:
+                    to_close.append(stale_entry.client)
         for client in to_close:
             self._schedule_client_close(
                 client,

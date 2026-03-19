@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from app.core.config import settings as app_settings
@@ -12,20 +11,10 @@ from app.integrations.a2a_client.gateway import A2AGateway
 from app.integrations.a2a_client.http_clients import (
     close_shared_sdk_transport_http_clients,
 )
+from app.integrations.a2a_client.types import ResolvedAgent
 from app.utils.logging_redaction import redact_url_for_logging
 
 logger = get_logger(__name__)
-
-
-@dataclass(frozen=True)
-class ResolvedAgent:
-    """Concrete agent information used for invocation."""
-
-    name: str
-    url: str
-    description: Optional[str]
-    metadata: Dict[str, Any]
-    headers: Dict[str, str]
 
 
 class A2AService:

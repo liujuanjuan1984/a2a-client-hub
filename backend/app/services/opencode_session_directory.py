@@ -24,7 +24,7 @@ from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
 from app.db.transaction import commit_safely
-from app.integrations.a2a_client.service import ResolvedAgent
+from app.integrations.a2a_client.types import ResolvedAgent
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.service import ExtensionCallResult

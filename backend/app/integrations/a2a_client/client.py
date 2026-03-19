@@ -7,14 +7,13 @@ import json
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, cast
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from a2a.client import (
     A2ACardResolver,
     ClientCallInterceptor,
-    ClientEvent,
     Consumer,
 )
 from a2a.client.errors import A2AClientHTTPError
@@ -35,6 +34,7 @@ from app.integrations.a2a_client.adapters import (
     JsonRpcSlashAdapter,
     SDKA2AAdapter,
 )
+from app.integrations.a2a_client.adapters.base import A2AAdapter
 from app.integrations.a2a_client.adapters.sdk import SDKA2AAdapterRetiredError
 from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.dialect_cache import global_dialect_cache
@@ -55,7 +55,7 @@ from app.integrations.a2a_client.lifecycle import (
     A2AClientLifecycleSnapshot,
     AdapterLifecycleSnapshot,
 )
-from app.integrations.a2a_client.models import A2AMessageRequest
+from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 from app.integrations.a2a_client.selection import (
     build_peer_descriptor,
     normalize_transport_label,
@@ -95,7 +95,7 @@ class StaticHeaderInterceptor(ClientCallInterceptor):
 class ClientCacheEntry:
     """Backward-compatible adapter cache entry used by tests and cleanup."""
 
-    client: Any
+    client: A2AAdapter
 
 
 class A2AClient:
@@ -118,7 +118,7 @@ class A2AClient:
     ) -> None:
         self.agent_url = agent_url.rstrip("/")
         self._agent_card: Optional[AgentCard] = None
-        self._peer_descriptor = None
+        self._peer_descriptor: A2APeerDescriptor | None = None
         self._timeout = timeout or self._build_timeout(timeout_seconds)
         self._http_client, self._owns_http_client = (
             self._resolve_http_client_dependency(
@@ -784,7 +784,9 @@ class A2AClient:
             )
         )
 
-    async def _invoke_with_jsonrpc_fallback(self, *, callback) -> Any:
+    async def _invoke_with_jsonrpc_fallback(
+        self, *, callback: Callable[[A2AAdapter], Awaitable[Any]]
+    ) -> Any:
         descriptor = await self._get_peer_descriptor()
         last_error: Exception | None = None
         for dialect in await self._get_preferred_dialects(descriptor):
@@ -854,19 +856,20 @@ class A2AClient:
             raise last_error
         raise A2AAgentUnavailableError("No adapter attempt executed")
 
-    async def _get_peer_descriptor(self):
+    async def _get_peer_descriptor(self) -> A2APeerDescriptor:
         if self._peer_descriptor is not None:
             return self._peer_descriptor
         await self.get_agent_card()
-        if self._peer_descriptor is None:
+        descriptor = cast(A2APeerDescriptor | None, getattr(self, "_peer_descriptor"))
+        if descriptor is None:
             raise A2AAgentUnavailableError(
                 f"A2A agent '{redact_url_for_logging(self.agent_url)}' has no "
                 "resolved peer descriptor"
             )
-        return self._peer_descriptor
+        return descriptor
 
-    async def _get_adapter(self, dialect: str):
-        stale_adapter = None
+    async def _get_adapter(self, dialect: str) -> A2AAdapter:
+        stale_adapter: A2AAdapter | None = None
         async with self._adapter_lock:
             entry = self._clients.get(dialect)
             if entry:
@@ -901,7 +904,7 @@ class A2AClient:
                         timeout=self._timeout
                     )
                     sdk_transport_http_client = shared_transport_lease.client
-                adapter = SDKA2AAdapter(
+                adapter: A2AAdapter = SDKA2AAdapter(
                     descriptor,
                     transport_http_client=sdk_transport_http_client,
                     shared_transport_lease=shared_transport_lease,
@@ -987,7 +990,7 @@ class A2AClient:
                 )
         await self._discard_adapter(dialect, expected_adapter=adapter)
 
-    async def _get_preferred_dialects(self, descriptor) -> list[str]:
+    async def _get_preferred_dialects(self, descriptor: A2APeerDescriptor) -> list[str]:
         if normalize_transport_label(descriptor.selected_transport) != "JSONRPC":
             return [SDK_DIALECT]
         choices = [JSONRPC_SLASH_DIALECT, JSONRPC_PASCAL_DIALECT]
@@ -1002,7 +1005,7 @@ class A2AClient:
     @staticmethod
     def _should_try_alternate_dialect(
         *,
-        descriptor,
+        descriptor: A2APeerDescriptor,
         dialect: str,
         exc: Exception,
     ) -> bool:
@@ -1130,7 +1133,7 @@ class A2AClient:
                     self._active_requests -= 1
 
     @staticmethod
-    def _extract_text_from_payload(payload: ClientEvent | Message) -> Optional[str]:
+    def _extract_text_from_payload(payload: Any) -> Optional[str]:
         """Extract readable text from A2A events or message-like payloads."""
 
         def extract_from_iterable(items: Any) -> Optional[str]:
@@ -1193,7 +1196,7 @@ class A2AClient:
                 if value in (None, ""):
                     continue
                 if key == "text" and isinstance(value, (str, int, float, bool)):
-                    text = str(value).strip()
+                    text: str | None = str(value).strip()
                     if text:
                         return text
                 if key in ("parts",):
@@ -1334,7 +1337,7 @@ def _json_fallback(value: Any) -> Any:
 
 
 def _unwrap_httpx_error(exc: Exception) -> Optional[httpx.HTTPError]:
-    current = exc
+    current: BaseException | None = exc
     visited: set[int] = set()
     while current and id(current) not in visited:
         visited.add(id(current))

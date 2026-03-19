@@ -232,7 +232,11 @@ def _build_timeout_key(timeout: httpx.Timeout | None) -> tuple[float | None, ...
 def _normalize_timeout_value(value: object) -> float | None:
     if value is None:
         return None
-    return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        return float(value)
+    raise TypeError("unsupported timeout value")
 
 
 __all__ = [

@@ -158,7 +158,7 @@ class JsonRpcSlashAdapter(A2AAdapter):
         return None
 
     async def _send_rpc(
-        self, *, method: str, payload: dict[str, Any], response_model
+        self, *, method: str, payload: dict[str, Any], response_model: Any
     ) -> Any:
         request_headers = {"Content-Type": "application/json"}
         request_headers.update(self._headers)
@@ -213,7 +213,7 @@ class JsonRpcSlashAdapter(A2AAdapter):
                 error_code="invalid_json_response",
                 http_status=response.status_code,
             ) from exc
-        return parsed.root.result
+        return getattr(parsed.root, "result", None)
 
     async def _send_rpc_stream(
         self,
@@ -301,7 +301,7 @@ class JsonRpcSlashAdapter(A2AAdapter):
                             error_code="invalid_json_response",
                             http_status=response.status_code,
                         ) from exc
-                    yield parsed.root.result
+                    yield getattr(parsed.root, "result", None)
         except httpx.RequestError as exc:
             raise A2APeerProtocolError(
                 message=str(exc),
