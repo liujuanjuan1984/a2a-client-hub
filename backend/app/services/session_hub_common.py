@@ -9,7 +9,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy.exc import IntegrityError
@@ -115,7 +115,7 @@ def parse_messages_before_cursor(raw: str) -> MessagesBeforeCursor:
         raise ValueError("invalid_before_cursor") from exc
 
     try:
-        sender_priority = int(sender_priority_raw)
+        sender_priority = int(cast(int | str, sender_priority_raw))
     except (TypeError, ValueError) as exc:
         raise ValueError("invalid_before_cursor") from exc
     if sender_priority not in {0, 1}:
@@ -351,8 +351,9 @@ def write_block_cursor_state(metadata: dict[str, Any], cursor: dict[str, int]) -
 def render_block_item(
     block: AgentMessageBlock,
 ) -> dict[str, Any]:
-    raw_content = block.content if isinstance(block.content, str) else ""
-    block_type = normalize_block_type(block.block_type)
+    block_content = cast(str | None, block.content)
+    raw_content = block_content or ""
+    block_type = normalize_block_type(cast(str | None, block.block_type))
     if block_type in {"reasoning", "tool_call"}:
         raw_content = ""
     return {
@@ -370,11 +371,12 @@ def render_blocks(blocks: list[AgentMessageBlock]) -> list[dict[str, Any]]:
 def render_block_detail_item(
     block: AgentMessageBlock,
 ) -> dict[str, Any]:
-    raw_content = block.content if isinstance(block.content, str) else ""
+    block_content = cast(str | None, block.content)
+    raw_content = block_content or ""
     return {
         "id": str(block.id),
         "messageId": str(block.message_id),
-        "type": normalize_block_type(block.block_type),
+        "type": normalize_block_type(cast(str | None, block.block_type)),
         "content": raw_content,
         "isFinished": bool(block.is_finished),
     }
@@ -384,8 +386,6 @@ def dedupe_uuid_list_keep_order(values: list[UUID]) -> list[UUID]:
     deduped: list[UUID] = []
     seen: set[UUID] = set()
     for value in values:
-        if not isinstance(value, UUID):
-            continue
         if value in seen:
             continue
         seen.add(value)
