@@ -6,7 +6,7 @@ upper layers (routers, dependencies, services) can remain persistence-agnostic.
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -171,37 +171,40 @@ async def authenticate_user(
         raise UserNotFoundError("Invalid credentials")
 
     current_time = now or utc_now()
+    locked_until = cast(datetime | None, user.locked_until)
+    password_hash = cast(str, user.password_hash)
+    user_id = cast(UUID, user.id)
 
-    if user.locked_until and user.locked_until > current_time:
-        seconds_remaining = int((user.locked_until - current_time).total_seconds())
+    if locked_until is not None and locked_until > current_time:
+        seconds_remaining = int((locked_until - current_time).total_seconds())
         raise UserLockedError(
             user=user,
-            lock_expires_at=user.locked_until,
+            lock_expires_at=locked_until,
             seconds_remaining=seconds_remaining,
         )
 
-    if user.locked_until and user.locked_until <= current_time:
+    if locked_until is not None and locked_until <= current_time:
         user.reset_login_state()
 
-    if not verify_password(password, user.password_hash):
-        user.failed_login_attempts += 1
-        failed_attempts = user.failed_login_attempts
-        lock_expires_at = None
+    if not verify_password(password, password_hash):
+        failed_attempts = cast(int, user.failed_login_attempts) + 1
+        setattr(user, "failed_login_attempts", failed_attempts)
+        lock_expires_at: datetime | None = None
         if failed_attempts >= settings.auth_max_failed_login_attempts:
             lock_expires_at = current_time + timedelta(
                 minutes=settings.auth_failed_login_lock_minutes
             )
-            user.locked_until = lock_expires_at
-            user.failed_login_attempts = 0
+            setattr(user, "locked_until", lock_expires_at)
+            setattr(user, "failed_login_attempts", 0)
 
         db.add(user)
         metadata: Dict[str, Any] = {"failed_attempts": failed_attempts}
         if lock_expires_at:
             metadata["lock_expires_at"] = lock_expires_at.isoformat()
-        raise InvalidCredentialsError(metadata=metadata, user_id=user.id)
+        raise InvalidCredentialsError(metadata=metadata, user_id=user_id)
 
     user.reset_login_state()
-    user.last_login_at = current_time
+    setattr(user, "last_login_at", current_time)
     db.add(user)
     return user
 
@@ -221,7 +224,8 @@ async def change_user_password(
             raise ValueError("Either user or user_id must be provided")
         user = await get_active_user(db, user_id=user_id)
 
-    if not verify_password(current_password, user.password_hash):
+    password_hash = cast(str, user.password_hash)
+    if not verify_password(current_password, password_hash):
         raise InvalidCredentialsError("Current password is incorrect")
 
     if current_password == new_password:
@@ -233,7 +237,7 @@ async def change_user_password(
     if not is_valid:
         raise PasswordValidationError(error_msg or "New password is too weak")
 
-    user.password_hash = get_password_hash(new_password)
+    setattr(user, "password_hash", get_password_hash(new_password))
     db.add(user)
     await commit_safely(db)
 

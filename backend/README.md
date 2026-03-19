@@ -55,12 +55,18 @@ Current scope:
 - `backend/app/schemas/**/*.py`
 - `backend/app/core/**/*.py`
 - `backend/app/db/**/*.py`
+- `backend/app/api/deps.py`
+- `backend/app/api/routers/auth.py`
+- `backend/app/api/routers/invitations.py`
+- `backend/app/handlers/auth.py`
+- `backend/app/handlers/invitations.py`
 - `backend/app/middleware/debug_logging.py`
 - `backend/app/services/a2a_stream_diagnostics.py`
 - `backend/app/services/a2a_schedule_time.py`
 - `backend/app/services/interrupt_metadata_normalization.py`
 - `backend/app/services/invoke_guard.py`
 - `backend/app/services/scheduler.py`
+- `backend/app/services/ws_ticket_service.py`
 
 Useful commands:
 

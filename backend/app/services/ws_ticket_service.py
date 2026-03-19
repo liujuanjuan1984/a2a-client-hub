@@ -7,9 +7,12 @@ import hmac
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, cast
 from uuid import UUID
 
+from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -173,9 +176,11 @@ class WsTicketService:
             raise
         if ticket is None:
             raise WsTicketNotFoundError("Invalid or expired ticket")
-        if ticket.used_at is not None:
+        used_at = cast(datetime | None, ticket.used_at)
+        if used_at is not None:
             raise WsTicketUsedError("Ticket has already been used")
-        if ticket.expires_at <= now:
+        expires_at = cast(datetime, ticket.expires_at)
+        if expires_at <= now:
             raise WsTicketExpiredError("Ticket has expired")
 
         # Strict scope matching (including type)
@@ -183,7 +188,7 @@ class WsTicketService:
         if ticket.scope_id != scope_id or ticket.scope_type != expected_type:
             raise WsTicketScopeError("Ticket scope mismatch")
 
-        ticket.used_at = now
+        setattr(ticket, "used_at", now)
         try:
             await commit_safely(db)
         except DBAPIError as exc:
@@ -227,9 +232,9 @@ class WsTicketService:
                 WsTicket.scope_type.is_(None),
             )
         )
-        result = await db.execute(stmt)
+        result = cast(CursorResult[Any], await db.execute(stmt))
         await commit_safely(db)
-        return result.rowcount
+        return result.rowcount or 0
 
 
 async def cleanup_ws_tickets_job() -> None:
@@ -254,9 +259,6 @@ def ensure_ws_ticket_cleanup_job() -> None:
     job_id = "ws-ticket-cleanup-daily"
     if scheduler.get_job(job_id):
         return
-
-    # Run daily at 3:00 AM
-    from apscheduler.triggers.cron import CronTrigger
 
     scheduler.add_job(
         cleanup_ws_tickets_job,

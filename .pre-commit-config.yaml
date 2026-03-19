@@ -82,7 +82,7 @@ repos:
     hooks:
       - id: backend-mypy-changed
         name: backend mypy (changed files only)
-        entry: env MYPY_INCLUDE_REGEX='^backend/app/((utils|schemas|core|db)/.*\.py|middleware/debug_logging\.py|services/(a2a_stream_diagnostics|interrupt_metadata_normalization|invoke_guard|a2a_schedule_time|scheduler)\.py)$' bash backend/scripts/mypy_changed.sh
+        entry: env MYPY_INCLUDE_REGEX='^backend/app/((utils|schemas|core|db)/.*\.py|api/deps\.py|api/routers/(auth|invitations)\.py|handlers/(auth|invitations)\.py|middleware/debug_logging\.py|services/(a2a_stream_diagnostics|interrupt_metadata_normalization|invoke_guard|a2a_schedule_time|scheduler|ws_ticket_service)\.py)$' bash backend/scripts/mypy_changed.sh
         language: system
         files: ^backend/.*\.py$
 
