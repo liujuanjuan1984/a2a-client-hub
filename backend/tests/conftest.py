@@ -89,6 +89,7 @@ from setup_db_schema import create_schema, drop_schema
 
 from app.core.config import settings
 from app.db.models.base import Base
+from app.services.a2a_proxy_service import A2AProxyService
 
 # Import the minimal set of models required for tests to ensure SQLAlchemy
 # metadata is populated before schema setup runs.
@@ -216,3 +217,15 @@ async def async_db_session(
                 pass
             await session.close()
             await _truncate_all_tables(async_engine)
+
+
+@pytest.fixture(autouse=True)
+def reset_a2a_proxy_service_state() -> None:
+    """Reset process-local proxy allowlist cache between tests."""
+
+    A2AProxyService._cached_allowed_hosts = []
+    A2AProxyService._last_refresh = 0
+    A2AProxyService._ttl = 60
+    A2AProxyService._is_initialized = False
+    A2AProxyService._refresh_lock = None
+    A2AProxyService._refresh_lock_loop = None
