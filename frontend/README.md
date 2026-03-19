@@ -118,6 +118,9 @@ Chat timeline loading is unified via
 (`limit` + `before` cursor for backward pagination from latest window).
 To avoid transport contention, chat history auto-refetch is paused while a
 message is actively streaming.
+The chat composer keeps large drafts in a ref-backed buffer and applies a
+hard `50,000` character limit to avoid long-paste re-render spikes and
+unbounded memory growth.
 
 Message id contract:
 

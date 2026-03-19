@@ -17,7 +17,12 @@ describe("ChatComposer clear button", () => {
     selectedModel: null,
     onOpenModelPicker: jest.fn(),
     inputRef: { current: { focus: jest.fn() } } as any,
-    input: "",
+    inputResetKey: 0,
+    inputDefaultValue: "",
+    hasInput: false,
+    hasSendableInput: false,
+    maxInputChars: 50_000,
+    onClearInput: jest.fn(),
     onInputChange: jest.fn(),
     onContentSizeChange: jest.fn(),
     inputHeight: 40,
@@ -33,29 +38,32 @@ describe("ChatComposer clear button", () => {
 
   it("shows clear button when input is not empty", () => {
     const { getByLabelText } = render(
-      <ChatComposer {...mockProps} input="hello" />,
+      <ChatComposer
+        {...mockProps}
+        inputDefaultValue="hello"
+        hasInput
+        hasSendableInput
+      />,
     );
     expect(getByLabelText("Clear input")).toBeTruthy();
   });
 
-  it("calls onInputChange with empty string and focuses input when cleared", () => {
-    const onInputChange = jest.fn();
-    const focus = jest.fn();
-    const inputRef = { current: { focus } };
+  it("calls onClearInput when cleared", () => {
+    const onClearInput = jest.fn();
 
     const { getByLabelText } = render(
       <ChatComposer
         {...mockProps}
-        input="hello"
-        onInputChange={onInputChange}
-        inputRef={inputRef as any}
+        inputDefaultValue="hello"
+        hasInput
+        hasSendableInput
+        onClearInput={onClearInput}
       />,
     );
 
     fireEvent.press(getByLabelText("Clear input"));
 
-    expect(onInputChange).toHaveBeenCalledWith("");
-    expect(focus).toHaveBeenCalled();
+    expect(onClearInput).toHaveBeenCalled();
   });
 
   it("shows default model label and opens picker", () => {
@@ -103,7 +111,9 @@ describe("ChatComposer clear button", () => {
     const { getByLabelText, queryByLabelText, UNSAFE_getByType } = render(
       <ChatComposer
         {...mockProps}
-        input="hello"
+        hasInput
+        hasSendableInput
+        inputDefaultValue="hello"
         showScrollToBottom
         onScrollToBottom={jest.fn()}
       />,
@@ -115,5 +125,11 @@ describe("ChatComposer clear button", () => {
     expect(getByLabelText("Open shortcut manager")).toBeTruthy();
     expect(getByLabelText("Clear input")).toBeTruthy();
     expect(getByLabelText("Scroll to bottom")).toBeTruthy();
+  });
+
+  it("applies the configured maxLength to the input", () => {
+    const { UNSAFE_getByType } = render(<ChatComposer {...mockProps} />);
+
+    expect(UNSAFE_getByType(TextInput).props.maxLength).toBe(50_000);
   });
 });

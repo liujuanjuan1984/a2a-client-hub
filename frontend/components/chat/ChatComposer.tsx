@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { memo, useState } from "react";
 import {
   NativeSyntheticEvent,
   Platform,
@@ -14,7 +14,7 @@ import { type GenericCapabilityStatus } from "@/hooks/useExtensionCapabilitiesQu
 import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import { type SharedModelSelection } from "@/lib/chat-utils";
 
-export function ChatComposer({
+export const ChatComposer = memo(function ChatComposer({
   modelSelectionStatus,
   pendingInterrupt,
   showShortcutManager,
@@ -22,7 +22,12 @@ export function ChatComposer({
   selectedModel,
   onOpenModelPicker,
   inputRef,
-  input,
+  inputResetKey,
+  inputDefaultValue,
+  hasInput,
+  hasSendableInput,
+  maxInputChars,
+  onClearInput,
   onInputChange,
   onContentSizeChange,
   inputHeight,
@@ -39,7 +44,12 @@ export function ChatComposer({
   selectedModel: SharedModelSelection | null;
   onOpenModelPicker: () => void;
   inputRef: React.RefObject<TextInput | null>;
-  input: string;
+  inputResetKey: number;
+  inputDefaultValue: string;
+  hasInput: boolean;
+  hasSendableInput: boolean;
+  maxInputChars: number;
+  onClearInput: () => void;
   onInputChange: (value: string) => void;
   onContentSizeChange: (height: number) => void;
   inputHeight: number;
@@ -113,13 +123,10 @@ export function ChatComposer({
             />
           </Pressable>
 
-          {input.length > 0 && (
+          {hasInput && (
             <Pressable
               className="h-9 w-14 items-center justify-center rounded-xl bg-slate-800/40"
-              onPress={() => {
-                onInputChange("");
-                inputRef.current?.focus();
-              }}
+              onPress={onClearInput}
               accessibilityRole="button"
               accessibilityLabel="Clear input"
             >
@@ -142,6 +149,7 @@ export function ChatComposer({
 
       <View className="flex-row items-end gap-2 rounded-2xl bg-surface p-2">
         <TextInput
+          key={inputResetKey}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           ref={inputRef}
@@ -149,7 +157,8 @@ export function ChatComposer({
           placeholder="Type your message"
           placeholderTextColor="#666666"
           multiline
-          value={input}
+          defaultValue={inputDefaultValue}
+          maxLength={maxInputChars}
           onChangeText={onInputChange}
           onContentSizeChange={(event) =>
             onContentSizeChange(event.nativeEvent.contentSize.height)
@@ -164,7 +173,7 @@ export function ChatComposer({
           returnKeyType="default"
         />
         <View className="flex-row items-center pb-1">
-          {input.trim().length > 0 && (
+          {hasSendableInput && (
             <Pressable
               className={`h-9 w-14 items-center justify-center rounded-xl ${
                 pendingInterrupt ? "bg-slate-800/30 opacity-40" : "bg-primary"
@@ -182,4 +191,4 @@ export function ChatComposer({
       </View>
     </View>
   );
-}
+});
