@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select
@@ -212,7 +213,7 @@ class A2AScheduleDispatchService:
             .limit(1)
             .with_for_update(of=A2AScheduleExecution, skip_locked=True)
         )
-        execution = await db.scalar(stmt)
+        execution = cast(A2AScheduleExecution | None, await db.scalar(stmt))
         if execution is None:
             return None
 
@@ -223,38 +224,51 @@ class A2AScheduleDispatchService:
             .limit(1)
         )
         try:
-            task = await db.scalar(task_stmt)
+            task = cast(A2AScheduleTask | None, await db.scalar(task_stmt))
         except DBAPIError as exc:
-            if to_retryable_db_lock_error(exc) is not None:
+            if (
+                to_retryable_db_lock_error(
+                    exc,
+                    lock_message="Schedule task row is locked by another operation.",
+                )
+                is not None
+            ):
                 await db.rollback()
                 return None
             raise
-        if task is None or task.deleted_at is not None or not task.enabled:
-            execution.status = A2AScheduleExecution.STATUS_FAILED
-            execution.finished_at = now_utc
-            execution.error_message = (
-                "Task disabled or deleted before execution started"
+        task_deleted_at = (
+            cast(datetime | None, task.deleted_at) if task is not None else None
+        )
+        task_enabled = cast(bool, task.enabled) if task is not None else False
+        if task is None or task_deleted_at is not None or not task_enabled:
+            setattr(execution, "status", A2AScheduleExecution.STATUS_FAILED)
+            setattr(execution, "finished_at", now_utc)
+            setattr(
+                execution,
+                "error_message",
+                "Task disabled or deleted before execution started",
             )
             await commit_safely(db)
             return None
 
-        execution.status = A2AScheduleExecution.STATUS_RUNNING
-        execution.started_at = now_utc
-        execution.last_heartbeat_at = now_utc
+        setattr(execution, "status", A2AScheduleExecution.STATUS_RUNNING)
+        setattr(execution, "started_at", now_utc)
+        setattr(execution, "last_heartbeat_at", now_utc)
 
         await commit_safely(db)
 
         return ClaimedA2AScheduleTask(
-            task_id=task.id,
-            user_id=task.user_id,
-            agent_id=task.agent_id,
-            conversation_id=execution.conversation_id or task.conversation_id,
-            name=task.name,
-            prompt=task.prompt,
-            cycle_type=task.cycle_type,
-            time_point=dict(task.time_point or {}),
-            scheduled_for=execution.scheduled_for,
-            run_id=execution.run_id,
+            task_id=cast(UUID, task.id),
+            user_id=cast(UUID, task.user_id),
+            agent_id=cast(UUID, task.agent_id),
+            conversation_id=cast(UUID | None, execution.conversation_id)
+            or cast(UUID | None, task.conversation_id),
+            name=cast(str, task.name),
+            prompt=cast(str, task.prompt),
+            cycle_type=cast(str, task.cycle_type),
+            time_point=dict(cast(dict[str, Any] | None, task.time_point) or {}),
+            scheduled_for=cast(datetime, execution.scheduled_for),
+            run_id=cast(UUID, execution.run_id),
         )
 
     async def recover_stale_running_tasks(
@@ -311,7 +325,7 @@ class A2AScheduleDispatchService:
                 .limit(1)
                 .with_for_update(of=A2AScheduleExecution, skip_locked=True)
             )
-            execution = await db.scalar(stmt)
+            execution = cast(A2AScheduleExecution | None, await db.scalar(stmt))
             if execution is None:
                 stale_count_stmt = (
                     select(func.count(A2AScheduleExecution.id))
@@ -342,9 +356,15 @@ class A2AScheduleDispatchService:
                 .with_for_update(nowait=True)
             )
             try:
-                task = await db.scalar(task_stmt)
+                task = cast(A2AScheduleTask | None, await db.scalar(task_stmt))
             except DBAPIError as exc:
-                if to_retryable_db_lock_error(exc) is not None:
+                if (
+                    to_retryable_db_lock_error(
+                        exc,
+                        lock_message="Schedule task row is locked during stale recovery.",
+                    )
+                    is not None
+                ):
                     await db.rollback()
                     continue
                 raise
@@ -353,19 +373,24 @@ class A2AScheduleDispatchService:
                 await commit_safely(db)
                 continue
 
-            execution.status = A2AScheduleExecution.STATUS_FAILED
-            execution.finished_at = now_utc
-            execution.error_message = error_message
-            execution.error_code = error_code
-            if execution.conversation_id is None:
-                execution.conversation_id = task.conversation_id
+            setattr(execution, "status", A2AScheduleExecution.STATUS_FAILED)
+            setattr(execution, "finished_at", now_utc)
+            setattr(execution, "error_message", error_message)
+            setattr(execution, "error_code", error_code)
+            conversation_id = cast(UUID | None, execution.conversation_id)
+            if conversation_id is None:
+                setattr(
+                    execution,
+                    "conversation_id",
+                    cast(UUID | None, task.conversation_id),
+                )
 
             self._projection.apply_task_terminal_projection(
                 task,
                 final_status=A2AScheduleTask.STATUS_FAILED,
                 finished_at=now_utc,
                 failure_threshold=failure_threshold,
-                conversation_id=execution.conversation_id,
+                conversation_id=cast(UUID | None, execution.conversation_id),
             )
             recovered_count += 1
 
@@ -404,7 +429,7 @@ class A2AScheduleDispatchService:
             .with_for_update(nowait=True)
             .limit(1)
         )
-        execution = await db.scalar(exec_stmt)
+        execution = cast(A2AScheduleExecution | None, await db.scalar(exec_stmt))
         if execution is None:
             return False
 
@@ -419,7 +444,7 @@ class A2AScheduleDispatchService:
             .with_for_update(nowait=True)
             .limit(1)
         )
-        task = await db.scalar(stmt)
+        task = cast(A2AScheduleTask | None, await db.scalar(stmt))
         if task is None:
             return False
 
@@ -430,14 +455,14 @@ class A2AScheduleDispatchService:
         }:
             raise A2AScheduleValidationError("Unsupported final status for task run")
 
-        execution.status = final_status
-        execution.finished_at = ensure_utc(finished_at)
-        execution.conversation_id = conversation_id
-        execution.response_content = response_content
-        execution.error_message = error_message
-        execution.error_code = error_code
-        execution.user_message_id = user_message_id
-        execution.agent_message_id = agent_message_id
+        setattr(execution, "status", final_status)
+        setattr(execution, "finished_at", ensure_utc(finished_at))
+        setattr(execution, "conversation_id", conversation_id)
+        setattr(execution, "response_content", response_content)
+        setattr(execution, "error_message", error_message)
+        setattr(execution, "error_code", error_code)
+        setattr(execution, "user_message_id", user_message_id)
+        setattr(execution, "agent_message_id", agent_message_id)
         self._projection.apply_task_terminal_projection(
             task,
             final_status=final_status,
