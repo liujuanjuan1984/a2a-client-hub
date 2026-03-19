@@ -4,6 +4,8 @@ This module exposes the SQLAlchemy async session factory used by the API.
 Routing dependencies should import `get_async_db` from `app.api.deps` to avoid duplication.
 """
 
+from typing import Any
+
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -14,7 +16,7 @@ from app.services.ops_metrics import ops_metrics
 _use_null_pool = settings.schema_name.startswith("test_")
 
 # Async engine/session factory (used by new async stack)
-async_engine_kwargs = dict(
+async_engine_kwargs: dict[str, Any] = dict(
     echo=settings.database_echo,
     pool_pre_ping=True,
 )
@@ -36,12 +38,12 @@ _pool = async_engine.sync_engine.pool
 
 
 @event.listens_for(_pool, "checkout")
-def _pool_checkout(*_args) -> None:
+def _pool_checkout(*_args: Any) -> None:
     ops_metrics.increment_db_pool_checked_out()
 
 
 @event.listens_for(_pool, "checkin")
-def _pool_checkin(*_args) -> None:
+def _pool_checkin(*_args: Any) -> None:
     ops_metrics.decrement_db_pool_checked_out()
 
 
