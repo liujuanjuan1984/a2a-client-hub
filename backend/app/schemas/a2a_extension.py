@@ -26,7 +26,7 @@ class A2AExtensionQueryRequest(BaseModel):
 
 class A2AExtensionResponse(BaseModel):
     success: bool
-    result: Optional[Dict[str, Any]] = None
+    result: Optional[Any] = None
     error_code: Optional[str] = None
     upstream_error: Optional[Dict[str, Any]] = None
     meta: Dict[str, Any] = Field(default_factory=dict)

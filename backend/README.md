@@ -44,6 +44,24 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Default API prefix: `/api/v1`.
 
+## Incremental mypy Gate
+
+The backend uses a phased mypy gate for changed files instead of a full-repo
+type gate.
+
+Current scope:
+
+- `backend/app/utils/**/*.py`
+- `backend/app/schemas/**/*.py`
+
+Useful commands:
+
+```bash
+cd backend
+uv run bash scripts/mypy_changed.sh
+uv run bash scripts/mypy_changed.sh app/schemas/auth.py
+```
+
 ## A2A Outbound Allowlist
 
 This backend requires an allowlist for all outbound A2A HTTP requests (agent card
