@@ -55,10 +55,12 @@ Current direction:
 - Feature-owned code is being moved into `app/features/<feature_name>/`.
 - Legacy module paths are kept as compatibility shims during the migration.
 
-Stage 1 features migrated:
+Migrated features so far:
 
 - `app/features/auth/`
 - `app/features/invitations/`
+- `app/features/schedules/`
+- `app/features/sessions/`
 - `app/features/shortcuts/`
 
 This keeps runtime behavior stable while establishing a clearer long-term
@@ -78,7 +80,7 @@ Useful commands:
 ```bash
 cd backend
 uv run bash scripts/mypy_changed.sh
-uv run bash scripts/mypy_changed.sh app/schemas/auth.py
+uv run bash scripts/mypy_changed.sh app/features/auth/schemas.py
 ```
 
 ## A2A Outbound Allowlist

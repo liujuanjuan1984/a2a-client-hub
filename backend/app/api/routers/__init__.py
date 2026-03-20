@@ -10,11 +10,11 @@ ROUTER_MODULES: Final[tuple[str, ...]] = (
     "app.api.routers.hub_a2a_agents",
     "app.api.routers.admin_a2a_agents",
     "app.api.routers.admin_proxy_allowlist",
-    "app.api.routers.a2a_schedules",
+    "app.features.schedules.router",
     "app.api.routers.a2a_extension_capabilities",
     "app.api.routers.hub_a2a_extension_capabilities",
     "app.api.routers.opencode_session_directory",
-    "app.api.routers.me_sessions",
+    "app.features.sessions.router",
     "app.features.invitations.router",
     "app.features.shortcuts.router",
 )
