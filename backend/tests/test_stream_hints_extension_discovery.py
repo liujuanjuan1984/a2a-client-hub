@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+import pytest
+from a2a.types import AgentCard
+
+from app.integrations.a2a_extensions.errors import (
+    A2AExtensionContractError,
+    A2AExtensionNotSupportedError,
+)
+from app.integrations.a2a_extensions.shared_contract import STREAM_HINTS_URI
+from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
+
+
+def _base_card_payload() -> dict:
+    return {
+        "name": "example",
+        "description": "example",
+        "url": "https://example.com",
+        "version": "1.0",
+        "capabilities": {"extensions": []},
+        "defaultInputModes": [],
+        "defaultOutputModes": [],
+        "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+    }
+
+
+def test_resolve_stream_hints_defaults_to_canonical_shared_fields() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [{"uri": STREAM_HINTS_URI, "params": {}}]
+
+    resolved = resolve_stream_hints(AgentCard.model_validate(payload))
+
+    assert resolved.uri == STREAM_HINTS_URI
+    assert resolved.stream_field == "metadata.shared.stream"
+    assert resolved.usage_field == "metadata.shared.usage"
+    assert resolved.interrupt_field == "metadata.shared.interrupt"
+    assert resolved.session_field == "metadata.shared.session"
+
+
+def test_resolve_stream_hints_rejects_non_canonical_field_override() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": STREAM_HINTS_URI,
+            "params": {"stream_field": "metadata.private.stream"},
+        }
+    ]
+
+    with pytest.raises(A2AExtensionContractError, match="params.stream_field"):
+        resolve_stream_hints(AgentCard.model_validate(payload))
+
+
+def test_resolve_stream_hints_rejects_missing_extension() -> None:
+    with pytest.raises(A2AExtensionNotSupportedError):
+        resolve_stream_hints(AgentCard.model_validate(_base_card_payload()))

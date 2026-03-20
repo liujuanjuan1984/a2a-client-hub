@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+from a2a.types import AgentCard
 from fastapi import HTTPException, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -2810,6 +2811,128 @@ async def test_resolve_session_binding_outbound_mode_warns_on_upstream_failure_a
                 "session_binding_resolution_error": "upstream_fetch_failed",
                 "session_binding_resolution_detail": "card fetch failed",
                 "session_binding_fallback_used": True,
+            },
+        )
+    ]
+
+
+def test_build_stream_hints_runtime_meta_from_card_warns_once_for_missing_capability() -> (
+    None
+):
+    warnings: list[tuple[str, dict[str, object]]] = []
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(
+            name="Demo Agent",
+            url="https://example.com/a2a/missing-stream-hints",
+            headers={"Authorization": "Bearer token"},
+        )
+    )
+    card = AgentCard.model_validate(
+        {
+            "name": "example",
+            "description": "example",
+            "url": "https://example.com",
+            "version": "1.0",
+            "capabilities": {"extensions": []},
+            "defaultInputModes": [],
+            "defaultOutputModes": [],
+            "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+        }
+    )
+
+    meta = invoke_route_runner._build_stream_hints_runtime_meta_from_card(
+        runtime=runtime,
+        card=card,
+        logger=SimpleNamespace(
+            info=lambda *args, **kwargs: None,
+            warning=lambda message, *, extra: warnings.append((message, extra)),
+        ),
+        log_extra={"agent_id": "agent-1"},
+    )
+    second = invoke_route_runner._build_stream_hints_runtime_meta_from_card(
+        runtime=SimpleNamespace(
+            resolved=SimpleNamespace(
+                name="Demo Agent",
+                url="https://example.com/a2a/missing-stream-hints",
+                headers={"Authorization": "Bearer token"},
+            )
+        ),
+        card=card,
+        logger=SimpleNamespace(
+            info=lambda *args, **kwargs: None,
+            warning=lambda message, *, extra: warnings.append((message, extra)),
+        ),
+        log_extra={"agent_id": "agent-1"},
+    )
+
+    assert meta == {
+        "stream_hints_declared": False,
+        "stream_hints_mode": "compat_fallback",
+        "stream_hints_fallback_used": True,
+    }
+    assert second == meta
+    assert warnings == [
+        (
+            "Stream hints extension not declared; using compatibility fallback",
+            {
+                "agent_id": "agent-1",
+                "stream_hints_fallback_used": True,
+            },
+        )
+    ]
+
+
+def test_diagnose_stream_hints_contract_gap_warns_once_for_missing_shared_stream() -> (
+    None
+):
+    warnings: list[tuple[str, dict[str, object]]] = []
+    state = invoke_route_runner._InvokeState(
+        local_session_id=None,
+        local_source=None,
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        stream_hints_meta={
+            "stream_hints_declared": True,
+            "stream_hints_mode": "declared_contract",
+            "stream_hints_fallback_used": False,
+        },
+    )
+    event_payload = {
+        "kind": "artifact-update",
+        "metadata": {"block_type": "text"},
+        "artifact": {
+            "parts": [{"kind": "text", "text": "hello"}],
+        },
+    }
+
+    invoke_route_runner._diagnose_stream_hints_contract_gap(
+        state=state,
+        event_payload=event_payload,
+        logger=SimpleNamespace(
+            info=lambda *args, **kwargs: None,
+            warning=lambda message, *, extra: warnings.append((message, extra)),
+        ),
+        log_extra={"agent_id": "agent-1"},
+    )
+    invoke_route_runner._diagnose_stream_hints_contract_gap(
+        state=state,
+        event_payload=event_payload,
+        logger=SimpleNamespace(
+            info=lambda *args, **kwargs: None,
+            warning=lambda message, *, extra: warnings.append((message, extra)),
+        ),
+        log_extra={"agent_id": "agent-1"},
+    )
+
+    assert warnings == [
+        (
+            "Stream hints declared but artifact updates relied on compatibility fallback for shared.stream",
+            {
+                "agent_id": "agent-1",
+                "stream_hints_mode": "declared_contract",
+                "stream_hints_contract_gap": "shared_stream_missing",
             },
         )
     ]

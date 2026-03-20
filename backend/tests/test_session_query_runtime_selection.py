@@ -20,6 +20,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
     SHARED_SESSION_QUERY_URI,
+    STREAM_HINTS_URI,
 )
 
 
@@ -41,6 +42,7 @@ def _build_card(
     uri: str = SHARED_SESSION_QUERY_URI,
     pagination: dict | None = None,
     with_binding: bool = False,
+    with_stream_hints: bool = False,
 ) -> AgentCard:
     payload = _base_card_payload()
     extensions = [
@@ -73,6 +75,8 @@ def _build_card(
                 },
             }
         )
+    if with_stream_hints:
+        extensions.append({"uri": STREAM_HINTS_URI, "params": {}})
     payload["capabilities"]["extensions"] = extensions
     return AgentCard.model_validate(payload)
 
@@ -123,7 +127,7 @@ async def test_resolve_capability_snapshot_uses_runtime_cache(
             headers={"Authorization": "Bearer token"},
         )
     )
-    fake_card = _build_card(with_binding=True)
+    fake_card = _build_card(with_binding=True, with_stream_hints=True)
     fetch_calls = 0
 
     async def _fake_fetch_card(_runtime):
@@ -143,6 +147,13 @@ async def test_resolve_capability_snapshot_uses_runtime_cache(
         "session_query_selection_mode": "canonical_parser",
     }
     assert first.session_binding.status == "supported"
+    assert first.stream_hints.status == "supported"
+    assert first.stream_hints.meta == {
+        "stream_hints_declared": True,
+        "stream_hints_uri": STREAM_HINTS_URI,
+        "stream_hints_mode": "declared_contract",
+        "stream_hints_fallback_used": False,
+    }
     assert fetch_calls == 1
 
 
@@ -171,6 +182,12 @@ async def test_resolve_capability_snapshot_caches_unsupported_binding(
         "session_binding_declared": False,
         "session_binding_mode": "compat_fallback",
         "session_binding_fallback_used": True,
+    }
+    assert first.stream_hints.status == "unsupported"
+    assert first.stream_hints.meta == {
+        "stream_hints_declared": False,
+        "stream_hints_mode": "compat_fallback",
+        "stream_hints_fallback_used": True,
     }
     assert second == first
     assert fetch_calls == 1
