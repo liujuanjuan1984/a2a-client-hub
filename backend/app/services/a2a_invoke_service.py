@@ -22,6 +22,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from app.integrations.a2a_client.errors import A2APeerProtocolError
+from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
 )
@@ -80,6 +81,7 @@ StreamTextCallbackFn = Callable[[str], Any]
 StreamEventPayloadCallbackFn = Callable[[dict[str, Any]], Any]
 StreamMetadataCallbackFn = Callable[[dict[str, Any]], Any]
 StreamErrorMetadataCallbackFn = Callable[[dict[str, Any]], Any]
+StreamSessionStartedCallbackFn = Callable[[Any], Any]
 
 
 class StreamFinishReason(str, Enum):
@@ -286,6 +288,55 @@ class A2AInvokeService:
                 exc_info=True,
                 extra=log_extra,
             )
+
+    @classmethod
+    async def _iter_gateway_stream(
+        cls,
+        *,
+        gateway: Any,
+        invoke_session: Any | None,
+        resolved: Any,
+        query: str,
+        context_id: str | None,
+        metadata: dict[str, Any] | None,
+        on_session_started: StreamSessionStartedCallbackFn | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        if invoke_session is not None:
+            await cls._call_callback(on_session_started, invoke_session)
+            async for payload in gateway.stream(
+                session=invoke_session,
+                resolved=resolved,
+                query=query,
+                context_id=context_id,
+                metadata=metadata,
+            ):
+                yield payload
+            return
+
+        open_invoke_session = getattr(gateway, "open_invoke_session", None)
+        if callable(open_invoke_session):
+            async with open_invoke_session(
+                resolved=resolved,
+                policy=AgentResolutionPolicy.CACHED_SHARED,
+            ) as session:
+                await cls._call_callback(on_session_started, session)
+                async for payload in gateway.stream(
+                    session=session,
+                    resolved=resolved,
+                    query=query,
+                    context_id=context_id,
+                    metadata=metadata,
+                ):
+                    yield payload
+            return
+
+        async for payload in gateway.stream(
+            resolved=resolved,
+            query=query,
+            context_id=context_id,
+            metadata=metadata,
+        ):
+            yield payload
 
     @classmethod
     def analyze_payload(cls, payload: dict[str, Any]) -> PayloadAnalysis:
@@ -845,6 +896,7 @@ class A2AInvokeService:
         self,
         *,
         gateway: Any,
+        invoke_session: Any | None = None,
         resolved: Any,
         query: str,
         context_id: str | None,
@@ -857,6 +909,7 @@ class A2AInvokeService:
         on_error: StreamTextCallbackFn | None = None,
         on_event: StreamEventPayloadCallbackFn | None = None,
         on_finalized: StreamFinalizedCallbackFn | None = None,
+        on_session_started: StreamSessionStartedCallbackFn | None = None,
         resume_from_sequence: int | None = None,
         cache_key: str | None = None,
     ) -> StreamingResponse:
@@ -902,11 +955,14 @@ class A2AInvokeService:
 
             try:
                 async for event in self._iter_stream_events_with_heartbeat(
-                    gateway.stream(
+                    self._iter_gateway_stream(
+                        gateway=gateway,
+                        invoke_session=invoke_session,
                         resolved=resolved,
                         query=query,
                         context_id=context_id,
                         metadata=metadata,
+                        on_session_started=on_session_started,
                     ),
                     heartbeat_interval_seconds=heartbeat_interval_seconds,
                 ):
@@ -1085,6 +1141,7 @@ class A2AInvokeService:
         on_event: StreamEventPayloadCallbackFn | None = None,
         on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
         on_finalized: StreamFinalizedCallbackFn | None = None,
+        on_session_started: StreamSessionStartedCallbackFn | None = None,
         send_stream_end: bool = True,
         resume_from_sequence: int | None = None,
         cache_key: str | None = None,
@@ -1125,11 +1182,14 @@ class A2AInvokeService:
         serialized = {}
         try:
             async for event in self._iter_stream_events_with_heartbeat(
-                gateway.stream(
+                self._iter_gateway_stream(
+                    gateway=gateway,
+                    invoke_session=None,
                     resolved=resolved,
                     query=query,
                     context_id=context_id,
                     metadata=metadata,
+                    on_session_started=on_session_started,
                 ),
                 heartbeat_interval_seconds=heartbeat_interval_seconds,
             ):
@@ -1305,6 +1365,7 @@ class A2AInvokeService:
         on_event: StreamEventPayloadCallbackFn | None = None,
         on_error_metadata: StreamErrorMetadataCallbackFn | None = None,
         on_finalized: StreamFinalizedCallbackFn | None = None,
+        on_session_started: StreamSessionStartedCallbackFn | None = None,
         idle_timeout_seconds: float | None = None,
         total_timeout_seconds: float | None = None,
     ) -> StreamOutcome:
@@ -1316,12 +1377,14 @@ class A2AInvokeService:
         last_event_at = started_at
         heartbeat_interval_seconds = self._stream_heartbeat_interval_seconds()
         stream_iter = self._iter_stream_events_with_heartbeat(
-            gateway.stream(
-                session=invoke_session,
+            self._iter_gateway_stream(
+                gateway=gateway,
+                invoke_session=invoke_session,
                 resolved=resolved,
                 query=query,
                 context_id=context_id,
                 metadata=metadata,
+                on_session_started=on_session_started,
             ),
             heartbeat_interval_seconds=heartbeat_interval_seconds,
         ).__aiter__()
