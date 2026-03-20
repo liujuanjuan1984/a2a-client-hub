@@ -323,12 +323,13 @@ describe("executeChatRuntime empty-content recovery", () => {
 
     expect(state.sessions[conversationId]?.streamState).toBe("error");
     expect(state.sessions[conversationId]?.lastStreamError).toBe(
-      "缺少上游必需参数：project_id, channel_id",
+      "Missing required upstream parameters: project_id, channel_id",
     );
     expect(agentMessage).toMatchObject({
       status: "error",
       errorCode: "invalid_params",
-      errorMessage: "缺少上游必需参数：project_id, channel_id",
+      errorMessage:
+        "Missing required upstream parameters: project_id, channel_id",
       errorSource: "upstream_a2a",
       jsonrpcCode: -32602,
       missingParams: [
@@ -1325,12 +1326,12 @@ describe("executeChatRuntime failure handling", () => {
 
     expect(state.sessions[conversationId]?.streamState).toBe("error");
     expect(state.sessions[conversationId]?.lastStreamError).toBe(
-      "缺少上游必需参数：project_id",
+      "Missing required upstream parameters: project_id",
     );
     expect(agentMessage).toMatchObject({
       status: "error",
       errorCode: "invalid_params",
-      errorMessage: "缺少上游必需参数：project_id",
+      errorMessage: "Missing required upstream parameters: project_id",
       errorSource: "upstream_a2a",
       jsonrpcCode: -32602,
       missingParams: [{ name: "project_id", required: true }],

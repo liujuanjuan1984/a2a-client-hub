@@ -264,7 +264,7 @@ describe("ChatMessageItem interaction", () => {
 
     expect(screen.queryByText("Content unavailable.")).toBeNull();
     expect(
-      screen.getByText("当前无法连接到上游 Agent，请稍后重试。"),
+      screen.getByText("Unable to reach the upstream agent. Please try again."),
     ).toBeTruthy();
   });
 
@@ -273,7 +273,8 @@ describe("ChatMessageItem interaction", () => {
       content: "",
       status: "error",
       errorCode: "invalid_params",
-      errorMessage: "缺少上游必需参数：project_id, channel_id",
+      errorMessage:
+        "Missing required upstream parameters: project_id, channel_id",
       errorSource: "upstream_a2a",
       jsonrpcCode: -32602,
       missingParams: [
@@ -294,8 +295,12 @@ describe("ChatMessageItem interaction", () => {
     );
 
     expect(
-      screen.getByText("缺少上游必需参数：project_id, channel_id"),
+      screen.getByText(
+        "Missing required upstream parameters: project_id, channel_id",
+      ),
     ).toBeTruthy();
-    expect(screen.queryByText("流响应异常，请重试。")).toBeNull();
+    expect(
+      screen.queryByText("Streaming response failed. Please try again."),
+    ).toBeNull();
   });
 });

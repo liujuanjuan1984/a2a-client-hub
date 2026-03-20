@@ -35,15 +35,15 @@ const resolveErrorBannerText = (message: ChatMessage): string => {
   const missingParamLabel = formatMissingParamLabel(message);
 
   if (missingParamLabel) {
-    return `缺少上游必需参数：${missingParamLabel}`;
+    return `Missing required upstream parameters: ${missingParamLabel}`;
   }
 
   if (AGENT_CONNECTIVITY_ERROR_CODES.has(normalizedErrorCode)) {
-    return "当前无法连接到上游 Agent，请稍后重试。";
+    return "Unable to reach the upstream agent. Please try again.";
   }
 
   if (normalizedErrorCode === "outbound_not_allowed") {
-    return "当前配置不允许访问该上游 Agent。";
+    return "Current configuration does not allow access to this upstream agent.";
   }
 
   if (STREAM_FAILURE_ERROR_CODES.has(normalizedErrorCode)) {
@@ -56,14 +56,14 @@ const resolveErrorBannerText = (message: ChatMessage): string => {
     ) {
       return message.errorMessage.trim();
     }
-    return "流响应异常，请重试。";
+    return "Streaming response failed. Please try again.";
   }
 
   if (typeof message.errorMessage === "string" && message.errorMessage.trim()) {
     return message.errorMessage.trim();
   }
 
-  return "流响应异常，请重试。";
+  return "Streaming response failed. Please try again.";
 };
 
 export const ChatMessageItem = React.memo(function ChatMessageItem({

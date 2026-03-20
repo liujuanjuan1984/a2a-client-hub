@@ -194,7 +194,7 @@ const buildStreamErrorMessage = ({
 }) => {
   const missingParams = formatMissingParamLabel(details?.missingParams);
   if (missingParams) {
-    return `缺少上游必需参数：${missingParams}`;
+    return `Missing required upstream parameters: ${missingParams}`;
   }
   const upstreamMessage = extractUpstreamErrorMessage(details?.upstreamError);
   if (
