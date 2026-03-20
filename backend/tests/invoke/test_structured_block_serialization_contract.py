@@ -5,7 +5,7 @@ from app.features.invoke.stream_payloads import serialize_stream_data_value
 
 _SERIALIZATION_CASES = json.loads(
     (
-        Path(__file__).resolve().parents[2]
+        Path(__file__).resolve().parents[3]
         / "docs/contracts/structured-block-stable-serialization-cases.json"
     ).read_text(encoding="utf-8")
 )

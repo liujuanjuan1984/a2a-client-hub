@@ -71,6 +71,12 @@ Feature-owned areas already organized under `app/features/`:
 This keeps the runtime entrypoints aligned with business capabilities and makes
 the import graph easier to reason about over time.
 
+## Test Layout
+
+Feature-facing backend tests are being grouped under `backend/tests/<feature_name>/`
+so route, service, and contract coverage for the same capability stays close
+together. Shared fixtures and helpers remain at the `backend/tests/` root.
+
 ## Incremental mypy Gate
 
 The backend uses a phased mypy gate for changed files instead of a full-repo

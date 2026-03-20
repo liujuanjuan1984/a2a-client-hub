@@ -2,8 +2,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.features.invoke import guard as invoke_guard
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
-from app.services import invoke_guard
 
 
 def test_build_invoke_guard_key_normalizes_query_and_uses_conversation_or_context() -> (

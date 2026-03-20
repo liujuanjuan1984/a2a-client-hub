@@ -12,7 +12,7 @@ from app.services.session_hub_common import (
 
 _MESSAGE_CASES = json.loads(
     (
-        Path(__file__).resolve().parents[2]
+        Path(__file__).resolve().parents[3]
         / "docs/contracts/interrupt-lifecycle-message-cases.json"
     ).read_text(encoding="utf-8")
 )

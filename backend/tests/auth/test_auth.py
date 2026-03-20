@@ -8,11 +8,11 @@ import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from app.api.routers import auth as auth_router
 from app.core.config import settings
 from app.core.security import DUMMY_PASSWORD_HASH, create_user_token, get_password_hash
 from app.db.models.invitation import Invitation, InvitationStatus
 from app.db.models.user import User
+from app.features.auth import router as auth_router
 from app.handlers import auth as auth_handler
 from app.utils.timezone_util import utc_now
 from tests.api_utils import create_test_client

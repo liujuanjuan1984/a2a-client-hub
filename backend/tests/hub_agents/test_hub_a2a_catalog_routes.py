@@ -6,12 +6,12 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import select
 
-from app.api.routers import admin_a2a_agents as admin_router
-from app.api.routers import hub_a2a_agents as hub_router
 from app.core.config import settings
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
+from app.features.hub_agents import admin_router
+from app.features.hub_agents import router as hub_router
 from tests.api_utils import create_test_client
 from tests.utils import create_user
 

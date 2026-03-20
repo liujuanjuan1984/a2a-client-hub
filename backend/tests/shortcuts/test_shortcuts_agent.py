@@ -1,7 +1,7 @@
 import pytest
 
-from app.api.routers import shortcuts
 from app.db.models.a2a_agent import A2AAgent
+from app.features.shortcuts import router as shortcuts
 from tests.api_utils import create_test_client
 from tests.utils import create_user
 
