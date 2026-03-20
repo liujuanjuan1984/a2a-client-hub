@@ -34,7 +34,7 @@ import { blurActiveElement } from "@/lib/focus";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
-import { useAgentStore } from "@/store/agents";
+import { type AgentSource, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
 
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
@@ -123,6 +123,8 @@ export function useChatScreenController({
     agentId: activeAgentId,
     source: agent?.source,
   });
+  const runtimeStatusContract =
+    extensionCapabilitiesQuery.runtimeStatusContract ?? undefined;
   const modelSelectionStatus: GenericCapabilityStatus =
     !activeAgentId || !agent?.source
       ? "unsupported"
@@ -176,6 +178,23 @@ export function useChatScreenController({
     scheduleStickToBottom(true);
   }, [scheduleStickToBottom]);
 
+  const sendMessageWithCapabilities = useCallback(
+    (
+      nextConversationId: string,
+      nextAgentId: string,
+      content: string,
+      nextAgentSource: AgentSource,
+    ) =>
+      sendMessage(
+        nextConversationId,
+        nextAgentId,
+        content,
+        nextAgentSource,
+        runtimeStatusContract,
+      ),
+    [runtimeStatusContract, sendMessage],
+  );
+
   const {
     interruptAction,
     questionAnswers,
@@ -224,7 +243,7 @@ export function useChatScreenController({
     agentSource: agent?.source,
     pendingInterruptActive: Boolean(pendingInterrupt),
     ensureSession,
-    sendMessage,
+    sendMessage: sendMessageWithCapabilities,
     setSharedModelSelection,
     onAfterSend: handleSendScrollIntent,
   });
@@ -469,7 +488,7 @@ export function useChatScreenController({
       try {
         if (session?.streamState === "recoverable") {
           if (typeof resumeMessage === "function") {
-            await resumeMessage(conversationId);
+            await resumeMessage(conversationId, runtimeStatusContract);
           }
           return;
         }
@@ -478,6 +497,7 @@ export function useChatScreenController({
             conversationId,
             activeAgentId,
             agent?.source || "personal",
+            runtimeStatusContract,
           );
         }
       } catch (error) {
@@ -491,6 +511,7 @@ export function useChatScreenController({
     activeAgentId,
     agent?.source,
     conversationId,
+    runtimeStatusContract,
     retryMessage,
     resumeMessage,
     session?.streamState,

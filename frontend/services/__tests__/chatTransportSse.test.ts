@@ -60,7 +60,11 @@ describe("chatTransportSse", () => {
       handlers.onData?.({ kind: "chunk" });
       handlers.onError?.(
         Object.assign(new Error("Upstream streaming failed"), {
-          errorCode: "agent_unavailable",
+          errorCode: "invalid_params",
+          source: "upstream_a2a",
+          jsonrpcCode: -32602,
+          missingParams: [{ name: "project_id", required: true }],
+          upstreamError: { message: "project_id required" },
         }),
       );
     });
@@ -92,7 +96,13 @@ describe("chatTransportSse", () => {
     expect(health.recordSseFailure).not.toHaveBeenCalled();
     expect(callbacks.onStreamError).toHaveBeenCalledWith(
       "Upstream streaming failed",
-      "agent_unavailable",
+      {
+        errorCode: "invalid_params",
+        source: "upstream_a2a",
+        jsonrpcCode: -32602,
+        missingParams: [{ name: "project_id", required: true }],
+        upstreamError: { message: "project_id required" },
+      },
     );
   });
 

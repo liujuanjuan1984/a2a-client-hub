@@ -86,7 +86,7 @@ describe("fetchSSE", () => {
   it("parses structured error events with error_code", async () => {
     (global.fetch as jest.Mock).mockResolvedValue(
       createSseResponse(
-        'event: error\ndata: {"message":"Upstream streaming failed","error_code":"agent_unavailable"}\n\n',
+        'event: error\ndata: {"message":"Upstream streaming failed","error_code":"invalid_params","source":"upstream_a2a","jsonrpc_code":-32602,"missing_params":[{"name":"project_id","required":true}],"upstream_error":{"message":"project_id required"}}\n\n',
       ),
     );
 
@@ -107,7 +107,11 @@ describe("fetchSSE", () => {
     expect(error).toBeInstanceOf(SSEStreamError);
     expect(error).toMatchObject({
       message: "Upstream streaming failed",
-      errorCode: "agent_unavailable",
+      errorCode: "invalid_params",
+      source: "upstream_a2a",
+      jsonrpcCode: -32602,
+      missingParams: [{ name: "project_id", required: true }],
+      upstreamError: { message: "project_id required" },
     });
   });
 

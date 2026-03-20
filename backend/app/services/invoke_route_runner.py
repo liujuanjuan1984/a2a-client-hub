@@ -74,9 +74,6 @@ from app.services.invoke_stream_persistence import (
 from app.services.invoke_stream_persistence import (
     persist_synthetic_final_block_if_needed as persist_synthetic_final_block_if_needed_impl,
 )
-from app.services.invoke_stream_persistence import (
-    resolve_invoke_idempotency_key as _resolve_invoke_idempotency_key_impl,
-)
 from app.services.session_hub import session_hub_service
 from app.services.session_hub_common import build_interrupt_lifecycle_message_content
 from app.services.ws_ticket_service import ws_ticket_service
@@ -325,14 +322,6 @@ def _normalize_optional_message_id(value: str | None) -> str | None:
     return str(resolved)
 
 
-def _resolve_invoke_idempotency_key(
-    *,
-    state: _InvokeState,
-    transport: Literal["http_json", "http_sse", "scheduled", "ws"],
-) -> str | None:
-    return _resolve_invoke_idempotency_key_impl(state=state, transport=transport)
-
-
 async def _resolve_session_binding_outbound_mode(
     *,
     runtime: Any,
@@ -369,18 +358,6 @@ async def _finalize_outbound_invoke_payload(
         log_extra=log_extra,
         resolve_outbound_mode=_resolve_session_binding_outbound_mode,
     )
-
-
-def _resolve_agent_status_from_outcome(outcome: StreamOutcome) -> str:
-    if outcome.success:
-        return "done"
-    if outcome.finish_reason.value in {
-        "client_disconnect",
-        "timeout_total",
-        "timeout_idle",
-    }:
-        return "interrupted"
-    return "error"
 
 
 async def _ensure_local_message_headers(
@@ -798,6 +775,10 @@ async def run_http_invoke(
         content=content,
         error=error,
         error_code=error_code,
+        source=outcome.source,
+        jsonrpc_code=outcome.jsonrpc_code,
+        missing_params=list(outcome.missing_params or []) or None,
+        upstream_error=outcome.upstream_error,
         agent_name=runtime.resolved.name,
         agent_url=runtime.resolved.url,
     )
@@ -881,6 +862,10 @@ async def run_background_invoke(
         "response_content": response_content,
         "error": outcome.error_message,
         "error_code": state.persisted_error_code or outcome.error_code,
+        "source": outcome.source,
+        "jsonrpc_code": outcome.jsonrpc_code,
+        "missing_params": list(outcome.missing_params or []) or None,
+        "upstream_error": outcome.upstream_error,
         "internal_error_message": outcome.internal_error_message,
         "conversation_id": (
             state.message_refs.get("conversation_id") if state.message_refs else None

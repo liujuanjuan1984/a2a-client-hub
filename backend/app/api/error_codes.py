@@ -16,6 +16,7 @@ class _A2AErrorCodeStatus:
         "outbound_not_allowed": 403,
         "not_supported": 400,
         "method_not_supported": 400,
+        "method_not_found": 400,
         "extension_contract_error": 400,
         "invalid_conversation_id": 400,
         "runtime_invalid": 400,

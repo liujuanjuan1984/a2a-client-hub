@@ -100,6 +100,35 @@ def test_extract_interrupt_lifecycle_keeps_question_descriptions() -> None:
     }
 
 
+def test_extract_interrupt_lifecycle_treats_auth_required_as_asked() -> None:
+    payload = {
+        "kind": "status-update",
+        "status": {"state": "auth_required"},
+        "metadata": {
+            "shared": {
+                "interrupt": {
+                    "request_id": "auth-1",
+                    "type": "permission",
+                    "details": {
+                        "permission": "login",
+                        "patterns": [],
+                    },
+                }
+            }
+        },
+    }
+
+    assert extract_interrupt_lifecycle_from_serialized_event(payload) == {
+        "request_id": "auth-1",
+        "type": "permission",
+        "phase": "asked",
+        "details": {
+            "permission": "login",
+            "patterns": [],
+        },
+    }
+
+
 def test_extract_interrupt_lifecycle_ignores_codex_private_permission_details() -> None:
     payload = {
         "kind": "status-update",

@@ -427,6 +427,41 @@ describe("api client auth refresh flow", () => {
     });
   });
 
+  it("preserves structured upstream error details on API request errors", async () => {
+    const { client, useSessionStore } = loadModules();
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse(400, {
+        error: "Upstream streaming failed",
+        error_code: "invalid_params",
+        source: "upstream_a2a",
+        jsonrpc_code: -32602,
+        missing_params: [{ name: "project_id", required: true }],
+        upstream_error: {
+          message: "project_id required",
+        },
+      }),
+    );
+
+    useSessionStore.setState({
+      token: "token",
+      authStatus: "authenticated",
+    });
+
+    await expect(
+      client.apiRequest<{ ok: boolean }>("/me/echo"),
+    ).rejects.toMatchObject({
+      status: 400,
+      errorCode: "invalid_params",
+      source: "upstream_a2a",
+      jsonrpcCode: -32602,
+      missingParams: [{ name: "project_id", required: true }],
+      upstreamError: {
+        message: "project_id required",
+      },
+    });
+  });
+
   it("shares one refresh request across 20 concurrent callers", async () => {
     const { client, useSessionStore } = loadModules();
     const fetchMock = global.fetch as jest.Mock;

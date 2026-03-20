@@ -23,10 +23,16 @@ class A2AExtensionUpstreamError(A2AExtensionError):
         *,
         message: str,
         error_code: str,
+        source: str | None = None,
+        jsonrpc_code: int | None = None,
+        missing_params: list[dict] | None = None,
         upstream_error: dict | None = None,
     ) -> None:
         super().__init__(message)
         self.error_code = error_code
+        self.source = source
+        self.jsonrpc_code = jsonrpc_code
+        self.missing_params = list(missing_params or []) or None
         self.upstream_error = upstream_error or None
 
 

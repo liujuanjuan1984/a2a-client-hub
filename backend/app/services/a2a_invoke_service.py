@@ -21,13 +21,14 @@ from a2a.types import Message
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
+from app.integrations.a2a_client.errors import A2APeerProtocolError
+from app.integrations.a2a_error_contract import (
+    build_upstream_error_details_from_protocol_error,
+)
 from app.services.a2a_payload_analysis import (
     PayloadAnalysis,
 )
 from app.services.a2a_payload_analysis import analyze_payload as analyze_payload_object
-from app.services.a2a_payload_analysis import (
-    coerce_payload_to_dict as coerce_payload_object,
-)
 from app.services.a2a_payload_analysis import (
     extract_binding_hints_from_invoke_result as extract_binding_hints_from_result,
 )
@@ -100,6 +101,34 @@ class StreamOutcome:
     idle_seconds: float
     terminal_event_seen: bool
     internal_error_message: str | None = None
+    source: str | None = None
+    jsonrpc_code: int | None = None
+    missing_params: tuple[dict[str, Any], ...] | None = None
+    upstream_error: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class StreamErrorPayload:
+    message: str
+    error_code: str | None
+    source: str | None = None
+    jsonrpc_code: int | None = None
+    missing_params: tuple[dict[str, Any], ...] | None = None
+    upstream_error: dict[str, Any] | None = None
+
+    def as_event_data(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"message": self.message}
+        if self.error_code:
+            data["error_code"] = self.error_code
+        if self.source:
+            data["source"] = self.source
+        if self.jsonrpc_code is not None:
+            data["jsonrpc_code"] = self.jsonrpc_code
+        if self.missing_params:
+            data["missing_params"] = [dict(item) for item in self.missing_params]
+        if self.upstream_error:
+            data["upstream_error"] = dict(self.upstream_error)
+        return data
 
 
 StreamFinalizedCallbackFn = Callable[[StreamOutcome], Any]
@@ -115,6 +144,36 @@ class A2AInvokeService:
     _WS_HEARTBEAT_EVENT = {"event": "heartbeat", "data": {}}
     _WS_STREAM_END_EVENT = {"event": "stream_end", "data": {}}
     _ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,64}$")
+    _MISSING_PARAM_MESSAGE_PATTERNS = (
+        re.compile(
+            r"(?P<names>[A-Za-z][A-Za-z0-9_]*(?:\s*[/,]\s*[A-Za-z][A-Za-z0-9_]*)*)\s+required\b",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"\bmissing\s+(?P<names>[A-Za-z][A-Za-z0-9_]*(?:\s*[/,]\s*[A-Za-z][A-Za-z0-9_]*)*)\b",
+            re.IGNORECASE,
+        ),
+    )
+    _SAFE_UPSTREAM_DATA_KEYS = frozenset(
+        {
+            "type",
+            "field",
+            "fields",
+            "param",
+            "params",
+            "name",
+            "names",
+            "missing",
+            "missing_fields",
+            "missing_params",
+            "missingParams",
+            "required",
+            "required_fields",
+            "reason",
+            "hint",
+            "details",
+        }
+    )
 
     @classmethod
     def build_ws_error_event(
@@ -122,10 +181,22 @@ class A2AInvokeService:
         *,
         message: str,
         error_code: str | None = None,
+        source: str | None = None,
+        jsonrpc_code: int | None = None,
+        missing_params: list[dict[str, Any]] | None = None,
+        upstream_error: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         data: dict[str, Any] = {"message": message}
         if error_code:
             data["error_code"] = error_code
+        if source:
+            data["source"] = source
+        if jsonrpc_code is not None:
+            data["jsonrpc_code"] = jsonrpc_code
+        if missing_params:
+            data["missing_params"] = missing_params
+        if upstream_error:
+            data["upstream_error"] = upstream_error
         return {"event": "error", "data": data}
 
     async def send_ws_error(
@@ -134,11 +205,22 @@ class A2AInvokeService:
         *,
         message: str,
         error_code: str | None = None,
+        source: str | None = None,
+        jsonrpc_code: int | None = None,
+        missing_params: list[dict[str, Any]] | None = None,
+        upstream_error: dict[str, Any] | None = None,
     ) -> None:
         try:
             await websocket.send_text(
                 json_dumps(
-                    self.build_ws_error_event(message=message, error_code=error_code),
+                    self.build_ws_error_event(
+                        message=message,
+                        error_code=error_code,
+                        source=source,
+                        jsonrpc_code=jsonrpc_code,
+                        missing_params=missing_params,
+                        upstream_error=upstream_error,
+                    ),
                     ensure_ascii=False,
                 )
             )
@@ -267,10 +349,6 @@ class A2AInvokeService:
         cls, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
         return extract_stream_chunk_from_serialized_event(payload)
-
-    @classmethod
-    def _coerce_payload_to_dict(cls, payload: Any) -> dict[str, Any]:
-        return coerce_payload_object(payload)
 
     @classmethod
     def extract_binding_hints_from_invoke_result(
@@ -570,6 +648,146 @@ class A2AInvokeService:
             return None
         return candidate
 
+    @classmethod
+    def _split_missing_param_names(cls, value: str) -> list[str]:
+        return [
+            item.strip()
+            for item in re.split(r"[/,]", value)
+            if item.strip() and cls._normalize_error_code(item.strip()) is not None
+        ]
+
+    @classmethod
+    def _coerce_missing_params(cls, value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, str):
+            return [
+                {"name": name, "required": True}
+                for name in cls._split_missing_param_names(value)
+            ]
+
+        if isinstance(value, dict):
+            name = None
+            for key in ("name", "field", "param", "id"):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    name = candidate.strip()
+                    break
+            if not name:
+                return []
+            required = value.get("required")
+            return [
+                {
+                    "name": name,
+                    "required": required if isinstance(required, bool) else True,
+                }
+            ]
+
+        if not isinstance(value, list):
+            return []
+
+        items: list[dict[str, Any]] = []
+        seen_names: set[str] = set()
+        for item in value:
+            for resolved in cls._coerce_missing_params(item):
+                name = resolved.get("name")
+                if not isinstance(name, str) or name in seen_names:
+                    continue
+                seen_names.add(name)
+                items.append(resolved)
+        return items
+
+    @classmethod
+    def _extract_missing_params_from_message(
+        cls,
+        message: str | None,
+    ) -> list[dict[str, Any]]:
+        if not message:
+            return []
+        for pattern in cls._MISSING_PARAM_MESSAGE_PATTERNS:
+            match = pattern.search(message)
+            if not match:
+                continue
+            return cls._coerce_missing_params(match.group("names"))
+        return []
+
+    @classmethod
+    def _extract_missing_params(
+        cls,
+        *,
+        data: Any,
+        message: str | None,
+    ) -> list[dict[str, Any]]:
+        if isinstance(data, dict):
+            for key in (
+                "missing_params",
+                "missingParams",
+                "missing_fields",
+                "required_fields",
+                "fields",
+                "params",
+                "missing",
+                "field",
+                "param",
+                "name",
+            ):
+                resolved = cls._coerce_missing_params(data.get(key))
+                if resolved:
+                    return resolved
+        return cls._extract_missing_params_from_message(message)
+
+    @classmethod
+    def _sanitize_upstream_error_data(
+        cls,
+        value: Any,
+        *,
+        depth: int = 0,
+    ) -> Any:
+        if depth >= 3:
+            return None
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, list):
+            sanitized_items = [
+                cls._sanitize_upstream_error_data(item, depth=depth + 1)
+                for item in value
+            ]
+            return [item for item in sanitized_items if item is not None] or None
+        if isinstance(value, dict):
+            sanitized: dict[str, Any] = {}
+            for key, item in value.items():
+                if key not in cls._SAFE_UPSTREAM_DATA_KEYS:
+                    continue
+                resolved = cls._sanitize_upstream_error_data(item, depth=depth + 1)
+                if resolved is not None:
+                    sanitized[key] = resolved
+            return sanitized or None
+        return None
+
+    @classmethod
+    def _build_stream_error_payload(
+        cls,
+        exc: BaseException,
+    ) -> StreamErrorPayload:
+        if not isinstance(exc, A2APeerProtocolError):
+            return StreamErrorPayload(
+                message=cls._STREAM_ERROR_MESSAGE,
+                error_code=(
+                    cls._extract_error_code_from_exception(exc)
+                    or cls._STREAM_ERROR_CODE
+                ),
+            )
+        error_details = build_upstream_error_details_from_protocol_error(
+            exc,
+            default_error_code=cls._STREAM_ERROR_CODE,
+        )
+        return StreamErrorPayload(
+            message=cls._STREAM_ERROR_MESSAGE,
+            error_code=error_details.error_code,
+            source=error_details.source,
+            jsonrpc_code=error_details.jsonrpc_code,
+            missing_params=error_details.missing_params,
+            upstream_error=error_details.upstream_error,
+        )
+
     @staticmethod
     def _extract_internal_error_message(exc: BaseException) -> str | None:
         detail = getattr(exc, "detail", None)
@@ -787,28 +1005,25 @@ class A2AInvokeService:
             except Exception as exc:
                 stream_failed = True
                 logger.warning("A2A SSE stream failed", exc_info=True, extra=log_extra)
-                error_code = (
-                    self._extract_error_code_from_exception(exc)
-                    or self._STREAM_ERROR_CODE
-                )
+                error_payload = self._build_stream_error_payload(exc)
                 final_outcome = StreamOutcome(
                     success=False,
                     finish_reason=StreamFinishReason.UPSTREAM_ERROR,
                     final_text=stream_text_accumulator.result() or "",
                     error_message=self._STREAM_ERROR_MESSAGE,
-                    error_code=error_code,
+                    error_code=error_payload.error_code,
                     elapsed_seconds=time.monotonic() - started_at,
                     idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                     terminal_event_seen=False,
+                    source=error_payload.source,
+                    jsonrpc_code=error_payload.jsonrpc_code,
+                    missing_params=error_payload.missing_params,
+                    upstream_error=error_payload.upstream_error,
                 )
                 await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
-                error_payload = self.build_ws_error_event(
-                    message=self._STREAM_ERROR_MESSAGE,
-                    error_code=error_code,
-                )
                 yield (
                     "event: error\n"
-                    f"data: {json_dumps(error_payload['data'], ensure_ascii=False)}\n\n"
+                    f"data: {json_dumps(error_payload.as_event_data(), ensure_ascii=False)}\n\n"
                 )
             finally:
                 if cache_key and self._is_terminal_status_event(serialized):
@@ -1032,29 +1247,31 @@ class A2AInvokeService:
                 )
                 return
             logger.warning("A2A WS stream failed", exc_info=True, extra=log_extra)
-            error_code = (
-                self._extract_error_code_from_exception(exc) or self._STREAM_ERROR_CODE
-            )
-            error_payload = {
-                "message": self._STREAM_ERROR_MESSAGE,
-                "error_code": error_code,
-            }
+            error_payload = self._build_stream_error_payload(exc)
             final_outcome = StreamOutcome(
                 success=False,
                 finish_reason=StreamFinishReason.UPSTREAM_ERROR,
                 final_text=stream_text_accumulator.result() or "",
                 error_message=self._STREAM_ERROR_MESSAGE,
-                error_code=error_code,
+                error_code=error_payload.error_code,
                 elapsed_seconds=time.monotonic() - started_at,
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=False,
+                source=error_payload.source,
+                jsonrpc_code=error_payload.jsonrpc_code,
+                missing_params=error_payload.missing_params,
+                upstream_error=error_payload.upstream_error,
             )
             await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
-            await self._call_callback(on_error_metadata, error_payload)
+            await self._call_callback(on_error_metadata, error_payload.as_event_data())
             await self.send_ws_error(
                 websocket,
-                message=self._STREAM_ERROR_MESSAGE,
-                error_code=error_code,
+                message=error_payload.message,
+                error_code=error_payload.error_code,
+                source=error_payload.source,
+                jsonrpc_code=error_payload.jsonrpc_code,
+                missing_params=list(error_payload.missing_params or []),
+                upstream_error=error_payload.upstream_error,
             )
         finally:
             if cache_key and self._is_terminal_status_event(serialized):
@@ -1326,26 +1543,25 @@ class A2AInvokeService:
                     exc_info=True,
                     extra=log_extra,
                 )
-            error_code = (
-                self._extract_error_code_from_exception(exc) or self._STREAM_ERROR_CODE
-            )
+            error_payload = self._build_stream_error_payload(exc)
             partial_content = stream_text_accumulator.result()
             outcome = StreamOutcome(
                 success=False,
                 finish_reason=StreamFinishReason.UPSTREAM_ERROR,
                 final_text=partial_content or "",
                 error_message=self._STREAM_ERROR_MESSAGE,
-                error_code=error_code,
+                error_code=error_payload.error_code,
                 elapsed_seconds=time.monotonic() - started_at,
                 idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                 terminal_event_seen=False,
                 internal_error_message=self._extract_internal_error_message(exc),
+                source=error_payload.source,
+                jsonrpc_code=error_payload.jsonrpc_code,
+                missing_params=error_payload.missing_params,
+                upstream_error=error_payload.upstream_error,
             )
             await self._call_callback(on_error, self._STREAM_ERROR_MESSAGE)
-            await self._call_callback(
-                on_error_metadata,
-                {"message": self._STREAM_ERROR_MESSAGE, "error_code": error_code},
-            )
+            await self._call_callback(on_error_metadata, error_payload.as_event_data())
             await self._call_callback_safely(
                 on_finalized,
                 outcome,

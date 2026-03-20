@@ -264,7 +264,43 @@ describe("ChatMessageItem interaction", () => {
 
     expect(screen.queryByText("Content unavailable.")).toBeNull();
     expect(
-      screen.getByText("当前无法连接到上游 Agent，请稍后重试。"),
+      screen.getByText("Unable to reach the upstream agent. Please try again."),
     ).toBeTruthy();
+  });
+
+  it("renders missing parameter details for structured upstream stream errors", () => {
+    const message = buildAgentMessage({
+      content: "",
+      status: "error",
+      errorCode: "invalid_params",
+      errorMessage:
+        "Missing required upstream parameters: project_id, channel_id",
+      errorSource: "upstream_a2a",
+      jsonrpcCode: -32602,
+      missingParams: [
+        { name: "project_id", required: true },
+        { name: "channel_id", required: true },
+      ],
+      upstreamError: { message: "project_id/channel_id required" },
+      blocks: [],
+    });
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage
+        onRetry={jest.fn()}
+        sessionStreamState="error"
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Missing required upstream parameters: project_id, channel_id",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("Streaming response failed. Please try again."),
+    ).toBeNull();
   });
 });

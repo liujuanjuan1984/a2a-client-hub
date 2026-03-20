@@ -675,9 +675,9 @@ describe("block-based stream parser and reducer", () => {
       final: true,
     };
 
-    expect(extractRuntimeStatus(payload)).toBe("input_required");
+    expect(extractRuntimeStatus(payload)).toBe("input-required");
     expect(extractRuntimeStatusEvent(payload)).toEqual({
-      state: "input_required",
+      state: "input-required",
       isFinal: true,
       interrupt: null,
     });

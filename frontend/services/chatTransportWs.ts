@@ -126,7 +126,7 @@ export async function tryWebSocketTransport({
           if (hasReceivedData) {
             callbacks.onStreamError(
               `WebSocket idle timeout after ${wsIdleTimeoutMs}ms`,
-              "timeout",
+              { errorCode: "timeout" },
             );
             finalize("resolve");
             return;
@@ -182,7 +182,9 @@ export async function tryWebSocketTransport({
           finalize("reject", new Error("WebSocket connection failed"));
           return;
         }
-        callbacks.onStreamError("WebSocket error", "stream_error");
+        callbacks.onStreamError("WebSocket error", {
+          errorCode: "stream_error",
+        });
         finalize("resolve");
       };
 
@@ -200,10 +202,9 @@ export async function tryWebSocketTransport({
           );
           return;
         }
-        callbacks.onStreamError(
-          "WebSocket closed unexpectedly",
-          "stream_closed",
-        );
+        callbacks.onStreamError("WebSocket closed unexpectedly", {
+          errorCode: "stream_closed",
+        });
         finalize("resolve");
       };
 

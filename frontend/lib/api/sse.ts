@@ -1,4 +1,9 @@
 import {
+  extractStreamErrorDetails,
+  type StreamErrorDetails,
+  type StreamMissingParam,
+} from "@/lib/api/chat-utils";
+import {
   ApiRequestError,
   AuthExpiredError,
   AuthRecoverableError,
@@ -42,11 +47,19 @@ const isUnauthorizedStatusCode = (status: number) => status === 401;
 
 export class SSEStreamError extends Error {
   errorCode: string | null;
+  source: string | null;
+  jsonrpcCode: number | null;
+  missingParams: StreamMissingParam[] | null;
+  upstreamError: Record<string, unknown> | null;
 
-  constructor(message: string, errorCode: string | null = null) {
+  constructor(message: string, details: Partial<StreamErrorDetails> = {}) {
     super(message);
     this.name = "SSEStreamError";
-    this.errorCode = errorCode;
+    this.errorCode = details.errorCode ?? null;
+    this.source = details.source ?? null;
+    this.jsonrpcCode = details.jsonrpcCode ?? null;
+    this.missingParams = details.missingParams ?? null;
+    this.upstreamError = details.upstreamError ?? null;
     Object.setPrototypeOf(this, SSEStreamError.prototype);
   }
 }
@@ -66,18 +79,14 @@ const parseSseError = (data: string): SSEStreamError => {
       return new SSEStreamError(fallbackMessage);
     }
 
-    const record = parsed as Record<string, unknown>;
-    const message =
-      typeof record.message === "string" && record.message.trim().length > 0
-        ? record.message
-        : typeof record.error === "string" && record.error.trim().length > 0
-          ? record.error
-          : fallbackMessage;
-
-    return new SSEStreamError(
-      message,
-      normalizeErrorCode(record.error_code ?? record.errorCode),
+    const details = extractStreamErrorDetails(
+      parsed as Record<string, unknown>,
+      fallbackMessage,
     );
+    return new SSEStreamError(details.message, {
+      ...details,
+      errorCode: normalizeErrorCode(details.errorCode),
+    });
   } catch {
     return new SSEStreamError(fallbackMessage);
   }

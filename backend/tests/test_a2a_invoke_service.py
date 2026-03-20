@@ -9,7 +9,9 @@ import pytest
 from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
+from app.integrations.a2a_client.errors import A2APeerProtocolError
 from app.services.a2a_invoke_service import StreamFinishReason, a2a_invoke_service
+from app.services.a2a_payload_analysis import coerce_payload_to_dict
 from app.services.a2a_stream_diagnostics import build_artifact_update_log_sample
 
 
@@ -92,6 +94,21 @@ class _GatewayWithUnstructuredError:
         if False:
             yield  # pragma: no cover
         raise RuntimeError("session missing")
+
+
+class _GatewayWithStructuredProtocolError:
+    async def stream(self, **kwargs):  # noqa: ARG001
+        if False:
+            yield  # pragma: no cover
+        raise A2APeerProtocolError(
+            "project_id/channel_id required",
+            error_code="invalid_params",
+            rpc_code=-32602,
+            data={
+                "missing_params": ["project_id", "channel_id"],
+                "details": {"token": "secret"},
+            },
+        )
 
 
 def _artifact_event(
@@ -182,6 +199,40 @@ async def test_sse_error_event_contains_unified_error_code():
     error_data = json.loads(error_data_line.removeprefix("data: "))
     assert error_data["message"] == "Upstream streaming failed"
     assert error_data["error_code"] == "upstream_stream_error"
+
+
+@pytest.mark.asyncio
+async def test_sse_error_event_exposes_structured_upstream_payload():
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithStructuredProtocolError(),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    payload = "".join(chunks)
+    error_data_line = next(
+        line for line in payload.splitlines() if line.startswith("data: {")
+    )
+    error_data = json.loads(error_data_line.removeprefix("data: "))
+    assert error_data["error_code"] == "invalid_params"
+    assert error_data["source"] == "upstream_a2a"
+    assert error_data["jsonrpc_code"] == -32602
+    assert error_data["missing_params"] == [
+        {"name": "project_id", "required": True},
+        {"name": "channel_id", "required": True},
+    ]
+    assert error_data["upstream_error"] == {
+        "message": "project_id/channel_id required",
+        "data": {"missing_params": ["project_id", "channel_id"]},
+    }
 
 
 @pytest.mark.asyncio
@@ -1046,6 +1097,41 @@ async def test_ws_error_metadata_callback_falls_back_to_default_code_for_unstruc
     assert observed["error_code"] == "upstream_stream_error"
     assert payloads[-2]["event"] == "error"
     assert payloads[-2]["data"]["error_code"] == "upstream_stream_error"
+
+
+@pytest.mark.asyncio
+async def test_ws_error_metadata_callback_exposes_structured_upstream_payload():
+    websocket = _DummyWebSocket()
+    observed: dict[str, object] = {}
+
+    async def _on_error_metadata(payload: dict[str, object]) -> None:
+        observed.update(payload)
+
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithStructuredProtocolError(),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_error_metadata=_on_error_metadata,
+    )
+
+    payloads = [json.loads(item) for item in websocket.sent]
+    assert observed["error_code"] == "invalid_params"
+    assert observed["source"] == "upstream_a2a"
+    assert observed["jsonrpc_code"] == -32602
+    assert observed["missing_params"] == [
+        {"name": "project_id", "required": True},
+        {"name": "channel_id", "required": True},
+    ]
+    assert payloads[-2]["data"]["upstream_error"] == {
+        "message": "project_id/channel_id required",
+        "data": {"missing_params": ["project_id", "channel_id"]},
+    }
 
 
 @pytest.mark.asyncio
@@ -1949,6 +2035,6 @@ def test_coerce_payload_to_dict_raises_exception(caplog):
     payload = MockUnserializablePayload()
     with pytest.raises(ValueError, match="Payload serialization failed"):
         with caplog.at_level(logging.ERROR):
-            a2a_invoke_service._coerce_payload_to_dict(payload)
+            coerce_payload_to_dict(payload)
 
     assert "Failed to dump A2A payload" in caplog.text

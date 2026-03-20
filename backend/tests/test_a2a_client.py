@@ -22,7 +22,10 @@ from app.integrations.a2a_client.adapters import sdk as sdk_module
 from app.integrations.a2a_client.adapters.sdk import SDKA2AAdapter
 from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
 from app.integrations.a2a_client.config import A2ASettings
-from app.integrations.a2a_client.errors import A2AClientResetRequiredError
+from app.integrations.a2a_client.errors import (
+    A2AClientResetRequiredError,
+    A2APeerProtocolError,
+)
 from app.integrations.a2a_client.http_clients import (
     SharedSDKTransportInvalidatedError,
     SharedSDKTransportLease,
@@ -813,6 +816,32 @@ async def test_call_agent_falls_back_to_plain_string_without_json_wrapping() -> 
 
     assert result["success"] is True
     assert result["content"] == "Task(artifacts=[...])"
+
+
+@pytest.mark.asyncio
+async def test_call_agent_returns_structured_protocol_error_details() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._send_with_fallback = AsyncMock(
+        side_effect=A2APeerProtocolError(
+            "project_id required",
+            error_code="peer_protocol_error",
+            rpc_code=-32602,
+            data={"missing_params": ["project_id"]},
+        )
+    )
+
+    result = await a2a_client.call_agent("hello")
+
+    assert result["success"] is False
+    assert result["error"] == "project_id required"
+    assert result["error_code"] == "invalid_params"
+    assert result["source"] == "upstream_a2a"
+    assert result["jsonrpc_code"] == -32602
+    assert result["missing_params"] == [{"name": "project_id", "required": True}]
+    assert result["upstream_error"] == {
+        "message": "project_id required",
+        "data": {"missing_params": ["project_id"]},
+    }
 
 
 @pytest.mark.asyncio

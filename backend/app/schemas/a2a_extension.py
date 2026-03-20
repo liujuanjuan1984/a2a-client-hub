@@ -28,8 +28,24 @@ class A2AExtensionResponse(BaseModel):
     success: bool
     result: Optional[Any] = None
     error_code: Optional[str] = None
+    source: Optional[str] = None
+    jsonrpc_code: Optional[int] = None
+    missing_params: Optional[List[Dict[str, Any]]] = None
     upstream_error: Optional[Dict[str, Any]] = None
     meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class A2ARuntimeStatusContractResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    version: str
+    canonical_states: List[str] = Field(..., alias="canonicalStates")
+    terminal_states: List[str] = Field(..., alias="terminalStates")
+    final_states: List[str] = Field(..., alias="finalStates")
+    interactive_states: List[str] = Field(..., alias="interactiveStates")
+    failure_states: List[str] = Field(..., alias="failureStates")
+    aliases: Dict[str, str]
+    passthrough_unknown: bool = Field(..., alias="passthroughUnknown")
 
 
 class A2AExtensionQueryPagination(BaseModel):
@@ -119,6 +135,11 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         alias="modelSelection",
         description="Whether the agent supports generic chat model selection",
     )
+    runtime_status: A2ARuntimeStatusContractResponse = Field(
+        ...,
+        alias="runtimeStatus",
+        description="Canonical runtime status contract advertised by the hub.",
+    )
 
 
 __all__ = [
@@ -126,6 +147,7 @@ __all__ = [
     "A2AExtensionCapabilitiesResponse",
     "A2AModelDiscoveryRequest",
     "A2AExtensionPermissionReplyRequest",
+    "A2ARuntimeStatusContractResponse",
     "A2AExtensionQueryPagination",
     "A2AExtensionQueryResponse",
     "A2AExtensionQueryRequest",

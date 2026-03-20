@@ -1,16 +1,17 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { type RuntimeStatusContract } from "@/lib/api/chat-utils";
 import {
   buildPersistedSessions,
   buildInvokePayload,
   buildSessionCleanupPlan,
   createAgentSession,
-  type SharedModelSelection,
   getSharedModelSelection,
   mergeExternalSessionRef,
   sortSessionsByLastActive,
   withSharedModelSelection,
+  type SharedModelSelection,
   type AgentSession,
 } from "@/lib/chat-utils";
 import {
@@ -94,13 +95,18 @@ type ChatState = {
     agentId: string,
     content: string,
     agentSource: AgentSource,
+    runtimeStatusContract?: RuntimeStatusContract | null,
   ) => Promise<void>;
   retryMessage: (
     conversationId: string,
     agentId: string,
     agentSource: AgentSource,
+    runtimeStatusContract?: RuntimeStatusContract | null,
   ) => Promise<void>;
-  resumeMessage: (conversationId: string) => Promise<void>;
+  resumeMessage: (
+    conversationId: string,
+    runtimeStatusContract?: RuntimeStatusContract | null,
+  ) => Promise<void>;
   cancelMessage: (conversationId: string) => void;
   resetSession: (conversationId: string, agentId: string) => void;
   bindExternalSession: (
@@ -257,7 +263,7 @@ export const useChatStore = create<ChatState>()(
         removeConversationMessages(conversationId);
       },
 
-      resumeMessage: async (conversationId) => {
+      resumeMessage: async (conversationId, runtimeStatusContract) => {
         const state = get();
         const session = state.sessions[conversationId];
         if (!session || session.streamState !== "recoverable") {
@@ -320,6 +326,7 @@ export const useChatStore = create<ChatState>()(
           agentMessageId,
           get,
           set,
+          { runtimeStatusContract },
         );
       },
       cancelMessage: (conversationId) => {
@@ -364,7 +371,13 @@ export const useChatStore = create<ChatState>()(
           };
         });
       },
-      sendMessage: async (conversationId, agentId, content, agentSource) => {
+      sendMessage: async (
+        conversationId,
+        agentId,
+        content,
+        agentSource,
+        runtimeStatusContract,
+      ) => {
         const trimmed = content.trim();
         if (!trimmed) return;
 
@@ -428,9 +441,15 @@ export const useChatStore = create<ChatState>()(
           agentMessage.id,
           get,
           set,
+          { runtimeStatusContract },
         );
       },
-      retryMessage: async (conversationId, agentId, agentSource) => {
+      retryMessage: async (
+        conversationId,
+        agentId,
+        agentSource,
+        runtimeStatusContract,
+      ) => {
         const session = get().sessions[conversationId];
         const userMessageId = session?.lastUserMessageId;
         const agentMessageId = session?.lastAgentMessageId;
@@ -504,6 +523,7 @@ export const useChatStore = create<ChatState>()(
           agentMessageId,
           get,
           set,
+          { runtimeStatusContract },
         );
       },
       getLatestConversationIdByAgentId: (agentId) => {

@@ -46,6 +46,7 @@ export const useExtensionCapabilitiesQuery = ({
 
   return {
     ...query,
+    runtimeStatusContract: query.data?.runtimeStatus ?? null,
     modelSelectionStatus,
     canShowModelPicker: modelSelectionStatus !== "unsupported",
   };

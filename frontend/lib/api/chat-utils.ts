@@ -25,6 +25,27 @@ export type ChatMessage = {
   blocks?: MessageBlock[];
   errorCode?: string | null;
   errorMessage?: string | null;
+  errorSource?: string | null;
+  jsonrpcCode?: number | null;
+  missingParams?: StreamMissingParam[] | null;
+  upstreamError?: Record<string, unknown> | null;
+};
+
+export type StreamMissingParam = {
+  name: string;
+  required: boolean;
+};
+
+export type StreamErrorDetails = {
+  errorCode: string | null;
+  source: string | null;
+  jsonrpcCode: number | null;
+  missingParams: StreamMissingParam[] | null;
+  upstreamError: Record<string, unknown> | null;
+};
+
+export type ParsedStreamError = StreamErrorDetails & {
+  message: string;
 };
 
 export type ToolCallView = {
@@ -57,6 +78,64 @@ export type RuntimeStatusEvent = {
   isFinal: boolean;
   interrupt: RuntimeInterrupt | null;
 };
+
+export type RuntimeStatusContract = {
+  version: "v1";
+  canonicalStates: readonly string[];
+  terminalStates: readonly string[];
+  finalStates: readonly string[];
+  interactiveStates: readonly string[];
+  failureStates: readonly string[];
+  aliases: Readonly<Record<string, string>>;
+  passthroughUnknown: true;
+};
+
+export const DEFAULT_RUNTIME_STATUS_CONTRACT: RuntimeStatusContract = {
+  version: "v1",
+  canonicalStates: [
+    "working",
+    "input-required",
+    "auth-required",
+    "completed",
+    "failed",
+    "cancelled",
+  ],
+  terminalStates: [
+    "input-required",
+    "auth-required",
+    "completed",
+    "failed",
+    "cancelled",
+  ],
+  finalStates: ["completed", "failed", "cancelled"],
+  interactiveStates: ["input-required", "auth-required"],
+  failureStates: ["failed", "cancelled"],
+  aliases: {
+    input_required: "input-required",
+    auth_required: "auth-required",
+    canceled: "cancelled",
+    done: "completed",
+    success: "completed",
+    error: "failed",
+    rejected: "failed",
+  },
+  passthroughUnknown: true,
+};
+
+const normalizeRuntimeAliasMap = (
+  contract: RuntimeStatusContract,
+): Record<string, string> =>
+  Object.entries(contract.aliases).reduce<Record<string, string>>(
+    (acc, [alias, canonical]) => {
+      acc[alias.trim().toLowerCase().replace(/_/g, "-")] = canonical;
+      return acc;
+    },
+    {},
+  );
+
+const resolveRuntimeStatusContract = (
+  contract?: RuntimeStatusContract | null,
+): RuntimeStatusContract => contract ?? DEFAULT_RUNTIME_STATUS_CONTRACT;
 
 const coerceStringArray = (value: unknown) =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
@@ -129,24 +208,28 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
   };
 };
 
-export const extractRuntimeStatus = (data: Record<string, unknown>) => {
-  const statusEvent = extractRuntimeStatusEvent(data);
+export const extractRuntimeStatus = (
+  data: Record<string, unknown>,
+  contract?: RuntimeStatusContract | null,
+) => {
+  const statusEvent = extractRuntimeStatusEvent(data, contract);
   return statusEvent?.state ?? null;
 };
 
 export const extractRuntimeStatusEvent = (
   data: Record<string, unknown>,
+  contract?: RuntimeStatusContract | null,
 ): RuntimeStatusEvent | null => {
   if (data.kind !== "status-update") {
     return null;
   }
   const status = data.status as { state?: unknown } | undefined;
   if (status && typeof status.state === "string" && status.state.trim()) {
-    const state = status.state;
+    const state = normalizeRuntimeState(status.state, contract);
     return {
       state,
       isFinal: data.final === true,
-      interrupt: extractRuntimeInterrupt(data, state),
+      interrupt: extractRuntimeInterrupt(data, state, contract),
     };
   }
   return null;
@@ -266,6 +349,27 @@ const pickRawString = (
   return null;
 };
 
+const pickInt = (
+  source: Record<string, unknown> | null,
+  keys: string[],
+): number | null => {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "number" && Number.isInteger(value)) {
+      return value;
+    }
+    if (
+      typeof value === "string" &&
+      value.trim().length > 0 &&
+      /^-?\d+$/.test(value.trim())
+    ) {
+      return Number.parseInt(value.trim(), 10);
+    }
+  }
+  return null;
+};
+
 const resolveNestedValue = (
   source: Record<string, unknown> | null,
   path: string[],
@@ -311,6 +415,78 @@ const pickFirstArray = (
     }
   }
   return [];
+};
+
+const normalizeMissingParam = (value: unknown): StreamMissingParam | null => {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return {
+      name: value.trim(),
+      required: true,
+    };
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+  const name =
+    pickString(record, ["name", "field", "param", "id"]) ??
+    pickRawString(record, ["name", "field", "param", "id"]);
+  if (!name) {
+    return null;
+  }
+  return {
+    name,
+    required: typeof record.required === "boolean" ? record.required : true,
+  };
+};
+
+const coerceMissingParams = (value: unknown): StreamMissingParam[] | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const entries = Array.isArray(value) ? value : [value];
+  const normalized = entries
+    .map((entry) => normalizeMissingParam(entry))
+    .filter((entry): entry is StreamMissingParam => Boolean(entry));
+  if (!normalized.length) {
+    return null;
+  }
+  const unique = new Map<string, StreamMissingParam>();
+  normalized.forEach((entry) => {
+    if (!unique.has(entry.name)) {
+      unique.set(entry.name, entry);
+    }
+  });
+  return Array.from(unique.values());
+};
+
+export const extractStreamErrorDetails = (
+  data: Record<string, unknown>,
+  fallbackMessage = "Stream error.",
+): ParsedStreamError => {
+  const message =
+    pickString(data, ["message", "error"]) ??
+    pickRawString(data, ["message", "error"]) ??
+    fallbackMessage;
+  const upstreamError =
+    asRecord(data.upstream_error) ?? asRecord(data.upstreamError);
+  const missingParams =
+    coerceMissingParams(data.missing_params ?? data.missingParams) ??
+    coerceMissingParams(
+      resolveNestedValue(upstreamError, ["data", "missing_params"]),
+    ) ??
+    coerceMissingParams(
+      resolveNestedValue(upstreamError, ["data", "missingParams"]),
+    );
+
+  return {
+    message,
+    errorCode: pickString(data, ["error_code", "errorCode"]),
+    source: pickString(data, ["source"]),
+    jsonrpcCode: pickInt(data, ["jsonrpc_code", "jsonrpcCode"]),
+    missingParams,
+    upstreamError,
+  };
 };
 
 const extractInterruptDisplayMessage = (
@@ -386,11 +562,26 @@ const extractToolCallView = (
   };
 };
 
-const normalizeRuntimeState = (state: string) => state.trim().toLowerCase();
+export const normalizeRuntimeState = (
+  state: string,
+  contract?: RuntimeStatusContract | null,
+) => {
+  const resolvedContract = resolveRuntimeStatusContract(contract);
+  const normalized = state.trim().toLowerCase().replace(/_/g, "-");
+  const aliases = normalizeRuntimeAliasMap(resolvedContract);
+  return aliases[normalized] ?? normalized;
+};
 
-export const isInputRequiredRuntimeState = (state: string) => {
-  const normalized = normalizeRuntimeState(state);
-  return normalized === "input-required" || normalized === "input_required";
+export const isInputRequiredRuntimeState = (
+  state: string,
+  contract?: RuntimeStatusContract | null,
+) => {
+  const resolvedContract = resolveRuntimeStatusContract(contract);
+  const interactiveStates = resolvedContract.interactiveStates.map((item) =>
+    normalizeRuntimeState(item, resolvedContract),
+  );
+  const normalized = normalizeRuntimeState(state, resolvedContract);
+  return interactiveStates.includes(normalized);
 };
 
 const parseInterruptQuestionOption = (
@@ -471,6 +662,7 @@ const parseInterruptQuestion = (value: unknown): InterruptQuestion | null => {
 const extractRuntimeInterrupt = (
   data: Record<string, unknown>,
   runtimeState: string,
+  contract?: RuntimeStatusContract | null,
 ): RuntimeInterrupt | null => {
   const interrupt = getPreferredInterruptMetadata(data);
   if (!interrupt) {
@@ -487,7 +679,7 @@ const extractRuntimeInterrupt = (
 
   const phase =
     pickString(interrupt, ["phase"])?.toLowerCase() ??
-    (isInputRequiredRuntimeState(runtimeState) ? "asked" : null);
+    (isInputRequiredRuntimeState(runtimeState, contract) ? "asked" : null);
   if (phase === "resolved") {
     const resolution = pickString(interrupt, ["resolution"])?.toLowerCase();
     if (resolution !== "replied" && resolution !== "rejected") {

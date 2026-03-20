@@ -66,6 +66,10 @@ class A2AAgentInvokeResponse(BaseModel):
     content: Optional[str] = None
     error: Optional[str] = None
     error_code: Optional[str] = None
+    source: Optional[str] = None
+    jsonrpc_code: Optional[int] = None
+    missing_params: Optional[list[dict[str, Any]]] = None
+    upstream_error: Optional[Dict[str, Any]] = None
     agent_name: Optional[str] = None
     agent_url: Optional[str] = None
 

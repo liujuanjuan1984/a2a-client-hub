@@ -4,6 +4,9 @@ import json
 from typing import Any
 
 from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
+from app.integrations.a2a_runtime_status_contract import (
+    is_interactive_runtime_state,
+)
 from app.services.a2a_shared_metadata import (
     extract_preferred_interrupt_metadata,
     merge_shared_metadata_sections,
@@ -288,13 +291,8 @@ def extract_interrupt_lifecycle_from_serialized_event(
         return None
 
     phase = _pick_non_empty_str(interrupt, ("phase",))
-    normalized_state = (raw_state or "").strip().lower()
     if phase is None:
-        phase = (
-            "asked"
-            if normalized_state in {"input-required", "input_required"}
-            else None
-        )
+        phase = "asked" if is_interactive_runtime_state(raw_state) else None
     if phase not in {"asked", "resolved"}:
         return None
 

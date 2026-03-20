@@ -17,6 +17,9 @@ export class ApiConfigError extends Error {
 export class ApiRequestError extends Error {
   status: number;
   errorCode: string | null;
+  source: string | null;
+  jsonrpcCode: number | null;
+  missingParams: { name: string; required: boolean }[] | null;
   upstreamError: Record<string, unknown> | null;
 
   constructor(
@@ -24,6 +27,9 @@ export class ApiRequestError extends Error {
     status: number,
     options?: {
       errorCode?: string | null;
+      source?: string | null;
+      jsonrpcCode?: number | null;
+      missingParams?: { name: string; required: boolean }[] | null;
       upstreamError?: Record<string, unknown> | null;
     },
   ) {
@@ -31,6 +37,9 @@ export class ApiRequestError extends Error {
     this.name = "ApiRequestError";
     this.status = status;
     this.errorCode = options?.errorCode ?? null;
+    this.source = options?.source ?? null;
+    this.jsonrpcCode = options?.jsonrpcCode ?? null;
+    this.missingParams = options?.missingParams ?? null;
     this.upstreamError = options?.upstreamError ?? null;
     Object.setPrototypeOf(this, ApiRequestError.prototype);
   }
@@ -557,6 +566,9 @@ const parseApiErrorDetails = async (
 ): Promise<{
   message: string;
   errorCode: string | null;
+  source: string | null;
+  jsonrpcCode: number | null;
+  missingParams: { name: string; required: boolean }[] | null;
   upstreamError: JsonRecord | null;
 }> => {
   let details: ApiErrorResponse | undefined;
@@ -583,6 +595,41 @@ const parseApiErrorDetails = async (
       : typeof detailRecord?.error_code === "string"
         ? detailRecord.error_code
         : null;
+  const source =
+    typeof detailsRecord?.source === "string"
+      ? detailsRecord.source
+      : typeof detailRecord?.source === "string"
+        ? detailRecord.source
+        : null;
+  const jsonrpcCodeRaw =
+    typeof detailsRecord?.jsonrpc_code === "number"
+      ? detailsRecord.jsonrpc_code
+      : typeof detailRecord?.jsonrpc_code === "number"
+        ? detailRecord.jsonrpc_code
+        : null;
+  const missingParamsRaw = Array.isArray(detailsRecord?.missing_params)
+    ? detailsRecord.missing_params
+    : Array.isArray(detailRecord?.missing_params)
+      ? detailRecord.missing_params
+      : null;
+  const missingParams = missingParamsRaw
+    ?.map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const candidate = item as Record<string, unknown>;
+      if (typeof candidate.name !== "string" || !candidate.name.trim()) {
+        return null;
+      }
+      return {
+        name: candidate.name.trim(),
+        required:
+          typeof candidate.required === "boolean" ? candidate.required : true,
+      };
+    })
+    .filter(
+      (item): item is { name: string; required: boolean } => item !== null,
+    );
   const upstreamError =
     detailRecord?.upstream_error &&
     typeof detailRecord.upstream_error === "object" &&
@@ -623,6 +670,9 @@ const parseApiErrorDetails = async (
   return {
     message,
     errorCode,
+    source,
+    jsonrpcCode: jsonrpcCodeRaw,
+    missingParams: missingParams?.length ? missingParams : null,
     upstreamError,
   };
 };
@@ -707,6 +757,9 @@ export async function apiRequest<Response, Body = unknown>(
     const parsed = await parseApiErrorDetails(response);
     throw new ApiRequestError(parsed.message, response.status, {
       errorCode: parsed.errorCode,
+      source: parsed.source,
+      jsonrpcCode: parsed.jsonrpcCode,
+      missingParams: parsed.missingParams,
       upstreamError: parsed.upstreamError,
     });
   }
