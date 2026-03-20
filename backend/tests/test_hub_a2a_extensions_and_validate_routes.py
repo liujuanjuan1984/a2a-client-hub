@@ -14,6 +14,9 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
+from app.integrations.a2a_runtime_status_contract import (
+    runtime_status_contract_payload,
+)
 from tests.api_utils import create_test_client
 from tests.utils import create_user
 
@@ -75,6 +78,9 @@ class _FakeExtensionResult:
     success: bool
     result: Optional[Dict[str, Any]] = None
     error_code: Optional[str] = None
+    source: Optional[str] = None
+    jsonrpc_code: Optional[int] = None
+    missing_params: Optional[list[Dict[str, Any]]] = None
     upstream_error: Optional[Dict[str, Any]] = None
     meta: Optional[Dict[str, Any]] = None
 
@@ -346,10 +352,21 @@ class _FakeExtensionsService:
 
 
 class _FakeExtensionsErrorService:
-    def __init__(self, *, error_code: str, message: str) -> None:
+    def __init__(
+        self,
+        *,
+        error_code: str,
+        message: str,
+        source: str | None = None,
+        jsonrpc_code: int | None = None,
+        missing_params: list[Dict[str, Any]] | None = None,
+    ) -> None:
         self.calls: list[Dict[str, Any]] = []
         self.error_code = error_code
         self.message = message
+        self.source = source
+        self.jsonrpc_code = jsonrpc_code
+        self.missing_params = missing_params
 
     async def continue_session(self, *, runtime, session_id: str):
         self.calls.append(
@@ -362,6 +379,9 @@ class _FakeExtensionsErrorService:
         return _FakeExtensionResult(
             success=False,
             error_code=self.error_code,
+            source=self.source,
+            jsonrpc_code=self.jsonrpc_code,
+            missing_params=self.missing_params,
             upstream_error={"message": self.message},
             meta={},
         )
@@ -914,7 +934,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         )
 
     assert response.status_code == 200
-    assert response.json() == {"modelSelection": True}
+    assert response.json() == {
+        "modelSelection": True,
+        "runtimeStatus": runtime_status_contract_payload(),
+    }
     assert response.headers["cache-control"] == "no-store"
 
 
@@ -958,7 +981,10 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         )
 
     assert response.status_code == 200
-    assert response.json() == {"modelSelection": False}
+    assert response.json() == {
+        "modelSelection": False,
+        "runtimeStatus": runtime_status_contract_payload(),
+    }
     assert response.headers["cache-control"] == "no-store"
 
 
@@ -1171,6 +1197,55 @@ async def test_hub_opencode_session_continue_maps_extension_error_to_http_status
         assert payload["success"] is False
         assert payload["error_code"] == error_code
         assert payload["upstream_error"] == {"message": message}
+
+
+@pytest.mark.asyncio
+async def test_hub_opencode_session_continue_preserves_structured_error_details(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_extension_structured_error@example.com",
+        user_email="alice_extension_structured_error@example.com",
+        token="secret-token-opencode-structured-error",
+    )
+
+    fake_extensions = _FakeExtensionsErrorService(
+        error_code="invalid_params",
+        message="project_id required",
+        source="upstream_a2a",
+        jsonrpc_code=-32602,
+        missing_params=[{"name": "project_id", "required": True}],
+    )
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions/sess-structured:continue"
+        )
+
+    assert resp.status_code == 400
+    payload = resp.json()
+    assert payload["success"] is False
+    assert payload["error_code"] == "invalid_params"
+    assert payload["source"] == "upstream_a2a"
+    assert payload["jsonrpc_code"] == -32602
+    assert payload["missing_params"] == [{"name": "project_id", "required": True}]
+    assert payload["upstream_error"] == {"message": "project_id required"}
 
 
 @pytest.mark.parametrize(

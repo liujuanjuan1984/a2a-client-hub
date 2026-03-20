@@ -23,6 +23,9 @@ from app.integrations.a2a_client.errors import (
 )
 from app.integrations.a2a_client.models import A2AMessageRequest, A2APeerDescriptor
 from app.integrations.a2a_client.selection import build_pascal_message_payload
+from app.integrations.a2a_runtime_status_contract import (
+    terminal_runtime_state_values,
+)
 
 JSONRPC_PASCAL_DIALECT = "jsonrpc_pascal"
 
@@ -30,16 +33,7 @@ _METHOD_SEND_MESSAGE = "SendMessage"
 _METHOD_SEND_STREAMING_MESSAGE = "SendStreamingMessage"
 _METHOD_GET_TASK = "GetTask"
 _METHOD_CANCEL_TASK = "CancelTask"
-_FINAL_STATUS_STATES = {
-    "completed",
-    "failed",
-    "canceled",
-    "rejected",
-    "input-required",
-    "auth-required",
-    "input_required",
-    "auth_required",
-}
+_FINAL_STATUS_STATES = terminal_runtime_state_values()
 
 
 class JsonRpcPascalAdapter(A2AAdapter):

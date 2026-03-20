@@ -24,6 +24,34 @@ const createWrapper = (queryClient: QueryClient) => {
   );
 };
 
+const createRuntimeStatus = () => ({
+  version: "v1",
+  canonicalStates: [
+    "working",
+    "input-required",
+    "auth-required",
+    "completed",
+    "failed",
+    "cancelled",
+  ],
+  terminalStates: [
+    "input-required",
+    "auth-required",
+    "completed",
+    "failed",
+    "cancelled",
+  ],
+  finalStates: ["completed", "failed", "cancelled"],
+  interactiveStates: ["input-required", "auth-required"],
+  failureStates: ["failed", "cancelled"],
+  aliases: {
+    input_required: "input-required",
+    auth_required: "auth-required",
+    canceled: "cancelled",
+  },
+  passthroughUnknown: true,
+});
+
 describe("useExtensionCapabilitiesQuery", () => {
   let queryClient: QueryClient;
 
@@ -37,7 +65,10 @@ describe("useExtensionCapabilitiesQuery", () => {
   });
 
   it("returns supported when model selection is available", async () => {
-    mockedGetExtensionCapabilities.mockResolvedValue({ modelSelection: true });
+    mockedGetExtensionCapabilities.mockResolvedValue({
+      modelSelection: true,
+      runtimeStatus: createRuntimeStatus(),
+    });
 
     const { result } = renderHook(
       () =>
@@ -51,10 +82,14 @@ describe("useExtensionCapabilitiesQuery", () => {
     await waitFor(() => {
       expect(result.current.modelSelectionStatus).toBe("supported");
     });
+    expect(result.current.runtimeStatusContract?.version).toBe("v1");
   });
 
   it("returns unsupported when model selection is unavailable", async () => {
-    mockedGetExtensionCapabilities.mockResolvedValue({ modelSelection: false });
+    mockedGetExtensionCapabilities.mockResolvedValue({
+      modelSelection: false,
+      runtimeStatus: createRuntimeStatus(),
+    });
 
     const { result } = renderHook(
       () =>

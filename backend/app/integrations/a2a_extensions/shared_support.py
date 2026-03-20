@@ -14,9 +14,17 @@ from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
 )
 from app.integrations.a2a_error_contract import (
-    coerce_jsonrpc_error_code,
-    map_upstream_error_code,
-    normalize_error_data_type,
+    A2AUpstreamErrorDetails,
+    build_upstream_error_details,
+)
+from app.integrations.a2a_error_contract import (
+    coerce_jsonrpc_error_code as coerce_jsonrpc_numeric_code,
+)
+from app.integrations.a2a_error_contract import (
+    map_upstream_error_code as map_upstream_error_code_token,
+)
+from app.integrations.a2a_error_contract import (
+    normalize_error_data_type as normalize_upstream_error_data_type,
 )
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.jsonrpc import JsonRpcClient, JsonRpcResponse
@@ -62,12 +70,14 @@ class A2AExtensionSupport:
             raise A2AExtensionUpstreamError(
                 message=str(exc),
                 error_code="agent_unavailable",
+                source="hub_gateway",
                 upstream_error={"message": str(exc), "type": type(exc).__name__},
             ) from exc
         if card is None:
             raise A2AExtensionUpstreamError(
                 message="Agent card unavailable",
                 error_code="agent_unavailable",
+                source="hub_gateway",
                 upstream_error={"message": "Agent card unavailable"},
             )
         return cast(AgentCard, card)
@@ -83,6 +93,7 @@ class A2AExtensionSupport:
             raise A2AExtensionUpstreamError(
                 message=str(exc),
                 error_code="outbound_not_allowed",
+                source="hub_policy",
                 upstream_error={"message": str(exc)},
             ) from exc
 
@@ -145,12 +156,14 @@ class A2AExtensionSupport:
             raise A2AExtensionUpstreamError(
                 message=str(exc),
                 error_code="upstream_unreachable",
+                source="upstream_http",
                 upstream_error={"message": str(exc), "type": type(exc).__name__},
             ) from exc
         except httpx.HTTPStatusError as exc:
             raise A2AExtensionUpstreamError(
                 message=str(exc),
                 error_code="upstream_http_error",
+                source="upstream_http",
                 upstream_error={
                     "message": str(exc),
                     "status_code": (exc.response.status_code if exc.response else None),
@@ -160,16 +173,17 @@ class A2AExtensionSupport:
             raise A2AExtensionUpstreamError(
                 message=str(exc),
                 error_code="upstream_error",
+                source="upstream_http",
                 upstream_error={"message": str(exc), "type": type(exc).__name__},
             ) from exc
 
     @staticmethod
     def coerce_jsonrpc_error_code(error: Dict[str, Any]) -> Optional[int]:
-        return coerce_jsonrpc_error_code(error)
+        return coerce_jsonrpc_numeric_code(error)
 
     @staticmethod
     def normalize_error_data_type(error: Dict[str, Any]) -> Optional[str]:
-        return normalize_error_data_type(error)
+        return normalize_upstream_error_data_type(error)
 
     @staticmethod
     def map_upstream_error_code(
@@ -177,7 +191,7 @@ class A2AExtensionSupport:
         error: Dict[str, Any],
         business_code_map: Mapping[int, str],
     ) -> str:
-        return map_upstream_error_code(
+        return map_upstream_error_code_token(
             jsonrpc_code=error,
             data=error.get("data"),
             message=(
@@ -187,6 +201,45 @@ class A2AExtensionSupport:
             ),
             business_code_map=business_code_map,
             default_error_code="upstream_error",
+        )
+
+    @staticmethod
+    def build_upstream_error_details(
+        *,
+        error: Dict[str, Any],
+        business_code_map: Mapping[int, str],
+    ) -> A2AUpstreamErrorDetails:
+        return build_upstream_error_details(
+            message=(
+                str(error.get("message")).strip()
+                if isinstance(error.get("message"), str)
+                else None
+            ),
+            jsonrpc_code=error,
+            data=error.get("data"),
+            business_code_map=business_code_map,
+            default_error_code="upstream_error",
+            source="upstream_a2a",
+        )
+
+    @staticmethod
+    def build_business_error_details(
+        error: Dict[str, Any],
+        ext: ResolvedExtension | ResolvedProviderDiscoveryExtension,
+    ) -> A2AUpstreamErrorDetails:
+        return A2AExtensionSupport.build_upstream_error_details(
+            error=error,
+            business_code_map=ext.business_code_map,
+        )
+
+    @staticmethod
+    def build_interrupt_business_error_details(
+        error: Dict[str, Any],
+        ext: ResolvedInterruptCallbackExtension,
+    ) -> A2AUpstreamErrorDetails:
+        return A2AExtensionSupport.build_upstream_error_details(
+            error=error,
+            business_code_map=ext.business_code_map,
         )
 
     @staticmethod

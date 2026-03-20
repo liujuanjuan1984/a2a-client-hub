@@ -96,14 +96,17 @@ class InterruptExtensionService:
             return ExtensionCallResult(success=True, result=resp.result, meta=meta)
 
         error = resp.error or {}
-        error_code = self._support.map_interrupt_business_error_code(error, ext)
+        error_details = self._support.build_interrupt_business_error_details(error, ext)
         self._support.record_extension_metric(
-            metric_key, success=False, error_code=error_code
+            metric_key, success=False, error_code=error_details.error_code
         )
         return ExtensionCallResult(
             success=False,
-            error_code=error_code,
-            upstream_error=error,
+            error_code=error_details.error_code,
+            source=error_details.source,
+            jsonrpc_code=error_details.jsonrpc_code,
+            missing_params=list(error_details.missing_params or []) or None,
+            upstream_error=error_details.upstream_error,
             meta=meta,
         )
 

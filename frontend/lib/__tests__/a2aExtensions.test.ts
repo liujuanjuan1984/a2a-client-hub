@@ -44,14 +44,23 @@ describe("assertExtensionSuccess", () => {
     try {
       assertExtensionSuccess({
         success: false,
-        error_code: "upstream_error",
+        error_code: "invalid_params",
+        source: "upstream_a2a",
+        jsonrpc_code: -32602,
+        missing_params: [{ name: "project_id", required: true }],
+        upstream_error: { message: "project_id required" },
       });
       fail("Expected A2AExtensionCallError");
     } catch (error) {
       expect(error).toBeInstanceOf(A2AExtensionCallError);
       const typed = error as A2AExtensionCallError;
-      expect(typed.message).toBe("Extension call failed (upstream_error)");
-      expect(typed.errorCode).toBe("upstream_error");
+      expect(typed.message).toBe("Extension call failed (invalid_params)");
+      expect(typed.errorCode).toBe("invalid_params");
+      expect(typed.source).toBe("upstream_a2a");
+      expect(typed.jsonrpcCode).toBe(-32602);
+      expect(typed.missingParams).toEqual([
+        { name: "project_id", required: true },
+      ]);
     }
   });
 
@@ -177,6 +186,33 @@ describe("assertExtensionSuccess", () => {
   it("calls generic extension capabilities endpoint and returns support flags", async () => {
     mockedApiRequest.mockResolvedValue({
       modelSelection: false,
+      runtimeStatus: {
+        version: "v1",
+        canonicalStates: [
+          "working",
+          "input-required",
+          "auth-required",
+          "completed",
+          "failed",
+          "cancelled",
+        ],
+        terminalStates: [
+          "input-required",
+          "auth-required",
+          "completed",
+          "failed",
+          "cancelled",
+        ],
+        finalStates: ["completed", "failed", "cancelled"],
+        interactiveStates: ["input-required", "auth-required"],
+        failureStates: ["failed", "cancelled"],
+        aliases: {
+          input_required: "input-required",
+          auth_required: "auth-required",
+          canceled: "cancelled",
+        },
+        passthroughUnknown: true,
+      },
     });
 
     const result = await getExtensionCapabilities({
@@ -190,7 +226,9 @@ describe("assertExtensionSuccess", () => {
         method: "GET",
       },
     );
-    expect(result).toEqual({ modelSelection: false });
+    expect(result.modelSelection).toBe(false);
+    expect(result.runtimeStatus.version).toBe("v1");
+    expect(result.runtimeStatus.aliases.canceled).toBe("cancelled");
   });
 
   it("calls model discovery endpoint with provider filter", async () => {

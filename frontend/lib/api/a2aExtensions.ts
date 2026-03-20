@@ -4,24 +4,52 @@ export type A2AExtensionResponse = {
   success: boolean;
   result?: Record<string, unknown> | null;
   error_code?: string | null;
+  source?: string | null;
+  jsonrpc_code?: number | null;
+  missing_params?: { name: string; required: boolean }[] | null;
   upstream_error?: Record<string, unknown> | null;
   meta?: Record<string, unknown>;
 };
 
+export type RuntimeStatusContract = {
+  version: string;
+  canonicalStates: string[];
+  terminalStates: string[];
+  finalStates: string[];
+  interactiveStates: string[];
+  failureStates: string[];
+  aliases: Record<string, string>;
+  passthroughUnknown: boolean;
+};
+
+export type A2AExtensionCapabilities = {
+  modelSelection: boolean;
+  runtimeStatus: RuntimeStatusContract;
+};
+
 export class A2AExtensionCallError extends Error {
   errorCode: string | null;
+  source: string | null;
+  jsonrpcCode: number | null;
+  missingParams: { name: string; required: boolean }[] | null;
   upstreamError: Record<string, unknown> | null;
 
   constructor(
     message: string,
     options?: {
       errorCode?: string | null;
+      source?: string | null;
+      jsonrpcCode?: number | null;
+      missingParams?: { name: string; required: boolean }[] | null;
       upstreamError?: Record<string, unknown> | null;
     },
   ) {
     super(message);
     this.name = "A2AExtensionCallError";
     this.errorCode = options?.errorCode ?? null;
+    this.source = options?.source ?? null;
+    this.jsonrpcCode = options?.jsonrpcCode ?? null;
+    this.missingParams = options?.missingParams ?? null;
     this.upstreamError = options?.upstreamError ?? null;
     Object.setPrototypeOf(this, A2AExtensionCallError.prototype);
   }
@@ -31,6 +59,17 @@ export const assertExtensionSuccess = (response: A2AExtensionResponse) => {
   if (response.success) return;
   const errorCode =
     typeof response.error_code === "string" ? response.error_code : null;
+  const source = typeof response.source === "string" ? response.source : null;
+  const jsonrpcCode =
+    typeof response.jsonrpc_code === "number" ? response.jsonrpc_code : null;
+  const missingParams = Array.isArray(response.missing_params)
+    ? response.missing_params.filter(
+        (item): item is { name: string; required: boolean } =>
+          Boolean(item) &&
+          typeof item === "object" &&
+          typeof (item as Record<string, unknown>).name === "string",
+      )
+    : null;
   const upstreamError =
     response.upstream_error && typeof response.upstream_error === "object"
       ? (response.upstream_error as Record<string, unknown>)
@@ -42,7 +81,13 @@ export const assertExtensionSuccess = (response: A2AExtensionResponse) => {
       : errorCode
         ? `Extension call failed (${errorCode})`
         : "Extension call failed";
-  throw new A2AExtensionCallError(base, { errorCode, upstreamError });
+  throw new A2AExtensionCallError(base, {
+    errorCode,
+    source,
+    jsonrpcCode,
+    missingParams,
+    upstreamError,
+  });
 };
 
 type ExtensionAgentSource = "personal" | "shared";
@@ -299,8 +344,8 @@ const asModelItems = (value: unknown): ModelSummary[] => {
 export const getExtensionCapabilities = async (input: {
   source: ExtensionAgentSource;
   agentId: string;
-}): Promise<{ modelSelection: boolean }> => {
-  const response = await apiRequest<{ modelSelection: boolean }>(
+}): Promise<A2AExtensionCapabilities> => {
+  const response = await apiRequest<A2AExtensionCapabilities>(
     buildExtensionPath(input.source, input.agentId, "capabilities"),
     {
       method: "GET",

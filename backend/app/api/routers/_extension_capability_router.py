@@ -26,6 +26,9 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
     A2AExtensionUpstreamError,
 )
+from app.integrations.a2a_runtime_status_contract import (
+    runtime_status_contract_payload,
+)
 from app.schemas.a2a_extension import (
     A2AExtensionCapabilitiesResponse,
     A2AExtensionPermissionReplyRequest,
@@ -36,6 +39,7 @@ from app.schemas.a2a_extension import (
     A2AExtensionQuestionReplyRequest,
     A2AExtensionResponse,
     A2AModelDiscoveryRequest,
+    A2ARuntimeStatusContractResponse,
 )
 from app.utils.logging_redaction import redact_url_for_logging
 
@@ -104,6 +108,9 @@ def create_extension_capability_router(
             success=result.success,
             result=result.result,
             error_code=result.error_code,
+            source=result.source,
+            jsonrpc_code=result.jsonrpc_code,
+            missing_params=result.missing_params,
             upstream_error=result.upstream_error,
             meta=result.meta or {},
         )
@@ -112,6 +119,9 @@ def create_extension_capability_router(
         *,
         error_code: str,
         message: str,
+        source: Optional[str] = None,
+        jsonrpc_code: Optional[int] = None,
+        missing_params: Optional[list[dict[str, Any]]] = None,
         upstream_error: Optional[Dict[str, Any]] = None,
         meta: Optional[Dict[str, Any]] = None,
     ) -> JSONResponse:
@@ -119,6 +129,9 @@ def create_extension_capability_router(
             success=False,
             result=None,
             error_code=error_code,
+            source=source,
+            jsonrpc_code=jsonrpc_code,
+            missing_params=missing_params,
             upstream_error=(
                 upstream_error if upstream_error is not None else {"message": message}
             ),
@@ -158,7 +171,12 @@ def create_extension_capability_router(
         except A2AExtensionNotSupportedError:
             model_selection = False
 
-        return A2AExtensionCapabilitiesResponse(modelSelection=model_selection)
+        return A2AExtensionCapabilitiesResponse(
+            modelSelection=model_selection,
+            runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
+                runtime_status_contract_payload()
+            ),
+        )
 
     @router.post(
         "/{agent_id}/extensions/models/providers:list",
@@ -249,6 +267,9 @@ def create_extension_capability_router(
             response = A2AExtensionResponse(
                 success=False,
                 error_code=exc.error_code,
+                source=exc.source,
+                jsonrpc_code=exc.jsonrpc_code,
+                missing_params=exc.missing_params,
                 upstream_error=exc.upstream_error,
                 meta={},
             )

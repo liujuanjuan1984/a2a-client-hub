@@ -79,6 +79,49 @@ export type RuntimeStatusEvent = {
   interrupt: RuntimeInterrupt | null;
 };
 
+export type RuntimeStatusContract = {
+  version: "v1";
+  canonicalStates: readonly string[];
+  terminalStates: readonly string[];
+  finalStates: readonly string[];
+  interactiveStates: readonly string[];
+  failureStates: readonly string[];
+  aliases: Readonly<Record<string, string>>;
+  passthroughUnknown: true;
+};
+
+export const DEFAULT_RUNTIME_STATUS_CONTRACT: RuntimeStatusContract = {
+  version: "v1",
+  canonicalStates: [
+    "working",
+    "input-required",
+    "auth-required",
+    "completed",
+    "failed",
+    "cancelled",
+  ],
+  terminalStates: [
+    "input-required",
+    "auth-required",
+    "completed",
+    "failed",
+    "cancelled",
+  ],
+  finalStates: ["completed", "failed", "cancelled"],
+  interactiveStates: ["input-required", "auth-required"],
+  failureStates: ["failed", "cancelled"],
+  aliases: {
+    input_required: "input-required",
+    auth_required: "auth-required",
+    canceled: "cancelled",
+    done: "completed",
+    success: "completed",
+    error: "failed",
+    rejected: "failed",
+  },
+  passthroughUnknown: true,
+};
+
 const coerceStringArray = (value: unknown) =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
     ? (value as string[])
@@ -163,7 +206,7 @@ export const extractRuntimeStatusEvent = (
   }
   const status = data.status as { state?: unknown } | undefined;
   if (status && typeof status.state === "string" && status.state.trim()) {
-    const state = status.state;
+    const state = normalizeRuntimeState(status.state);
     return {
       state,
       isFinal: data.final === true,
@@ -500,11 +543,14 @@ const extractToolCallView = (
   };
 };
 
-const normalizeRuntimeState = (state: string) => state.trim().toLowerCase();
+export const normalizeRuntimeState = (state: string) => {
+  const normalized = state.trim().toLowerCase().replace(/_/g, "-");
+  return DEFAULT_RUNTIME_STATUS_CONTRACT.aliases[normalized] ?? normalized;
+};
 
 export const isInputRequiredRuntimeState = (state: string) => {
   const normalized = normalizeRuntimeState(state);
-  return normalized === "input-required" || normalized === "input_required";
+  return DEFAULT_RUNTIME_STATUS_CONTRACT.interactiveStates.includes(normalized);
 };
 
 const parseInterruptQuestionOption = (
