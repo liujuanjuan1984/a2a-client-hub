@@ -98,6 +98,9 @@ describe("useContinueSession", () => {
       metadata: {
         provider: "opencode",
         externalSessionId: "upstream-1",
+        opencode: {
+          directory: "/workspace/app",
+        },
       },
     });
 
@@ -123,6 +126,11 @@ describe("useContinueSession", () => {
       provider: "opencode",
       externalSessionId: "upstream-1",
       contextId: undefined,
+      metadata: {
+        opencode: {
+          directory: "/workspace/app",
+        },
+      },
     });
     expect(mockedBlurActiveElement).toHaveBeenCalledTimes(1);
     expect(mockedBuildChatRoute).toHaveBeenCalledWith("agent-1", "conv-1");
@@ -139,6 +147,9 @@ describe("useContinueSession", () => {
       metadata: {
         provider: "opencode",
         externalSessionId: "upstream-1",
+        opencode: {
+          directory: "/workspace/app",
+        },
       },
     });
     const { result } = renderHook(() => useContinueSession());
@@ -172,6 +183,11 @@ describe("useContinueSession", () => {
         provider: "opencode",
         externalSessionId: "upstream-1",
         contextId: undefined,
+        metadata: {
+          opencode: {
+            directory: "/workspace/app",
+          },
+        },
       },
     );
     expect(mockedBuildChatRoute).toHaveBeenCalledWith(

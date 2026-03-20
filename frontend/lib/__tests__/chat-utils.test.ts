@@ -211,6 +211,9 @@ describe("chat store utils", () => {
     newest.contextId = "ctx-1";
     newest.metadata = {
       locale: "zh-CN",
+      opencode: {
+        directory: "/workspace/app",
+      },
       shared: {
         model: {
           providerID: "openai",
@@ -261,6 +264,9 @@ describe("chat store utils", () => {
     expect(persisted.newest.source).toBeNull();
     expect(persisted.newest.contextId).toBeNull();
     expect(persisted.newest.metadata).toEqual({
+      opencode: {
+        directory: "/workspace/app",
+      },
       shared: {
         model: {
           providerID: "openai",

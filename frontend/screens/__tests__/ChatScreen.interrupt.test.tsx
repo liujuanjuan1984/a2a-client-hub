@@ -76,6 +76,10 @@ jest.mock("@/components/chat/SessionPickerModal", () => ({
   SessionPickerModal: () => null,
 }));
 
+jest.mock("@/components/chat/OpencodeDirectoryModal", () => ({
+  OpencodeDirectoryModal: () => null,
+}));
+
 jest.mock("@/components/chat/ShortcutManagerModal", () => ({
   ShortcutManagerModal: () => null,
 }));
@@ -222,6 +226,7 @@ const mockChatState: {
   cancelMessage: jest.Mock;
   clearPendingInterrupt: jest.Mock;
   bindExternalSession: jest.Mock;
+  setOpencodeDirectory: jest.Mock;
   getSessionsByAgentId: jest.Mock;
 } = {
   sessions: {},
@@ -231,6 +236,7 @@ const mockChatState: {
   cancelMessage: jest.fn(),
   clearPendingInterrupt: jest.fn(),
   bindExternalSession: jest.fn(),
+  setOpencodeDirectory: jest.fn(),
   getSessionsByAgentId: jest.fn(() => []),
 };
 
@@ -407,6 +413,7 @@ describe("ChatScreen interrupt handling", () => {
     mockChatState.cancelMessage.mockReset();
     mockChatState.clearPendingInterrupt.mockReset();
     mockChatState.bindExternalSession.mockReset();
+    mockChatState.setOpencodeDirectory.mockReset();
     mockPromptSessionAsync.mockReset().mockResolvedValue({
       ok: true,
       sessionId: "ses-upstream-1",
@@ -691,6 +698,11 @@ describe("ChatScreen interrupt handling", () => {
   it("appends input to the active upstream session during streaming", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
+      metadata: {
+        opencode: {
+          directory: "/workspace/app",
+        },
+      },
       streamState: "streaming",
       externalSessionRef: {
         provider: "OpenCode",
@@ -717,6 +729,11 @@ describe("ChatScreen interrupt handling", () => {
       request: {
         messageID: expect.any(String),
         parts: [{ type: "text", text: "append this" }],
+      },
+      metadata: {
+        opencode: {
+          directory: "/workspace/app",
+        },
       },
     });
     expect(mockChatState.sendMessage).not.toHaveBeenCalled();

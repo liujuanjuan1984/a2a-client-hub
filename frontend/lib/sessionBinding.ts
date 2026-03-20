@@ -1,4 +1,5 @@
 import { type SessionContinueBinding } from "@/lib/api/sessions";
+import { pickOpencodeDirectoryMetadata } from "@/lib/opencodeMetadata";
 import { readSharedSessionBinding } from "@/lib/sharedMetadata";
 
 export const buildContinueBindingPayload = (
@@ -7,6 +8,7 @@ export const buildContinueBindingPayload = (
 ) => {
   const metadata = binding.metadata || {};
   const sessionBinding = readSharedSessionBinding(metadata);
+  const opencodeMetadata = pickOpencodeDirectoryMetadata(metadata);
   return {
     agentId,
     source: binding.source,
@@ -14,5 +16,6 @@ export const buildContinueBindingPayload = (
     externalSessionId: sessionBinding.externalSessionId ?? undefined,
     contextId:
       typeof metadata.contextId === "string" ? metadata.contextId : undefined,
+    ...(opencodeMetadata ? { metadata: opencodeMetadata } : {}),
   };
 };

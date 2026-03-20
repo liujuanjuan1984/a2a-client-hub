@@ -16,8 +16,10 @@ import { type SharedModelSelection } from "@/lib/chat-utils";
 
 export const ChatComposer = memo(function ChatComposer({
   modelSelectionStatus,
+  currentDirectory,
   pendingInterrupt,
   showShortcutManager,
+  onOpenDirectoryPicker,
   onOpenShortcutManager,
   selectedModel,
   onOpenModelPicker,
@@ -38,8 +40,10 @@ export const ChatComposer = memo(function ChatComposer({
   onScrollToBottom,
 }: {
   modelSelectionStatus: GenericCapabilityStatus;
+  currentDirectory?: string | null;
   pendingInterrupt: PendingRuntimeInterrupt | null;
   showShortcutManager: boolean;
+  onOpenDirectoryPicker: () => void;
   onOpenShortcutManager: () => void;
   selectedModel: SharedModelSelection | null;
   onOpenModelPicker: () => void;
@@ -64,6 +68,7 @@ export const ChatComposer = memo(function ChatComposer({
   const modelLabel = selectedModel
     ? `${selectedModel.providerID} / ${selectedModel.modelID}`
     : "Model: Default";
+  const hasDirectory = Boolean(currentDirectory?.trim());
 
   return (
     <View className="relative border-t border-slate-800 px-2 sm:px-6 py-4">
@@ -80,7 +85,7 @@ export const ChatComposer = memo(function ChatComposer({
         <View className="flex-row items-center gap-2">
           {modelSelectionStatus !== "unsupported" && !isFocused && (
             <Pressable
-              className="h-9 max-w-[180px] flex-row items-center gap-2 rounded-xl bg-slate-800/40 px-3"
+              className="h-9 max-w-[156px] flex-row items-center gap-2 rounded-xl bg-slate-800/40 px-3"
               onPress={onOpenModelPicker}
               accessibilityRole="button"
               accessibilityLabel="Choose model"
@@ -107,6 +112,26 @@ export const ChatComposer = memo(function ChatComposer({
               </Text>
             </Pressable>
           )}
+
+          <Pressable
+            className={`h-9 w-14 items-center justify-center rounded-xl ${
+              hasDirectory ? "bg-primary" : "bg-slate-800/40"
+            }`}
+            onPress={onOpenDirectoryPicker}
+            accessibilityRole="button"
+            accessibilityLabel="Configure working directory"
+            accessibilityHint={
+              hasDirectory
+                ? `Current directory: ${currentDirectory}`
+                : "Set the working directory for this session"
+            }
+          >
+            <Ionicons
+              name={hasDirectory ? "folder-open" : "folder-open-outline"}
+              size={18}
+              color={hasDirectory ? "#000000" : "#FFFFFF"}
+            />
+          </Pressable>
 
           <Pressable
             className={`h-9 w-14 items-center justify-center rounded-xl ${

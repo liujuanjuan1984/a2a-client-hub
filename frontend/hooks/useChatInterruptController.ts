@@ -9,6 +9,7 @@ import {
 import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 import { ApiRequestError } from "@/lib/api/client";
 import { type ResolvedRuntimeInterruptRecord } from "@/lib/chat-utils";
+import { pickOpencodeDirectoryMetadata } from "@/lib/opencodeMetadata";
 import { toast } from "@/lib/toast";
 import type { AgentSource } from "@/store/agents";
 
@@ -25,6 +26,7 @@ type UseChatInterruptControllerParams = {
   pendingInterrupt: PendingRuntimeInterrupt | null;
   lastResolvedInterrupt: ResolvedRuntimeInterruptRecord | null;
   pendingQuestionCount: number;
+  sessionMetadata?: Record<string, unknown>;
   clearPendingInterrupt: (conversationId: string, requestId?: string) => void;
 };
 
@@ -35,6 +37,7 @@ export function useChatInterruptController({
   pendingInterrupt,
   lastResolvedInterrupt,
   pendingQuestionCount,
+  sessionMetadata,
   clearPendingInterrupt,
 }: UseChatInterruptControllerParams) {
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
@@ -206,6 +209,7 @@ export function useChatInterruptController({
             agentId: activeAgentId,
             requestId,
             reply,
+            metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
           });
           acknowledgeLocalInterruptResolution(
             requestId,
@@ -225,6 +229,7 @@ export function useChatInterruptController({
       conversationId,
       pendingInterrupt,
       runInterruptAction,
+      sessionMetadata,
     ],
   );
 
@@ -278,6 +283,7 @@ export function useChatInterruptController({
           agentId: activeAgentId,
           requestId,
           answers: normalizedAnswers,
+          metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
         });
         acknowledgeLocalInterruptResolution(requestId, "question", "replied");
         clearPendingInterrupt(conversationId, requestId);
@@ -293,6 +299,7 @@ export function useChatInterruptController({
     pendingInterrupt,
     questionAnswers,
     runInterruptAction,
+    sessionMetadata,
   ]);
 
   const handleQuestionReject = useCallback(() => {
@@ -313,6 +320,7 @@ export function useChatInterruptController({
           source: agentSource,
           agentId: activeAgentId,
           requestId,
+          metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
         });
         acknowledgeLocalInterruptResolution(requestId, "question", "rejected");
         clearPendingInterrupt(conversationId, requestId);
@@ -327,6 +335,7 @@ export function useChatInterruptController({
     conversationId,
     pendingInterrupt,
     runInterruptAction,
+    sessionMetadata,
   ]);
 
   return {
