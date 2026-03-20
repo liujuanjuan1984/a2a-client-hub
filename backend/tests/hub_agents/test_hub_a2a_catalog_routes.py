@@ -12,8 +12,8 @@ from app.db.models.conversation_thread import ConversationThread
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.features.hub_agents import admin_router
 from app.features.hub_agents import router as hub_router
-from tests.api_utils import create_test_client
-from tests.utils import create_user
+from tests.support.api_utils import create_test_client
+from tests.support.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

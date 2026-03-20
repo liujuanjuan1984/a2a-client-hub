@@ -18,8 +18,8 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_runtime_status_contract import (
     runtime_status_contract_payload,
 )
-from tests.api_utils import create_test_client
-from tests.utils import create_user
+from tests.support.api_utils import create_test_client
+from tests.support.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

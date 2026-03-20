@@ -17,7 +17,7 @@ from app.services.ws_ticket_service import (
     ws_ticket_service,
 )
 from app.utils.timezone_util import utc_now
-from tests.utils import create_user
+from tests.support.utils import create_user
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,7 @@ from app.db.models.user import User
 from app.features.auth import router as auth_router
 from app.handlers import auth as auth_handler
 from app.utils.timezone_util import utc_now
-from tests.api_utils import create_test_client
+from tests.support.api_utils import create_test_client
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

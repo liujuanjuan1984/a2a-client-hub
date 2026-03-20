@@ -10,7 +10,7 @@ from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
 from app.services.a2a_schedule_job import _execute_claimed_task
 from app.utils.timezone_util import utc_now
-from tests.utils import create_a2a_agent, create_schedule_task, create_user
+from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

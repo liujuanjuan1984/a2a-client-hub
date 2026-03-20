@@ -9,8 +9,8 @@ from app.api import deps
 from app.api.routers import admin_proxy_allowlist as admin_proxy_allowlist_router
 from app.core.config import settings
 from app.services.a2a_proxy_service import A2AProxyService, a2a_proxy_service
-from tests.api_utils import create_test_client
-from tests.utils import create_user
+from tests.support.api_utils import create_test_client
+from tests.support.utils import create_user
 
 
 class _ScalarResult:

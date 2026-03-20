@@ -16,7 +16,7 @@ from app.utils.idempotency_key import (
     normalize_idempotency_key,
 )
 from app.utils.timezone_util import utc_now
-from tests.utils import create_user
+from tests.support.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

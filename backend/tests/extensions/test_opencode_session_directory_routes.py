@@ -15,8 +15,8 @@ from app.integrations.a2a_extensions.service import ExtensionCallResult
 from app.services.a2a_runtime import A2ARuntimeValidationError
 from app.services.agent_common import upsert_agent_credential
 from app.services.hub_a2a_runtime import HubA2ARuntimeValidationError
-from tests.api_utils import create_test_client
-from tests.utils import create_user
+from tests.support.api_utils import create_test_client
+from tests.support.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

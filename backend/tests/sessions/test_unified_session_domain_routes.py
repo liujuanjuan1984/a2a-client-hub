@@ -13,8 +13,8 @@ from app.features.schedules.service import a2a_schedule_service
 from app.features.sessions import router as me_sessions
 from app.features.sessions.service import session_hub_service
 from app.utils.timezone_util import utc_now
-from tests.api_utils import create_test_client
-from tests.utils import create_a2a_agent, create_user
+from tests.support.api_utils import create_test_client
+from tests.support.utils import create_a2a_agent, create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

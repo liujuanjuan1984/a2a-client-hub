@@ -38,7 +38,7 @@ from app.services.a2a_schedule_job import (
 )
 from app.services.ops_metrics import ops_metrics
 from app.utils.timezone_util import utc_now
-from tests.utils import create_a2a_agent, create_schedule_task, create_user
+from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 

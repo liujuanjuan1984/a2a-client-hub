@@ -6,7 +6,7 @@ import pytest
 
 from app.db.models.conversation_thread import ConversationThread
 from app.utils.timezone_util import utc_now
-from tests.utils import create_user
+from tests.support.utils import create_user
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
