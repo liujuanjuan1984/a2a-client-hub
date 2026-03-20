@@ -103,6 +103,20 @@ class ToolCallViewItem(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ToolCallTimelineEntryItem(BaseModel):
+    status: str
+    title: Optional[str] = None
+    input: Optional[Any] = None
+    output: Optional[Any] = None
+    error: Optional[Any] = None
+
+
+class ToolCallDetailItem(ToolCallViewItem):
+    title: Optional[str] = None
+    timeline: list[ToolCallTimelineEntryItem] = Field(default_factory=list)
+    raw: Optional[str] = None
+
+
 class SessionMessageBlockItem(BaseModel):
     id: str
     type: str
@@ -120,6 +134,10 @@ class SessionMessageBlockDetailItem(BaseModel):
     content: Optional[str] = None
     is_finished: bool = Field(alias="isFinished")
     tool_call: Optional[ToolCallViewItem] = Field(alias="toolCall", default=None)
+    tool_call_detail: Optional[ToolCallDetailItem] = Field(
+        alias="toolCallDetail",
+        default=None,
+    )
 
     model_config = {"populate_by_name": True}
 
@@ -160,6 +178,8 @@ __all__ = [
     "SessionMessageBlockDetailItem",
     "SessionMessageBlocksQueryRequest",
     "SessionMessageBlocksQueryResponse",
+    "ToolCallDetailItem",
+    "ToolCallTimelineEntryItem",
     "ToolCallViewItem",
     "SessionMessageItem",
     "SessionMessagesPageInfo",
