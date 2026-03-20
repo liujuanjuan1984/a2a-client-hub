@@ -37,6 +37,7 @@ export function ChatTimelinePanel({
   onCaptureContentSizeAnchor,
   onLoadBlockContent,
   onRetry,
+  onInterruptStream,
   onListContentSizeChange,
   onListScroll,
   pendingInterrupt,
@@ -60,6 +61,7 @@ export function ChatTimelinePanel({
   onCaptureContentSizeAnchor: () => void;
   onLoadBlockContent: (messageId: string, blockId: string) => Promise<boolean>;
   onRetry: () => void;
+  onInterruptStream: () => void;
   onListContentSizeChange: (w: number, h: number) => void;
   onListScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   pendingInterrupt: PendingRuntimeInterrupt | null;
@@ -82,12 +84,14 @@ export function ChatTimelinePanel({
         onLayoutChangeStart={onCaptureContentSizeAnchor}
         onLoadBlockContent={onLoadBlockContent}
         onRetry={onRetry}
+        onInterruptStream={onInterruptStream}
       />
     ),
     [
       messages.length,
       onCaptureContentSizeAnchor,
       onLoadBlockContent,
+      onInterruptStream,
       onRetry,
       session?.streamState,
     ],

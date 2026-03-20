@@ -22,15 +22,21 @@ import {
   useExtensionCapabilitiesQuery,
 } from "@/hooks/useExtensionCapabilitiesQuery";
 import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
+import {
+  A2AExtensionCallError,
+  promptSessionAsync,
+} from "@/lib/api/a2aExtensions";
 import type { ChatMessage } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
 import { getSharedModelSelection } from "@/lib/chat-utils";
+import { addConversationOverlayMessage } from "@/lib/chatHistoryCache";
 import {
   getAnchoredOffsetAfterContentResize,
   shouldShowScrollToBottom,
   shouldStickToBottom,
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
+import { generateUuid } from "@/lib/id";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
@@ -64,6 +70,7 @@ export function useChatScreenController({
   const sendMessage = useChatStore((state) => state.sendMessage);
   const retryMessage = useChatStore((state) => state.retryMessage);
   const resumeMessage = useChatStore((state) => state.resumeMessage);
+  const cancelMessage = useChatStore((state) => state.cancelMessage);
   const clearPendingInterrupt = useChatStore(
     (state) => state.clearPendingInterrupt,
   );
@@ -179,19 +186,83 @@ export function useChatScreenController({
   }, [scheduleStickToBottom]);
 
   const sendMessageWithCapabilities = useCallback(
-    (
+    async (
       nextConversationId: string,
       nextAgentId: string,
       content: string,
       nextAgentSource: AgentSource,
-    ) =>
-      sendMessage(
+    ) => {
+      const currentSession =
+        useChatStore.getState().sessions[nextConversationId];
+      const isActivelyStreaming = currentSession?.streamState === "streaming";
+      const externalSessionId =
+        currentSession?.externalSessionRef?.externalSessionId?.trim() ?? "";
+
+      if (isActivelyStreaming && externalSessionId) {
+        const promptMessageId = generateUuid();
+        try {
+          const promptResult = await promptSessionAsync({
+            source: nextAgentSource,
+            agentId: nextAgentId,
+            sessionId: externalSessionId,
+            request: {
+              messageID: promptMessageId,
+              parts: [{ type: "text", text: content.trim() }],
+            },
+          });
+          addConversationOverlayMessage(nextConversationId, {
+            id: promptMessageId,
+            role: "user",
+            content: content.trim(),
+            createdAt: new Date().toISOString(),
+            status: "done",
+          });
+          useChatStore.getState().bindExternalSession(nextConversationId, {
+            agentId: nextAgentId,
+            externalSessionId: promptResult.sessionId,
+          });
+          toast.info(
+            "Message appended",
+            "Sent to the running upstream session.",
+          );
+          return;
+        } catch (error) {
+          const fallbackReason =
+            error instanceof A2AExtensionCallError
+              ? (error.errorCode ?? "extension_call_failed")
+              : error instanceof Error
+                ? error.message
+                : "unknown_error";
+          console.warn(
+            "[Chat] prompt_async unavailable during stream; fallback to interrupt send",
+            {
+              conversationId: nextConversationId,
+              agentId: nextAgentId,
+              fallbackReason,
+              hasExternalSessionId: true,
+            },
+          );
+        }
+      } else if (isActivelyStreaming) {
+        console.warn(
+          "[Chat] missing upstream session binding during stream; fallback to interrupt send",
+          {
+            conversationId: nextConversationId,
+            agentId: nextAgentId,
+            fallbackReason: "missing_external_session_id",
+            hasExternalSessionId: false,
+          },
+        );
+      }
+
+      await sendMessage(
         nextConversationId,
         nextAgentId,
         content,
         nextAgentSource,
         runtimeStatusContract,
-      ),
+      );
+    },
     [runtimeStatusContract, sendMessage],
   );
 
@@ -521,6 +592,13 @@ export function useChatScreenController({
     setShowDetails((current) => !current);
   }, []);
 
+  const handleInterruptStream = useCallback(() => {
+    if (!conversationId) {
+      return;
+    }
+    cancelMessage(conversationId);
+  }, [cancelMessage, conversationId]);
+
   const handleSessionSelect = useCallback(
     (nextConversationId: string) => {
       if (!agent) {
@@ -591,6 +669,7 @@ export function useChatScreenController({
     captureContentSizeAnchor,
     handleLoadBlockContent,
     handleRetry,
+    handleInterruptStream,
     handlePermissionReply,
     handleQuestionAnswerChange,
     handleQuestionOptionPick,

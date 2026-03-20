@@ -1,4 +1,7 @@
-import { getConversationMessages } from "@/lib/chatHistoryCache";
+import {
+  addConversationMessage,
+  getConversationMessages,
+} from "@/lib/chatHistoryCache";
 import { useChatStore } from "@/store/chat";
 import { executeChatRuntime } from "@/store/chatRuntime";
 
@@ -197,6 +200,24 @@ describe("chat store idempotency semantics", () => {
 
   it("cancelMessage marks streaming session as idle immediately", () => {
     useChatStore.getState().ensureSession("conv-4", "agent-1");
+    const streamingAgentMessageId = "agent-stream-1";
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-4": {
+          ...state.sessions["conv-4"],
+          lastAgentMessageId: streamingAgentMessageId,
+        },
+      },
+    }));
+    addConversationMessage("conv-4", {
+      id: streamingAgentMessageId,
+      role: "agent",
+      content: "",
+      createdAt: "2026-02-24T00:00:00.000Z",
+      status: "streaming",
+      blocks: [],
+    });
     useChatStore.setState((state) => ({
       sessions: {
         ...state.sessions,
@@ -223,6 +244,11 @@ describe("chat store idempotency semantics", () => {
     expect(session?.streamState).toBe("idle");
     expect(session?.lastStreamError).toBeNull();
     expect(session?.pendingInterrupt).toBeNull();
+    expect(
+      getConversationMessages("conv-4").find(
+        (message) => message.id === streamingAgentMessageId,
+      )?.status,
+    ).toBe("interrupted");
     expect(chatConnectionService.cancelSession).toHaveBeenCalledWith("conv-4");
   });
 

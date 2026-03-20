@@ -9,7 +9,20 @@ type ChatHistoryPage = {
   nextPage?: number;
 };
 
+const overlayMessages = new Map<string, Map<string, ChatMessage>>();
+
 const normalizeMessageId = (value: string) => value.trim();
+
+const resolveOverlayBucket = (conversationId: string) => {
+  const normalizedConversationId = conversationId.trim();
+  const existing = overlayMessages.get(normalizedConversationId);
+  if (existing) {
+    return existing;
+  }
+  const created = new Map<string, ChatMessage>();
+  overlayMessages.set(normalizedConversationId, created);
+  return created;
+};
 
 const normalizeMessages = (items: ChatMessage[]) => {
   const ordered = [...items].sort((left, right) =>
@@ -130,6 +143,28 @@ export const addConversationMessage = (
   writeMessages(conversationId, [...current, message]);
 };
 
+export const addConversationOverlayMessage = (
+  conversationId: string,
+  message: ChatMessage,
+) => {
+  const targetId = normalizeMessageId(message.id);
+  if (!targetId) return;
+  const bucket = resolveOverlayBucket(conversationId);
+  bucket.set(targetId, { ...message, id: targetId });
+  addConversationMessage(conversationId, { ...message, id: targetId });
+};
+
+export const mergeConversationOverlayMessages = (
+  conversationId: string,
+  messages: ChatMessage[],
+) => {
+  const bucket = overlayMessages.get(conversationId.trim());
+  if (!bucket || bucket.size === 0) {
+    return normalizeMessages(messages);
+  }
+  return normalizeMessages([...messages, ...Array.from(bucket.values())]);
+};
+
 export const updateConversationMessage = (
   conversationId: string,
   messageId: string,
@@ -178,6 +213,7 @@ export const rekeyConversationMessage = (
 };
 
 export const removeConversationMessages = (conversationId: string) => {
+  overlayMessages.delete(conversationId.trim());
   queryClient.removeQueries({
     queryKey: queryKeys.history.chat(conversationId),
     exact: true,
@@ -201,6 +237,7 @@ export const listConversationIdsWithHistory = (): string[] => {
 };
 
 export const clearAllConversationMessages = () => {
+  overlayMessages.clear();
   queryClient.removeQueries({
     queryKey: ["history", "chat"],
   });

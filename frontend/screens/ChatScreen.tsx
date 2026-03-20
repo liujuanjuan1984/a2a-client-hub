@@ -69,6 +69,7 @@ export function ChatScreen({
         onCaptureContentSizeAnchor={controller.captureContentSizeAnchor}
         onLoadBlockContent={controller.handleLoadBlockContent}
         onRetry={controller.handleRetry}
+        onInterruptStream={controller.handleInterruptStream}
         onListContentSizeChange={controller.handleListContentSizeChange}
         onListScroll={controller.handleListScroll}
         pendingInterrupt={controller.pendingInterrupt}

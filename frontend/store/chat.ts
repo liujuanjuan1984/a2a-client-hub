@@ -343,6 +343,26 @@ export const useChatStore = create<ChatState>()(
         if (shouldCancelByState || shouldCancelByConnection) {
           requestSessionCancel(normalizedConversationId);
         }
+        const interruptedAgentMessageId = current?.lastAgentMessageId;
+        if (
+          interruptedAgentMessageId &&
+          getConversationMessages(
+            normalizedConversationId || conversationId,
+          ).some(
+            (message) =>
+              message.id === interruptedAgentMessageId &&
+              message.role === "agent" &&
+              message.status === "streaming",
+          )
+        ) {
+          updateConversationMessage(
+            normalizedConversationId || conversationId,
+            interruptedAgentMessageId,
+            {
+              status: "interrupted",
+            },
+          );
+        }
         set((state) => {
           const targetConversationId = state.sessions[normalizedConversationId]
             ? normalizedConversationId
