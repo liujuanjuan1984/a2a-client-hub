@@ -201,4 +201,115 @@ describe("useChatBlockDetailController", () => {
       "Block ownership mismatch.",
     );
   });
+
+  it("reloads completed tool_call blocks when only raw content is cached", async () => {
+    mockedGetConversationMessages.mockReturnValue([
+      {
+        id: "msg-tool-1",
+        role: "agent",
+        createdAt: "2026-03-18T00:00:00.000Z",
+        blocks: [
+          {
+            id: "block-tool-1",
+            type: "tool_call",
+            content:
+              '{"call_id":"call-1","tool":"bash","status":"completed","output":"done"}',
+            isFinished: true,
+            toolCall: {
+              name: "bash",
+              status: "success",
+              callId: "call-1",
+              result: "done",
+            },
+          },
+        ],
+      },
+    ] as never);
+    mockedQuerySessionMessageBlocks.mockResolvedValue({
+      items: [
+        {
+          id: "block-tool-1",
+          messageId: "msg-tool-1",
+          type: "tool_call",
+          content:
+            '{"call_id":"call-1","tool":"bash","status":"completed","output":"done"}',
+          isFinished: true,
+          toolCall: {
+            name: "bash",
+            status: "success",
+            callId: "call-1",
+            result: "done",
+          },
+          toolCallDetail: {
+            name: "bash",
+            status: "success",
+            callId: "call-1",
+            timeline: [{ status: "completed", output: "done" }],
+            raw: '{"call_id":"call-1","tool":"bash","status":"completed","output":"done"}',
+          },
+        },
+      ],
+    } as never);
+
+    const { result } = renderHook(() => useChatBlockDetailController("conv-1"));
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.handleLoadBlockContent(
+        "msg-tool-1",
+        "block-tool-1",
+      );
+    });
+
+    expect(ok).toBe(true);
+    expect(mockedQuerySessionMessageBlocks).toHaveBeenCalledWith("conv-1", {
+      blockIds: ["block-tool-1"],
+    });
+    expect(mockedUpdateConversationMessageWithUpdater).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips reloading completed tool_call blocks when structured detail is already cached", async () => {
+    mockedGetConversationMessages.mockReturnValue([
+      {
+        id: "msg-tool-2",
+        role: "agent",
+        createdAt: "2026-03-18T00:00:00.000Z",
+        blocks: [
+          {
+            id: "block-tool-2",
+            type: "tool_call",
+            content:
+              '{"call_id":"call-2","tool":"bash","status":"completed","output":"done"}',
+            isFinished: true,
+            toolCall: {
+              name: "bash",
+              status: "success",
+              callId: "call-2",
+              result: "done",
+            },
+            toolCallDetail: {
+              name: "bash",
+              status: "success",
+              callId: "call-2",
+              timeline: [{ status: "completed", output: "done" }],
+            },
+          },
+        ],
+      },
+    ] as never);
+
+    const { result } = renderHook(() => useChatBlockDetailController("conv-1"));
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.handleLoadBlockContent(
+        "msg-tool-2",
+        "block-tool-2",
+      );
+    });
+
+    expect(ok).toBe(true);
+    expect(mockedQuerySessionMessageBlocks).not.toHaveBeenCalled();
+    expect(mockedUpdateConversationMessageWithUpdater).not.toHaveBeenCalled();
+  });
 });

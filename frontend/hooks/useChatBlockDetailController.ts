@@ -28,8 +28,23 @@ export function useChatBlockDetailController(conversationId?: string) {
       const latestBlock = latestMessage?.blocks?.find(
         (item) => item.id === resolvedBlockId,
       );
-      if (latestBlock && latestBlock.content.length > 0) {
-        return true;
+      if (latestBlock) {
+        const hasContent =
+          typeof latestBlock.content === "string" &&
+          latestBlock.content.length > 0;
+        if (latestBlock.type === "tool_call") {
+          const hasStructuredToolCallDetail = Boolean(
+            latestBlock.toolCallDetail,
+          );
+          if (
+            hasStructuredToolCallDetail ||
+            (!latestBlock.isFinished && hasContent)
+          ) {
+            return true;
+          }
+        } else if (hasContent) {
+          return true;
+        }
       }
 
       const inFlightKey = `${conversationId}:${resolvedBlockId}`;
