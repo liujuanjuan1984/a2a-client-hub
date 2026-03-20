@@ -1,7 +1,5 @@
-"""Compatibility shim for the legacy session hub service path."""
+"""Compatibility re-export for the legacy session hub service path."""
 
-import sys
+from app.features.sessions.service import SessionHubService, session_hub_service
 
-from app.features.sessions import service as _service_module
-
-sys.modules[__name__] = _service_module
+__all__ = ["SessionHubService", "session_hub_service"]

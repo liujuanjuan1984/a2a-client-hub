@@ -6,9 +6,9 @@ from typing import Final
 # app.main and make startup registration changes reviewable in one place.
 ROUTER_MODULES: Final[tuple[str, ...]] = (
     "app.features.auth.router",
-    "app.api.routers.a2a_agents",
-    "app.api.routers.hub_a2a_agents",
-    "app.api.routers.admin_a2a_agents",
+    "app.features.personal_agents.router",
+    "app.features.hub_agents.router",
+    "app.features.hub_agents.admin_router",
     "app.api.routers.admin_proxy_allowlist",
     "app.features.schedules.router",
     "app.api.routers.a2a_extension_capabilities",

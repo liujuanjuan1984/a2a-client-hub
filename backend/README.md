@@ -58,7 +58,9 @@ Current direction:
 Migrated features so far:
 
 - `app/features/auth/`
+- `app/features/hub_agents/`
 - `app/features/invitations/`
+- `app/features/personal_agents/`
 - `app/features/schedules/`
 - `app/features/sessions/`
 - `app/features/shortcuts/`
