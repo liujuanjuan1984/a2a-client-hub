@@ -186,6 +186,7 @@ describe("assertExtensionSuccess", () => {
   it("calls generic extension capabilities endpoint and returns support flags", async () => {
     mockedApiRequest.mockResolvedValue({
       modelSelection: false,
+      sessionPromptAsync: true,
       runtimeStatus: {
         version: "v1",
         canonicalStates: [
@@ -227,6 +228,7 @@ describe("assertExtensionSuccess", () => {
       },
     );
     expect(result.modelSelection).toBe(false);
+    expect(result.sessionPromptAsync).toBe(true);
     expect(result.runtimeStatus.version).toBe("v1");
     expect(result.runtimeStatus.aliases.canceled).toBe("cancelled");
   });

@@ -73,6 +73,7 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
   onLayoutChangeStart,
   onLoadBlockContent,
   onRetry,
+  onInterruptStream,
 }: {
   message: ChatMessage;
   index: number;
@@ -81,6 +82,7 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
   onLayoutChangeStart?: () => void;
   onLoadBlockContent?: (messageId: string, blockId: string) => Promise<boolean>;
   onRetry: () => void;
+  onInterruptStream: () => void;
 }) {
   const deriveRenderableBlocks = useCallback(
     (msg: ChatMessage): MessageBlockType[] => {
@@ -130,6 +132,10 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
     message.role === "agent" &&
     sessionStreamState &&
     ["error", "recoverable"].includes(sessionStreamState);
+  const canInterrupt =
+    message.role === "agent" &&
+    message.status === "streaming" &&
+    sessionStreamState === "streaming";
   const canCopyMessage = isCopyableText(textToCopy);
   const userCopyButtonPositionClass = "right-0";
   let messageBody: React.ReactNode = null;
@@ -225,6 +231,18 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
           <Ionicons name="refresh" size={12} color="#FFFFFF" />
           <Text className="text-[11px] font-bold text-white uppercase tracking-wider">
             Retry
+          </Text>
+        </Pressable>
+      )}
+      {canInterrupt && (
+        <Pressable
+          testID="chat-interrupt-button"
+          onPress={onInterruptStream}
+          className="mt-2 flex-row items-center gap-1.5 opacity-70"
+        >
+          <Ionicons name="stop-circle-outline" size={12} color="#FBBF24" />
+          <Text className="text-[11px] font-bold uppercase tracking-wider text-yellow-300">
+            Interrupt
           </Text>
         </Pressable>
       )}

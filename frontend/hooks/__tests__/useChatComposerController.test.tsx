@@ -21,6 +21,7 @@ describe("useChatComposerController", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    sendMessage.mockResolvedValue(undefined);
   });
 
   const renderComposer = () =>
@@ -66,12 +67,14 @@ describe("useChatComposerController", () => {
     expect(result.current.inputResetKey).toBe(1);
   });
 
-  it("sends the current draft from the ref-backed buffer and clears the composer", () => {
+  it("sends the current draft from the ref-backed buffer and clears the composer", async () => {
     const { result } = renderComposer();
 
     act(() => {
       result.current.handleInputChange("Ship the patch");
-      result.current.handleSend();
+    });
+    await act(async () => {
+      await result.current.handleSend();
     });
 
     expect(sendMessage).toHaveBeenCalledWith(

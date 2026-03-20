@@ -43,11 +43,18 @@ export const useExtensionCapabilitiesQuery = ({
       : query.data?.modelSelection === false
         ? "unsupported"
         : "unknown";
+  const sessionPromptAsyncStatus: GenericCapabilityStatus =
+    query.data?.sessionPromptAsync === true
+      ? "supported"
+      : query.data?.sessionPromptAsync === false
+        ? "unsupported"
+        : "unknown";
 
   return {
     ...query,
     runtimeStatusContract: query.data?.runtimeStatus ?? null,
     modelSelectionStatus,
+    sessionPromptAsyncStatus,
     canShowModelPicker: modelSelectionStatus !== "unsupported",
   };
 };

@@ -30,7 +30,7 @@ type UseChatComposerControllerParams = {
     agentId: string,
     content: string,
     agentSource: AgentSource,
-  ) => void;
+  ) => Promise<void>;
   setSharedModelSelection: (
     conversationId: string,
     agentId: string,
@@ -111,7 +111,7 @@ export function useChatComposerController({
     [minInputHeight, updateInputFlags],
   );
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     if (!activeAgentId || !conversationId || !agentSource) {
       return;
     }
@@ -127,7 +127,7 @@ export function useChatComposerController({
       return;
     }
 
-    sendMessage(conversationId, activeAgentId, input, agentSource);
+    await sendMessage(conversationId, activeAgentId, input, agentSource);
     replaceInput("", { resetHeight: true });
     onAfterSend();
   }, [

@@ -42,6 +42,8 @@ jest.mock("@/lib/toast", () => ({
   },
 }));
 
+const noopInterrupt = jest.fn();
+
 const buildAgentMessage = (
   overrides: Partial<ChatMessage> = {},
 ): ChatMessage => ({
@@ -87,6 +89,7 @@ describe("ChatMessageItem interaction", () => {
         index={0}
         isLastMessage
         onRetry={jest.fn()}
+        onInterruptStream={noopInterrupt}
       />,
     );
 
@@ -114,6 +117,7 @@ describe("ChatMessageItem interaction", () => {
         index={0}
         isLastMessage
         onRetry={jest.fn()}
+        onInterruptStream={noopInterrupt}
       />,
     );
 
@@ -136,6 +140,7 @@ describe("ChatMessageItem interaction", () => {
         isLastMessage
         onRetry={onRetry}
         sessionStreamState="error"
+        onInterruptStream={noopInterrupt}
       />,
     );
 
@@ -153,6 +158,7 @@ describe("ChatMessageItem interaction", () => {
         index={0}
         isLastMessage
         onRetry={jest.fn()}
+        onInterruptStream={noopInterrupt}
       />,
     );
 
@@ -170,6 +176,7 @@ describe("ChatMessageItem interaction", () => {
         index={0}
         isLastMessage
         onRetry={jest.fn()}
+        onInterruptStream={noopInterrupt}
       />,
     );
 
@@ -214,6 +221,7 @@ describe("ChatMessageItem interaction", () => {
         index={0}
         isLastMessage
         onRetry={jest.fn()}
+        onInterruptStream={noopInterrupt}
       />,
     );
 
@@ -237,6 +245,7 @@ describe("ChatMessageItem interaction", () => {
         index={0}
         isLastMessage
         onRetry={jest.fn()}
+        onInterruptStream={noopInterrupt}
       />,
     );
 
@@ -259,6 +268,7 @@ describe("ChatMessageItem interaction", () => {
         isLastMessage
         onRetry={jest.fn()}
         sessionStreamState="error"
+        onInterruptStream={noopInterrupt}
       />,
     );
 
@@ -291,6 +301,7 @@ describe("ChatMessageItem interaction", () => {
         isLastMessage
         onRetry={jest.fn()}
         sessionStreamState="error"
+        onInterruptStream={noopInterrupt}
       />,
     );
 
@@ -302,5 +313,26 @@ describe("ChatMessageItem interaction", () => {
     expect(
       screen.queryByText("Streaming response failed. Please try again."),
     ).toBeNull();
+  });
+
+  it("shows interrupt button on a streaming agent message and calls handler", () => {
+    const onInterruptStream = jest.fn();
+    const message = buildAgentMessage({
+      status: "streaming",
+    });
+    const screen = render(
+      <ChatMessageItem
+        message={message}
+        index={0}
+        isLastMessage={false}
+        onRetry={jest.fn()}
+        onInterruptStream={onInterruptStream}
+        sessionStreamState="streaming"
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("chat-interrupt-button"));
+
+    expect(onInterruptStream).toHaveBeenCalledTimes(1);
   });
 });

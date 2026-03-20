@@ -5,6 +5,7 @@ import { ChatScreen } from "@/screens/ChatScreen";
 const mockReplyPermission = jest.fn();
 const mockReplyQuestion = jest.fn();
 const mockRejectQuestion = jest.fn();
+const mockPromptSessionAsync = jest.fn();
 const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
 const mockToastError = jest.fn();
@@ -14,6 +15,13 @@ const mockUpdateShortcut = jest.fn();
 const mockRemoveShortcut = jest.fn();
 const mockAgentStoreState = {
   activeAgentId: "agent-1",
+};
+type MockCapabilityStatus = "supported" | "unsupported" | "unknown";
+
+const mockExtensionCapabilitiesState = {
+  modelSelectionStatus: "supported" as MockCapabilityStatus,
+  sessionPromptAsyncStatus: "supported" as MockCapabilityStatus,
+  canShowModelPicker: true,
 };
 
 jest.mock("react-native/Libraries/Utilities/Dimensions", () => {
@@ -75,10 +83,12 @@ jest.mock("@/components/chat/ShortcutManagerModal", () => ({
 jest.mock("@/components/chat/ChatTimelinePanel", () => ({
   ChatTimelinePanel: (props: {
     messages?: { id: string; content: string }[];
+    session?: { streamState?: string | null };
     pendingInterrupt?: {
       type?: string;
       details?: { questions?: { question?: string }[] };
     } | null;
+    onInterruptStream?: () => void;
     onPermissionReply?: (
       reply: "once" | "always" | "reject",
     ) => void | Promise<void>;
@@ -94,6 +104,14 @@ jest.mock("@/components/chat/ChatTimelinePanel", () => ({
         {(props.messages ?? []).map((message) => (
           <Text key={message.id}>{message.content}</Text>
         ))}
+        {props.session?.streamState === "streaming" ? (
+          <Pressable
+            testID="chat-interrupt-button"
+            onPress={() => props.onInterruptStream?.()}
+          >
+            <Text>Interrupt</Text>
+          </Pressable>
+        ) : null}
         {!props.pendingInterrupt ? null : (
           <>
             <Text>
@@ -201,6 +219,7 @@ const mockChatState: {
   ensureSession: jest.Mock;
   generateConversationId: jest.Mock;
   sendMessage: jest.Mock;
+  cancelMessage: jest.Mock;
   clearPendingInterrupt: jest.Mock;
   bindExternalSession: jest.Mock;
   getSessionsByAgentId: jest.Mock;
@@ -209,6 +228,7 @@ const mockChatState: {
   ensureSession: jest.fn(),
   generateConversationId: jest.fn(() => "conversation-next"),
   sendMessage: jest.fn(),
+  cancelMessage: jest.fn(),
   clearPendingInterrupt: jest.fn(),
   bindExternalSession: jest.fn(),
   getSessionsByAgentId: jest.fn(() => []),
@@ -243,14 +263,6 @@ const mockSessionHistoryState = {
   loadMessageBlocks: jest.fn(async () => {}),
   isMessageBlocksLoading: jest.fn(() => false),
 };
-
-const mockUseChatStore = ((
-  selector: (state: typeof mockChatState) => unknown,
-) => selector(mockChatState)) as unknown as {
-  (selector: (state: typeof mockChatState) => unknown): unknown;
-  getState: () => typeof mockChatState;
-};
-mockUseChatStore.getState = () => mockChatState;
 
 jest.mock("expo-router", () => ({
   useRouter: () => ({
@@ -288,10 +300,7 @@ jest.mock("@/hooks/useChatHistoryQuery", () => ({
 }));
 
 jest.mock("@/hooks/useExtensionCapabilitiesQuery", () => ({
-  useExtensionCapabilitiesQuery: () => ({
-    modelSelectionStatus: "supported",
-    canShowModelPicker: true,
-  }),
+  useExtensionCapabilitiesQuery: () => mockExtensionCapabilitiesState,
 }));
 
 jest.mock("@/hooks/useSessionsDirectoryQuery", () => ({
@@ -312,10 +321,16 @@ jest.mock("@/hooks/useSessionsDirectoryQuery", () => ({
   }),
 }));
 
-jest.mock("@/store/chat", () => ({
-  useChatStore: (selector: (state: typeof mockChatState) => unknown) =>
-    mockUseChatStore(selector),
-}));
+jest.mock("@/store/chat", () => {
+  const useChatStore = Object.assign(
+    (selector: (state: typeof mockChatState) => unknown) =>
+      selector(mockChatState),
+    {
+      getState: () => mockChatState,
+    },
+  );
+  return { useChatStore };
+});
 
 jest.mock("@/store/agents", () => ({
   useAgentStore: (selector: (state: typeof mockAgentStoreState) => unknown) =>
@@ -345,6 +360,7 @@ jest.mock("@/lib/api/a2aExtensions", () => ({
     errorCode: string | null = null;
     upstreamError: Record<string, unknown> | null = null;
   },
+  promptSessionAsync: (...args: unknown[]) => mockPromptSessionAsync(...args),
   replyPermissionInterrupt: (...args: unknown[]) =>
     mockReplyPermission(...args),
   replyQuestionInterrupt: (...args: unknown[]) => mockReplyQuestion(...args),
@@ -388,8 +404,16 @@ describe("ChatScreen interrupt handling", () => {
       .mockReset()
       .mockReturnValue("conversation-next");
     mockChatState.sendMessage.mockReset();
+    mockChatState.cancelMessage.mockReset();
     mockChatState.clearPendingInterrupt.mockReset();
     mockChatState.bindExternalSession.mockReset();
+    mockPromptSessionAsync.mockReset().mockResolvedValue({
+      ok: true,
+      sessionId: "ses-upstream-1",
+    });
+    mockExtensionCapabilitiesState.modelSelectionStatus = "supported";
+    mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "supported";
+    mockExtensionCapabilitiesState.canShowModelPicker = true;
     mockSessionHistoryState.loadMore.mockReset();
     mockSessionHistoryState.messages = [];
     mockSessionHistoryState.error = null;
@@ -659,6 +683,193 @@ describe("ChatScreen interrupt handling", () => {
       }),
     ).toBeTruthy();
 
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("appends input to the active upstream session during streaming", async () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      streamState: "streaming",
+      externalSessionRef: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-1",
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("append this");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
+
+    expect(mockPromptSessionAsync).toHaveBeenCalledWith({
+      source: "personal",
+      agentId: "agent-1",
+      sessionId: "ses-upstream-1",
+      request: {
+        messageID: expect.any(String),
+        parts: [{ type: "text", text: "append this" }],
+      },
+    });
+    expect(mockChatState.sendMessage).not.toHaveBeenCalled();
+    expect(mockChatState.bindExternalSession).toHaveBeenCalledWith(
+      conversationId,
+      {
+        agentId: "agent-1",
+        externalSessionId: "ses-upstream-1",
+      },
+    );
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Message appended",
+      "Sent to the running upstream session.",
+    );
+
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("falls back to interrupt-and-send when prompt_async fails", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    mockPromptSessionAsync.mockRejectedValueOnce(new Error("unsupported"));
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      streamState: "streaming",
+      externalSessionRef: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-2",
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("fallback send");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
+
+    expect(mockPromptSessionAsync).toHaveBeenCalledTimes(1);
+    expect(mockChatState.sendMessage).toHaveBeenCalledWith(
+      conversationId,
+      "agent-1",
+      "fallback send",
+      "personal",
+      undefined,
+    );
+    expect(warnSpy).toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("falls back to interrupt-and-send when the stream has no upstream session binding", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      streamState: "streaming",
+      externalSessionRef: null,
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("send anyway");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
+
+    expect(mockPromptSessionAsync).not.toHaveBeenCalled();
+    expect(mockChatState.sendMessage).toHaveBeenCalledWith(
+      conversationId,
+      "agent-1",
+      "send anyway",
+      "personal",
+      undefined,
+    );
+    expect(warnSpy).toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("falls back to interrupt-and-send when prompt_async capability is unsupported", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      streamState: "streaming",
+      externalSessionRef: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-3",
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("capability fallback");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
+
+    expect(mockPromptSessionAsync).not.toHaveBeenCalled();
+    expect(mockChatState.sendMessage).toHaveBeenCalledWith(
+      conversationId,
+      "agent-1",
+      "capability fallback",
+      "personal",
+      undefined,
+    );
+    expect(warnSpy).toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("cancels the current stream when the interrupt button is pressed", () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      streamState: "streaming",
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const interruptButton = root.findByProps({
+      testID: "chat-interrupt-button",
+    });
+
+    act(() => {
+      interruptButton.props.onPress();
+    });
+
+    expect(mockChatState.cancelMessage).toHaveBeenCalledWith(conversationId);
     act(() => {
       tree.unmount();
     });
