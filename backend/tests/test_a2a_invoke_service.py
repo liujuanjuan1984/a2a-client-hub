@@ -11,6 +11,7 @@ from fastapi import WebSocketDisconnect
 from app.core.config import settings
 from app.integrations.a2a_client.errors import A2APeerProtocolError
 from app.services.a2a_invoke_service import StreamFinishReason, a2a_invoke_service
+from app.services.a2a_payload_analysis import coerce_payload_to_dict
 from app.services.a2a_stream_diagnostics import build_artifact_update_log_sample
 
 
@@ -2034,6 +2035,6 @@ def test_coerce_payload_to_dict_raises_exception(caplog):
     payload = MockUnserializablePayload()
     with pytest.raises(ValueError, match="Payload serialization failed"):
         with caplog.at_level(logging.ERROR):
-            a2a_invoke_service._coerce_payload_to_dict(payload)
+            coerce_payload_to_dict(payload)
 
     assert "Failed to dump A2A payload" in caplog.text

@@ -30,9 +30,6 @@ from app.services.a2a_payload_analysis import (
 )
 from app.services.a2a_payload_analysis import analyze_payload as analyze_payload_object
 from app.services.a2a_payload_analysis import (
-    coerce_payload_to_dict as coerce_payload_object,
-)
-from app.services.a2a_payload_analysis import (
     extract_binding_hints_from_invoke_result as extract_binding_hints_from_result,
 )
 from app.services.a2a_payload_analysis import (
@@ -352,10 +349,6 @@ class A2AInvokeService:
         cls, payload: dict[str, Any]
     ) -> dict[str, Any] | None:
         return extract_stream_chunk_from_serialized_event(payload)
-
-    @classmethod
-    def _coerce_payload_to_dict(cls, payload: Any) -> dict[str, Any]:
-        return coerce_payload_object(payload)
 
     @classmethod
     def extract_binding_hints_from_invoke_result(

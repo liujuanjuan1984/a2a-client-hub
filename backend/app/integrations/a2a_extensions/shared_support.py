@@ -243,26 +243,6 @@ class A2AExtensionSupport:
         )
 
     @staticmethod
-    def map_business_error_code(
-        error: Dict[str, Any],
-        ext: ResolvedExtension | ResolvedProviderDiscoveryExtension,
-    ) -> str:
-        return A2AExtensionSupport.map_upstream_error_code(
-            error=error,
-            business_code_map=ext.business_code_map,
-        )
-
-    @staticmethod
-    def map_interrupt_business_error_code(
-        error: Dict[str, Any],
-        ext: ResolvedInterruptCallbackExtension,
-    ) -> str:
-        return A2AExtensionSupport.map_upstream_error_code(
-            error=error,
-            business_code_map=ext.business_code_map,
-        )
-
-    @staticmethod
     def normalize_extension_metadata(
         metadata: Optional[Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:

@@ -996,13 +996,6 @@ class A2AClient:
             return
         await await_cancel_safe(adapter.close())
 
-    async def _reset_adapter(self, *, dialect: str, adapter: Any) -> None:
-        await self._reset_adapter_with_policy(
-            dialect=dialect,
-            adapter=adapter,
-            invalidate_transport=True,
-        )
-
     async def _reset_adapter_with_policy(
         self,
         *,
