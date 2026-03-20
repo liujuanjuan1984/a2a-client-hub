@@ -13,6 +13,7 @@ from app.integrations.a2a_extensions.service import (
     ResolvedCapabilitySnapshot,
     SessionBindingCapabilitySnapshot,
     SessionQueryCapabilitySnapshot,
+    StreamHintsCapabilitySnapshot,
 )
 from app.integrations.a2a_extensions.session_extension_service import (
     SessionExtensionService,
@@ -26,6 +27,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_SESSION_BINDING_URI,
     SHARED_SESSION_ID_FIELD,
     SHARED_SESSION_QUERY_URI,
+    STREAM_HINTS_URI,
 )
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
@@ -34,6 +36,7 @@ from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
     ResolvedProviderDiscoveryExtension,
+    ResolvedStreamHintsExtension,
     ResultEnvelopeMapping,
 )
 
@@ -105,12 +108,15 @@ def _capability_snapshot(
     session_binding: SessionBindingCapabilitySnapshot | None = None,
     interrupt_callback: InterruptCallbackCapabilitySnapshot | None = None,
     provider_discovery: ProviderDiscoveryCapabilitySnapshot | None = None,
+    stream_hints: StreamHintsCapabilitySnapshot | None = None,
 ) -> ResolvedCapabilitySnapshot:
     return ResolvedCapabilitySnapshot(
         session_query=session_query,
         session_binding=session_binding or _binding_snapshot(status="unsupported"),
         interrupt_callback=interrupt_callback or _interrupt_snapshot(),
         provider_discovery=provider_discovery or _provider_discovery_snapshot(),
+        stream_hints=stream_hints
+        or StreamHintsCapabilitySnapshot(status="unsupported", meta={}),
     )
 
 
@@ -174,6 +180,33 @@ def _provider_discovery_extension_fixture() -> ResolvedProviderDiscoveryExtensio
             "list_models": "models.list",
         },
         business_code_map={},
+    )
+
+
+def _stream_hints_snapshot(
+    *,
+    status: str = "supported",
+    ext: ResolvedStreamHintsExtension | None = None,
+    error: str | None = None,
+    meta: dict | None = None,
+) -> StreamHintsCapabilitySnapshot:
+    return StreamHintsCapabilitySnapshot(
+        status=status,
+        ext=ext,
+        error=error,
+        meta=meta or {},
+    )
+
+
+def _stream_hints_extension_fixture() -> ResolvedStreamHintsExtension:
+    return ResolvedStreamHintsExtension(
+        uri=STREAM_HINTS_URI,
+        required=False,
+        provider="opencode",
+        stream_field="metadata.shared.stream",
+        usage_field="metadata.shared.usage",
+        interrupt_field="metadata.shared.interrupt",
+        session_field="metadata.shared.session",
     )
 
 

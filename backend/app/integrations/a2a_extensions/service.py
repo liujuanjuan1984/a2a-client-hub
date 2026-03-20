@@ -37,10 +37,12 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
 from app.integrations.a2a_extensions.shared_support import (
     A2AExtensionSupport,
 )
+from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
 from app.integrations.a2a_extensions.types import (
     ResolvedInterruptCallbackExtension,
     ResolvedProviderDiscoveryExtension,
     ResolvedSessionBindingExtension,
+    ResolvedStreamHintsExtension,
 )
 from app.services.a2a_runtime import A2ARuntime
 
@@ -89,11 +91,20 @@ class ProviderDiscoveryCapabilitySnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class StreamHintsCapabilitySnapshot:
+    status: Literal["supported", "unsupported", "invalid"]
+    ext: ResolvedStreamHintsExtension | None = None
+    error: str | None = None
+    meta: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedCapabilitySnapshot:
     session_query: SessionQueryCapabilitySnapshot
     session_binding: SessionBindingCapabilitySnapshot
     interrupt_callback: InterruptCallbackCapabilitySnapshot
     provider_discovery: ProviderDiscoveryCapabilitySnapshot
+    stream_hints: StreamHintsCapabilitySnapshot
 
 
 @dataclass(slots=True)
@@ -234,6 +245,43 @@ class A2AExtensionsService:
             ),
         )
 
+    @staticmethod
+    def _build_stream_hints_snapshot(card: Any) -> StreamHintsCapabilitySnapshot:
+        try:
+            ext = resolve_stream_hints(card)
+        except A2AExtensionNotSupportedError as exc:
+            return StreamHintsCapabilitySnapshot(
+                status="unsupported",
+                error=str(exc),
+                meta={
+                    "stream_hints_declared": False,
+                    "stream_hints_mode": "compat_fallback",
+                    "stream_hints_fallback_used": True,
+                },
+            )
+        except A2AExtensionContractError as exc:
+            return StreamHintsCapabilitySnapshot(
+                status="invalid",
+                error=str(exc),
+                meta={
+                    "stream_hints_declared": True,
+                    "stream_hints_mode": "compat_fallback",
+                    "stream_hints_fallback_used": True,
+                    "stream_hints_contract_error": str(exc),
+                },
+            )
+
+        return StreamHintsCapabilitySnapshot(
+            status="supported",
+            ext=ext,
+            meta={
+                "stream_hints_declared": True,
+                "stream_hints_uri": ext.uri,
+                "stream_hints_mode": "declared_contract",
+                "stream_hints_fallback_used": False,
+            },
+        )
+
     async def resolve_capability_snapshot(
         self,
         *,
@@ -252,6 +300,7 @@ class A2AExtensionsService:
             session_binding=self._build_session_binding_snapshot(card),
             interrupt_callback=self._build_interrupt_callback_snapshot(card),
             provider_discovery=self._build_provider_discovery_snapshot(card),
+            stream_hints=self._build_stream_hints_snapshot(card),
         )
         async with self._capability_snapshot_cache_lock:
             self._capability_snapshot_cache[cache_key] = _CapabilitySnapshotCacheEntry(

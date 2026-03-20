@@ -75,6 +75,17 @@ class ResolvedProviderDiscoveryExtension:
     business_code_map: Mapping[int, str]
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedStreamHintsExtension:
+    uri: str
+    required: bool
+    provider: str
+    stream_field: str
+    usage_field: str
+    interrupt_field: str
+    session_field: str
+
+
 __all__ = [
     "JsonRpcInterface",
     "PageSizePagination",
@@ -83,4 +94,5 @@ __all__ = [
     "ResolvedExtension",
     "ResolvedInterruptCallbackExtension",
     "ResolvedSessionBindingExtension",
+    "ResolvedStreamHintsExtension",
 ]

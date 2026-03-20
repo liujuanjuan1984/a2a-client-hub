@@ -22,6 +22,7 @@ from app.db.locking import (
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
 from app.integrations.a2a_extensions import get_a2a_extensions_service
+from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
     A2AAgentInvokeResponse,
@@ -29,6 +30,7 @@ from app.schemas.a2a_invoke import (
 from app.schemas.ws_ticket import WsTicketResponse
 from app.services import invoke_guard as invoke_guard_module
 from app.services.a2a_invoke_service import StreamOutcome, a2a_invoke_service
+from app.services.a2a_shared_metadata import extract_shared_metadata_section
 from app.services.invoke_guard import build_invoke_guard_key as _build_invoke_guard_key
 from app.services.invoke_guard import guard_inflight_invoke as _guard_inflight_invoke
 from app.services.invoke_guard import release_invoke_guard as _release_invoke_guard_impl
@@ -78,6 +80,7 @@ from app.services.session_hub import session_hub_service
 from app.services.session_hub_common import build_interrupt_lifecycle_message_content
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
+from app.utils.payload_extract import as_dict, extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text
 
 AgentSource = Literal["personal", "shared"]
@@ -112,6 +115,8 @@ class _InvokeState:
     persisted_block_count: int = 0
     chunk_buffer: list[dict[str, Any]] = field(default_factory=list)
     current_block_type: str | None = None
+    stream_hints_meta: dict[str, Any] = field(default_factory=dict)
+    stream_hints_warned: set[str] = field(default_factory=set)
 
 
 async def _prepare_state(
@@ -159,6 +164,8 @@ async def _prepare_state(
         persisted_response_content=None,
         persisted_success=None,
         persisted_error_code=None,
+        stream_hints_meta={},
+        stream_hints_warned=set(),
     )
 
 
@@ -308,6 +315,239 @@ def _collect_stream_hints(
     )
     if usage_hints:
         state.stream_usage = usage_hints
+
+
+def _log_stream_hints_warning(
+    *,
+    logger: Any,
+    message: str,
+    log_extra: dict[str, Any],
+    extra: dict[str, Any] | None = None,
+) -> None:
+    log_warning = getattr(logger, "warning", None) or getattr(logger, "info", None)
+    if not callable(log_warning):
+        return
+    merged_extra = dict(log_extra)
+    if extra:
+        merged_extra.update(extra)
+    log_warning(message, extra=merged_extra)
+
+
+async def _resolve_stream_hints_runtime_meta(
+    *,
+    runtime: Any,
+    logger: Any,
+    log_extra: dict[str, Any],
+) -> dict[str, Any]:
+    fallback_meta = {
+        "stream_hints_declared": False,
+        "stream_hints_mode": "compat_fallback",
+        "stream_hints_fallback_used": True,
+    }
+    try:
+        extensions_service = cast(Any, get_a2a_extensions_service())
+        snapshot = await extensions_service.resolve_capability_snapshot(runtime=runtime)
+    except A2AExtensionUpstreamError as exc:
+        _log_stream_hints_warning(
+            logger=logger,
+            message=(
+                "Stream hints capability resolution failed upstream; "
+                "using compatibility fallback"
+            ),
+            log_extra=log_extra,
+            extra={
+                "stream_hints_resolution_error": "upstream_fetch_failed",
+                "stream_hints_resolution_detail": str(exc),
+                "stream_hints_fallback_used": True,
+            },
+        )
+        return {
+            **fallback_meta,
+            "stream_hints_resolution_error": "upstream_fetch_failed",
+        }
+    except AttributeError as exc:
+        _log_stream_hints_warning(
+            logger=logger,
+            message=(
+                "Stream hints capability resolution failed due to runtime shape; "
+                "using compatibility fallback"
+            ),
+            log_extra=log_extra,
+            extra={
+                "stream_hints_resolution_error": "runtime_invalid",
+                "stream_hints_resolution_detail": str(exc),
+                "stream_hints_fallback_used": True,
+            },
+        )
+        return {
+            **fallback_meta,
+            "stream_hints_resolution_error": "runtime_invalid",
+        }
+
+    resolved_meta = dict(snapshot.stream_hints.meta or fallback_meta)
+    if snapshot.stream_hints.status == "unsupported":
+        _log_stream_hints_warning(
+            logger=logger,
+            message="Stream hints extension not declared; using compatibility fallback",
+            log_extra=log_extra,
+            extra={"stream_hints_fallback_used": True},
+        )
+    elif snapshot.stream_hints.status == "invalid":
+        _log_stream_hints_warning(
+            logger=logger,
+            message="Stream hints contract invalid; using compatibility fallback",
+            log_extra=log_extra,
+            extra={
+                "stream_hints_contract_error": snapshot.stream_hints.error,
+                "stream_hints_fallback_used": True,
+            },
+        )
+    return resolved_meta
+
+
+def _has_shared_section(
+    payload: dict[str, Any],
+    *,
+    section: str,
+    include_artifact: bool = False,
+    include_message: bool = False,
+    include_status: bool = False,
+    include_task: bool = False,
+    include_result: bool = False,
+) -> bool:
+    candidates = [payload]
+    if include_artifact:
+        candidates.append(as_dict(payload.get("artifact")))
+    if include_message:
+        candidates.append(as_dict(payload.get("message")))
+    if include_status:
+        candidates.append(as_dict(payload.get("status")))
+    if include_task:
+        candidates.append(as_dict(payload.get("task")))
+    if include_result:
+        candidates.append(as_dict(payload.get("result")))
+    return any(
+        bool(extract_shared_metadata_section(candidate, section=section))
+        for candidate in candidates
+        if candidate
+    )
+
+
+def _warn_stream_hints_contract_gap_once(
+    *,
+    state: _InvokeState,
+    logger: Any,
+    log_extra: dict[str, Any],
+    key: str,
+    message: str,
+) -> None:
+    if key in state.stream_hints_warned:
+        return
+    state.stream_hints_warned.add(key)
+    _log_stream_hints_warning(
+        logger=logger,
+        message=message,
+        log_extra=log_extra,
+        extra={
+            "stream_hints_mode": state.stream_hints_meta.get("stream_hints_mode"),
+            "stream_hints_contract_gap": key,
+        },
+    )
+
+
+def _diagnose_stream_hints_contract_gap(
+    *,
+    state: _InvokeState,
+    event_payload: dict[str, Any],
+    logger: Any,
+    log_extra: dict[str, Any],
+) -> None:
+    if state.stream_hints_meta.get("stream_hints_mode") != "declared_contract":
+        return
+
+    stream_chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        event_payload
+    )
+    if stream_chunk and not _has_shared_section(
+        event_payload,
+        section="stream",
+        include_artifact=True,
+    ):
+        _warn_stream_hints_contract_gap_once(
+            state=state,
+            logger=logger,
+            log_extra=log_extra,
+            key="shared_stream_missing",
+            message=(
+                "Stream hints declared but artifact updates relied on "
+                "compatibility fallback for shared.stream"
+            ),
+        )
+
+    usage_hints = a2a_invoke_service.extract_usage_hints_from_serialized_event(
+        event_payload
+    )
+    if usage_hints and not _has_shared_section(
+        event_payload,
+        section="usage",
+        include_artifact=True,
+        include_message=True,
+        include_status=True,
+        include_task=True,
+        include_result=True,
+    ):
+        _warn_stream_hints_contract_gap_once(
+            state=state,
+            logger=logger,
+            log_extra=log_extra,
+            key="shared_usage_missing",
+            message=(
+                "Stream hints declared but usage hints relied on "
+                "compatibility fallback for shared.usage"
+            ),
+        )
+
+    interrupt = a2a_invoke_service.extract_interrupt_lifecycle_from_serialized_event(
+        event_payload
+    )
+    if interrupt and not _has_shared_section(
+        event_payload,
+        section="interrupt",
+        include_status=True,
+    ):
+        _warn_stream_hints_contract_gap_once(
+            state=state,
+            logger=logger,
+            log_extra=log_extra,
+            key="shared_interrupt_missing",
+            message=(
+                "Stream hints declared but interrupt hints relied on "
+                "compatibility fallback for shared.interrupt"
+            ),
+        )
+
+    _, binding_metadata = (
+        a2a_invoke_service.extract_binding_hints_from_serialized_event(event_payload)
+    )
+    provider, external_session_id = extract_provider_and_external_session_id(
+        {"metadata": binding_metadata}
+    )
+    if (provider or external_session_id) and not _has_shared_section(
+        event_payload,
+        section="session",
+        include_message=True,
+        include_result=True,
+    ):
+        _warn_stream_hints_contract_gap_once(
+            state=state,
+            logger=logger,
+            log_extra=log_extra,
+            key="shared_session_missing",
+            message=(
+                "Stream hints declared but session hints relied on "
+                "compatibility fallback for shared.session"
+            ),
+        )
 
 
 def _normalize_optional_message_id(value: str | None) -> str | None:
@@ -564,11 +804,21 @@ def _build_consume_stream_callbacks(
     query: str,
     transport: Literal["http_json", "http_sse", "scheduled", "ws"],
     stream_enabled: bool,
+    logger: Any = None,
+    log_extra: dict[str, Any] | None = None,
 ) -> tuple[
     Callable[[dict[str, Any]], Any],
     Callable[[StreamOutcome], Any],
 ]:
+    resolved_log_extra = dict(log_extra or {})
+
     async def on_event(event_payload: dict[str, Any]) -> None:
+        _diagnose_stream_hints_contract_gap(
+            state=state,
+            event_payload=event_payload,
+            logger=logger,
+            log_extra=resolved_log_extra,
+        )
         _collect_stream_hints(state=state, event_payload=event_payload)
         await _bind_inflight_task_if_needed(state=state, user_id=user_id)
         await _persist_stream_block_update(
@@ -694,6 +944,12 @@ async def run_http_invoke(
         agent_source=agent_source,
         payload=payload,
     )
+    state.stream_hints_meta = await _resolve_stream_hints_runtime_meta(
+        runtime=runtime,
+        logger=logger,
+        log_extra=log_extra,
+    )
+    stream_log_extra = {**log_extra, **state.stream_hints_meta}
     await _preempt_previous_invoke_if_requested(
         state=state,
         payload=payload,
@@ -715,6 +971,8 @@ async def run_http_invoke(
             query=payload.query,
             transport="http_sse",
             stream_enabled=True,
+            logger=logger,
+            log_extra=stream_log_extra,
         )
         try:
             return a2a_invoke_service.stream_sse(
@@ -725,7 +983,7 @@ async def run_http_invoke(
                 metadata=payload.metadata,
                 validate_message=validate_message,
                 logger=logger,
-                log_extra=log_extra,
+                log_extra=stream_log_extra,
                 on_event=on_event,
                 on_finalized=on_finalized,
                 resume_from_sequence=payload.resume_from_sequence,
@@ -743,6 +1001,8 @@ async def run_http_invoke(
         query=payload.query,
         transport="http_json",
         stream_enabled=False,
+        logger=logger,
+        log_extra=stream_log_extra,
     )
     try:
         outcome = await a2a_invoke_service.consume_stream(
@@ -753,7 +1013,7 @@ async def run_http_invoke(
             metadata=payload.metadata,
             validate_message=validate_message,
             logger=logger,
-            log_extra=log_extra,
+            log_extra=stream_log_extra,
             on_event=on_event,
             on_finalized=on_finalized,
         )
@@ -812,6 +1072,12 @@ async def run_background_invoke(
         agent_source=agent_source,
         payload=payload,
     )
+    state.stream_hints_meta = await _resolve_stream_hints_runtime_meta(
+        runtime=runtime,
+        logger=logger,
+        log_extra=log_extra,
+    )
+    stream_log_extra = {**log_extra, **state.stream_hints_meta}
     await _preempt_previous_invoke_if_requested(
         state=state,
         payload=payload,
@@ -832,6 +1098,8 @@ async def run_background_invoke(
         query=payload.query,
         transport="scheduled",
         stream_enabled=True,
+        logger=logger,
+        log_extra=stream_log_extra,
     )
     try:
         outcome = await a2a_invoke_service.consume_stream(
@@ -843,7 +1111,7 @@ async def run_background_invoke(
             metadata=payload.metadata,
             validate_message=validate_message,
             logger=logger,
-            log_extra=log_extra,
+            log_extra=stream_log_extra,
             on_event=on_event,
             on_finalized=on_finalized,
             total_timeout_seconds=total_timeout_seconds,
@@ -903,6 +1171,12 @@ async def run_ws_invoke(
         agent_source=agent_source,
         payload=payload,
     )
+    state.stream_hints_meta = await _resolve_stream_hints_runtime_meta(
+        runtime=runtime,
+        logger=logger,
+        log_extra=log_extra,
+    )
+    stream_log_extra = {**log_extra, **state.stream_hints_meta}
     await _preempt_previous_invoke_if_requested(
         state=state,
         payload=payload,
@@ -922,6 +1196,8 @@ async def run_ws_invoke(
         query=payload.query,
         transport="ws",
         stream_enabled=True,
+        logger=logger,
+        log_extra=stream_log_extra,
     )
     try:
         await a2a_invoke_service.stream_ws(
@@ -933,7 +1209,7 @@ async def run_ws_invoke(
             metadata=payload.metadata,
             validate_message=validate_message,
             logger=logger,
-            log_extra=log_extra,
+            log_extra=stream_log_extra,
             on_event=on_event,
             on_error_metadata=on_error_metadata,
             on_finalized=on_finalized,

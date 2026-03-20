@@ -2816,6 +2816,115 @@ async def test_resolve_session_binding_outbound_mode_warns_on_upstream_failure_a
 
 
 @pytest.mark.asyncio
+async def test_resolve_stream_hints_runtime_meta_warns_on_missing_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warnings: list[tuple[str, dict[str, object]]] = []
+
+    class _ExtensionsService:
+        async def resolve_capability_snapshot(self, *, runtime):  # noqa: ARG002
+            return SimpleNamespace(
+                stream_hints=SimpleNamespace(
+                    status="unsupported",
+                    error="Stream hints extension not found",
+                    meta={
+                        "stream_hints_declared": False,
+                        "stream_hints_mode": "compat_fallback",
+                        "stream_hints_fallback_used": True,
+                    },
+                )
+            )
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "get_a2a_extensions_service",
+        lambda: _ExtensionsService(),
+    )
+
+    meta = await invoke_route_runner._resolve_stream_hints_runtime_meta(
+        runtime=SimpleNamespace(
+            resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+        ),
+        logger=SimpleNamespace(
+            info=lambda *args, **kwargs: None,
+            warning=lambda message, *, extra: warnings.append((message, extra)),
+        ),
+        log_extra={"agent_id": "agent-1"},
+    )
+
+    assert meta == {
+        "stream_hints_declared": False,
+        "stream_hints_mode": "compat_fallback",
+        "stream_hints_fallback_used": True,
+    }
+    assert warnings == [
+        (
+            "Stream hints extension not declared; using compatibility fallback",
+            {
+                "agent_id": "agent-1",
+                "stream_hints_fallback_used": True,
+            },
+        )
+    ]
+
+
+def test_diagnose_stream_hints_contract_gap_warns_once_for_missing_shared_stream() -> (
+    None
+):
+    warnings: list[tuple[str, dict[str, object]]] = []
+    state = invoke_route_runner._InvokeState(
+        local_session_id=None,
+        local_source=None,
+        context_id=None,
+        metadata={},
+        stream_identity={},
+        stream_usage={},
+        stream_hints_meta={
+            "stream_hints_declared": True,
+            "stream_hints_mode": "declared_contract",
+            "stream_hints_fallback_used": False,
+        },
+    )
+    event_payload = {
+        "kind": "artifact-update",
+        "metadata": {"block_type": "text"},
+        "artifact": {
+            "parts": [{"kind": "text", "text": "hello"}],
+        },
+    }
+
+    invoke_route_runner._diagnose_stream_hints_contract_gap(
+        state=state,
+        event_payload=event_payload,
+        logger=SimpleNamespace(
+            info=lambda *args, **kwargs: None,
+            warning=lambda message, *, extra: warnings.append((message, extra)),
+        ),
+        log_extra={"agent_id": "agent-1"},
+    )
+    invoke_route_runner._diagnose_stream_hints_contract_gap(
+        state=state,
+        event_payload=event_payload,
+        logger=SimpleNamespace(
+            info=lambda *args, **kwargs: None,
+            warning=lambda message, *, extra: warnings.append((message, extra)),
+        ),
+        log_extra={"agent_id": "agent-1"},
+    )
+
+    assert warnings == [
+        (
+            "Stream hints declared but artifact updates relied on compatibility fallback for shared.stream",
+            {
+                "agent_id": "agent-1",
+                "stream_hints_mode": "declared_contract",
+                "stream_hints_contract_gap": "shared_stream_missing",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_run_ws_invoke_with_session_recovery_skips_binding_resolution_without_recovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
