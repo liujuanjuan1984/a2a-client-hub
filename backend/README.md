@@ -73,9 +73,14 @@ the import graph easier to reason about over time.
 
 ## Test Layout
 
-Feature-facing backend tests are being grouped under `backend/tests/<feature_name>/`
-so route, service, and contract coverage for the same capability stays close
-together. Shared fixtures and helpers remain at the `backend/tests/` root.
+Backend tests are being grouped under `backend/tests/<group_name>/` so related
+coverage stays close together.
+
+Current layout direction:
+
+- Feature directories such as `tests/invoke/`, `tests/sessions/`, and `tests/hub_agents/`
+- Shared capability directories such as `tests/client/`, `tests/runtime/`, `tests/proxy/`, `tests/platform/`, and `tests/shared/`
+- Shared fixtures and helpers remain at the `backend/tests/` root
 
 ## Incremental mypy Gate
 

@@ -68,7 +68,7 @@ async def test_get_ws_ticket_user_echoes_valid_subprotocol(
 
     monkeypatch.setattr(settings, "ws_require_origin", False, raising=False)
     monkeypatch.setattr(ws_ticket_service, "consume_ticket", _consume_ticket)
-    monkeypatch.setattr(api_deps.auth_handler, "get_active_user", _get_active_user)
+    monkeypatch.setattr(api_deps.auth_service, "get_active_user", _get_active_user)
 
     websocket = _build_websocket(ticket=f"a2a-invoke-v1, {ticket}")
     user = await get_ws_ticket_user(

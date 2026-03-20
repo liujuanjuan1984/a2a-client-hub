@@ -601,7 +601,7 @@ async def test_jsonrpc_slash_stream_message_maps_application_json_method_not_fou
             ):
                 pass
 
-    assert exc_info.value.error_code == "method_not_found"
+    assert exc_info.value.error_code == "method_not_supported"
     assert exc_info.value.code == -32601
     assert len(captured_requests) == 1
     assert captured_requests[0]["body"]["method"] == "message/stream"
