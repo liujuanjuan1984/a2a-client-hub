@@ -1,4 +1,8 @@
 import {
+  DEFAULT_RUNTIME_STATUS_CONTRACT,
+  type RuntimeStatusContract,
+} from "@/lib/api/chat-utils";
+import {
   listSessionMessagesPage,
   type SessionMessageItem,
 } from "@/lib/api/sessions";
@@ -915,6 +919,117 @@ describe("executeChatRuntime empty-content recovery", () => {
     });
     expect(state.sessions[conversationId]?.pendingInterrupt).toBeNull();
     expect(state.sessions[conversationId]?.lastResolvedInterrupt).toBeNull();
+  });
+
+  it("applies capability runtime status aliases during stream parsing", async () => {
+    const conversationId = "conv-interrupt-contract-1";
+    const agentId = "agent-interrupt-contract-1";
+    const userMessageId = "user-msg-interrupt-contract-1";
+    const agentMessageId = "agent-msg-interrupt-contract-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T07:30:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T07:30:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    let pendingAfterAlias = state.sessions[conversationId]?.pendingInterrupt;
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "approval_needed" },
+          final: false,
+          metadata: {
+            shared: {
+              interrupt: {
+                request_id: "perm-contract-1",
+                type: "permission",
+                details: {
+                  permission: "read",
+                  patterns: ["/repo/.env"],
+                },
+              },
+            },
+          },
+        });
+        pendingAfterAlias = state.sessions[conversationId]?.pendingInterrupt;
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        return true;
+      },
+    );
+
+    const customRuntimeStatusContract: RuntimeStatusContract = {
+      ...DEFAULT_RUNTIME_STATUS_CONTRACT,
+      aliases: {
+        ...DEFAULT_RUNTIME_STATUS_CONTRACT.aliases,
+        approval_needed: "input-required",
+      },
+    };
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+      { runtimeStatusContract: customRuntimeStatusContract },
+    );
+
+    expect(pendingAfterAlias).toMatchObject({
+      requestId: "perm-contract-1",
+      type: "permission",
+      phase: "asked",
+    });
+    expect(state.sessions[conversationId]?.runtimeStatus).toBe("completed");
   });
 
   it("records resolved interrupt state and only clears matching pending interrupt", async () => {

@@ -122,6 +122,21 @@ export const DEFAULT_RUNTIME_STATUS_CONTRACT: RuntimeStatusContract = {
   passthroughUnknown: true,
 };
 
+const normalizeRuntimeAliasMap = (
+  contract: RuntimeStatusContract,
+): Record<string, string> =>
+  Object.entries(contract.aliases).reduce<Record<string, string>>(
+    (acc, [alias, canonical]) => {
+      acc[alias.trim().toLowerCase().replace(/_/g, "-")] = canonical;
+      return acc;
+    },
+    {},
+  );
+
+const resolveRuntimeStatusContract = (
+  contract?: RuntimeStatusContract | null,
+): RuntimeStatusContract => contract ?? DEFAULT_RUNTIME_STATUS_CONTRACT;
+
 const coerceStringArray = (value: unknown) =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
     ? (value as string[])
@@ -193,24 +208,28 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
   };
 };
 
-export const extractRuntimeStatus = (data: Record<string, unknown>) => {
-  const statusEvent = extractRuntimeStatusEvent(data);
+export const extractRuntimeStatus = (
+  data: Record<string, unknown>,
+  contract?: RuntimeStatusContract | null,
+) => {
+  const statusEvent = extractRuntimeStatusEvent(data, contract);
   return statusEvent?.state ?? null;
 };
 
 export const extractRuntimeStatusEvent = (
   data: Record<string, unknown>,
+  contract?: RuntimeStatusContract | null,
 ): RuntimeStatusEvent | null => {
   if (data.kind !== "status-update") {
     return null;
   }
   const status = data.status as { state?: unknown } | undefined;
   if (status && typeof status.state === "string" && status.state.trim()) {
-    const state = normalizeRuntimeState(status.state);
+    const state = normalizeRuntimeState(status.state, contract);
     return {
       state,
       isFinal: data.final === true,
-      interrupt: extractRuntimeInterrupt(data, state),
+      interrupt: extractRuntimeInterrupt(data, state, contract),
     };
   }
   return null;
@@ -543,14 +562,26 @@ const extractToolCallView = (
   };
 };
 
-export const normalizeRuntimeState = (state: string) => {
+export const normalizeRuntimeState = (
+  state: string,
+  contract?: RuntimeStatusContract | null,
+) => {
+  const resolvedContract = resolveRuntimeStatusContract(contract);
   const normalized = state.trim().toLowerCase().replace(/_/g, "-");
-  return DEFAULT_RUNTIME_STATUS_CONTRACT.aliases[normalized] ?? normalized;
+  const aliases = normalizeRuntimeAliasMap(resolvedContract);
+  return aliases[normalized] ?? normalized;
 };
 
-export const isInputRequiredRuntimeState = (state: string) => {
-  const normalized = normalizeRuntimeState(state);
-  return DEFAULT_RUNTIME_STATUS_CONTRACT.interactiveStates.includes(normalized);
+export const isInputRequiredRuntimeState = (
+  state: string,
+  contract?: RuntimeStatusContract | null,
+) => {
+  const resolvedContract = resolveRuntimeStatusContract(contract);
+  const interactiveStates = resolvedContract.interactiveStates.map((item) =>
+    normalizeRuntimeState(item, resolvedContract),
+  );
+  const normalized = normalizeRuntimeState(state, resolvedContract);
+  return interactiveStates.includes(normalized);
 };
 
 const parseInterruptQuestionOption = (
@@ -631,6 +662,7 @@ const parseInterruptQuestion = (value: unknown): InterruptQuestion | null => {
 const extractRuntimeInterrupt = (
   data: Record<string, unknown>,
   runtimeState: string,
+  contract?: RuntimeStatusContract | null,
 ): RuntimeInterrupt | null => {
   const interrupt = getPreferredInterruptMetadata(data);
   if (!interrupt) {
@@ -647,7 +679,7 @@ const extractRuntimeInterrupt = (
 
   const phase =
     pickString(interrupt, ["phase"])?.toLowerCase() ??
-    (isInputRequiredRuntimeState(runtimeState) ? "asked" : null);
+    (isInputRequiredRuntimeState(runtimeState, contract) ? "asked" : null);
   if (phase === "resolved") {
     const resolution = pickString(interrupt, ["resolution"])?.toLowerCase();
     if (resolution !== "replied" && resolution !== "rejected") {

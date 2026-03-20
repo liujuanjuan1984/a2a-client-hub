@@ -8,6 +8,7 @@ import {
   extractSessionMeta,
   finalizeMessageBlocks,
   type PendingRuntimeInterrupt,
+  type RuntimeStatusContract,
   type StreamErrorDetails,
   type StreamMissingParam,
   type RuntimeInterrupt,
@@ -242,7 +243,11 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   initialAgentMessageId: string,
   get: () => TState,
   set: ChatRuntimeSetState<TState>,
+  options?: {
+    runtimeStatusContract?: RuntimeStatusContract | null;
+  },
 ) => {
+  const runtimeStatusContract = options?.runtimeStatusContract ?? null;
   const buildSessionsPatch = (
     sessions: Record<string, AgentSession>,
   ): Partial<TState> => ({ sessions }) as Partial<TState>;
@@ -771,7 +776,10 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
 
   const applyIncomingStreamData = (data: Record<string, unknown>): boolean => {
     const chunk = extractStreamBlockUpdate(data);
-    const runtimeStatusEvent = extractRuntimeStatusEvent(data);
+    const runtimeStatusEvent = extractRuntimeStatusEvent(
+      data,
+      runtimeStatusContract,
+    );
     const kind = typeof data.kind === "string" ? data.kind : "";
     const isLegacyContentEvent =
       typeof data.content === "string" && data.content.trim().length > 0;

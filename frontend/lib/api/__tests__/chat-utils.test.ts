@@ -12,6 +12,23 @@ describe("runtime status contract", () => {
     expect(normalizeRuntimeState("success")).toBe("completed");
   });
 
+  it("uses capability-provided aliases when available", () => {
+    const customContract = {
+      ...DEFAULT_RUNTIME_STATUS_CONTRACT,
+      aliases: {
+        ...DEFAULT_RUNTIME_STATUS_CONTRACT.aliases,
+        approval_needed: "input-required",
+      },
+    };
+
+    expect(normalizeRuntimeState("approval_needed", customContract)).toBe(
+      "input-required",
+    );
+    expect(isInputRequiredRuntimeState("approval_needed", customContract)).toBe(
+      true,
+    );
+  });
+
   it("preserves unknown runtime status tokens", () => {
     expect(normalizeRuntimeState("waiting-human")).toBe("waiting-human");
   });

@@ -30,6 +30,8 @@ The raw numeric code is preserved separately as `jsonrpc_code`.
 ## Runtime Status Contract
 
 The hub advertises a `runtimeStatus` capability object with contract version `v1`.
+Frontend runtime parsing uses this capability contract when available and falls
+back to the built-in `v1` default only when capability data is unavailable.
 
 ### Canonical states
 

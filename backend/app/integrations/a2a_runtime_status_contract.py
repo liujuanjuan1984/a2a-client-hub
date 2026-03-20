@@ -49,6 +49,11 @@ RUNTIME_STATUS_ALIASES: Final[dict[str, str]] = {
     "rejected": "failed",
 }
 
+NORMALIZED_RUNTIME_STATUS_ALIASES: Final[dict[str, str]] = {
+    alias.strip().lower().replace("_", "-"): canonical
+    for alias, canonical in RUNTIME_STATUS_ALIASES.items()
+}
+
 
 def normalize_runtime_state(value: str | None) -> str | None:
     if not isinstance(value, str):
@@ -56,7 +61,12 @@ def normalize_runtime_state(value: str | None) -> str | None:
     normalized = value.strip().lower().replace("_", "-")
     if not normalized:
         return None
-    return RUNTIME_STATUS_ALIASES.get(normalized, normalized)
+    return NORMALIZED_RUNTIME_STATUS_ALIASES.get(normalized, normalized)
+
+
+def is_interactive_runtime_state(value: str | None) -> bool:
+    normalized = normalize_runtime_state(value)
+    return normalized in INTERACTIVE_RUNTIME_STATES
 
 
 def runtime_status_contract_payload() -> dict[str, object]:
@@ -78,7 +88,18 @@ def terminal_runtime_state_values() -> frozenset[str]:
         for alias, canonical in RUNTIME_STATUS_ALIASES.items()
         if canonical in TERMINAL_STREAM_RUNTIME_STATES
     }
-    return frozenset((*TERMINAL_STREAM_RUNTIME_STATES, *alias_states))
+    normalized_alias_states = {
+        alias
+        for alias, canonical in NORMALIZED_RUNTIME_STATUS_ALIASES.items()
+        if canonical in TERMINAL_STREAM_RUNTIME_STATES
+    }
+    return frozenset(
+        (
+            *TERMINAL_STREAM_RUNTIME_STATES,
+            *alias_states,
+            *normalized_alias_states,
+        )
+    )
 
 
 __all__ = [
@@ -86,6 +107,7 @@ __all__ = [
     "FAILURE_RUNTIME_STATES",
     "FINAL_RUNTIME_STATES",
     "INTERACTIVE_RUNTIME_STATES",
+    "is_interactive_runtime_state",
     "RUNTIME_STATUS_ALIASES",
     "RUNTIME_STATUS_CONTRACT_VERSION",
     "TERMINAL_STREAM_RUNTIME_STATES",

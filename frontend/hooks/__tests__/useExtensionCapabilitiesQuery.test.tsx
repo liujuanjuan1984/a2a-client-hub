@@ -4,6 +4,7 @@ import { type PropsWithChildren } from "react";
 
 import { useExtensionCapabilitiesQuery } from "@/hooks/useExtensionCapabilitiesQuery";
 import { getExtensionCapabilities } from "@/lib/api/a2aExtensions";
+import { type RuntimeStatusContract } from "@/lib/api/chat-utils";
 import {
   cleanupTestQueryClient,
   createTestQueryClient,
@@ -24,7 +25,7 @@ const createWrapper = (queryClient: QueryClient) => {
   );
 };
 
-const createRuntimeStatus = () => ({
+const createRuntimeStatus = (): RuntimeStatusContract => ({
   version: "v1",
   canonicalStates: [
     "working",

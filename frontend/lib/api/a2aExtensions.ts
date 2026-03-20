@@ -1,3 +1,4 @@
+import type { RuntimeStatusContract } from "@/lib/api/chat-utils";
 import { apiRequest } from "@/lib/api/client";
 
 export type A2AExtensionResponse = {
@@ -9,17 +10,6 @@ export type A2AExtensionResponse = {
   missing_params?: { name: string; required: boolean }[] | null;
   upstream_error?: Record<string, unknown> | null;
   meta?: Record<string, unknown>;
-};
-
-export type RuntimeStatusContract = {
-  version: string;
-  canonicalStates: string[];
-  terminalStates: string[];
-  finalStates: string[];
-  interactiveStates: string[];
-  failureStates: string[];
-  aliases: Record<string, string>;
-  passthroughUnknown: boolean;
 };
 
 export type A2AExtensionCapabilities = {
