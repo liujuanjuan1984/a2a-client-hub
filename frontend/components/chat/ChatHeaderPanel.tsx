@@ -5,6 +5,7 @@ import { Pressable, Text, View } from "react-native";
 import { BackButton } from "@/components/ui/BackButton";
 import { Button } from "@/components/ui/Button";
 import { type AgentSession } from "@/lib/chat-utils";
+import { getOpencodeDirectory } from "@/lib/opencodeMetadata";
 import { type AgentConfig } from "@/store/agents";
 
 export function ChatHeaderPanel({
@@ -30,6 +31,8 @@ export function ChatHeaderPanel({
   onTestConnection: () => void;
   testingConnection: boolean;
 }) {
+  const workingDirectory = getOpencodeDirectory(session?.metadata);
+
   return (
     <View
       className="border-b border-white/5 bg-background px-2 sm:px-6 pb-4"
@@ -135,6 +138,20 @@ export function ChatHeaderPanel({
           </View>
 
           <View className="h-[1px] bg-white/5" />
+
+          {workingDirectory ? (
+            <>
+              <View>
+                <Text className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  Working Directory
+                </Text>
+                <Text className="mt-1 break-all text-[11px] font-normal text-slate-300">
+                  {workingDirectory}
+                </Text>
+              </View>
+              <View className="h-[1px] bg-white/5" />
+            </>
+          ) : null}
 
           <View className="flex-row items-center justify-between">
             <Text className="text-[11px] font-medium uppercase tracking-wider text-slate-500">

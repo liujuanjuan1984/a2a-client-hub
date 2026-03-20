@@ -11,8 +11,10 @@ jest.mock("@expo/vector-icons", () => ({
 describe("ChatComposer clear button", () => {
   const mockProps = {
     modelSelectionStatus: "supported" as const,
+    currentDirectory: null,
     pendingInterrupt: null,
     showShortcutManager: false,
+    onOpenDirectoryPicker: jest.fn(),
     onOpenShortcutManager: jest.fn(),
     selectedModel: null,
     onOpenModelPicker: jest.fn(),
@@ -77,6 +79,19 @@ describe("ChatComposer clear button", () => {
     expect(onOpenModelPicker).toHaveBeenCalled();
   });
 
+  it("opens the working directory modal", () => {
+    const onOpenDirectoryPicker = jest.fn();
+    const { getByLabelText } = render(
+      <ChatComposer
+        {...mockProps}
+        onOpenDirectoryPicker={onOpenDirectoryPicker}
+      />,
+    );
+
+    fireEvent.press(getByLabelText("Configure working directory"));
+    expect(onOpenDirectoryPicker).toHaveBeenCalled();
+  });
+
   it("renders selected provider/model in button", () => {
     const { getByText } = render(
       <ChatComposer
@@ -122,6 +137,7 @@ describe("ChatComposer clear button", () => {
     fireEvent(UNSAFE_getByType(TextInput), "focus");
 
     expect(queryByLabelText("Choose model")).toBeNull();
+    expect(getByLabelText("Configure working directory")).toBeTruthy();
     expect(getByLabelText("Open shortcut manager")).toBeTruthy();
     expect(getByLabelText("Clear input")).toBeTruthy();
     expect(getByLabelText("Scroll to bottom")).toBeTruthy();

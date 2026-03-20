@@ -24,6 +24,10 @@ import {
 } from "@/lib/chatHistoryCache";
 import { generateUuid } from "@/lib/id";
 import {
+  getOpencodeDirectory,
+  withOpencodeDirectory,
+} from "@/lib/opencodeMetadata";
+import {
   buildPersistStorageName,
   createPersistStorage,
 } from "@/lib/storage/mmkv";
@@ -117,7 +121,13 @@ type ChatState = {
       provider?: string | null;
       externalSessionId?: string | null;
       contextId?: string | null;
+      metadata?: Record<string, unknown>;
     },
+  ) => void;
+  setOpencodeDirectory: (
+    conversationId: string,
+    agentId: string,
+    directory: string | null,
   ) => void;
   setSharedModelSelection: (
     conversationId: string,
@@ -185,13 +195,20 @@ export const useChatStore = create<ChatState>()(
           sessions: {
             ...state.sessions,
             [conversationId]: {
-              ...(state.sessions[conversationId] ??
-                createAgentSession(payload.agentId)),
+              ...((state.sessions[conversationId] ??
+                createAgentSession(payload.agentId)) as AgentSession),
               agentId: payload.agentId,
               source:
                 payload.source === undefined
                   ? (state.sessions[conversationId]?.source ?? null)
                   : payload.source,
+              metadata: payload.metadata
+                ? {
+                    ...((state.sessions[conversationId]?.metadata ??
+                      {}) as Record<string, unknown>),
+                    ...payload.metadata,
+                  }
+                : (state.sessions[conversationId]?.metadata ?? {}),
               externalSessionRef: mergeExternalSessionRef(
                 state.sessions[conversationId]?.externalSessionRef,
                 payload,
@@ -204,6 +221,26 @@ export const useChatStore = create<ChatState>()(
             },
           },
         }));
+      },
+      setOpencodeDirectory: (conversationId, agentId, directory) => {
+        set((state) => {
+          const current =
+            state.sessions[conversationId] ?? createAgentSession(agentId);
+          if (getOpencodeDirectory(current.metadata) === directory?.trim()) {
+            return state;
+          }
+          return {
+            sessions: {
+              ...state.sessions,
+              [conversationId]: {
+                ...current,
+                agentId,
+                metadata: withOpencodeDirectory(current.metadata, directory),
+                lastActiveAt: new Date().toISOString(),
+              },
+            },
+          };
+        });
       },
       setSharedModelSelection: (conversationId, agentId, selection) => {
         set((state) => {

@@ -5,6 +5,7 @@ import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatHeaderPanel } from "@/components/chat/ChatHeaderPanel";
 import { ChatTimelinePanel } from "@/components/chat/ChatTimelinePanel";
 import { ModelPickerModal } from "@/components/chat/ModelPickerModal";
+import { OpencodeDirectoryModal } from "@/components/chat/OpencodeDirectoryModal";
 import { SessionPickerModal } from "@/components/chat/SessionPickerModal";
 import { ShortcutManagerModal } from "@/components/chat/ShortcutManagerModal";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
@@ -109,10 +110,20 @@ export function ChatScreen({
         onClearModelSelection={controller.clearModelSelection}
       />
 
+      <OpencodeDirectoryModal
+        visible={controller.showDirectoryPicker}
+        onClose={controller.closeDirectoryPicker}
+        currentDirectory={controller.opencodeDirectory}
+        onSave={controller.handleSaveOpencodeDirectory}
+        onClear={controller.handleClearOpencodeDirectory}
+      />
+
       <ChatComposer
         modelSelectionStatus={controller.modelSelectionStatus}
+        currentDirectory={controller.opencodeDirectory}
         pendingInterrupt={controller.pendingInterrupt}
         showShortcutManager={controller.showShortcutManager}
+        onOpenDirectoryPicker={controller.openDirectoryPicker}
         onOpenShortcutManager={controller.openShortcutManager}
         selectedModel={controller.selectedModel}
         onOpenModelPicker={controller.openModelPicker}

@@ -62,6 +62,7 @@ export function useChatComposerController({
   const [shortcutManagerInitialPrompt, setShortcutManagerInitialPrompt] =
     useState("");
   const [showShortcutManager, setShowShortcutManager] = useState(false);
+  const [showDirectoryPicker, setShowDirectoryPicker] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const minInputHeight = 44;
   const maxInputHeight = 128;
@@ -155,6 +156,14 @@ export function useChatComposerController({
 
   const closeModelPicker = useCallback(() => {
     setShowModelPicker(false);
+  }, []);
+
+  const openDirectoryPicker = useCallback(() => {
+    setShowDirectoryPicker(true);
+  }, []);
+
+  const closeDirectoryPicker = useCallback(() => {
+    setShowDirectoryPicker(false);
   }, []);
 
   const handleModelSelect = useCallback(
@@ -256,9 +265,12 @@ export function useChatComposerController({
     inputHeight,
     maxInputHeight,
     showShortcutManager,
+    showDirectoryPicker,
     showModelPicker,
     openShortcutManager,
     closeShortcutManager,
+    openDirectoryPicker,
+    closeDirectoryPicker,
     openModelPicker,
     closeModelPicker,
     handleModelSelect,

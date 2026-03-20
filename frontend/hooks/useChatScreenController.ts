@@ -37,6 +37,10 @@ import {
 } from "@/lib/chatScroll";
 import { blurActiveElement } from "@/lib/focus";
 import { generateUuid } from "@/lib/id";
+import {
+  getOpencodeDirectory,
+  pickOpencodeDirectoryMetadata,
+} from "@/lib/opencodeMetadata";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
 import { toast } from "@/lib/toast";
@@ -73,6 +77,9 @@ export function useChatScreenController({
   const cancelMessage = useChatStore((state) => state.cancelMessage);
   const clearPendingInterrupt = useChatStore(
     (state) => state.clearPendingInterrupt,
+  );
+  const setOpencodeDirectory = useChatStore(
+    (state) => state.setOpencodeDirectory,
   );
   const setSharedModelSelection = useChatStore(
     (state) => state.setSharedModelSelection,
@@ -126,6 +133,7 @@ export function useChatScreenController({
   const pendingInterrupt = session?.pendingInterrupt ?? null;
   const lastResolvedInterrupt = session?.lastResolvedInterrupt ?? null;
   const selectedModel = getSharedModelSelection(session?.metadata);
+  const opencodeDirectory = getOpencodeDirectory(session?.metadata);
   const extensionCapabilitiesQuery = useExtensionCapabilitiesQuery({
     agentId: activeAgentId,
     source: agent?.source,
@@ -217,6 +225,7 @@ export function useChatScreenController({
               messageID: promptMessageId,
               parts: [{ type: "text", text: content.trim() }],
             },
+            metadata: pickOpencodeDirectoryMetadata(currentSession?.metadata),
           });
           addConversationOverlayMessage(nextConversationId, {
             id: promptMessageId,
@@ -295,6 +304,7 @@ export function useChatScreenController({
     pendingInterrupt,
     lastResolvedInterrupt,
     pendingQuestionCount,
+    sessionMetadata: session?.metadata,
     clearPendingInterrupt,
   });
 
@@ -309,9 +319,12 @@ export function useChatScreenController({
     inputHeight,
     maxInputHeight,
     showShortcutManager,
+    showDirectoryPicker,
     showModelPicker,
     openShortcutManager,
     closeShortcutManager,
+    openDirectoryPicker,
+    closeDirectoryPicker,
     openModelPicker,
     closeModelPicker,
     handleModelSelect,
@@ -561,6 +574,27 @@ export function useChatScreenController({
     setShowSessionPicker(false);
   }, []);
 
+  const handleSaveOpencodeDirectory = useCallback(
+    (directory: string) => {
+      if (!conversationId || !activeAgentId) {
+        return;
+      }
+      ensureSession(conversationId, activeAgentId);
+      setOpencodeDirectory(conversationId, activeAgentId, directory);
+      toast.success("Working directory updated", directory);
+    },
+    [activeAgentId, conversationId, ensureSession, setOpencodeDirectory],
+  );
+
+  const handleClearOpencodeDirectory = useCallback(() => {
+    if (!conversationId || !activeAgentId) {
+      return;
+    }
+    ensureSession(conversationId, activeAgentId);
+    setOpencodeDirectory(conversationId, activeAgentId, null);
+    toast.success("Working directory cleared", "Using upstream default.");
+  }, [activeAgentId, conversationId, ensureSession, setOpencodeDirectory]);
+
   const handleRetry = useCallback(() => {
     if (
       !conversationId ||
@@ -634,6 +668,7 @@ export function useChatScreenController({
     sessionSource,
     modelSelectionStatus,
     selectedModel,
+    opencodeDirectory,
     messages,
     historyLoading,
     historyLoadingMore,
@@ -649,15 +684,20 @@ export function useChatScreenController({
     scrollToBottom,
     showShortcutManager,
     showSessionPicker,
+    showDirectoryPicker,
     showModelPicker,
     openShortcutManager,
     closeShortcutManager,
     openSessionPicker,
     closeSessionPicker,
+    openDirectoryPicker,
+    closeDirectoryPicker,
     openModelPicker,
     closeModelPicker,
     handleModelSelect,
     clearModelSelection,
+    handleSaveOpencodeDirectory,
+    handleClearOpencodeDirectory,
     handleUseShortcut,
     handleSessionSelect,
     handleTest,
