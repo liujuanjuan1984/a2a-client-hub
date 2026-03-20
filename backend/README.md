@@ -58,9 +58,11 @@ Current direction:
 Migrated features so far:
 
 - `app/features/auth/`
+- `app/features/extension_capabilities/`
 - `app/features/hub_agents/`
 - `app/features/invitations/`
 - `app/features/invoke/`
+- `app/features/opencode_sessions/`
 - `app/features/personal_agents/`
 - `app/features/schedules/`
 - `app/features/sessions/`

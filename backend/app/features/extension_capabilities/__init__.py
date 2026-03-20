@@ -1,0 +1,1 @@
+"""Extension capabilities feature package."""
