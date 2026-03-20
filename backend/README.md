@@ -44,6 +44,26 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Default API prefix: `/api/v1`.
 
+## Backend Structure
+
+The backend is transitioning from a purely technical layout to a more practical
+feature-based structure.
+
+Current direction:
+
+- Cross-cutting layers remain under `app/api`, `app/core`, `app/db`, and `app/integrations`.
+- Feature-owned code is being moved into `app/features/<feature_name>/`.
+- Legacy module paths are kept as compatibility shims during the migration.
+
+Stage 1 features migrated:
+
+- `app/features/auth/`
+- `app/features/invitations/`
+- `app/features/shortcuts/`
+
+This keeps runtime behavior stable while establishing a clearer long-term
+directory model for business capabilities.
+
 ## Incremental mypy Gate
 
 The backend uses a phased mypy gate for changed files instead of a full-repo
