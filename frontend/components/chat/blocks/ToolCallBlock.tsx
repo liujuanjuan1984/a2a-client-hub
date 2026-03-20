@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import { ExpandToggle } from "@/components/ui/ExpandToggle";
 import { type ChatMessage, type MessageBlock } from "@/lib/api/chat-utils";
@@ -101,6 +101,7 @@ export function ToolCallBlock({
   const statusStyle = STATUS_STYLES[status];
   const statusLabel = STATUS_LABELS[status];
   const toolName = toolCall?.name?.trim() || "Tool Call";
+  const collapsedLabel = `Show Tool Call ${statusLabel}`;
   const argumentsText = useMemo(
     () => formatStructuredValue(toolCall?.arguments),
     [toolCall?.arguments],
@@ -129,6 +130,29 @@ export function ToolCallBlock({
     }
     toggleToolCall();
   };
+
+  if (!expanded) {
+    return (
+      <View
+        key={blockId}
+        className={`${!isFirst ? "mt-3" : ""} rounded-xl border border-white/10 bg-black/40 p-3`}
+      >
+        <Pressable
+          onPress={() => {
+            handleToggle().catch(() => undefined);
+          }}
+          className="w-full"
+          accessibilityRole="button"
+          accessibilityLabel={collapsedLabel}
+          testID={`chat-message-${blockId}-tool-call-toggle`}
+        >
+          <Text className="text-[11px] font-medium tracking-wide text-slate-300">
+            {collapsedLabel}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View
@@ -215,7 +239,7 @@ export function ToolCallBlock({
             handleToggle().catch(() => undefined);
           }}
           type="Tool Call"
-          variant={expanded ? "mini" : "default"}
+          variant="mini"
           showChevron={expanded}
           testID={`chat-message-${blockId}-tool-call-toggle`}
         />

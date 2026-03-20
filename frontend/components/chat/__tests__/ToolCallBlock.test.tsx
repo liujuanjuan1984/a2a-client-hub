@@ -27,13 +27,17 @@ describe("ToolCallBlock", () => {
       />,
     );
 
-    expect(screen.getByText("bash")).toBeTruthy();
-    expect(screen.getByText("Failed")).toBeTruthy();
-    expect(screen.getByText("call_id: call-1")).toBeTruthy();
+    expect(screen.getByText("Show Tool Call Failed")).toBeTruthy();
+    expect(screen.queryByText("bash")).toBeNull();
+    expect(screen.queryByText("Failed")).toBeNull();
+    expect(screen.queryByText("Tap to inspect tool call details.")).toBeNull();
 
-    fireEvent.press(screen.getByLabelText("Show Tool Call"));
+    fireEvent.press(screen.getByLabelText("Show Tool Call Failed"));
 
     await waitFor(() => {
+      expect(screen.getByText("bash")).toBeTruthy();
+      expect(screen.getByText("Failed")).toBeTruthy();
+      expect(screen.getByText("call_id: call-1")).toBeTruthy();
       expect(screen.getByText('{\n  "command": "pwd"\n}')).toBeTruthy();
     });
     expect(screen.getByText('{\n  "message": "boom"\n}')).toBeTruthy();
@@ -56,7 +60,7 @@ describe("ToolCallBlock", () => {
       />,
     );
 
-    expect(screen.getByText("Interrupted")).toBeTruthy();
+    expect(screen.getByText("Show Tool Call Interrupted")).toBeTruthy();
   });
 
   it("loads missing detail before expanding", async () => {
@@ -97,7 +101,7 @@ describe("ToolCallBlock", () => {
 
     const screen = render(<TestHarness />);
 
-    fireEvent.press(screen.getByLabelText("Show Tool Call"));
+    fireEvent.press(screen.getByLabelText("Show Tool Call Running"));
 
     await waitFor(() => {
       expect(screen.getByText("read")).toBeTruthy();
