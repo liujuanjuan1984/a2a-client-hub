@@ -6,11 +6,11 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-from app.api.routers import _extension_capability_router as extension_router_common
-from app.api.routers import admin_a2a_agents as admin_router
-from app.api.routers import hub_a2a_agents as hub_router
-from app.api.routers import hub_a2a_extension_capabilities as hub_extension_router
 from app.core.config import settings
+from app.features.extension_capabilities import common_router as extension_router_common
+from app.features.extension_capabilities import hub_router as hub_extension_router
+from app.features.hub_agents import admin_router
+from app.features.hub_agents import router as hub_router
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,

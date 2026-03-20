@@ -5,12 +5,12 @@ from typing import Any, Dict, List
 import pytest
 from sqlalchemy import event, select
 
-from app.api.routers import opencode_session_directory
 from app.core.secret_vault import hub_a2a_secret_vault, user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
+from app.features.opencode_sessions import router as opencode_session_directory
 from app.integrations.a2a_extensions.service import ExtensionCallResult
 from app.services.a2a_runtime import A2ARuntimeValidationError
 from app.services.agent_common import upsert_agent_credential
@@ -140,7 +140,7 @@ async def test_opencode_sessions_directory_caches_and_sorts(
 
     fake = FakeExtensionsService()
     monkeypatch.setattr(
-        "app.services.opencode_session_directory.get_a2a_extensions_service",
+        "app.features.opencode_sessions.service.get_a2a_extensions_service",
         lambda: fake,
     )
 
@@ -239,7 +239,7 @@ async def test_opencode_sessions_directory_deduplicates_across_same_upstream(
             )
 
     monkeypatch.setattr(
-        "app.services.opencode_session_directory.get_a2a_extensions_service",
+        "app.features.opencode_sessions.service.get_a2a_extensions_service",
         lambda: FakeExtensionsService(),
     )
 
@@ -294,7 +294,7 @@ async def test_opencode_sessions_directory_does_not_treat_context_id_as_session_
             )
 
     monkeypatch.setattr(
-        "app.services.opencode_session_directory.get_a2a_extensions_service",
+        "app.features.opencode_sessions.service.get_a2a_extensions_service",
         lambda: FakeExtensionsService(),
     )
 
@@ -346,7 +346,7 @@ async def test_opencode_sessions_directory_ignores_legacy_external_session_id_al
             )
 
     monkeypatch.setattr(
-        "app.services.opencode_session_directory.get_a2a_extensions_service",
+        "app.features.opencode_sessions.service.get_a2a_extensions_service",
         lambda: FakeExtensionsService(),
     )
 
@@ -414,7 +414,7 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
             )
 
     monkeypatch.setattr(
-        "app.services.opencode_session_directory.get_a2a_extensions_service",
+        "app.features.opencode_sessions.service.get_a2a_extensions_service",
         lambda: FakeExtensionsService(),
     )
 

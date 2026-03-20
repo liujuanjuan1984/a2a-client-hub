@@ -3,13 +3,13 @@ from uuid import uuid4
 
 import pytest
 
-from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
-from app.schemas.a2a_invoke import A2AAgentInvokeRequest
-from app.services.invoke_recovery import (
+from app.features.invoke.recovery import (
     build_rebound_invoke_payload,
     finalize_outbound_invoke_payload,
     resolve_session_binding_outbound_mode,
 )
+from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
+from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 
 
 def _fake_logger() -> SimpleNamespace:

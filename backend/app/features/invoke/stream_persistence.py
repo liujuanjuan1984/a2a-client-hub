@@ -7,8 +7,8 @@ from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from app.db.models.agent_message import AgentMessage
+from app.features.invoke.service import StreamOutcome
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
-from app.services.a2a_invoke_service import StreamOutcome
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.session_identity import normalize_non_empty_text
 

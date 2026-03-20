@@ -1,8 +1,8 @@
 import pytest
 
 from app.core.config import settings
+from app.features.invoke.service import A2AInvokeService
 from app.services.a2a_agent_card_validation import fetch_and_validate_agent_card
-from app.services.a2a_invoke_service import A2AInvokeService
 
 
 class _DummyCard:

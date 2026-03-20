@@ -9,10 +9,10 @@ import pytest
 from fastapi import WebSocketDisconnect
 
 from app.core.config import settings
+from app.features.invoke.service import StreamFinishReason, a2a_invoke_service
+from app.features.invoke.stream_diagnostics import build_artifact_update_log_sample
 from app.integrations.a2a_client.errors import A2APeerProtocolError
-from app.services.a2a_invoke_service import StreamFinishReason, a2a_invoke_service
 from app.services.a2a_payload_analysis import coerce_payload_to_dict
-from app.services.a2a_stream_diagnostics import build_artifact_update_log_sample
 
 
 class _BrokenGateway:
@@ -1440,12 +1440,8 @@ async def test_consume_stream_reports_total_timeout_with_partial_content(monkeyp
             await timeout_task
         raise asyncio.TimeoutError()
 
-    monkeypatch.setattr(
-        "app.services.a2a_invoke_service.time.monotonic", _fake_monotonic
-    )
-    monkeypatch.setattr(
-        "app.services.a2a_invoke_service.asyncio.wait_for", _fake_wait_for
-    )
+    monkeypatch.setattr("app.features.invoke.service.time.monotonic", _fake_monotonic)
+    monkeypatch.setattr("app.features.invoke.service.asyncio.wait_for", _fake_wait_for)
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithSingleEventThenPending(
             first_event=_artifact_event(
@@ -1493,12 +1489,8 @@ async def test_consume_stream_reports_idle_timeout_with_partial_content(monkeypa
             await timeout_task
         raise asyncio.TimeoutError()
 
-    monkeypatch.setattr(
-        "app.services.a2a_invoke_service.time.monotonic", _fake_monotonic
-    )
-    monkeypatch.setattr(
-        "app.services.a2a_invoke_service.asyncio.wait_for", _fake_wait_for
-    )
+    monkeypatch.setattr("app.features.invoke.service.time.monotonic", _fake_monotonic)
+    monkeypatch.setattr("app.features.invoke.service.asyncio.wait_for", _fake_wait_for)
     result = await a2a_invoke_service.consume_stream(
         gateway=_GatewayWithSingleEventThenPending(
             first_event=_artifact_event(

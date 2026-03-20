@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db.models.a2a_agent_credential import A2AAgentCredential
-from app.services.a2a_agents import a2a_agent_service
+from app.features.personal_agents.service import a2a_agent_service
 from tests.utils import create_user
 
 

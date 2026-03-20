@@ -49,7 +49,7 @@ class HubA2ARuntimeBuilder:
         user_id: UUID,
         agent_id: UUID,
     ) -> HubA2ARuntime:
-        from app.services.hub_a2a_agents import (
+        from app.features.hub_agents.service import (
             HubA2AAgentNotFoundError,
             hub_a2a_agent_service,
         )

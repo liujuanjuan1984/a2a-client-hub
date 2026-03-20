@@ -27,6 +27,11 @@ from app.features.hub_agents.service import (
     HubA2AAgentNotFoundError,
     hub_a2a_agent_service,
 )
+from app.features.invoke.route_runner import (
+    run_http_invoke_route,
+    run_issue_ws_ticket_route,
+    run_ws_invoke_route,
+)
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.controls import summarize_query
 from app.integrations.a2a_client.errors import (
@@ -42,11 +47,6 @@ from app.services.hub_a2a_runtime import (
     HubA2ARuntimeNotFoundError,
     HubA2ARuntimeValidationError,
     hub_a2a_runtime_builder,
-)
-from app.services.invoke_route_runner import (
-    run_http_invoke_route,
-    run_issue_ws_ticket_route,
-    run_ws_invoke_route,
 )
 from app.utils.logging_redaction import redact_url_for_logging
 

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from app.services.a2a_stream_payloads import serialize_stream_data_value
+from app.features.invoke.stream_payloads import serialize_stream_data_value
 
 _SERIALIZATION_CASES = json.loads(
     (

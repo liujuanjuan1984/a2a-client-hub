@@ -8,10 +8,10 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.api.retry_after import DB_BUSY_RETRY_AFTER_SECONDS
-from app.api.routers import a2a_schedules
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
-from app.services.a2a_schedule_service import (
+from app.features.schedules import router as a2a_schedules
+from app.features.schedules.service import (
     A2AScheduleConflictError,
     A2AScheduleServiceBusyError,
     a2a_schedule_service,

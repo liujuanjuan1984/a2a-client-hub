@@ -86,7 +86,7 @@ def test_invoke_agent_ws_success(monkeypatch, mock_user):
     mock_service.gateway = mock_gateway
 
     monkeypatch.setattr(
-        "app.api.routers.a2a_agents.get_a2a_service", lambda: mock_service
+        "app.features.personal_agents.router.get_a2a_service", lambda: mock_service
     )
     # Also need to mock a2a_runtime_builder
     mock_runtime = MagicMock()
@@ -97,11 +97,13 @@ def test_invoke_agent_ws_success(monkeypatch, mock_user):
         return mock_runtime
 
     monkeypatch.setattr(
-        "app.api.routers.a2a_agents.a2a_runtime_builder.build", mock_build
+        "app.features.personal_agents.router.a2a_runtime_builder.build", mock_build
     )
 
     # Mock validate_message to return empty list
-    monkeypatch.setattr("app.api.routers.a2a_agents.validate_message", lambda x: [])
+    monkeypatch.setattr(
+        "app.features.personal_agents.router.validate_message", lambda x: []
+    )
 
     client = TestClient(app)
     try:
@@ -141,7 +143,7 @@ def test_invoke_agent_ws_invalid_conversation_id_returns_error_event(
         return mock_runtime
 
     monkeypatch.setattr(
-        "app.api.routers.a2a_agents.a2a_runtime_builder.build", mock_build
+        "app.features.personal_agents.router.a2a_runtime_builder.build", mock_build
     )
 
     client = TestClient(app)

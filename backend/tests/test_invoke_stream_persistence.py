@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from app.services.a2a_invoke_service import StreamFinishReason, StreamOutcome
-from app.services.invoke_stream_persistence import (
+from app.features.invoke.service import StreamFinishReason, StreamOutcome
+from app.features.invoke.stream_persistence import (
     build_stream_metadata_from_outcome,
     resolve_invoke_idempotency_key,
 )

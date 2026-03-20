@@ -28,6 +28,13 @@ from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
 from app.db.session import AsyncSessionLocal, async_engine
 from app.db.transaction import commit_safely, rollback_safely
+from app.features.invoke.route_runner import run_background_invoke
+from app.features.schedules.service import (
+    A2A_SCHEDULE_SOURCE,
+    A2AScheduleConflictError,
+    ClaimedA2AScheduleTask,
+    a2a_schedule_service,
+)
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 from app.services.a2a_runtime import a2a_runtime_builder
@@ -37,13 +44,6 @@ from app.services.a2a_schedule_preflight import (
 from app.services.a2a_schedule_runtime_summary import (
     derive_schedule_recovery_timeouts,
 )
-from app.services.a2a_schedule_service import (
-    A2A_SCHEDULE_SOURCE,
-    A2AScheduleConflictError,
-    ClaimedA2AScheduleTask,
-    a2a_schedule_service,
-)
-from app.services.invoke_route_runner import run_background_invoke
 from app.services.ops_metrics import ops_metrics
 from app.services.ops_metrics_refresh import refresh_db_pool_checked_out
 from app.services.scheduler import get_scheduler

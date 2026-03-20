@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.invoke_session_binding import (
+from app.features.invoke.session_binding import (
     is_recoverable_invoke_session_error,
     normalize_error_code,
     status_code_for_invoke_session_error,

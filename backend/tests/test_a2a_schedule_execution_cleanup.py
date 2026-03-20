@@ -8,8 +8,8 @@ import pytest
 from sqlalchemy import func, select
 
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
-from app.services import a2a_schedule_service as a2a_schedule_service_module
-from app.services.a2a_schedule_service import a2a_schedule_service
+from app.features.schedules import service as a2a_schedule_service_module
+from app.features.schedules.service import a2a_schedule_service
 from app.utils.timezone_util import utc_now
 from tests.utils import create_a2a_agent, create_schedule_task, create_user
 

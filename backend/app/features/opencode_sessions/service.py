@@ -24,13 +24,13 @@ from app.db.models.external_session_directory_cache import (
     ExternalSessionDirectoryCacheEntry,
 )
 from app.db.transaction import commit_safely
+from app.features.hub_agents.service import hub_a2a_agent_service
+from app.features.personal_agents.service import a2a_agent_service
 from app.integrations.a2a_client.types import ResolvedAgent
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.integrations.a2a_extensions.service import ExtensionCallResult
-from app.services.a2a_agents import a2a_agent_service
 from app.services.a2a_runtime import a2a_runtime_builder
-from app.services.hub_a2a_agents import hub_a2a_agent_service
 from app.services.hub_a2a_runtime import hub_a2a_runtime_builder
 
 logger = get_logger(__name__)

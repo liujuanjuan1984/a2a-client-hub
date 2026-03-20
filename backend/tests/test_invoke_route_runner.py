@@ -17,10 +17,10 @@ from app.db.locking import (
     RetryableDbLockError,
     RetryableDbQueryTimeoutError,
 )
+from app.features.invoke import route_runner as invoke_route_runner
+from app.features.invoke.service import StreamFinishReason, StreamOutcome
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
-from app.services import invoke_route_runner
-from app.services.a2a_invoke_service import StreamFinishReason, StreamOutcome
 
 
 async def _consume_stream(response: StreamingResponse) -> None:

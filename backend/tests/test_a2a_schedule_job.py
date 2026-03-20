@@ -20,6 +20,13 @@ from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely as real_commit_safely
+from app.features.schedules.service import (
+    A2AScheduleConflictError,
+    A2AScheduleNotFoundError,
+    A2AScheduleServiceBusyError,
+    ClaimedA2AScheduleTask,
+    a2a_schedule_service,
+)
 from app.integrations.a2a_client.errors import A2AAgentUnavailableError
 from app.services.a2a_schedule_job import (
     _derive_recovery_timeouts,
@@ -28,13 +35,6 @@ from app.services.a2a_schedule_job import (
     _schedule_run_heartbeat_loop,
     _try_hold_dispatch_leader_lock,
     dispatch_due_a2a_schedules,
-)
-from app.services.a2a_schedule_service import (
-    A2AScheduleConflictError,
-    A2AScheduleNotFoundError,
-    A2AScheduleServiceBusyError,
-    ClaimedA2AScheduleTask,
-    a2a_schedule_service,
 )
 from app.services.ops_metrics import ops_metrics
 from app.utils.timezone_util import utc_now

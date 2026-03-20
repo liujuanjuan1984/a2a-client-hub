@@ -14,6 +14,11 @@ from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
+from app.features.invoke.route_runner import (
+    run_http_invoke_route,
+    run_issue_ws_ticket_route,
+    run_ws_invoke_route,
+)
 from app.features.personal_agents.schemas import (
     A2AAgentCreate,
     A2AAgentListMeta,
@@ -48,11 +53,6 @@ from app.services.a2a_runtime import (
     A2ARuntimeNotFoundError,
     A2ARuntimeValidationError,
     a2a_runtime_builder,
-)
-from app.services.invoke_route_runner import (
-    run_http_invoke_route,
-    run_issue_ws_ticket_route,
-    run_ws_invoke_route,
 )
 from app.utils.auth_headers import build_proxy_auth_headers
 from app.utils.logging_redaction import redact_url_for_logging

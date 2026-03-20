@@ -46,16 +46,16 @@ Default API prefix: `/api/v1`.
 
 ## Backend Structure
 
-The backend is transitioning from a purely technical layout to a more practical
-feature-based structure.
+The backend now uses a practical feature-based structure for business-facing
+entrypoints and orchestration code.
 
 Current direction:
 
 - Cross-cutting layers remain under `app/api`, `app/core`, `app/db`, and `app/integrations`.
-- Feature-owned code is being moved into `app/features/<feature_name>/`.
-- Legacy module paths are kept as compatibility shims during the migration.
+- Feature-owned code lives under `app/features/<feature_name>/`.
+- Migrated feature routes, schemas, and facades should be imported from `app/features/...` directly.
 
-Migrated features so far:
+Feature-owned areas already organized under `app/features/`:
 
 - `app/features/auth/`
 - `app/features/extension_capabilities/`
@@ -68,8 +68,8 @@ Migrated features so far:
 - `app/features/sessions/`
 - `app/features/shortcuts/`
 
-This keeps runtime behavior stable while establishing a clearer long-term
-directory model for business capabilities.
+This keeps the runtime entrypoints aligned with business capabilities and makes
+the import graph easier to reason about over time.
 
 ## Incremental mypy Gate
 

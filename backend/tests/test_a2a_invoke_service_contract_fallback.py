@@ -1,4 +1,4 @@
-from app.services.a2a_invoke_service import a2a_invoke_service
+from app.features.invoke.service import a2a_invoke_service
 
 
 def test_extract_stream_chunk_falls_back_to_text_if_parts_exist():

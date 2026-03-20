@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from app.services.a2a_stream_payloads import (
+from app.features.invoke.stream_payloads import (
     extract_interrupt_lifecycle_from_serialized_event,
 )
 from app.services.session_hub_common import (

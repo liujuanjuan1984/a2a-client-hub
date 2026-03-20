@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.services.a2a_schedule_service import a2a_schedule_service
+from app.features.schedules.service import a2a_schedule_service
 
 
 @pytest.mark.parametrize(

@@ -21,6 +21,22 @@ from a2a.types import Message
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
+from app.features.invoke.stream_diagnostics import (
+    build_artifact_update_log_sample,
+    build_validation_errors_log_sample,
+    extract_artifact_validation_errors,
+    warn_non_contract_artifact_update_once,
+)
+from app.features.invoke.stream_payloads import (
+    analyze_stream_chunk_contract,
+    extract_artifact_source,
+    extract_artifact_type,
+    extract_interrupt_lifecycle_from_serialized_event,
+    extract_shared_stream_metadata,
+    extract_stream_chunk_from_serialized_event,
+    extract_stream_sequence_from_serialized_event,
+    extract_stream_text_from_parts,
+)
 from app.integrations.a2a_client.errors import A2APeerProtocolError
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
 from app.integrations.a2a_error_contract import (
@@ -53,22 +69,6 @@ from app.services.a2a_payload_analysis import (
 )
 from app.services.a2a_payload_analysis import (
     extract_usage_hints_from_serialized_event as extract_usage_hints_from_event,
-)
-from app.services.a2a_stream_diagnostics import (
-    build_artifact_update_log_sample,
-    build_validation_errors_log_sample,
-    extract_artifact_validation_errors,
-    warn_non_contract_artifact_update_once,
-)
-from app.services.a2a_stream_payloads import (
-    analyze_stream_chunk_contract,
-    extract_artifact_source,
-    extract_artifact_type,
-    extract_interrupt_lifecycle_from_serialized_event,
-    extract_shared_stream_metadata,
-    extract_stream_chunk_from_serialized_event,
-    extract_stream_sequence_from_serialized_event,
-    extract_stream_text_from_parts,
 )
 from app.utils.json_encoder import json_dumps
 from app.utils.payload_extract import as_dict

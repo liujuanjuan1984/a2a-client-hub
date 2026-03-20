@@ -25,6 +25,53 @@ from app.db.transaction import commit_safely
 from app.features.invoke.guard import (
     _invoke_inflight_keys as _invoke_inflight_keys_impl,
 )
+from app.features.invoke.guard import build_invoke_guard_key as _build_invoke_guard_key
+from app.features.invoke.guard import guard_inflight_invoke as _guard_inflight_invoke
+from app.features.invoke.guard import release_invoke_guard as _release_invoke_guard_impl
+from app.features.invoke.guard import (
+    try_acquire_invoke_guard as _try_acquire_invoke_guard_impl,
+)
+from app.features.invoke.recovery import (
+    build_rebound_invoke_payload as _build_rebound_invoke_payload,
+)
+from app.features.invoke.recovery import (
+    finalize_outbound_invoke_payload as _finalize_outbound_invoke_payload_impl,
+)
+from app.features.invoke.recovery import (
+    resolve_session_binding_outbound_mode as _resolve_session_binding_outbound_mode_impl,
+)
+from app.features.invoke.service import StreamOutcome, a2a_invoke_service
+from app.features.invoke.session_binding import (
+    is_recoverable_invoke_session_error,
+    merge_invoke_binding_state,
+    normalize_invoke_binding_state,
+    status_code_for_invoke_session_error,
+    ws_error_code_for_invoke_session_error,
+    ws_error_code_for_recovery_failed,
+)
+from app.features.invoke.stream_persistence import coerce_uuid as _coerce_uuid
+from app.features.invoke.stream_persistence import (
+    ensure_local_message_headers as ensure_local_message_headers_impl,
+)
+from app.features.invoke.stream_persistence import (
+    flush_stream_buffer as flush_stream_buffer_impl,
+)
+from app.features.invoke.stream_persistence import (
+    is_interrupt_requested as _is_interrupt_requested,
+)
+from app.features.invoke.stream_persistence import (
+    persist_interrupt_lifecycle_event as persist_interrupt_lifecycle_event_impl,
+)
+from app.features.invoke.stream_persistence import (
+    persist_local_outcome as persist_local_outcome_impl,
+)
+from app.features.invoke.stream_persistence import (
+    persist_stream_block_update as persist_stream_block_update_impl,
+)
+from app.features.invoke.stream_persistence import (
+    persist_synthetic_final_block_if_needed as persist_synthetic_final_block_if_needed_impl,
+)
+from app.features.sessions.service import session_hub_service
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
@@ -36,54 +83,7 @@ from app.schemas.a2a_invoke import (
     A2AAgentInvokeResponse,
 )
 from app.schemas.ws_ticket import WsTicketResponse
-from app.services.a2a_invoke_service import StreamOutcome, a2a_invoke_service
 from app.services.a2a_shared_metadata import extract_shared_metadata_section
-from app.services.invoke_guard import build_invoke_guard_key as _build_invoke_guard_key
-from app.services.invoke_guard import guard_inflight_invoke as _guard_inflight_invoke
-from app.services.invoke_guard import release_invoke_guard as _release_invoke_guard_impl
-from app.services.invoke_guard import (
-    try_acquire_invoke_guard as _try_acquire_invoke_guard_impl,
-)
-from app.services.invoke_recovery import (
-    build_rebound_invoke_payload as _build_rebound_invoke_payload,
-)
-from app.services.invoke_recovery import (
-    finalize_outbound_invoke_payload as _finalize_outbound_invoke_payload_impl,
-)
-from app.services.invoke_recovery import (
-    resolve_session_binding_outbound_mode as _resolve_session_binding_outbound_mode_impl,
-)
-from app.services.invoke_session_binding import (
-    is_recoverable_invoke_session_error,
-    merge_invoke_binding_state,
-    normalize_invoke_binding_state,
-    status_code_for_invoke_session_error,
-    ws_error_code_for_invoke_session_error,
-    ws_error_code_for_recovery_failed,
-)
-from app.services.invoke_stream_persistence import coerce_uuid as _coerce_uuid
-from app.services.invoke_stream_persistence import (
-    ensure_local_message_headers as ensure_local_message_headers_impl,
-)
-from app.services.invoke_stream_persistence import (
-    flush_stream_buffer as flush_stream_buffer_impl,
-)
-from app.services.invoke_stream_persistence import (
-    is_interrupt_requested as _is_interrupt_requested,
-)
-from app.services.invoke_stream_persistence import (
-    persist_interrupt_lifecycle_event as persist_interrupt_lifecycle_event_impl,
-)
-from app.services.invoke_stream_persistence import (
-    persist_local_outcome as persist_local_outcome_impl,
-)
-from app.services.invoke_stream_persistence import (
-    persist_stream_block_update as persist_stream_block_update_impl,
-)
-from app.services.invoke_stream_persistence import (
-    persist_synthetic_final_block_if_needed as persist_synthetic_final_block_if_needed_impl,
-)
-from app.services.session_hub import session_hub_service
 from app.services.session_hub_common import build_interrupt_lifecycle_message_content
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
