@@ -136,6 +136,10 @@ export function useChatScreenController({
     !activeAgentId || !agent?.source
       ? "unsupported"
       : extensionCapabilitiesQuery.modelSelectionStatus;
+  const sessionPromptAsyncStatus: GenericCapabilityStatus =
+    !activeAgentId || !agent?.source
+      ? "unsupported"
+      : extensionCapabilitiesQuery.sessionPromptAsyncStatus;
   const pendingQuestionCount =
     pendingInterrupt?.type === "question"
       ? (pendingInterrupt.details.questions?.length ?? 0)
@@ -198,7 +202,11 @@ export function useChatScreenController({
       const externalSessionId =
         currentSession?.externalSessionRef?.externalSessionId?.trim() ?? "";
 
-      if (isActivelyStreaming && externalSessionId) {
+      if (
+        isActivelyStreaming &&
+        sessionPromptAsyncStatus === "supported" &&
+        externalSessionId
+      ) {
         const promptMessageId = generateUuid();
         try {
           const promptResult = await promptSessionAsync({
@@ -244,13 +252,19 @@ export function useChatScreenController({
           );
         }
       } else if (isActivelyStreaming) {
+        const fallbackReason = externalSessionId
+          ? sessionPromptAsyncStatus === "unsupported"
+            ? "prompt_async_capability_unsupported"
+            : "prompt_async_capability_unknown"
+          : "missing_external_session_id";
         console.warn(
-          "[Chat] missing upstream session binding during stream; fallback to interrupt send",
+          "[Chat] prompt_async not eligible during stream; fallback to interrupt send",
           {
             conversationId: nextConversationId,
             agentId: nextAgentId,
-            fallbackReason: "missing_external_session_id",
-            hasExternalSessionId: false,
+            fallbackReason,
+            hasExternalSessionId: Boolean(externalSessionId),
+            sessionPromptAsyncStatus,
           },
         );
       }
@@ -263,7 +277,7 @@ export function useChatScreenController({
         runtimeStatusContract,
       );
     },
-    [runtimeStatusContract, sendMessage],
+    [runtimeStatusContract, sendMessage, sessionPromptAsyncStatus],
   );
 
   const {

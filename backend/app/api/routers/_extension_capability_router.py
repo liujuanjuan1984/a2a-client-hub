@@ -160,19 +160,18 @@ def create_extension_capability_router(
     ) -> A2AExtensionCapabilitiesResponse:
         response.headers["Cache-Control"] = "no-store"
         runtime = await _get_runtime(db, current_user, agent_id)
-
-        from app.integrations.a2a_extensions.opencode_provider_discovery import (
-            resolve_opencode_provider_discovery,
+        snapshot = await _extensions_service().resolve_capability_snapshot(
+            runtime=runtime
         )
-
-        try:
-            resolve_opencode_provider_discovery(runtime.resolved)
-            model_selection = True
-        except A2AExtensionNotSupportedError:
-            model_selection = False
+        model_selection = snapshot.provider_discovery.status == "supported"
+        session_prompt_async = bool(
+            snapshot.session_query.capability
+            and snapshot.session_query.capability.ext.methods.get("prompt_async")
+        )
 
         return A2AExtensionCapabilitiesResponse(
             modelSelection=model_selection,
+            sessionPromptAsync=session_prompt_async,
             runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
                 runtime_status_contract_payload()
             ),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 import pytest
@@ -88,6 +89,19 @@ class _FakeExtensionResult:
 class _FakeExtensionsService:
     def __init__(self) -> None:
         self.calls: list[Dict[str, Any]] = []
+        self.capability_snapshot: Any = SimpleNamespace(
+            provider_discovery=SimpleNamespace(status="unsupported"),
+            session_query=SimpleNamespace(status="unsupported", capability=None),
+        )
+
+    async def resolve_capability_snapshot(self, *, runtime):
+        self.calls.append(
+            {
+                "fn": "resolve_capability_snapshot",
+                "runtime": runtime,
+            }
+        )
+        return self.capability_snapshot
 
     async def continue_session(self, *, runtime, session_id: str):
         self.calls.append(
@@ -913,14 +927,22 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         token="secret-token-opencode-capability-true",
     )
 
-    from app.integrations.a2a_extensions import (
-        opencode_provider_discovery as opencode_provider_discovery_module,
+    fake_extensions = _FakeExtensionsService()
+    fake_extensions.capability_snapshot = SimpleNamespace(
+        provider_discovery=SimpleNamespace(status="supported"),
+        session_query=SimpleNamespace(
+            status="supported",
+            capability=SimpleNamespace(
+                ext=SimpleNamespace(
+                    methods={"prompt_async": "shared.sessions.prompt_async"}
+                )
+            ),
+        ),
     )
-
     monkeypatch.setattr(
-        opencode_provider_discovery_module,
-        "resolve_opencode_provider_discovery",
-        lambda _resolved: object(),
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
     )
 
     async with create_test_client(
@@ -936,6 +958,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
     assert response.status_code == 200
     assert response.json() == {
         "modelSelection": True,
+        "sessionPromptAsync": True,
         "runtimeStatus": runtime_status_contract_payload(),
     }
     assert response.headers["cache-control"] == "no-store"
@@ -955,19 +978,20 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         token="secret-token-opencode-capability-false",
     )
 
-    from app.integrations.a2a_extensions import (
-        opencode_provider_discovery as opencode_provider_discovery_module,
+    fake_extensions = _FakeExtensionsService()
+    fake_extensions.capability_snapshot = SimpleNamespace(
+        provider_discovery=SimpleNamespace(status="unsupported"),
+        session_query=SimpleNamespace(
+            status="supported",
+            capability=SimpleNamespace(
+                ext=SimpleNamespace(methods={"prompt_async": None})
+            ),
+        ),
     )
-
-    def _raise_not_supported(_resolved):
-        raise A2AExtensionNotSupportedError(
-            "OpenCode provider discovery extension not found"
-        )
-
     monkeypatch.setattr(
-        opencode_provider_discovery_module,
-        "resolve_opencode_provider_discovery",
-        _raise_not_supported,
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
     )
 
     async with create_test_client(
@@ -983,6 +1007,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
     assert response.status_code == 200
     assert response.json() == {
         "modelSelection": False,
+        "sessionPromptAsync": False,
         "runtimeStatus": runtime_status_contract_payload(),
     }
     assert response.headers["cache-control"] == "no-store"

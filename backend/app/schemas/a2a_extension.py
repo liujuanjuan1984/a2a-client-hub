@@ -135,6 +135,13 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         alias="modelSelection",
         description="Whether the agent supports generic chat model selection",
     )
+    session_prompt_async: bool = Field(
+        ...,
+        alias="sessionPromptAsync",
+        description=(
+            "Whether the agent advertises shared session-query prompt_async support"
+        ),
+    )
     runtime_status: A2ARuntimeStatusContractResponse = Field(
         ...,
         alias="runtimeStatus",

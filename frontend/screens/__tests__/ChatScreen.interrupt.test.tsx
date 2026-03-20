@@ -16,6 +16,13 @@ const mockRemoveShortcut = jest.fn();
 const mockAgentStoreState = {
   activeAgentId: "agent-1",
 };
+type MockCapabilityStatus = "supported" | "unsupported" | "unknown";
+
+const mockExtensionCapabilitiesState = {
+  modelSelectionStatus: "supported" as MockCapabilityStatus,
+  sessionPromptAsyncStatus: "supported" as MockCapabilityStatus,
+  canShowModelPicker: true,
+};
 
 jest.mock("react-native/Libraries/Utilities/Dimensions", () => {
   const dimensions = {
@@ -293,10 +300,7 @@ jest.mock("@/hooks/useChatHistoryQuery", () => ({
 }));
 
 jest.mock("@/hooks/useExtensionCapabilitiesQuery", () => ({
-  useExtensionCapabilitiesQuery: () => ({
-    modelSelectionStatus: "supported",
-    canShowModelPicker: true,
-  }),
+  useExtensionCapabilitiesQuery: () => mockExtensionCapabilitiesState,
 }));
 
 jest.mock("@/hooks/useSessionsDirectoryQuery", () => ({
@@ -407,6 +411,9 @@ describe("ChatScreen interrupt handling", () => {
       ok: true,
       sessionId: "ses-upstream-1",
     });
+    mockExtensionCapabilitiesState.modelSelectionStatus = "supported";
+    mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "supported";
+    mockExtensionCapabilitiesState.canShowModelPicker = true;
     mockSessionHistoryState.loadMore.mockReset();
     mockSessionHistoryState.messages = [];
     mockSessionHistoryState.error = null;
@@ -795,6 +802,46 @@ describe("ChatScreen interrupt handling", () => {
       conversationId,
       "agent-1",
       "send anyway",
+      "personal",
+      undefined,
+    );
+    expect(warnSpy).toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("falls back to interrupt-and-send when prompt_async capability is unsupported", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "unsupported";
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      streamState: "streaming",
+      externalSessionRef: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-3",
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("capability fallback");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
+
+    expect(mockPromptSessionAsync).not.toHaveBeenCalled();
+    expect(mockChatState.sendMessage).toHaveBeenCalledWith(
+      conversationId,
+      "agent-1",
+      "capability fallback",
       "personal",
       undefined,
     );
