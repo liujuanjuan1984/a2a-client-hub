@@ -22,7 +22,7 @@ from app.services.interrupt_metadata_normalization import (
     normalize_permission_interrupt_details,
     normalize_question_interrupt_details,
 )
-from app.services.tool_call_view import build_tool_call_view
+from app.services.tool_call_view import build_tool_call_detail, build_tool_call_view
 from app.utils.session_identity import normalize_non_empty_text
 from app.utils.timezone_util import ensure_utc
 
@@ -408,6 +408,13 @@ def render_block_detail_item(
         )
         if tool_call is not None:
             item["toolCall"] = tool_call
+        tool_call_detail = build_tool_call_detail(
+            raw_content,
+            is_finished=bool(block.is_finished),
+            message_status=message_status,
+        )
+        if tool_call_detail is not None:
+            item["toolCallDetail"] = tool_call_detail
     return item
 
 

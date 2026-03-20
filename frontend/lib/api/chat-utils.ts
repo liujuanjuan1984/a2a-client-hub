@@ -12,6 +12,7 @@ export type MessageBlock = {
   content: string;
   isFinished: boolean;
   toolCall?: ToolCallView | null;
+  toolCallDetail?: ToolCallDetailView | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -55,6 +56,20 @@ export type ToolCallView = {
   arguments?: unknown;
   result?: unknown;
   error?: unknown;
+};
+
+export type ToolCallTimelineEntry = {
+  status: string;
+  title?: string | null;
+  input?: unknown;
+  output?: unknown;
+  error?: unknown;
+};
+
+export type ToolCallDetailView = ToolCallView & {
+  title?: string | null;
+  timeline?: ToolCallTimelineEntry[] | null;
+  raw?: string | null;
 };
 
 export type StreamBlockUpdate = {
@@ -1166,6 +1181,7 @@ export const applyLoadedBlockDetail = (
     content?: string | null;
     isFinished?: boolean;
     toolCall?: ToolCallView | null;
+    toolCallDetail?: ToolCallDetailView | null;
   },
 ): Pick<ChatMessage, "content" | "blocks"> => {
   const nextBlocks = (message.blocks ?? []).map((block) =>
@@ -1185,6 +1201,10 @@ export const applyLoadedBlockDetail = (
             input.toolCall === undefined
               ? (block.toolCall ?? null)
               : input.toolCall,
+          toolCallDetail:
+            input.toolCallDetail === undefined
+              ? (block.toolCallDetail ?? null)
+              : input.toolCallDetail,
         }
       : block,
   );

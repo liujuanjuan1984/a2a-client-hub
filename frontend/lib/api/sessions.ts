@@ -1,4 +1,7 @@
-import { type ToolCallView } from "@/lib/api/chat-utils";
+import {
+  type ToolCallDetailView,
+  type ToolCallView,
+} from "@/lib/api/chat-utils";
 import { apiRequest } from "@/lib/api/client";
 import {
   parsePaginatedListResponse,
@@ -33,6 +36,7 @@ export type SessionMessageBlockDetailItem = {
   content?: string | null;
   isFinished: boolean;
   toolCall?: ToolCallView | null;
+  toolCallDetail?: ToolCallDetailView | null;
 };
 
 export type SessionMessageItem = {

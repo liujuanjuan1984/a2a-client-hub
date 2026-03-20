@@ -411,7 +411,7 @@ async def test_tool_call_blocks_expose_normalized_tool_call_view(
         user_id=user.id,
         sender="agent",
         conversation_id=session.id,
-        status="error",
+        status="done",
     )
     async_db_session.add(agent_message)
     await async_db_session.flush()
@@ -422,8 +422,11 @@ async def test_tool_call_blocks_expose_normalized_tool_call_view(
         block_seq=1,
         block_type="tool_call",
         content=(
-            '{"call_id":"call-1","tool":"bash","status":"failed",'
-            '"input":{"command":"pwd"},"error":{"message":"boom"}}'
+            '{"call_id":"call-1","tool":"bash","status":"pending","input":{}}'
+            '{"call_id":"call-1","tool":"bash","status":"running",'
+            '"input":{"command":"pwd","description":"Inspect repository state."}}'
+            '{"call_id":"call-1","tool":"bash","status":"completed",'
+            '"title":"Inspect repository state.","output":"main\\nclean"}'
         ),
         is_finished=True,
         source="stream",
@@ -446,11 +449,14 @@ async def test_tool_call_blocks_expose_normalized_tool_call_view(
         assert message_blocks[0]["content"] == ""
         assert message_blocks[0]["toolCall"] == {
             "name": "bash",
-            "status": "failed",
+            "status": "success",
             "callId": "call-1",
-            "arguments": {"command": "pwd"},
-            "result": None,
-            "error": {"message": "boom"},
+            "arguments": {
+                "command": "pwd",
+                "description": "Inspect repository state.",
+            },
+            "result": "main\nclean",
+            "error": None,
         }
 
         detail_resp = await client.post(
@@ -462,16 +468,67 @@ async def test_tool_call_blocks_expose_normalized_tool_call_view(
         assert detail_item["id"] == str(tool_block.id)
         assert detail_item["messageId"] == str(agent_message.id)
         assert detail_item["content"] == (
-            '{"call_id":"call-1","tool":"bash","status":"failed",'
-            '"input":{"command":"pwd"},"error":{"message":"boom"}}'
+            '{"call_id":"call-1","tool":"bash","status":"pending","input":{}}'
+            '{"call_id":"call-1","tool":"bash","status":"running",'
+            '"input":{"command":"pwd","description":"Inspect repository state."}}'
+            '{"call_id":"call-1","tool":"bash","status":"completed",'
+            '"title":"Inspect repository state.","output":"main\\nclean"}'
         )
         assert detail_item["toolCall"] == {
             "name": "bash",
-            "status": "failed",
+            "status": "success",
             "callId": "call-1",
-            "arguments": {"command": "pwd"},
-            "result": None,
-            "error": {"message": "boom"},
+            "arguments": {
+                "command": "pwd",
+                "description": "Inspect repository state.",
+            },
+            "result": "main\nclean",
+            "error": None,
+        }
+        assert detail_item["toolCallDetail"] == {
+            "name": "bash",
+            "status": "success",
+            "callId": "call-1",
+            "title": "Inspect repository state.",
+            "arguments": {
+                "command": "pwd",
+                "description": "Inspect repository state.",
+            },
+            "result": "main\nclean",
+            "error": None,
+            "timeline": [
+                {
+                    "status": "pending",
+                    "title": None,
+                    "input": {},
+                    "output": None,
+                    "error": None,
+                },
+                {
+                    "status": "running",
+                    "title": "Inspect repository state.",
+                    "input": {
+                        "command": "pwd",
+                        "description": "Inspect repository state.",
+                    },
+                    "output": None,
+                    "error": None,
+                },
+                {
+                    "status": "completed",
+                    "title": "Inspect repository state.",
+                    "input": None,
+                    "output": "main\nclean",
+                    "error": None,
+                },
+            ],
+            "raw": (
+                '{"call_id":"call-1","tool":"bash","status":"pending","input":{}}'
+                '{"call_id":"call-1","tool":"bash","status":"running",'
+                '"input":{"command":"pwd","description":"Inspect repository state."}}'
+                '{"call_id":"call-1","tool":"bash","status":"completed",'
+                '"title":"Inspect repository state.","output":"main\\nclean"}'
+            ),
         }
 
 
