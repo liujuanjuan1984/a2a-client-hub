@@ -11,9 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.handlers import agent_message_block as agent_message_block_handler
-from app.services.a2a_shared_metadata import merge_preferred_session_binding_metadata
-from app.services.conversation_identity import conversation_identity_service
 from app.features.sessions.common import (
     MessagesBeforeCursor,
     ResolvedConversationTarget,
@@ -30,6 +27,9 @@ from app.features.sessions.common import (
     sender_to_role,
 )
 from app.features.sessions.support import SessionHubSupport
+from app.handlers import agent_message_block as agent_message_block_handler
+from app.services.a2a_shared_metadata import merge_preferred_session_binding_metadata
+from app.services.conversation_identity import conversation_identity_service
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import ensure_utc
 

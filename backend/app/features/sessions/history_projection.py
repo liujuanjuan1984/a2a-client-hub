@@ -13,9 +13,6 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.db.transaction import rollback_safely
-from app.handlers import agent_message as agent_message_handler
-from app.handlers import agent_message_block as agent_message_block_handler
-from app.services.conversation_identity import conversation_identity_service
 from app.features.sessions.common import (
     SessionSource,
     build_interrupt_lifecycle_message_content,
@@ -32,6 +29,9 @@ from app.features.sessions.common import (
     write_block_cursor_state,
 )
 from app.features.sessions.support import SessionHubSupport
+from app.handlers import agent_message as agent_message_handler
+from app.handlers import agent_message_block as agent_message_block_handler
+from app.services.conversation_identity import conversation_identity_service
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
