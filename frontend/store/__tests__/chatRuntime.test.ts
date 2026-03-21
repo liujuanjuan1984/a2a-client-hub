@@ -1645,6 +1645,123 @@ describe("executeChatRuntime empty-content recovery", () => {
       )?.content,
     ).toContain("After resume.");
   });
+
+  it("tracks status-update seq values in the resume cursor", async () => {
+    const conversationId = "conv-status-seq-resume-1";
+    const agentId = "agent-status-seq-resume-1";
+    const userMessageId = "user-msg-status-seq-resume-1";
+    const agentMessageId = "agent-msg-status-seq-resume-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-21T11:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-21T11:00:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "artifact-update",
+          message_id: agentMessageId,
+          event_id: `${agentMessageId}:1`,
+          seq: 1,
+          append: true,
+          artifact: {
+            artifactId: `${agentMessageId}:stream:1`,
+            parts: [{ kind: "text", text: "Before interrupt. " }],
+            metadata: {
+              shared: {
+                stream: {
+                  block_type: "text",
+                  source: "assistant_text",
+                  message_id: agentMessageId,
+                  event_id: `${agentMessageId}:1`,
+                  sequence: 1,
+                },
+              },
+            },
+          },
+        });
+        params.callbacks.onData({
+          kind: "status-update",
+          seq: 2,
+          status: { state: "input-required" },
+          metadata: {
+            shared: {
+              interrupt: {
+                request_id: "status-seq-interrupt-1",
+                type: "question",
+                details: {
+                  questions: [
+                    {
+                      question: "Continue?",
+                      options: [{ label: "Yes", value: "yes" }],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        });
+        return false;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(state.sessions[conversationId]?.lastReceivedSequence).toBe(2);
+    expect(state.sessions[conversationId]?.streamState).toBe("error");
+  });
 });
 
 describe("executeChatRuntime failure handling", () => {

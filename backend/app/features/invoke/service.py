@@ -603,9 +603,9 @@ class A2AInvokeService:
         *,
         event_sequence: int,
     ) -> None:
+        payload["seq"] = event_sequence
         if payload.get("kind") != "artifact-update":
             return
-        payload["seq"] = event_sequence
 
         artifact = as_dict(payload.get("artifact"))
         artifact_metadata: dict[str, Any] = {}

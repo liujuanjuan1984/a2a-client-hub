@@ -924,14 +924,20 @@ async def test_sse_normalizes_outbound_seq_to_monotonic_event_cursor():
     async for chunk in response.body_iterator:
         frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
 
-    artifact_payloads = [
+    payloads = [
         json.loads(line.removeprefix("data: "))
         for line in "".join(frames).splitlines()
-        if line.startswith("data: ") and '"kind": "artifact-update"' in line
+        if line.startswith("data: ")
+        and ('"kind": "artifact-update"' in line or '"kind": "status-update"' in line)
+    ]
+    artifact_payloads = [
+        payload for payload in payloads if payload.get("kind") == "artifact-update"
     ]
     assert [payload["seq"] for payload in artifact_payloads] == [1, 2]
     assert artifact_payloads[0]["artifact"]["seq"] == 1
     assert artifact_payloads[1]["artifact"]["seq"] == 2
+    assert payloads[-1]["kind"] == "status-update"
+    assert payloads[-1]["seq"] == 3
 
 
 @pytest.mark.asyncio
@@ -1089,11 +1095,17 @@ async def test_ws_normalizes_outbound_seq_to_monotonic_event_cursor():
     payloads = [
         json.loads(item)
         for item in websocket.sent
-        if item.startswith("{") and '"kind": "artifact-update"' in item
+        if item.startswith("{")
+        and ('"kind": "artifact-update"' in item or '"kind": "status-update"' in item)
     ]
-    assert [payload["seq"] for payload in payloads] == [1, 2]
-    assert payloads[0]["artifact"]["seq"] == 1
-    assert payloads[1]["artifact"]["seq"] == 2
+    artifact_payloads = [
+        payload for payload in payloads if payload.get("kind") == "artifact-update"
+    ]
+    assert [payload["seq"] for payload in artifact_payloads] == [1, 2]
+    assert artifact_payloads[0]["artifact"]["seq"] == 1
+    assert artifact_payloads[1]["artifact"]["seq"] == 2
+    assert payloads[-1]["kind"] == "status-update"
+    assert payloads[-1]["seq"] == 3
 
 
 @pytest.mark.asyncio

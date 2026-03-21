@@ -710,22 +710,22 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       seenEventIds.add(chunk.eventId);
     }
 
+    advanceResumeCursor(chunk.seq);
+    appendStreamChunk(chunk);
+  };
+
+  const advanceResumeCursor = (seq: number | null | undefined) => {
     // Seq is only a stream-level resume cursor. Rendering follows arrival order
     // after event-id dedupe, so message chunks do not need contiguous numbering.
-    if (chunk.seq === null) {
-      appendStreamChunk(chunk);
+    if (typeof seq !== "number" || !Number.isInteger(seq) || seq <= 0) {
       return;
     }
-    if (
-      highestReceivedSequence === null ||
-      chunk.seq > highestReceivedSequence
-    ) {
-      highestReceivedSequence = chunk.seq;
+    if (highestReceivedSequence === null || seq > highestReceivedSequence) {
+      highestReceivedSequence = seq;
       patchSession({
-        lastReceivedSequence: chunk.seq,
+        lastReceivedSequence: seq,
       });
     }
-    appendStreamChunk(chunk);
   };
 
   const applyIncomingStreamData = (data: Record<string, unknown>): boolean => {
@@ -746,6 +746,11 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     ) {
       hasObservedStreamEvent = true;
     }
+    const eventSequence =
+      typeof data.seq === "number" && Number.isInteger(data.seq)
+        ? data.seq
+        : null;
+    advanceResumeCursor(eventSequence);
     if (chunk) {
       queueIncomingChunk(chunk);
     }
