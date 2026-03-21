@@ -36,7 +36,7 @@ from app.features.schedules.service import (
     a2a_schedule_service,
 )
 from app.integrations.a2a_client.errors import A2AAgentUnavailableError
-from app.platform.ops_metrics import ops_metrics
+from app.runtime.ops_metrics import ops_metrics
 from app.utils.timezone_util import utc_now
 from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
 

@@ -3,8 +3,8 @@ import sqlite3
 from sqlalchemy import event
 from sqlalchemy.pool import QueuePool
 
-from app.platform.ops_metrics import ops_metrics
-from app.platform.ops_metrics_refresh import refresh_db_pool_checked_out
+from app.runtime.ops_metrics import ops_metrics
+from app.runtime.ops_metrics_refresh import refresh_db_pool_checked_out
 
 
 def test_refresh_db_pool_checked_out_sets_live_value() -> None:

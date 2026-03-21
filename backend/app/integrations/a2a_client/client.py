@@ -63,7 +63,7 @@ from app.integrations.a2a_client.selection import (
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
 )
-from app.platform.a2a_proxy_service import a2a_proxy_service
+from app.runtime.a2a_proxy_service import a2a_proxy_service
 from app.utils.async_cleanup import await_cancel_safe
 from app.utils.logging_redaction import redact_url_for_logging
 from app.utils.outbound_url import (

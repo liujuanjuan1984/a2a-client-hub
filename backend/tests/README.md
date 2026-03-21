@@ -18,7 +18,6 @@ Backend tests are organized by either feature or shared concern.
 - `client/`
 - `proxy/`
 - `runtime/`
-- `platform/`
 - `shared/`
 
 ## Root Files
@@ -29,5 +28,5 @@ Backend tests are organized by either feature or shared concern.
 When adding a new test:
 
 - Put business capability coverage under the matching feature directory.
-- Put reusable platform/runtime/client assertions under the matching shared concern directory.
+- Put reusable runtime/client/proxy assertions under the matching shared concern directory.
 - Add new generic helpers under `tests/support/` instead of the tests root.

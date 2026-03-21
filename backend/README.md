@@ -79,7 +79,7 @@ coverage stays close together.
 Current layout direction:
 
 - Feature directories such as `tests/invoke/`, `tests/sessions/`, and `tests/hub_agents/`
-- Shared capability directories such as `tests/client/`, `tests/runtime/`, `tests/proxy/`, `tests/platform/`, and `tests/shared/`
+- Shared capability directories such as `tests/client/`, `tests/runtime/`, `tests/proxy/`, and `tests/shared/`
 - Shared fixtures remain at the `backend/tests/` root, and reusable helpers live under `backend/tests/support/`
 
 ## Incremental mypy Gate

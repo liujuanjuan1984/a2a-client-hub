@@ -35,7 +35,7 @@ from app.integrations.a2a_extensions.types import (
     ResolvedInterruptCallbackExtension,
     ResolvedProviderDiscoveryExtension,
 )
-from app.platform.a2a_proxy_service import a2a_proxy_service
+from app.runtime.a2a_proxy_service import a2a_proxy_service
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
     validate_outbound_http_url,

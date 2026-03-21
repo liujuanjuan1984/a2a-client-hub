@@ -33,10 +33,10 @@ from app.integrations.a2a_extensions import (
     shutdown_a2a_extensions_service,
 )
 from app.middleware.debug_logging import DebugLoggingMiddleware
-from app.platform.a2a_proxy_service import a2a_proxy_service
-from app.platform.health import run_health_checks
-from app.platform.scheduler import shutdown_scheduler, start_scheduler
-from app.platform.ws_ticket import ensure_ws_ticket_cleanup_job
+from app.runtime.a2a_proxy_service import a2a_proxy_service
+from app.runtime.health import run_health_checks
+from app.runtime.scheduler import shutdown_scheduler, start_scheduler
+from app.runtime.ws_ticket import ensure_ws_ticket_cleanup_job
 from app.utils.timezone_util import utc_now_iso
 
 # Set up logging first
