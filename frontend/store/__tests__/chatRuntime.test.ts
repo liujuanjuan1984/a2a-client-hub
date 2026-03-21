@@ -1760,7 +1760,12 @@ describe("executeChatRuntime empty-content recovery", () => {
     );
 
     expect(state.sessions[conversationId]?.lastReceivedSequence).toBe(2);
-    expect(state.sessions[conversationId]?.streamState).toBe("error");
+    expect(state.sessions[conversationId]?.streamState).toBe("recoverable");
+    expect(
+      getConversationMessages(conversationId).find(
+        (message) => message.id === agentMessageId,
+      )?.status,
+    ).toBe("interrupted");
   });
 });
 

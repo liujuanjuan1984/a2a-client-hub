@@ -305,6 +305,52 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     });
   };
 
+  const markRecoverableInterruption = ({
+    message,
+    details,
+  }: {
+    message: string;
+    details?: Partial<StreamErrorDetails>;
+  }) => {
+    if (terminalHandled) {
+      return;
+    }
+    terminalHandled = true;
+    flushChunkBuffer();
+
+    const currentMsg = getConversationMessages(conversationId).find(
+      (messageItem) => messageItem.id === activeAgentMessageId,
+    );
+
+    updateConversationMessage(conversationId, activeAgentMessageId, {
+      status: "interrupted",
+      content: currentMsg?.content ?? "",
+      errorCode: null,
+      errorMessage: null,
+    });
+
+    patchSession({
+      streamState: "recoverable",
+      lastStreamError: buildStreamErrorMessage({
+        errorText: message,
+        details,
+      }),
+    });
+
+    warnStreamOnce(
+      `recoverable:${conversationId}:${message}:${details?.errorCode ?? "none"}`,
+      "[Chat Stream] transport interruption marked recoverable",
+      {
+        conversationId,
+        source: get().sessions[conversationId]?.source ?? null,
+        message,
+        errorCode: normalizeErrorCode(details?.errorCode),
+        transport: get().sessions[conversationId]?.transport ?? "unknown",
+        lastReceivedSequence: highestReceivedSequence,
+      },
+    );
+  };
+
   const updateSessionMeta = (meta: {
     contextId?: string | null;
     provider?: string | null;
@@ -746,11 +792,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     ) {
       hasObservedStreamEvent = true;
     }
-    const eventSequence =
-      typeof data.seq === "number" && Number.isInteger(data.seq)
-        ? data.seq
-        : null;
-    advanceResumeCursor(eventSequence);
+    advanceResumeCursor(runtimeStatusEvent?.seq);
     if (chunk) {
       queueIncomingChunk(chunk);
     }
@@ -853,6 +895,16 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     errorText: string,
     details?: Partial<StreamErrorDetails>,
   ) => {
+    const normalizedErrorCode = normalizeErrorCode(details?.errorCode);
+    if (
+      normalizedErrorCode === "timeout" ||
+      normalizedErrorCode === "stream_closed" ||
+      normalizedErrorCode === "stream_error" ||
+      normalizedErrorCode === "session_not_found"
+    ) {
+      markRecoverableInterruption({ message: errorText, details });
+      return;
+    }
     finalizeStreamingFailure({ errorText, details });
   };
 
@@ -910,7 +962,11 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
                 conversationId,
                 errorCode: details.errorCode,
               });
-              return false;
+              markRecoverableInterruption({
+                message: details.message,
+                details,
+              });
+              return true;
             }
             appendStreamError(details.message, details);
             return true;
@@ -1036,9 +1092,10 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   }
 
   if (hasObservedStreamEvent) {
-    appendStreamError(
-      "Streaming transport interrupted before completion; skip blocking replay.",
-    );
+    markRecoverableInterruption({
+      message: "Streaming transport interrupted before completion.",
+      details: { errorCode: "stream_interrupted" },
+    });
     return;
   }
   await sendViaJsonFallback();

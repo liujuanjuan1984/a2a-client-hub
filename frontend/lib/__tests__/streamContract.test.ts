@@ -680,11 +680,27 @@ describe("block-based stream parser and reducer", () => {
       state: "input-required",
       isFinal: true,
       interrupt: null,
+      seq: null,
     });
   });
 
   it("returns null runtime status event for non-status payload", () => {
     expect(extractRuntimeStatusEvent({ kind: "artifact-update" })).toBeNull();
+  });
+
+  it("parses status-update seq for resume tracking", () => {
+    const payload = {
+      kind: "status-update",
+      seq: 4,
+      status: { state: "working" },
+    };
+
+    expect(extractRuntimeStatusEvent(payload)).toEqual({
+      state: "working",
+      isFinal: false,
+      interrupt: null,
+      seq: 4,
+    });
   });
 
   it("parses permission interrupt metadata from status-update", () => {
@@ -717,6 +733,7 @@ describe("block-based stream parser and reducer", () => {
           displayMessage: null,
         },
       },
+      seq: null,
     });
   });
 
@@ -793,6 +810,7 @@ describe("block-based stream parser and reducer", () => {
           ],
         },
       },
+      seq: null,
     });
   });
 
@@ -862,6 +880,7 @@ describe("block-based stream parser and reducer", () => {
         phase: "resolved",
         resolution: "rejected",
       },
+      seq: null,
     });
   });
 
