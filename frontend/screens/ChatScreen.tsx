@@ -74,6 +74,7 @@ export function ChatScreen({
         onListContentSizeChange={controller.handleListContentSizeChange}
         onListScroll={controller.handleListScroll}
         pendingInterrupt={controller.pendingInterrupt}
+        pendingInterruptCount={controller.pendingInterruptCount}
         interruptAction={controller.interruptAction}
         questionAnswers={controller.questionAnswers}
         onPermissionReply={controller.handlePermissionReply}
@@ -122,6 +123,7 @@ export function ChatScreen({
         modelSelectionStatus={controller.modelSelectionStatus}
         currentDirectory={controller.opencodeDirectory}
         pendingInterrupt={controller.pendingInterrupt}
+        pendingInterruptCount={controller.pendingInterruptCount}
         showShortcutManager={controller.showShortcutManager}
         onOpenDirectoryPicker={controller.openDirectoryPicker}
         onOpenShortcutManager={controller.openShortcutManager}

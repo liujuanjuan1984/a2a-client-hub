@@ -18,6 +18,7 @@ describe("InterruptActionCard", () => {
     const { getByText } = render(
       <InterruptActionCard
         {...baseProps}
+        pendingInterruptCount={1}
         pendingInterrupt={{
           requestId: "perm-1",
           type: "permission",
@@ -42,6 +43,7 @@ describe("InterruptActionCard", () => {
     const { getByText } = render(
       <InterruptActionCard
         {...baseProps}
+        pendingInterruptCount={1}
         onQuestionOptionPick={onQuestionOptionPick}
         pendingInterrupt={{
           requestId: "q-1",

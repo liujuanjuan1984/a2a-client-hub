@@ -6,6 +6,7 @@ import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
 
 export function InterruptActionCard({
   pendingInterrupt,
+  pendingInterruptCount,
   interruptAction,
   questionAnswers,
   onPermissionReply,
@@ -15,6 +16,7 @@ export function InterruptActionCard({
   onQuestionReject,
 }: {
   pendingInterrupt: PendingRuntimeInterrupt;
+  pendingInterruptCount: number;
   interruptAction: string | null;
   questionAnswers: string[];
   onPermissionReply: (reply: "once" | "always" | "reject") => void;
@@ -23,6 +25,8 @@ export function InterruptActionCard({
   onQuestionReply: () => void;
   onQuestionReject: () => void;
 }) {
+  const remainingInterruptCount = Math.max(pendingInterruptCount - 1, 0);
+
   if (pendingInterrupt.type === "permission") {
     const permission = pendingInterrupt.details.permission ?? "unknown";
     const patterns = pendingInterrupt.details.patterns ?? [];
@@ -32,6 +36,13 @@ export function InterruptActionCard({
         <Text className="text-xs font-semibold uppercase tracking-wide text-amber-300">
           Authorization Required
         </Text>
+        {remainingInterruptCount > 0 ? (
+          <Text className="mt-2 text-xs text-amber-200">
+            {remainingInterruptCount} more pending request
+            {remainingInterruptCount === 1 ? "" : "s"} will appear after this
+            one is resolved.
+          </Text>
+        ) : null}
         {displayMessage ? (
           <Text className="mt-2 text-sm text-amber-50">{displayMessage}</Text>
         ) : null}
@@ -86,6 +97,13 @@ export function InterruptActionCard({
       <Text className="text-xs font-semibold uppercase tracking-wide text-sky-300">
         Additional Input Required
       </Text>
+      {remainingInterruptCount > 0 ? (
+        <Text className="mt-2 text-xs text-sky-200">
+          {remainingInterruptCount} more pending request
+          {remainingInterruptCount === 1 ? "" : "s"} will appear after this one
+          is resolved.
+        </Text>
+      ) : null}
       {displayMessage ? (
         <Text className="mt-2 text-sm text-sky-50">{displayMessage}</Text>
       ) : null}

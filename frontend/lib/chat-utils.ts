@@ -29,6 +29,7 @@ export type AgentSession = {
   source?: "manual" | "scheduled" | null;
   contextId: string | null;
   runtimeStatus?: string | null;
+  pendingInterrupts: PendingRuntimeInterrupt[];
   pendingInterrupt?: PendingRuntimeInterrupt | null;
   lastResolvedInterrupt?: ResolvedRuntimeInterruptRecord | null;
   streamState?: "idle" | "streaming" | "recoverable" | "error";
@@ -55,6 +56,7 @@ export const createAgentSession = (agentId: string): AgentSession => ({
   source: null,
   contextId: null,
   runtimeStatus: null,
+  pendingInterrupts: [],
   pendingInterrupt: null,
   lastResolvedInterrupt: null,
   streamState: "idle",
@@ -77,6 +79,59 @@ export const mergeExternalSessionRef = (
   provider: current?.provider ?? incoming.provider ?? null,
   externalSessionId:
     current?.externalSessionId ?? incoming.externalSessionId ?? null,
+});
+
+const isPendingRuntimeInterrupt = (
+  value: unknown,
+): value is PendingRuntimeInterrupt => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as PendingRuntimeInterrupt;
+  return (
+    typeof candidate.requestId === "string" &&
+    (candidate.type === "permission" || candidate.type === "question") &&
+    candidate.phase === "asked"
+  );
+};
+
+export const getPendingInterruptQueue = (
+  session:
+    | Pick<AgentSession, "pendingInterrupts" | "pendingInterrupt">
+    | null
+    | undefined,
+): PendingRuntimeInterrupt[] => {
+  const pendingInterrupts = Array.isArray(session?.pendingInterrupts)
+    ? session.pendingInterrupts.filter(isPendingRuntimeInterrupt)
+    : [];
+  if (pendingInterrupts.length > 0) {
+    return pendingInterrupts;
+  }
+  return isPendingRuntimeInterrupt(session?.pendingInterrupt)
+    ? [session.pendingInterrupt]
+    : [];
+};
+
+export const getPendingInterrupt = (
+  session:
+    | Pick<AgentSession, "pendingInterrupts" | "pendingInterrupt">
+    | null
+    | undefined,
+): PendingRuntimeInterrupt | null =>
+  getPendingInterruptQueue(session)[0] ?? null;
+
+export const hasPendingInterrupt = (
+  session:
+    | Pick<AgentSession, "pendingInterrupts" | "pendingInterrupt">
+    | null
+    | undefined,
+) => getPendingInterruptQueue(session).length > 0;
+
+export const buildPendingInterruptState = (
+  pendingInterrupts: PendingRuntimeInterrupt[],
+): Pick<AgentSession, "pendingInterrupts" | "pendingInterrupt"> => ({
+  pendingInterrupts,
+  pendingInterrupt: pendingInterrupts[0] ?? null,
 });
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
@@ -214,6 +269,7 @@ const normalizeSessionForPersistence = (
     source: null,
     contextId: null,
     runtimeStatus: null,
+    pendingInterrupts: [],
     pendingInterrupt: null,
     lastResolvedInterrupt: null,
     streamState: "idle",

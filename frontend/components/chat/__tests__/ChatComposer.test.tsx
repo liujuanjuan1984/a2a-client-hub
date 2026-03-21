@@ -13,6 +13,7 @@ describe("ChatComposer clear button", () => {
     modelSelectionStatus: "supported" as const,
     currentDirectory: null,
     pendingInterrupt: null,
+    pendingInterruptCount: 0,
     showShortcutManager: false,
     onOpenDirectoryPicker: jest.fn(),
     onOpenShortcutManager: jest.fn(),
