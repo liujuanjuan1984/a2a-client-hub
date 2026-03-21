@@ -299,22 +299,18 @@ async def persist_stream_block_update(
     if agent_message_id is None:
         return
     local_message_id = str(agent_message_id)
-    raw_seq = stream_block.get("seq")
-    resolved_seq = raw_seq if isinstance(raw_seq, int) and raw_seq > 0 else None
-    if resolved_seq is None:
-        resolved_seq = state.next_event_seq
     persist_seq = state.next_event_seq if state.next_event_seq > 0 else 1
     state.next_event_seq = persist_seq + 1
     resolved_event_id = resolve_stream_event_id(
         stream_block=stream_block,
         local_message_id=local_message_id,
-        seq=resolved_seq,
+        seq=persist_seq,
     )
     rewrite_stream_event_contract(
         event_payload,
         local_message_id=local_message_id,
         event_id=resolved_event_id,
-        seq=resolved_seq,
+        seq=persist_seq,
     )
 
     block_type = str(stream_block.get("block_type") or "text")

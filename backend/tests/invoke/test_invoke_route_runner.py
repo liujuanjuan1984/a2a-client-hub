@@ -1223,7 +1223,7 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
     assert state.chunk_buffer == []
     assert event_payload["message_id"] == str(state.message_refs["agent_message_id"])
     assert event_payload["event_id"] == "evt-opt"
-    assert event_payload["seq"] == 9
+    assert event_payload["seq"] == 3
     assert "messageId" not in event_payload
     assert "eventId" not in event_payload
     assert "eventSeq" not in event_payload
@@ -1232,7 +1232,7 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
         state.message_refs["agent_message_id"]
     )
     assert event_payload["artifact"]["event_id"] == "evt-opt"
-    assert event_payload["artifact"]["seq"] == 9
+    assert event_payload["artifact"]["seq"] == 3
 
 
 @pytest.mark.asyncio

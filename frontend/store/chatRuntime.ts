@@ -272,8 +272,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   const activeStreamMessageIds = new Set<string>([initialAgentMessageId]);
   const streamMessageIdMap = new Map<string, string>();
   const seenEventIds = new Set<string>();
-  const lastAppliedSeqByMessageId = new Map<string, number>();
-  const resettableSeqByMessageId = new Set<string>();
   let terminalHandled = false;
   let hasObservedStreamEvent = false;
   let highestReceivedSequence =
@@ -712,6 +710,8 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       seenEventIds.add(chunk.eventId);
     }
 
+    // Seq is only a stream-level resume cursor. Rendering follows arrival order
+    // after event-id dedupe, so message chunks do not need contiguous numbering.
     if (chunk.seq === null) {
       appendStreamChunk(chunk);
       return;
@@ -725,24 +725,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         lastReceivedSequence: chunk.seq,
       });
     }
-
-    let lastAppliedSeq = lastAppliedSeqByMessageId.get(chunk.messageId);
-    if (
-      typeof lastAppliedSeq === "number" &&
-      chunk.seq <= lastAppliedSeq &&
-      resettableSeqByMessageId.has(chunk.messageId)
-    ) {
-      // Some upstreams restart message-local chunk seq after an interrupt is
-      // resolved. Accept the first restarted chunk as a new segment boundary.
-      resettableSeqByMessageId.delete(chunk.messageId);
-      lastAppliedSeqByMessageId.delete(chunk.messageId);
-      lastAppliedSeq = undefined;
-    }
-    if (typeof lastAppliedSeq === "number" && chunk.seq <= lastAppliedSeq) {
-      return;
-    }
     appendStreamChunk(chunk);
-    lastAppliedSeqByMessageId.set(chunk.messageId, chunk.seq);
   };
 
   const applyIncomingStreamData = (data: Record<string, unknown>): boolean => {
@@ -774,9 +757,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           messageId: activeAgentMessageId,
         }),
       );
-      if (runtimeStatusEvent.interrupt.phase === "resolved") {
-        resettableSeqByMessageId.add(activeAgentMessageId);
-      }
     }
 
     const meta = extractSessionMeta(data);

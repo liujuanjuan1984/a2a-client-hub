@@ -619,11 +619,13 @@ async def test_sse_drops_invalid_artifact_update_events():
             "event_id": "evt-task-valid-stream",
             "artifact": {
                 "artifact_id": "task-valid:stream",
+                "seq": 1,
                 "parts": [{"kind": "text", "text": "kept"}],
                 "metadata": {
                     "block_type": "text",
                     "message_id": "msg-task-valid-stream",
                     "event_id": "evt-task-valid-stream",
+                    "seq": 1,
                 },
             },
         }
@@ -877,6 +879,62 @@ async def test_sse_cache_replays_mutated_event_payload_from_on_event():
 
 
 @pytest.mark.asyncio
+async def test_sse_normalizes_outbound_seq_to_monotonic_event_cursor():
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "seq": 9,
+                    "artifact": {
+                        "artifact_id": "task-sse:stream:text:1",
+                        "parts": [{"kind": "text", "text": "hello"}],
+                        "metadata": {
+                            "block_type": "text",
+                            "event_id": "evt-sse-1",
+                            "message_id": "msg-sse-1",
+                        },
+                    },
+                },
+                {
+                    "kind": "artifact-update",
+                    "seq": 12,
+                    "artifact": {
+                        "artifact_id": "task-sse:stream:text:2",
+                        "parts": [{"kind": "text", "text": " world"}],
+                        "metadata": {
+                            "block_type": "text",
+                            "event_id": "evt-sse-2",
+                            "message_id": "msg-sse-1",
+                        },
+                    },
+                },
+                {"kind": "status-update", "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    frames: list[str] = []
+    async for chunk in response.body_iterator:
+        frames.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    artifact_payloads = [
+        json.loads(line.removeprefix("data: "))
+        for line in "".join(frames).splitlines()
+        if line.startswith("data: ") and '"kind": "artifact-update"' in line
+    ]
+    assert [payload["seq"] for payload in artifact_payloads] == [1, 2]
+    assert artifact_payloads[0]["artifact"]["seq"] == 1
+    assert artifact_payloads[1]["artifact"]["seq"] == 2
+
+
+@pytest.mark.asyncio
 async def test_sse_breaks_stream_after_terminal_status_update():
     response = a2a_invoke_service.stream_sse(
         gateway=_GatewayWithEvents(
@@ -980,6 +1038,62 @@ async def test_ws_assigns_fallback_seq_and_event_id_after_on_event_mutation():
     assert payloads[0]["message_id"] == "msg-local-ws-1"
     assert payloads[0]["seq"] == 1
     assert payloads[0]["event_id"] == "msg-local-ws-1:1"
+
+
+@pytest.mark.asyncio
+async def test_ws_normalizes_outbound_seq_to_monotonic_event_cursor():
+    websocket = _DummyWebSocket()
+
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                {
+                    "kind": "artifact-update",
+                    "seq": 9,
+                    "artifact": {
+                        "artifact_id": "task-ws:stream:text:1",
+                        "parts": [{"kind": "text", "text": "hello"}],
+                        "metadata": {
+                            "block_type": "text",
+                            "event_id": "evt-ws-1",
+                            "message_id": "msg-ws-1",
+                        },
+                    },
+                },
+                {
+                    "kind": "artifact-update",
+                    "seq": 12,
+                    "artifact": {
+                        "artifact_id": "task-ws:stream:text:2",
+                        "parts": [{"kind": "text", "text": " world"}],
+                        "metadata": {
+                            "block_type": "text",
+                            "event_id": "evt-ws-2",
+                            "message_id": "msg-ws-1",
+                        },
+                    },
+                },
+                {"kind": "status-update", "final": True},
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+
+    payloads = [
+        json.loads(item)
+        for item in websocket.sent
+        if item.startswith("{") and '"kind": "artifact-update"' in item
+    ]
+    assert [payload["seq"] for payload in payloads] == [1, 2]
+    assert payloads[0]["artifact"]["seq"] == 1
+    assert payloads[1]["artifact"]["seq"] == 2
 
 
 @pytest.mark.asyncio

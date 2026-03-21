@@ -1478,7 +1478,7 @@ describe("executeChatRuntime empty-content recovery", () => {
     expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
   });
 
-  it("continues rendering chunks after interrupt resolution when upstream seq restarts", async () => {
+  it("continues rendering chunks after interrupt resolution", async () => {
     const conversationId = "conv-interrupt-resume-seq-reset-1";
     const agentId = "agent-interrupt-resume-seq-reset-1";
     const userMessageId = "user-msg-interrupt-resume-seq-reset-1";
@@ -1588,11 +1588,11 @@ describe("executeChatRuntime empty-content recovery", () => {
         params.callbacks.onData({
           kind: "artifact-update",
           message_id: agentMessageId,
-          event_id: `${agentMessageId}:resume:1`,
-          seq: 1,
+          event_id: `${agentMessageId}:3`,
+          seq: 3,
           append: true,
           artifact: {
-            artifactId: `${agentMessageId}:stream:resume:1`,
+            artifactId: `${agentMessageId}:stream:3`,
             parts: [{ kind: "text", text: "After resume." }],
             metadata: {
               shared: {
@@ -1600,8 +1600,8 @@ describe("executeChatRuntime empty-content recovery", () => {
                   block_type: "text",
                   source: "assistant_text",
                   message_id: agentMessageId,
-                  event_id: `${agentMessageId}:resume:1`,
-                  sequence: 1,
+                  event_id: `${agentMessageId}:3`,
+                  sequence: 3,
                 },
               },
             },
