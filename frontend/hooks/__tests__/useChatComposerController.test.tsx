@@ -19,6 +19,10 @@ describe("useChatComposerController", () => {
   const setSharedModelSelection = jest.fn();
   const onAfterSend = jest.fn();
 
+  const flushMicrotasks = async () => {
+    await Promise.resolve();
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
     sendMessage.mockResolvedValue(undefined);
@@ -67,14 +71,21 @@ describe("useChatComposerController", () => {
     expect(result.current.inputResetKey).toBe(1);
   });
 
-  it("sends the current draft from the ref-backed buffer and clears the composer", async () => {
+  it("sends the current draft from the ref-backed buffer and clears the composer immediately", () => {
     const { result } = renderComposer();
+    let resolveSend: (() => void) | undefined;
+    sendMessage.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
 
     act(() => {
       result.current.handleInputChange("Ship the patch");
     });
-    await act(async () => {
-      await result.current.handleSend();
+    act(() => {
+      result.current.handleSend();
     });
 
     expect(sendMessage).toHaveBeenCalledWith(
@@ -87,6 +98,64 @@ describe("useChatComposerController", () => {
     expect(result.current.inputDefaultValue).toBe("");
     expect(result.current.hasInput).toBe(false);
     expect(result.current.hasSendableInput).toBe(false);
+
+    resolveSend?.();
+  });
+
+  it("restores the failed draft when sending rejects and the composer is still empty", async () => {
+    const { result } = renderComposer();
+    sendMessage.mockRejectedValueOnce(new Error("network down"));
+
+    act(() => {
+      result.current.handleInputChange("Ship the patch");
+      result.current.handleSend();
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(mockedToast.error).toHaveBeenCalledWith(
+      "Send failed",
+      "network down",
+    );
+    expect(result.current.inputDefaultValue).toBe("Ship the patch");
+    expect(result.current.hasInput).toBe(true);
+    expect(result.current.hasSendableInput).toBe(true);
+  });
+
+  it("does not overwrite a newer draft when the previous send fails", async () => {
+    const { result } = renderComposer();
+    let rejectSend: ((error?: unknown) => void) | undefined;
+    sendMessage.mockImplementationOnce(
+      () =>
+        new Promise<void>((_, reject) => {
+          rejectSend = reject;
+        }),
+    );
+
+    act(() => {
+      result.current.handleInputChange("Ship the patch");
+      result.current.handleSend();
+    });
+
+    act(() => {
+      result.current.handleInputChange("New draft");
+    });
+
+    await act(async () => {
+      rejectSend?.(new Error("network down"));
+      await flushMicrotasks();
+    });
+
+    act(() => {
+      result.current.openShortcutManager();
+    });
+
+    expect(mockedToast.error).toHaveBeenCalledWith(
+      "Send failed",
+      "network down",
+    );
+    expect(result.current.shortcutManagerInitialPrompt).toBe("New draft");
   });
 
   it("shows a toast once when the hard input limit is reached", () => {
