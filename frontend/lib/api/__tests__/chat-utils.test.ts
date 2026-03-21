@@ -44,6 +44,7 @@ describe("runtime status contract", () => {
       state: "input-required",
       isFinal: true,
       interrupt: null,
+      seq: null,
     });
   });
 

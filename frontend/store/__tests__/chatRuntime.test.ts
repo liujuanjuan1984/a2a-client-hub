@@ -1349,7 +1349,136 @@ describe("executeChatRuntime empty-content recovery", () => {
     );
   });
 
-  it("continues rendering chunks after interrupt resolution when upstream seq restarts", async () => {
+  it("renders non-contiguous chunk seq values during streaming", async () => {
+    const conversationId = "conv-stream-noncontiguous-seq-1";
+    const agentId = "agent-stream-noncontiguous-seq-1";
+    const userMessageId = "user-msg-stream-noncontiguous-seq-1";
+    const agentMessageId = "agent-msg-stream-noncontiguous-seq-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-21T09:10:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-21T09:10:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    let contentDuringStream = "";
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "artifact-update",
+          message_id: agentMessageId,
+          event_id: `${agentMessageId}:1`,
+          seq: 1,
+          append: true,
+          artifact: {
+            artifactId: `${agentMessageId}:stream:1`,
+            parts: [{ kind: "text", text: "Hello " }],
+            metadata: {
+              shared: {
+                stream: {
+                  block_type: "text",
+                  source: "assistant_text",
+                  message_id: agentMessageId,
+                  event_id: `${agentMessageId}:1`,
+                  sequence: 1,
+                },
+              },
+            },
+          },
+        });
+        params.callbacks.onData({
+          kind: "artifact-update",
+          message_id: agentMessageId,
+          event_id: `${agentMessageId}:3`,
+          seq: 3,
+          append: true,
+          artifact: {
+            artifactId: `${agentMessageId}:stream:3`,
+            parts: [{ kind: "text", text: "world" }],
+            metadata: {
+              shared: {
+                stream: {
+                  block_type: "text",
+                  source: "assistant_text",
+                  message_id: agentMessageId,
+                  event_id: `${agentMessageId}:3`,
+                  sequence: 3,
+                },
+              },
+            },
+          },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        contentDuringStream =
+          getConversationMessages(conversationId).find(
+            (message) => message.id === agentMessageId,
+          )?.content ?? "";
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(contentDuringStream).toBe("Hello world");
+    expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
+  });
+
+  it("continues rendering chunks after interrupt resolution", async () => {
     const conversationId = "conv-interrupt-resume-seq-reset-1";
     const agentId = "agent-interrupt-resume-seq-reset-1";
     const userMessageId = "user-msg-interrupt-resume-seq-reset-1";
@@ -1459,11 +1588,11 @@ describe("executeChatRuntime empty-content recovery", () => {
         params.callbacks.onData({
           kind: "artifact-update",
           message_id: agentMessageId,
-          event_id: `${agentMessageId}:resume:1`,
-          seq: 1,
+          event_id: `${agentMessageId}:3`,
+          seq: 3,
           append: true,
           artifact: {
-            artifactId: `${agentMessageId}:stream:resume:1`,
+            artifactId: `${agentMessageId}:stream:3`,
             parts: [{ kind: "text", text: "After resume." }],
             metadata: {
               shared: {
@@ -1471,8 +1600,8 @@ describe("executeChatRuntime empty-content recovery", () => {
                   block_type: "text",
                   source: "assistant_text",
                   message_id: agentMessageId,
-                  event_id: `${agentMessageId}:resume:1`,
-                  sequence: 1,
+                  event_id: `${agentMessageId}:3`,
+                  sequence: 3,
                 },
               },
             },
@@ -1515,6 +1644,128 @@ describe("executeChatRuntime empty-content recovery", () => {
         (message) => message.id === agentMessageId,
       )?.content,
     ).toContain("After resume.");
+  });
+
+  it("tracks status-update seq values in the resume cursor", async () => {
+    const conversationId = "conv-status-seq-resume-1";
+    const agentId = "agent-status-seq-resume-1";
+    const userMessageId = "user-msg-status-seq-resume-1";
+    const agentMessageId = "agent-msg-status-seq-resume-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-21T11:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-21T11:00:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "artifact-update",
+          message_id: agentMessageId,
+          event_id: `${agentMessageId}:1`,
+          seq: 1,
+          append: true,
+          artifact: {
+            artifactId: `${agentMessageId}:stream:1`,
+            parts: [{ kind: "text", text: "Before interrupt. " }],
+            metadata: {
+              shared: {
+                stream: {
+                  block_type: "text",
+                  source: "assistant_text",
+                  message_id: agentMessageId,
+                  event_id: `${agentMessageId}:1`,
+                  sequence: 1,
+                },
+              },
+            },
+          },
+        });
+        params.callbacks.onData({
+          kind: "status-update",
+          seq: 2,
+          status: { state: "input-required" },
+          metadata: {
+            shared: {
+              interrupt: {
+                request_id: "status-seq-interrupt-1",
+                type: "question",
+                details: {
+                  questions: [
+                    {
+                      question: "Continue?",
+                      options: [{ label: "Yes", value: "yes" }],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        });
+        return false;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(state.sessions[conversationId]?.lastReceivedSequence).toBe(2);
+    expect(state.sessions[conversationId]?.streamState).toBe("recoverable");
+    expect(
+      getConversationMessages(conversationId).find(
+        (message) => message.id === agentMessageId,
+      )?.status,
+    ).toBe("interrupted");
   });
 });
 

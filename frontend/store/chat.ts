@@ -339,7 +339,9 @@ export const useChatStore = create<ChatState>()(
           return;
         }
 
-        get().cancelMessage(conversationId);
+        if (chatConnectionService.hasActiveConnection(conversationId.trim())) {
+          get().cancelMessage(conversationId);
+        }
 
         const messages = getConversationMessages(conversationId);
         const userMessage = messages.find((m) => m.id === userMessageId);

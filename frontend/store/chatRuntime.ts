@@ -272,12 +272,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   const activeStreamMessageIds = new Set<string>([initialAgentMessageId]);
   const streamMessageIdMap = new Map<string, string>();
   const seenEventIds = new Set<string>();
-  const nextExpectedSeqByMessageId = new Map<string, number>();
-  const pendingChunksByMessageId = new Map<
-    string,
-    Map<number, StreamBlockUpdate>
-  >();
-  const resettableSeqByMessageId = new Set<string>();
   let terminalHandled = false;
   let hasObservedStreamEvent = false;
   let highestReceivedSequence =
@@ -309,6 +303,52 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       lastStreamError: null,
       ...buildPendingInterruptState([]),
     });
+  };
+
+  const markRecoverableInterruption = ({
+    message,
+    details,
+  }: {
+    message: string;
+    details?: Partial<StreamErrorDetails>;
+  }) => {
+    if (terminalHandled) {
+      return;
+    }
+    terminalHandled = true;
+    flushChunkBuffer();
+
+    const currentMsg = getConversationMessages(conversationId).find(
+      (messageItem) => messageItem.id === activeAgentMessageId,
+    );
+
+    updateConversationMessage(conversationId, activeAgentMessageId, {
+      status: "interrupted",
+      content: currentMsg?.content ?? "",
+      errorCode: null,
+      errorMessage: null,
+    });
+
+    patchSession({
+      streamState: "recoverable",
+      lastStreamError: buildStreamErrorMessage({
+        errorText: message,
+        details,
+      }),
+    });
+
+    warnStreamOnce(
+      `recoverable:${conversationId}:${message}:${details?.errorCode ?? "none"}`,
+      "[Chat Stream] transport interruption marked recoverable",
+      {
+        conversationId,
+        source: get().sessions[conversationId]?.source ?? null,
+        message,
+        errorCode: normalizeErrorCode(details?.errorCode),
+        transport: get().sessions[conversationId]?.transport ?? "unknown",
+        lastReceivedSequence: highestReceivedSequence,
+      },
+    );
   };
 
   const updateSessionMeta = (meta: {
@@ -508,46 +548,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       return true;
     }
     return Array.isArray(message.blocks) && message.blocks.length > 0;
-  };
-
-  const backfillHistoryAfterSequenceGap = async () => {
-    const recovered = new Map<string, ChatMessage>();
-    const limit = 50;
-    const maxPages = 6;
-    let before: string | null = null;
-
-    const collectPage = (
-      items: Parameters<typeof mapSessionMessagesToChatMessages>[0],
-    ) => {
-      const mapped = mapSessionMessagesToChatMessages(items);
-      mapped.forEach((message) => {
-        recovered.set(message.id, message);
-      });
-    };
-
-    for (let requestCount = 0; requestCount < maxPages; requestCount += 1) {
-      const response = await listSessionMessagesPage(conversationId, {
-        before,
-        limit,
-      });
-      collectPage(response.items);
-      const nextBefore =
-        typeof response.pageInfo.nextBefore === "string" &&
-        response.pageInfo.nextBefore.trim().length > 0
-          ? response.pageInfo.nextBefore.trim()
-          : null;
-      if (!response.pageInfo.hasMoreBefore || !nextBefore) {
-        break;
-      }
-      before = nextBefore;
-    }
-
-    if (recovered.size > 0) {
-      mergeHistoryMessagesById(Array.from(recovered.values()));
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.history.chat(conversationId),
-      });
-    }
   };
 
   const backfillHistoryAfterEmptyRender = async (
@@ -756,59 +756,21 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       seenEventIds.add(chunk.eventId);
     }
 
-    if (chunk.seq === null) {
-      appendStreamChunk(chunk);
+    advanceResumeCursor(chunk.seq);
+    appendStreamChunk(chunk);
+  };
+
+  const advanceResumeCursor = (seq: number | null | undefined) => {
+    // Seq is only a stream-level resume cursor. Rendering follows arrival order
+    // after event-id dedupe, so message chunks do not need contiguous numbering.
+    if (typeof seq !== "number" || !Number.isInteger(seq) || seq <= 0) {
       return;
     }
-    if (
-      highestReceivedSequence === null ||
-      chunk.seq > highestReceivedSequence
-    ) {
-      highestReceivedSequence = chunk.seq;
+    if (highestReceivedSequence === null || seq > highestReceivedSequence) {
+      highestReceivedSequence = seq;
       patchSession({
-        lastReceivedSequence: chunk.seq,
+        lastReceivedSequence: seq,
       });
-    }
-
-    let currentExpected = nextExpectedSeqByMessageId.get(chunk.messageId);
-    if (
-      typeof currentExpected === "number" &&
-      chunk.seq < currentExpected &&
-      resettableSeqByMessageId.has(chunk.messageId)
-    ) {
-      // Some upstreams restart per-message chunk sequence after an interrupt is
-      // resolved. Treat the resumed chunk stream as a new ordered segment.
-      resettableSeqByMessageId.delete(chunk.messageId);
-      nextExpectedSeqByMessageId.delete(chunk.messageId);
-      pendingChunksByMessageId.delete(chunk.messageId);
-      currentExpected = undefined;
-    }
-    if (typeof currentExpected === "number" && chunk.seq < currentExpected) {
-      return;
-    }
-    if (currentExpected === undefined) {
-      nextExpectedSeqByMessageId.set(chunk.messageId, chunk.seq);
-    }
-
-    const pending = pendingChunksByMessageId.get(chunk.messageId) ?? new Map();
-    if (pending.has(chunk.seq)) {
-      return;
-    }
-    pending.set(chunk.seq, chunk);
-    pendingChunksByMessageId.set(chunk.messageId, pending);
-
-    let nextExpected =
-      nextExpectedSeqByMessageId.get(chunk.messageId) ?? chunk.seq;
-    while (pending.has(nextExpected)) {
-      const readyChunk = pending.get(nextExpected);
-      if (!readyChunk) break;
-      pending.delete(nextExpected);
-      appendStreamChunk(readyChunk);
-      nextExpected += 1;
-    }
-    nextExpectedSeqByMessageId.set(chunk.messageId, nextExpected);
-    if (pending.size === 0) {
-      pendingChunksByMessageId.delete(chunk.messageId);
     }
   };
 
@@ -830,6 +792,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     ) {
       hasObservedStreamEvent = true;
     }
+    advanceResumeCursor(runtimeStatusEvent?.seq);
     if (chunk) {
       queueIncomingChunk(chunk);
     }
@@ -841,9 +804,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           messageId: activeAgentMessageId,
         }),
       );
-      if (runtimeStatusEvent.interrupt.phase === "resolved") {
-        resettableSeqByMessageId.add(activeAgentMessageId);
-      }
     }
 
     const meta = extractSessionMeta(data);
@@ -935,6 +895,16 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     errorText: string,
     details?: Partial<StreamErrorDetails>,
   ) => {
+    const normalizedErrorCode = normalizeErrorCode(details?.errorCode);
+    if (
+      normalizedErrorCode === "timeout" ||
+      normalizedErrorCode === "stream_closed" ||
+      normalizedErrorCode === "stream_error" ||
+      normalizedErrorCode === "session_not_found"
+    ) {
+      markRecoverableInterruption({ message: errorText, details });
+      return;
+    }
     finalizeStreamingFailure({ errorText, details });
   };
 
@@ -954,33 +924,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         })
         .catch(() => undefined);
     };
-
-    const hasPendingSequenceGap = Array.from(
-      pendingChunksByMessageId.values(),
-    ).some((pending) => pending.size > 0);
-    if (hasPendingSequenceGap) {
-      finalizeCompletion();
-      backfillHistoryAfterSequenceGap().catch((error) => {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Sequence-gap recovery failed.";
-        patchSession({
-          streamState: "recoverable",
-          lastStreamError: message,
-        });
-        warnStreamOnce(
-          `sequence-gap:${conversationId}:${message}`,
-          "[Chat Stream] sequence-gap recovery failed",
-          {
-            conversationId,
-            source: get().sessions[conversationId]?.source ?? null,
-            message,
-          },
-        );
-      });
-      return;
-    }
 
     const mergedMessages = getConversationMessages(conversationId);
     const needsEmptyRenderRecovery =
@@ -1019,7 +962,11 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
                 conversationId,
                 errorCode: details.errorCode,
               });
-              return false;
+              markRecoverableInterruption({
+                message: details.message,
+                details,
+              });
+              return true;
             }
             appendStreamError(details.message, details);
             return true;
@@ -1145,9 +1092,10 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   }
 
   if (hasObservedStreamEvent) {
-    appendStreamError(
-      "Streaming transport interrupted before completion; skip blocking replay.",
-    );
+    markRecoverableInterruption({
+      message: "Streaming transport interrupted before completion.",
+      details: { errorCode: "stream_interrupted" },
+    });
     return;
   }
   await sendViaJsonFallback();

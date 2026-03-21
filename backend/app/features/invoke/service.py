@@ -603,13 +603,18 @@ class A2AInvokeService:
         *,
         event_sequence: int,
     ) -> None:
+        payload["seq"] = event_sequence
         if payload.get("kind") != "artifact-update":
             return
-        if cls._pick_int(payload, ("seq",)) is None:
-            payload["seq"] = event_sequence
 
         artifact = as_dict(payload.get("artifact"))
-        artifact_metadata = as_dict(artifact.get("metadata"))
+        artifact_metadata: dict[str, Any] = {}
+        if artifact:
+            artifact["seq"] = event_sequence
+            artifact_metadata = as_dict(artifact.get("metadata"))
+            artifact_metadata["seq"] = event_sequence
+            artifact["metadata"] = artifact_metadata
+            payload["artifact"] = artifact
         root_metadata = as_dict(payload.get("metadata"))
         shared_stream = cls._StreamTextAccumulator._extract_shared_stream_metadata(
             payload, artifact
@@ -1006,21 +1011,9 @@ class A2AInvokeService:
                         log_extra=log_extra,
                     )
 
-                    parsed_sequence = (
-                        stream_block.get("seq")
-                        if isinstance(stream_block, dict)
-                        and isinstance(stream_block.get("seq"), int)
-                        else self._extract_stream_sequence_from_serialized_event(
-                            serialized
-                        )
-                    )
-                    event_sequence = (
-                        parsed_sequence
-                        if parsed_sequence is not None
-                        else seq_counter + 1
-                    )
-                    if event_sequence <= seq_counter:
-                        event_sequence = seq_counter + 1
+                    # Outbound seq is a local stream cursor for resume and ordering.
+                    # It intentionally does not preserve any upstream chunk numbering.
+                    event_sequence = seq_counter + 1
 
                     # If this event sequence was already replayed from cache, skip yielding it again
                     # This happens if upstream didn't support resume and gave us everything from start
@@ -1235,17 +1228,7 @@ class A2AInvokeService:
                     log_extra=log_extra,
                 )
 
-                parsed_sequence = (
-                    stream_block.get("seq")
-                    if isinstance(stream_block, dict)
-                    and isinstance(stream_block.get("seq"), int)
-                    else self._extract_stream_sequence_from_serialized_event(serialized)
-                )
-                event_sequence = (
-                    parsed_sequence if parsed_sequence is not None else seq_counter + 1
-                )
-                if event_sequence <= seq_counter:
-                    event_sequence = seq_counter + 1
+                event_sequence = seq_counter + 1
                 if (
                     resume_from_sequence is not None
                     and event_sequence <= resume_from_sequence

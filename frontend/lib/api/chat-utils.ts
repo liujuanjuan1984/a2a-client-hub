@@ -92,6 +92,7 @@ export type RuntimeStatusEvent = {
   state: string;
   isFinal: boolean;
   interrupt: RuntimeInterrupt | null;
+  seq: number | null;
 };
 
 export type RuntimeStatusContract = {
@@ -245,6 +246,7 @@ export const extractRuntimeStatusEvent = (
       state,
       isFinal: data.final === true,
       interrupt: extractRuntimeInterrupt(data, state, contract),
+      seq: pickInteger(data, ["seq"]),
     };
   }
   return null;

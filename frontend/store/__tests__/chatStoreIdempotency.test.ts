@@ -304,4 +304,54 @@ describe("chat store idempotency semantics", () => {
 
     expect(chatConnectionService.cancelSession).toHaveBeenCalledTimes(1);
   });
+
+  it("resumeMessage reuses the existing ids and forwards resumeFromSequence", async () => {
+    const userMessageId = "user-resume-1";
+    const agentMessageId = "agent-resume-1";
+
+    useChatStore.getState().ensureSession("conv-8", "agent-1");
+    addConversationMessage("conv-8", {
+      id: userMessageId,
+      role: "user",
+      content: "resume target",
+      createdAt: "2026-03-21T12:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage("conv-8", {
+      id: agentMessageId,
+      role: "agent",
+      content: "partial",
+      createdAt: "2026-03-21T12:00:01.000Z",
+      status: "interrupted",
+      blocks: [],
+    });
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-8": {
+          ...state.sessions["conv-8"],
+          streamState: "recoverable",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+          lastReceivedSequence: 7,
+        },
+      },
+    }));
+
+    await useChatStore.getState().resumeMessage("conv-8");
+
+    expect(mockedExecuteChatRuntime).toHaveBeenCalledTimes(1);
+    const runtimeCall = mockedExecuteChatRuntime.mock.calls[0];
+    expect(runtimeCall?.[0]).toBe("conv-8");
+    expect(runtimeCall?.[1]).toBe("agent-1");
+    expect(runtimeCall?.[3]).toMatchObject({
+      query: "resume target",
+      conversationId: "conv-8",
+      userMessageId,
+      agentMessageId,
+      resumeFromSequence: 7,
+    });
+    expect(runtimeCall?.[4]).toBe(agentMessageId);
+    expect(chatConnectionService.cancelSession).not.toHaveBeenCalled();
+  });
 });
