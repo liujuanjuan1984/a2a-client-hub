@@ -272,11 +272,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   const activeStreamMessageIds = new Set<string>([initialAgentMessageId]);
   const streamMessageIdMap = new Map<string, string>();
   const seenEventIds = new Set<string>();
-  const nextExpectedSeqByMessageId = new Map<string, number>();
-  const pendingChunksByMessageId = new Map<
-    string,
-    Map<number, StreamBlockUpdate>
-  >();
+  const lastAppliedSeqByMessageId = new Map<string, number>();
   const resettableSeqByMessageId = new Set<string>();
   let terminalHandled = false;
   let hasObservedStreamEvent = false;
@@ -510,46 +506,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     return Array.isArray(message.blocks) && message.blocks.length > 0;
   };
 
-  const backfillHistoryAfterSequenceGap = async () => {
-    const recovered = new Map<string, ChatMessage>();
-    const limit = 50;
-    const maxPages = 6;
-    let before: string | null = null;
-
-    const collectPage = (
-      items: Parameters<typeof mapSessionMessagesToChatMessages>[0],
-    ) => {
-      const mapped = mapSessionMessagesToChatMessages(items);
-      mapped.forEach((message) => {
-        recovered.set(message.id, message);
-      });
-    };
-
-    for (let requestCount = 0; requestCount < maxPages; requestCount += 1) {
-      const response = await listSessionMessagesPage(conversationId, {
-        before,
-        limit,
-      });
-      collectPage(response.items);
-      const nextBefore =
-        typeof response.pageInfo.nextBefore === "string" &&
-        response.pageInfo.nextBefore.trim().length > 0
-          ? response.pageInfo.nextBefore.trim()
-          : null;
-      if (!response.pageInfo.hasMoreBefore || !nextBefore) {
-        break;
-      }
-      before = nextBefore;
-    }
-
-    if (recovered.size > 0) {
-      mergeHistoryMessagesById(Array.from(recovered.values()));
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.history.chat(conversationId),
-      });
-    }
-  };
-
   const backfillHistoryAfterEmptyRender = async (
     targetMessageIds: string[],
   ): Promise<void> => {
@@ -770,46 +726,23 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       });
     }
 
-    let currentExpected = nextExpectedSeqByMessageId.get(chunk.messageId);
+    let lastAppliedSeq = lastAppliedSeqByMessageId.get(chunk.messageId);
     if (
-      typeof currentExpected === "number" &&
-      chunk.seq < currentExpected &&
+      typeof lastAppliedSeq === "number" &&
+      chunk.seq <= lastAppliedSeq &&
       resettableSeqByMessageId.has(chunk.messageId)
     ) {
-      // Some upstreams restart per-message chunk sequence after an interrupt is
-      // resolved. Treat the resumed chunk stream as a new ordered segment.
+      // Some upstreams restart message-local chunk seq after an interrupt is
+      // resolved. Accept the first restarted chunk as a new segment boundary.
       resettableSeqByMessageId.delete(chunk.messageId);
-      nextExpectedSeqByMessageId.delete(chunk.messageId);
-      pendingChunksByMessageId.delete(chunk.messageId);
-      currentExpected = undefined;
+      lastAppliedSeqByMessageId.delete(chunk.messageId);
+      lastAppliedSeq = undefined;
     }
-    if (typeof currentExpected === "number" && chunk.seq < currentExpected) {
+    if (typeof lastAppliedSeq === "number" && chunk.seq <= lastAppliedSeq) {
       return;
     }
-    if (currentExpected === undefined) {
-      nextExpectedSeqByMessageId.set(chunk.messageId, chunk.seq);
-    }
-
-    const pending = pendingChunksByMessageId.get(chunk.messageId) ?? new Map();
-    if (pending.has(chunk.seq)) {
-      return;
-    }
-    pending.set(chunk.seq, chunk);
-    pendingChunksByMessageId.set(chunk.messageId, pending);
-
-    let nextExpected =
-      nextExpectedSeqByMessageId.get(chunk.messageId) ?? chunk.seq;
-    while (pending.has(nextExpected)) {
-      const readyChunk = pending.get(nextExpected);
-      if (!readyChunk) break;
-      pending.delete(nextExpected);
-      appendStreamChunk(readyChunk);
-      nextExpected += 1;
-    }
-    nextExpectedSeqByMessageId.set(chunk.messageId, nextExpected);
-    if (pending.size === 0) {
-      pendingChunksByMessageId.delete(chunk.messageId);
-    }
+    appendStreamChunk(chunk);
+    lastAppliedSeqByMessageId.set(chunk.messageId, chunk.seq);
   };
 
   const applyIncomingStreamData = (data: Record<string, unknown>): boolean => {
@@ -954,33 +887,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         })
         .catch(() => undefined);
     };
-
-    const hasPendingSequenceGap = Array.from(
-      pendingChunksByMessageId.values(),
-    ).some((pending) => pending.size > 0);
-    if (hasPendingSequenceGap) {
-      finalizeCompletion();
-      backfillHistoryAfterSequenceGap().catch((error) => {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Sequence-gap recovery failed.";
-        patchSession({
-          streamState: "recoverable",
-          lastStreamError: message,
-        });
-        warnStreamOnce(
-          `sequence-gap:${conversationId}:${message}`,
-          "[Chat Stream] sequence-gap recovery failed",
-          {
-            conversationId,
-            source: get().sessions[conversationId]?.source ?? null,
-            message,
-          },
-        );
-      });
-      return;
-    }
 
     const mergedMessages = getConversationMessages(conversationId);
     const needsEmptyRenderRecovery =
