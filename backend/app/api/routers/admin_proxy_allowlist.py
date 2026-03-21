@@ -11,7 +11,7 @@ from app.api.deps import get_async_db, get_current_admin_user
 from app.api.routing import StrictAPIRouter
 from app.db.models.a2a_proxy_allowlist import A2AProxyAllowlist
 from app.db.models.user import User
-from app.platform.a2a_proxy_service import a2a_proxy_service
+from app.runtime.a2a_proxy_service import a2a_proxy_service
 from app.schemas.a2a_proxy_allowlist import (
     A2AProxyAllowlistCreate,
     A2AProxyAllowlistResponse,

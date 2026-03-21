@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
-from app.platform import health as health_service
-from app.platform.ops_metrics import ops_metrics
+from app.runtime import health as health_service
+from app.runtime.ops_metrics import ops_metrics
 
 _REAL_CHECK_DATABASE = health_service._check_database
 

@@ -80,7 +80,7 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
-from app.platform.ws_ticket import ws_ticket_service
+from app.runtime.ws_ticket import ws_ticket_service
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
     A2AAgentInvokeResponse,

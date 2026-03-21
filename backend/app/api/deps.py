@@ -24,8 +24,8 @@ from app.db.locking import (
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
 from app.features.auth import service as auth_service
-from app.platform.ops_metrics import ops_metrics
-from app.platform.ws_ticket import (
+from app.runtime.ops_metrics import ops_metrics
+from app.runtime.ws_ticket import (
     WsTicketError,
     ws_ticket_service,
 )

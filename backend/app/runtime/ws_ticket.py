@@ -253,7 +253,7 @@ async def cleanup_ws_tickets_job() -> None:
 
 def ensure_ws_ticket_cleanup_job() -> None:
     """Register the WS ticket cleanup job with the shared scheduler."""
-    from app.platform.scheduler import get_scheduler
+    from app.runtime.scheduler import get_scheduler
 
     scheduler = get_scheduler()
     job_id = "ws-ticket-cleanup-daily"

@@ -47,7 +47,7 @@ from app.integrations.a2a_client.errors import (
 )
 from app.integrations.a2a_client.types import ResolvedAgent
 from app.integrations.a2a_client.validators import validate_message
-from app.platform.a2a_proxy_service import a2a_proxy_service
+from app.runtime.a2a_proxy_service import a2a_proxy_service
 from app.schemas.a2a_agent_card import (
     A2AAgentCardProxyRequest,
     A2AAgentCardValidationResponse,

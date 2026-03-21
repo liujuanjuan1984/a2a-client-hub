@@ -13,8 +13,8 @@ from app.db.session import AsyncSessionLocal, async_engine
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.metrics import a2a_metrics
 from app.integrations.a2a_extensions.metrics import a2a_extension_metrics
-from app.platform.ops_metrics import ops_metrics
-from app.platform.ops_metrics_refresh import refresh_db_pool_checked_out
+from app.runtime.ops_metrics import ops_metrics
+from app.runtime.ops_metrics_refresh import refresh_db_pool_checked_out
 from app.utils.timezone_util import utc_now_iso
 
 HealthStatus = Literal["healthy", "degraded", "unhealthy"]

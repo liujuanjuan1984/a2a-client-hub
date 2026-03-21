@@ -89,7 +89,7 @@ from setup_db_schema import create_schema, drop_schema
 
 from app.core.config import settings
 from app.db.models.base import Base
-from app.platform.a2a_proxy_service import A2AProxyService
+from app.runtime.a2a_proxy_service import A2AProxyService
 
 # Import the minimal set of models required for tests to ensure SQLAlchemy
 # metadata is populated before schema setup runs.
