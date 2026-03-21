@@ -13,15 +13,15 @@ from app.core.config import settings
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.transaction import commit_safely
-from app.services.a2a_schedule_common import (
+from app.features.schedules.common import (
     A2AScheduleConflictError,
     A2AScheduleNotFoundError,
     A2AScheduleValidationError,
     map_retryable_db_errors,
 )
-from app.services.a2a_schedule_projection import A2AScheduleProjectionService
-from app.services.a2a_schedule_support import A2AScheduleSupport
-from app.services.a2a_schedule_time import A2AScheduleTimeHelper
+from app.features.schedules.projection import A2AScheduleProjectionService
+from app.features.schedules.support import A2AScheduleSupport
+from app.features.schedules.time import A2AScheduleTimeHelper
 from app.utils.timezone_util import ensure_utc, utc_now
 
 _MANUAL_FAILURE_MESSAGE = "Stopped by user as failed"

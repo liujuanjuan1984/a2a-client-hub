@@ -4,7 +4,7 @@ from pathlib import Path
 from app.features.invoke.stream_payloads import (
     extract_interrupt_lifecycle_from_serialized_event,
 )
-from app.services.session_hub_common import (
+from app.features.sessions.common import (
     build_interrupt_lifecycle_message_code,
     build_interrupt_lifecycle_message_content,
     normalize_interrupt_lifecycle_event,

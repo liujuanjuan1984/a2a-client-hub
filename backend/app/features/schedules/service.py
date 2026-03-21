@@ -17,7 +17,7 @@ from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.session import AsyncSessionLocal
 from app.db.transaction import commit_safely
-from app.services.a2a_schedule_common import (
+from app.features.schedules.common import (
     A2A_MANUAL_SOURCE,
     A2A_SCHEDULE_SOURCE,
     A2AScheduleConflictError,
@@ -28,11 +28,11 @@ from app.services.a2a_schedule_common import (
     A2AScheduleValidationError,
     ClaimedA2AScheduleTask,
 )
-from app.services.a2a_schedule_crud import A2AScheduleCrudService
-from app.services.a2a_schedule_dispatch import A2AScheduleDispatchService
-from app.services.a2a_schedule_projection import A2AScheduleProjectionService
-from app.services.a2a_schedule_support import A2AScheduleSupport
-from app.services.a2a_schedule_time import A2AScheduleTimeHelper
+from app.features.schedules.crud import A2AScheduleCrudService
+from app.features.schedules.dispatch import A2AScheduleDispatchService
+from app.features.schedules.projection import A2AScheduleProjectionService
+from app.features.schedules.support import A2AScheduleSupport
+from app.features.schedules.time import A2AScheduleTimeHelper
 from app.services.scheduler import get_scheduler
 from app.utils.timezone_util import ensure_utc, utc_now
 

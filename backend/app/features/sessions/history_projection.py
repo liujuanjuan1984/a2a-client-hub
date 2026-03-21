@@ -16,7 +16,7 @@ from app.db.transaction import rollback_safely
 from app.handlers import agent_message as agent_message_handler
 from app.handlers import agent_message_block as agent_message_block_handler
 from app.services.conversation_identity import conversation_identity_service
-from app.services.session_hub_common import (
+from app.features.sessions.common import (
     SessionSource,
     build_interrupt_lifecycle_message_content,
     build_interrupt_lifecycle_message_id,
@@ -31,7 +31,7 @@ from app.services.session_hub_common import (
     read_block_cursor_state,
     write_block_cursor_state,
 )
-from app.services.session_hub_support import SessionHubSupport
+from app.features.sessions.support import SessionHubSupport
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
@@ -53,7 +53,7 @@ class SessionHistoryProjectionService:
         agent_source: Literal["personal", "shared"],
         conversation_id: str | None,
     ) -> tuple[ConversationThread | None, SessionSource | None]:
-        from app.services.session_hub_common import parse_conversation_id
+        from app.features.sessions.common import parse_conversation_id
 
         if not conversation_id:
             return None, None

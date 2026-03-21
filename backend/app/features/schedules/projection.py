@@ -11,10 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
-from app.services.a2a_schedule_common import A2AScheduleValidationError
+from app.features.schedules.common import A2AScheduleValidationError
 from app.services.a2a_schedule_runtime_summary import build_schedule_status_summary
-from app.services.a2a_schedule_support import A2AScheduleSupport
-from app.services.a2a_schedule_time import A2AScheduleTimeHelper
+from app.features.schedules.support import A2AScheduleSupport
+from app.features.schedules.time import A2AScheduleTimeHelper
 from app.utils.timezone_util import ensure_utc
 
 

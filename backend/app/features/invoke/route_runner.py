@@ -71,6 +71,7 @@ from app.features.invoke.stream_persistence import (
 from app.features.invoke.stream_persistence import (
     persist_synthetic_final_block_if_needed as persist_synthetic_final_block_if_needed_impl,
 )
+from app.features.sessions.common import build_interrupt_lifecycle_message_content
 from app.features.sessions.service import session_hub_service
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import (
@@ -84,7 +85,6 @@ from app.schemas.a2a_invoke import (
 )
 from app.schemas.ws_ticket import WsTicketResponse
 from app.services.a2a_shared_metadata import extract_shared_metadata_section
-from app.services.session_hub_common import build_interrupt_lifecycle_message_content
 from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
 from app.utils.payload_extract import as_dict, extract_provider_and_external_session_id

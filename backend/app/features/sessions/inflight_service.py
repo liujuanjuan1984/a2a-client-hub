@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.services.session_hub_common import (
+from app.features.sessions.common import (
     INFLIGHT_CANCEL_TERMINAL_ERROR_CODES,
     InflightInvokeEntry,
     inflight_invokes,
@@ -16,7 +16,7 @@ from app.services.session_hub_common import (
     normalize_non_empty_text,
     parse_conversation_id,
 )
-from app.services.session_hub_support import SessionHubSupport
+from app.features.sessions.support import SessionHubSupport
 
 logger = get_logger(__name__)
 

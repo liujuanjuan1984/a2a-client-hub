@@ -12,7 +12,7 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message_block as agent_message_block_handler
-from app.services.session_hub_common import (
+from app.features.sessions.common import (
     ResolvedConversationTarget,
     build_query_hash,
     create_block_with_conflict_recovery,

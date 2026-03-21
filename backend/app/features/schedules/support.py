@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.db.locking import set_postgres_local_timeouts
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_schedule_task import A2AScheduleTask
-from app.services.a2a_schedule_common import (
+from app.features.schedules.common import (
     A2AScheduleConflictError,
     A2AScheduleNotFoundError,
     A2AScheduleQuotaError,

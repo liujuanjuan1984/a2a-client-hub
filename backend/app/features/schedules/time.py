@@ -7,7 +7,7 @@ from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
 from app.db.models.a2a_schedule_task import A2AScheduleTask
-from app.services.a2a_schedule_common import A2AScheduleValidationError
+from app.features.schedules.common import A2AScheduleValidationError
 from app.utils.timezone_util import ensure_utc, resolve_timezone
 
 

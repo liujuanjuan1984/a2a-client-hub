@@ -14,7 +14,7 @@ from app.db.models.conversation_thread import ConversationThread
 from app.handlers import agent_message_block as agent_message_block_handler
 from app.services.a2a_shared_metadata import merge_preferred_session_binding_metadata
 from app.services.conversation_identity import conversation_identity_service
-from app.services.session_hub_common import (
+from app.features.sessions.common import (
     MessagesBeforeCursor,
     ResolvedConversationTarget,
     SessionSource,
@@ -29,7 +29,7 @@ from app.services.session_hub_common import (
     sender_priority_for_role,
     sender_to_role,
 )
-from app.services.session_hub_support import SessionHubSupport
+from app.features.sessions.support import SessionHubSupport
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider
 from app.utils.timezone_util import ensure_utc
 

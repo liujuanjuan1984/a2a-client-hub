@@ -13,7 +13,7 @@ from app.core.security import DUMMY_PASSWORD_HASH, create_user_token, get_passwo
 from app.db.models.invitation import Invitation, InvitationStatus
 from app.db.models.user import User
 from app.features.auth import router as auth_router
-from app.handlers import auth as auth_handler
+from app.features.auth import service as auth_handler
 from app.utils.timezone_util import utc_now
 from tests.support.api_utils import create_test_client
 
@@ -517,7 +517,9 @@ async def test_authenticate_user_not_found_runs_dummy_hash_verification(
 ) -> None:
     password = "NotUsed!1"  # pragma: allowlist secret
 
-    with patch("app.handlers.auth.verify_password", return_value=False) as verify_mock:
+    with patch(
+        "app.features.auth.service.verify_password", return_value=False
+    ) as verify_mock:
         with pytest.raises(auth_handler.UserNotFoundError, match="Invalid credentials"):
             await auth_handler.authenticate_user(
                 async_db_session,

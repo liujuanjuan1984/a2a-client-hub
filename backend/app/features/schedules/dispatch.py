@@ -17,14 +17,14 @@ from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.services.a2a_schedule_common import (
+from app.features.schedules.common import (
     A2AScheduleValidationError,
     ClaimedA2AScheduleTask,
     map_retryable_db_errors,
 )
-from app.services.a2a_schedule_projection import A2AScheduleProjectionService
-from app.services.a2a_schedule_support import A2AScheduleSupport
-from app.services.a2a_schedule_time import A2AScheduleTimeHelper
+from app.features.schedules.projection import A2AScheduleProjectionService
+from app.features.schedules.support import A2AScheduleSupport
+from app.features.schedules.time import A2AScheduleTimeHelper
 from app.services.ops_metrics import ops_metrics
 from app.utils.timezone_util import ensure_utc, utc_now
 

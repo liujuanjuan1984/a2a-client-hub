@@ -9,13 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.services.session_history_projection import SessionHistoryProjectionService
-from app.services.session_hub_support import SessionHubSupport
-from app.services.session_inflight_service import SessionInflightService
-from app.services.session_query_service import SessionQueryService
+from app.features.sessions.history_projection import SessionHistoryProjectionService
+from app.features.sessions.inflight_service import SessionInflightService
+from app.features.sessions.query_service import SessionQueryService
+from app.features.sessions.support import SessionHubSupport
 
 if TYPE_CHECKING:
-    from app.services.session_hub_common import SessionSource
+    from app.features.sessions.common import SessionSource
 
 
 class SessionHubService:
