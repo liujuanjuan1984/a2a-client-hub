@@ -11,13 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
+from app.features.sessions import block_store
 from app.features.sessions.common import (
     ResolvedConversationTarget,
     build_query_hash,
     create_block_with_conflict_recovery,
     normalize_non_empty_text,
 )
-from app.handlers import agent_message_block as agent_message_block_handler
 from app.utils.timezone_util import utc_now
 
 
@@ -211,13 +211,11 @@ class SessionHubSupport:
         if existing_query_hash and existing_query_hash != query_hash:
             raise ValueError("idempotency_conflict")
         if not existing_query_hash:
-            first_block = (
-                await agent_message_block_handler.find_block_by_message_and_block_seq(
-                    db,
-                    user_id=user_id,
-                    message_id=cast(UUID, user_message.id),
-                    block_seq=1,
-                )
+            first_block = await block_store.find_block_by_message_and_block_seq(
+                db,
+                user_id=user_id,
+                message_id=cast(UUID, user_message.id),
+                block_seq=1,
             )
             if first_block is not None:
                 persisted_query = cast(str | None, first_block.content) or ""
@@ -237,13 +235,11 @@ class SessionHubSupport:
         content: str,
         source: str | None = None,
     ) -> AgentMessageBlock | None:
-        existing = (
-            await agent_message_block_handler.find_block_by_message_and_block_seq(
-                db,
-                user_id=user_id,
-                message_id=message_id,
-                block_seq=1,
-            )
+        existing = await block_store.find_block_by_message_and_block_seq(
+            db,
+            user_id=user_id,
+            message_id=message_id,
+            block_seq=1,
         )
         if existing is None:
             existing = await create_block_with_conflict_recovery(

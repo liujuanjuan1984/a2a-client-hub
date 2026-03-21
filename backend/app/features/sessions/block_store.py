@@ -1,4 +1,4 @@
-"""Async handlers for persisted message blocks."""
+"""Persistence helpers for stored message blocks."""
 
 from __future__ import annotations
 

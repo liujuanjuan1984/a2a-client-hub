@@ -13,6 +13,7 @@ from app.db.models.agent_message import AgentMessage
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.db.transaction import rollback_safely
+from app.features.sessions import block_store, message_store
 from app.features.sessions.common import (
     SessionSource,
     build_interrupt_lifecycle_message_content,
@@ -29,8 +30,6 @@ from app.features.sessions.common import (
     write_block_cursor_state,
 )
 from app.features.sessions.support import SessionHubSupport
-from app.handlers import agent_message as agent_message_handler
-from app.handlers import agent_message_block as agent_message_block_handler
 from app.services.conversation_identity import conversation_identity_service
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import extract_provider_and_external_session_id
@@ -325,7 +324,7 @@ class SessionHistoryProjectionService:
         if existing_user_message is None:
             try:
                 if isinstance(user_message_id, UUID):
-                    user_message = await agent_message_handler.create_agent_message(
+                    user_message = await message_store.create_agent_message(
                         db,
                         id=user_message_id,
                         user_id=user_id,
@@ -336,7 +335,7 @@ class SessionHistoryProjectionService:
                         invoke_idempotency_key=normalized_idempotency_key,
                     )
                 else:
-                    user_message = await agent_message_handler.create_agent_message(
+                    user_message = await message_store.create_agent_message(
                         db,
                         user_id=user_id,
                         sender="user",
@@ -345,7 +344,7 @@ class SessionHistoryProjectionService:
                         metadata=metadata,
                         invoke_idempotency_key=normalized_idempotency_key,
                     )
-            except agent_message_handler.AgentMessageCreationError as exc:
+            except message_store.AgentMessageCreationError as exc:
                 if isinstance(user_message_id, UUID) and is_agent_message_pk_violation(
                     exc
                 ):
@@ -396,7 +395,7 @@ class SessionHistoryProjectionService:
         if existing_agent_message is None:
             try:
                 if isinstance(agent_message_id, UUID):
-                    agent_message = await agent_message_handler.create_agent_message(
+                    agent_message = await message_store.create_agent_message(
                         db,
                         id=agent_message_id,
                         user_id=user_id,
@@ -409,7 +408,7 @@ class SessionHistoryProjectionService:
                         invoke_idempotency_key=normalized_idempotency_key,
                     )
                 else:
-                    agent_message = await agent_message_handler.create_agent_message(
+                    agent_message = await message_store.create_agent_message(
                         db,
                         user_id=user_id,
                         sender="agent",
@@ -420,7 +419,7 @@ class SessionHistoryProjectionService:
                         metadata=agent_metadata,
                         invoke_idempotency_key=normalized_idempotency_key,
                     )
-            except agent_message_handler.AgentMessageCreationError as exc:
+            except message_store.AgentMessageCreationError as exc:
                 if isinstance(agent_message_id, UUID) and is_agent_message_pk_violation(
                     exc
                 ):
@@ -449,16 +448,14 @@ class SessionHistoryProjectionService:
                     and recovered_agent_message.id != agent_message_id
                 ):
                     raise ValueError("message_id_conflict")
-                updated_agent_message = (
-                    await agent_message_handler.update_agent_message(
-                        db,
-                        message=recovered_agent_message,
-                        status=resolved_agent_status,
-                        finish_reason=resolved_finish_reason,
-                        error_code=resolved_error_code,
-                        message_metadata=agent_metadata,
-                        invoke_idempotency_key=normalized_idempotency_key,
-                    )
+                updated_agent_message = await message_store.update_agent_message(
+                    db,
+                    message=recovered_agent_message,
+                    status=resolved_agent_status,
+                    finish_reason=resolved_finish_reason,
+                    error_code=resolved_error_code,
+                    message_metadata=agent_metadata,
+                    invoke_idempotency_key=normalized_idempotency_key,
                 )
                 if updated_agent_message is None:
                     raise ValueError("message_update_failed")
@@ -469,7 +466,7 @@ class SessionHistoryProjectionService:
                 and existing_agent_message.id != agent_message_id
             ):
                 raise ValueError("message_id_conflict")
-            updated_agent_message = await agent_message_handler.update_agent_message(
+            updated_agent_message = await message_store.update_agent_message(
                 db,
                 message=existing_agent_message,
                 status=resolved_agent_status,
@@ -489,12 +486,10 @@ class SessionHistoryProjectionService:
             source="user_input",
         )
         if isinstance(response_content, str) and response_content:
-            existing_agent_blocks = (
-                await agent_message_block_handler.list_blocks_by_message_id(
-                    db,
-                    user_id=user_id,
-                    message_id=cast(UUID, agent_message.id),
-                )
+            existing_agent_blocks = await block_store.list_blocks_by_message_id(
+                db,
+                user_id=user_id,
+                message_id=cast(UUID, agent_message.id),
             )
             can_upsert_snapshot = not existing_agent_blocks or (
                 len(existing_agent_blocks) == 1
@@ -727,7 +722,7 @@ class SessionHistoryProjectionService:
             conversation_id=conversation_id,
         )
         if existing_message is None:
-            system_message = await agent_message_handler.create_agent_message(
+            system_message = await message_store.create_agent_message(
                 db,
                 id=message_id,
                 created_at=utc_now(),
@@ -738,7 +733,7 @@ class SessionHistoryProjectionService:
                 metadata=message_metadata,
             )
         else:
-            updated_system_message = await agent_message_handler.update_agent_message(
+            updated_system_message = await message_store.update_agent_message(
                 db,
                 message=existing_message,
                 status="done",
@@ -808,21 +803,17 @@ class SessionHistoryProjectionService:
 
         active_block: AgentMessageBlock | None = None
         if active_block_seq > 0:
-            active_block = (
-                await agent_message_block_handler.find_block_by_message_and_block_seq(
-                    db,
-                    user_id=user_id,
-                    message_id=agent_message_id,
-                    block_seq=active_block_seq,
-                )
+            active_block = await block_store.find_block_by_message_and_block_seq(
+                db,
+                user_id=user_id,
+                message_id=agent_message_id,
+                block_seq=active_block_seq,
             )
         if active_block is None:
-            active_block = (
-                await agent_message_block_handler.find_last_block_for_message(
-                    db,
-                    user_id=user_id,
-                    message_id=agent_message_id,
-                )
+            active_block = await block_store.find_last_block_for_message(
+                db,
+                user_id=user_id,
+                message_id=agent_message_id,
             )
 
         persisted_block: AgentMessageBlock | None = None
@@ -1004,7 +995,7 @@ class SessionHistoryProjectionService:
         user_id: UUID,
         agent_message_id: UUID,
     ) -> bool:
-        return await agent_message_block_handler.has_blocks_for_message(
+        return await block_store.has_blocks_for_message(
             db,
             user_id=user_id,
             message_id=agent_message_id,

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.handlers import agent_message_block as agent_message_block_handler
+from app.features.sessions import block_store
 from app.services.interrupt_metadata_normalization import (
     normalize_permission_interrupt_details,
     normalize_question_interrupt_details,
@@ -479,7 +479,7 @@ async def create_block_with_conflict_recovery(
     """Insert one block with best-effort recovery for concurrent same-seq writes."""
     try:
         async with db.begin_nested():
-            return await agent_message_block_handler.create_block(
+            return await block_store.create_block(
                 db,
                 user_id=user_id,
                 message_id=message_id,
@@ -498,7 +498,7 @@ async def create_block_with_conflict_recovery(
             exc, index_name="ix_agent_message_blocks_message_id_block_seq"
         ):
             raise
-        return await agent_message_block_handler.find_block_by_message_and_block_seq(
+        return await block_store.find_block_by_message_and_block_seq(
             db,
             user_id=user_id,
             message_id=message_id,

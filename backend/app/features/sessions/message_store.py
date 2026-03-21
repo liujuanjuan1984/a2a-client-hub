@@ -1,4 +1,4 @@
-"""Async agent message handlers."""
+"""Persistence helpers for stored agent messages."""
 
 from __future__ import annotations
 

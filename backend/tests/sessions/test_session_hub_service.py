@@ -1478,17 +1478,17 @@ async def test_append_agent_message_block_update_unique_conflict_does_not_rollba
         )
 
     monkeypatch.setattr(
-        session_history_projection_module.agent_message_block_handler,
+        session_history_projection_module.block_store,
         "find_block_by_message_and_block_seq",
         _find_existing,
     )
     monkeypatch.setattr(
-        session_history_projection_module.agent_message_block_handler,
+        session_history_projection_module.block_store,
         "find_last_block_for_message",
         _find_none,
     )
     monkeypatch.setattr(
-        session_history_projection_module.agent_message_block_handler,
+        session_history_projection_module.block_store,
         "create_block",
         _raise_unique_conflict,
     )
