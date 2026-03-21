@@ -6,6 +6,7 @@ import {
   replyPermissionInterrupt,
   replyQuestionInterrupt,
 } from "@/lib/api/a2aExtensions";
+import { ApiRequestError } from "@/lib/api/client";
 import { toast } from "@/lib/toast";
 
 jest.mock("@/lib/api/a2aExtensions", () => ({
@@ -17,13 +18,40 @@ jest.mock("@/lib/api/a2aExtensions", () => ({
 
 jest.mock("@/lib/api/client", () => ({
   ApiRequestError: class extends Error {
-    errorCode: string | null = null;
-    upstreamError: Record<string, unknown> | null = null;
+    status: number;
+    errorCode: string | null;
+    source: string | null;
+    jsonrpcCode: number | null;
+    missingParams: { name: string; required: boolean }[] | null;
+    upstreamError: Record<string, unknown> | null;
+
+    constructor(
+      message: string,
+      status: number,
+      options?: {
+        errorCode?: string | null;
+        source?: string | null;
+        jsonrpcCode?: number | null;
+        missingParams?: { name: string; required: boolean }[] | null;
+        upstreamError?: Record<string, unknown> | null;
+      },
+    ) {
+      super(message);
+      this.name = "ApiRequestError";
+      this.status = status;
+      this.errorCode = options?.errorCode ?? null;
+      this.source = options?.source ?? null;
+      this.jsonrpcCode = options?.jsonrpcCode ?? null;
+      this.missingParams = options?.missingParams ?? null;
+      this.upstreamError = options?.upstreamError ?? null;
+      Object.setPrototypeOf(this, new.target.prototype);
+    }
   },
 }));
 
 jest.mock("@/lib/toast", () => ({
   toast: {
+    info: jest.fn(),
     success: jest.fn(),
     error: jest.fn(),
   },
@@ -154,6 +182,174 @@ describe("useChatInterruptController", () => {
     expect(mockedToast.success).toHaveBeenCalledWith(
       "Action submitted",
       "Question answers delivered to upstream.",
+    );
+  });
+
+  it("clears stale permission interrupts when upstream reports expiration", async () => {
+    mockedReplyPermissionInterrupt.mockRejectedValueOnce(
+      new ApiRequestError("Conflict", 409, {
+        errorCode: "interrupt_request_expired",
+        upstreamError: { message: "Interrupt request expired" },
+      }),
+    );
+    const { result } = renderHook(() =>
+      useChatInterruptController({
+        activeAgentId: "agent-1",
+        agentSource: "personal",
+        conversationId: "conv-1",
+        pendingInterrupt: {
+          requestId: "perm-1",
+          type: "permission",
+          phase: "asked",
+          details: { permission: "read", patterns: ["/workspace/**"] },
+        },
+        lastResolvedInterrupt: null,
+        pendingQuestionCount: 0,
+        clearPendingInterrupt,
+      }),
+    );
+
+    await act(async () => {
+      result.current.handlePermissionReply("once");
+      await Promise.resolve();
+    });
+
+    expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "perm-1");
+    expect(mockedToast.info).toHaveBeenCalledWith(
+      "Interrupt closed",
+      "The interrupt request expired and was removed.",
+    );
+    expect(mockedToast.error).not.toHaveBeenCalled();
+  });
+
+  it("clears stale question reply interrupts when upstream reports not found", async () => {
+    mockedReplyQuestionInterrupt.mockRejectedValueOnce(
+      new ApiRequestError("Not Found", 404, {
+        errorCode: "interrupt_request_not_found",
+        upstreamError: { message: "Interrupt request not found" },
+      }),
+    );
+    const { result } = renderHook(() =>
+      useChatInterruptController({
+        activeAgentId: "agent-1",
+        agentSource: "personal",
+        conversationId: "conv-1",
+        pendingInterrupt: {
+          requestId: "question-1",
+          type: "question",
+          phase: "asked",
+          details: {
+            questions: [
+              {
+                header: null,
+                question: "Proceed?",
+                options: [],
+              },
+            ],
+          },
+        },
+        lastResolvedInterrupt: null,
+        pendingQuestionCount: 1,
+        clearPendingInterrupt,
+      }),
+    );
+
+    act(() => {
+      result.current.handleQuestionAnswerChange(0, "yes");
+    });
+
+    await act(async () => {
+      result.current.handleQuestionReply();
+      await Promise.resolve();
+    });
+
+    expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "question-1");
+    expect(mockedToast.info).toHaveBeenCalledWith(
+      "Interrupt closed",
+      "The interrupt request no longer exists and was removed.",
+    );
+    expect(mockedToast.error).not.toHaveBeenCalled();
+  });
+
+  it("clears stale question reject interrupts when upstream reports expiration", async () => {
+    mockedRejectQuestionInterrupt.mockRejectedValueOnce(
+      new ApiRequestError("Conflict", 409, {
+        errorCode: "interrupt_request_expired",
+        upstreamError: { message: "Interrupt request expired" },
+      }),
+    );
+    const { result } = renderHook(() =>
+      useChatInterruptController({
+        activeAgentId: "agent-1",
+        agentSource: "personal",
+        conversationId: "conv-1",
+        pendingInterrupt: {
+          requestId: "question-1",
+          type: "question",
+          phase: "asked",
+          details: {
+            questions: [
+              {
+                header: null,
+                question: "Proceed?",
+                options: [],
+              },
+            ],
+          },
+        },
+        lastResolvedInterrupt: null,
+        pendingQuestionCount: 1,
+        clearPendingInterrupt,
+      }),
+    );
+
+    await act(async () => {
+      result.current.handleQuestionReject();
+      await Promise.resolve();
+    });
+
+    expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "question-1");
+    expect(mockedToast.info).toHaveBeenCalledWith(
+      "Interrupt closed",
+      "The interrupt request expired and was removed.",
+    );
+    expect(mockedToast.error).not.toHaveBeenCalled();
+  });
+
+  it("keeps pending interrupts visible for non-terminal callback errors", async () => {
+    mockedReplyPermissionInterrupt.mockRejectedValueOnce(
+      new ApiRequestError("Bad Request", 400, {
+        errorCode: "invalid_params",
+        upstreamError: { message: "reply is invalid" },
+      }),
+    );
+    const { result } = renderHook(() =>
+      useChatInterruptController({
+        activeAgentId: "agent-1",
+        agentSource: "personal",
+        conversationId: "conv-1",
+        pendingInterrupt: {
+          requestId: "perm-1",
+          type: "permission",
+          phase: "asked",
+          details: { permission: "read", patterns: ["/workspace/**"] },
+        },
+        lastResolvedInterrupt: null,
+        pendingQuestionCount: 0,
+        clearPendingInterrupt,
+      }),
+    );
+
+    await act(async () => {
+      result.current.handlePermissionReply("once");
+      await Promise.resolve();
+    });
+
+    expect(clearPendingInterrupt).not.toHaveBeenCalled();
+    expect(mockedToast.info).not.toHaveBeenCalled();
+    expect(mockedToast.error).toHaveBeenCalledWith(
+      "Interrupt callback failed",
+      "Bad Request [invalid_params]：reply is invalid",
     );
   });
 });

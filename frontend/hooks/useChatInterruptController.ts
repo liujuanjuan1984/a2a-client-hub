@@ -13,6 +13,11 @@ import { pickOpencodeDirectoryMetadata } from "@/lib/opencodeMetadata";
 import { toast } from "@/lib/toast";
 import type { AgentSource } from "@/store/agents";
 
+const TERMINAL_INTERRUPT_ERROR_CODES = new Set([
+  "interrupt_request_expired",
+  "interrupt_request_not_found",
+]);
+
 type ResolvedInterruptKeyInput = {
   requestId: string;
   type: "permission" | "question";
@@ -78,6 +83,26 @@ export function useChatInterruptController({
       : "Interrupt callback failed.";
   }, []);
 
+  const getInterruptErrorCode = useCallback((error: unknown) => {
+    if (
+      error instanceof ApiRequestError ||
+      error instanceof A2AExtensionCallError
+    ) {
+      return error.errorCode;
+    }
+    return null;
+  }, []);
+
+  const buildTerminalInterruptDismissMessage = useCallback(
+    (errorCode: string | null) => {
+      if (errorCode === "interrupt_request_expired") {
+        return "The interrupt request expired and was removed.";
+      }
+      return "The interrupt request no longer exists and was removed.";
+    },
+    [],
+  );
+
   const buildResolvedInterruptKey = useCallback(
     (interrupt: ResolvedInterruptKeyInput | null) =>
       interrupt
@@ -130,12 +155,29 @@ export function useChatInterruptController({
       actionKey: string,
       executor: () => Promise<void>,
       successMessage: string,
+      options?: {
+        conversationId: string;
+        requestId: string;
+      },
     ) => {
       setInterruptAction(actionKey);
       try {
         await executor();
         toast.success("Action submitted", successMessage);
       } catch (error) {
+        const errorCode = getInterruptErrorCode(error);
+        if (
+          options &&
+          errorCode &&
+          TERMINAL_INTERRUPT_ERROR_CODES.has(errorCode)
+        ) {
+          clearPendingInterrupt(options.conversationId, options.requestId);
+          toast.info(
+            "Interrupt closed",
+            buildTerminalInterruptDismissMessage(errorCode),
+          );
+          return;
+        }
         toast.error(
           "Interrupt callback failed",
           buildInterruptErrorMessage(error),
@@ -144,7 +186,12 @@ export function useChatInterruptController({
         setInterruptAction(null);
       }
     },
-    [buildInterruptErrorMessage],
+    [
+      buildInterruptErrorMessage,
+      buildTerminalInterruptDismissMessage,
+      clearPendingInterrupt,
+      getInterruptErrorCode,
+    ],
   );
 
   useEffect(() => {
@@ -219,6 +266,10 @@ export function useChatInterruptController({
           clearPendingInterrupt(conversationId, requestId);
         },
         "Permission reply delivered to upstream.",
+        {
+          conversationId,
+          requestId,
+        },
       ).catch(() => undefined);
     },
     [
@@ -289,6 +340,10 @@ export function useChatInterruptController({
         clearPendingInterrupt(conversationId, requestId);
       },
       "Question answers delivered to upstream.",
+      {
+        conversationId,
+        requestId,
+      },
     ).catch(() => undefined);
   }, [
     activeAgentId,
@@ -326,6 +381,10 @@ export function useChatInterruptController({
         clearPendingInterrupt(conversationId, requestId);
       },
       "Question request rejected.",
+      {
+        conversationId,
+        requestId,
+      },
     ).catch(() => undefined);
   }, [
     activeAgentId,
