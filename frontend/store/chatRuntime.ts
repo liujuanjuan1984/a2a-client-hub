@@ -24,6 +24,8 @@ import {
 import { invokeHubAgent } from "@/lib/api/hubA2aAgentsUser";
 import { listSessionMessagesPage } from "@/lib/api/sessions";
 import {
+  buildPendingInterruptState,
+  getPendingInterruptQueue,
   mergeExternalSessionRef,
   type AgentSession,
   type ResolvedRuntimeInterruptRecord,
@@ -137,6 +139,21 @@ const isSameResolvedInterrupt = (
     lhs.type === rhs.type &&
     lhs.phase === rhs.phase &&
     lhs.resolution === rhs.resolution
+  );
+};
+
+const arePendingInterruptQueuesEqual = (
+  left: PendingRuntimeInterrupt[],
+  right: PendingRuntimeInterrupt[],
+) => {
+  if (left === right) {
+    return true;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((item, index) =>
+    isSamePendingInterrupt(item, right[index]),
   );
 };
 
@@ -289,7 +306,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     patchSession({
       streamState: "idle",
       lastStreamError: null,
-      pendingInterrupt: null,
+      ...buildPendingInterruptState([]),
     });
   };
 
@@ -321,17 +338,24 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         nextPatch.runtimeStatus = meta.runtimeStatus;
       }
       if (meta.runtimeInterruptEvent?.phase === "asked") {
-        if (
-          !isSamePendingInterrupt(
-            current.pendingInterrupt,
-            meta.runtimeInterruptEvent,
-          )
-        ) {
-          nextPatch.pendingInterrupt = meta.runtimeInterruptEvent;
+        const askedInterrupt = meta.runtimeInterruptEvent;
+        const currentQueue = getPendingInterruptQueue(current);
+        const existingIndex = currentQueue.findIndex(
+          (interrupt) => interrupt.requestId === askedInterrupt.requestId,
+        );
+        const nextQueue =
+          existingIndex >= 0
+            ? currentQueue.map((interrupt, index) =>
+                index === existingIndex ? askedInterrupt : interrupt,
+              )
+            : [...currentQueue, askedInterrupt];
+        if (!arePendingInterruptQueuesEqual(currentQueue, nextQueue)) {
+          Object.assign(nextPatch, buildPendingInterruptState(nextQueue));
         }
       } else if (meta.runtimeInterruptEvent?.phase === "resolved") {
+        const resolvedRuntimeInterrupt = meta.runtimeInterruptEvent;
         const resolvedInterrupt: ResolvedRuntimeInterruptRecord = {
-          ...meta.runtimeInterruptEvent,
+          ...resolvedRuntimeInterrupt,
           observedAt: new Date().toISOString(),
         };
         if (
@@ -342,13 +366,14 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         ) {
           nextPatch.lastResolvedInterrupt = resolvedInterrupt;
         }
-        if (
-          current.pendingInterrupt &&
-          current.pendingInterrupt.requestId ===
-            meta.runtimeInterruptEvent.requestId
-        ) {
-          // Only a matching resolved event should close the current action card.
-          nextPatch.pendingInterrupt = null;
+        const currentQueue = getPendingInterruptQueue(current);
+        const nextQueue = currentQueue.filter(
+          (interrupt) =>
+            interrupt.requestId !== resolvedRuntimeInterrupt.requestId,
+        );
+        if (!arePendingInterruptQueuesEqual(currentQueue, nextQueue)) {
+          // Only a matching resolved event should close the corresponding action card.
+          Object.assign(nextPatch, buildPendingInterruptState(nextQueue));
         }
       }
       if (
@@ -872,7 +897,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     patchSession({
       streamState: "error",
       lastStreamError: normalizedErrorMessage,
-      pendingInterrupt: null,
+      ...buildPendingInterruptState([]),
     });
     warnStreamOnce(
       `error:${conversationId}:${errorText}`,
@@ -1098,7 +1123,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     patchSession({
       streamState: "error",
       lastStreamError: message,
-      pendingInterrupt: null,
+      ...buildPendingInterruptState([]),
     });
     return;
   }

@@ -28,7 +28,11 @@ import {
 } from "@/lib/api/a2aExtensions";
 import type { ChatMessage } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
-import { getSharedModelSelection } from "@/lib/chat-utils";
+import {
+  getPendingInterrupt,
+  getPendingInterruptQueue,
+  getSharedModelSelection,
+} from "@/lib/chat-utils";
 import { addConversationOverlayMessage } from "@/lib/chatHistoryCache";
 import {
   getAnchoredOffsetAfterContentResize,
@@ -130,7 +134,9 @@ export function useChatScreenController({
       ? sessionHistoryQuery.error.message
       : null;
   const sessionSource = session?.source ?? null;
-  const pendingInterrupt = session?.pendingInterrupt ?? null;
+  const pendingInterrupts = getPendingInterruptQueue(session);
+  const pendingInterrupt = getPendingInterrupt(session);
+  const pendingInterruptCount = pendingInterrupts.length;
   const lastResolvedInterrupt = session?.lastResolvedInterrupt ?? null;
   const selectedModel = getSharedModelSelection(session?.metadata);
   const opencodeDirectory = getOpencodeDirectory(session?.metadata);
@@ -339,7 +345,7 @@ export function useChatScreenController({
     activeAgentId,
     conversationId,
     agentSource: agent?.source,
-    pendingInterruptActive: Boolean(pendingInterrupt),
+    pendingInterruptActive: pendingInterruptCount > 0,
     ensureSession,
     sendMessage: sendMessageWithCapabilities,
     setSharedModelSelection,
@@ -676,6 +682,7 @@ export function useChatScreenController({
     historyPaused,
     historyError,
     pendingInterrupt,
+    pendingInterruptCount,
     interruptAction,
     questionAnswers,
     showDetails,

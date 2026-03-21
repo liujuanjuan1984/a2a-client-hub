@@ -41,6 +41,7 @@ export function ChatTimelinePanel({
   onListContentSizeChange,
   onListScroll,
   pendingInterrupt,
+  pendingInterruptCount,
   interruptAction,
   questionAnswers,
   onPermissionReply,
@@ -65,6 +66,7 @@ export function ChatTimelinePanel({
   onListContentSizeChange: (w: number, h: number) => void;
   onListScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   pendingInterrupt: PendingRuntimeInterrupt | null;
+  pendingInterruptCount: number;
   interruptAction: string | null;
   questionAnswers: string[];
   onPermissionReply: (reply: "once" | "always" | "reject") => void;
@@ -132,6 +134,7 @@ export function ChatTimelinePanel({
       pendingInterrupt ? (
         <InterruptActionCard
           pendingInterrupt={pendingInterrupt}
+          pendingInterruptCount={pendingInterruptCount}
           interruptAction={interruptAction}
           questionAnswers={questionAnswers}
           onPermissionReply={onPermissionReply}
@@ -149,6 +152,7 @@ export function ChatTimelinePanel({
       onQuestionReject,
       onQuestionReply,
       pendingInterrupt,
+      pendingInterruptCount,
       questionAnswers,
     ],
   );

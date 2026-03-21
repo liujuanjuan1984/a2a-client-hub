@@ -3,11 +3,14 @@ import { persist } from "zustand/middleware";
 
 import { type RuntimeStatusContract } from "@/lib/api/chat-utils";
 import {
+  buildPendingInterruptState,
   buildPersistedSessions,
   buildInvokePayload,
   buildSessionCleanupPlan,
   createAgentSession,
   getSharedModelSelection,
+  getPendingInterruptQueue,
+  hasPendingInterrupt,
   mergeExternalSessionRef,
   sortSessionsByLastActive,
   withSharedModelSelection,
@@ -272,10 +275,19 @@ export const useChatStore = create<ChatState>()(
       clearPendingInterrupt: (conversationId, requestId) => {
         set((state) => {
           const current = state.sessions[conversationId];
-          if (!current?.pendingInterrupt) {
+          if (!current) {
             return state;
           }
-          if (requestId && current.pendingInterrupt.requestId !== requestId) {
+          const currentQueue = getPendingInterruptQueue(current);
+          if (currentQueue.length === 0) {
+            return state;
+          }
+          const nextQueue = requestId
+            ? currentQueue.filter(
+                (interrupt) => interrupt.requestId !== requestId,
+              )
+            : [];
+          if (nextQueue.length === currentQueue.length) {
             return state;
           }
           return {
@@ -283,7 +295,7 @@ export const useChatStore = create<ChatState>()(
               ...state.sessions,
               [conversationId]: {
                 ...current,
-                pendingInterrupt: null,
+                ...buildPendingInterruptState(nextQueue),
               },
             },
           };
@@ -410,7 +422,7 @@ export const useChatStore = create<ChatState>()(
           }
           if (
             targetSession.streamState === "idle" &&
-            targetSession.pendingInterrupt == null &&
+            !hasPendingInterrupt(targetSession) &&
             targetSession.lastStreamError == null
           ) {
             return state;
@@ -421,7 +433,7 @@ export const useChatStore = create<ChatState>()(
               [targetConversationId]: {
                 ...targetSession,
                 streamState: "idle",
-                pendingInterrupt: null,
+                ...buildPendingInterruptState([]),
                 lastStreamError: null,
               },
             },
@@ -474,7 +486,7 @@ export const useChatStore = create<ChatState>()(
               lastAgentMessageId: agentMessage.id,
               lastReceivedSequence: undefined,
               transport: chatConnectionService.getPreferredTransport(),
-              pendingInterrupt: null,
+              ...buildPendingInterruptState([]),
             },
           },
         }));
@@ -557,7 +569,7 @@ export const useChatStore = create<ChatState>()(
               lastUserMessageId: userMessageId,
               lastAgentMessageId: agentMessageId,
               lastReceivedSequence: undefined,
-              pendingInterrupt: null,
+              ...buildPendingInterruptState([]),
             },
           },
         }));

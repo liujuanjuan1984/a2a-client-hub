@@ -6,7 +6,11 @@ import {
   listSessionMessagesPage,
   type SessionMessageItem,
 } from "@/lib/api/sessions";
-import { createAgentSession } from "@/lib/chat-utils";
+import {
+  buildPendingInterruptState,
+  createAgentSession,
+  getPendingInterruptQueue,
+} from "@/lib/chat-utils";
 import {
   addConversationMessage,
   clearAllConversationMessages,
@@ -810,6 +814,7 @@ describe("executeChatRuntime empty-content recovery", () => {
       type: "interrupt_event",
       content: "Agent requested authorization: read.\nTargets: /repo/.env",
     });
+    expect(state.sessions[conversationId]?.pendingInterrupts).toEqual([]);
     expect(state.sessions[conversationId]?.pendingInterrupt).toBeNull();
   });
 
@@ -858,7 +863,9 @@ describe("executeChatRuntime empty-content recovery", () => {
       };
     };
 
-    let pendingAfterWorking = state.sessions[conversationId]?.pendingInterrupt;
+    let pendingAfterWorking = getPendingInterruptQueue(
+      state.sessions[conversationId],
+    );
     mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
       async (params: {
         callbacks: {
@@ -888,7 +895,9 @@ describe("executeChatRuntime empty-content recovery", () => {
           status: { state: "working" },
           final: false,
         });
-        pendingAfterWorking = state.sessions[conversationId]?.pendingInterrupt;
+        pendingAfterWorking = getPendingInterruptQueue(
+          state.sessions[conversationId],
+        );
         params.callbacks.onData({
           kind: "status-update",
           status: { state: "completed" },
@@ -913,11 +922,13 @@ describe("executeChatRuntime empty-content recovery", () => {
       set,
     );
 
-    expect(pendingAfterWorking).toMatchObject({
+    expect(pendingAfterWorking).toHaveLength(1);
+    expect(pendingAfterWorking[0]).toMatchObject({
       requestId: "perm-1",
       type: "permission",
       phase: "asked",
     });
+    expect(state.sessions[conversationId]?.pendingInterrupts).toEqual([]);
     expect(state.sessions[conversationId]?.pendingInterrupt).toBeNull();
     expect(state.sessions[conversationId]?.lastResolvedInterrupt).toBeNull();
   });
@@ -967,7 +978,9 @@ describe("executeChatRuntime empty-content recovery", () => {
       };
     };
 
-    let pendingAfterAlias = state.sessions[conversationId]?.pendingInterrupt;
+    let pendingAfterAlias = getPendingInterruptQueue(
+      state.sessions[conversationId],
+    );
     mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
       async (params: {
         callbacks: {
@@ -991,7 +1004,9 @@ describe("executeChatRuntime empty-content recovery", () => {
             },
           },
         });
-        pendingAfterAlias = state.sessions[conversationId]?.pendingInterrupt;
+        pendingAfterAlias = getPendingInterruptQueue(
+          state.sessions[conversationId],
+        );
         params.callbacks.onData({
           kind: "status-update",
           status: { state: "completed" },
@@ -1025,12 +1040,185 @@ describe("executeChatRuntime empty-content recovery", () => {
       { runtimeStatusContract: customRuntimeStatusContract },
     );
 
-    expect(pendingAfterAlias).toMatchObject({
+    expect(pendingAfterAlias).toHaveLength(1);
+    expect(pendingAfterAlias[0]).toMatchObject({
       requestId: "perm-contract-1",
       type: "permission",
       phase: "asked",
     });
     expect(state.sessions[conversationId]?.runtimeStatus).toBe("completed");
+  });
+
+  it("queues multiple pending interrupts and advances by matching request id", async () => {
+    const conversationId = "conv-interrupt-queue-1";
+    const agentId = "agent-interrupt-queue-1";
+    const userMessageId = "user-msg-interrupt-queue-1";
+    const agentMessageId = "agent-msg-interrupt-queue-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T07:45:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T07:45:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    const queueSnapshots: string[][] = [];
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "input-required" },
+          final: false,
+          metadata: {
+            shared: {
+              interrupt: {
+                request_id: "perm-1",
+                type: "permission",
+                phase: "asked",
+                details: {
+                  permission: "read",
+                  patterns: ["/repo/.env"],
+                },
+              },
+            },
+          },
+        });
+        queueSnapshots.push(
+          getPendingInterruptQueue(state.sessions[conversationId]).map(
+            (interrupt) => interrupt.requestId,
+          ),
+        );
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "auth-required" },
+          final: false,
+          metadata: {
+            shared: {
+              interrupt: {
+                request_id: "perm-2",
+                type: "permission",
+                phase: "asked",
+                details: {
+                  permission: "write",
+                  patterns: ["/repo/src/**"],
+                },
+              },
+            },
+          },
+        });
+        queueSnapshots.push(
+          getPendingInterruptQueue(state.sessions[conversationId]).map(
+            (interrupt) => interrupt.requestId,
+          ),
+        );
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "working" },
+          final: false,
+          metadata: {
+            shared: {
+              interrupt: {
+                request_id: "perm-2",
+                type: "permission",
+                phase: "resolved",
+                resolution: "replied",
+              },
+            },
+          },
+        });
+        queueSnapshots.push(
+          getPendingInterruptQueue(state.sessions[conversationId]).map(
+            (interrupt) => interrupt.requestId,
+          ),
+        );
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "working" },
+          final: false,
+          metadata: {
+            shared: {
+              interrupt: {
+                request_id: "perm-1",
+                type: "permission",
+                phase: "resolved",
+                resolution: "replied",
+              },
+            },
+          },
+        });
+        queueSnapshots.push(
+          getPendingInterruptQueue(state.sessions[conversationId]).map(
+            (interrupt) => interrupt.requestId,
+          ),
+        );
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(queueSnapshots).toEqual([
+      ["perm-1"],
+      ["perm-1", "perm-2"],
+      ["perm-1"],
+      [],
+    ]);
+    expect(state.sessions[conversationId]?.pendingInterrupts).toEqual([]);
+    expect(state.sessions[conversationId]?.pendingInterrupt).toBeNull();
   });
 
   it("records resolved interrupt state and only clears matching pending interrupt", async () => {
@@ -1060,15 +1248,17 @@ describe("executeChatRuntime empty-content recovery", () => {
         [conversationId]: {
           ...createAgentSession(agentId),
           streamState: "streaming",
-          pendingInterrupt: {
-            requestId: "perm-1",
-            type: "permission",
-            phase: "asked",
-            details: {
-              permission: "read",
-              patterns: ["/repo/.env"],
+          ...buildPendingInterruptState([
+            {
+              requestId: "perm-1",
+              type: "permission",
+              phase: "asked",
+              details: {
+                permission: "read",
+                patterns: ["/repo/.env"],
+              },
             },
-          },
+          ]),
           lastUserMessageId: userMessageId,
           lastAgentMessageId: agentMessageId,
         },
@@ -1147,6 +1337,7 @@ describe("executeChatRuntime empty-content recovery", () => {
       set,
     );
 
+    expect(state.sessions[conversationId]?.pendingInterrupts).toEqual([]);
     expect(state.sessions[conversationId]?.pendingInterrupt).toBeNull();
     expect(state.sessions[conversationId]?.lastResolvedInterrupt).toMatchObject(
       {

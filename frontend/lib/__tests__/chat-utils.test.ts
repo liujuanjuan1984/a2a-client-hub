@@ -3,6 +3,8 @@ import {
   buildInvokePayload,
   buildSessionCleanupPlan,
   createAgentSession,
+  getPendingInterrupt,
+  getPendingInterruptQueue,
   getSharedModelSelection,
   mergeExternalSessionRef,
   sortSessionsByLastActive,
@@ -15,6 +17,7 @@ describe("chat store utils", () => {
     expect(session.agentId).toBe("agent-1");
     expect(session.contextId).toBeNull();
     expect(session.streamState).toBe("idle");
+    expect(session.pendingInterrupts).toEqual([]);
     expect(session.pendingInterrupt).toBeNull();
     expect(session.lastResolvedInterrupt).toBeNull();
     expect(session.transport).toBe("http_json");
@@ -160,6 +163,55 @@ describe("chat store utils", () => {
     expect(sorted.map(([id]) => id)).toEqual(["s1", "s2"]);
   });
 
+  it("prefers queued pending interrupts and falls back to legacy state", () => {
+    const session = createAgentSession("agent-1");
+    session.pendingInterrupt = {
+      requestId: "legacy-perm-1",
+      type: "permission",
+      phase: "asked",
+      details: {
+        permission: "read",
+        patterns: ["/repo/.env"],
+      },
+    };
+
+    expect(getPendingInterruptQueue(session)).toEqual([
+      session.pendingInterrupt,
+    ]);
+    expect(getPendingInterrupt(session)?.requestId).toBe("legacy-perm-1");
+
+    session.pendingInterrupts = [
+      {
+        requestId: "perm-1",
+        type: "permission",
+        phase: "asked",
+        details: {
+          permission: "read",
+          patterns: ["/repo/.env"],
+        },
+      },
+      {
+        requestId: "q-1",
+        type: "question",
+        phase: "asked",
+        details: {
+          questions: [
+            {
+              header: null,
+              question: "Proceed?",
+              options: [],
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(
+      getPendingInterruptQueue(session).map((item) => item.requestId),
+    ).toEqual(["perm-1", "q-1"]);
+    expect(getPendingInterrupt(session)?.requestId).toBe("perm-1");
+  });
+
   it("builds cleanup plan for expired and orphaned sessions", () => {
     const active = createAgentSession("agent-1");
     active.lastActiveAt = "2026-02-14T12:00:00.000Z";
@@ -241,6 +293,7 @@ describe("chat store utils", () => {
       phase: "asked",
       details: { permission: "read", patterns: ["/repo/.env"] },
     };
+    newest.pendingInterrupts = [newest.pendingInterrupt];
     newest.lastResolvedInterrupt = {
       requestId: "q-1",
       type: "question",
@@ -258,6 +311,7 @@ describe("chat store utils", () => {
     expect(persisted.newest.streamState).toBe("idle");
     expect(persisted.newest.lastStreamError).toBeNull();
     expect(persisted.newest.runtimeStatus).toBeNull();
+    expect(persisted.newest.pendingInterrupts).toEqual([]);
     expect(persisted.newest.pendingInterrupt).toBeNull();
     expect(persisted.newest.lastResolvedInterrupt).toBeNull();
     expect(persisted.newest.transport).toBe("http_json");

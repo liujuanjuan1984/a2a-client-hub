@@ -18,6 +18,7 @@ export const ChatComposer = memo(function ChatComposer({
   modelSelectionStatus,
   currentDirectory,
   pendingInterrupt,
+  pendingInterruptCount,
   showShortcutManager,
   onOpenDirectoryPicker,
   onOpenShortcutManager,
@@ -42,6 +43,7 @@ export const ChatComposer = memo(function ChatComposer({
   modelSelectionStatus: GenericCapabilityStatus;
   currentDirectory?: string | null;
   pendingInterrupt: PendingRuntimeInterrupt | null;
+  pendingInterruptCount: number;
   showShortcutManager: boolean;
   onOpenDirectoryPicker: () => void;
   onOpenShortcutManager: () => void;
@@ -78,6 +80,12 @@ export const ChatComposer = memo(function ChatComposer({
             Agent is waiting for authorization/input. Resolve the action card
             first.
           </Text>
+          {pendingInterruptCount > 1 ? (
+            <Text className="mt-1 text-xs text-amber-200">
+              {pendingInterruptCount} pending requests are queued for this
+              session.
+            </Text>
+          ) : null}
         </View>
       ) : null}
 
