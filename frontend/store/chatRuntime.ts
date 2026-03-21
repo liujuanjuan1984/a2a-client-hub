@@ -277,6 +277,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     string,
     Map<number, StreamBlockUpdate>
   >();
+  const resettableSeqByMessageId = new Set<string>();
   let terminalHandled = false;
   let hasObservedStreamEvent = false;
   let highestReceivedSequence =
@@ -769,7 +770,19 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       });
     }
 
-    const currentExpected = nextExpectedSeqByMessageId.get(chunk.messageId);
+    let currentExpected = nextExpectedSeqByMessageId.get(chunk.messageId);
+    if (
+      typeof currentExpected === "number" &&
+      chunk.seq < currentExpected &&
+      resettableSeqByMessageId.has(chunk.messageId)
+    ) {
+      // Some upstreams restart per-message chunk sequence after an interrupt is
+      // resolved. Treat the resumed chunk stream as a new ordered segment.
+      resettableSeqByMessageId.delete(chunk.messageId);
+      nextExpectedSeqByMessageId.delete(chunk.messageId);
+      pendingChunksByMessageId.delete(chunk.messageId);
+      currentExpected = undefined;
+    }
     if (typeof currentExpected === "number" && chunk.seq < currentExpected) {
       return;
     }
@@ -828,6 +841,9 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           messageId: activeAgentMessageId,
         }),
       );
+      if (runtimeStatusEvent.interrupt.phase === "resolved") {
+        resettableSeqByMessageId.add(activeAgentMessageId);
+      }
     }
 
     const meta = extractSessionMeta(data);
