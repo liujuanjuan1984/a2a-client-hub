@@ -89,7 +89,11 @@ def test_rejects_invalid_jwt_private_key_pem(
     _set_base_env(monkeypatch)
     monkeypatch.setenv(
         "JWT_PRIVATE_KEY_PEM",
-        "-----BEGIN PRIVATE KEY-----\nnot-valid-pem\n-----END PRIVATE KEY-----\n",
+        (
+            "-----BEGIN PRIVATE KEY-----\n"  # pragma: allowlist secret
+            "not-valid-pem\n"
+            "-----END PRIVATE KEY-----\n"
+        ),
     )
 
     with pytest.raises(

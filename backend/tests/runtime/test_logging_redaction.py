@@ -53,7 +53,9 @@ def test_redact_query_params_for_logging():
 
 def test_redact_url_for_logging():
     assert (
-        redact_url_for_logging("https://user:pass@example.com/path?query=val#frag")
+        redact_url_for_logging(
+            "https://user:pass@example.com/path?query=val#frag"  # pragma: allowlist secret
+        )
         == "https://example.com"
     )
     assert (
