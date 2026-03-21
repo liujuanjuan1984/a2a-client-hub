@@ -22,8 +22,8 @@ from app.features.sessions.common import (
     encode_messages_before_cursor,
     parse_conversation_id,
     parse_messages_before_cursor,
+    project_message_blocks,
     render_block_detail_item,
-    render_blocks,
     resolve_session_source,
     sender_priority_for_role,
     sender_to_role,
@@ -243,13 +243,18 @@ class SessionQueryService:
             status = (
                 normalize_non_empty_text(getattr(message, "status", None)) or "done"
             )
+            rendered_blocks, content = project_message_blocks(
+                raw_blocks,
+                message_status=status,
+            )
             items.append(
                 {
                     "id": str(message_id),
                     "role": role,
+                    "content": content,
                     "created_at": message.created_at,
                     "status": status,
-                    "blocks": render_blocks(raw_blocks, message_status=status),
+                    "blocks": rendered_blocks,
                 }
             )
 

@@ -24,6 +24,7 @@ from app.features.sessions.common import (
     derive_session_title_from_query,
     is_agent_message_pk_violation,
     is_idempotency_unique_violation,
+    is_primary_text_snapshot_source,
     normalize_block_type,
     normalize_interrupt_lifecycle_event,
     read_block_cursor_state,
@@ -800,6 +801,9 @@ class SessionHistoryProjectionService:
             "finalize_snapshot",
         }
         active_block_seq = cursor_state["active_block_seq"]
+        allow_snapshot_text_rewrite = normalized_type == "text" and (
+            is_primary_text_snapshot_source(normalized_source)
+        )
 
         active_block: AgentMessageBlock | None = None
         if active_block_seq > 0:
@@ -815,34 +819,59 @@ class SessionHistoryProjectionService:
                 user_id=user_id,
                 message_id=agent_message_id,
             )
+        overwrite_target = active_block
+        if allow_snapshot_text_rewrite:
+            # Final text snapshots are authoritative for the existing primary text
+            # lane even if a non-text block was the most recent active block.
+            text_block = await block_store.find_last_block_for_message_and_type(
+                db,
+                user_id=user_id,
+                message_id=agent_message_id,
+                block_type="text",
+            )
+            if text_block is not None:
+                overwrite_target = text_block
 
         persisted_block: AgentMessageBlock | None = None
         if overwrite:
             if (
-                active_block is not None
-                and cast(str | None, active_block.block_type) == normalized_type
-                and not bool(active_block.is_finished)
-            ):
-                setattr(active_block, "content", normalized_content)
-                setattr(active_block, "is_finished", bool(is_finished))
-                setattr(
-                    active_block,
-                    "source",
-                    normalized_source or cast(str | None, active_block.source),
+                overwrite_target is not None
+                and cast(str | None, overwrite_target.block_type) == normalized_type
+                and (
+                    not bool(overwrite_target.is_finished)
+                    or allow_snapshot_text_rewrite
                 )
-                active_start_event_seq = cast(int | None, active_block.start_event_seq)
+            ):
+                if (
+                    active_block is not None
+                    and overwrite_target is not active_block
+                    and not bool(active_block.is_finished)
+                ):
+                    setattr(active_block, "is_finished", True)
+                setattr(overwrite_target, "content", normalized_content)
+                setattr(overwrite_target, "is_finished", bool(is_finished))
+                setattr(
+                    overwrite_target,
+                    "source",
+                    normalized_source or cast(str | None, overwrite_target.source),
+                )
+                active_start_event_seq = cast(
+                    int | None, overwrite_target.start_event_seq
+                )
                 if active_start_event_seq is None:
-                    setattr(active_block, "start_event_seq", seq)
-                active_end_event_seq = cast(int | None, active_block.end_event_seq)
+                    setattr(overwrite_target, "start_event_seq", seq)
+                active_end_event_seq = cast(int | None, overwrite_target.end_event_seq)
                 if active_end_event_seq is None or seq >= active_end_event_seq:
-                    setattr(active_block, "end_event_seq", seq)
+                    setattr(overwrite_target, "end_event_seq", seq)
                 normalized_event_id = normalize_non_empty_text(event_id)
-                active_start_event_id = cast(str | None, active_block.start_event_id)
+                active_start_event_id = cast(
+                    str | None, overwrite_target.start_event_id
+                )
                 if normalized_event_id and not active_start_event_id:
-                    setattr(active_block, "start_event_id", normalized_event_id)
+                    setattr(overwrite_target, "start_event_id", normalized_event_id)
                 if normalized_event_id:
-                    setattr(active_block, "end_event_id", normalized_event_id)
-                persisted_block = active_block
+                    setattr(overwrite_target, "end_event_id", normalized_event_id)
+                persisted_block = overwrite_target
             else:
                 if active_block is not None and not bool(active_block.is_finished):
                     setattr(active_block, "is_finished", True)

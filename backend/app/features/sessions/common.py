@@ -63,6 +63,7 @@ INFLIGHT_CANCEL_TERMINAL_ERROR_CODES = {
     "task_not_cancelable",
     "invalid_task_id",
 }
+PRIMARY_TEXT_SNAPSHOT_SOURCES = frozenset({"final_snapshot", "finalize_snapshot"})
 
 
 def parse_conversation_id(value: str) -> UUID:
@@ -180,6 +181,8 @@ def derive_session_title_from_query(query: str) -> str | None:
 
 def normalize_block_type(raw_type: str | None) -> str:
     normalized = (raw_type or "").strip().lower()
+    if not normalized:
+        return "text"
     if normalized in {
         "text",
         "reasoning",
@@ -188,7 +191,7 @@ def normalize_block_type(raw_type: str | None) -> str:
         "system_error",
     }:
         return normalized
-    return "text"
+    return normalized
 
 
 def normalize_interrupt_lifecycle_event(
@@ -352,6 +355,10 @@ def write_block_cursor_state(metadata: dict[str, Any], cursor: dict[str, int]) -
     }
 
 
+def is_primary_text_snapshot_source(source: str | None) -> bool:
+    return normalize_non_empty_text(source) in PRIMARY_TEXT_SNAPSHOT_SOURCES
+
+
 def render_block_item(
     block: AgentMessageBlock,
     *,
@@ -386,6 +393,46 @@ def render_blocks(
     message_status: str | None = None,
 ) -> list[dict[str, Any]]:
     return [render_block_item(block, message_status=message_status) for block in blocks]
+
+
+def project_message_blocks(
+    blocks: list[AgentMessageBlock],
+    *,
+    message_status: str | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    projected_blocks: list[dict[str, Any]] = []
+
+    for block in blocks:
+        block_type = normalize_block_type(cast(str | None, block.block_type))
+        rendered = render_block_item(block, message_status=message_status)
+        if block_type == "text" and is_primary_text_snapshot_source(
+            cast(str | None, block.source)
+        ):
+            # History list views expose a canonical read model rather than raw
+            # persistence rows, so a final text snapshot rewrites the last text slot.
+            target_index = next(
+                (
+                    index
+                    for index in range(len(projected_blocks) - 1, -1, -1)
+                    if str(projected_blocks[index].get("type") or "") == "text"
+                ),
+                None,
+            )
+            if target_index is not None:
+                projected_blocks[target_index] = {
+                    **projected_blocks[target_index],
+                    "content": rendered.get("content", ""),
+                    "isFinished": rendered.get("isFinished", True),
+                }
+                continue
+        projected_blocks.append(rendered)
+
+    content = "".join(
+        str(block.get("content") or "")
+        for block in projected_blocks
+        if str(block.get("type") or "") == "text"
+    )
+    return projected_blocks, content
 
 
 def render_block_detail_item(
