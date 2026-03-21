@@ -227,4 +227,33 @@ describe("session history mapping", () => {
       },
     });
   });
+
+  it("prefers server-provided content over recomputing text from blocks", () => {
+    const mapped = mapSessionMessagesToChatMessages([
+      {
+        id: "msg-projected-1",
+        role: "agent",
+        created_at: "2026-03-21T00:00:00.000Z",
+        content: "final answer",
+        blocks: [
+          {
+            id: "text-block-1",
+            type: "text",
+            content: "draft",
+            isFinished: true,
+          },
+          {
+            id: "reasoning-block-1",
+            type: "reasoning",
+            content: "",
+            isFinished: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]?.content).toBe("final answer");
+    expect(mapped[0]?.blocks?.[0]?.content).toBe("draft");
+  });
 });

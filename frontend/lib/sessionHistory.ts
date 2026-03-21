@@ -9,6 +9,7 @@ import {
 export type SessionMessageItem = {
   id: string;
   role: string;
+  content?: string;
   created_at: string;
   status?: string;
   blocks?: {
@@ -99,9 +100,15 @@ export const mapSessionMessagesToChatMessages = (
       return;
     }
     const blocks = mapBlocks(item);
+    const serviceContent =
+      typeof item.content === "string" ? item.content : undefined;
     const blockContent = projectPrimaryTextContent(blocks);
     const normalizedContent =
-      blockContent.trim().length > 0 ? blockContent : "";
+      typeof serviceContent === "string"
+        ? serviceContent
+        : blockContent.trim().length > 0
+          ? blockContent
+          : "";
     if (
       normalizedContent.trim().length === 0 &&
       blocks.length === 0 &&

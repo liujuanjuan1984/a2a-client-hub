@@ -42,6 +42,7 @@ export type SessionMessageBlockDetailItem = {
 export type SessionMessageItem = {
   id: string;
   role: "user" | "agent" | "system";
+  content?: string;
   created_at: string;
   status?: string;
   blocks?: SessionMessageBlockItem[];

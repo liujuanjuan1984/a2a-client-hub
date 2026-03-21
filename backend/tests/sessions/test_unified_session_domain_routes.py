@@ -164,6 +164,8 @@ async def test_conversation_routes_use_conversation_id_only(
         )
         assert messages_user_item["id"] == str(user_message.id)
         assert messages_agent_item["id"] == str(agent_message.id)
+        assert messages_user_item["content"] == "hello"
+        assert messages_agent_item["content"] == "world"
         assert len(messages_user_item["blocks"]) == 1
         assert len(messages_agent_item["blocks"]) == 2
         assert messages_agent_item["blocks"][0]["content"] == "world"

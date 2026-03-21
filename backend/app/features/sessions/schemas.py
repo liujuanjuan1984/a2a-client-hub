@@ -60,6 +60,7 @@ class SessionMessagesQueryRequest(BaseModel):
 class SessionMessageItem(BaseModel):
     id: str
     role: Literal["user", "agent", "system"]
+    content: str = ""
     created_at: datetime
     status: str
     blocks: list[SessionMessageBlockItem] = Field(default_factory=list)
