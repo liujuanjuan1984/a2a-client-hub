@@ -112,7 +112,7 @@ export function useChatComposerController({
     [minInputHeight, updateInputFlags],
   );
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(() => {
     if (!activeAgentId || !conversationId || !agentSource) {
       return;
     }
@@ -128,9 +128,21 @@ export function useChatComposerController({
       return;
     }
 
-    await sendMessage(conversationId, activeAgentId, input, agentSource);
     replaceInput("", { resetHeight: true });
     onAfterSend();
+    const sendPromise = sendMessage(
+      conversationId,
+      activeAgentId,
+      input,
+      agentSource,
+    );
+    sendPromise.catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "Unknown error.";
+      toast.error("Send failed", message);
+      if (draftInputRef.current.length === 0) {
+        replaceInput(input, { focus: true });
+      }
+    });
   }, [
     activeAgentId,
     agentSource,
