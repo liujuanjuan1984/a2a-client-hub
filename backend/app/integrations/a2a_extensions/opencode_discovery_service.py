@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from app.features.personal_agents.runtime import A2ARuntime
 from app.integrations.a2a_extensions.service_common import ExtensionCallResult
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import ResolvedProviderDiscoveryExtension
-from app.services.a2a_runtime import A2ARuntime
 
 
 def _extract_provider_private_metadata(

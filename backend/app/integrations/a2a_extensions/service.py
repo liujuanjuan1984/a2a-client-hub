@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional
 
 from app.core.logging import get_logger
+from app.features.personal_agents.runtime import A2ARuntime
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
@@ -44,7 +45,6 @@ from app.integrations.a2a_extensions.types import (
     ResolvedSessionBindingExtension,
     ResolvedStreamHintsExtension,
 )
-from app.services.a2a_runtime import A2ARuntime
 
 logger = get_logger(__name__)
 _CAPABILITY_SNAPSHOT_CACHE_TTL_SECONDS = 300.0

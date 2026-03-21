@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import AnyHttpUrl, BaseModel, Field
 
-from app.schemas.a2a_agent import A2AAuthType
+from app.features.personal_agents.schemas import A2AAuthType
 
 
 class A2AAgentCardProxyRequest(BaseModel):

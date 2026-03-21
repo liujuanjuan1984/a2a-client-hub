@@ -8,6 +8,7 @@ from a2a.types import AgentCard
 
 from app.core.config import settings
 from app.core.http_client import get_global_http_client
+from app.features.personal_agents.runtime import A2ARuntime
 from app.integrations.a2a_client import get_a2a_service
 from app.integrations.a2a_client.errors import (
     A2AAgentUnavailableError,
@@ -34,8 +35,7 @@ from app.integrations.a2a_extensions.types import (
     ResolvedInterruptCallbackExtension,
     ResolvedProviderDiscoveryExtension,
 )
-from app.services.a2a_proxy_service import a2a_proxy_service
-from app.services.a2a_runtime import A2ARuntime
+from app.platform.a2a_proxy_service import a2a_proxy_service
 from app.utils.outbound_url import (
     OutboundURLNotAllowedError,
     validate_outbound_http_url,

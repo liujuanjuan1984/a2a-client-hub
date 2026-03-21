@@ -23,20 +23,20 @@ from app.core.config import settings
 from app.core.http_client import close_global_http_client, init_global_http_client
 from app.core.logging import get_logger, setup_logging
 from app.db.session import AsyncSessionLocal
+from app.features.schedules.job import ensure_a2a_schedule_job
+from app.features.schedules.service import (
+    ensure_a2a_schedule_execution_cleanup_job,
+)
 from app.integrations.a2a_client import get_a2a_service, shutdown_a2a_service
 from app.integrations.a2a_extensions import (
     get_a2a_extensions_service,
     shutdown_a2a_extensions_service,
 )
 from app.middleware.debug_logging import DebugLoggingMiddleware
-from app.services.a2a_proxy_service import a2a_proxy_service
-from app.services.a2a_schedule_job import ensure_a2a_schedule_job
-from app.services.a2a_schedule_service import (
-    ensure_a2a_schedule_execution_cleanup_job,
-)
-from app.services.health import run_health_checks
-from app.services.scheduler import shutdown_scheduler, start_scheduler
-from app.services.ws_ticket_service import ensure_ws_ticket_cleanup_job
+from app.platform.a2a_proxy_service import a2a_proxy_service
+from app.platform.health import run_health_checks
+from app.platform.scheduler import shutdown_scheduler, start_scheduler
+from app.platform.ws_ticket import ensure_ws_ticket_cleanup_job
 from app.utils.timezone_util import utc_now_iso
 
 # Set up logging first

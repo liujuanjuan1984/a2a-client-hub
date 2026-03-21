@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
-from app.services.ops_metrics import ops_metrics
+from app.platform.ops_metrics import ops_metrics
 
 _use_null_pool = settings.schema_name.startswith("test_")
 

@@ -23,9 +23,9 @@ from app.db.locking import (
 )
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
-from app.handlers import auth as auth_handler
-from app.services.ops_metrics import ops_metrics
-from app.services.ws_ticket_service import (
+from app.features.auth import service as auth_service
+from app.platform.ops_metrics import ops_metrics
+from app.platform.ws_ticket import (
     WsTicketError,
     ws_ticket_service,
 )
@@ -86,13 +86,13 @@ async def get_current_user(
 
     try:
         async with AsyncSessionLocal() as db:
-            user = await auth_handler.get_active_user(
+            user = await auth_service.get_active_user(
                 db,
                 user_id=user_uuid,
             )
             set_user_context(str(user.id))
             return user
-    except auth_handler.UserNotFoundError as exc:
+    except auth_service.UserNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
@@ -201,7 +201,7 @@ async def get_ws_ticket_user(
                 scope_id=scope_id,
             )
             consumed_user_id = cast(UUID, consumed.user_id)
-            user = await auth_handler.get_active_user(
+            user = await auth_service.get_active_user(
                 db,
                 user_id=consumed_user_id,
             )
@@ -252,7 +252,7 @@ async def get_ws_ticket_user(
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION, reason=str(exc)
         ) from exc
-    except auth_handler.UserNotFoundError as exc:
+    except auth_service.UserNotFoundError as exc:
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION,
             reason=str(exc),

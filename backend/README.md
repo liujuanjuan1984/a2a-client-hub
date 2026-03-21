@@ -44,6 +44,44 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Default API prefix: `/api/v1`.
 
+## Backend Structure
+
+The backend now uses a practical feature-based structure for business-facing
+entrypoints and orchestration code.
+
+Current direction:
+
+- Cross-cutting layers remain under `app/api`, `app/core`, `app/db`, `app/integrations`, and `app/platform`.
+- Feature-owned code lives under `app/features/<feature_name>/`.
+- Migrated feature routes, schemas, and facades should be imported from `app/features/...` directly.
+
+Feature-owned areas already organized under `app/features/`:
+
+- `app/features/auth/`
+- `app/features/extension_capabilities/`
+- `app/features/hub_agents/`
+- `app/features/invitations/`
+- `app/features/invoke/`
+- `app/features/opencode_sessions/`
+- `app/features/personal_agents/`
+- `app/features/schedules/`
+- `app/features/sessions/`
+- `app/features/shortcuts/`
+
+This keeps the runtime entrypoints aligned with business capabilities and makes
+the import graph easier to reason about over time.
+
+## Test Layout
+
+Backend tests are being grouped under `backend/tests/<group_name>/` so related
+coverage stays close together.
+
+Current layout direction:
+
+- Feature directories such as `tests/invoke/`, `tests/sessions/`, and `tests/hub_agents/`
+- Shared capability directories such as `tests/client/`, `tests/runtime/`, `tests/proxy/`, `tests/platform/`, and `tests/shared/`
+- Shared fixtures remain at the `backend/tests/` root, and reusable helpers live under `backend/tests/support/`
+
 ## Incremental mypy Gate
 
 The backend uses a phased mypy gate for changed files instead of a full-repo
@@ -58,7 +96,7 @@ Useful commands:
 ```bash
 cd backend
 uv run bash scripts/mypy_changed.sh
-uv run bash scripts/mypy_changed.sh app/schemas/auth.py
+uv run bash scripts/mypy_changed.sh app/features/auth/schemas.py
 ```
 
 ## A2A Outbound Allowlist
