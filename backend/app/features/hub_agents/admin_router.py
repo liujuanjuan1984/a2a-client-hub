@@ -33,7 +33,7 @@ from app.features.hub_agents.service import (
     HubA2AUserNotFoundError,
     hub_a2a_agent_service,
 )
-from app.services.a2a_proxy_service import a2a_proxy_service
+from app.platform.a2a_proxy_service import a2a_proxy_service
 from app.utils.logging_redaction import redact_url_for_logging
 
 router = StrictAPIRouter(prefix="/admin/a2a/agents", tags=["admin-a2a"])

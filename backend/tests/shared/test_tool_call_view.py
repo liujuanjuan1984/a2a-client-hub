@@ -1,4 +1,7 @@
-from app.services.tool_call_view import build_tool_call_detail, build_tool_call_view
+from app.features.invoke.tool_call_view import (
+    build_tool_call_detail,
+    build_tool_call_view,
+)
 
 
 def test_build_tool_call_view_uses_last_event_for_summary():

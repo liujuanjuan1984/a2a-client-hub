@@ -13,7 +13,7 @@ from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.transaction import commit_safely
-from app.services.agent_common import (
+from app.features.agents_shared.common import (
     ALLOWED_AUTH_TYPES,
     AgentValidationMixin,
     delete_agent_credentials,

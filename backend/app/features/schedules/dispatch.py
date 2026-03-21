@@ -25,7 +25,7 @@ from app.features.schedules.common import (
 from app.features.schedules.projection import A2AScheduleProjectionService
 from app.features.schedules.support import A2AScheduleSupport
 from app.features.schedules.time import A2AScheduleTimeHelper
-from app.services.ops_metrics import ops_metrics
+from app.platform.ops_metrics import ops_metrics
 from app.utils.timezone_util import ensure_utc, utc_now
 
 logger = get_logger(__name__)

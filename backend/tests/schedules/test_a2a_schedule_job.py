@@ -20,6 +20,14 @@ from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.db.models.user import User
 from app.db.transaction import commit_safely as real_commit_safely
+from app.features.schedules.job import (
+    _derive_recovery_timeouts,
+    _execute_claimed_task,
+    _refresh_ops_metrics,
+    _schedule_run_heartbeat_loop,
+    _try_hold_dispatch_leader_lock,
+    dispatch_due_a2a_schedules,
+)
 from app.features.schedules.service import (
     A2AScheduleConflictError,
     A2AScheduleNotFoundError,
@@ -28,15 +36,7 @@ from app.features.schedules.service import (
     a2a_schedule_service,
 )
 from app.integrations.a2a_client.errors import A2AAgentUnavailableError
-from app.services.a2a_schedule_job import (
-    _derive_recovery_timeouts,
-    _execute_claimed_task,
-    _refresh_ops_metrics,
-    _schedule_run_heartbeat_loop,
-    _try_hold_dispatch_leader_lock,
-    dispatch_due_a2a_schedules,
-)
-from app.services.ops_metrics import ops_metrics
+from app.platform.ops_metrics import ops_metrics
 from app.utils.timezone_util import utc_now
 from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
 
@@ -495,7 +495,7 @@ async def test_schedule_run_heartbeat_loop_classifies_lock_contention(
         )
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._touch_schedule_run_heartbeat",
+        "app.features.schedules.job._touch_schedule_run_heartbeat",
         _raise_lock_contention,
     )
     monkeypatch.setattr(
@@ -505,7 +505,7 @@ async def test_schedule_run_heartbeat_loop_classifies_lock_contention(
         raising=False,
     )
 
-    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+    with caplog.at_level(logging.WARNING, logger="app.features.schedules.job"):
         await _schedule_run_heartbeat_loop(claim=claim, stop_event=stop_event)
 
     assert "lock contention" in caplog.text
@@ -543,7 +543,7 @@ async def test_schedule_run_heartbeat_loop_classifies_statement_timeout(
         )
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._touch_schedule_run_heartbeat",
+        "app.features.schedules.job._touch_schedule_run_heartbeat",
         _raise_statement_timeout,
     )
     monkeypatch.setattr(
@@ -553,7 +553,7 @@ async def test_schedule_run_heartbeat_loop_classifies_statement_timeout(
         raising=False,
     )
 
-    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+    with caplog.at_level(logging.WARNING, logger="app.features.schedules.job"):
         await _schedule_run_heartbeat_loop(claim=claim, stop_event=stop_event)
 
     after = ops_metrics.snapshot().get("schedule_db_query_timeouts", 0)
@@ -581,11 +581,11 @@ async def test_execute_claimed_task_resets_consecutive_failures_on_success(
     await async_db_session.commit()
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
@@ -670,11 +670,11 @@ async def test_execute_claimed_task_timeout_trips_failure_threshold(
         raising=False,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
@@ -741,7 +741,7 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
         raising=False,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
 
@@ -776,7 +776,7 @@ async def test_execute_claimed_task_timeout_persists_partial_stream_content(
             await preflight_client.close()
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
                 stream=_stream,
@@ -855,7 +855,7 @@ async def test_execute_claimed_task_runtime_failure_does_not_create_conversation
         raise RuntimeError("runtime build failed")
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         SimpleNamespace(build=_build),
     )
 
@@ -896,7 +896,7 @@ async def test_execute_claimed_task_persists_structured_agent_unavailable_error(
     task_id = task.id
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
 
@@ -918,7 +918,7 @@ async def test_execute_claimed_task_persists_structured_agent_unavailable_error(
             await preflight_client.close()
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
                 stream=_stream,
@@ -964,7 +964,7 @@ async def test_execute_claimed_task_fails_fast_when_preflight_card_fetch_fails(
     task_id = task.id
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
 
@@ -974,7 +974,7 @@ async def test_execute_claimed_task_fails_fast_when_preflight_card_fetch_fails(
         yield  # pragma: no cover
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
                 open_invoke_session=_open_invoke_session,
@@ -982,12 +982,12 @@ async def test_execute_claimed_task_fails_fast_when_preflight_card_fetch_fails(
         ),
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._ensure_task_session",
+        "app.features.schedules.job._ensure_task_session",
         AsyncMock(side_effect=AssertionError("session should not be created")),
     )
     run_background_invoke_mock = AsyncMock()
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.run_background_invoke",
+        "app.features.schedules.job.run_background_invoke",
         run_background_invoke_mock,
     )
 
@@ -1028,7 +1028,7 @@ async def test_execute_claimed_task_reuses_preflight_client_for_invoke(
     )
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
 
@@ -1056,11 +1056,11 @@ async def test_execute_claimed_task_reuses_preflight_client_for_invoke(
 
     gateway = SimpleNamespace(open_invoke_session=_open_invoke_session)
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(gateway=gateway),
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.run_background_invoke",
+        "app.features.schedules.job.run_background_invoke",
         run_background_invoke_mock,
     )
 
@@ -1091,11 +1091,11 @@ async def test_execute_claimed_task_binds_external_session_identity_when_present
     task_id = task.id
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
@@ -1161,11 +1161,11 @@ async def test_execute_claimed_task_persists_readable_agent_content(
     task_id = task.id
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
@@ -1240,11 +1240,11 @@ async def test_execute_claimed_task_creates_new_conversation_each_run(
     task_id = task.id
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=_mock_gateway_stream(
                 events=[
@@ -1357,7 +1357,7 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_mi
     task_id = task.id
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
 
@@ -1370,7 +1370,7 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_mi
         )
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
                 open_invoke_session=_open_invoke_session,
@@ -1386,11 +1386,11 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_mi
         }
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.run_background_invoke",
+        "app.features.schedules.job.run_background_invoke",
         _fake_run_background_invoke,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.finalize_task_run",
+        "app.features.schedules.job.a2a_schedule_service.finalize_task_run",
         AsyncMock(return_value=False),
     )
 
@@ -1441,7 +1441,7 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_lo
     task_id = task.id
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder",
+        "app.features.schedules.job.a2a_runtime_builder",
         _mock_runtime_builder(),
     )
 
@@ -1454,7 +1454,7 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_lo
         )
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
                 open_invoke_session=_open_invoke_session,
@@ -1470,11 +1470,11 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_lo
         }
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.run_background_invoke",
+        "app.features.schedules.job.run_background_invoke",
         _fake_run_background_invoke,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.finalize_task_run",
+        "app.features.schedules.job.a2a_schedule_service.finalize_task_run",
         AsyncMock(
             side_effect=A2AScheduleConflictError(
                 "Task is currently locked by another operation; retry shortly."
@@ -1483,7 +1483,7 @@ async def test_execute_claimed_task_does_not_side_write_execution_on_finalize_lo
     )
 
     run_id = await _mark_task_claimed(async_db_session, task=task)
-    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+    with caplog.at_level(logging.WARNING, logger="app.features.schedules.job"):
         await _execute_claimed_task(claim=_build_claim(task, run_id=run_id))
     await async_db_session.rollback()
 
@@ -1893,19 +1893,19 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_db_connection_refused
         raise ConnectionRefusedError("db unavailable")
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        "app.features.schedules.job._ensure_schedule_workers_started",
         ensure_workers_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        "app.features.schedules.job._refresh_ops_metrics",
         refresh_metrics_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        "app.features.schedules.job.a2a_schedule_service.recover_stale_running_tasks",
         _raise_connection_refused,
     )
 
-    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+    with caplog.at_level(logging.WARNING, logger="app.features.schedules.job"):
         await dispatch_due_a2a_schedules(batch_size=1)
 
     assert ensure_workers_mock.await_count == 0
@@ -1933,23 +1933,23 @@ async def test_dispatch_due_a2a_schedules_continues_when_recovery_hits_lock_cont
         )
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        "app.features.schedules.job._ensure_schedule_workers_started",
         ensure_workers_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        "app.features.schedules.job._refresh_ops_metrics",
         refresh_metrics_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        "app.features.schedules.job.a2a_schedule_service.recover_stale_running_tasks",
         _raise_lock_contention,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        "app.features.schedules.job.a2a_schedule_service.enqueue_due_tasks",
         enqueue_mock,
     )
 
-    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+    with caplog.at_level(logging.WARNING, logger="app.features.schedules.job"):
         await dispatch_due_a2a_schedules(batch_size=1)
 
     assert ensure_workers_mock.await_count == 1
@@ -1978,23 +1978,23 @@ async def test_dispatch_due_a2a_schedules_skips_when_leader_lock_not_acquired(
             return False
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._try_hold_dispatch_leader_lock",
+        "app.features.schedules.job._try_hold_dispatch_leader_lock",
         lambda: _NoLeaderLockContext(),
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        "app.features.schedules.job._ensure_schedule_workers_started",
         ensure_workers_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        "app.features.schedules.job._refresh_ops_metrics",
         refresh_metrics_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        "app.features.schedules.job.a2a_schedule_service.recover_stale_running_tasks",
         recover_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        "app.features.schedules.job.a2a_schedule_service.enqueue_due_tasks",
         enqueue_mock,
     )
 
@@ -2036,7 +2036,7 @@ async def test_try_hold_dispatch_leader_lock_rolls_back_open_transaction(
             return False
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.async_engine",
+        "app.features.schedules.job.async_engine",
         SimpleNamespace(connect=lambda: _FakeConnContext()),
     )
 
@@ -2081,11 +2081,11 @@ async def test_try_hold_dispatch_leader_lock_invalidates_connection_on_unlock_fa
             return False
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.async_engine",
+        "app.features.schedules.job.async_engine",
         SimpleNamespace(connect=lambda: _FakeConnContext()),
     )
 
-    with caplog.at_level(logging.ERROR, logger="app.services.a2a_schedule_job"):
+    with caplog.at_level(logging.ERROR, logger="app.features.schedules.job"):
         async with _try_hold_dispatch_leader_lock() as has_leader_lock:
             assert has_leader_lock is True
 
@@ -2111,23 +2111,23 @@ async def test_dispatch_due_a2a_schedules_skips_cycle_when_enqueue_db_connection
         raise ConnectionRefusedError("db unavailable")
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        "app.features.schedules.job._ensure_schedule_workers_started",
         ensure_workers_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        "app.features.schedules.job._refresh_ops_metrics",
         refresh_metrics_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        "app.features.schedules.job.a2a_schedule_service.recover_stale_running_tasks",
         _recover_ok,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        "app.features.schedules.job.a2a_schedule_service.enqueue_due_tasks",
         _enqueue_raises,
     )
 
-    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+    with caplog.at_level(logging.WARNING, logger="app.features.schedules.job"):
         await dispatch_due_a2a_schedules(batch_size=1)
 
     assert ensure_workers_mock.await_count == 1
@@ -2157,23 +2157,23 @@ async def test_dispatch_due_a2a_schedules_stops_enqueue_when_enqueue_hits_statem
         )
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        "app.features.schedules.job._ensure_schedule_workers_started",
         ensure_workers_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        "app.features.schedules.job._refresh_ops_metrics",
         refresh_metrics_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        "app.features.schedules.job.a2a_schedule_service.recover_stale_running_tasks",
         _recover_ok,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        "app.features.schedules.job.a2a_schedule_service.enqueue_due_tasks",
         _enqueue_timeout,
     )
 
-    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+    with caplog.at_level(logging.WARNING, logger="app.features.schedules.job"):
         await dispatch_due_a2a_schedules(batch_size=2)
 
     assert ensure_workers_mock.await_count == 1
@@ -2192,7 +2192,7 @@ async def test_dispatch_due_a2a_schedules_reraises_non_connectivity_errors(
         raise RuntimeError("unexpected recovery failure")
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        "app.features.schedules.job.a2a_schedule_service.recover_stale_running_tasks",
         _raise_unexpected,
     )
 
@@ -2244,19 +2244,19 @@ async def test_dispatch_due_a2a_schedules_passes_heartbeat_and_hard_timeout(
         raising=False,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        "app.features.schedules.job._ensure_schedule_workers_started",
         ensure_workers_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        "app.features.schedules.job._refresh_ops_metrics",
         refresh_metrics_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        "app.features.schedules.job.a2a_schedule_service.recover_stale_running_tasks",
         recover_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        "app.features.schedules.job.a2a_schedule_service.enqueue_due_tasks",
         enqueue_mock,
     )
 
@@ -2292,19 +2292,19 @@ async def test_dispatch_due_a2a_schedules_clamps_stale_timeout_to_invoke_timeout
         raising=False,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._ensure_schedule_workers_started",
+        "app.features.schedules.job._ensure_schedule_workers_started",
         ensure_workers_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job._refresh_ops_metrics",
+        "app.features.schedules.job._refresh_ops_metrics",
         refresh_metrics_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.recover_stale_running_tasks",
+        "app.features.schedules.job.a2a_schedule_service.recover_stale_running_tasks",
         recover_mock,
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_schedule_service.enqueue_due_tasks",
+        "app.features.schedules.job.a2a_schedule_service.enqueue_due_tasks",
         enqueue_mock,
     )
 
@@ -2330,11 +2330,11 @@ async def test_refresh_ops_metrics_skips_when_db_connection_refused(
             return False
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.AsyncSessionLocal",
+        "app.features.schedules.job.AsyncSessionLocal",
         lambda: _RefusedSessionContext(),
     )
 
-    with caplog.at_level(logging.WARNING, logger="app.services.a2a_schedule_job"):
+    with caplog.at_level(logging.WARNING, logger="app.features.schedules.job"):
         await _refresh_ops_metrics()
 
     assert (
@@ -2364,15 +2364,15 @@ async def test_refresh_ops_metrics_refreshes_db_pool_checked_out(
     refresh_mock = Mock()
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.AsyncSessionLocal",
+        "app.features.schedules.job.AsyncSessionLocal",
         lambda: _HealthySessionContext(),
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.async_engine",
+        "app.features.schedules.job.async_engine",
         SimpleNamespace(sync_engine=SimpleNamespace(pool=fake_pool)),
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.refresh_db_pool_checked_out",
+        "app.features.schedules.job.refresh_db_pool_checked_out",
         refresh_mock,
     )
 

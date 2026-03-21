@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db.models.ws_ticket import WsTicket
-from app.services.ws_ticket_service import WsTicketScopeError, ws_ticket_service
+from app.platform.ws_ticket import WsTicketScopeError, ws_ticket_service
 from app.utils.timezone_util import utc_now
 from tests.support.utils import create_user
 

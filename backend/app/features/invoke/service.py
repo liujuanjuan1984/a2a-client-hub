@@ -21,6 +21,36 @@ from a2a.types import Message
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
+from app.features.invoke.payload_analysis import (
+    PayloadAnalysis,
+)
+from app.features.invoke.payload_analysis import (
+    analyze_payload as analyze_payload_object,
+)
+from app.features.invoke.payload_analysis import (
+    extract_binding_hints_from_invoke_result as extract_binding_hints_from_result,
+)
+from app.features.invoke.payload_analysis import (
+    extract_binding_hints_from_serialized_event as extract_binding_hints_from_event,
+)
+from app.features.invoke.payload_analysis import (
+    extract_preferred_text_from_payload as extract_preferred_text,
+)
+from app.features.invoke.payload_analysis import (
+    extract_readable_content_from_invoke_result as extract_readable_content_from_result,
+)
+from app.features.invoke.payload_analysis import (
+    extract_stream_identity_hints_from_invoke_result as extract_stream_identity_hints_from_result,
+)
+from app.features.invoke.payload_analysis import (
+    extract_stream_identity_hints_from_serialized_event as extract_stream_identity_hints_from_event,
+)
+from app.features.invoke.payload_analysis import (
+    extract_usage_hints_from_invoke_result as extract_usage_hints_from_result,
+)
+from app.features.invoke.payload_analysis import (
+    extract_usage_hints_from_serialized_event as extract_usage_hints_from_event,
+)
 from app.features.invoke.stream_diagnostics import (
     build_artifact_update_log_sample,
     build_validation_errors_log_sample,
@@ -41,34 +71,6 @@ from app.integrations.a2a_client.errors import A2APeerProtocolError
 from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
 from app.integrations.a2a_error_contract import (
     build_upstream_error_details_from_protocol_error,
-)
-from app.services.a2a_payload_analysis import (
-    PayloadAnalysis,
-)
-from app.services.a2a_payload_analysis import analyze_payload as analyze_payload_object
-from app.services.a2a_payload_analysis import (
-    extract_binding_hints_from_invoke_result as extract_binding_hints_from_result,
-)
-from app.services.a2a_payload_analysis import (
-    extract_binding_hints_from_serialized_event as extract_binding_hints_from_event,
-)
-from app.services.a2a_payload_analysis import (
-    extract_preferred_text_from_payload as extract_preferred_text,
-)
-from app.services.a2a_payload_analysis import (
-    extract_readable_content_from_invoke_result as extract_readable_content_from_result,
-)
-from app.services.a2a_payload_analysis import (
-    extract_stream_identity_hints_from_invoke_result as extract_stream_identity_hints_from_result,
-)
-from app.services.a2a_payload_analysis import (
-    extract_stream_identity_hints_from_serialized_event as extract_stream_identity_hints_from_event,
-)
-from app.services.a2a_payload_analysis import (
-    extract_usage_hints_from_invoke_result as extract_usage_hints_from_result,
-)
-from app.services.a2a_payload_analysis import (
-    extract_usage_hints_from_serialized_event as extract_usage_hints_from_event,
 )
 from app.utils.json_encoder import json_dumps
 from app.utils.payload_extract import as_dict
@@ -913,7 +915,7 @@ class A2AInvokeService:
         resume_from_sequence: int | None = None,
         cache_key: str | None = None,
     ) -> StreamingResponse:
-        from app.services.stream_cache.memory_cache import global_stream_cache
+        from app.features.invoke.stream_cache.memory_cache import global_stream_cache
 
         async def event_generator() -> AsyncIterator[str]:
             stream_text_accumulator = self._StreamTextAccumulator()
@@ -1146,7 +1148,7 @@ class A2AInvokeService:
         resume_from_sequence: int | None = None,
         cache_key: str | None = None,
     ) -> None:
-        from app.services.stream_cache.memory_cache import global_stream_cache
+        from app.features.invoke.stream_cache.memory_cache import global_stream_cache
 
         stream_text_accumulator = self._StreamTextAccumulator()
         client_disconnected = False

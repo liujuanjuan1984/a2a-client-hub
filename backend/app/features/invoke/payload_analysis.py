@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
-from app.services.a2a_shared_metadata import (
+from app.features.invoke.shared_metadata import (
     extract_preferred_usage_metadata,
     merge_shared_metadata_sections,
 )

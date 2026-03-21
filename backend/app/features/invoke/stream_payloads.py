@@ -3,19 +3,19 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.features.invoke.interrupt_metadata import (
+    normalize_permission_interrupt_details,
+    normalize_question_interrupt_details,
+)
+from app.features.invoke.shared_metadata import (
+    extract_preferred_interrupt_metadata,
+    merge_shared_metadata_sections,
+)
+from app.features.invoke.tool_call_view import build_tool_call_view
 from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.integrations.a2a_runtime_status_contract import (
     is_interactive_runtime_state,
 )
-from app.services.a2a_shared_metadata import (
-    extract_preferred_interrupt_metadata,
-    merge_shared_metadata_sections,
-)
-from app.services.interrupt_metadata_normalization import (
-    normalize_permission_interrupt_details,
-    normalize_question_interrupt_details,
-)
-from app.services.tool_call_view import build_tool_call_view
 from app.utils.payload_extract import as_dict
 
 

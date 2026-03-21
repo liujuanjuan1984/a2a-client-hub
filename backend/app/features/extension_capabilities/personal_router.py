@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.features.extension_capabilities.common_router import (
     create_extension_capability_router,
 )
-from app.services.a2a_runtime import (
+from app.features.personal_agents.runtime import (
     A2ARuntimeNotFoundError,
     A2ARuntimeValidationError,
     a2a_runtime_builder,

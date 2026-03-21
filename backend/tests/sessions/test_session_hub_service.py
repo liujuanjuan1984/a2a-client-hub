@@ -11,8 +11,8 @@ from app.db.models.conversation_thread import ConversationThread
 from app.features.sessions import (
     history_projection as session_history_projection_module,
 )
+from app.features.sessions.identity import conversation_identity_service
 from app.features.sessions.service import session_hub_service
-from app.services.conversation_identity import conversation_identity_service
 from app.utils.idempotency_key import (
     IDEMPOTENCY_KEY_MAX_LENGTH,
     normalize_idempotency_key,

@@ -29,8 +29,8 @@ from app.features.sessions.common import (
     read_block_cursor_state,
     write_block_cursor_state,
 )
+from app.features.sessions.identity import conversation_identity_service
 from app.features.sessions.support import SessionHubSupport
-from app.services.conversation_identity import conversation_identity_service
 from app.utils.idempotency_key import normalize_idempotency_key
 from app.utils.payload_extract import extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text, normalize_provider

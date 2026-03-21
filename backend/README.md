@@ -51,7 +51,7 @@ entrypoints and orchestration code.
 
 Current direction:
 
-- Cross-cutting layers remain under `app/api`, `app/core`, `app/db`, and `app/integrations`.
+- Cross-cutting layers remain under `app/api`, `app/core`, `app/db`, `app/integrations`, and `app/platform`.
 - Feature-owned code lives under `app/features/<feature_name>/`.
 - Migrated feature routes, schemas, and facades should be imported from `app/features/...` directly.
 

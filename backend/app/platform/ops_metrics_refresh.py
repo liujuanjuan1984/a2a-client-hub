@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.ops_metrics import ops_metrics
+from app.platform.ops_metrics import ops_metrics
 
 
 def refresh_db_pool_checked_out(pool: Any) -> int | None:

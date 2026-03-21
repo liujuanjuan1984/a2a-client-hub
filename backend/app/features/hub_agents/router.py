@@ -17,6 +17,12 @@ from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
+from app.features.agents_shared.card_validation import fetch_and_validate_agent_card
+from app.features.hub_agents.runtime import (
+    HubA2ARuntimeNotFoundError,
+    HubA2ARuntimeValidationError,
+    hub_a2a_runtime_builder,
+)
 from app.features.hub_agents.schemas import (
     HubA2AAgentListMeta,
     HubA2AAgentPagination,
@@ -42,12 +48,6 @@ from app.integrations.a2a_client.validators import validate_message
 from app.schemas.a2a_agent_card import A2AAgentCardValidationResponse
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.ws_ticket import WsTicketResponse
-from app.services.a2a_agent_card_validation import fetch_and_validate_agent_card
-from app.services.hub_a2a_runtime import (
-    HubA2ARuntimeNotFoundError,
-    HubA2ARuntimeValidationError,
-    hub_a2a_runtime_builder,
-)
 from app.utils.logging_redaction import redact_url_for_logging
 
 router = StrictAPIRouter(prefix="/a2a/agents", tags=["a2a-catalog"])

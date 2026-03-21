@@ -15,7 +15,7 @@ from app.db.models.a2a_agent_credential import A2AAgentCredential
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.db.models.user import User
 from app.db.transaction import commit_safely
-from app.services.agent_common import (
+from app.features.agents_shared.common import (
     ALLOWED_AUTH_TYPES,
     ALLOWED_AVAILABILITY_POLICIES,
     AgentValidationMixin,

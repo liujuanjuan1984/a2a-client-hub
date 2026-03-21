@@ -17,12 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
-from app.features.sessions import block_store
-from app.services.interrupt_metadata_normalization import (
+from app.features.invoke.interrupt_metadata import (
     normalize_permission_interrupt_details,
     normalize_question_interrupt_details,
 )
-from app.services.tool_call_view import build_tool_call_detail, build_tool_call_view
+from app.features.invoke.tool_call_view import (
+    build_tool_call_detail,
+    build_tool_call_view,
+)
+from app.features.sessions import block_store
 from app.utils.session_identity import normalize_non_empty_text
 from app.utils.timezone_util import ensure_utc
 

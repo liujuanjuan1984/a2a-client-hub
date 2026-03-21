@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
-from app.services.agent_common import (
+from app.features.agents_shared.common import (
     AgentValidationMixin,
     delete_agent_credentials,
     encrypt_bearer_token,

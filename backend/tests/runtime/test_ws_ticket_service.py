@@ -11,7 +11,7 @@ from app.db.locking import (
     RetryableDbQueryTimeoutError,
 )
 from app.db.models.ws_ticket import WsTicket
-from app.services.ws_ticket_service import (
+from app.platform.ws_ticket import (
     WsTicketExpiredError,
     WsTicketUsedError,
     ws_ticket_service,

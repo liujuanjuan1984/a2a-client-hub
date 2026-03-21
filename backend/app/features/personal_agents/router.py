@@ -14,10 +14,16 @@ from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
 from app.db.session import AsyncSessionLocal
+from app.features.agents_shared.card_validation import fetch_and_validate_agent_card
 from app.features.invoke.route_runner import (
     run_http_invoke_route,
     run_issue_ws_ticket_route,
     run_ws_invoke_route,
+)
+from app.features.personal_agents.runtime import (
+    A2ARuntimeNotFoundError,
+    A2ARuntimeValidationError,
+    a2a_runtime_builder,
 )
 from app.features.personal_agents.schemas import (
     A2AAgentCreate,
@@ -41,19 +47,13 @@ from app.integrations.a2a_client.errors import (
 )
 from app.integrations.a2a_client.types import ResolvedAgent
 from app.integrations.a2a_client.validators import validate_message
+from app.platform.a2a_proxy_service import a2a_proxy_service
 from app.schemas.a2a_agent_card import (
     A2AAgentCardProxyRequest,
     A2AAgentCardValidationResponse,
 )
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 from app.schemas.ws_ticket import WsTicketResponse
-from app.services.a2a_agent_card_validation import fetch_and_validate_agent_card
-from app.services.a2a_proxy_service import a2a_proxy_service
-from app.services.a2a_runtime import (
-    A2ARuntimeNotFoundError,
-    A2ARuntimeValidationError,
-    a2a_runtime_builder,
-)
 from app.utils.auth_headers import build_proxy_auth_headers
 from app.utils.logging_redaction import redact_url_for_logging
 

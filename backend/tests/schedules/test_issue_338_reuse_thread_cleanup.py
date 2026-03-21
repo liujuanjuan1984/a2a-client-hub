@@ -8,7 +8,7 @@ import pytest
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.db.models.conversation_thread import ConversationThread
-from app.services.a2a_schedule_job import _execute_claimed_task
+from app.features.schedules.job import _execute_claimed_task
 from app.utils.timezone_util import utc_now
 from tests.support.utils import create_a2a_agent, create_schedule_task, create_user
 
@@ -111,10 +111,10 @@ async def test_execute_claimed_task_retains_history_on_reuse_policy_failure(
 
     # Mock runtime and gateway to return failure
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder", _mock_runtime_builder()
+        "app.features.schedules.job.a2a_runtime_builder", _mock_runtime_builder()
     )
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.get_a2a_service",
+        "app.features.schedules.job.get_a2a_service",
         lambda: SimpleNamespace(
             gateway=SimpleNamespace(
                 stream=lambda **kwargs: (yield {"kind": "status-update", "final": True})
@@ -127,7 +127,7 @@ async def test_execute_claimed_task_retains_history_on_reuse_policy_failure(
         return {"success": False, "error": "failed intentionally"}
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.run_background_invoke",
+        "app.features.schedules.job.run_background_invoke",
         mock_run_background_invoke,
     )
 
@@ -167,14 +167,14 @@ async def test_execute_claimed_task_cleans_new_thread_on_failure(
     task_id = task.id
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.a2a_runtime_builder", _mock_runtime_builder()
+        "app.features.schedules.job.a2a_runtime_builder", _mock_runtime_builder()
     )
 
     async def mock_run_background_invoke(**kwargs):
         return {"success": False, "error": "failed intentionally"}
 
     monkeypatch.setattr(
-        "app.services.a2a_schedule_job.run_background_invoke",
+        "app.features.schedules.job.run_background_invoke",
         mock_run_background_invoke,
     )
 

@@ -9,7 +9,7 @@ from app.api.deps import get_async_db, get_ws_ticket_user_hub
 from app.core.config import settings
 from app.db.models.user import User
 from app.main import app
-from app.services.ws_ticket_service import WsTicketNotFoundError, ws_ticket_service
+from app.platform.ws_ticket import WsTicketNotFoundError, ws_ticket_service
 
 
 @pytest.fixture

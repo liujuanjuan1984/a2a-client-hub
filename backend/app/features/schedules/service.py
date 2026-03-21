@@ -33,7 +33,7 @@ from app.features.schedules.dispatch import A2AScheduleDispatchService
 from app.features.schedules.projection import A2AScheduleProjectionService
 from app.features.schedules.support import A2AScheduleSupport
 from app.features.schedules.time import A2AScheduleTimeHelper
-from app.services.scheduler import get_scheduler
+from app.platform.scheduler import get_scheduler
 from app.utils.timezone_util import ensure_utc, utc_now
 
 logger = get_logger(__name__)

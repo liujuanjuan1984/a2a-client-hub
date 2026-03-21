@@ -37,16 +37,16 @@ from app.features.schedules.service import (
 )
 from app.integrations.a2a_client import get_a2a_service
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
-from app.services.a2a_runtime import a2a_runtime_builder
-from app.services.a2a_schedule_preflight import (
+from app.features.personal_agents.runtime import a2a_runtime_builder
+from app.features.schedules.preflight import (
     open_schedule_invoke_session,
 )
-from app.services.a2a_schedule_runtime_summary import (
+from app.features.schedules.runtime_summary import (
     derive_schedule_recovery_timeouts,
 )
-from app.services.ops_metrics import ops_metrics
-from app.services.ops_metrics_refresh import refresh_db_pool_checked_out
-from app.services.scheduler import get_scheduler
+from app.platform.ops_metrics import ops_metrics
+from app.platform.ops_metrics_refresh import refresh_db_pool_checked_out
+from app.platform.scheduler import get_scheduler
 from app.utils.async_cleanup import await_cancel_safe_suppressed
 from app.utils.session_identity import normalize_non_empty_text
 from app.utils.timezone_util import utc_now

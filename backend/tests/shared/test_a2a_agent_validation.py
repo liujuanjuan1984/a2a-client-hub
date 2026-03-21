@@ -2,7 +2,7 @@ from typing import Type
 
 import pytest
 
-from app.services.agent_common import AgentValidationMixin
+from app.features.agents_shared.common import AgentValidationMixin
 
 
 class DummyValidationException(Exception):

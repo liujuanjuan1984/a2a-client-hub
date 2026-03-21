@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, cast
 
 from app.features.invoke.session_binding import resolve_invoke_session_binding_hint
+from app.features.invoke.shared_metadata import (
+    apply_invoke_session_binding_metadata,
+    strip_session_binding_metadata,
+)
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
@@ -14,10 +18,6 @@ from app.integrations.a2a_extensions.errors import (
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
     A2AAgentInvokeSessionBinding,
-)
-from app.services.a2a_shared_metadata import (
-    apply_invoke_session_binding_metadata,
-    strip_session_binding_metadata,
 )
 from app.utils.payload_extract import (
     as_dict,

@@ -49,6 +49,7 @@ from app.features.invoke.session_binding import (
     ws_error_code_for_invoke_session_error,
     ws_error_code_for_recovery_failed,
 )
+from app.features.invoke.shared_metadata import extract_shared_metadata_section
 from app.features.invoke.stream_persistence import coerce_uuid as _coerce_uuid
 from app.features.invoke.stream_persistence import (
     ensure_local_message_headers as ensure_local_message_headers_impl,
@@ -79,13 +80,12 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
+from app.platform.ws_ticket import ws_ticket_service
 from app.schemas.a2a_invoke import (
     A2AAgentInvokeRequest,
     A2AAgentInvokeResponse,
 )
 from app.schemas.ws_ticket import WsTicketResponse
-from app.services.a2a_shared_metadata import extract_shared_metadata_section
-from app.services.ws_ticket_service import ws_ticket_service
 from app.utils.async_cleanup import await_cancel_safe, await_cancel_safe_suppressed
 from app.utils.payload_extract import as_dict, extract_provider_and_external_session_id
 from app.utils.session_identity import normalize_non_empty_text
