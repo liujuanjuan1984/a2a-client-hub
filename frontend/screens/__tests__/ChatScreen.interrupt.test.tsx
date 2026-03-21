@@ -1,5 +1,6 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
+import { ApiRequestError } from "@/lib/api/client";
 import { ChatScreen } from "@/screens/ChatScreen";
 
 const mockReplyPermission = jest.fn();
@@ -523,6 +524,53 @@ describe("ChatScreen interrupt handling", () => {
       "perm-1",
     );
     expect(mockToastSuccess).toHaveBeenCalled();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("clears stale permission interrupts when the callback returns expiration", async () => {
+    mockReplyPermission.mockRejectedValueOnce(
+      new ApiRequestError("Conflict", 409, {
+        errorCode: "interrupt_request_expired",
+        upstreamError: {
+          message: "Interrupt request expired",
+        },
+      }),
+    );
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      pendingInterrupt: {
+        requestId: "perm-stale-1",
+        type: "permission",
+        phase: "asked",
+        details: {
+          permission: "read",
+          patterns: ["/repo/.env"],
+        },
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const allowOnceButton = root.findByProps({
+      testID: "interrupt-permission-once",
+    });
+
+    await act(async () => {
+      allowOnceButton.props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockChatState.clearPendingInterrupt).toHaveBeenCalledWith(
+      conversationId,
+      "perm-stale-1",
+    );
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Interrupt closed",
+      "The interrupt request expired and was removed.",
+    );
+    expect(mockToastError).not.toHaveBeenCalled();
     act(() => {
       tree.unmount();
     });
