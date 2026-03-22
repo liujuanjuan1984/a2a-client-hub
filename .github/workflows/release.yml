@@ -82,8 +82,6 @@ jobs:
           base: master
           commit-message: "chore(release): sync version metadata for ${{ steps.version.outputs.version }} (#586)"
           delete-branch: true
-          labels: |
-            release
           add-paths: |
             VERSION
             backend/pyproject.toml
