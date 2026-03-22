@@ -24,6 +24,15 @@ def _read_version_from_file(path: Path = VERSION_FILE) -> str:
     return raw.splitlines()[0].strip() if raw else ""
 
 
+def _write_version_file(version: str) -> tuple[bool, str]:
+    previous = _read_version_from_file()
+    if previous == version:
+        return False, previous
+
+    VERSION_FILE.write_text(f"{version}\n", encoding="utf-8")
+    return True, previous
+
+
 def _validate_version(version: str) -> None:
     if not SEMVER_PATTERN.match(version):
         raise ValueError(f"Invalid semantic version: {version}")
@@ -186,8 +195,23 @@ def main() -> None:
         args.version = _read_version_from_file()
     _validate_version(args.version)
 
+    if not VERSION_FILE.exists():
+        raise ValueError(f"VERSION file is missing: {VERSION_FILE}")
+
+    if args.version != _read_version_from_file():
+        if args.check:
+            print(f"VERSION file mismatch: {_read_version_from_file()} -> {args.version}")
+            raise SystemExit(1)
+        if not args.write:
+            print(f"WARNING: VERSION file mismatch: {_read_version_from_file()} -> {args.version}")
+
     if args.check and args.write:
         raise ValueError("Use either --check or --write, not both.")
+
+    if args.write and args.version != _read_version_from_file():
+        was_version_updated, previous_version = _write_version_file(args.version)
+        if was_version_updated:
+            print(f"{VERSION_FILE}: {previous_version} -> {args.version}")
 
     if args.write:
         updates = apply_updates(args.version)

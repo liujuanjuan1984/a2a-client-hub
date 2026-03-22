@@ -110,14 +110,16 @@ Recommended release flow:
 
 - Decide a version (for example, `1.0.0`) and push a matching tag like
   `v1.0.0`.
-- `VERSION` is the shared repository version source for runtime metadata;
-  if you bump it, keep package metadata aligned before tagging:
-  run `python scripts/sync_release_version.py --write`.
+- The workflow extracts the pushed tag version and auto-syncs repository metadata
+  during release execution via `scripts/sync_release_version.py --write`.
+- `VERSION` is the unified repository version source; in this flow it is also
+  synchronized from the tag during release so you do not need to bump it manually
+  for each release.
 - The workflow will use the pushed tag as release identity and generate release
   notes automatically.
 
-`scripts/sync_release_version.py --check` can be used in CI to verify metadata
-consistency as a local/CI check.
+`scripts/sync_release_version.py --check` can be used in CI or locally to
+verify metadata consistency against a target version.
 
 ## Production Parameter Baseline (Scheduler and Streaming)
 
