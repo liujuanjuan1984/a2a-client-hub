@@ -4,6 +4,7 @@ This module contains configuration settings using Pydantic for environment
 variable management.
 """
 
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -16,6 +17,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine.url import make_url
 
 load_dotenv(override=True)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _read_default_app_version() -> str:
+    version_file = PROJECT_ROOT / "VERSION"
+    if not version_file.exists():
+        return "1.0.0"
+
+    raw = version_file.read_text(encoding="utf-8").strip()
+    if not raw:
+        return "1.0.0"
+
+    return raw.splitlines()[0].strip()
+
 
 SUPPORTED_JWT_ALGORITHMS = frozenset(
     {
@@ -36,7 +52,7 @@ class Settings(BaseSettings):
 
     # Application settings
     app_name: str = "a2a-client-hub API"
-    app_version: str = "1.0.0"
+    app_version: str = _read_default_app_version()
     debug: bool = False
     app_env: str = Field(
         default="development",

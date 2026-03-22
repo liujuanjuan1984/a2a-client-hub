@@ -102,15 +102,21 @@ Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your backend.
 
 ## Release workflow
 
-Pushing a tag that matches `v*` triggers the GitHub Release workflow defined at
-`.github/workflows/release.yml`.
+The repository uses a unified release version controlled by the root-level
+`VERSION` file.
 
-- Add and push a version tag (for example, `v1.0.0`) to trigger the release
-  flow.
-- The workflow creates a GitHub Release via `softprops/action-gh-release@v2` and
-  auto-generates release notes.
-- Future binary artifacts (APK/Wheel) can be published by uncommenting and
-  populating the optional `files` field in the workflow.
+Current release flow:
+
+- Update `VERSION` to the next release version (for example, `1.0.0`).
+- Run `python scripts/sync_release_version.py --write` so backend/frontend
+  metadata versions follow the unified version.
+- Commit and push the version bump, then push tag `v<VERSION>` (for example, `v1.0.0`).
+- The release workflow at `.github/workflows/release.yml` validates that the pushed
+  tag matches `VERSION`, creates a GitHub Release using `softprops/action-gh-release@v2`,
+  and generates release notes automatically.
+
+`scripts/sync_release_version.py` can be used in CI checks with `--check` to
+verify version consistency before release.
 
 ## Production Parameter Baseline (Scheduler and Streaming)
 
