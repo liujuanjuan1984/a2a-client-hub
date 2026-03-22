@@ -21,32 +21,20 @@ jobs:
       - name: Resolve release version
         id: version
         run: |
-          RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          TAG_NAME="${GITHUB_REF_NAME}"
+          RELEASE_VERSION="${TAG_NAME#v}"
           echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Validate tag matches unified VERSION
-        run: |
-          VERSION_FILE_VALUE="$(cat VERSION)"
-          if [ "${{ steps.version.outputs.version }}" != "$VERSION_FILE_VALUE" ]; then
-            echo "::error::Release version ${VERSION_FILE_VALUE} required by VERSION file, but tag is v${{ steps.version.outputs.version }}."
-            exit 1
-          fi
-
-      - name: Verify metadata files match release version
-        run: |
-          python3 scripts/sync_release_version.py --version "${{ steps.version.outputs.version }}" --check
+          echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Create release from tag
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "${{ github.ref_name }}"
+          tag_name: "${{ steps.version.outputs.tag }}"
           generate_release_notes: true
-          name: "v${{ steps.version.outputs.version }} / release"
+          name: "Release ${{ steps.version.outputs.tag }}"
           body: |
             Release version: **${{ steps.version.outputs.version }}**
-
-            Unified version source: `VERSION`
-          fail_on_unmatched_files: true
+            Release source: pushed tag `${{ steps.version.outputs.tag }}`
           # files:
           #   - backend/dist/*.whl
           #   - frontend/build/*.apk

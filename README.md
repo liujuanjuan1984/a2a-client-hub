@@ -102,21 +102,22 @@ Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your backend.
 
 ## Release workflow
 
-The repository uses a unified release version controlled by the root-level
-`VERSION` file.
+The release workflow at `.github/workflows/release.yml` listens for pushed
+Git tags with the `v*` pattern and creates a GitHub Release using
+`softprops/action-gh-release@v2` automatically.
 
-Current release flow:
+Recommended release flow:
 
-- Update `VERSION` to the next release version (for example, `1.0.0`).
-- Run `python scripts/sync_release_version.py --write` so backend/frontend
-  metadata versions follow the unified version.
-- Commit and push the version bump, then push tag `v<VERSION>` (for example, `v1.0.0`).
-- The release workflow at `.github/workflows/release.yml` validates that the pushed
-  tag matches `VERSION`, creates a GitHub Release using `softprops/action-gh-release@v2`,
-  and generates release notes automatically.
+- Decide a version (for example, `1.0.0`) and push a matching tag like
+  `v1.0.0`.
+- `VERSION` is the shared repository version source for runtime metadata;
+  if you bump it, keep package metadata aligned before tagging:
+  run `python scripts/sync_release_version.py --write`.
+- The workflow will use the pushed tag as release identity and generate release
+  notes automatically.
 
-`scripts/sync_release_version.py` can be used in CI checks with `--check` to
-verify version consistency before release.
+`scripts/sync_release_version.py --check` can be used in CI to verify metadata
+consistency as a local/CI check.
 
 ## Production Parameter Baseline (Scheduler and Streaming)
 
