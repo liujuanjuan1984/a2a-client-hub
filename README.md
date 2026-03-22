@@ -100,6 +100,18 @@ npm run start
 
 Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your backend.
 
+## Release workflow
+
+Pushing a tag that matches `v*` triggers the GitHub Release workflow defined at
+`.github/workflows/release.yml`.
+
+- Add and push a version tag (for example, `v1.0.0`) to trigger the release
+  flow.
+- The workflow creates a GitHub Release via `softprops/action-gh-release@v2` and
+  auto-generates release notes.
+- Future binary artifacts (APK/Wheel) can be published by uncommenting and
+  populating the optional `files` field in the workflow.
+
 ## Production Parameter Baseline (Scheduler and Streaming)
 
 Set the following parameters explicitly in production to avoid long
