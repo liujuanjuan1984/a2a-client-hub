@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   github-release:
@@ -27,14 +28,17 @@ jobs:
           echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Sync release version metadata
+        id: sync
         run: |
           python3 scripts/sync_release_version.py --version "${{ steps.version.outputs.version }}" --write
           python3 scripts/sync_release_version.py --version "${{ steps.version.outputs.version }}" --check
           if git diff --quiet backend/pyproject.toml frontend/package.json frontend/app.json frontend/package-lock.json VERSION; then
             echo "No repository metadata changes required."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "Synchronized metadata files for release version ${{ steps.version.outputs.version }}."
             echo "The synchronized files are derived from tag ${{ steps.version.outputs.tag }} for release traceability."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create release from tag
@@ -49,3 +53,40 @@ jobs:
           # files:
           #   - backend/dist/*.whl
           #   - frontend/build/*.apk
+
+      - name: Create version sync pull request
+        if: steps.sync.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: "chore(release): sync version metadata for ${{ steps.version.outputs.version }} (#586)"
+          body: |
+            ## 变更说明
+            本 PR 由发布流水线自动发起，用于将仓库内版本元数据同步为标签版本。
+
+            ### 来源
+            - Tag: `${{ steps.version.outputs.tag }}`
+            - 目标版本: `${{ steps.version.outputs.version }}`
+            - 自动化: `.github/workflows/release.yml`
+
+            ### 同步文件
+            - `VERSION`
+            - `backend/pyproject.toml`
+            - `frontend/package.json`
+            - `frontend/app.json`
+            - `frontend/package-lock.json`
+
+            ### 关联
+            - Closes: #586
+            - Related: #440
+          branch: "release/version-${{ steps.version.outputs.version }}"
+          base: master
+          commit-message: "chore(release): sync version metadata for ${{ steps.version.outputs.version }} (#586)"
+          delete-branch: true
+          labels: |
+            release
+          add-paths: |
+            VERSION
+            backend/pyproject.toml
+            frontend/package.json
+            frontend/app.json
+            frontend/package-lock.json

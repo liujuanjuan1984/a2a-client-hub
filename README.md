@@ -115,6 +115,9 @@ Recommended release flow:
 - `VERSION` is the unified repository version source; in this flow it is also
   synchronized from the tag during release so you do not need to bump it manually
   for each release.
+- If repository metadata differs from the target version after sync, the workflow
+  automatically opens a follow-up pull request (for example,
+  `release/version-<version>`) to persist the version updates.
 - The workflow will use the pushed tag as release identity and generate release
   notes automatically.
 
