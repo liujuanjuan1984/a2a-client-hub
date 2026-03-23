@@ -777,6 +777,11 @@ class A2AInvokeService:
         event_sequence: int,
     ) -> None:
         payload["seq"] = event_sequence
+        if (
+            payload.get("kind") != "artifact-update"
+            and cls.extract_stream_chunk_from_serialized_event(payload) is not None
+        ):
+            payload["kind"] = "artifact-update"
         if payload.get("kind") != "artifact-update":
             return
 

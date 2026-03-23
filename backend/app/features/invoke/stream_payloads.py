@@ -298,7 +298,12 @@ def extract_stream_sequence_from_serialized_event(
 def extract_stream_chunk_from_serialized_event(
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    if not isinstance(payload, dict) or payload.get("kind") != "artifact-update":
+    raw_kind = payload.get("kind")
+    if (
+        isinstance(raw_kind, str)
+        and raw_kind.strip()
+        and raw_kind.strip().lower() != "artifact-update"
+    ):
         return None
 
     artifact = as_dict(payload.get("artifact"))
@@ -383,7 +388,12 @@ def extract_stream_chunk_from_serialized_event(
 def analyze_stream_chunk_contract(
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None]:
-    if payload.get("kind") != "artifact-update":
+    raw_kind = payload.get("kind")
+    if (
+        isinstance(raw_kind, str)
+        and raw_kind.strip()
+        and raw_kind.strip().lower() != "artifact-update"
+    ):
         return None, None
     stream_block = extract_stream_chunk_from_serialized_event(payload)
     if stream_block is not None:

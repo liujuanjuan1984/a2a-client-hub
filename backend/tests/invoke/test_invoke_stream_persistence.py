@@ -142,8 +142,10 @@ class _SessionContext:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("include_kind", [True, False])
 async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
     async_db_session,
+    include_kind: bool,
 ) -> None:
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     thread = ConversationThread(
@@ -182,7 +184,6 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
         )
 
     reasoning_event = {
-        "kind": "artifact-update",
         "artifact": {
             "parts": [{"kind": "text", "text": "thinking"}],
             "metadata": {
@@ -198,7 +199,6 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
         },
     }
     tool_event = {
-        "kind": "artifact-update",
         "artifact": {
             "parts": [
                 {
@@ -224,7 +224,6 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
         },
     }
     text_event = {
-        "kind": "artifact-update",
         "artifact": {
             "parts": [{"kind": "text", "text": "draft"}],
             "metadata": {
@@ -240,7 +239,6 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
         },
     }
     snapshot_event = {
-        "kind": "artifact-update",
         "append": False,
         "artifact": {
             "parts": [{"kind": "text", "text": "final answer"}],
@@ -258,6 +256,15 @@ async def test_persist_local_outcome_keeps_typed_blocks_after_stream_completion(
             "lastChunk": True,
         },
     }
+
+    if include_kind:
+        for event_payload in (
+            reasoning_event,
+            tool_event,
+            text_event,
+            snapshot_event,
+        ):
+            event_payload["kind"] = "artifact-update"
 
     for event_payload in (
         reasoning_event,
