@@ -33,10 +33,11 @@ export function MessageBlock({
 }: MessageBlockProps) {
   const blockId = block.id || `${messageId}:${blockIndex}`;
   const isFirst = blockIndex === 0;
+  let content: React.ReactNode;
 
   switch (block.type) {
     case "reasoning":
-      return (
+      content = (
         <ReasoningBlock
           block={block}
           fallbackBlockId={blockId}
@@ -46,8 +47,9 @@ export function MessageBlock({
           isFirst={isFirst}
         />
       );
+      break;
     case "tool_call":
-      return (
+      content = (
         <ToolCallBlock
           block={block}
           fallbackBlockId={blockId}
@@ -58,16 +60,18 @@ export function MessageBlock({
           isFirst={isFirst}
         />
       );
+      break;
     case "interrupt_event":
-      return (
+      content = (
         <InterruptEventBlock
           block={block}
           fallbackBlockId={blockId}
           isFirst={isFirst}
         />
       );
+      break;
     case "text":
-      return (
+      content = (
         <TextBlock
           block={block}
           fallbackBlockId={blockId}
@@ -75,15 +79,19 @@ export function MessageBlock({
           isFirst={isFirst}
         />
       );
+      break;
     default:
-      return (
+      content = (
         <GenericBlock
           block={block}
           fallbackBlockId={blockId}
           isFirst={isFirst}
         />
       );
+      break;
   }
+
+  return <View className="w-full min-w-0">{content}</View>;
 }
 
 export function MessageContentFallback({
