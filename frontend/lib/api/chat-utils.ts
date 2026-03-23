@@ -88,6 +88,13 @@ export type StreamBlockUpdate = {
   toolCall?: ToolCallView | null;
 };
 
+const PRIMARY_TEXT_SNAPSHOT_SOURCES = new Set([
+  "final_snapshot",
+  "finalize_snapshot",
+]);
+const REASONING_OVERLAP_WORD_PATTERN = /[\p{L}\p{N}_]+/gu;
+const MIN_REASONING_OVERLAP_WORD_LENGTH = 5;
+
 export type RuntimeStatusEvent = {
   state: string;
   isFinal: boolean;
@@ -896,6 +903,32 @@ const parseBlockType = (
   return null;
 };
 
+const isPrimaryTextSnapshotSource = (source: string | null): boolean =>
+  Boolean(source && PRIMARY_TEXT_SNAPSHOT_SOURCES.has(source));
+
+const isWordChar = (value: string | undefined): boolean =>
+  Boolean(value && /[\p{L}\p{N}_]/u.test(value));
+
+const isBoundaryAlignedReasoningOverlap = (
+  reasoningContent: string,
+  text: string,
+  overlap: number,
+): boolean => {
+  const overlapStart = reasoningContent.length - overlap;
+  const beforeOverlap =
+    overlapStart > 0 ? reasoningContent[overlapStart - 1] : undefined;
+  const afterOverlap = overlap < text.length ? text[overlap] : undefined;
+  return !isWordChar(beforeOverlap) && !isWordChar(afterOverlap);
+};
+
+const isSubstantialReasoningOverlap = (candidate: string): boolean => {
+  const tokens = candidate.match(REASONING_OVERLAP_WORD_PATTERN) ?? [];
+  return (
+    tokens.length >= 2 ||
+    tokens.some((token) => token.length >= MIN_REASONING_OVERLAP_WORD_LENGTH)
+  );
+};
+
 const trimOverlappingReasoningPrefix = (
   blocks: MessageBlock[] | undefined,
   text: string,
@@ -915,11 +948,25 @@ const trimOverlappingReasoningPrefix = (
     overlap > 0;
     overlap -= 1
   ) {
-    if (text.startsWith(reasoningContent.slice(-overlap))) {
+    const candidate = reasoningContent.slice(-overlap);
+    if (
+      text.startsWith(candidate) &&
+      isBoundaryAlignedReasoningOverlap(reasoningContent, text, overlap) &&
+      isSubstantialReasoningOverlap(candidate)
+    ) {
       return text.slice(overlap);
     }
   }
   return text;
+};
+
+const findLastTextBlockIndex = (blocks: MessageBlock[]): number => {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (blocks[index]?.type === "text") {
+      return index;
+    }
+  }
+  return -1;
 };
 
 const inferTaskIdFromArtifactId = (
@@ -1106,11 +1153,10 @@ export const applyStreamBlockUpdate = (
   update: StreamBlockUpdate,
 ): MessageBlock[] => {
   const now = new Date().toISOString();
-  const overwrite = update.source === "final_snapshot" || !update.append;
-  const isPrimaryTextSnapshotSource =
-    update.source === "final_snapshot" || update.source === "finalize_snapshot";
+  const primaryTextSnapshot = isPrimaryTextSnapshotSource(update.source);
+  const overwrite = primaryTextSnapshot || !update.append;
   const needsPrimaryTextDedupe =
-    overwrite && update.blockType === "text" && isPrimaryTextSnapshotSource;
+    overwrite && update.blockType === "text" && primaryTextSnapshot;
   const delta = needsPrimaryTextDedupe
     ? trimOverlappingReasoningPrefix(current ?? [], update.delta)
     : update.delta;
@@ -1136,8 +1182,24 @@ export const applyStreamBlockUpdate = (
   // Fallback: Create new array for type switches, new blocks, or overwrites
   const nextBlocks = [...blocks];
   const lastNextBlock = nextBlocks[nextBlocks.length - 1];
+  const rewriteTextSlotIndex = needsPrimaryTextDedupe
+    ? findLastTextBlockIndex(nextBlocks)
+    : -1;
 
   if (overwrite) {
+    if (
+      rewriteTextSlotIndex >= 0 &&
+      rewriteTextSlotIndex === nextBlocks.length - 1
+    ) {
+      const targetBlock = nextBlocks[rewriteTextSlotIndex];
+      nextBlocks[rewriteTextSlotIndex] = {
+        ...targetBlock,
+        content: delta,
+        isFinished: update.done,
+        updatedAt: now,
+      };
+      return nextBlocks;
+    }
     if (
       lastNextBlock &&
       lastNextBlock.type === update.blockType &&

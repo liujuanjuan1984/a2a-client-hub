@@ -1731,6 +1731,75 @@ async def test_reasoning_content_is_trimmed_from_following_final_snapshot_text(
     assert agent_item["blocks"][2]["content"] == " final answer"
 
 
+async def test_reasoning_overlap_dedupe_requires_substantial_boundary_aligned_prefix(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_SCHEDULED,
+        title="Scheduled Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    refs = await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="scheduled",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="",
+        success=False,
+        context_id="ctx-4",
+        idempotency_key="run:reasoning-short-overlap:scheduled",
+    )
+
+    agent_message_id = refs["agent_message_id"]
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=1,
+        block_type="reasoning",
+        content="a",
+        append=False,
+        is_finished=True,
+        event_id="evt-1",
+        source="reasoning_part_update",
+    )
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=2,
+        block_type="text",
+        content="answer",
+        append=False,
+        is_finished=True,
+        event_id="evt-2",
+        source="final_snapshot",
+    )
+    await async_db_session.flush()
+
+    message_items = await _list_message_items(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+    )
+    agent_item = next(item for item in message_items if item.get("role") == "agent")
+    assert agent_item["content"] == "answer"
+    assert [block["type"] for block in agent_item["blocks"]] == [
+        "reasoning",
+        "text",
+    ]
+    assert agent_item["blocks"][1]["content"] == "answer"
+
+
 async def test_append_agent_message_block_update_unique_conflict_does_not_rollback_session(
     monkeypatch: pytest.MonkeyPatch,
 ):

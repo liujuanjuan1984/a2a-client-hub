@@ -334,6 +334,77 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[1]?.content).toBe(" final answer");
   });
 
+  it("does not trim trivial reasoning overlap from final_snapshot text updates", () => {
+    let blocks: MessageBlock[] | undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "reasoning",
+          delta: "a",
+          artifactId: "task-4:stream:reasoning",
+          append: false,
+          taskId: "task-4",
+          seq: 1,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "answer",
+          artifactId: "task-4:stream:text",
+          append: false,
+          source: "final_snapshot",
+          taskId: "task-4",
+          seq: 2,
+        }),
+      ),
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks?.[1]?.content).toBe("answer");
+  });
+
+  it("rewrites the latest finished text block when final_snapshot arrives", () => {
+    let blocks: MessageBlock[] | undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "draft",
+          artifactId: "task-5:stream:text",
+          append: false,
+          taskId: "task-5",
+          seq: 1,
+          lastChunk: true,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "final answer",
+          artifactId: "task-5:stream:text",
+          append: false,
+          source: "final_snapshot",
+          taskId: "task-5",
+          seq: 2,
+          lastChunk: true,
+        }),
+      ),
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks?.[0]?.content).toBe("final answer");
+    expect(blocks?.[0]?.isFinished).toBe(true);
+  });
+
   it("syncs message content when loading text block details", () => {
     const message = {
       content: "",

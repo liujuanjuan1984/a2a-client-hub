@@ -7,6 +7,7 @@ import base64
 import binascii
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, cast
@@ -64,6 +65,8 @@ INFLIGHT_CANCEL_TERMINAL_ERROR_CODES = {
     "invalid_task_id",
 }
 PRIMARY_TEXT_SNAPSHOT_SOURCES = frozenset({"final_snapshot", "finalize_snapshot"})
+REASONING_OVERLAP_WORD_PATTERN = re.compile(r"\w+", re.UNICODE)
+MIN_REASONING_OVERLAP_WORD_LENGTH = 5
 
 
 def parse_conversation_id(value: str) -> UUID:
@@ -359,6 +362,30 @@ def is_primary_text_snapshot_source(source: str | None) -> bool:
     return normalize_non_empty_text(source) in PRIMARY_TEXT_SNAPSHOT_SOURCES
 
 
+def _is_word_char(value: str | None) -> bool:
+    if not value:
+        return False
+    return value == "_" or value.isalnum()
+
+
+def _is_boundary_aligned_reasoning_overlap(
+    reasoning_content: str,
+    text: str,
+    overlap: int,
+) -> bool:
+    overlap_start = len(reasoning_content) - overlap
+    before_overlap = reasoning_content[overlap_start - 1] if overlap_start > 0 else None
+    after_overlap = text[overlap] if overlap < len(text) else None
+    return (not _is_word_char(before_overlap)) and (not _is_word_char(after_overlap))
+
+
+def _is_substantial_reasoning_overlap(candidate: str) -> bool:
+    tokens = REASONING_OVERLAP_WORD_PATTERN.findall(candidate)
+    return len(tokens) >= 2 or any(
+        len(token) >= MIN_REASONING_OVERLAP_WORD_LENGTH for token in tokens
+    )
+
+
 def _strip_reasoning_prefix(
     text: str,
     reasoning_content: str,
@@ -369,7 +396,15 @@ def _strip_reasoning_prefix(
     max_overlap = min(len(text), len(reasoning_content))
     for overlap in range(max_overlap, 0, -1):
         suffix = reasoning_content[-overlap:]
-        if text.startswith(suffix):
+        if (
+            text.startswith(suffix)
+            and _is_boundary_aligned_reasoning_overlap(
+                reasoning_content,
+                text,
+                overlap,
+            )
+            and _is_substantial_reasoning_overlap(suffix)
+        ):
             return text[overlap:]
     return text
 
