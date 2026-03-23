@@ -359,6 +359,21 @@ def is_primary_text_snapshot_source(source: str | None) -> bool:
     return normalize_non_empty_text(source) in PRIMARY_TEXT_SNAPSHOT_SOURCES
 
 
+def _strip_reasoning_prefix(
+    text: str,
+    reasoning_content: str,
+) -> str:
+    if not text or not reasoning_content:
+        return text
+
+    max_overlap = min(len(text), len(reasoning_content))
+    for overlap in range(max_overlap, 0, -1):
+        suffix = reasoning_content[-overlap:]
+        if text.startswith(suffix):
+            return text[overlap:]
+    return text
+
+
 def render_block_item(
     block: AgentMessageBlock,
     *,
@@ -401,15 +416,25 @@ def project_message_blocks(
     message_status: str | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     projected_blocks: list[dict[str, Any]] = []
+    previous_reasoning_content = None
 
     for block in blocks:
         block_type = normalize_block_type(cast(str | None, block.block_type))
+        block_content = cast(str | None, block.content) or ""
+        if block_type == "reasoning":
+            previous_reasoning_content = block_content
         rendered = render_block_item(block, message_status=message_status)
         if block_type == "text" and is_primary_text_snapshot_source(
             cast(str | None, block.source)
         ):
+            if previous_reasoning_content:
+                rendered["content"] = _strip_reasoning_prefix(
+                    str(rendered.get("content") or ""),
+                    previous_reasoning_content,
+                )
             # History list views expose a canonical read model rather than raw
-            # persistence rows, so a final text snapshot rewrites the last text slot.
+            # persistence rows, so a final text snapshot rewrites the last text
+            # slot only when it is the most recent rendered block.
             target_index = next(
                 (
                     index
@@ -418,13 +443,16 @@ def project_message_blocks(
                 ),
                 None,
             )
-            if target_index is not None:
+            if target_index is not None and target_index == len(projected_blocks) - 1:
                 projected_blocks[target_index] = {
                     **projected_blocks[target_index],
                     "content": rendered.get("content", ""),
                     "isFinished": rendered.get("isFinished", True),
                 }
                 continue
+
+        if block_type != "reasoning":
+            previous_reasoning_content = None
         projected_blocks.append(rendered)
 
     content = "".join(

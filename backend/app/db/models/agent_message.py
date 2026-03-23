@@ -81,6 +81,7 @@ class AgentMessage(Base, TimestampMixin, UserOwnedMixin):
         "AgentMessageBlock",
         back_populates="message",
         foreign_keys="AgentMessageBlock.message_id",
+        order_by="AgentMessageBlock.block_seq",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )

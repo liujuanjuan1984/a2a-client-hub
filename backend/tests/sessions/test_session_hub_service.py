@@ -1427,7 +1427,7 @@ async def test_list_messages_overwrite_preserves_block_boundaries(
     assert text_blocks[1]["content"] == "second final"
 
 
-async def test_interleaved_reasoning_final_snapshot_rewrites_primary_text_slot(
+async def test_non_text_blocks_between_primary_text_and_final_snapshot_create_new_text_slot(
     async_db_session,
 ):
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
@@ -1473,23 +1473,136 @@ async def test_interleaved_reasoning_final_snapshot_rewrites_primary_text_slot(
         user_id=user.id,
         agent_message_id=agent_message_id,
         seq=2,
-        block_type="reasoning",
-        content="internal-plan",
+        block_type="interrupt_event",
+        content="{}",
         append=False,
         is_finished=True,
         event_id="evt-2",
-        source="reasoning_part_update",
+        source="interrupt",
     )
     await session_hub_service.append_agent_message_block_update(
         async_db_session,
         user_id=user.id,
         agent_message_id=agent_message_id,
         seq=3,
+        block_type="tool_call",
+        content="[]",
+        append=False,
+        is_finished=True,
+        event_id="evt-3",
+        source="tool_call_part_update",
+    )
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=4,
+        block_type="reasoning",
+        content="internal-plan",
+        append=False,
+        is_finished=True,
+        event_id="evt-4",
+        source="reasoning_part_update",
+    )
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=5,
         block_type="text",
         content="final answer",
         append=False,
         is_finished=True,
-        event_id="evt-3",
+        event_id="evt-5",
+        source="final_snapshot",
+    )
+    await async_db_session.flush()
+
+    persisted_blocks = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessageBlock)
+                .where(AgentMessageBlock.message_id == agent_message_id)
+                .order_by(AgentMessageBlock.block_seq.asc())
+            )
+        ).all()
+    )
+    text_blocks = [
+        block for block in persisted_blocks if str(block.block_type or "") == "text"
+    ]
+    assert len(text_blocks) == 2
+    assert text_blocks[0].content == "draft"
+    assert text_blocks[1].content == "final answer"
+
+    message_items = await _list_message_items(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+    )
+    agent_item = next(item for item in message_items if item.get("role") == "agent")
+    assert agent_item["content"] == "draftfinal answer"
+    assert [block["type"] for block in agent_item["blocks"]] == [
+        "text",
+        "interrupt_event",
+        "tool_call",
+        "reasoning",
+        "text",
+    ]
+    assert agent_item["blocks"][0]["content"] == "draft"
+    assert agent_item["blocks"][4]["content"] == "final answer"
+
+
+async def test_final_snapshot_overwrites_primary_text_slot_when_no_intervening_non_text_block(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_SCHEDULED,
+        title="Scheduled Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    refs = await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="scheduled",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="",
+        success=False,
+        context_id="ctx-2",
+        idempotency_key="run:final-snapshot:scheduled",
+    )
+
+    agent_message_id = refs["agent_message_id"]
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=1,
+        block_type="text",
+        content="draft",
+        append=True,
+        is_finished=False,
+        event_id="evt-1",
+        source=None,
+    )
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=2,
+        block_type="text",
+        content="final answer",
+        append=False,
+        is_finished=True,
+        event_id="evt-2",
         source="final_snapshot",
     )
     await async_db_session.flush()
@@ -1516,12 +1629,106 @@ async def test_interleaved_reasoning_final_snapshot_rewrites_primary_text_slot(
     )
     agent_item = next(item for item in message_items if item.get("role") == "agent")
     assert agent_item["content"] == "final answer"
+    assert [block["type"] for block in agent_item["blocks"]] == ["text"]
+    assert agent_item["blocks"][0]["content"] == "final answer"
+
+
+async def test_reasoning_content_is_trimmed_from_following_final_snapshot_text(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_SCHEDULED,
+        title="Scheduled Session",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    refs = await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="scheduled",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="",
+        success=False,
+        context_id="ctx-3",
+        idempotency_key="run:reasoning-overlap:scheduled",
+    )
+
+    agent_message_id = refs["agent_message_id"]
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=1,
+        block_type="text",
+        content="draft",
+        append=True,
+        is_finished=False,
+        event_id="evt-1",
+        source=None,
+    )
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=2,
+        block_type="reasoning",
+        content="internal reasoning:",
+        append=False,
+        is_finished=True,
+        event_id="evt-2",
+        source="reasoning_part_update",
+    )
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=3,
+        block_type="text",
+        content="internal reasoning: final answer",
+        append=False,
+        is_finished=True,
+        event_id="evt-3",
+        source="final_snapshot",
+    )
+    await async_db_session.flush()
+
+    persisted_blocks = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessageBlock)
+                .where(AgentMessageBlock.message_id == agent_message_id)
+                .order_by(AgentMessageBlock.block_seq.asc())
+            )
+        ).all()
+    )
+    text_blocks = [
+        block for block in persisted_blocks if str(block.block_type or "") == "text"
+    ]
+    assert len(text_blocks) == 2
+    assert text_blocks[0].content == "draft"
+    assert text_blocks[1].content == "internal reasoning: final answer"
+
+    message_items = await _list_message_items(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+    )
+    agent_item = next(item for item in message_items if item.get("role") == "agent")
+    assert agent_item["content"] == "draft final answer"
     assert [block["type"] for block in agent_item["blocks"]] == [
         "text",
         "reasoning",
+        "text",
     ]
-    assert agent_item["blocks"][0]["content"] == "final answer"
-    assert agent_item["blocks"][1]["content"] == ""
+    assert agent_item["blocks"][2]["content"] == " final answer"
 
 
 async def test_append_agent_message_block_update_unique_conflict_does_not_rollback_session(

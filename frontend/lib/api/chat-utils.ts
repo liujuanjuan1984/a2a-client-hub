@@ -896,6 +896,32 @@ const parseBlockType = (
   return null;
 };
 
+const trimOverlappingReasoningPrefix = (
+  blocks: MessageBlock[] | undefined,
+  text: string,
+): string => {
+  if (!text) {
+    return "";
+  }
+  const latestReasoning =
+    blocks && blocks.length > 0 ? blocks[blocks.length - 1] : undefined;
+  const reasoningContent =
+    latestReasoning?.type === "reasoning" ? latestReasoning.content : "";
+  if (!reasoningContent) {
+    return text;
+  }
+  for (
+    let overlap = Math.min(reasoningContent.length, text.length);
+    overlap > 0;
+    overlap -= 1
+  ) {
+    if (text.startsWith(reasoningContent.slice(-overlap))) {
+      return text.slice(overlap);
+    }
+  }
+  return text;
+};
+
 const inferTaskIdFromArtifactId = (
   artifactId: string | null,
 ): string | null => {
@@ -1081,6 +1107,13 @@ export const applyStreamBlockUpdate = (
 ): MessageBlock[] => {
   const now = new Date().toISOString();
   const overwrite = update.source === "final_snapshot" || !update.append;
+  const isPrimaryTextSnapshotSource =
+    update.source === "final_snapshot" || update.source === "finalize_snapshot";
+  const needsPrimaryTextDedupe =
+    overwrite && update.blockType === "text" && isPrimaryTextSnapshotSource;
+  const delta = needsPrimaryTextDedupe
+    ? trimOverlappingReasoningPrefix(current ?? [], update.delta)
+    : update.delta;
   const blocks = current ?? [];
   const lastBlock = blocks[blocks.length - 1];
 
@@ -1112,7 +1145,7 @@ export const applyStreamBlockUpdate = (
     ) {
       nextBlocks[nextBlocks.length - 1] = {
         ...lastNextBlock,
-        content: update.delta,
+        content: delta,
         isFinished: update.done,
         ...(update.toolCall !== undefined
           ? { toolCall: update.toolCall ?? null }
@@ -1133,7 +1166,7 @@ export const applyStreamBlockUpdate = (
     nextBlocks.push({
       id: `${update.messageId}:${nextBlocks.length + 1}`,
       type: update.blockType,
-      content: update.delta,
+      content: delta,
       isFinished: update.done,
       ...(update.toolCall !== undefined
         ? { toolCall: update.toolCall ?? null }
@@ -1156,7 +1189,7 @@ export const applyStreamBlockUpdate = (
   nextBlocks.push({
     id: `${update.messageId}:${nextBlocks.length + 1}`,
     type: update.blockType,
-    content: update.delta,
+    content: delta,
     isFinished: update.done,
     ...(update.toolCall !== undefined
       ? { toolCall: update.toolCall ?? null }

@@ -299,6 +299,41 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[0]?.content).toBe("reset");
   });
 
+  it("trims overlapping reasoning text from final_snapshot text updates", () => {
+    let blocks: MessageBlock[] | undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "reasoning",
+          delta: "thinking aloud:",
+          artifactId: "task-3:stream:reasoning",
+          append: false,
+          taskId: "task-3",
+          seq: 1,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "thinking aloud: final answer",
+          artifactId: "task-3:stream:text",
+          append: false,
+          source: "final_snapshot",
+          taskId: "task-3",
+          seq: 2,
+        }),
+      ),
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks?.[1]?.type).toBe("text");
+    expect(blocks?.[1]?.content).toBe(" final answer");
+  });
+
   it("syncs message content when loading text block details", () => {
     const message = {
       content: "",

@@ -821,8 +821,8 @@ class SessionHistoryProjectionService:
             )
         overwrite_target = active_block
         if allow_snapshot_text_rewrite:
-            # Final text snapshots are authoritative for the existing primary text
-            # lane even if a non-text block was the most recent active block.
+            # Final text snapshots are authoritative for a text lane only when no
+            # intervening non-text block has become the latest block.
             text_block = await block_store.find_last_block_for_message_and_type(
                 db,
                 user_id=user_id,
@@ -830,7 +830,26 @@ class SessionHistoryProjectionService:
                 block_type="text",
             )
             if text_block is not None:
-                overwrite_target = text_block
+                latest_block = active_block
+                if latest_block is None:
+                    latest_block = await block_store.find_last_block_for_message(
+                        db,
+                        user_id=user_id,
+                        message_id=agent_message_id,
+                    )
+                if (
+                    latest_block is not None
+                    and str(latest_block.block_type or "") == "text"
+                ):
+                    # Preserve snapshot overwrite semantics only when text is still
+                    # the latest rendered lane.
+                    overwrite_target = text_block
+                else:
+                    # A non-text block has appeared after the last text block,
+                    # so keep lane order by appending final text.
+                    overwrite_target = None
+            else:
+                overwrite_target = None
 
         persisted_block: AgentMessageBlock | None = None
         if overwrite:
