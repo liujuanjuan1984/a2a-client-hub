@@ -100,30 +100,6 @@ npm run start
 
 Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your backend.
 
-## Release workflow
-
-The release workflow at `.github/workflows/release.yml` listens for pushed
-Git tags with the `v*` pattern and creates a GitHub Release using
-`softprops/action-gh-release@v2` automatically.
-
-Recommended release flow:
-
-- Decide a version (for example, `1.0.0`) and push a matching tag like
-  `v1.0.0`.
-- The workflow extracts the pushed tag version and auto-syncs repository metadata
-  during release execution via `scripts/sync_release_version.py --write`.
-- `VERSION` is the unified repository version source; in this flow it is also
-  synchronized from the tag during release so you do not need to bump it manually
-  for each release.
-- If repository metadata differs from the target version after sync, the workflow
-  automatically opens a follow-up pull request (for example,
-  `release/version-<version>`) to persist the version updates.
-- The workflow will use the pushed tag as release identity and generate release
-  notes automatically.
-
-`scripts/sync_release_version.py --check` can be used in CI or locally to
-verify metadata consistency against a target version.
-
 ## Production Parameter Baseline (Scheduler and Streaming)
 
 Set the following parameters explicitly in production to avoid long
@@ -166,6 +142,7 @@ You can observe these via `/health` under `a2a.ops_metrics`:
 - Frontend details: [frontend/README.md](frontend/README.md)
 - Authentication conventions: [docs/authentication.md](docs/authentication.md)
 - Production security baseline: [docs/security-baseline.md](docs/security-baseline.md)
+- Release automation: [docs/release-workflow.md](docs/release-workflow.md)
 - Shared session query contract:
   [docs/contracts/shared-session-query-canonical-contract.md](docs/contracts/shared-session-query-canonical-contract.md)
 - Architecture and API examples:
