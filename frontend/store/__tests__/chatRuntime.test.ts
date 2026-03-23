@@ -235,6 +235,129 @@ describe("executeChatRuntime empty-content recovery", () => {
     expect(agentMessage?.content).toBe("Recovered response");
   });
 
+  it("does not finalize on terminal status until the transport finishes", async () => {
+    const conversationId = "conv-terminal-status-gate-1";
+    const agentId = "agent-terminal-status-gate-1";
+    const userMessageId = "user-terminal-status-gate-1";
+    const agentMessageId = "agent-terminal-status-gate-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-23T10:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-23T10:00:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    const transportDone = createDeferred<boolean>();
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "artifact-update",
+          message_id: agentMessageId,
+          event_id: `${agentMessageId}:1`,
+          seq: 1,
+          append: true,
+          artifact: {
+            artifactId: `${agentMessageId}:stream:1`,
+            parts: [{ kind: "text", text: "Hello after terminal status." }],
+            metadata: {
+              shared: {
+                stream: {
+                  block_type: "text",
+                  source: "assistant_text",
+                  message_id: agentMessageId,
+                  event_id: `${agentMessageId}:1`,
+                  sequence: 1,
+                },
+              },
+            },
+          },
+        });
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        await transportDone.promise;
+        return true;
+      },
+    );
+
+    const runtimePromise = executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    await flushPromises();
+
+    expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
+    expect(state.sessions[conversationId]?.streamState).toBe("streaming");
+    expect(
+      getConversationMessages(conversationId).find(
+        (message) => message.id === agentMessageId,
+      )?.status,
+    ).toBe("streaming");
+
+    transportDone.resolve(true);
+    await runtimePromise;
+
+    expect(state.sessions[conversationId]?.streamState).toBe("idle");
+    expect(
+      getConversationMessages(conversationId).find(
+        (message) => message.id === agentMessageId,
+      ),
+    ).toMatchObject({
+      status: "done",
+      content: "Hello after terminal status.",
+    });
+  });
+
   it("stores structured stream errors from websocket error events", async () => {
     const conversationId = "conv-stream-error-1";
     const agentId = "agent-stream-error-1";

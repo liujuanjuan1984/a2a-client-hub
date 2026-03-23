@@ -273,6 +273,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   const streamMessageIdMap = new Map<string, string>();
   const seenEventIds = new Set<string>();
   let terminalHandled = false;
+  let terminalRuntimeStatusSeen = false;
   let hasObservedStreamEvent = false;
   let highestReceivedSequence =
     get().sessions[conversationId]?.lastReceivedSequence ?? null;
@@ -830,8 +831,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     }
 
     if (runtimeStatusEvent?.isFinal) {
-      completeStreamingMessage();
-      return true;
+      terminalRuntimeStatusSeen = true;
     }
     return false;
   };
@@ -1063,11 +1063,17 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   try {
     if (chatConnectionService.isWsHealthy()) {
       if (await tryWebSocketTransport()) {
+        if (!terminalHandled && terminalRuntimeStatusSeen) {
+          completeStreamingMessage();
+        }
         return;
       }
     }
     if (chatConnectionService.isSseHealthy()) {
       if (await trySseTransport()) {
+        if (!terminalHandled && terminalRuntimeStatusSeen) {
+          completeStreamingMessage();
+        }
         return;
       }
     }
