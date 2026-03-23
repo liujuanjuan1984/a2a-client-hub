@@ -16,6 +16,7 @@ export type MessageBlock = {
   baseSeq?: number | null;
   toolCall?: ToolCallView | null;
   toolCallDetail?: ToolCallDetailView | null;
+  interrupt?: RuntimeInterrupt | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -93,6 +94,7 @@ export type StreamBlockUpdate = {
   append: boolean;
   done: boolean;
   toolCall?: ToolCallView | null;
+  interrupt?: RuntimeInterrupt | null;
 };
 
 const PRIMARY_TEXT_SNAPSHOT_SOURCES = new Set([
@@ -211,6 +213,82 @@ export type ResolvedRuntimeInterrupt = RuntimeInterruptBase & {
 export type RuntimeInterrupt =
   | PendingRuntimeInterrupt
   | ResolvedRuntimeInterrupt;
+
+const isInterruptQuestionOption = (
+  value: unknown,
+): value is InterruptQuestionOption => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as InterruptQuestionOption;
+  return (
+    typeof candidate.label === "string" &&
+    (candidate.description === undefined ||
+      candidate.description === null ||
+      typeof candidate.description === "string") &&
+    (candidate.value === undefined ||
+      candidate.value === null ||
+      typeof candidate.value === "string")
+  );
+};
+
+const isInterruptQuestion = (value: unknown): value is InterruptQuestion => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as InterruptQuestion;
+  return (
+    typeof candidate.question === "string" &&
+    (candidate.header === undefined ||
+      candidate.header === null ||
+      typeof candidate.header === "string") &&
+    (candidate.description === undefined ||
+      candidate.description === null ||
+      typeof candidate.description === "string") &&
+    (candidate.options === undefined ||
+      (Array.isArray(candidate.options) &&
+        candidate.options.every(isInterruptQuestionOption)))
+  );
+};
+
+const isRuntimeInterrupt = (value: unknown): value is RuntimeInterrupt => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as RuntimeInterrupt;
+  if (
+    typeof candidate.requestId !== "string" ||
+    (candidate.type !== "permission" && candidate.type !== "question")
+  ) {
+    return false;
+  }
+  if (candidate.phase === "resolved") {
+    return (
+      candidate.resolution === "replied" || candidate.resolution === "rejected"
+    );
+  }
+  if (candidate.phase !== "asked") {
+    return false;
+  }
+  const details = candidate.details;
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return false;
+  }
+  return (
+    (details.permission === undefined ||
+      details.permission === null ||
+      typeof details.permission === "string") &&
+    (details.patterns === undefined ||
+      (Array.isArray(details.patterns) &&
+        details.patterns.every((item) => typeof item === "string"))) &&
+    (details.displayMessage === undefined ||
+      details.displayMessage === null ||
+      typeof details.displayMessage === "string") &&
+    (details.questions === undefined ||
+      (Array.isArray(details.questions) &&
+        details.questions.every(isInterruptQuestion)))
+  );
+};
 
 export const extractSessionMeta = (data: Record<string, unknown>) => {
   const contextId =
@@ -926,7 +1004,33 @@ export const buildInterruptEventBlockUpdate = ({
     delta: buildInterruptEventContent(interrupt),
     append: false,
     done: true,
+    interrupt,
   };
+};
+
+const parseSerializedInterruptEventContent = (
+  raw: string,
+): { content: string; interrupt: RuntimeInterrupt | null } => {
+  try {
+    const payload = JSON.parse(raw) as {
+      kind?: unknown;
+      content?: unknown;
+      interrupt?: unknown;
+    };
+    if (payload.kind !== "interrupt_event") {
+      return { content: raw, interrupt: null };
+    }
+    const content =
+      typeof payload.content === "string" && payload.content.trim().length > 0
+        ? payload.content
+        : raw;
+    const interrupt = isRuntimeInterrupt(payload.interrupt)
+      ? payload.interrupt
+      : null;
+    return { content, interrupt };
+  } catch {
+    return { content: raw, interrupt: null };
+  }
 };
 
 const normalizeRole = (raw: string | null): ChatRole => {
@@ -1261,6 +1365,10 @@ export const extractStreamBlockUpdate = (
             asRecord(artifact?.toolCall),
         )
       : null;
+  const interruptPayload =
+    blockType === "interrupt_event"
+      ? parseSerializedInterruptEventContent(delta)
+      : { content: delta, interrupt: null };
 
   return {
     eventId,
@@ -1276,10 +1384,11 @@ export const extractStreamBlockUpdate = (
     source,
     messageId,
     role,
-    delta,
+    delta: interruptPayload.content,
     append,
     done: op === "finalize" ? true : done,
     toolCall,
+    interrupt: interruptPayload.interrupt,
   };
 };
 
@@ -1321,6 +1430,11 @@ export const applyStreamBlockUpdate = (
         : targetBlock.toolCall !== undefined
           ? { toolCall: targetBlock.toolCall ?? null }
           : {}),
+      ...(resolvedUpdate.interrupt !== undefined
+        ? { interrupt: resolvedUpdate.interrupt ?? null }
+        : targetBlock.interrupt !== undefined
+          ? { interrupt: targetBlock.interrupt ?? null }
+          : {}),
       updatedAt: now,
     };
     return nextBlocks;
@@ -1347,6 +1461,9 @@ export const applyStreamBlockUpdate = (
       isFinished: resolvedUpdate.done,
       ...(resolvedUpdate.toolCall !== undefined
         ? { toolCall: resolvedUpdate.toolCall ?? null }
+        : {}),
+      ...(resolvedUpdate.interrupt !== undefined
+        ? { interrupt: resolvedUpdate.interrupt ?? null }
         : {}),
       createdAt: now,
       updatedAt: now,
@@ -1397,6 +1514,7 @@ export const applyLoadedBlockDetail = (
     isFinished?: boolean;
     toolCall?: ToolCallView | null;
     toolCallDetail?: ToolCallDetailView | null;
+    interrupt?: RuntimeInterrupt | null;
   },
 ): Pick<ChatMessage, "content" | "blocks"> => {
   const nextBlocks = (message.blocks ?? []).map((block) =>
@@ -1420,6 +1538,10 @@ export const applyLoadedBlockDetail = (
             input.toolCallDetail === undefined
               ? (block.toolCallDetail ?? null)
               : input.toolCallDetail,
+          interrupt:
+            input.interrupt === undefined
+              ? (block.interrupt ?? null)
+              : input.interrupt,
         }
       : block,
   );

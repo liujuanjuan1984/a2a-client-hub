@@ -11,6 +11,7 @@ from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.features.schedules.service import a2a_schedule_service
 from app.features.sessions import router as me_sessions
+from app.features.sessions.common import serialize_interrupt_event_block_content
 from app.features.sessions.service import session_hub_service
 from app.utils.timezone_util import utc_now
 from tests.support.api_utils import create_test_client
@@ -940,7 +941,17 @@ async def test_messages_query_keeps_interrupt_event_blocks_inline_on_agent_messa
                 message_id=agent_message.id,
                 block_seq=2,
                 block_type="interrupt_event",
-                content="Agent requested authorization: read.\nTargets: /repo/.env",
+                content=serialize_interrupt_event_block_content(
+                    {
+                        "request_id": "perm-inline-1",
+                        "type": "permission",
+                        "phase": "asked",
+                        "details": {
+                            "permission": "read",
+                            "patterns": ["/repo/.env"],
+                        },
+                    }
+                ),
                 is_finished=True,
                 source="interrupt_lifecycle",
             ),
@@ -980,6 +991,18 @@ async def test_messages_query_keeps_interrupt_event_blocks_inline_on_agent_messa
     assert returned_message["blocks"][1]["content"].startswith(
         "Agent requested authorization: read."
     )
+    assert returned_message["blocks"][1]["interrupt"] == {
+        "requestId": "perm-inline-1",
+        "type": "permission",
+        "phase": "asked",
+        "resolution": None,
+        "details": {
+            "permission": "read",
+            "patterns": ["/repo/.env"],
+            "displayMessage": None,
+            "questions": [],
+        },
+    }
 
 
 async def test_messages_query_keeps_non_interrupt_system_messages(

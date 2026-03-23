@@ -233,7 +233,61 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[0]?.content).toBe(
       "Agent requested authorization: read.\nTargets: /repo/.env",
     );
+    expect(blocks?.[0]?.interrupt).toEqual({
+      requestId: "perm-1",
+      type: "permission",
+      phase: "asked",
+      details: {
+        permission: "read",
+        patterns: ["/repo/.env"],
+        displayMessage: null,
+      },
+    });
     expect(projectPrimaryTextContent(blocks)).toBe("");
+  });
+
+  it("replaces an inline interrupt_event block when the same request resolves", () => {
+    let blocks = applyStreamBlockUpdate(
+      undefined,
+      buildInterruptEventBlockUpdate({
+        messageId: "msg-interrupt-2",
+        interrupt: {
+          requestId: "perm-2",
+          type: "permission",
+          phase: "asked",
+          details: {
+            permission: "write",
+            patterns: ["/repo/config.yml"],
+            displayMessage: null,
+          },
+        },
+      }),
+    );
+
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      buildInterruptEventBlockUpdate({
+        messageId: "msg-interrupt-2",
+        interrupt: {
+          requestId: "perm-2",
+          type: "permission",
+          phase: "resolved",
+          resolution: "replied",
+        },
+      }),
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks?.[0]?.type).toBe("interrupt_event");
+    expect(blocks?.[0]?.content).toBe(
+      "Authorization request was handled. Agent resumed.",
+    );
+    expect(blocks?.[0]?.interrupt).toEqual({
+      requestId: "perm-2",
+      type: "permission",
+      phase: "resolved",
+      resolution: "replied",
+    });
   });
 
   it("matches the shared interrupt lifecycle message contract cases", () => {

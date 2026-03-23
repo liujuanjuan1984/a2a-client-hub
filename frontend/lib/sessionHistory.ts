@@ -2,6 +2,7 @@ import {
   type ChatMessage,
   type ChatRole,
   type MessageBlock,
+  type RuntimeInterrupt,
   type ToolCallView,
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
@@ -21,6 +22,7 @@ export type SessionMessageItem = {
     laneId?: string | null;
     baseSeq?: number | null;
     toolCall?: ToolCallView | null;
+    interrupt?: RuntimeInterrupt | null;
   }[];
 };
 
@@ -97,6 +99,9 @@ const mapBlocks = (item: SessionMessageItem): MessageBlock[] => {
     };
     if (block.toolCall) {
       mappedBlock.toolCall = block.toolCall;
+    }
+    if (block.interrupt) {
+      mappedBlock.interrupt = block.interrupt;
     }
     return mappedBlock;
   });

@@ -5,9 +5,12 @@ from app.features.invoke.stream_payloads import (
     extract_interrupt_lifecycle_from_serialized_event,
 )
 from app.features.sessions.common import (
+    build_interrupt_block_view,
     build_interrupt_lifecycle_message_code,
     build_interrupt_lifecycle_message_content,
+    deserialize_interrupt_event_block_content,
     normalize_interrupt_lifecycle_event,
+    serialize_interrupt_event_block_content,
 )
 
 _MESSAGE_CASES = json.loads(
@@ -249,3 +252,22 @@ def test_build_interrupt_lifecycle_message_contract_cases() -> None:
         assert (
             build_interrupt_lifecycle_message_content(case["event"]) == case["content"]
         )
+
+
+def test_interrupt_event_block_content_round_trips_structured_payload() -> None:
+    event = {
+        "request_id": "perm-structured-1",
+        "type": "permission",
+        "phase": "asked",
+        "details": {
+            "permission": "read",
+            "patterns": ["/repo/.env"],
+            "display_message": "Agent requested authorization: read.",
+        },
+    }
+
+    serialized = serialize_interrupt_event_block_content(event)
+    content, interrupt = deserialize_interrupt_event_block_content(serialized)
+
+    assert content == "Agent requested authorization: read.\nTargets: /repo/.env"
+    assert interrupt == build_interrupt_block_view(event)

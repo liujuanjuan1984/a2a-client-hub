@@ -76,7 +76,7 @@ from app.features.invoke.stream_persistence import (
 from app.features.invoke.stream_persistence import (
     persist_synthetic_final_block_if_needed as persist_synthetic_final_block_if_needed_impl,
 )
-from app.features.sessions.common import build_interrupt_lifecycle_message_content
+from app.features.sessions.common import serialize_interrupt_event_block_content
 from app.features.sessions.service import session_hub_service
 from app.integrations.a2a_extensions import get_a2a_extensions_service
 from app.integrations.a2a_extensions.errors import (
@@ -808,7 +808,7 @@ async def _persist_interrupt_lifecycle_event(
         transport=transport,
         stream_enabled=stream_enabled,
         stream_service=a2a_invoke_service,
-        build_interrupt_message_content=build_interrupt_lifecycle_message_content,
+        build_interrupt_message_content=serialize_interrupt_event_block_content,
         session_factory=AsyncSessionLocal,
         commit_fn=commit_safely,
         session_hub=session_hub_service,
