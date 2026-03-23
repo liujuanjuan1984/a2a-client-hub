@@ -37,6 +37,10 @@ across multiple READMEs.
   [`contracts/interrupt-lifecycle-message-cases.json`](contracts/interrupt-lifecycle-message-cases.json)
 - Structured block serialization cases:
   [`contracts/structured-block-stable-serialization-cases.json`](contracts/structured-block-stable-serialization-cases.json)
+- Stream block operation contract:
+  [`contracts/stream-block-operation-contract.md`](contracts/stream-block-operation-contract.md)
+- Stream block operation canonical cases:
+  [`contracts/stream-block-operation-canonical-cases.json`](contracts/stream-block-operation-canonical-cases.json)
 
 ## Documentation Boundaries
 

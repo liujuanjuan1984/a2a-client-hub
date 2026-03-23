@@ -473,15 +473,32 @@ class A2AInvokeService:
         ) -> str | None:
             return extract_artifact_source(payload, artifact)
 
-        def _push_new_block(self, block_type: str, delta: str, done: bool) -> None:
+        def _find_block_index(self, block_id: str) -> int | None:
+            for index, block in enumerate(self._blocks):
+                if str(block.get("block_id") or "") == block_id:
+                    return index
+            return None
+
+        def _push_new_block(
+            self,
+            block_type: str,
+            block_id: str,
+            lane_id: str,
+            delta: str,
+            done: bool,
+            base_seq: int | None,
+        ) -> None:
             now = self._block_seq
             self._block_seq += 1
             self._blocks.append(
                 {
                     "id": f"block-{now + 1}",
+                    "block_id": block_id,
+                    "lane_id": lane_id,
                     "type": block_type,
                     "content": delta,
                     "is_finished": done,
+                    "base_seq": base_seq,
                     "seq": now,
                 }
             )
@@ -494,41 +511,67 @@ class A2AInvokeService:
             append: bool,
             done: bool,
             source: str | None,
+            block_id: str,
+            lane_id: str,
+            operation: str,
+            base_seq: int | None,
         ) -> None:
-            if not delta:
+            if not delta and operation != "finalize":
                 return
-            overwrite = (not append) or source == "final_snapshot"
             last = self._blocks[-1] if self._blocks else None
+            target_index = self._find_block_index(block_id)
+            target = self._blocks[target_index] if target_index is not None else None
 
-            if overwrite:
-                if (
-                    isinstance(last, dict)
-                    and last.get("type") == block_type
-                    and last.get("is_finished") is False
-                ):
-                    last["content"] = delta
-                    last["is_finished"] = done
+            if operation == "finalize":
+                if isinstance(target, dict):
+                    target["is_finished"] = True
+                    if base_seq is not None:
+                        target["base_seq"] = base_seq
+                return
+
+            if operation == "replace":
+                if isinstance(target, dict):
+                    target["type"] = block_type
+                    target["lane_id"] = lane_id
+                    target["content"] = delta
+                    target["is_finished"] = done
+                    if base_seq is not None:
+                        target["base_seq"] = base_seq
                     return
                 if isinstance(last, dict) and last.get("is_finished") is False:
                     last["is_finished"] = True
-                self._push_new_block(block_type, delta, done)
+                self._push_new_block(
+                    block_type,
+                    block_id,
+                    lane_id,
+                    delta,
+                    done,
+                    base_seq,
+                )
                 return
 
-            if (
-                isinstance(last, dict)
-                and last.get("type") == block_type
-                and last.get("is_finished") is False
-            ):
-                current = last.get("content")
-                last["content"] = (
+            if isinstance(target, dict):
+                current = target.get("content")
+                target["type"] = block_type
+                target["lane_id"] = lane_id
+                target["content"] = (
                     f"{current if isinstance(current, str) else ''}{delta}"
                 )
-                last["is_finished"] = done
+                target["is_finished"] = done
+                if base_seq is not None:
+                    target["base_seq"] = base_seq
                 return
 
             if isinstance(last, dict) and last.get("is_finished") is False:
                 last["is_finished"] = True
-            self._push_new_block(block_type, delta, done)
+            self._push_new_block(
+                block_type,
+                block_id,
+                lane_id,
+                delta,
+                done,
+                base_seq,
+            )
 
         def consume(
             self,
@@ -547,6 +590,22 @@ class A2AInvokeService:
             delta = resolved_stream_block.get("content")
             if not isinstance(block_type, str) or not isinstance(delta, str):
                 return
+            block_id = resolved_stream_block.get("block_id")
+            lane_id = resolved_stream_block.get("lane_id")
+            operation = resolved_stream_block.get("op")
+            base_seq = resolved_stream_block.get("base_seq")
+            if not isinstance(block_id, str) or not block_id:
+                block_id = f"stream:{block_type}"
+            if not isinstance(lane_id, str) or not lane_id:
+                lane_id = "primary_text" if block_type == "text" else block_type
+            if not isinstance(operation, str) or not operation:
+                operation = (
+                    "replace"
+                    if (not bool(resolved_stream_block.get("append", True)))
+                    or str(resolved_stream_block.get("source") or "")
+                    == "final_snapshot"
+                    else "append"
+                )
             self._apply_block_update(
                 block_type=block_type,
                 delta=delta,
@@ -557,6 +616,10 @@ class A2AInvokeService:
                     if isinstance(resolved_stream_block.get("source"), str)
                     else None
                 ),
+                block_id=block_id,
+                lane_id=lane_id,
+                operation=operation,
+                base_seq=base_seq if isinstance(base_seq, int) else None,
             )
 
         def result(self) -> str:

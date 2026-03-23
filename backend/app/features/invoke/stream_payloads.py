@@ -18,6 +18,9 @@ from app.integrations.a2a_runtime_status_contract import (
 )
 from app.utils.payload_extract import as_dict
 
+PRIMARY_TEXT_SNAPSHOT_SOURCES = frozenset({"final_snapshot", "finalize_snapshot"})
+BLOCK_OPERATION_TYPES = frozenset({"append", "replace", "finalize"})
+
 
 def _pick_non_empty_str(
     payload: dict[str, Any],
@@ -163,6 +166,123 @@ def extract_artifact_source(
     return None
 
 
+def extract_artifact_id(
+    payload: dict[str, Any], artifact: dict[str, Any]
+) -> str | None:
+    artifact_metadata = as_dict(artifact.get("metadata"))
+    root_metadata = as_dict(payload.get("metadata"))
+    shared_stream = extract_shared_stream_metadata(payload, artifact)
+
+    for candidate in (artifact, artifact_metadata, root_metadata, shared_stream):
+        artifact_id = _pick_non_empty_str(
+            candidate, ("artifact_id", "artifactId", "id")
+        )
+        if artifact_id is not None:
+            return artifact_id
+    return None
+
+
+def _default_lane_id(block_type: str) -> str:
+    return "primary_text" if block_type == "text" else block_type
+
+
+def extract_block_operation(
+    payload: dict[str, Any], artifact: dict[str, Any]
+) -> str | None:
+    artifact_metadata = as_dict(artifact.get("metadata"))
+    root_metadata = as_dict(payload.get("metadata"))
+    shared_stream = extract_shared_stream_metadata(payload, artifact)
+
+    for candidate in (
+        shared_stream,
+        artifact_metadata,
+        root_metadata,
+        artifact,
+        payload,
+    ):
+        raw = _pick_non_empty_str(candidate, ("op", "operation"))
+        if raw is None:
+            continue
+        normalized = raw.lower()
+        if normalized in BLOCK_OPERATION_TYPES:
+            return normalized
+
+    source = extract_artifact_source(payload, artifact)
+    append = payload.get("append")
+    if source in PRIMARY_TEXT_SNAPSHOT_SOURCES:
+        return "replace"
+    if isinstance(append, bool):
+        return "append" if append else "replace"
+    return "append"
+
+
+def extract_block_id(
+    payload: dict[str, Any], artifact: dict[str, Any], *, block_type: str
+) -> str:
+    artifact_metadata = as_dict(artifact.get("metadata"))
+    root_metadata = as_dict(payload.get("metadata"))
+    shared_stream = extract_shared_stream_metadata(payload, artifact)
+
+    for candidate in (
+        shared_stream,
+        artifact_metadata,
+        root_metadata,
+        artifact,
+        payload,
+    ):
+        block_id = _pick_non_empty_str(candidate, ("block_id", "blockId"))
+        if block_id is not None:
+            return block_id
+
+    artifact_id = extract_artifact_id(payload, artifact)
+    if artifact_id is not None:
+        return artifact_id
+
+    message_id = _pick_non_empty_str(payload, ("message_id", "messageId")) or "stream"
+    return f"{message_id}:{block_type}"
+
+
+def extract_lane_id(
+    payload: dict[str, Any], artifact: dict[str, Any], *, block_type: str
+) -> str:
+    artifact_metadata = as_dict(artifact.get("metadata"))
+    root_metadata = as_dict(payload.get("metadata"))
+    shared_stream = extract_shared_stream_metadata(payload, artifact)
+
+    for candidate in (
+        shared_stream,
+        artifact_metadata,
+        root_metadata,
+        artifact,
+        payload,
+    ):
+        lane_id = _pick_non_empty_str(candidate, ("lane_id", "laneId"))
+        if lane_id is not None:
+            return lane_id
+
+    return _default_lane_id(block_type)
+
+
+def extract_block_base_seq(
+    payload: dict[str, Any], artifact: dict[str, Any]
+) -> int | None:
+    artifact_metadata = as_dict(artifact.get("metadata"))
+    root_metadata = as_dict(payload.get("metadata"))
+    shared_stream = extract_shared_stream_metadata(payload, artifact)
+
+    for candidate in (
+        shared_stream,
+        artifact_metadata,
+        root_metadata,
+        artifact,
+        payload,
+    ):
+        base_seq = _pick_int(candidate, ("base_seq", "baseSeq"))
+        if base_seq is not None:
+            return base_seq
+    return None
+
+
 def extract_stream_sequence_from_serialized_event(
     payload: dict[str, Any],
 ) -> int | None:
@@ -191,6 +311,9 @@ def extract_stream_chunk_from_serialized_event(
     block_type = extract_artifact_type(payload, artifact)
     if block_type is None:
         return None
+    operation = extract_block_operation(payload, artifact)
+    if operation is None:
+        return None
 
     event_id = None
     message_id = None
@@ -209,7 +332,7 @@ def extract_stream_chunk_from_serialized_event(
     delta = extract_stream_content_from_parts(
         artifact.get("parts"), block_type=block_type
     )
-    if not delta:
+    if not delta and operation != "finalize":
         return None
 
     append = payload.get("append")
@@ -220,6 +343,8 @@ def extract_stream_chunk_from_serialized_event(
         or artifact.get("lastChunk") is True
         or artifact.get("last_chunk") is True
     )
+    if operation == "finalize":
+        resolved_is_finished = True
 
     seq = (
         _pick_int(payload, ("seq",))
@@ -229,12 +354,18 @@ def extract_stream_chunk_from_serialized_event(
         or _pick_int(shared_stream, ("sequence", "seq"))
     )
     source = extract_artifact_source(payload, artifact)
+    artifact_id = extract_artifact_id(payload, artifact)
     stream_chunk: dict[str, Any] = {
         "event_id": event_id,
         "seq": seq,
         "message_id": message_id,
+        "artifact_id": artifact_id,
+        "block_id": extract_block_id(payload, artifact, block_type=block_type),
+        "lane_id": extract_lane_id(payload, artifact, block_type=block_type),
         "block_type": block_type,
+        "op": operation,
         "content": delta,
+        "base_seq": extract_block_base_seq(payload, artifact),
         "append": resolved_append,
         "is_finished": resolved_is_finished,
         "source": source,
@@ -265,9 +396,13 @@ def analyze_stream_chunk_contract(
     block_type = extract_artifact_type(payload, artifact)
     if block_type is None:
         return None, "missing_or_invalid_block_type"
+    operation = extract_block_operation(payload, artifact)
+    if operation is None:
+        return None, "missing_or_invalid_block_operation"
     if (
         extract_stream_content_from_parts(artifact.get("parts"), block_type=block_type)
         == ""
+        and operation != "finalize"
     ):
         return None, "missing_text_parts"
     return None, "invalid_artifact_update_shape"
