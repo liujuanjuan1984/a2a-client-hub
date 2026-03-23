@@ -25,6 +25,7 @@ class _DumpableEvent:
         self._payload = payload
 
     def model_dump(self, exclude_none: bool = True):  # noqa: ARG002
+        _ = exclude_none
         return self._payload
 
 
@@ -2274,6 +2275,7 @@ def test_extract_usage_hints_from_serialized_event_falls_back_to_legacy_metadata
 def test_coerce_payload_to_dict_raises_exception(caplog):
     class MockUnserializablePayload:
         def model_dump(self, exclude_none=True):  # noqa: ARG002
+            _ = exclude_none
             raise ValueError("Cannot serialize this mock payload")
 
     payload = MockUnserializablePayload()

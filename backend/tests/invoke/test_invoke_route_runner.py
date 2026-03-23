@@ -1971,7 +1971,7 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
         validate_message=lambda _: [],
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
         invoke_log_message="test invoke",
-        invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+        invoke_log_extra_builder=lambda _req, _runtime: {},
     )
 
     assert isinstance(response, A2AAgentInvokeResponse)
@@ -2065,7 +2065,7 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
         validate_message=lambda _: [],
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
         invoke_log_message="test invoke",
-        invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+        invoke_log_extra_builder=lambda _req, _runtime: {},
     )
 
     assert isinstance(response, JSONResponse)
@@ -2414,7 +2414,7 @@ async def test_run_ws_invoke_route_invalid_payload_close_is_cancellation_safe(
                 error=lambda *args, **kwargs: None,
             ),
             invoke_log_message="test invoke ws route",
-            invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+            invoke_log_extra_builder=lambda _req, _runtime: {},
             unexpected_log_message="unexpected",
         )
     )
@@ -2458,7 +2458,7 @@ async def test_run_ws_invoke_route_finally_close_suppresses_secondary_cancellati
                 error=lambda *args, **kwargs: None,
             ),
             invoke_log_message="test invoke ws route",
-            invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+            invoke_log_extra_builder=lambda _req, _runtime: {},
             unexpected_log_message="unexpected",
         )
     )
@@ -2550,7 +2550,7 @@ async def test_run_http_invoke_route_returns_status_for_error_code(
         validate_message=lambda _: [],
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
         invoke_log_message="test invoke",
-        invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+        invoke_log_extra_builder=lambda _req, _runtime: {},
     )
     assert isinstance(response, JSONResponse)
     assert response.status_code == expected_status
