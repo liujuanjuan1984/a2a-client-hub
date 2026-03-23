@@ -99,29 +99,6 @@ uv run bash scripts/mypy_changed.sh
 uv run bash scripts/mypy_changed.sh app/features/auth/schemas.py
 ```
 
-## Dead Code Scanning
-
-Use the repository wrapper instead of ad hoc `vulture` invocations so scans stay
-consistent across contributors.
-
-```bash
-cd backend
-
-# Maintained gate for high-confidence findings only.
-bash scripts/run_vulture.sh
-
-# Exploratory scan for lower-confidence review work.
-bash scripts/run_vulture.sh exploratory
-```
-
-Notes:
-
-- `strict` mode scans `app/` and `tests/` at `--min-confidence 80`.
-- `exploratory` mode keeps Vulture defaults and is intended for manual triage only.
-- Do not treat exploratory output as delete-on-sight: FastAPI routes, Pydantic
-  validators, SQLAlchemy hooks, pytest fixtures, and test doubles are frequent
-  false positives.
-
 ## Lockfile Hygiene
 
 `backend/pyproject.toml` and `backend/uv.lock` must remain synchronized.

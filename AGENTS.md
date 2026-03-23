@@ -63,6 +63,7 @@ Notes:
 - Avoid repeating equivalent heavy checks when code has not changed in the same iteration.
 - In low-load default mode, run `npm install` / `uv sync` only when dependencies changed or environment drift is detected.
 - `backend/pyproject.toml` and `backend/uv.lock` must stay in sync. If a version or dependency change makes `uv lock --check` fail, fix it in a dedicated lockfile update commit instead of letting `uv run` mutate the worktree during verification.
+- Dead-code scanning should use `cd backend && bash scripts/run_vulture.sh` for the maintained high-confidence pass. Use `cd backend && bash scripts/run_vulture.sh exploratory` only for manual triage; do not treat low-confidence `vulture` output as delete-on-sight because FastAPI routes, Pydantic validators, SQLAlchemy hooks, pytest fixtures, and test doubles are common false positives.
 - If a change touches database schema or migrations, additionally run:
   - `cd backend && uv run alembic upgrade head`
   - And verify the critical endpoints manually.
