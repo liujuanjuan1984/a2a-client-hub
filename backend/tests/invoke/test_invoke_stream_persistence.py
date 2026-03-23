@@ -137,7 +137,7 @@ class _SessionContext:
     async def __aenter__(self) -> Any:
         return self._session
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+    async def __aexit__(self, _exc_type, _exc, _tb) -> None:
         return None
 
 

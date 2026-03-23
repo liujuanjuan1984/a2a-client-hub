@@ -128,7 +128,7 @@ class _FailingAsyncContextManager:
     async def __aenter__(self):
         raise self._error
 
-    async def __aexit__(self, exc_type, exc, tb):  # noqa: ANN001, ARG002
+    async def __aexit__(self, _exc_type, _exc, _tb):
         return False
 
 
@@ -1995,7 +1995,7 @@ async def test_dispatch_due_a2a_schedules_skips_when_leader_lock_not_acquired(
         async def __aenter__(self):
             return False
 
-        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return False
 
     monkeypatch.setattr(
@@ -2053,7 +2053,7 @@ async def test_try_hold_dispatch_leader_lock_rolls_back_open_transaction(
         async def __aenter__(self):
             return fake_conn
 
-        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return False
 
     monkeypatch.setattr(
@@ -2098,7 +2098,7 @@ async def test_try_hold_dispatch_leader_lock_invalidates_connection_on_unlock_fa
         async def __aenter__(self):
             return fake_conn
 
-        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return False
 
     monkeypatch.setattr(
@@ -2347,7 +2347,7 @@ async def test_refresh_ops_metrics_skips_when_db_connection_refused(
         async def __aenter__(self):
             raise ConnectionRefusedError("db unavailable")
 
-        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return False
 
     monkeypatch.setattr(
@@ -2378,7 +2378,7 @@ async def test_refresh_ops_metrics_refreshes_db_pool_checked_out(
         async def __aenter__(self):
             return _HealthySession()
 
-        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return False
 
     fake_pool = object()

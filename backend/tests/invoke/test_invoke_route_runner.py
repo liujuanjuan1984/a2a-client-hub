@@ -51,7 +51,7 @@ class _CancelableCloseWebSocket:
         self.close_finished = asyncio.Event()
         self.close_codes: list[int | None] = []
 
-    async def accept(self, subprotocol: str | None = None) -> None:  # noqa: ARG002
+    async def accept(self, _subprotocol: str | None = None) -> None:
         return None
 
     async def receive_json(self) -> object:
@@ -453,7 +453,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
         async def __aenter__(self) -> object:
             return object()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
@@ -637,7 +637,7 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
         async def __aenter__(self) -> object:
             return object()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_record_local_invoke_messages(
@@ -745,7 +745,7 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(
@@ -1060,7 +1060,7 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
@@ -1148,7 +1148,7 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
@@ -1249,7 +1249,7 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
@@ -1352,7 +1352,7 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
@@ -1440,7 +1440,7 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
@@ -1578,7 +1578,7 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_has_agent_message_blocks(_db, **_kwargs) -> bool:  # noqa: ANN001
@@ -1683,7 +1683,7 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
         async def __aenter__(self) -> object:
             return object()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
@@ -1786,7 +1786,7 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
         async def __aenter__(self) -> object:
             return object()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001

@@ -94,7 +94,9 @@ def test_invoke_hub_agent_ws_success(monkeypatch, mock_user):
     monkeypatch.setattr(
         "app.features.hub_agents.router.hub_a2a_runtime_builder.build", mock_build
     )
-    monkeypatch.setattr("app.features.hub_agents.router.validate_message", lambda x: [])
+    monkeypatch.setattr(
+        "app.features.hub_agents.router.validate_message", lambda _value: []
+    )
 
     client = TestClient(app)
     try:

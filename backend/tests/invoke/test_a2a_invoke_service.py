@@ -1682,7 +1682,7 @@ async def test_consume_stream_reports_total_timeout_with_partial_content(monkeyp
 
     wait_for_calls = {"value": 0}
 
-    async def _fake_wait_for(awaitable, timeout):  # noqa: ARG001
+    async def _fake_wait_for(awaitable, _timeout):
         wait_for_calls["value"] += 1
         if wait_for_calls["value"] == 1:
             return await awaitable
@@ -1731,7 +1731,7 @@ async def test_consume_stream_reports_idle_timeout_with_partial_content(monkeypa
 
     wait_for_calls = {"value": 0}
 
-    async def _fake_wait_for(awaitable, timeout):  # noqa: ARG001
+    async def _fake_wait_for(awaitable, _timeout):
         wait_for_calls["value"] += 1
         if wait_for_calls["value"] == 1:
             return await awaitable
@@ -2273,7 +2273,7 @@ def test_extract_usage_hints_from_serialized_event_falls_back_to_legacy_metadata
 
 def test_coerce_payload_to_dict_raises_exception(caplog):
     class MockUnserializablePayload:
-        def model_dump(self, exclude_none=True):
+        def model_dump(self, exclude_none=True):  # noqa: ARG002
             raise ValueError("Cannot serialize this mock payload")
 
     payload = MockUnserializablePayload()

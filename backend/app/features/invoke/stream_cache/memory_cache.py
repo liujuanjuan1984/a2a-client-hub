@@ -165,22 +165,10 @@ class MemoryStreamCache:
                 if cached.sequence > sequence
             ]
 
-    async def get_events_after(
-        self, cache_key: str, sequence: int
-    ) -> List[Dict[str, Any]]:
-        """Get cached events after a specific sequence number."""
-        events = await self.get_events_with_sequence_after(cache_key, sequence)
-        return [event for _, event in events]
-
     async def mark_completed(self, cache_key: str) -> None:
         """Mark a stream as completed. Can be used for immediate cleanup if needed."""
         async with self._lock:
             self._evict_key(cache_key)
-
-    async def cleanup_expired(self) -> None:
-        """Remove expired entries from the cache."""
-        async with self._lock:
-            self._cleanup_expired_locked(time.time())
 
 
 # Global instance for the application
