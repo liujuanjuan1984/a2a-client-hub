@@ -1226,13 +1226,6 @@ export const extractStreamBlockUpdate = (
   if (!delta && op !== "finalize") {
     return null;
   }
-  const blockId =
-    pickString(sharedStream, ["block_id", "blockId"]) ??
-    pickString(metadata, ["block_id", "blockId"]) ??
-    pickString(rootMetadata, ["block_id", "blockId"]) ??
-    pickString(artifact ?? null, ["block_id", "blockId"]) ??
-    pickString(data, ["block_id", "blockId"]) ??
-    resolvedArtifactId;
   const laneId =
     pickString(sharedStream, ["lane_id", "laneId"]) ??
     pickString(metadata, ["lane_id", "laneId"]) ??
@@ -1240,6 +1233,13 @@ export const extractStreamBlockUpdate = (
     pickString(artifact ?? null, ["lane_id", "laneId"]) ??
     pickString(data, ["lane_id", "laneId"]) ??
     defaultLaneIdForBlockType(blockType);
+  const blockId =
+    pickString(sharedStream, ["block_id", "blockId"]) ??
+    pickString(metadata, ["block_id", "blockId"]) ??
+    pickString(rootMetadata, ["block_id", "blockId"]) ??
+    pickString(artifact ?? null, ["block_id", "blockId"]) ??
+    pickString(data, ["block_id", "blockId"]) ??
+    `${messageId}:${laneId}`;
   const baseSeq =
     pickInteger(sharedStream, ["base_seq", "baseSeq"]) ??
     pickInteger(metadata, ["base_seq", "baseSeq"]) ??

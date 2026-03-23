@@ -234,12 +234,22 @@ def extract_block_id(
         if block_id is not None:
             return block_id
 
-    artifact_id = extract_artifact_id(payload, artifact)
-    if artifact_id is not None:
-        return artifact_id
+    lane_id = extract_lane_id(payload, artifact, block_type=block_type)
+    message_id = None
+    for candidate in (
+        payload,
+        artifact,
+        artifact_metadata,
+        root_metadata,
+        shared_stream,
+    ):
+        if message_id is None:
+            message_id = _pick_non_empty_str(candidate, ("message_id", "messageId"))
+    if message_id is not None:
+        return f"{message_id}:{lane_id}"
 
-    message_id = _pick_non_empty_str(payload, ("message_id", "messageId")) or "stream"
-    return f"{message_id}:{block_type}"
+    artifact_id = extract_artifact_id(payload, artifact) or "stream"
+    return f"{artifact_id}:{lane_id}"
 
 
 def extract_lane_id(

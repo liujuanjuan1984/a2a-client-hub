@@ -165,6 +165,50 @@ def test_extract_stream_chunk_reads_tool_call_content_from_data_parts():
     }
 
 
+def test_extract_stream_chunk_uses_message_lane_identity_when_artifact_id_is_shared():
+    reasoning = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "artifactId": "task-shared:stream",
+                "parts": [{"kind": "text", "text": "thinking"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "reasoning",
+                            "message_id": "msg-shared-lanes",
+                        }
+                    }
+                },
+            },
+        }
+    )
+    text = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "artifactId": "task-shared:stream",
+                "parts": [{"kind": "text", "text": "final answer"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "text",
+                            "message_id": "msg-shared-lanes",
+                        }
+                    }
+                },
+            },
+        }
+    )
+
+    assert reasoning is not None
+    assert text is not None
+    assert reasoning["artifact_id"] == "task-shared:stream"
+    assert text["artifact_id"] == "task-shared:stream"
+    assert reasoning["block_id"] == "msg-shared-lanes:reasoning"
+    assert text["block_id"] == "msg-shared-lanes:primary_text"
+
+
 def test_ensure_outbound_stream_contract_canonicalizes_kindless_artifact_updates():
     payload = {
         "artifact": {

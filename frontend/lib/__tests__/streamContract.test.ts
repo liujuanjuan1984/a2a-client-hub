@@ -139,6 +139,38 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[1]?.type).toBe("tool_call");
   });
 
+  it("derives distinct block ids when upstream reuses one artifact id across lanes", () => {
+    const reasoning = mustParse(
+      buildBlockUpdatePayload({
+        blockType: "reasoning",
+        delta: "thinking",
+        artifactId: "task-1:stream",
+        messageId: "msg-shared-lanes",
+        seq: 1,
+      }),
+    );
+    const text = mustParse(
+      buildBlockUpdatePayload({
+        blockType: "text",
+        delta: "final answer",
+        artifactId: "task-1:stream",
+        messageId: "msg-shared-lanes",
+        seq: 2,
+      }),
+    );
+
+    expect(reasoning.blockId).toBe("msg-shared-lanes:reasoning");
+    expect(text.blockId).toBe("msg-shared-lanes:primary_text");
+
+    const blocks = applyStreamBlockUpdate(
+      applyStreamBlockUpdate(undefined, reasoning),
+      text,
+    );
+    expect(blocks).toHaveLength(2);
+    expect(blocks?.[0]?.type).toBe("reasoning");
+    expect(blocks?.[1]?.type).toBe("text");
+  });
+
   it("projects only text blocks into message content", () => {
     let blocks: MessageBlock[] | undefined;
     blocks = applyStreamBlockUpdate(
