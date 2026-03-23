@@ -19,6 +19,7 @@ from app.db.locking import (
 )
 from app.features.invoke import route_runner as invoke_route_runner
 from app.features.invoke.service import StreamFinishReason, StreamOutcome
+from app.features.sessions.common import deserialize_interrupt_event_block_content
 from app.integrations.a2a_extensions.errors import A2AExtensionUpstreamError
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest, A2AAgentInvokeResponse
 
@@ -854,10 +855,21 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
     assert interrupt_call["append"] is False
     assert interrupt_call["is_finished"] is True
     assert interrupt_call["source"] == "interrupt_lifecycle"
-    assert (
+    content, interrupt = deserialize_interrupt_event_block_content(
         interrupt_call["content"]
-        == "Agent requested authorization: read.\nTargets: /repo/.env"
     )
+    assert content == "Agent requested authorization: read.\nTargets: /repo/.env"
+    assert interrupt == {
+        "requestId": "perm-1",
+        "type": "permission",
+        "phase": "asked",
+        "details": {
+            "permission": "read",
+            "patterns": ["/repo/.env"],
+            "displayMessage": None,
+            "questions": [],
+        },
+    }
     assert state.chunk_buffer == []
     assert state.persisted_block_count == 2
     assert state.next_event_seq == 4

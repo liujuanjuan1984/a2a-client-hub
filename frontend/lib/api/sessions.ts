@@ -1,4 +1,5 @@
 import {
+  type RuntimeInterrupt,
   type ToolCallDetailView,
   type ToolCallView,
 } from "@/lib/api/chat-utils";
@@ -30,6 +31,7 @@ export type SessionMessageBlockItem = {
   laneId?: string | null;
   baseSeq?: number | null;
   toolCall?: ToolCallView | null;
+  interrupt?: RuntimeInterrupt | null;
 };
 
 export type SessionMessageBlockDetailItem = {
@@ -43,6 +45,7 @@ export type SessionMessageBlockDetailItem = {
   baseSeq?: number | null;
   toolCall?: ToolCallView | null;
   toolCallDetail?: ToolCallDetailView | null;
+  interrupt?: RuntimeInterrupt | null;
 };
 
 export type SessionMessageItem = {

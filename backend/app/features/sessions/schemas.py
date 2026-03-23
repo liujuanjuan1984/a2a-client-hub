@@ -118,6 +118,38 @@ class ToolCallDetailItem(ToolCallViewItem):
     raw: Optional[str] = None
 
 
+class InterruptQuestionOptionItem(BaseModel):
+    label: str
+    description: Optional[str] = None
+    value: Optional[str] = None
+
+
+class InterruptQuestionItem(BaseModel):
+    header: Optional[str] = None
+    description: Optional[str] = None
+    question: str
+    options: list[InterruptQuestionOptionItem] = Field(default_factory=list)
+
+
+class InterruptDetailsItem(BaseModel):
+    permission: Optional[str] = None
+    patterns: list[str] = Field(default_factory=list)
+    display_message: Optional[str] = Field(alias="displayMessage", default=None)
+    questions: list[InterruptQuestionItem] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
+
+
+class InterruptViewItem(BaseModel):
+    request_id: str = Field(alias="requestId")
+    type: Literal["permission", "question"]
+    phase: Literal["asked", "resolved"]
+    resolution: Optional[Literal["replied", "rejected"]] = None
+    details: Optional[InterruptDetailsItem] = None
+
+    model_config = {"populate_by_name": True}
+
+
 class SessionMessageBlockItem(BaseModel):
     id: str
     type: str
@@ -127,6 +159,7 @@ class SessionMessageBlockItem(BaseModel):
     lane_id: Optional[str] = Field(alias="laneId", default=None)
     base_seq: Optional[int] = Field(alias="baseSeq", default=None)
     tool_call: Optional[ToolCallViewItem] = Field(alias="toolCall", default=None)
+    interrupt: Optional[InterruptViewItem] = None
 
     model_config = {"populate_by_name": True}
 
@@ -145,6 +178,7 @@ class SessionMessageBlockDetailItem(BaseModel):
         alias="toolCallDetail",
         default=None,
     )
+    interrupt: Optional[InterruptViewItem] = None
 
     model_config = {"populate_by_name": True}
 

@@ -329,6 +329,82 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
     return "Agent requested additional input."
 
 
+def build_interrupt_block_view(event: dict[str, Any]) -> dict[str, Any]:
+    normalized_event = normalize_interrupt_lifecycle_event(event)
+    if normalized_event is None:
+        raise ValueError("invalid_interrupt_event")
+
+    item: dict[str, Any] = {
+        "requestId": normalized_event["request_id"],
+        "type": normalized_event["type"],
+        "phase": normalized_event["phase"],
+    }
+    if normalized_event["phase"] == "resolved":
+        item["resolution"] = normalized_event["resolution"]
+        return item
+
+    details = normalized_event.get("details")
+    normalized_details = details if isinstance(details, dict) else {}
+    raw_patterns = normalized_details.get("patterns")
+    raw_questions = normalized_details.get("questions")
+    item["details"] = {
+        "permission": normalize_non_empty_text(normalized_details.get("permission")),
+        "patterns": (
+            [pattern for pattern in raw_patterns if isinstance(pattern, str)]
+            if isinstance(raw_patterns, list)
+            else []
+        ),
+        "displayMessage": normalize_non_empty_text(
+            normalized_details.get("display_message")
+            or normalized_details.get("displayMessage")
+        ),
+        "questions": (
+            [item for item in raw_questions if isinstance(item, dict)]
+            if isinstance(raw_questions, list)
+            else []
+        ),
+    }
+    return item
+
+
+def serialize_interrupt_event_block_content(event: dict[str, Any]) -> str:
+    normalized_event = normalize_interrupt_lifecycle_event(event)
+    if normalized_event is None:
+        raise ValueError("invalid_interrupt_event")
+
+    payload = {
+        "kind": "interrupt_event",
+        "schemaVersion": 1,
+        "interrupt": normalized_event,
+        "content": build_interrupt_lifecycle_message_content(normalized_event),
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def deserialize_interrupt_event_block_content(
+    raw_content: str | None,
+) -> tuple[str, dict[str, Any] | None]:
+    normalized_raw_content = raw_content or ""
+    try:
+        payload = json.loads(normalized_raw_content)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return normalized_raw_content, None
+
+    if not isinstance(payload, dict) or payload.get("kind") != "interrupt_event":
+        return normalized_raw_content, None
+
+    normalized_event = normalize_interrupt_lifecycle_event(
+        cast(dict[str, Any] | None, payload.get("interrupt"))
+    )
+    if normalized_event is None:
+        return normalized_raw_content, None
+
+    content = normalize_non_empty_text(payload.get("content")) or (
+        build_interrupt_lifecycle_message_content(normalized_event)
+    )
+    return content, build_interrupt_block_view(normalized_event)
+
+
 def read_block_cursor_state(metadata: dict[str, Any]) -> dict[str, int]:
     raw_cursor = metadata.get("_block_cursor")
     cursor = raw_cursor if isinstance(raw_cursor, dict) else {}
@@ -368,12 +444,15 @@ def render_block_item(
     raw_content = block_content or ""
     block_type = normalize_block_type(cast(str | None, block.block_type))
     tool_call = None
+    interrupt = None
     if block_type == "tool_call":
         tool_call = build_tool_call_view(
             raw_content,
             is_finished=bool(block.is_finished),
             message_status=message_status,
         )
+    if block_type == "interrupt_event":
+        raw_content, interrupt = deserialize_interrupt_event_block_content(raw_content)
     if block_type in {"reasoning", "tool_call"}:
         raw_content = ""
     block_id = normalize_non_empty_text(getattr(block, "block_id", None)) or (
@@ -393,6 +472,8 @@ def render_block_item(
     }
     if tool_call is not None:
         item["toolCall"] = tool_call
+    if interrupt is not None:
+        item["interrupt"] = interrupt
     return item
 
 
@@ -426,6 +507,9 @@ def render_block_detail_item(
     block_content = cast(str | None, block.content)
     raw_content = block_content or ""
     block_type = normalize_block_type(cast(str | None, block.block_type))
+    interrupt = None
+    if block_type == "interrupt_event":
+        raw_content, interrupt = deserialize_interrupt_event_block_content(raw_content)
     block_id = normalize_non_empty_text(getattr(block, "block_id", None)) or (
         f"{block.message_id}:{block_type}:{getattr(block, 'block_seq', 0) or 0}"
     )
@@ -457,6 +541,8 @@ def render_block_detail_item(
         )
         if tool_call_detail is not None:
             item["toolCallDetail"] = tool_call_detail
+    if interrupt is not None:
+        item["interrupt"] = interrupt
     return item
 
 
