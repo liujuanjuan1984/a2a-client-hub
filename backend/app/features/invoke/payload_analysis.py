@@ -5,11 +5,11 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.features.invoke.shared_metadata import (
     extract_preferred_usage_metadata,
     merge_shared_metadata_sections,
 )
+from app.integrations.a2a_extensions.shared_contract import SHARED_STREAM_KEY
 from app.utils.payload_extract import (
     as_dict,
     extract_context_id,

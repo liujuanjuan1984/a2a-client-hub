@@ -14,8 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.secret_vault import user_llm_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
-from app.integrations.a2a_client.types import ResolvedAgent
 from app.features.agents_shared.runtime_auth import build_resolved_runtime_agent
+from app.integrations.a2a_client.types import ResolvedAgent
 
 
 class A2ARuntimeError(RuntimeError):
