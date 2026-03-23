@@ -40,8 +40,8 @@ are running inside the legacy adapter.
 
 ## Completion Acknowledgement
 
-Canonical streaming consumers should prefer an explicit persisted-completion
-acknowledgement over transport shutdown heuristics.
+Canonical streaming consumers must use an explicit persisted-completion
+acknowledgement as the only success-finalization signal.
 
 When the server has finished durable persistence for the current message, it may
 emit a terminal `status-update` carrying:
@@ -50,11 +50,12 @@ emit a terminal `status-update` carrying:
 - `metadata.shared.stream.message_id = <canonical message id>`
 
 This acknowledgement is emitted after persistence succeeds and before any
-transport-level `stream_end` marker. Consumers may safely finalize the live
-message and refresh history as soon as they observe this persisted ack.
+transport-level `stream_end` marker. Consumers may finalize the live message
+and refresh history as soon as they observe this persisted ack.
 
-Older producers may omit this ack. In that case, consumers should fall back to
-transport completion (`stream_end` / `onDone`) as a compatibility path.
+Transport completion alone (`stream_end` / `onDone`) must not be treated as a
+successful completion signal. If the transport closes before this ack arrives,
+consumers should surface the stream as interrupted or protocol-invalid.
 
 ## Lane Defaults
 

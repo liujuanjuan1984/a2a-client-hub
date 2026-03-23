@@ -352,6 +352,17 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     );
   };
 
+  const markMissingPersistedCompletionAck = () => {
+    markRecoverableInterruption({
+      message: terminalRuntimeStatusSeen
+        ? "Streaming finished without a persisted completion acknowledgement."
+        : "Streaming transport ended before a persisted completion acknowledgement was received.",
+      details: {
+        errorCode: "missing_persisted_completion_ack",
+      },
+    });
+  };
+
   const updateSessionMeta = (meta: {
     contextId?: string | null;
     provider?: string | null;
@@ -978,8 +989,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           }
 
           if (data.event === "stream_end") {
-            completeStreamingMessage();
-            return true;
+            return terminalHandled;
           }
 
           if (applyIncomingStreamData(data)) {
@@ -987,9 +997,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           }
           return false;
         },
-        onDone: () => {
-          completeStreamingMessage();
-        },
+        onDone: () => {},
         onStreamError: appendStreamError,
       },
     });
@@ -1005,9 +1013,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         onData: (data) => {
           return applyIncomingStreamData(data);
         },
-        onDone: () => {
-          completeStreamingMessage();
-        },
+        onDone: () => {},
         onStreamError: appendStreamError,
       },
     });
@@ -1068,16 +1074,16 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   try {
     if (chatConnectionService.isWsHealthy()) {
       if (await tryWebSocketTransport()) {
-        if (!terminalHandled && terminalRuntimeStatusSeen) {
-          completeStreamingMessage();
+        if (!terminalHandled) {
+          markMissingPersistedCompletionAck();
         }
         return;
       }
     }
     if (chatConnectionService.isSseHealthy()) {
       if (await trySseTransport()) {
-        if (!terminalHandled && terminalRuntimeStatusSeen) {
-          completeStreamingMessage();
+        if (!terminalHandled) {
+          markMissingPersistedCompletionAck();
         }
         return;
       }

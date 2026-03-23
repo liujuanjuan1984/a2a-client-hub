@@ -1089,6 +1089,32 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
+  it("ignores non-canonical persisted completion aliases", () => {
+    const payload = {
+      kind: "status-update",
+      final: true,
+      status: { state: "completed" },
+      metadata: {
+        shared: {
+          stream: {
+            messageId: "msg-legacy-1",
+            completionPhase: "persisted",
+            persisted: true,
+          },
+        },
+      },
+    };
+
+    expect(extractRuntimeStatusEvent(payload)).toEqual({
+      state: "completed",
+      isFinal: true,
+      interrupt: null,
+      seq: null,
+      completionPhase: null,
+      messageId: null,
+    });
+  });
+
   it("extracts external session from canonical shared session metadata", () => {
     const meta = extractSessionMeta({
       kind: "status-update",

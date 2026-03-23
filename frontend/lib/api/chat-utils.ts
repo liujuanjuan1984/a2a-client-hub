@@ -279,11 +279,7 @@ export const extractRuntimeStatusEvent = (
     const rawCompletionPhase =
       typeof sharedStream?.completion_phase === "string"
         ? sharedStream.completion_phase
-        : typeof sharedStream?.completionPhase === "string"
-          ? sharedStream.completionPhase
-          : sharedStream?.persisted === true
-            ? "persisted"
-            : null;
+        : null;
     const completionPhase =
       rawCompletionPhase?.trim().toLowerCase() === "persisted"
         ? "persisted"
@@ -291,15 +287,10 @@ export const extractRuntimeStatusEvent = (
     const messageId =
       typeof data.message_id === "string" && data.message_id.trim().length > 0
         ? data.message_id.trim()
-        : typeof data.messageId === "string" && data.messageId.trim().length > 0
-          ? data.messageId.trim()
-          : typeof sharedStream?.message_id === "string" &&
-              sharedStream.message_id.trim().length > 0
-            ? sharedStream.message_id.trim()
-            : typeof sharedStream?.messageId === "string" &&
-                sharedStream.messageId.trim().length > 0
-              ? sharedStream.messageId.trim()
-              : null;
+        : typeof sharedStream?.message_id === "string" &&
+            sharedStream.message_id.trim().length > 0
+          ? sharedStream.message_id.trim()
+          : null;
     const state = normalizeRuntimeState(status.state, contract);
     return {
       state,
