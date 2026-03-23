@@ -16,9 +16,8 @@ from app.integrations.a2a_client.errors import A2APeerProtocolError
 
 
 class _BrokenGateway:
-    async def stream(self, **kwargs):
-        raise RuntimeError("stream failed")
-        yield  # pragma: no cover
+    def stream(self, **kwargs):  # noqa: ARG002
+        return _FailingAsyncIterator(RuntimeError("stream failed"))
 
 
 class _DumpableEvent:
@@ -82,32 +81,41 @@ class _SessionNotFoundError(RuntimeError):
         self.error_code = error_code
 
 
+class _FailingAsyncIterator:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise self._error
+
+
 class _BrokenGatewayWithSessionNotFound:
-    async def stream(self, **kwargs):  # noqa: ARG001
-        if False:
-            yield  # pragma: no cover
-        raise _SessionNotFoundError("session not found", "session_not_found")
+    def stream(self, **kwargs):  # noqa: ARG001
+        return _FailingAsyncIterator(
+            _SessionNotFoundError("session not found", "session_not_found")
+        )
 
 
 class _GatewayWithUnstructuredError:
-    async def stream(self, **kwargs):  # noqa: ARG001
-        if False:
-            yield  # pragma: no cover
-        raise RuntimeError("session missing")
+    def stream(self, **kwargs):  # noqa: ARG001
+        return _FailingAsyncIterator(RuntimeError("session missing"))
 
 
 class _GatewayWithStructuredProtocolError:
-    async def stream(self, **kwargs):  # noqa: ARG001
-        if False:
-            yield  # pragma: no cover
-        raise A2APeerProtocolError(
-            "project_id/channel_id required",
-            error_code="invalid_params",
-            rpc_code=-32602,
-            data={
-                "missing_params": ["project_id", "channel_id"],
-                "details": {"token": "secret"},
-            },
+    def stream(self, **kwargs):  # noqa: ARG001
+        return _FailingAsyncIterator(
+            A2APeerProtocolError(
+                "project_id/channel_id required",
+                error_code="invalid_params",
+                rpc_code=-32602,
+                data={
+                    "missing_params": ["project_id", "channel_id"],
+                    "details": {"token": "secret"},
+                },
+            )
         )
 
 

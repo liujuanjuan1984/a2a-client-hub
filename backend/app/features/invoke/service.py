@@ -34,9 +34,6 @@ from app.features.invoke.payload_analysis import (
     extract_binding_hints_from_serialized_event as extract_binding_hints_from_event,
 )
 from app.features.invoke.payload_analysis import (
-    extract_preferred_text_from_payload as extract_preferred_text,
-)
-from app.features.invoke.payload_analysis import (
     extract_readable_content_from_invoke_result as extract_readable_content_from_result,
 )
 from app.features.invoke.payload_analysis import (
@@ -59,8 +56,6 @@ from app.features.invoke.stream_diagnostics import (
 )
 from app.features.invoke.stream_payloads import (
     analyze_stream_chunk_contract,
-    extract_artifact_source,
-    extract_artifact_type,
     extract_interrupt_lifecycle_from_serialized_event,
     extract_shared_stream_metadata,
     extract_stream_chunk_from_serialized_event,
@@ -432,10 +427,6 @@ class A2AInvokeService:
         return resolved or None
 
     @classmethod
-    def _extract_preferred_text_from_payload(cls, payload: Any) -> str | None:
-        return extract_preferred_text(payload)
-
-    @classmethod
     def extract_readable_content_from_invoke_result(
         cls, result: dict[str, Any]
     ) -> str | None:
@@ -469,18 +460,6 @@ class A2AInvokeService:
             payload: dict[str, Any], artifact: dict[str, Any]
         ) -> dict[str, Any]:
             return extract_shared_stream_metadata(payload, artifact)
-
-        @staticmethod
-        def _extract_artifact_type(
-            payload: dict[str, Any], artifact: dict[str, Any]
-        ) -> str | None:
-            return extract_artifact_type(payload, artifact)
-
-        @staticmethod
-        def _extract_artifact_source(
-            payload: dict[str, Any], artifact: dict[str, Any]
-        ) -> str | None:
-            return extract_artifact_source(payload, artifact)
 
         def _find_block_index(self, block_id: str) -> int | None:
             for index, block in enumerate(self._blocks):
@@ -930,45 +909,6 @@ class A2AInvokeService:
                 seen_names.add(name)
                 items.append(resolved)
         return items
-
-    @classmethod
-    def _extract_missing_params_from_message(
-        cls,
-        message: str | None,
-    ) -> list[dict[str, Any]]:
-        if not message:
-            return []
-        for pattern in cls._MISSING_PARAM_MESSAGE_PATTERNS:
-            match = pattern.search(message)
-            if not match:
-                continue
-            return cls._coerce_missing_params(match.group("names"))
-        return []
-
-    @classmethod
-    def _extract_missing_params(
-        cls,
-        *,
-        data: Any,
-        message: str | None,
-    ) -> list[dict[str, Any]]:
-        if isinstance(data, dict):
-            for key in (
-                "missing_params",
-                "missingParams",
-                "missing_fields",
-                "required_fields",
-                "fields",
-                "params",
-                "missing",
-                "field",
-                "param",
-                "name",
-            ):
-                resolved = cls._coerce_missing_params(data.get(key))
-                if resolved:
-                    return resolved
-        return cls._extract_missing_params_from_message(message)
 
     @classmethod
     def _sanitize_upstream_error_data(

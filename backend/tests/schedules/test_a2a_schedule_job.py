@@ -121,6 +121,28 @@ def _mock_gateway_stream(*, events, first_event_delay: float = 0.0):
     )
 
 
+class _FailingAsyncContextManager:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def __aenter__(self):
+        raise self._error
+
+    async def __aexit__(self, exc_type, exc, tb):  # noqa: ANN001, ARG002
+        return False
+
+
+class _FailingAsyncIterator:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise self._error
+
+
 async def test_claim_next_pending_execution_obeys_agent_concurrency_limit(
     async_db_session,
     monkeypatch,
@@ -900,9 +922,8 @@ async def test_execute_claimed_task_persists_structured_agent_unavailable_error(
         _mock_runtime_builder(),
     )
 
-    async def _stream(**_kwargs):
-        raise A2AAgentUnavailableError("Agent card unavailable")
-        yield  # pragma: no cover
+    def _stream(**_kwargs):
+        return _FailingAsyncIterator(A2AAgentUnavailableError("Agent card unavailable"))
 
     preflight_client = SimpleNamespace(close=AsyncMock())
 
@@ -968,10 +989,10 @@ async def test_execute_claimed_task_fails_fast_when_preflight_card_fetch_fails(
         _mock_runtime_builder(),
     )
 
-    @asynccontextmanager
-    async def _open_invoke_session(**_kwargs):
-        raise A2AAgentUnavailableError("Agent card unavailable")
-        yield  # pragma: no cover
+    def _open_invoke_session(**_kwargs):
+        return _FailingAsyncContextManager(
+            A2AAgentUnavailableError("Agent card unavailable")
+        )
 
     monkeypatch.setattr(
         "app.features.schedules.job.get_a2a_service",
