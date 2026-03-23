@@ -256,20 +256,11 @@ async def test_http_stream_guard_blocks_duplicate_request_until_stream_finishes(
 
 
 @pytest.mark.asyncio
-async def test_run_http_invoke_route_stream_closes_db_even_if_stream_consumer_is_cancelled(
+async def test_run_http_invoke_route_stream_releases_inflight_guard_even_if_stream_consumer_is_cancelled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     invoke_route_runner._invoke_inflight_keys.clear()
     stream_started = asyncio.Event()
-    close_started = asyncio.Event()
-    close_released = asyncio.Event()
-    close_finished = asyncio.Event()
-
-    class _FakeDbSession:
-        async def close(self) -> None:
-            close_started.set()
-            await close_released.wait()
-            close_finished.set()
 
     async def fake_run_http_invoke_with_session_recovery(**kwargs):  # noqa: ARG001
         async def iterator():
@@ -299,10 +290,8 @@ async def test_run_http_invoke_route_stream_closes_db_even_if_stream_consumer_is
             "metadata": {},
         }
     )
-    db = _FakeDbSession()
-
     response = await invoke_route_runner.run_http_invoke_route(
-        db=db,
+        db=object(),
         user_id=uuid4(),
         agent_id=uuid4(),
         agent_source="shared",
@@ -325,15 +314,13 @@ async def test_run_http_invoke_route_stream_closes_db_even_if_stream_consumer_is
     first_chunk = await response.body_iterator.__anext__()
     assert first_chunk == "data: {}\n\n"
     await asyncio.wait_for(stream_started.wait(), timeout=1.0)
+    assert invoke_route_runner._invoke_inflight_keys
 
     consume_task = asyncio.create_task(response.body_iterator.aclose())
-    await asyncio.wait_for(close_started.wait(), timeout=1.0)
     consume_task.cancel()
-
-    close_released.set()
     with pytest.raises(asyncio.CancelledError):
         await consume_task
-    assert close_finished.is_set() is True
+    assert invoke_route_runner._invoke_inflight_keys == {}
 
 
 @pytest.mark.asyncio
