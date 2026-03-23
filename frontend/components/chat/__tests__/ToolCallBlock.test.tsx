@@ -1,5 +1,6 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import React, { useState } from "react";
+import { act, create } from "react-test-renderer";
 
 import { ToolCallBlock } from "../blocks/ToolCallBlock";
 
@@ -65,7 +66,8 @@ describe("ToolCallBlock", () => {
       />,
     );
 
-    expect(screen.getByText("Show Tool Call Success")).toBeTruthy();
+    expect(screen.getByText("Show Tool Call")).toBeTruthy();
+    expect(screen.getByText("Success")).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText("Show Tool Call Success"));
 
@@ -113,7 +115,8 @@ describe("ToolCallBlock", () => {
       />,
     );
 
-    expect(screen.getByText("Show Tool Call Interrupted")).toBeTruthy();
+    expect(screen.getByText("Show Tool Call")).toBeTruthy();
+    expect(screen.getByText("Interrupted")).toBeTruthy();
   });
 
   it("loads completed tool call detail before expanding even when raw content exists", async () => {
@@ -187,5 +190,62 @@ describe("ToolCallBlock", () => {
       expect(screen.getByText("Progress")).toBeTruthy();
       expect(screen.getByText("Completed")).toBeTruthy();
     });
+  });
+
+  it("keeps the hide and raw payload toggles in a shared footer row", async () => {
+    let root: ReturnType<typeof create> | null = null;
+
+    await act(async () => {
+      root = create(
+        <ToolCallBlock
+          block={{
+            id: "tool-call-4",
+            type: "tool_call",
+            content: '{"raw":true}',
+            isFinished: true,
+            toolCall: {
+              name: "bash",
+              status: "success",
+              callId: "call-4",
+              arguments: { command: "pwd" },
+              result: "done",
+            },
+            toolCallDetail: {
+              name: "bash",
+              status: "success",
+              callId: "call-4",
+              arguments: { command: "pwd" },
+              result: "done",
+              raw: '{"raw":true}',
+            },
+            createdAt: "2026-03-19T00:00:00.000Z",
+            updatedAt: "2026-03-19T00:00:00.000Z",
+          }}
+          fallbackBlockId="fallback-tool-call-4"
+          messageId="message-4"
+        />,
+      );
+    });
+
+    await act(async () => {
+      const togglePressable = root?.root.find(
+        (node) =>
+          node.props.testID === "chat-message-tool-call-4-tool-call-toggle" &&
+          typeof node.props.onPress === "function",
+      );
+      togglePressable?.props.onPress();
+    });
+
+    expect(root).not.toBeNull();
+
+    const footerRow = root!.root.find(
+      (node) =>
+        typeof node.props.className === "string" &&
+        node.props.className.includes(
+          "flex-row items-center justify-between border-t",
+        ),
+    );
+
+    expect(footerRow).toBeTruthy();
   });
 });

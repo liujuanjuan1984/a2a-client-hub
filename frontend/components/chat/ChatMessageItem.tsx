@@ -174,11 +174,15 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
 
   return (
     <View
-      className={`mb-4 flex ${
+      className={`mb-4 flex w-full ${
         message.role === "user" ? "items-end" : "items-start"
       }`}
     >
-      <View className="max-w-[94%] relative group">
+      <View
+        className={`relative group min-w-0 ${
+          message.role === "agent" ? "w-full sm:max-w-[92%]" : "max-w-[94%]"
+        }`}
+      >
         <Pressable
           onLongPress={canCopyMessage ? handleLongPressCopy : undefined}
           delayLongPress={500}
@@ -188,6 +192,10 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
               : message.role === "agent"
                 ? "bg-surface"
                 : "bg-slate-900"
+          } ${message.role === "agent" ? "w-full" : ""} ${
+            message.role === "agent" && message.status === "streaming"
+              ? "min-h-[52px]"
+              : ""
           }`}
         >
           {messageBody}

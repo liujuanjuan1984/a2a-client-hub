@@ -1,6 +1,7 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
 import * as Clipboard from "expo-clipboard";
 import React from "react";
+import { create } from "react-test-renderer";
 
 import { ChatMessageItem } from "@/components/chat/ChatMessageItem";
 import { type ChatMessage } from "@/lib/api/chat-utils";
@@ -163,6 +164,36 @@ describe("ChatMessageItem interaction", () => {
     );
 
     expect(screen.getByText("Streaming...")).toBeTruthy();
+  });
+
+  it("keeps agent streaming bubbles at a stable width shell", () => {
+    const message = buildAgentMessage({
+      content: "",
+      status: "streaming",
+      blocks: [],
+    });
+    let root: ReturnType<typeof create> | null = null;
+
+    act(() => {
+      root = create(
+        <ChatMessageItem
+          message={message}
+          index={0}
+          isLastMessage
+          onRetry={jest.fn()}
+          onInterruptStream={noopInterrupt}
+        />,
+      );
+    });
+
+    const bubble = root!.root.find(
+      (node) =>
+        typeof node.props.className === "string" &&
+        node.props.className.includes("rounded-2xl shadow-sm"),
+    );
+
+    expect(bubble.props.className).toContain("w-full");
+    expect(bubble.props.className).toContain("min-h-[52px]");
   });
 
   it("copies message content on long press", async () => {

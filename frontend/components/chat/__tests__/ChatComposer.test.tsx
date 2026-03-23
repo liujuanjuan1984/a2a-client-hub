@@ -12,11 +12,13 @@ describe("ChatComposer clear button", () => {
   const mockProps = {
     modelSelectionStatus: "supported" as const,
     currentDirectory: null,
+    quickShortcuts: [],
     pendingInterrupt: null,
     pendingInterruptCount: 0,
     showShortcutManager: false,
     onOpenDirectoryPicker: jest.fn(),
     onOpenShortcutManager: jest.fn(),
+    onUseShortcut: jest.fn(),
     selectedModel: null,
     onOpenModelPicker: jest.fn(),
     inputRef: { current: { focus: jest.fn() } } as any,
@@ -148,5 +150,31 @@ describe("ChatComposer clear button", () => {
     const { UNSAFE_getByType } = render(<ChatComposer {...mockProps} />);
 
     expect(UNSAFE_getByType(TextInput).props.maxLength).toBe(50_000);
+  });
+
+  it("renders quick shortcut suggestions and uses them directly", () => {
+    const onUseShortcut = jest.fn();
+    const { getByLabelText, getByText } = render(
+      <ChatComposer
+        {...mockProps}
+        quickShortcuts={[
+          {
+            id: "shortcut-1",
+            title: "Summarize",
+            prompt: "Please summarize this.",
+          },
+          {
+            id: "shortcut-2",
+            title: "Explain",
+            prompt: "Please explain this.",
+          },
+        ]}
+        onUseShortcut={onUseShortcut}
+      />,
+    );
+
+    expect(getByText("Quick Suggestions")).toBeTruthy();
+    fireEvent.press(getByLabelText("Use shortcut Summarize"));
+    expect(onUseShortcut).toHaveBeenCalledWith("Please summarize this.");
   });
 });
