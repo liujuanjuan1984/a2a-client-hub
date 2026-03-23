@@ -89,7 +89,7 @@ async def test_personal_agent_http_invoke_works_with_dependency_injected_db(
         base_prefix=settings.api_v1_prefix,
     ) as client:
         response = await client.post(
-            f"{settings.api_v1_prefix}/me/a2a/agents/{record.agent.id}/invoke",
+            f"{settings.api_v1_prefix}/me/a2a/agents/{record.id}/invoke",
             json={"query": "hello", "metadata": {}},
         )
 
@@ -135,7 +135,7 @@ async def test_personal_agent_sse_invoke_streams_with_dependency_injected_db(
     ) as client:
         async with client.stream(
             "POST",
-            f"{settings.api_v1_prefix}/me/a2a/agents/{record.agent.id}/invoke",
+            f"{settings.api_v1_prefix}/me/a2a/agents/{record.id}/invoke",
             params={"stream": "true"},
             json={
                 "query": "hello",

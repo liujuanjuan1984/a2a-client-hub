@@ -425,17 +425,17 @@ class OpencodeSessionDirectoryService:
         personal_records = await a2a_agent_service.list_agents(db, user_id=user_id)
         personal = [
             _AgentRef(
-                agent_id=cast(UUID, record.agent.id),
-                agent_name=cast(str, record.agent.name),
+                agent_id=record.id,
+                agent_name=record.name,
                 agent_source="personal",
-                agent_url=cast(str, record.agent.card_url),
-                auth_type=cast(str, record.agent.auth_type),
-                auth_header=cast(str | None, record.agent.auth_header),
-                auth_scheme=cast(str | None, record.agent.auth_scheme),
-                extra_headers=cast(dict[str, str] | None, record.agent.extra_headers),
+                agent_url=record.card_url,
+                auth_type=record.auth_type,
+                auth_header=record.auth_header,
+                auth_scheme=record.auth_scheme,
+                extra_headers=record.extra_headers or None,
             )
             for record in personal_records
-            if record.agent.enabled
+            if record.enabled
         ]
         hub_agents = await hub_a2a_agent_service.list_visible_agents_for_user(
             db, user_id=user_id

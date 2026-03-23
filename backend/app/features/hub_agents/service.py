@@ -47,16 +47,33 @@ class HubA2AUserNotFoundError(HubA2AAgentError):
 
 @dataclass(frozen=True)
 class HubA2AAgentRecord:
-    agent: A2AAgent
+    id: UUID
+    name: str
+    card_url: str
+    availability_policy: str
+    auth_type: str
+    auth_header: str | None
+    auth_scheme: str | None
+    enabled: bool
+    tags: list[str]
+    extra_headers: dict[str, str]
     has_credential: bool
     token_last4: Optional[str]
+    created_by_user_id: UUID | None
+    updated_by_user_id: UUID | None
+    created_at: object
+    updated_at: object
 
 
 @dataclass(frozen=True)
 class HubA2AAllowlistRecord:
-    entry: HubA2AAgentAllowlistEntry
+    id: UUID
+    agent_id: UUID
+    user_id: UUID
     user_email: Optional[str]
     user_name: Optional[str]
+    created_by_user_id: UUID
+    created_at: object
 
 
 class HubA2AAgentService(AgentValidationMixin):
@@ -67,6 +84,49 @@ class HubA2AAgentService(AgentValidationMixin):
 
     def __init__(self) -> None:
         self._vault = hub_a2a_secret_vault
+
+    @staticmethod
+    def _build_agent_record(
+        agent: A2AAgent,
+        *,
+        has_credential: bool,
+        token_last4: Optional[str],
+    ) -> HubA2AAgentRecord:
+        return HubA2AAgentRecord(
+            id=cast(UUID, agent.id),
+            name=cast(str, agent.name),
+            card_url=cast(str, agent.card_url),
+            availability_policy=cast(str, agent.availability_policy),
+            auth_type=cast(str, agent.auth_type),
+            auth_header=cast(str | None, agent.auth_header),
+            auth_scheme=cast(str | None, agent.auth_scheme),
+            enabled=bool(getattr(agent, "enabled", True)),
+            tags=cast(list[str], agent.tags or []),
+            extra_headers=cast(dict[str, str], agent.extra_headers or {}),
+            has_credential=has_credential,
+            token_last4=token_last4,
+            created_by_user_id=cast(UUID | None, agent.created_by_user_id),
+            updated_by_user_id=cast(UUID | None, agent.updated_by_user_id),
+            created_at=cast(object, agent.created_at),
+            updated_at=cast(object, agent.updated_at),
+        )
+
+    @staticmethod
+    def _build_allowlist_record(
+        entry: HubA2AAgentAllowlistEntry,
+        *,
+        user_email: Optional[str],
+        user_name: Optional[str],
+    ) -> HubA2AAllowlistRecord:
+        return HubA2AAllowlistRecord(
+            id=cast(UUID, entry.id),
+            agent_id=cast(UUID, entry.agent_id),
+            user_id=cast(UUID, entry.user_id),
+            user_email=user_email,
+            user_name=user_name,
+            created_by_user_id=cast(UUID, entry.created_by_user_id),
+            created_at=cast(object, entry.created_at),
+        )
 
     async def list_agents_admin(self, db: AsyncSession) -> List[HubA2AAgentRecord]:
         stmt = (
@@ -88,10 +148,10 @@ class HubA2AAgentService(AgentValidationMixin):
         records: list[HubA2AAgentRecord] = []
         for agent, token_last4 in rows:
             records.append(
-                HubA2AAgentRecord(
-                    agent=agent,
+                self._build_agent_record(
+                    cast(A2AAgent, agent),
                     has_credential=token_last4 is not None,
-                    token_last4=token_last4,
+                    token_last4=cast(str | None, token_last4),
                 )
             )
         return records
@@ -118,10 +178,10 @@ class HubA2AAgentService(AgentValidationMixin):
         if not row:
             raise HubA2AAgentNotFoundError("Hub A2A agent not found")
         agent, token_last4 = row
-        return HubA2AAgentRecord(
-            agent=agent,
+        return self._build_agent_record(
+            cast(A2AAgent, agent),
             has_credential=token_last4 is not None,
-            token_last4=token_last4,
+            token_last4=cast(str | None, token_last4),
         )
 
     async def create_agent_admin(
@@ -181,8 +241,10 @@ class HubA2AAgentService(AgentValidationMixin):
 
         await commit_safely(db)
         await db.refresh(agent)
-        return HubA2AAgentRecord(
-            agent=agent, has_credential=has_credential, token_last4=token_last4
+        return self._build_agent_record(
+            agent,
+            has_credential=has_credential,
+            token_last4=token_last4,
         )
 
     async def update_agent_admin(
@@ -248,8 +310,8 @@ class HubA2AAgentService(AgentValidationMixin):
         setattr(agent, "updated_by_user_id", admin_user_id)
         await commit_safely(db)
         await db.refresh(agent)
-        return HubA2AAgentRecord(
-            agent=agent,
+        return self._build_agent_record(
+            agent,
             has_credential=has_credential,
             token_last4=token_last4,
         )
@@ -350,8 +412,8 @@ class HubA2AAgentService(AgentValidationMixin):
         result = await db.execute(stmt)
         rows = result.all()
         return [
-            HubA2AAllowlistRecord(
-                entry=row[0],
+            self._build_allowlist_record(
+                cast(HubA2AAgentAllowlistEntry, row[0]),
                 user_email=cast(str | None, row[1]),
                 user_name=cast(str | None, row[2]),
             )
@@ -387,8 +449,8 @@ class HubA2AAgentService(AgentValidationMixin):
         db.add(entry)
         await commit_safely(db)
         await db.refresh(entry)
-        return HubA2AAllowlistRecord(
-            entry=entry,
+        return self._build_allowlist_record(
+            entry,
             user_email=cast(str | None, resolved_user.email),
             user_name=cast(str | None, resolved_user.name),
         )

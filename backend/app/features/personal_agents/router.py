@@ -61,20 +61,19 @@ logger = get_logger(__name__)
 
 
 def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
-    agent = record.agent
     payload = {
-        "id": agent.id,
-        "name": agent.name,
-        "card_url": agent.card_url,
-        "auth_type": agent.auth_type,
-        "auth_header": agent.auth_header,
-        "auth_scheme": agent.auth_scheme,
-        "enabled": agent.enabled,
-        "tags": agent.tags or [],
-        "extra_headers": agent.extra_headers or {},
+        "id": record.id,
+        "name": record.name,
+        "card_url": record.card_url,
+        "auth_type": record.auth_type,
+        "auth_header": record.auth_header,
+        "auth_scheme": record.auth_scheme,
+        "enabled": record.enabled,
+        "tags": record.tags,
+        "extra_headers": record.extra_headers,
         "token_last4": record.token_last4,
-        "created_at": agent.created_at,
-        "updated_at": agent.updated_at,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
     }
     return A2AAgentResponse.model_validate(payload)
 

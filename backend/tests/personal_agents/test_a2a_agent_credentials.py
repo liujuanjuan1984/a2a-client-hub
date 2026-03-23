@@ -37,19 +37,19 @@ async def test_update_to_none_hard_deletes_credential(async_db_session):
         async_db_session, user_id=user.id, suffix=f"none-{uuid4().hex}"
     )
 
-    credential = await _get_credential(async_db_session, agent_id=record.agent.id)
+    credential = await _get_credential(async_db_session, agent_id=record.id)
     assert credential is not None
 
     updated = await a2a_agent_service.update_agent(
         async_db_session,
         user_id=user.id,
-        agent_id=record.agent.id,
+        agent_id=record.id,
         auth_type="none",
         token=None,
     )
     assert updated.token_last4 is None
 
-    credential = await _get_credential(async_db_session, agent_id=record.agent.id)
+    credential = await _get_credential(async_db_session, agent_id=record.id)
     assert credential is None
 
 
@@ -65,10 +65,10 @@ async def test_delete_agent_hard_deletes_credential(async_db_session):
     await a2a_agent_service.delete_agent(
         async_db_session,
         user_id=user.id,
-        agent_id=record.agent.id,
+        agent_id=record.id,
     )
 
-    credential = await _get_credential(async_db_session, agent_id=record.agent.id)
+    credential = await _get_credential(async_db_session, agent_id=record.id)
     assert credential is None
 
 
@@ -80,13 +80,13 @@ async def test_upsert_keeps_single_credential_row(async_db_session):
     record = await _create_bearer_agent(
         async_db_session, user_id=user.id, suffix=f"legacy-{uuid4().hex}"
     )
-    credential = await _get_credential(async_db_session, agent_id=record.agent.id)
+    credential = await _get_credential(async_db_session, agent_id=record.id)
     assert credential is not None
 
     updated = await a2a_agent_service.update_agent(
         async_db_session,
         user_id=user.id,
-        agent_id=record.agent.id,
+        agent_id=record.id,
         auth_type="bearer",
         token="token9999",
     )
@@ -94,9 +94,7 @@ async def test_upsert_keeps_single_credential_row(async_db_session):
 
     rows = (
         await async_db_session.execute(
-            select(A2AAgentCredential).where(
-                A2AAgentCredential.agent_id == record.agent.id
-            )
+            select(A2AAgentCredential).where(A2AAgentCredential.agent_id == record.id)
         )
     ).scalars()
     credentials = list(rows)
