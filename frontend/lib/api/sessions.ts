@@ -26,6 +26,9 @@ export type SessionMessageBlockItem = {
   type: string;
   content?: string | null;
   isFinished: boolean;
+  blockId?: string | null;
+  laneId?: string | null;
+  baseSeq?: number | null;
   toolCall?: ToolCallView | null;
 };
 
@@ -35,6 +38,9 @@ export type SessionMessageBlockDetailItem = {
   type: string;
   content?: string | null;
   isFinished: boolean;
+  blockId?: string | null;
+  laneId?: string | null;
+  baseSeq?: number | null;
   toolCall?: ToolCallView | null;
   toolCallDetail?: ToolCallDetailView | null;
 };

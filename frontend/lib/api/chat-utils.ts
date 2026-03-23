@@ -979,7 +979,7 @@ const trimOverlappingReasoningPrefix = (
       isBoundaryAlignedReasoningOverlap(reasoningContent, text, overlap) &&
       isSubstantialReasoningOverlap(candidate)
     ) {
-      return text.slice(overlap);
+      return text.slice(overlap).replace(/^\s+/, "");
     }
   }
   return text;
@@ -997,6 +997,41 @@ const findLastTextBlockIndex = (blocks: MessageBlock[]): number => {
     }
   }
   return -1;
+};
+
+export const adaptStreamBlockUpdateForReducer = (
+  current: MessageBlock[] | undefined,
+  update: StreamBlockUpdate,
+): StreamBlockUpdate => {
+  if (
+    !(
+      update.op === "replace" &&
+      update.blockType === "text" &&
+      isPrimaryTextSnapshotSource(update.source)
+    )
+  ) {
+    return update;
+  }
+
+  const nextDelta = trimOverlappingReasoningPrefix(current, update.delta);
+  const blocks = current ?? [];
+  if (findBlockIndexByBlockId(blocks, update.blockId) >= 0) {
+    return { ...update, delta: nextDelta };
+  }
+
+  const latestTextIndex = findLastTextBlockIndex(blocks);
+  if (latestTextIndex < 0) {
+    return { ...update, delta: nextDelta };
+  }
+
+  const latestText = blocks[latestTextIndex];
+  return {
+    ...update,
+    blockId: latestText?.blockId ?? latestText?.id ?? update.blockId,
+    laneId: latestText?.laneId ?? "primary_text",
+    baseSeq: update.baseSeq ?? latestText?.baseSeq ?? update.seq ?? null,
+    delta: nextDelta,
+  };
 };
 
 const inferTaskIdFromArtifactId = (
@@ -1215,39 +1250,37 @@ export const applyStreamBlockUpdate = (
   current: MessageBlock[] | undefined,
   update: StreamBlockUpdate,
 ): MessageBlock[] => {
+  const resolvedUpdate = adaptStreamBlockUpdateForReducer(current, update);
   const now = new Date().toISOString();
   const blocks = current ?? [];
   const nextBlocks = [...blocks];
   const lastNextBlock = nextBlocks[nextBlocks.length - 1];
-  const targetIndex = findBlockIndexByBlockId(nextBlocks, update.blockId);
-  const isPrimaryTextReplace =
-    update.op === "replace" &&
-    update.blockType === "text" &&
-    isPrimaryTextSnapshotSource(update.source);
-  const delta = isPrimaryTextReplace
-    ? trimOverlappingReasoningPrefix(current ?? [], update.delta)
-    : update.delta;
+  const targetIndex = findBlockIndexByBlockId(
+    nextBlocks,
+    resolvedUpdate.blockId,
+  );
+  const delta = resolvedUpdate.delta;
 
   const applyBlockPatch = (index: number, content: string) => {
     const targetBlock = nextBlocks[index];
     const currentBaseSeq = targetBlock.baseSeq ?? null;
     if (
-      update.baseSeq !== null &&
+      resolvedUpdate.baseSeq !== null &&
       currentBaseSeq !== null &&
-      update.baseSeq < currentBaseSeq
+      resolvedUpdate.baseSeq < currentBaseSeq
     ) {
       return nextBlocks;
     }
     nextBlocks[index] = {
       ...targetBlock,
-      type: update.blockType,
-      blockId: update.blockId,
-      laneId: update.laneId,
-      baseSeq: update.baseSeq ?? currentBaseSeq,
+      type: resolvedUpdate.blockType,
+      blockId: resolvedUpdate.blockId,
+      laneId: resolvedUpdate.laneId,
+      baseSeq: resolvedUpdate.baseSeq ?? currentBaseSeq,
       content,
-      isFinished: update.done,
-      ...(update.toolCall !== undefined
-        ? { toolCall: update.toolCall ?? null }
+      isFinished: resolvedUpdate.done,
+      ...(resolvedUpdate.toolCall !== undefined
+        ? { toolCall: resolvedUpdate.toolCall ?? null }
         : targetBlock.toolCall !== undefined
           ? { toolCall: targetBlock.toolCall ?? null }
           : {}),
@@ -1268,15 +1301,15 @@ export const applyStreamBlockUpdate = (
 
   const pushNewBlock = (content: string) => {
     nextBlocks.push({
-      id: `${update.messageId}:${nextBlocks.length + 1}`,
-      type: update.blockType,
-      blockId: update.blockId,
-      laneId: update.laneId,
-      baseSeq: update.baseSeq,
+      id: `${resolvedUpdate.messageId}:${nextBlocks.length + 1}`,
+      type: resolvedUpdate.blockType,
+      blockId: resolvedUpdate.blockId,
+      laneId: resolvedUpdate.laneId,
+      baseSeq: resolvedUpdate.baseSeq,
       content,
-      isFinished: update.done,
-      ...(update.toolCall !== undefined
-        ? { toolCall: update.toolCall ?? null }
+      isFinished: resolvedUpdate.done,
+      ...(resolvedUpdate.toolCall !== undefined
+        ? { toolCall: resolvedUpdate.toolCall ?? null }
         : {}),
       createdAt: now,
       updatedAt: now,
@@ -1284,13 +1317,13 @@ export const applyStreamBlockUpdate = (
     return nextBlocks;
   };
 
-  if (update.op === "finalize") {
+  if (resolvedUpdate.op === "finalize") {
     return targetIndex >= 0
       ? applyBlockPatch(targetIndex, nextBlocks[targetIndex]?.content ?? "")
       : nextBlocks;
   }
 
-  if (update.op === "append") {
+  if (resolvedUpdate.op === "append") {
     if (targetIndex >= 0) {
       const targetBlock = nextBlocks[targetIndex];
       return applyBlockPatch(
@@ -1304,13 +1337,6 @@ export const applyStreamBlockUpdate = (
 
   if (targetIndex >= 0) {
     return applyBlockPatch(targetIndex, delta);
-  }
-
-  if (isPrimaryTextReplace) {
-    const latestTextIndex = findLastTextBlockIndex(nextBlocks);
-    if (latestTextIndex >= 0 && latestTextIndex === nextBlocks.length - 1) {
-      return applyBlockPatch(latestTextIndex, delta);
-    }
   }
 
   closeActiveBlock();

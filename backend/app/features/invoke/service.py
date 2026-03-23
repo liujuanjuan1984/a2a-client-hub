@@ -452,6 +452,10 @@ class A2AInvokeService:
             self._block_seq = 0
 
         @staticmethod
+        def _is_word_char(value: str | None) -> bool:
+            return bool(value and re.fullmatch(r"[\w]", value, flags=re.UNICODE))
+
+        @staticmethod
         def _extract_text_from_parts(parts: Any) -> str:
             return extract_stream_text_from_parts(parts)
 
@@ -478,6 +482,81 @@ class A2AInvokeService:
                 if str(block.get("block_id") or "") == block_id:
                     return index
             return None
+
+        def _find_last_text_block_index(self) -> int | None:
+            for index in range(len(self._blocks) - 1, -1, -1):
+                if str(self._blocks[index].get("type") or "") == "text":
+                    return index
+            return None
+
+        def _trim_overlapping_reasoning_prefix(self, text: str) -> str:
+            if not text or not self._blocks:
+                return text
+            latest_reasoning = self._blocks[-1]
+            if str(latest_reasoning.get("type") or "") != "reasoning":
+                return text
+            reasoning_content = str(latest_reasoning.get("content") or "")
+            if not reasoning_content:
+                return text
+            for overlap in range(min(len(reasoning_content), len(text)), 0, -1):
+                candidate = reasoning_content[-overlap:]
+                overlap_start = len(reasoning_content) - overlap
+                before_overlap = (
+                    reasoning_content[overlap_start - 1] if overlap_start > 0 else None
+                )
+                after_overlap = text[overlap] if overlap < len(text) else None
+                tokens = re.findall(r"[\w]+", candidate, flags=re.UNICODE)
+                if (
+                    text.startswith(candidate)
+                    and not self._is_word_char(before_overlap)
+                    and not self._is_word_char(after_overlap)
+                    and (len(tokens) >= 2 or any(len(token) >= 5 for token in tokens))
+                ):
+                    return re.sub(r"^\s+", "", text[overlap:])
+            return text
+
+        def _adapt_legacy_stream_block(
+            self,
+            *,
+            block_type: str,
+            delta: str,
+            done: bool,
+            source: str | None,
+            block_id: str,
+            lane_id: str,
+            operation: str,
+            base_seq: int | None,
+            seq: int | None,
+        ) -> tuple[str, str, str, str, int | None, bool]:
+            resolved_block_id = block_id
+            resolved_lane_id = lane_id
+            resolved_delta = delta
+            resolved_base_seq = base_seq
+            if (
+                operation == "replace"
+                and block_type == "text"
+                and source in {"final_snapshot", "finalize_snapshot"}
+            ):
+                latest_text_index = self._find_last_text_block_index()
+                if latest_text_index is not None:
+                    latest_text = self._blocks[latest_text_index]
+                    existing_block_id = str(latest_text.get("block_id") or "")
+                    existing_lane_id = str(latest_text.get("lane_id") or "")
+                    if existing_block_id:
+                        resolved_block_id = existing_block_id
+                    if existing_lane_id:
+                        resolved_lane_id = existing_lane_id
+                resolved_delta = self._trim_overlapping_reasoning_prefix(resolved_delta)
+                if resolved_base_seq is None:
+                    resolved_base_seq = seq
+            return (
+                resolved_block_id,
+                resolved_lane_id,
+                operation,
+                resolved_delta,
+                resolved_base_seq,
+                done,
+            )
 
         def _push_new_block(
             self,
@@ -603,13 +682,19 @@ class A2AInvokeService:
                     "replace"
                     if (not bool(resolved_stream_block.get("append", True)))
                     or str(resolved_stream_block.get("source") or "")
-                    == "final_snapshot"
+                    in {"final_snapshot", "finalize_snapshot"}
                     else "append"
                 )
-            self._apply_block_update(
+            (
+                block_id,
+                lane_id,
+                operation,
+                delta,
+                base_seq,
+                done,
+            ) = self._adapt_legacy_stream_block(
                 block_type=block_type,
                 delta=delta,
-                append=bool(resolved_stream_block.get("append", True)),
                 done=bool(resolved_stream_block.get("is_finished", False)),
                 source=(
                     str(resolved_stream_block.get("source"))
@@ -620,6 +705,26 @@ class A2AInvokeService:
                 lane_id=lane_id,
                 operation=operation,
                 base_seq=base_seq if isinstance(base_seq, int) else None,
+                seq=(
+                    resolved_stream_block.get("seq")
+                    if isinstance(resolved_stream_block.get("seq"), int)
+                    else None
+                ),
+            )
+            self._apply_block_update(
+                block_type=block_type,
+                delta=delta,
+                append=bool(resolved_stream_block.get("append", True)),
+                done=done,
+                source=(
+                    str(resolved_stream_block.get("source"))
+                    if isinstance(resolved_stream_block.get("source"), str)
+                    else None
+                ),
+                block_id=block_id,
+                lane_id=lane_id,
+                operation=operation,
+                base_seq=base_seq,
             )
 
         def result(self) -> str:

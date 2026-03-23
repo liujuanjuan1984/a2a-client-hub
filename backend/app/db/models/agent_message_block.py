@@ -20,6 +20,12 @@ class AgentMessageBlock(Base, TimestampMixin, UserOwnedMixin):
             "block_seq",
             unique=True,
         ),
+        Index(
+            "ix_agent_message_blocks_message_id_block_id",
+            "message_id",
+            "block_id",
+            unique=True,
+        ),
         {"schema": SCHEMA_NAME},
     )
 
@@ -33,6 +39,16 @@ class AgentMessageBlock(Base, TimestampMixin, UserOwnedMixin):
         Integer,
         nullable=False,
         comment="Monotonic block sequence within a single message.",
+    )
+    block_id = Column(
+        String(128),
+        nullable=True,
+        comment="Stable logical block id used by append/replace/finalize operations.",
+    )
+    lane_id = Column(
+        String(64),
+        nullable=True,
+        comment="Stable render lane id for this logical block.",
     )
     block_type = Column(
         String(32),
@@ -66,6 +82,11 @@ class AgentMessageBlock(Base, TimestampMixin, UserOwnedMixin):
         Integer,
         nullable=True,
         comment="Last applied event sequence for this block.",
+    )
+    base_seq = Column(
+        Integer,
+        nullable=True,
+        comment="Latest authoritative base sequence accepted for this block.",
     )
     start_event_id = Column(
         String(128),

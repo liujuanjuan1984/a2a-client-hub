@@ -376,11 +376,20 @@ def render_block_item(
         )
     if block_type in {"reasoning", "tool_call"}:
         raw_content = ""
+    block_id = normalize_non_empty_text(getattr(block, "block_id", None)) or (
+        f"{block.message_id}:{block_type}:{getattr(block, 'block_seq', 0) or 0}"
+    )
+    lane_id = normalize_non_empty_text(getattr(block, "lane_id", None)) or (
+        "primary_text" if block_type == "text" else block_type
+    )
     item = {
         "id": str(block.id),
         "type": block_type,
         "content": raw_content,
         "isFinished": bool(block.is_finished),
+        "blockId": block_id,
+        "laneId": lane_id,
+        "baseSeq": cast(int | None, block.base_seq),
     }
     if tool_call is not None:
         item["toolCall"] = tool_call
@@ -400,33 +409,7 @@ def project_message_blocks(
     *,
     message_status: str | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
-    projected_blocks: list[dict[str, Any]] = []
-
-    for block in blocks:
-        block_type = normalize_block_type(cast(str | None, block.block_type))
-        rendered = render_block_item(block, message_status=message_status)
-        if block_type == "text" and is_primary_text_snapshot_source(
-            cast(str | None, block.source)
-        ):
-            # History list views expose a canonical read model rather than raw
-            # persistence rows, so a final text snapshot rewrites the last text slot.
-            target_index = next(
-                (
-                    index
-                    for index in range(len(projected_blocks) - 1, -1, -1)
-                    if str(projected_blocks[index].get("type") or "") == "text"
-                ),
-                None,
-            )
-            if target_index is not None:
-                projected_blocks[target_index] = {
-                    **projected_blocks[target_index],
-                    "content": rendered.get("content", ""),
-                    "isFinished": rendered.get("isFinished", True),
-                }
-                continue
-        projected_blocks.append(rendered)
-
+    projected_blocks = render_blocks(blocks, message_status=message_status)
     content = "".join(
         str(block.get("content") or "")
         for block in projected_blocks
@@ -443,12 +426,21 @@ def render_block_detail_item(
     block_content = cast(str | None, block.content)
     raw_content = block_content or ""
     block_type = normalize_block_type(cast(str | None, block.block_type))
+    block_id = normalize_non_empty_text(getattr(block, "block_id", None)) or (
+        f"{block.message_id}:{block_type}:{getattr(block, 'block_seq', 0) or 0}"
+    )
+    lane_id = normalize_non_empty_text(getattr(block, "lane_id", None)) or (
+        "primary_text" if block_type == "text" else block_type
+    )
     item = {
         "id": str(block.id),
         "messageId": str(block.message_id),
         "type": block_type,
         "content": raw_content,
         "isFinished": bool(block.is_finished),
+        "blockId": block_id,
+        "laneId": lane_id,
+        "baseSeq": cast(int | None, block.base_seq),
     }
     if block_type == "tool_call":
         tool_call = build_tool_call_view(
@@ -517,12 +509,15 @@ async def create_block_with_conflict_recovery(
     user_id: UUID,
     message_id: UUID,
     block_seq: int,
+    block_id: str,
+    lane_id: str,
     block_type: str,
     content: str,
     is_finished: bool,
     source: str | None,
     start_event_seq: int | None,
     end_event_seq: int | None,
+    base_seq: int | None,
     start_event_id: str | None,
     end_event_id: str | None,
 ) -> AgentMessageBlock | None:
@@ -534,12 +529,15 @@ async def create_block_with_conflict_recovery(
                 user_id=user_id,
                 message_id=message_id,
                 block_seq=block_seq,
+                block_id=block_id,
+                lane_id=lane_id,
                 block_type=block_type,
                 content=content,
                 is_finished=is_finished,
                 source=source,
                 start_event_seq=start_event_seq,
                 end_event_seq=end_event_seq,
+                base_seq=base_seq,
                 start_event_id=start_event_id,
                 end_event_id=end_event_id,
             )

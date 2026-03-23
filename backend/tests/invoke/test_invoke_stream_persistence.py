@@ -6,6 +6,7 @@ from app.features.invoke.service import StreamFinishReason, StreamOutcome
 from app.features.invoke.stream_persistence import (
     build_stream_metadata_from_outcome,
     resolve_invoke_idempotency_key,
+    rewrite_stream_event_contract,
 )
 from app.utils.idempotency_key import IDEMPOTENCY_KEY_MAX_LENGTH
 
@@ -74,3 +75,39 @@ def test_build_stream_metadata_from_outcome_keeps_identity_and_usage() -> None:
             "error": {"message": "timeout", "error_code": "timeout"},
         },
     }
+
+
+def test_rewrite_stream_event_contract_copies_canonical_block_fields() -> None:
+    payload = {
+        "kind": "artifact-update",
+        "artifact": {"metadata": {}, "parts": [{"kind": "text", "text": "draft"}]},
+    }
+
+    rewrite_stream_event_contract(
+        payload,
+        local_message_id="msg-local-1",
+        event_id="evt-local-1",
+        seq=7,
+        stream_block={
+            "block_id": "block-text-main",
+            "lane_id": "primary_text",
+            "op": "replace",
+            "base_seq": 6,
+        },
+    )
+
+    assert payload["message_id"] == "msg-local-1"
+    assert payload["event_id"] == "evt-local-1"
+    assert payload["seq"] == 7
+    assert payload["block_id"] == "block-text-main"
+    assert payload["lane_id"] == "primary_text"
+    assert payload["op"] == "replace"
+    assert payload["base_seq"] == 6
+    artifact = payload["artifact"]
+    assert artifact["message_id"] == "msg-local-1"
+    assert artifact["event_id"] == "evt-local-1"
+    assert artifact["seq"] == 7
+    assert artifact["metadata"]["block_id"] == "block-text-main"
+    assert artifact["metadata"]["lane_id"] == "primary_text"
+    assert artifact["metadata"]["op"] == "replace"
+    assert artifact["metadata"]["base_seq"] == 6

@@ -411,6 +411,63 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[0]?.baseSeq).toBe(10);
   });
 
+  it("adapts legacy final_snapshot onto the existing primary text block", () => {
+    let blocks: MessageBlock[] | undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "draft",
+          artifactId: "task-5:stream:text",
+          blockId: "block-text-main",
+          laneId: "primary_text",
+          op: "append",
+          taskId: "task-5",
+          seq: 1,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "reasoning",
+          delta: "draft plan",
+          artifactId: "task-5:stream:reasoning",
+          taskId: "task-5",
+          seq: 2,
+          append: false,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "draft plan final answer",
+          artifactId: "task-5:stream:text:final",
+          source: "final_snapshot",
+          append: false,
+          taskId: "task-5",
+          seq: 3,
+          lastChunk: true,
+        }),
+      ),
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks?.[0]).toMatchObject({
+      type: "text",
+      blockId: "block-text-main",
+      laneId: "primary_text",
+      content: "final answer",
+      isFinished: true,
+    });
+    expect(blocks?.[1]?.type).toBe("reasoning");
+  });
+
   it("syncs message content when loading text block details", () => {
     const message = {
       content: "",

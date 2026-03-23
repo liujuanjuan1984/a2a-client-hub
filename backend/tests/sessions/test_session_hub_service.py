@@ -1522,6 +1522,112 @@ async def test_interleaved_reasoning_final_snapshot_rewrites_primary_text_slot(
     ]
     assert agent_item["blocks"][0]["content"] == "final answer"
     assert agent_item["blocks"][1]["content"] == ""
+    assert agent_item["blocks"][0]["blockId"] == text_blocks[0].block_id
+    assert agent_item["blocks"][0]["laneId"] == "primary_text"
+    assert agent_item["blocks"][0]["baseSeq"] == 3
+
+
+async def test_canonical_block_metadata_persists_and_rejects_stale_replace(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        title="Canonical Block State",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    refs = await session_hub_service.record_local_invoke_messages(
+        async_db_session,
+        session=thread,
+        source="manual",
+        user_id=user.id,
+        agent_id=uuid4(),
+        agent_source="personal",
+        query="hello",
+        response_content="",
+        success=False,
+        context_id="ctx-canonical",
+        idempotency_key="run:canonical-block-state:manual",
+    )
+    agent_message_id = refs["agent_message_id"]
+
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=1,
+        block_type="text",
+        content="draft",
+        append=True,
+        is_finished=False,
+        block_id="block-text-main",
+        lane_id="primary_text",
+        operation="append",
+        event_id="evt-1",
+    )
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=11,
+        block_type="text",
+        content="authoritative",
+        append=False,
+        is_finished=True,
+        block_id="block-text-main",
+        lane_id="primary_text",
+        operation="replace",
+        base_seq=10,
+        event_id="evt-11",
+    )
+
+    stale = await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message_id,
+        seq=12,
+        block_type="text",
+        content="stale",
+        append=False,
+        is_finished=True,
+        block_id="block-text-main",
+        lane_id="primary_text",
+        operation="replace",
+        base_seq=8,
+        event_id="evt-12",
+    )
+    assert stale is None
+
+    persisted_blocks = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessageBlock)
+                .where(AgentMessageBlock.message_id == agent_message_id)
+                .order_by(AgentMessageBlock.block_seq.asc())
+            )
+        ).all()
+    )
+    assert len(persisted_blocks) == 1
+    assert persisted_blocks[0].content == "authoritative"
+    assert persisted_blocks[0].block_id == "block-text-main"
+    assert persisted_blocks[0].lane_id == "primary_text"
+    assert persisted_blocks[0].base_seq == 10
+
+    message_items = await _list_message_items(
+        async_db_session,
+        user_id=user.id,
+        conversation_id=str(thread.id),
+    )
+    agent_item = next(item for item in message_items if item.get("role") == "agent")
+    assert agent_item["content"] == "authoritative"
+    assert agent_item["blocks"][0]["blockId"] == "block-text-main"
+    assert agent_item["blocks"][0]["laneId"] == "primary_text"
+    assert agent_item["blocks"][0]["baseSeq"] == 10
 
 
 async def test_append_agent_message_block_update_unique_conflict_does_not_rollback_session(

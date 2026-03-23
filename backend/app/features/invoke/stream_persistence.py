@@ -149,6 +149,7 @@ def rewrite_stream_event_contract(
     local_message_id: str,
     event_id: str,
     seq: int | None,
+    stream_block: dict[str, Any] | None = None,
 ) -> None:
     if event_payload.get("kind") != "artifact-update":
         return
@@ -161,6 +162,11 @@ def rewrite_stream_event_contract(
         event_payload["event_id"] = event_id
     if isinstance(seq, int) and seq > 0:
         event_payload["seq"] = seq
+    if isinstance(stream_block, dict):
+        for field in ("block_id", "lane_id", "op", "base_seq"):
+            value = stream_block.get(field)
+            if value is not None:
+                event_payload[field] = value
     artifact = event_payload.get("artifact")
     if isinstance(artifact, dict):
         artifact.pop("messageId", None)
@@ -179,6 +185,12 @@ def rewrite_stream_event_contract(
         if isinstance(seq, int) and seq > 0:
             metadata["seq"] = seq
             artifact["seq"] = seq
+        if isinstance(stream_block, dict):
+            for field in ("block_id", "lane_id", "op", "base_seq"):
+                value = stream_block.get(field)
+                if value is not None:
+                    metadata[field] = value
+                    artifact[field] = value
 
 
 def resolve_stream_event_id(
@@ -311,6 +323,7 @@ async def persist_stream_block_update(
         local_message_id=local_message_id,
         event_id=resolved_event_id,
         seq=persist_seq,
+        stream_block=stream_block,
     )
 
     block_type = str(stream_block.get("block_type") or "text")
@@ -333,6 +346,10 @@ async def persist_stream_block_update(
             "content": str(stream_block.get("content") or ""),
             "append": bool(stream_block.get("append", True)),
             "is_finished": is_finished,
+            "block_id": stream_block.get("block_id"),
+            "lane_id": stream_block.get("lane_id"),
+            "op": stream_block.get("op"),
+            "base_seq": stream_block.get("base_seq"),
             "event_id": resolved_event_id,
             "source": (
                 str(stream_block.get("source"))
@@ -415,6 +432,10 @@ async def persist_interrupt_lifecycle_event(
             content=build_interrupt_message_content(interrupt_event),
             append=False,
             is_finished=True,
+            block_id=f"{agent_message_id}:interrupt:{interrupt_event['request_id']}",
+            lane_id="interrupt_event",
+            operation="replace",
+            base_seq=persist_seq,
             event_id=interrupt_event_id,
             source="interrupt_lifecycle",
         )
@@ -589,6 +610,10 @@ async def persist_synthetic_final_block_if_needed(
             content=outcome.final_text,
             append=False,
             is_finished=True,
+            block_id=f"{agent_message_id}:primary_text:final",
+            lane_id="primary_text",
+            operation="replace",
+            base_seq=resolved_seq,
             event_id=None,
             source="finalize_snapshot",
         )
