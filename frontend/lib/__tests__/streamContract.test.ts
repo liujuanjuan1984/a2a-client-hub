@@ -850,6 +850,8 @@ describe("block-based stream parser and reducer", () => {
       isFinal: true,
       interrupt: null,
       seq: null,
+      completionPhase: null,
+      messageId: null,
     });
   });
 
@@ -869,6 +871,8 @@ describe("block-based stream parser and reducer", () => {
       isFinal: false,
       interrupt: null,
       seq: 4,
+      completionPhase: null,
+      messageId: null,
     });
   });
 
@@ -903,6 +907,8 @@ describe("block-based stream parser and reducer", () => {
         },
       },
       seq: null,
+      completionPhase: null,
+      messageId: null,
     });
   });
 
@@ -980,6 +986,8 @@ describe("block-based stream parser and reducer", () => {
         },
       },
       seq: null,
+      completionPhase: null,
+      messageId: null,
     });
   });
 
@@ -1050,6 +1058,34 @@ describe("block-based stream parser and reducer", () => {
         resolution: "rejected",
       },
       seq: null,
+      completionPhase: null,
+      messageId: null,
+    });
+  });
+
+  it("parses explicit persisted completion acknowledgement from shared stream metadata", () => {
+    const payload = {
+      kind: "status-update",
+      final: true,
+      message_id: "msg-persisted-1",
+      status: { state: "completed" },
+      metadata: {
+        shared: {
+          stream: {
+            message_id: "msg-persisted-1",
+            completion_phase: "persisted",
+          },
+        },
+      },
+    };
+
+    expect(extractRuntimeStatusEvent(payload)).toEqual({
+      state: "completed",
+      isFinal: true,
+      interrupt: null,
+      seq: null,
+      completionPhase: "persisted",
+      messageId: "msg-persisted-1",
     });
   });
 

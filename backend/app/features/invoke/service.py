@@ -262,12 +262,16 @@ class A2AInvokeService:
         return False
 
     @staticmethod
-    async def _call_callback(callback: Callable[[Any], Any] | None, value: Any) -> None:
+    async def _call_callback(
+        callback: Callable[[Any], Any] | None,
+        value: Any,
+    ) -> Any | None:
         if callback is None:
-            return
+            return None
         outcome = callback(value)
         if inspect.isawaitable(outcome):
-            await outcome
+            return await outcome
+        return outcome
 
     @staticmethod
     async def _call_callback_safely(
@@ -277,19 +281,20 @@ class A2AInvokeService:
         logger: Any,
         log_extra: dict[str, Any],
         warning_message: str,
-    ) -> None:
+    ) -> Any | None:
         try:
-            await A2AInvokeService._call_callback(callback, value)
+            return await A2AInvokeService._call_callback(callback, value)
         except Exception:
             log_warning = getattr(logger, "warning", None)
             if callable(log_warning):
                 log_warning(warning_message, exc_info=True, extra=log_extra)
-                return
+                return None
             logging.getLogger(__name__).warning(
                 warning_message,
                 exc_info=True,
                 extra=log_extra,
             )
+            return None
 
     @classmethod
     async def _iter_gateway_stream(
@@ -1264,13 +1269,20 @@ class A2AInvokeService:
                         idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                         terminal_event_seen=terminal_event_seen,
                     )
+                finalization_event: dict[str, Any] | None = None
                 if final_outcome is not None:
-                    await self._call_callback_safely(
+                    finalized_callback_result = await self._call_callback_safely(
                         on_finalized,
                         final_outcome,
                         logger=logger,
                         log_extra=log_extra,
                         warning_message="A2A SSE finalized callback failed",
+                    )
+                    if isinstance(finalized_callback_result, dict):
+                        finalization_event = finalized_callback_result
+                if finalization_event is not None and not client_disconnected:
+                    yield (
+                        f"data: {json_dumps(finalization_event, ensure_ascii=False)}\n\n"
                     )
                 if not client_disconnected:
                     yield "event: stream_end\ndata: {}\n\n"
@@ -1489,13 +1501,20 @@ class A2AInvokeService:
         finally:
             if cache_key and self._is_terminal_status_event(serialized):
                 await global_stream_cache.mark_completed(cache_key)
+            finalization_event: dict[str, Any] | None = None
             if final_outcome is not None:
-                await self._call_callback_safely(
+                finalized_callback_result = await self._call_callback_safely(
                     on_finalized,
                     final_outcome,
                     logger=logger,
                     log_extra=log_extra,
                     warning_message="A2A WS finalized callback failed",
+                )
+                if isinstance(finalized_callback_result, dict):
+                    finalization_event = finalized_callback_result
+            if finalization_event is not None and not client_disconnected:
+                await websocket.send_text(
+                    json_dumps(finalization_event, ensure_ascii=False)
                 )
             if send_stream_end and not client_disconnected:
                 await self.send_ws_stream_end(websocket)

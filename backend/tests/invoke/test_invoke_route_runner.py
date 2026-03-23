@@ -1527,7 +1527,7 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
     )
     assert len(state.chunk_buffer) == 1
 
-    await on_finalized(
+    persisted_ack = await on_finalized(
         StreamOutcome(
             success=True,
             finish_reason=StreamFinishReason.SUCCESS,
@@ -1545,6 +1545,22 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
     assert state.chunk_buffer == []
     assert state.persisted_block_count == 1
     assert captured_outcome["response_content"] == "partial"
+    assert persisted_ack == {
+        "kind": "status-update",
+        "final": True,
+        "status": {"state": "completed"},
+        "message_id": str(state.message_refs["agent_message_id"]),
+        "metadata": {
+            "shared": {
+                "stream": {
+                    "message_id": str(state.message_refs["agent_message_id"]),
+                    "completion_phase": "persisted",
+                    "finish_reason": "success",
+                    "success": True,
+                }
+            }
+        },
+    }
 
 
 @pytest.mark.asyncio

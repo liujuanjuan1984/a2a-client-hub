@@ -972,6 +972,59 @@ async def test_sse_breaks_stream_after_terminal_status_update():
 
 
 @pytest.mark.asyncio
+async def test_sse_emits_persisted_completion_ack_before_stream_end():
+    async def _on_finalized(_outcome):
+        return {
+            "kind": "status-update",
+            "final": True,
+            "status": {"state": "completed"},
+            "message_id": "msg-persisted-sse-1",
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "message_id": "msg-persisted-sse-1",
+                        "completion_phase": "persisted",
+                    }
+                }
+            },
+        }
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-persisted-sse:stream",
+                    text="ok",
+                    block_type="text",
+                ),
+                {
+                    "kind": "status-update",
+                    "status": {"state": "completed"},
+                    "final": True,
+                },
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_finalized=_on_finalized,
+    )
+
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    payload = "".join(chunks)
+    persisted_index = payload.index('"completion_phase": "persisted"')
+    stream_end_index = payload.index("event: stream_end")
+    assert persisted_index < stream_end_index
+
+
+@pytest.mark.asyncio
 async def test_ws_breaks_stream_after_terminal_status_update():
     websocket = _DummyWebSocket()
     await a2a_invoke_service.stream_ws(
@@ -1001,6 +1054,71 @@ async def test_ws_breaks_stream_after_terminal_status_update():
     assert not any(
         item.get("content") == "should-not-be-forwarded" for item in payloads
     )
+
+
+@pytest.mark.asyncio
+async def test_ws_emits_persisted_completion_ack_before_stream_end():
+    websocket = _DummyWebSocket()
+
+    async def _on_finalized(_outcome):
+        return {
+            "kind": "status-update",
+            "final": True,
+            "status": {"state": "completed"},
+            "message_id": "msg-persisted-ws-1",
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "message_id": "msg-persisted-ws-1",
+                        "completion_phase": "persisted",
+                    }
+                }
+            },
+        }
+
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-persisted-ws:stream",
+                    text="ok",
+                    block_type="text",
+                ),
+                {
+                    "kind": "status-update",
+                    "status": {"state": "completed"},
+                    "final": True,
+                },
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_finalized=_on_finalized,
+    )
+
+    payloads = [json.loads(item) for item in websocket.sent]
+    persisted_index = next(
+        index
+        for index, item in enumerate(payloads)
+        if item.get("kind") == "status-update"
+        and item.get("metadata", {})
+        .get("shared", {})
+        .get("stream", {})
+        .get("completion_phase")
+        == "persisted"
+    )
+    stream_end_index = next(
+        index
+        for index, item in enumerate(payloads)
+        if item.get("event") == "stream_end"
+    )
+    assert persisted_index < stream_end_index
 
 
 @pytest.mark.asyncio

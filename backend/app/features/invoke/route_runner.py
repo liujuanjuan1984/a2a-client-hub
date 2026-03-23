@@ -40,7 +40,11 @@ from app.features.invoke.recovery import (
 from app.features.invoke.recovery import (
     resolve_session_binding_outbound_mode as _resolve_session_binding_outbound_mode_impl,
 )
-from app.features.invoke.service import StreamOutcome, a2a_invoke_service
+from app.features.invoke.service import (
+    StreamFinishReason,
+    StreamOutcome,
+    a2a_invoke_service,
+)
 from app.features.invoke.session_binding import (
     is_recoverable_invoke_session_error,
     merge_invoke_binding_state,
@@ -620,6 +624,44 @@ def _normalize_optional_message_id(value: str | None) -> str | None:
     return str(resolved)
 
 
+def _resolve_final_runtime_state(outcome: StreamOutcome) -> str:
+    if outcome.success:
+        return "completed"
+    if outcome.finish_reason == StreamFinishReason.CLIENT_DISCONNECT:
+        return "cancelled"
+    return "failed"
+
+
+def _build_persisted_finalization_ack_event(
+    *,
+    state: _InvokeState,
+    outcome: StreamOutcome,
+) -> dict[str, Any] | None:
+    agent_message_id = (
+        _coerce_uuid(state.message_refs.get("agent_message_id"))
+        if isinstance(state.message_refs, dict)
+        else None
+    ) or _coerce_uuid(state.agent_message_id)
+    if agent_message_id is None:
+        return None
+    return {
+        "kind": "status-update",
+        "final": True,
+        "status": {"state": _resolve_final_runtime_state(outcome)},
+        "message_id": str(agent_message_id),
+        "metadata": {
+            "shared": {
+                "stream": {
+                    "message_id": str(agent_message_id),
+                    "completion_phase": "persisted",
+                    "finish_reason": outcome.finish_reason.value,
+                    "success": outcome.success,
+                }
+            }
+        },
+    }
+
+
 async def _resolve_session_binding_outbound_mode(
     *,
     runtime: Any,
@@ -900,7 +942,7 @@ def _build_consume_stream_callbacks(
             stream_enabled=stream_enabled,
         )
 
-    async def on_finalized(outcome: StreamOutcome) -> None:
+    async def on_finalized(outcome: StreamOutcome) -> dict[str, Any] | None:
         try:
             await _flush_stream_buffer(state=state, user_id=user_id)
             await _persist_local_outcome(
@@ -912,6 +954,10 @@ def _build_consume_stream_callbacks(
                 query=query,
                 transport=transport,
                 stream_enabled=stream_enabled,
+            )
+            return _build_persisted_finalization_ack_event(
+                state=state,
+                outcome=outcome,
             )
         finally:
             await _unregister_inflight_invoke(state=state, user_id=user_id)

@@ -830,6 +830,11 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       });
     }
 
+    if (runtimeStatusEvent?.completionPhase === "persisted") {
+      completeStreamingMessage();
+      return true;
+    }
+
     if (runtimeStatusEvent?.isFinal) {
       terminalRuntimeStatusSeen = true;
     }

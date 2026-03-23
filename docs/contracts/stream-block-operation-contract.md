@@ -38,6 +38,24 @@ Consumers must not infer replace targets by searching for the "last text block".
 Consumers must not infer duplicate removal from visible text content unless they
 are running inside the legacy adapter.
 
+## Completion Acknowledgement
+
+Canonical streaming consumers should prefer an explicit persisted-completion
+acknowledgement over transport shutdown heuristics.
+
+When the server has finished durable persistence for the current message, it may
+emit a terminal `status-update` carrying:
+
+- `metadata.shared.stream.completion_phase = "persisted"`
+- `metadata.shared.stream.message_id = <canonical message id>`
+
+This acknowledgement is emitted after persistence succeeds and before any
+transport-level `stream_end` marker. Consumers may safely finalize the live
+message and refresh history as soon as they observe this persisted ack.
+
+Older producers may omit this ack. In that case, consumers should fall back to
+transport completion (`stream_end` / `onDone`) as a compatibility path.
+
 ## Lane Defaults
 
 If `lane_id` is missing, adapters should derive a stable fallback:

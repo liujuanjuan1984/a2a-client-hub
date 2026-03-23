@@ -108,6 +108,8 @@ export type RuntimeStatusEvent = {
   isFinal: boolean;
   interrupt: RuntimeInterrupt | null;
   seq: number | null;
+  completionPhase: "persisted" | null;
+  messageId: string | null;
 };
 
 export type RuntimeStatusContract = {
@@ -256,12 +258,56 @@ export const extractRuntimeStatusEvent = (
   }
   const status = data.status as { state?: unknown } | undefined;
   if (status && typeof status.state === "string" && status.state.trim()) {
+    const metadata =
+      data.metadata &&
+      typeof data.metadata === "object" &&
+      !Array.isArray(data.metadata)
+        ? (data.metadata as Record<string, unknown>)
+        : null;
+    const shared =
+      metadata?.shared &&
+      typeof metadata.shared === "object" &&
+      !Array.isArray(metadata.shared)
+        ? (metadata.shared as Record<string, unknown>)
+        : null;
+    const sharedStream =
+      shared?.stream &&
+      typeof shared.stream === "object" &&
+      !Array.isArray(shared.stream)
+        ? (shared.stream as Record<string, unknown>)
+        : null;
+    const rawCompletionPhase =
+      typeof sharedStream?.completion_phase === "string"
+        ? sharedStream.completion_phase
+        : typeof sharedStream?.completionPhase === "string"
+          ? sharedStream.completionPhase
+          : sharedStream?.persisted === true
+            ? "persisted"
+            : null;
+    const completionPhase =
+      rawCompletionPhase?.trim().toLowerCase() === "persisted"
+        ? "persisted"
+        : null;
+    const messageId =
+      typeof data.message_id === "string" && data.message_id.trim().length > 0
+        ? data.message_id.trim()
+        : typeof data.messageId === "string" && data.messageId.trim().length > 0
+          ? data.messageId.trim()
+          : typeof sharedStream?.message_id === "string" &&
+              sharedStream.message_id.trim().length > 0
+            ? sharedStream.message_id.trim()
+            : typeof sharedStream?.messageId === "string" &&
+                sharedStream.messageId.trim().length > 0
+              ? sharedStream.messageId.trim()
+              : null;
     const state = normalizeRuntimeState(status.state, contract);
     return {
       state,
       isFinal: data.final === true,
       interrupt: extractRuntimeInterrupt(data, state, contract),
       seq: pickInteger(data, ["seq"]),
+      completionPhase,
+      messageId,
     };
   }
   return null;
