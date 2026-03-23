@@ -82,7 +82,10 @@ class UserLockedError(AuthHandlerError):
 class RegistrationResult:
     """Return payload for successful registrations."""
 
-    user: User
+    user_id: UUID
+    email: str
+    name: str
+    is_superuser: bool
     is_first_user: bool
     timezone: str
 
@@ -131,7 +134,10 @@ async def register_user(
     await db.refresh(user)
 
     return RegistrationResult(
-        user=user,
+        user_id=cast(UUID, user.id),
+        email=cast(str, user.email),
+        name=cast(str, user.name),
+        is_superuser=bool(getattr(user, "is_superuser", False)),
         is_first_user=is_first_user,
         timezone=timezone_value,
     )
