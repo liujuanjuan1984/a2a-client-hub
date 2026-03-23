@@ -4,6 +4,8 @@ import Markdown, { RenderRules } from "react-native-markdown-display";
 
 import { CopyButton } from "../ui/CopyButton";
 
+import { chatMarkdownPalette } from "@/theme/colors";
+
 interface MarkdownRenderProps {
   content: string;
   isAgent?: boolean;
@@ -11,7 +13,9 @@ interface MarkdownRenderProps {
 
 export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
   const styles = useMemo(() => {
-    const baseTextColor = isAgent ? "#E2E8F0" : "#FFFFFF"; // slate-200 or white
+    const baseTextColor = isAgent
+      ? chatMarkdownPalette.agentText
+      : chatMarkdownPalette.userText;
     return StyleSheet.create({
       body: {
         fontSize: 14,
@@ -44,40 +48,40 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
         fontSize: 16,
       },
       code_inline: {
-        backgroundColor: "rgba(0, 0, 0, 0.2)",
+        backgroundColor: chatMarkdownPalette.inlineCodeBackground,
         borderRadius: 4,
         borderWidth: 0,
         paddingHorizontal: 4,
         paddingVertical: 2,
         fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-        color: "rgba(52, 211, 153, 0.8)", // emerald-400 at 80% opacity
+        color: chatMarkdownPalette.inlineCodeText,
       },
       strong: {
-        color: "rgba(251, 191, 36, 0.8)", // amber-400 at 80% opacity
+        color: chatMarkdownPalette.strongText,
         fontWeight: "bold",
       },
       em: {
-        color: "rgba(167, 139, 250, 0.8)", // violet-400 at 80% opacity
+        color: chatMarkdownPalette.emphasisText,
         fontStyle: "italic",
       },
       code_block: {
-        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        backgroundColor: chatMarkdownPalette.codeBackground,
         borderRadius: 8,
         padding: 12,
         marginVertical: 8,
         fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-        color: "#F1F5F9", // slate-100
+        color: chatMarkdownPalette.codeText,
       },
       fence: {
-        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        backgroundColor: chatMarkdownPalette.codeBackground,
         borderRadius: 8,
         padding: 12,
         marginVertical: 8,
         fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-        color: "#F1F5F9",
+        color: chatMarkdownPalette.codeText,
       },
       link: {
-        color: "rgba(56, 189, 248, 0.8)", // sky-400 at 80% opacity
+        color: chatMarkdownPalette.linkText,
         textDecorationLine: "underline",
       },
       bullet_list: {
@@ -87,13 +91,19 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
         marginBottom: 8,
       },
       blockquote: {
-        backgroundColor: "rgba(255, 255, 255, 0.1)",
-        borderLeftColor: "#94A3B8",
+        backgroundColor: chatMarkdownPalette.blockquoteBackground,
+        borderLeftColor: chatMarkdownPalette.blockquoteBorder,
         borderLeftWidth: 4,
         paddingLeft: 12,
         paddingVertical: 4,
         marginVertical: 8,
         borderRadius: 4,
+      },
+      hr: {
+        backgroundColor: chatMarkdownPalette.divider,
+        borderRadius: 999,
+        height: StyleSheet.hairlineWidth || 1,
+        marginVertical: 16,
       },
     });
   }, [isAgent]);
@@ -115,7 +125,7 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
               variant="ghost"
               size="xs"
               iconSize={14}
-              iconColor="#94A3B8"
+              iconColor={chatMarkdownPalette.chromeMuted}
               className="h-6 w-6 rounded-md"
             />
           </View>
@@ -136,7 +146,7 @@ export function MarkdownRender({ content, isAgent }: MarkdownRenderProps) {
               variant="ghost"
               size="xs"
               iconSize={12}
-              iconColor="#94A3B8"
+              iconColor={chatMarkdownPalette.chromeMuted}
               className="h-5 w-5 rounded"
             />
           </View>

@@ -1,4 +1,5 @@
 const nativewind = require("nativewind/preset");
+const { appColors } = require("./theme/colors");
 
 module.exports = {
   content: [
@@ -13,15 +14,15 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: "#0B0E14",
-        surface: "#171B24",
-        primary: "#FACC15",
-        accent: "#FFFFFF",
-        muted: "#64748B",
-        "neo-yellow": "#FACC15",
-        "neo-green": "#34D399",
-        "neo-bg": "#0B0E14",
-        "neo-text": "#FFFFFF",
+        background: appColors.background,
+        surface: appColors.surface,
+        primary: appColors.primary,
+        accent: appColors.accent,
+        muted: appColors.muted,
+        "neo-yellow": appColors.neoYellow,
+        "neo-green": appColors.neoGreen,
+        "neo-bg": appColors.neoBg,
+        "neo-text": appColors.neoText,
       },
       borderWidth: {
         neo: "1px",

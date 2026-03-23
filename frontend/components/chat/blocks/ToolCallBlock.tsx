@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 import { ExpandToggle } from "@/components/ui/ExpandToggle";
 import {
@@ -155,6 +155,24 @@ function DetailCard({
   );
 }
 
+function StatusBadge({
+  statusLabel,
+  statusStyle,
+}: {
+  statusLabel: string;
+  statusStyle: (typeof STATUS_STYLES)[keyof typeof STATUS_STYLES];
+}) {
+  return (
+    <View className={`rounded-full border px-2 py-1 ${statusStyle.container}`}>
+      <Text
+        className={`text-[10px] font-semibold uppercase ${statusStyle.text}`}
+      >
+        {statusLabel}
+      </Text>
+    </View>
+  );
+}
+
 function StructuredValueBlock({
   value,
   tone = "text-slate-300",
@@ -283,19 +301,18 @@ export function ToolCallBlock({
         key={blockId}
         className={`${!isFirst ? "mt-3" : ""} rounded-xl border border-white/10 bg-black/40 p-3`}
       >
-        <Pressable
-          onPress={() => {
-            handleToggle().catch(() => undefined);
-          }}
-          className="w-full"
-          accessibilityRole="button"
-          accessibilityLabel={collapsedLabel}
-          testID={`chat-message-${blockId}-tool-call-toggle`}
-        >
-          <Text className="text-[11px] font-medium tracking-wide text-slate-300">
-            {collapsedLabel}
-          </Text>
-        </Pressable>
+        <View className="flex-row items-center justify-between gap-3">
+          <ExpandToggle
+            expanded={expanded}
+            onToggle={() => {
+              handleToggle().catch(() => undefined);
+            }}
+            type="Tool Call"
+            accessibilityLabel={collapsedLabel}
+            testID={`chat-message-${blockId}-tool-call-toggle`}
+          />
+          <StatusBadge statusLabel={statusLabel} statusStyle={statusStyle} />
+        </View>
       </View>
     );
   }
@@ -319,15 +336,7 @@ export function ToolCallBlock({
             </Text>
           ) : null}
         </View>
-        <View
-          className={`rounded-full border px-2 py-1 ${statusStyle.container}`}
-        >
-          <Text
-            className={`text-[10px] font-semibold uppercase ${statusStyle.text}`}
-          >
-            {statusLabel}
-          </Text>
-        </View>
+        <StatusBadge statusLabel={statusLabel} statusStyle={statusStyle} />
       </View>
 
       {command || argumentsText ? (
@@ -397,29 +406,7 @@ export function ToolCallBlock({
         </Text>
       ) : null}
 
-      {rawText ? (
-        <View className="mt-3">
-          <ExpandToggle
-            expanded={showRaw}
-            onToggle={() => {
-              setShowRaw((prev) => !prev);
-            }}
-            type="Raw Payload"
-            variant="mini"
-            showChevron
-            testID={`chat-message-${blockId}-tool-call-raw-toggle`}
-          />
-          {showRaw ? (
-            <View className="mt-2 rounded-lg border border-white/10 bg-black/30 p-2.5">
-              <Text selectable className="text-[11px] leading-5 text-slate-400">
-                {rawText}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      <View className="mt-2 items-end">
+      <View className="mt-3 flex-row items-center justify-between border-t border-white/5 pt-2">
         <ExpandToggle
           expanded={expanded}
           onToggle={() => {
@@ -430,7 +417,28 @@ export function ToolCallBlock({
           showChevron={expanded}
           testID={`chat-message-${blockId}-tool-call-toggle`}
         />
+        {rawText ? (
+          <ExpandToggle
+            expanded={showRaw}
+            onToggle={() => {
+              setShowRaw((prev) => !prev);
+            }}
+            type="Raw Payload"
+            variant="mini"
+            showChevron
+            testID={`chat-message-${blockId}-tool-call-raw-toggle`}
+          />
+        ) : (
+          <View />
+        )}
       </View>
+      {rawText && showRaw ? (
+        <View className="mt-2 rounded-lg border border-white/10 bg-black/30 p-2.5">
+          <Text selectable className="text-[11px] leading-5 text-slate-400">
+            {rawText}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
