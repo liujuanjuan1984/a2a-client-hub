@@ -1637,7 +1637,7 @@ async def test_append_agent_message_block_update_unique_conflict_does_not_rollba
         async def __aenter__(self) -> None:
             return None
 
-        async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> bool:
             return False
 
     class _DummyDB:
@@ -1733,7 +1733,7 @@ async def test_append_agent_message_block_update_block_id_conflict_uses_block_lo
         async def __aenter__(self) -> None:
             return None
 
-        async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> bool:
             return False
 
     class _DummyDB:

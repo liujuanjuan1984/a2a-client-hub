@@ -556,8 +556,10 @@ async def test_run_http_invoke_returns_structured_error_details(
 ) -> None:
     class _Gateway:
         async def stream(self, **kwargs):  # noqa: ARG002
-            if False:
-                yield {}
+            if kwargs:
+                await asyncio.sleep(0)
+            for event in ():
+                yield event
 
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
