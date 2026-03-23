@@ -521,7 +521,7 @@ async def create_block_with_conflict_recovery(
     start_event_id: str | None,
     end_event_id: str | None,
 ) -> AgentMessageBlock | None:
-    """Insert one block with best-effort recovery for concurrent same-seq writes."""
+    """Insert one block with best-effort recovery for concurrent idempotent writes."""
     try:
         async with db.begin_nested():
             return await block_store.create_block(
@@ -542,13 +542,22 @@ async def create_block_with_conflict_recovery(
                 end_event_id=end_event_id,
             )
     except IntegrityError as exc:
-        if not is_idempotency_unique_violation(
+        if is_idempotency_unique_violation(
             exc, index_name="ix_agent_message_blocks_message_id_block_seq"
         ):
-            raise
-        return await block_store.find_block_by_message_and_block_seq(
-            db,
-            user_id=user_id,
-            message_id=message_id,
-            block_seq=block_seq,
-        )
+            return await block_store.find_block_by_message_and_block_seq(
+                db,
+                user_id=user_id,
+                message_id=message_id,
+                block_seq=block_seq,
+            )
+        if is_idempotency_unique_violation(
+            exc, index_name="ix_agent_message_blocks_message_id_block_id"
+        ):
+            return await block_store.find_block_by_message_and_block_id(
+                db,
+                user_id=user_id,
+                message_id=message_id,
+                block_id=block_id,
+            )
+        raise

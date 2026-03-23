@@ -1688,6 +1688,16 @@ async def test_append_agent_message_block_update_unique_conflict_does_not_rollba
     )
     monkeypatch.setattr(
         session_history_projection_module.block_store,
+        "find_block_by_message_and_block_id",
+        _find_none,
+    )
+    monkeypatch.setattr(
+        session_history_projection_module.block_store,
+        "find_last_block_for_message_and_type",
+        _find_none,
+    )
+    monkeypatch.setattr(
+        session_history_projection_module.block_store,
         "find_last_block_for_message",
         _find_none,
     )
@@ -1712,5 +1722,118 @@ async def test_append_agent_message_block_update_unique_conflict_does_not_rollba
     )
 
     assert result is existing_block
+    assert dummy_db.begin_nested_called == 1
+    assert dummy_db.rollback_called is False
+
+
+async def test_append_agent_message_block_update_block_id_conflict_uses_block_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class _Nested:
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+            return False
+
+    class _DummyDB:
+        def __init__(self) -> None:
+            self.rollback_called = False
+            self.begin_nested_called = 0
+            self._message = type("Message", (), {"message_metadata": {}})()
+
+        async def scalar(self, _stmt):  # noqa: ANN001
+            return self._message
+
+        def begin_nested(self) -> _Nested:
+            self.begin_nested_called += 1
+            return _Nested()
+
+        async def flush(self) -> None:
+            return None
+
+        async def rollback(self) -> None:
+            self.rollback_called = True
+
+    async def _find_none(*_args, **_kwargs):  # noqa: ANN001
+        return None
+
+    existing_block = type(
+        "Block",
+        (),
+        {
+            "block_seq": 2,
+            "block_id": "block-text-main",
+            "lane_id": "primary_text",
+            "content": "draft",
+            "is_finished": False,
+            "start_event_seq": None,
+            "end_event_seq": None,
+            "base_seq": None,
+            "start_event_id": None,
+            "end_event_id": None,
+            "source": None,
+        },
+    )()
+
+    block_id_lookup_calls = 0
+
+    async def _find_by_block_id(*_args, **_kwargs):  # noqa: ANN001
+        nonlocal block_id_lookup_calls
+        block_id_lookup_calls += 1
+        return None if block_id_lookup_calls == 1 else existing_block
+
+    async def _raise_block_id_conflict(*_args, **_kwargs):  # noqa: ANN001
+        raise IntegrityError(
+            "insert ix_agent_message_blocks_message_id_block_id",
+            {},
+            Exception("ix_agent_message_blocks_message_id_block_id"),
+        )
+
+    monkeypatch.setattr(
+        session_history_projection_module.block_store,
+        "find_block_by_message_and_block_seq",
+        _find_none,
+    )
+    monkeypatch.setattr(
+        session_history_projection_module.block_store,
+        "find_block_by_message_and_block_id",
+        _find_by_block_id,
+    )
+    monkeypatch.setattr(
+        session_history_projection_module.block_store,
+        "find_last_block_for_message_and_type",
+        _find_none,
+    )
+    monkeypatch.setattr(
+        session_history_projection_module.block_store,
+        "find_last_block_for_message",
+        _find_none,
+    )
+    monkeypatch.setattr(
+        session_history_projection_module.block_store,
+        "create_block",
+        _raise_block_id_conflict,
+    )
+
+    dummy_db = _DummyDB()
+    result = await session_hub_service.append_agent_message_block_update(
+        dummy_db,  # type: ignore[arg-type]
+        user_id=uuid4(),
+        agent_message_id=uuid4(),
+        seq=5,
+        block_type="text",
+        content="payload",
+        append=False,
+        is_finished=True,
+        block_id="block-text-main",
+        lane_id="primary_text",
+        operation="replace",
+        event_id="evt-5",
+        source="final_snapshot",
+    )
+
+    assert result is existing_block
+    assert block_id_lookup_calls == 2
     assert dummy_db.begin_nested_called == 1
     assert dummy_db.rollback_called is False
