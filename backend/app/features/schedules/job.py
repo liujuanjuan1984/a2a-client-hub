@@ -449,7 +449,7 @@ async def _execute_claimed_task(*, claim: ClaimedA2AScheduleTask) -> None:
                 user_id=task_user_id,
                 agent_id=task_agent_id,
             )
-            if not bool(getattr(runtime.agent, "enabled", True)):
+            if not runtime.agent_enabled:
                 raise RuntimeError("Target A2A agent is disabled")
             gateway = cast(Any, get_a2a_service()).gateway
             async with open_schedule_invoke_session(

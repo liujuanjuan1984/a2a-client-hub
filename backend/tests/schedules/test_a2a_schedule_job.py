@@ -49,7 +49,7 @@ _create_schedule_task = create_schedule_task
 def _mock_runtime_builder():
     async def _build(_db, user_id, agent_id):  # noqa: ARG001
         return SimpleNamespace(
-            agent=SimpleNamespace(enabled=True),
+            agent_enabled=True,
             resolved=SimpleNamespace(
                 name="Schedule Agent",
                 url="https://example.com/schedule-agent",

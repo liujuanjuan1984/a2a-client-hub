@@ -32,7 +32,10 @@ class A2ARuntimeValidationError(A2ARuntimeError):
 
 @dataclass(frozen=True)
 class A2ARuntime:
-    agent: A2AAgent
+    agent_id: UUID
+    agent_name: str
+    agent_url: str
+    agent_enabled: bool
     resolved: ResolvedAgent
     token_last4: Optional[str]
 
@@ -72,7 +75,14 @@ class A2ARuntimeBuilder:
             credential=credential,
         )
 
-        return A2ARuntime(agent=agent, resolved=resolved, token_last4=token_last4)
+        return A2ARuntime(
+            agent_id=cast(UUID, agent.id),
+            agent_name=cast(str, agent.name),
+            agent_url=cast(str, agent.card_url),
+            agent_enabled=bool(getattr(agent, "enabled", True)),
+            resolved=resolved,
+            token_last4=token_last4,
+        )
 
     def resolve_prefetched(
         self,
