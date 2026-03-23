@@ -57,8 +57,14 @@ jobs:
       - name: Run backend ruff check (pre-commit)
         run: uv run pre-commit run ruff --all-files --config ../.pre-commit-config.yaml
 
-      - name: Run backend security hooks (pre-commit)
-        run: uv run pre-commit run detect-secrets shellcheck bash-syntax-check --all-files --config ../.pre-commit-config.yaml
+      - name: Run backend detect-secrets hook (pre-commit)
+        run: uv run pre-commit run detect-secrets --all-files --config ../.pre-commit-config.yaml
+
+      - name: Run backend shellcheck hook (pre-commit)
+        run: uv run pre-commit run shellcheck --all-files --config ../.pre-commit-config.yaml
+
+      - name: Run backend bash syntax check hook (pre-commit)
+        run: uv run pre-commit run bash-syntax-check --all-files --config ../.pre-commit-config.yaml
 
       - name: Fetch base branch for mypy diff
         if: github.event_name == 'pull_request'
