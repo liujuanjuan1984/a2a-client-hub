@@ -23,8 +23,8 @@ Run regressions by changed scope (backend/frontend) and fix all failures.
 Use **serial low-load** verification by default (no parallel heavy tasks):
 
 - **Backend (changed files/modules)**
-  - `cd backend && uv run pre-commit run --files <changed_backend_files...> --config ../.pre-commit-config.yaml`
-  - `cd backend && uv run pytest <changed_tests_or_module>`
+  - `cd backend && uv run --locked pre-commit run --files <changed_backend_files...> --config ../.pre-commit-config.yaml`
+  - `cd backend && uv run --locked pytest <changed_tests_or_module>`
 - **Frontend (changed files/modules)**
   - `cd frontend && npm run lint`
   - `cd frontend && export NODE_OPTIONS="--max-old-space-size=1024" && npm run check-types`
@@ -62,6 +62,7 @@ Notes:
 
 - Avoid repeating equivalent heavy checks when code has not changed in the same iteration.
 - In low-load default mode, run `npm install` / `uv sync` only when dependencies changed or environment drift is detected.
+- `backend/pyproject.toml` and `backend/uv.lock` must stay in sync. If a version or dependency change makes `uv lock --check` fail, fix it in a dedicated lockfile update commit instead of letting `uv run` mutate the worktree during verification.
 - If a change touches database schema or migrations, additionally run:
   - `cd backend && uv run alembic upgrade head`
   - And verify the critical endpoints manually.

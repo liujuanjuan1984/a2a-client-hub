@@ -31,9 +31,14 @@ Run relevant checks before opening or updating a PR.
 ```bash
 cd backend
 uv sync --extra dev --locked
-uv run pre-commit run --all-files --config ../.pre-commit-config.yaml
-uv run pytest
+uv run --locked pre-commit run --all-files --config ../.pre-commit-config.yaml
+uv run --locked pytest
 ```
+
+Notes:
+
+- Keep `backend/pyproject.toml` and `backend/uv.lock` synchronized. Metadata-only version bumps must update the lockfile in the same change.
+- If `cd backend && uv lock --check` fails, treat it as lockfile drift and fix it explicitly instead of relying on `uv run` to rewrite `uv.lock` during routine verification.
 
 ### Frontend changes
 

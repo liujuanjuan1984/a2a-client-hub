@@ -99,6 +99,14 @@ uv run bash scripts/mypy_changed.sh
 uv run bash scripts/mypy_changed.sh app/features/auth/schemas.py
 ```
 
+## Lockfile Hygiene
+
+`backend/pyproject.toml` and `backend/uv.lock` must remain synchronized.
+
+- Run `cd backend && uv lock --check` after dependency or version metadata changes.
+- If the check fails, update `backend/uv.lock` in an explicit lockfile change instead of letting `uv run` rewrite the file during normal lint/test execution.
+- For routine verification, prefer `uv run --locked ...` so local checks fail fast on lock drift without mutating the worktree.
+
 ## A2A Outbound Allowlist
 
 This backend requires an allowlist for all outbound A2A HTTP requests (agent card
