@@ -273,6 +273,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   const streamMessageIdMap = new Map<string, string>();
   const seenEventIds = new Set<string>();
   let terminalHandled = false;
+  let terminalRuntimeStatusSeen = false;
   let hasObservedStreamEvent = false;
   let highestReceivedSequence =
     get().sessions[conversationId]?.lastReceivedSequence ?? null;
@@ -349,6 +350,17 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         lastReceivedSequence: highestReceivedSequence,
       },
     );
+  };
+
+  const markMissingPersistedCompletionAck = () => {
+    markRecoverableInterruption({
+      message: terminalRuntimeStatusSeen
+        ? "Streaming finished without a persisted completion acknowledgement."
+        : "Streaming transport ended before a persisted completion acknowledgement was received.",
+      details: {
+        errorCode: "missing_persisted_completion_ack",
+      },
+    });
   };
 
   const updateSessionMeta = (meta: {
@@ -829,9 +841,13 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       });
     }
 
-    if (runtimeStatusEvent?.isFinal) {
+    if (runtimeStatusEvent?.completionPhase === "persisted") {
       completeStreamingMessage();
       return true;
+    }
+
+    if (runtimeStatusEvent?.isFinal) {
+      terminalRuntimeStatusSeen = true;
     }
     return false;
   };
@@ -973,8 +989,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           }
 
           if (data.event === "stream_end") {
-            completeStreamingMessage();
-            return true;
+            return terminalHandled;
           }
 
           if (applyIncomingStreamData(data)) {
@@ -982,9 +997,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
           }
           return false;
         },
-        onDone: () => {
-          completeStreamingMessage();
-        },
+        onDone: () => {},
         onStreamError: appendStreamError,
       },
     });
@@ -1000,9 +1013,7 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
         onData: (data) => {
           return applyIncomingStreamData(data);
         },
-        onDone: () => {
-          completeStreamingMessage();
-        },
+        onDone: () => {},
         onStreamError: appendStreamError,
       },
     });
@@ -1063,11 +1074,17 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   try {
     if (chatConnectionService.isWsHealthy()) {
       if (await tryWebSocketTransport()) {
+        if (!terminalHandled) {
+          markMissingPersistedCompletionAck();
+        }
         return;
       }
     }
     if (chatConnectionService.isSseHealthy()) {
       if (await trySseTransport()) {
+        if (!terminalHandled) {
+          markMissingPersistedCompletionAck();
+        }
         return;
       }
     }

@@ -172,6 +172,15 @@ describe("executeChatRuntime empty-content recovery", () => {
           kind: "status-update",
           status: { state: "completed" },
           final: true,
+          message_id: agentMessageId,
+          metadata: {
+            shared: {
+              stream: {
+                message_id: agentMessageId,
+                completion_phase: "persisted",
+              },
+            },
+          },
         });
         return true;
       },
@@ -191,6 +200,8 @@ describe("executeChatRuntime empty-content recovery", () => {
       get,
       set,
     );
+
+    await flushPromises();
 
     expect(mockedListSessionMessagesPage).toHaveBeenCalledWith(conversationId, {
       before: null,
@@ -233,6 +244,362 @@ describe("executeChatRuntime empty-content recovery", () => {
     );
     expect(agentMessage?.status).toBe("done");
     expect(agentMessage?.content).toBe("Recovered response");
+  });
+
+  it("marks the stream recoverable when terminal status is not followed by a persisted completion ack", async () => {
+    const conversationId = "conv-terminal-status-gate-1";
+    const agentId = "agent-terminal-status-gate-1";
+    const userMessageId = "user-terminal-status-gate-1";
+    const agentMessageId = "agent-terminal-status-gate-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-23T10:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-23T10:00:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    const transportDone = createDeferred<boolean>();
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "artifact-update",
+          message_id: agentMessageId,
+          event_id: `${agentMessageId}:1`,
+          seq: 1,
+          append: true,
+          artifact: {
+            artifactId: `${agentMessageId}:stream:1`,
+            parts: [{ kind: "text", text: "Hello after terminal status." }],
+            metadata: {
+              shared: {
+                stream: {
+                  block_type: "text",
+                  source: "assistant_text",
+                  message_id: agentMessageId,
+                  event_id: `${agentMessageId}:1`,
+                  sequence: 1,
+                },
+              },
+            },
+          },
+        });
+        params.callbacks.onData({
+          kind: "status-update",
+          status: { state: "completed" },
+          final: true,
+        });
+        await transportDone.promise;
+        return true;
+      },
+    );
+
+    const runtimePromise = executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    await flushPromises();
+
+    expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
+    expect(state.sessions[conversationId]?.streamState).toBe("streaming");
+    expect(
+      getConversationMessages(conversationId).find(
+        (message) => message.id === agentMessageId,
+      )?.status,
+    ).toBe("streaming");
+
+    transportDone.resolve(true);
+    await runtimePromise;
+
+    expect(state.sessions[conversationId]?.streamState).toBe("recoverable");
+    expect(state.sessions[conversationId]?.lastStreamError).toBe(
+      "Streaming finished without a persisted completion acknowledgement.",
+    );
+    expect(
+      getConversationMessages(conversationId).find(
+        (message) => message.id === agentMessageId,
+      ),
+    ).toMatchObject({
+      status: "interrupted",
+      content: "Hello after terminal status.",
+    });
+  });
+
+  it("finalizes immediately when an explicit persisted completion ack arrives", async () => {
+    const conversationId = "conv-stream-error-1";
+    const agentId = "agent-stream-error-1";
+    const userMessageId = "user-stream-error-1";
+    const agentMessageId = "agent-stream-error-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-12T07:00:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-12T07:00:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "artifact-update",
+          message_id: agentMessageId,
+          event_id: `${agentMessageId}:1`,
+          seq: 1,
+          append: true,
+          artifact: {
+            artifactId: `${agentMessageId}:stream:1`,
+            parts: [{ kind: "text", text: "Persisted ack response." }],
+            metadata: {
+              shared: {
+                stream: {
+                  block_type: "text",
+                  source: "assistant_text",
+                  message_id: agentMessageId,
+                  event_id: `${agentMessageId}:1`,
+                  sequence: 1,
+                },
+              },
+            },
+          },
+        });
+        const shouldClose = params.callbacks.onData({
+          kind: "status-update",
+          final: true,
+          message_id: agentMessageId,
+          status: { state: "completed" },
+          metadata: {
+            shared: {
+              stream: {
+                message_id: agentMessageId,
+                completion_phase: "persisted",
+              },
+            },
+          },
+        });
+        expect(shouldClose).toBe(true);
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(state.sessions[conversationId]?.streamState).toBe("idle");
+    expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
+    expect(
+      getConversationMessages(conversationId).find(
+        (message) => message.id === agentMessageId,
+      ),
+    ).toMatchObject({
+      status: "done",
+      content: "Persisted ack response.",
+    });
+  });
+
+  it("does not treat stream_end as a successful completion without persisted ack", async () => {
+    const conversationId = "conv-stream-end-without-ack-1";
+    const agentId = "agent-stream-end-without-ack-1";
+    const userMessageId = "user-stream-end-without-ack-1";
+    const agentMessageId = "agent-stream-end-without-ack-1";
+
+    addConversationMessage(conversationId, {
+      id: userMessageId,
+      role: "user",
+      content: "hello",
+      createdAt: "2026-03-23T10:10:00.000Z",
+      status: "done",
+    });
+    addConversationMessage(conversationId, {
+      id: agentMessageId,
+      role: "agent",
+      content: "",
+      blocks: [],
+      createdAt: "2026-03-23T10:10:01.000Z",
+      status: "streaming",
+    });
+
+    let state: ChatRuntimeState = {
+      sessions: {
+        [conversationId]: {
+          ...createAgentSession(agentId),
+          streamState: "streaming",
+          lastUserMessageId: userMessageId,
+          lastAgentMessageId: agentMessageId,
+        },
+      },
+    };
+
+    const get = () => state;
+    const set: ChatRuntimeSetState<ChatRuntimeState> = (partial) => {
+      const next =
+        typeof partial === "function"
+          ? partial(state as ChatRuntimeState)
+          : partial;
+      state = {
+        ...state,
+        ...(next as Partial<ChatRuntimeState>),
+      };
+    };
+
+    mockedChatConnectionService.tryWebSocketTransport.mockImplementationOnce(
+      async (params: {
+        callbacks: {
+          onData: (data: Record<string, unknown>) => boolean | void;
+        };
+      }) => {
+        params.callbacks.onData({
+          kind: "artifact-update",
+          message_id: agentMessageId,
+          event_id: `${agentMessageId}:1`,
+          seq: 1,
+          append: true,
+          artifact: {
+            artifactId: `${agentMessageId}:stream:1`,
+            parts: [{ kind: "text", text: "Hello before stream end." }],
+            metadata: {
+              shared: {
+                stream: {
+                  block_type: "text",
+                  source: "assistant_text",
+                  message_id: agentMessageId,
+                  event_id: `${agentMessageId}:1`,
+                  sequence: 1,
+                },
+              },
+            },
+          },
+        });
+        const shouldClose = params.callbacks.onData({
+          event: "stream_end",
+          data: {},
+        });
+        expect(shouldClose).toBe(false);
+        return true;
+      },
+    );
+
+    await executeChatRuntime(
+      conversationId,
+      agentId,
+      "personal",
+      {
+        query: "hello",
+        conversationId,
+        userMessageId,
+        agentMessageId,
+      },
+      agentMessageId,
+      get,
+      set,
+    );
+
+    expect(state.sessions[conversationId]?.streamState).toBe("recoverable");
+    expect(state.sessions[conversationId]?.lastStreamError).toBe(
+      "Streaming transport ended before a persisted completion acknowledgement was received.",
+    );
+    expect(
+      getConversationMessages(conversationId).find(
+        (message) => message.id === agentMessageId,
+      ),
+    ).toMatchObject({
+      status: "interrupted",
+      content: "Hello before stream end.",
+    });
   });
 
   it("stores structured stream errors from websocket error events", async () => {
@@ -346,7 +713,7 @@ describe("executeChatRuntime empty-content recovery", () => {
     });
   });
 
-  it("renders compatible text chunks during stream without empty-content recovery", async () => {
+  it("keeps rendered chunks but marks the stream recoverable when persisted completion ack is missing", async () => {
     const conversationId = "conv-stream-compat-1";
     const agentId = "agent-compat-1";
     const userMessageId = "user-msg-compat-1";
@@ -446,13 +813,18 @@ describe("executeChatRuntime empty-content recovery", () => {
     expect(renderedDuringStream).toBe(true);
     expect(mockedListSessionMessagesPage).not.toHaveBeenCalled();
 
+    expect(state.sessions[conversationId]?.streamState).toBe("recoverable");
+    expect(state.sessions[conversationId]?.lastStreamError).toBe(
+      "Streaming finished without a persisted completion acknowledgement.",
+    );
+
     const messages = getConversationMessages(conversationId);
     const streamedAgentMessage = messages.find(
       (message) =>
         message.role === "agent" &&
         message.content.includes("Hello from stream"),
     );
-    expect(streamedAgentMessage?.status).toBe("done");
+    expect(streamedAgentMessage?.status).toBe("interrupted");
   });
 
   it("renders a tool_call placeholder during stream before any text block arrives", async () => {
@@ -565,6 +937,15 @@ describe("executeChatRuntime empty-content recovery", () => {
           kind: "status-update",
           status: { state: "completed" },
           final: true,
+          message_id: agentMessageId,
+          metadata: {
+            shared: {
+              stream: {
+                message_id: agentMessageId,
+                completion_phase: "persisted",
+              },
+            },
+          },
         });
         return true;
       },
@@ -681,6 +1062,15 @@ describe("executeChatRuntime empty-content recovery", () => {
           kind: "status-update",
           status: { state: "completed" },
           final: true,
+          message_id: agentMessageId,
+          metadata: {
+            shared: {
+              stream: {
+                message_id: agentMessageId,
+                completion_phase: "persisted",
+              },
+            },
+          },
         });
         return true;
       },
@@ -790,6 +1180,15 @@ describe("executeChatRuntime empty-content recovery", () => {
           kind: "status-update",
           status: { state: "completed" },
           final: true,
+          message_id: agentMessageId,
+          metadata: {
+            shared: {
+              stream: {
+                message_id: agentMessageId,
+                completion_phase: "persisted",
+              },
+            },
+          },
         });
         return true;
       },
@@ -902,6 +1301,15 @@ describe("executeChatRuntime empty-content recovery", () => {
           kind: "status-update",
           status: { state: "completed" },
           final: true,
+          message_id: agentMessageId,
+          metadata: {
+            shared: {
+              stream: {
+                message_id: agentMessageId,
+                completion_phase: "persisted",
+              },
+            },
+          },
         });
         return true;
       },

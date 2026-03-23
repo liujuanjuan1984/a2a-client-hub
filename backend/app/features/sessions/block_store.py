@@ -84,6 +84,27 @@ async def find_block_by_message_and_block_seq(
     return cast(AgentMessageBlock | None, await db.scalar(stmt))
 
 
+async def find_block_by_message_and_block_id(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    message_id: UUID,
+    block_id: str,
+) -> AgentMessageBlock | None:
+    stmt = (
+        select(AgentMessageBlock)
+        .where(
+            and_(
+                AgentMessageBlock.user_id == user_id,
+                AgentMessageBlock.message_id == message_id,
+                AgentMessageBlock.block_id == block_id,
+            )
+        )
+        .limit(1)
+    )
+    return cast(AgentMessageBlock | None, await db.scalar(stmt))
+
+
 async def find_last_block_for_message(
     db: AsyncSession,
     *,
@@ -140,12 +161,15 @@ async def create_block(
     user_id: UUID,
     message_id: UUID,
     block_seq: int,
+    block_id: str,
+    lane_id: str,
     block_type: str,
     content: str,
     is_finished: bool,
     source: str | None = None,
     start_event_seq: int | None = None,
     end_event_seq: int | None = None,
+    base_seq: int | None = None,
     start_event_id: str | None = None,
     end_event_id: str | None = None,
 ) -> AgentMessageBlock:
@@ -153,12 +177,15 @@ async def create_block(
         user_id=user_id,
         message_id=message_id,
         block_seq=block_seq,
+        block_id=block_id,
+        lane_id=lane_id,
         block_type=block_type,
         content=content,
         is_finished=is_finished,
         source=source,
         start_event_seq=start_event_seq,
         end_event_seq=end_event_seq,
+        base_seq=base_seq,
         start_event_id=start_event_id,
         end_event_id=end_event_id,
     )
@@ -188,6 +215,7 @@ async def has_blocks_for_message(
 
 __all__ = [
     "create_block",
+    "find_block_by_message_and_block_id",
     "find_block_by_message_and_block_seq",
     "find_last_block_for_message",
     "find_last_block_for_message_and_type",

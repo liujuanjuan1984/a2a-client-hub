@@ -420,9 +420,7 @@ async def test_opencode_sessions_directory_refresh_avoids_n_plus_one_runtime_que
 
     select_statements: list[str] = []
 
-    def _count_selects(
-        conn, cursor, statement, parameters, context, executemany
-    ):  # noqa: ARG001
+    def _count_selects(_conn, _cursor, statement, _parameters, _context, _executemany):
         if statement.lstrip().upper().startswith("SELECT"):
             select_statements.append(statement.lower())
 

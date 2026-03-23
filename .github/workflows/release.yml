@@ -32,7 +32,7 @@ jobs:
         run: |
           python3 scripts/sync_release_version.py --version "${{ steps.version.outputs.version }}" --write
           python3 scripts/sync_release_version.py --version "${{ steps.version.outputs.version }}" --check
-          if git diff --quiet backend/pyproject.toml frontend/package.json frontend/app.json frontend/package-lock.json VERSION; then
+          if git diff --quiet backend/pyproject.toml backend/uv.lock frontend/package.json frontend/app.json frontend/package-lock.json VERSION; then
             echo "No repository metadata changes required."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -71,6 +71,7 @@ jobs:
             ### 同步文件
             - `VERSION`
             - `backend/pyproject.toml`
+            - `backend/uv.lock`
             - `frontend/package.json`
             - `frontend/app.json`
             - `frontend/package-lock.json`
@@ -85,6 +86,7 @@ jobs:
           add-paths: |
             VERSION
             backend/pyproject.toml
+            backend/uv.lock
             frontend/package.json
             frontend/app.json
             frontend/package-lock.json

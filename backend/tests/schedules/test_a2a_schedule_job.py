@@ -121,6 +121,28 @@ def _mock_gateway_stream(*, events, first_event_delay: float = 0.0):
     )
 
 
+class _FailingAsyncContextManager:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def __aenter__(self):
+        raise self._error
+
+    async def __aexit__(self, _exc_type, _exc, _tb):
+        return False
+
+
+class _FailingAsyncIterator:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise self._error
+
+
 async def test_claim_next_pending_execution_obeys_agent_concurrency_limit(
     async_db_session,
     monkeypatch,
@@ -900,9 +922,8 @@ async def test_execute_claimed_task_persists_structured_agent_unavailable_error(
         _mock_runtime_builder(),
     )
 
-    async def _stream(**_kwargs):
-        raise A2AAgentUnavailableError("Agent card unavailable")
-        yield  # pragma: no cover
+    def _stream(**_kwargs):
+        return _FailingAsyncIterator(A2AAgentUnavailableError("Agent card unavailable"))
 
     preflight_client = SimpleNamespace(close=AsyncMock())
 
@@ -968,10 +989,10 @@ async def test_execute_claimed_task_fails_fast_when_preflight_card_fetch_fails(
         _mock_runtime_builder(),
     )
 
-    @asynccontextmanager
-    async def _open_invoke_session(**_kwargs):
-        raise A2AAgentUnavailableError("Agent card unavailable")
-        yield  # pragma: no cover
+    def _open_invoke_session(**_kwargs):
+        return _FailingAsyncContextManager(
+            A2AAgentUnavailableError("Agent card unavailable")
+        )
 
     monkeypatch.setattr(
         "app.features.schedules.job.get_a2a_service",
@@ -1974,7 +1995,7 @@ async def test_dispatch_due_a2a_schedules_skips_when_leader_lock_not_acquired(
         async def __aenter__(self):
             return False
 
-        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return False
 
     monkeypatch.setattr(
@@ -2032,7 +2053,7 @@ async def test_try_hold_dispatch_leader_lock_rolls_back_open_transaction(
         async def __aenter__(self):
             return fake_conn
 
-        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return False
 
     monkeypatch.setattr(
@@ -2077,7 +2098,7 @@ async def test_try_hold_dispatch_leader_lock_invalidates_connection_on_unlock_fa
         async def __aenter__(self):
             return fake_conn
 
-        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return False
 
     monkeypatch.setattr(
@@ -2326,7 +2347,7 @@ async def test_refresh_ops_metrics_skips_when_db_connection_refused(
         async def __aenter__(self):
             raise ConnectionRefusedError("db unavailable")
 
-        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return False
 
     monkeypatch.setattr(
@@ -2357,7 +2378,7 @@ async def test_refresh_ops_metrics_refreshes_db_pool_checked_out(
         async def __aenter__(self):
             return _HealthySession()
 
-        async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+        async def __aexit__(self, _exc_type, _exc, _tb):
             return False
 
     fake_pool = object()

@@ -123,6 +123,9 @@ class SessionMessageBlockItem(BaseModel):
     type: str
     content: Optional[str] = None
     is_finished: bool = Field(alias="isFinished")
+    block_id: Optional[str] = Field(alias="blockId", default=None)
+    lane_id: Optional[str] = Field(alias="laneId", default=None)
+    base_seq: Optional[int] = Field(alias="baseSeq", default=None)
     tool_call: Optional[ToolCallViewItem] = Field(alias="toolCall", default=None)
 
     model_config = {"populate_by_name": True}
@@ -134,6 +137,9 @@ class SessionMessageBlockDetailItem(BaseModel):
     type: str
     content: Optional[str] = None
     is_finished: bool = Field(alias="isFinished")
+    block_id: Optional[str] = Field(alias="blockId", default=None)
+    lane_id: Optional[str] = Field(alias="laneId", default=None)
+    base_seq: Optional[int] = Field(alias="baseSeq", default=None)
     tool_call: Optional[ToolCallViewItem] = Field(alias="toolCall", default=None)
     tool_call_detail: Optional[ToolCallDetailItem] = Field(
         alias="toolCallDetail",

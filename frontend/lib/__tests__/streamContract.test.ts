@@ -22,7 +22,7 @@ const interruptLifecycleMessageCases =
 
 const buildBlockUpdatePayload = (input: {
   blockType: "text" | "reasoning" | "tool_call" | "interrupt_event";
-  delta: string;
+  delta?: string;
   artifactId: string;
   taskId?: string;
   messageId?: string;
@@ -31,7 +31,27 @@ const buildBlockUpdatePayload = (input: {
   append?: boolean;
   source?: string;
   lastChunk?: boolean;
+  blockId?: string;
+  laneId?: string;
+  op?: "append" | "replace" | "finalize";
+  baseSeq?: number;
 }) => {
+  const artifactMetadata: Record<string, unknown> = {
+    block_type: input.blockType,
+    source: input.source ?? "stream",
+  };
+  if (input.blockId !== undefined) {
+    artifactMetadata.block_id = input.blockId;
+  }
+  if (input.laneId !== undefined) {
+    artifactMetadata.lane_id = input.laneId;
+  }
+  if (input.op !== undefined) {
+    artifactMetadata.op = input.op;
+  }
+  if (input.baseSeq !== undefined) {
+    artifactMetadata.base_seq = input.baseSeq;
+  }
   const payload: Record<string, unknown> = {
     kind: "artifact-update",
     task_id: input.taskId ?? "task-1",
@@ -41,11 +61,9 @@ const buildBlockUpdatePayload = (input: {
     lastChunk: input.lastChunk ?? false,
     artifact: {
       artifact_id: input.artifactId,
-      parts: [{ kind: "text", text: input.delta }],
-      metadata: {
-        block_type: input.blockType,
-        source: input.source ?? "stream",
-      },
+      parts:
+        input.delta !== undefined ? [{ kind: "text", text: input.delta }] : [],
+      metadata: artifactMetadata,
     },
   };
   if (input.seq !== undefined) {
@@ -119,6 +137,38 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks).toHaveLength(2);
     expect(blocks?.[0]?.isFinished).toBe(true);
     expect(blocks?.[1]?.type).toBe("tool_call");
+  });
+
+  it("derives distinct block ids when upstream reuses one artifact id across lanes", () => {
+    const reasoning = mustParse(
+      buildBlockUpdatePayload({
+        blockType: "reasoning",
+        delta: "thinking",
+        artifactId: "task-1:stream",
+        messageId: "msg-shared-lanes",
+        seq: 1,
+      }),
+    );
+    const text = mustParse(
+      buildBlockUpdatePayload({
+        blockType: "text",
+        delta: "final answer",
+        artifactId: "task-1:stream",
+        messageId: "msg-shared-lanes",
+        seq: 2,
+      }),
+    );
+
+    expect(reasoning.blockId).toBe("msg-shared-lanes:reasoning");
+    expect(text.blockId).toBe("msg-shared-lanes:primary_text");
+
+    const blocks = applyStreamBlockUpdate(
+      applyStreamBlockUpdate(undefined, reasoning),
+      text,
+    );
+    expect(blocks).toHaveLength(2);
+    expect(blocks?.[0]?.type).toBe("reasoning");
+    expect(blocks?.[1]?.type).toBe("text");
   });
 
   it("projects only text blocks into message content", () => {
@@ -297,6 +347,157 @@ describe("block-based stream parser and reducer", () => {
 
     expect(blocks).toHaveLength(1);
     expect(blocks?.[0]?.content).toBe("reset");
+  });
+
+  it("accepts explicit finalize operations without content", () => {
+    let blocks: MessageBlock[] | undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "draft",
+          artifactId: "task-3:stream:text",
+          blockId: "block-text-main",
+          laneId: "primary_text",
+          op: "append",
+          taskId: "task-3",
+          seq: 1,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          artifactId: "task-3:stream:text",
+          blockId: "block-text-main",
+          laneId: "primary_text",
+          op: "finalize",
+          baseSeq: 1,
+          taskId: "task-3",
+          seq: 2,
+        }),
+      ),
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks?.[0]?.content).toBe("draft");
+    expect(blocks?.[0]?.isFinished).toBe(true);
+    expect(blocks?.[0]?.blockId).toBe("block-text-main");
+  });
+
+  it("rejects stale replace operations when base_seq moves backwards", () => {
+    let blocks: MessageBlock[] | undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "draft",
+          artifactId: "task-4:stream:text",
+          blockId: "block-text-main",
+          laneId: "primary_text",
+          op: "append",
+          taskId: "task-4",
+          seq: 1,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "authoritative",
+          artifactId: "task-4:stream:text",
+          blockId: "block-text-main",
+          laneId: "primary_text",
+          op: "replace",
+          baseSeq: 10,
+          taskId: "task-4",
+          seq: 11,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "stale",
+          artifactId: "task-4:stream:text",
+          blockId: "block-text-main",
+          laneId: "primary_text",
+          op: "replace",
+          baseSeq: 8,
+          taskId: "task-4",
+          seq: 12,
+        }),
+      ),
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks?.[0]?.content).toBe("authoritative");
+    expect(blocks?.[0]?.baseSeq).toBe(10);
+  });
+
+  it("adapts legacy final_snapshot onto the existing primary text block", () => {
+    let blocks: MessageBlock[] | undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "draft",
+          artifactId: "task-5:stream:text",
+          blockId: "block-text-main",
+          laneId: "primary_text",
+          op: "append",
+          taskId: "task-5",
+          seq: 1,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "reasoning",
+          delta: "draft plan",
+          artifactId: "task-5:stream:reasoning",
+          taskId: "task-5",
+          seq: 2,
+          append: false,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "text",
+          delta: "draft plan final answer",
+          artifactId: "task-5:stream:text:final",
+          source: "final_snapshot",
+          append: false,
+          taskId: "task-5",
+          seq: 3,
+          lastChunk: true,
+        }),
+      ),
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks?.[0]).toMatchObject({
+      type: "text",
+      blockId: "block-text-main",
+      laneId: "primary_text",
+      content: "final answer",
+      isFinished: true,
+    });
+    expect(blocks?.[1]?.type).toBe("reasoning");
   });
 
   it("syncs message content when loading text block details", () => {
@@ -681,6 +882,8 @@ describe("block-based stream parser and reducer", () => {
       isFinal: true,
       interrupt: null,
       seq: null,
+      completionPhase: null,
+      messageId: null,
     });
   });
 
@@ -700,6 +903,8 @@ describe("block-based stream parser and reducer", () => {
       isFinal: false,
       interrupt: null,
       seq: 4,
+      completionPhase: null,
+      messageId: null,
     });
   });
 
@@ -734,6 +939,8 @@ describe("block-based stream parser and reducer", () => {
         },
       },
       seq: null,
+      completionPhase: null,
+      messageId: null,
     });
   });
 
@@ -811,6 +1018,8 @@ describe("block-based stream parser and reducer", () => {
         },
       },
       seq: null,
+      completionPhase: null,
+      messageId: null,
     });
   });
 
@@ -881,6 +1090,60 @@ describe("block-based stream parser and reducer", () => {
         resolution: "rejected",
       },
       seq: null,
+      completionPhase: null,
+      messageId: null,
+    });
+  });
+
+  it("parses explicit persisted completion acknowledgement from shared stream metadata", () => {
+    const payload = {
+      kind: "status-update",
+      final: true,
+      message_id: "msg-persisted-1",
+      status: { state: "completed" },
+      metadata: {
+        shared: {
+          stream: {
+            message_id: "msg-persisted-1",
+            completion_phase: "persisted",
+          },
+        },
+      },
+    };
+
+    expect(extractRuntimeStatusEvent(payload)).toEqual({
+      state: "completed",
+      isFinal: true,
+      interrupt: null,
+      seq: null,
+      completionPhase: "persisted",
+      messageId: "msg-persisted-1",
+    });
+  });
+
+  it("ignores non-canonical persisted completion aliases", () => {
+    const payload = {
+      kind: "status-update",
+      final: true,
+      status: { state: "completed" },
+      metadata: {
+        shared: {
+          stream: {
+            messageId: "msg-legacy-1",
+            completionPhase: "persisted",
+            persisted: true,
+          },
+        },
+      },
+    };
+
+    expect(extractRuntimeStatusEvent(payload)).toEqual({
+      state: "completed",
+      isFinal: true,
+      interrupt: null,
+      seq: null,
+      completionPhase: null,
+      messageId: null,
     });
   });
 

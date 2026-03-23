@@ -11,6 +11,9 @@ export type MessageBlock = {
   type: string;
   content: string;
   isFinished: boolean;
+  blockId?: string;
+  laneId?: string;
+  baseSeq?: number | null;
   toolCall?: ToolCallView | null;
   toolCallDetail?: ToolCallDetailView | null;
   createdAt: string;
@@ -78,7 +81,11 @@ export type StreamBlockUpdate = {
   seq: number | null;
   taskId: string;
   artifactId: string;
+  blockId: string;
+  laneId: string;
   blockType: "text" | "reasoning" | "tool_call" | "interrupt_event";
+  op: "append" | "replace" | "finalize";
+  baseSeq: number | null;
   source: string | null;
   messageId: string;
   role: ChatRole;
@@ -88,11 +95,21 @@ export type StreamBlockUpdate = {
   toolCall?: ToolCallView | null;
 };
 
+const PRIMARY_TEXT_SNAPSHOT_SOURCES = new Set([
+  "final_snapshot",
+  "finalize_snapshot",
+]);
+const BLOCK_OPERATION_TYPES = new Set(["append", "replace", "finalize"]);
+const REASONING_OVERLAP_WORD_PATTERN = /[\p{L}\p{N}_]+/gu;
+const MIN_REASONING_OVERLAP_WORD_LENGTH = 5;
+
 export type RuntimeStatusEvent = {
   state: string;
   isFinal: boolean;
   interrupt: RuntimeInterrupt | null;
   seq: number | null;
+  completionPhase: "persisted" | null;
+  messageId: string | null;
 };
 
 export type RuntimeStatusContract = {
@@ -241,12 +258,47 @@ export const extractRuntimeStatusEvent = (
   }
   const status = data.status as { state?: unknown } | undefined;
   if (status && typeof status.state === "string" && status.state.trim()) {
+    const metadata =
+      data.metadata &&
+      typeof data.metadata === "object" &&
+      !Array.isArray(data.metadata)
+        ? (data.metadata as Record<string, unknown>)
+        : null;
+    const shared =
+      metadata?.shared &&
+      typeof metadata.shared === "object" &&
+      !Array.isArray(metadata.shared)
+        ? (metadata.shared as Record<string, unknown>)
+        : null;
+    const sharedStream =
+      shared?.stream &&
+      typeof shared.stream === "object" &&
+      !Array.isArray(shared.stream)
+        ? (shared.stream as Record<string, unknown>)
+        : null;
+    const rawCompletionPhase =
+      typeof sharedStream?.completion_phase === "string"
+        ? sharedStream.completion_phase
+        : null;
+    const completionPhase =
+      rawCompletionPhase?.trim().toLowerCase() === "persisted"
+        ? "persisted"
+        : null;
+    const messageId =
+      typeof data.message_id === "string" && data.message_id.trim().length > 0
+        ? data.message_id.trim()
+        : typeof sharedStream?.message_id === "string" &&
+            sharedStream.message_id.trim().length > 0
+          ? sharedStream.message_id.trim()
+          : null;
     const state = normalizeRuntimeState(status.state, contract);
     return {
       state,
       isFinal: data.final === true,
       interrupt: extractRuntimeInterrupt(data, state, contract),
       seq: pickInteger(data, ["seq"]),
+      completionPhase,
+      messageId,
     };
   }
   return null;
@@ -863,7 +915,11 @@ export const buildInterruptEventBlockUpdate = ({
     seq: null,
     taskId: `interrupt:${normalizedMessageId}`,
     artifactId: `${normalizedMessageId}:interrupt:${interrupt.requestId}:${interrupt.phase}`,
+    blockId: `${normalizedMessageId}:interrupt:${interrupt.requestId}`,
+    laneId: "interrupt_event",
     blockType: "interrupt_event",
+    op: "replace",
+    baseSeq: null,
     source: "interrupt_lifecycle",
     messageId: normalizedMessageId,
     role: "agent",
@@ -894,6 +950,125 @@ const parseBlockType = (
   if (normalized === "tool_call") return "tool_call";
   if (normalized === "interrupt_event") return "interrupt_event";
   return null;
+};
+
+const parseBlockOperation = (
+  raw: string | null,
+): "append" | "replace" | "finalize" | null => {
+  const normalized = (raw ?? "").trim().toLowerCase();
+  return BLOCK_OPERATION_TYPES.has(normalized)
+    ? (normalized as "append" | "replace" | "finalize")
+    : null;
+};
+
+const defaultLaneIdForBlockType = (
+  blockType: StreamBlockUpdate["blockType"],
+): string => (blockType === "text" ? "primary_text" : blockType);
+
+const isPrimaryTextSnapshotSource = (source: string | null): boolean =>
+  Boolean(source && PRIMARY_TEXT_SNAPSHOT_SOURCES.has(source));
+
+const isWordChar = (value: string | undefined): boolean =>
+  Boolean(value && /[\p{L}\p{N}_]/u.test(value));
+
+const isBoundaryAlignedReasoningOverlap = (
+  reasoningContent: string,
+  text: string,
+  overlap: number,
+): boolean => {
+  const overlapStart = reasoningContent.length - overlap;
+  const beforeOverlap =
+    overlapStart > 0 ? reasoningContent[overlapStart - 1] : undefined;
+  const afterOverlap = overlap < text.length ? text[overlap] : undefined;
+  return !isWordChar(beforeOverlap) && !isWordChar(afterOverlap);
+};
+
+const isSubstantialReasoningOverlap = (candidate: string): boolean => {
+  const tokens = candidate.match(REASONING_OVERLAP_WORD_PATTERN) ?? [];
+  return (
+    tokens.length >= 2 ||
+    tokens.some((token) => token.length >= MIN_REASONING_OVERLAP_WORD_LENGTH)
+  );
+};
+
+const trimOverlappingReasoningPrefix = (
+  blocks: MessageBlock[] | undefined,
+  text: string,
+): string => {
+  if (!text) {
+    return "";
+  }
+  const latestReasoning =
+    blocks && blocks.length > 0 ? blocks[blocks.length - 1] : undefined;
+  const reasoningContent =
+    latestReasoning?.type === "reasoning" ? latestReasoning.content : "";
+  if (!reasoningContent) {
+    return text;
+  }
+  for (
+    let overlap = Math.min(reasoningContent.length, text.length);
+    overlap > 0;
+    overlap -= 1
+  ) {
+    const candidate = reasoningContent.slice(-overlap);
+    if (
+      text.startsWith(candidate) &&
+      isBoundaryAlignedReasoningOverlap(reasoningContent, text, overlap) &&
+      isSubstantialReasoningOverlap(candidate)
+    ) {
+      return text.slice(overlap).replace(/^\s+/, "");
+    }
+  }
+  return text;
+};
+
+const findBlockIndexByBlockId = (
+  blocks: MessageBlock[],
+  blockId: string,
+): number => blocks.findIndex((block) => block.blockId === blockId);
+
+const findLastTextBlockIndex = (blocks: MessageBlock[]): number => {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (blocks[index]?.type === "text") {
+      return index;
+    }
+  }
+  return -1;
+};
+
+export const adaptStreamBlockUpdateForReducer = (
+  current: MessageBlock[] | undefined,
+  update: StreamBlockUpdate,
+): StreamBlockUpdate => {
+  if (
+    !(
+      update.op === "replace" &&
+      update.blockType === "text" &&
+      isPrimaryTextSnapshotSource(update.source)
+    )
+  ) {
+    return update;
+  }
+
+  const nextDelta = trimOverlappingReasoningPrefix(current, update.delta);
+  const blocks = current ?? [];
+  if (findBlockIndexByBlockId(blocks, update.blockId) >= 0) {
+    return { ...update, delta: nextDelta };
+  }
+
+  const latestTextIndex = findLastTextBlockIndex(blocks);
+  if (latestTextIndex < 0) {
+    return { ...update, delta: nextDelta };
+  }
+
+  const latestText = blocks[latestTextIndex];
+  return {
+    ...update,
+    blockId: latestText?.blockId ?? latestText?.id ?? update.blockId,
+    laneId: latestText?.laneId ?? "primary_text",
+    baseSeq: update.baseSeq ?? latestText?.baseSeq ?? update.seq ?? null,
+    delta: nextDelta,
+  };
 };
 
 const inferTaskIdFromArtifactId = (
@@ -1003,9 +1178,6 @@ export const extractStreamBlockUpdate = (
     pickRawString(data, ["content", "text"]) ||
     pickRawString(artifact ?? null, ["content", "text"]) ||
     "";
-  if (!delta) {
-    return null;
-  }
 
   const append =
     typeof data.append === "boolean"
@@ -1042,6 +1214,38 @@ export const extractStreamBlockUpdate = (
     pickString(metadata, ["source"]) ??
     pickString(rootMetadata, ["source"]) ??
     null;
+  const explicitOp =
+    parseBlockOperation(pickString(sharedStream, ["op", "operation"])) ??
+    parseBlockOperation(pickString(metadata, ["op", "operation"])) ??
+    parseBlockOperation(pickString(rootMetadata, ["op", "operation"])) ??
+    parseBlockOperation(pickString(artifact ?? null, ["op", "operation"])) ??
+    parseBlockOperation(pickString(data, ["op", "operation"]));
+  const op =
+    explicitOp ??
+    (isPrimaryTextSnapshotSource(source) || !append ? "replace" : "append");
+  if (!delta && op !== "finalize") {
+    return null;
+  }
+  const laneId =
+    pickString(sharedStream, ["lane_id", "laneId"]) ??
+    pickString(metadata, ["lane_id", "laneId"]) ??
+    pickString(rootMetadata, ["lane_id", "laneId"]) ??
+    pickString(artifact ?? null, ["lane_id", "laneId"]) ??
+    pickString(data, ["lane_id", "laneId"]) ??
+    defaultLaneIdForBlockType(blockType);
+  const blockId =
+    pickString(sharedStream, ["block_id", "blockId"]) ??
+    pickString(metadata, ["block_id", "blockId"]) ??
+    pickString(rootMetadata, ["block_id", "blockId"]) ??
+    pickString(artifact ?? null, ["block_id", "blockId"]) ??
+    pickString(data, ["block_id", "blockId"]) ??
+    `${messageId}:${laneId}`;
+  const baseSeq =
+    pickInteger(sharedStream, ["base_seq", "baseSeq"]) ??
+    pickInteger(metadata, ["base_seq", "baseSeq"]) ??
+    pickInteger(rootMetadata, ["base_seq", "baseSeq"]) ??
+    pickInteger(artifact ?? null, ["base_seq", "baseSeq"]) ??
+    pickInteger(data, ["base_seq", "baseSeq"]);
   const role = normalizeRole(
     pickString(data, ["role"]) ??
       pickString(sharedStream, ["role"]) ??
@@ -1064,13 +1268,17 @@ export const extractStreamBlockUpdate = (
     seq: seq ?? null,
     taskId,
     artifactId: resolvedArtifactId,
+    blockId,
+    laneId,
     blockType,
+    op,
+    baseSeq: baseSeq ?? null,
     source,
     messageId,
     role,
     delta,
     append,
-    done,
+    done: op === "finalize" ? true : done,
     toolCall,
   };
 };
@@ -1079,50 +1287,46 @@ export const applyStreamBlockUpdate = (
   current: MessageBlock[] | undefined,
   update: StreamBlockUpdate,
 ): MessageBlock[] => {
+  const resolvedUpdate = adaptStreamBlockUpdateForReducer(current, update);
   const now = new Date().toISOString();
-  const overwrite = update.source === "final_snapshot" || !update.append;
   const blocks = current ?? [];
-  const lastBlock = blocks[blocks.length - 1];
-
-  // Optimization: In-place update if we are appending to the same block type and it's not finished
-  if (
-    !overwrite &&
-    lastBlock &&
-    lastBlock.type === update.blockType &&
-    !lastBlock.isFinished
-  ) {
-    lastBlock.content += update.delta;
-    lastBlock.isFinished = update.done;
-    if (update.toolCall !== undefined) {
-      lastBlock.toolCall = update.toolCall ?? null;
-    }
-    lastBlock.updatedAt = now;
-    return blocks;
-  }
-
-  // Fallback: Create new array for type switches, new blocks, or overwrites
   const nextBlocks = [...blocks];
   const lastNextBlock = nextBlocks[nextBlocks.length - 1];
+  const targetIndex = findBlockIndexByBlockId(
+    nextBlocks,
+    resolvedUpdate.blockId,
+  );
+  const delta = resolvedUpdate.delta;
 
-  if (overwrite) {
+  const applyBlockPatch = (index: number, content: string) => {
+    const targetBlock = nextBlocks[index];
+    const currentBaseSeq = targetBlock.baseSeq ?? null;
     if (
-      lastNextBlock &&
-      lastNextBlock.type === update.blockType &&
-      !lastNextBlock.isFinished
+      resolvedUpdate.baseSeq !== null &&
+      currentBaseSeq !== null &&
+      resolvedUpdate.baseSeq < currentBaseSeq
     ) {
-      nextBlocks[nextBlocks.length - 1] = {
-        ...lastNextBlock,
-        content: update.delta,
-        isFinished: update.done,
-        ...(update.toolCall !== undefined
-          ? { toolCall: update.toolCall ?? null }
-          : lastNextBlock.toolCall !== undefined
-            ? { toolCall: lastNextBlock.toolCall ?? null }
-            : {}),
-        updatedAt: now,
-      };
       return nextBlocks;
     }
+    nextBlocks[index] = {
+      ...targetBlock,
+      type: resolvedUpdate.blockType,
+      blockId: resolvedUpdate.blockId,
+      laneId: resolvedUpdate.laneId,
+      baseSeq: resolvedUpdate.baseSeq ?? currentBaseSeq,
+      content,
+      isFinished: resolvedUpdate.done,
+      ...(resolvedUpdate.toolCall !== undefined
+        ? { toolCall: resolvedUpdate.toolCall ?? null }
+        : targetBlock.toolCall !== undefined
+          ? { toolCall: targetBlock.toolCall ?? null }
+          : {}),
+      updatedAt: now,
+    };
+    return nextBlocks;
+  };
+
+  const closeActiveBlock = () => {
     if (lastNextBlock && !lastNextBlock.isFinished) {
       nextBlocks[nextBlocks.length - 1] = {
         ...lastNextBlock,
@@ -1130,41 +1334,50 @@ export const applyStreamBlockUpdate = (
         updatedAt: now,
       };
     }
+  };
+
+  const pushNewBlock = (content: string) => {
     nextBlocks.push({
-      id: `${update.messageId}:${nextBlocks.length + 1}`,
-      type: update.blockType,
-      content: update.delta,
-      isFinished: update.done,
-      ...(update.toolCall !== undefined
-        ? { toolCall: update.toolCall ?? null }
+      id: `${resolvedUpdate.messageId}:${nextBlocks.length + 1}`,
+      type: resolvedUpdate.blockType,
+      blockId: resolvedUpdate.blockId,
+      laneId: resolvedUpdate.laneId,
+      baseSeq: resolvedUpdate.baseSeq,
+      content,
+      isFinished: resolvedUpdate.done,
+      ...(resolvedUpdate.toolCall !== undefined
+        ? { toolCall: resolvedUpdate.toolCall ?? null }
         : {}),
       createdAt: now,
       updatedAt: now,
     });
     return nextBlocks;
+  };
+
+  if (resolvedUpdate.op === "finalize") {
+    return targetIndex >= 0
+      ? applyBlockPatch(targetIndex, nextBlocks[targetIndex]?.content ?? "")
+      : nextBlocks;
   }
 
-  // Type mismatch or new block needed
-  if (lastNextBlock && !lastNextBlock.isFinished) {
-    nextBlocks[nextBlocks.length - 1] = {
-      ...lastNextBlock,
-      isFinished: true,
-      updatedAt: now,
-    };
+  if (resolvedUpdate.op === "append") {
+    if (targetIndex >= 0) {
+      const targetBlock = nextBlocks[targetIndex];
+      return applyBlockPatch(
+        targetIndex,
+        `${targetBlock?.content ?? ""}${delta}`,
+      );
+    }
+    closeActiveBlock();
+    return pushNewBlock(delta);
   }
 
-  nextBlocks.push({
-    id: `${update.messageId}:${nextBlocks.length + 1}`,
-    type: update.blockType,
-    content: update.delta,
-    isFinished: update.done,
-    ...(update.toolCall !== undefined
-      ? { toolCall: update.toolCall ?? null }
-      : {}),
-    createdAt: now,
-    updatedAt: now,
-  });
-  return nextBlocks;
+  if (targetIndex >= 0) {
+    return applyBlockPatch(targetIndex, delta);
+  }
+
+  closeActiveBlock();
+  return pushNewBlock(delta);
 };
 
 export const projectPrimaryTextContent = (

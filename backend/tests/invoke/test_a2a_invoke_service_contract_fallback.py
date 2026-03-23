@@ -43,6 +43,31 @@ def test_extract_stream_chunk_accepts_type_and_content_parts_shape():
     assert chunk["content"] == "hello"
 
 
+def test_extract_stream_chunk_accepts_kindless_artifact_updates():
+    chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "artifact": {
+                "parts": [{"kind": "text", "text": "thinking"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "reasoning",
+                            "message_id": "msg-kindless",
+                            "event_id": "evt-kindless",
+                            "sequence": 4,
+                        }
+                    }
+                },
+            },
+        }
+    )
+    assert chunk is not None
+    assert chunk["block_type"] == "reasoning"
+    assert chunk["message_id"] == "msg-kindless"
+    assert chunk["event_id"] == "evt-kindless"
+    assert chunk["seq"] == 4
+
+
 def test_extract_stream_chunk_reads_root_metadata_hints():
     chunk = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
         {
@@ -138,3 +163,75 @@ def test_extract_stream_chunk_reads_tool_call_content_from_data_parts():
         "result": None,
         "error": None,
     }
+
+
+def test_extract_stream_chunk_uses_message_lane_identity_when_artifact_id_is_shared():
+    reasoning = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "artifactId": "task-shared:stream",
+                "parts": [{"kind": "text", "text": "thinking"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "reasoning",
+                            "message_id": "msg-shared-lanes",
+                        }
+                    }
+                },
+            },
+        }
+    )
+    text = a2a_invoke_service.extract_stream_chunk_from_serialized_event(
+        {
+            "kind": "artifact-update",
+            "artifact": {
+                "artifactId": "task-shared:stream",
+                "parts": [{"kind": "text", "text": "final answer"}],
+                "metadata": {
+                    "shared": {
+                        "stream": {
+                            "block_type": "text",
+                            "message_id": "msg-shared-lanes",
+                        }
+                    }
+                },
+            },
+        }
+    )
+
+    assert reasoning is not None
+    assert text is not None
+    assert reasoning["artifact_id"] == "task-shared:stream"
+    assert text["artifact_id"] == "task-shared:stream"
+    assert reasoning["block_id"] == "msg-shared-lanes:reasoning"
+    assert text["block_id"] == "msg-shared-lanes:primary_text"
+
+
+def test_ensure_outbound_stream_contract_canonicalizes_kindless_artifact_updates():
+    payload = {
+        "artifact": {
+            "parts": [{"kind": "text", "text": "draft"}],
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "block_type": "text",
+                        "message_id": "msg-kindless-outbound",
+                        "event_id": "evt-kindless-outbound",
+                    }
+                }
+            },
+        }
+    }
+
+    a2a_invoke_service._ensure_outbound_stream_contract(
+        payload, event_sequence=3
+    )  # noqa: SLF001
+
+    assert payload["kind"] == "artifact-update"
+    assert payload["seq"] == 3
+    assert payload["message_id"] == "msg-kindless-outbound"
+    assert payload["event_id"] == "evt-kindless-outbound"
+    assert payload["artifact"]["seq"] == 3
+    assert payload["artifact"]["metadata"]["seq"] == 3

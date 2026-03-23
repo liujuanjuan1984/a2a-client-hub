@@ -1,0 +1,155 @@
+[
+  {
+    "name": "legacy_append_text_chunk_maps_to_append_operation",
+    "payload": {
+      "kind": "artifact-update",
+      "task_id": "task-1",
+      "message_id": "msg-1",
+      "event_id": "evt-1",
+      "seq": 1,
+      "append": true,
+      "artifact": {
+        "artifact_id": "task-1:stream:text",
+        "parts": [
+          {
+            "kind": "text",
+            "text": "Hello "
+          }
+        ],
+        "metadata": {
+          "block_type": "text",
+          "source": "stream"
+        }
+      }
+    },
+    "expected": {
+      "event_id": "evt-1",
+      "seq": 1,
+      "message_id": "msg-1",
+      "artifact_id": "task-1:stream:text",
+      "block_id": "msg-1:primary_text",
+      "lane_id": "primary_text",
+      "block_type": "text",
+      "op": "append",
+      "content": "Hello ",
+      "base_seq": null,
+      "is_finished": false,
+      "source": "stream"
+    }
+  },
+  {
+    "name": "legacy_final_snapshot_maps_to_replace_operation",
+    "payload": {
+      "kind": "artifact-update",
+      "task_id": "task-1",
+      "message_id": "msg-1",
+      "event_id": "evt-2",
+      "seq": 2,
+      "append": false,
+      "artifact": {
+        "artifact_id": "task-1:stream:text",
+        "parts": [
+          {
+            "kind": "text",
+            "text": "Hello world"
+          }
+        ],
+        "metadata": {
+          "block_type": "text",
+          "source": "final_snapshot"
+        }
+      }
+    },
+    "expected": {
+      "event_id": "evt-2",
+      "seq": 2,
+      "message_id": "msg-1",
+      "artifact_id": "task-1:stream:text",
+      "block_id": "msg-1:primary_text",
+      "lane_id": "primary_text",
+      "block_type": "text",
+      "op": "replace",
+      "content": "Hello world",
+      "base_seq": null,
+      "is_finished": false,
+      "source": "final_snapshot"
+    }
+  },
+  {
+    "name": "explicit_v2_replace_keeps_declared_target_and_base_seq",
+    "payload": {
+      "kind": "artifact-update",
+      "task_id": "task-2",
+      "message_id": "msg-2",
+      "event_id": "evt-3",
+      "seq": 9,
+      "artifact": {
+        "artifact_id": "task-2:block:text:main",
+        "parts": [
+          {
+            "kind": "text",
+            "text": "Final answer"
+          }
+        ],
+        "metadata": {
+          "block_type": "text",
+          "block_id": "block-text-main",
+          "lane_id": "primary_text",
+          "op": "replace",
+          "base_seq": 7,
+          "source": "canonical_v2"
+        }
+      }
+    },
+    "expected": {
+      "event_id": "evt-3",
+      "seq": 9,
+      "message_id": "msg-2",
+      "artifact_id": "task-2:block:text:main",
+      "block_id": "block-text-main",
+      "lane_id": "primary_text",
+      "block_type": "text",
+      "op": "replace",
+      "content": "Final answer",
+      "base_seq": 7,
+      "is_finished": false,
+      "source": "canonical_v2"
+    }
+  },
+  {
+    "name": "explicit_v2_finalize_accepts_empty_content",
+    "payload": {
+      "kind": "artifact-update",
+      "task_id": "task-2",
+      "message_id": "msg-2",
+      "event_id": "evt-4",
+      "seq": 10,
+      "artifact": {
+        "artifact_id": "task-2:block:text:main",
+        "parts": [],
+        "metadata": {
+          "block_type": "text",
+          "block_id": "block-text-main",
+          "lane_id": "primary_text",
+          "op": "finalize",
+          "base_seq": 9,
+          "source": "canonical_v2"
+        }
+      }
+    },
+    "expected": {
+      "event_id": "evt-4",
+      "seq": 10,
+      "message_id": "msg-2",
+      "artifact_id": "task-2:block:text:main",
+      "block_id": "block-text-main",
+      "lane_id": "primary_text",
+      "block_type": "text",
+      "op": "finalize",
+      "content": "",
+      "base_seq": 9,
+      "is_finished": true,
+      "source": "canonical_v2"
+    }
+  }
+]

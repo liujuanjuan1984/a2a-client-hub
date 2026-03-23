@@ -177,7 +177,7 @@ async def test_sdk_adapter_retire_drains_inflight_operations_before_closing() ->
 
     class FakeFactory:
         def __init__(self, *, config, consumers) -> None:
-            self._config = config
+            _ = config, consumers
 
         def create(self, *_args, **_kwargs):
             class FakeClient:

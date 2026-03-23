@@ -113,6 +113,25 @@ def _update_lockfile_root(path: Path, version: str, write: bool) -> tuple[bool, 
     return changed, str(current)
 
 
+def _update_uv_lock_self_package(path: Path, version: str, write: bool) -> tuple[bool, str]:
+    text = path.read_text(encoding="utf-8")
+    pattern = re.compile(
+        r'(?ms)(\[\[package\]\]\nname = "a2a-client-hub"\nversion = ")([^"]+)(")'
+    )
+    match = pattern.search(text)
+    if not match:
+        raise ValueError(f'No editable "a2a-client-hub" package found in {path}')
+
+    current = match.group(2)
+    if current == version:
+        return False, current
+
+    if write:
+        replaced = pattern.sub(f'\\g<1>{version}\\g<3>', text, count=1)
+        path.write_text(replaced, encoding="utf-8")
+    return True, current
+
+
 def collect_updates(version: str) -> list[tuple[str, tuple[bool, str]]]:
     updates = [
         (
@@ -120,6 +139,10 @@ def collect_updates(version: str) -> list[tuple[str, tuple[bool, str]]]:
             _update_toml_version(
                 ROOT / "backend/pyproject.toml", version, write=False
             ),
+        ),
+        (
+            "backend/uv.lock",
+            _update_uv_lock_self_package(ROOT / "backend/uv.lock", version, write=False),
         ),
         (
             "frontend/package.json",
@@ -147,6 +170,10 @@ def apply_updates(version: str) -> list[tuple[str, tuple[bool, str]]]:
             _update_toml_version(
                 ROOT / "backend/pyproject.toml", version, write=True
             ),
+        ),
+        (
+            "backend/uv.lock",
+            _update_uv_lock_self_package(ROOT / "backend/uv.lock", version, write=True),
         ),
         (
             "frontend/package.json",

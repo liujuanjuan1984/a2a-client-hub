@@ -34,9 +34,6 @@ from app.features.invoke.payload_analysis import (
     extract_binding_hints_from_serialized_event as extract_binding_hints_from_event,
 )
 from app.features.invoke.payload_analysis import (
-    extract_preferred_text_from_payload as extract_preferred_text,
-)
-from app.features.invoke.payload_analysis import (
     extract_readable_content_from_invoke_result as extract_readable_content_from_result,
 )
 from app.features.invoke.payload_analysis import (
@@ -59,8 +56,6 @@ from app.features.invoke.stream_diagnostics import (
 )
 from app.features.invoke.stream_payloads import (
     analyze_stream_chunk_contract,
-    extract_artifact_source,
-    extract_artifact_type,
     extract_interrupt_lifecycle_from_serialized_event,
     extract_shared_stream_metadata,
     extract_stream_chunk_from_serialized_event,
@@ -262,12 +257,16 @@ class A2AInvokeService:
         return False
 
     @staticmethod
-    async def _call_callback(callback: Callable[[Any], Any] | None, value: Any) -> None:
+    async def _call_callback(
+        callback: Callable[[Any], Any] | None,
+        value: Any,
+    ) -> Any | None:
         if callback is None:
-            return
+            return None
         outcome = callback(value)
         if inspect.isawaitable(outcome):
-            await outcome
+            return await outcome
+        return outcome
 
     @staticmethod
     async def _call_callback_safely(
@@ -277,19 +276,20 @@ class A2AInvokeService:
         logger: Any,
         log_extra: dict[str, Any],
         warning_message: str,
-    ) -> None:
+    ) -> Any | None:
         try:
-            await A2AInvokeService._call_callback(callback, value)
+            return await A2AInvokeService._call_callback(callback, value)
         except Exception:
             log_warning = getattr(logger, "warning", None)
             if callable(log_warning):
                 log_warning(warning_message, exc_info=True, extra=log_extra)
-                return
+                return None
             logging.getLogger(__name__).warning(
                 warning_message,
                 exc_info=True,
                 extra=log_extra,
             )
+            return None
 
     @classmethod
     async def _iter_gateway_stream(
@@ -427,10 +427,6 @@ class A2AInvokeService:
         return resolved or None
 
     @classmethod
-    def _extract_preferred_text_from_payload(cls, payload: Any) -> str | None:
-        return extract_preferred_text(payload)
-
-    @classmethod
     def extract_readable_content_from_invoke_result(
         cls, result: dict[str, Any]
     ) -> str | None:
@@ -452,6 +448,10 @@ class A2AInvokeService:
             self._block_seq = 0
 
         @staticmethod
+        def _is_word_char(value: str | None) -> bool:
+            return bool(value and re.fullmatch(r"[\w]", value, flags=re.UNICODE))
+
+        @staticmethod
         def _extract_text_from_parts(parts: Any) -> str:
             return extract_stream_text_from_parts(parts)
 
@@ -461,27 +461,107 @@ class A2AInvokeService:
         ) -> dict[str, Any]:
             return extract_shared_stream_metadata(payload, artifact)
 
-        @staticmethod
-        def _extract_artifact_type(
-            payload: dict[str, Any], artifact: dict[str, Any]
-        ) -> str | None:
-            return extract_artifact_type(payload, artifact)
+        def _find_block_index(self, block_id: str) -> int | None:
+            for index, block in enumerate(self._blocks):
+                if str(block.get("block_id") or "") == block_id:
+                    return index
+            return None
 
-        @staticmethod
-        def _extract_artifact_source(
-            payload: dict[str, Any], artifact: dict[str, Any]
-        ) -> str | None:
-            return extract_artifact_source(payload, artifact)
+        def _find_last_text_block_index(self) -> int | None:
+            for index in range(len(self._blocks) - 1, -1, -1):
+                if str(self._blocks[index].get("type") or "") == "text":
+                    return index
+            return None
 
-        def _push_new_block(self, block_type: str, delta: str, done: bool) -> None:
+        def _trim_overlapping_reasoning_prefix(self, text: str) -> str:
+            if not text or not self._blocks:
+                return text
+            latest_reasoning = self._blocks[-1]
+            if str(latest_reasoning.get("type") or "") != "reasoning":
+                return text
+            reasoning_content = str(latest_reasoning.get("content") or "")
+            if not reasoning_content:
+                return text
+            for overlap in range(min(len(reasoning_content), len(text)), 0, -1):
+                candidate = reasoning_content[-overlap:]
+                overlap_start = len(reasoning_content) - overlap
+                before_overlap = (
+                    reasoning_content[overlap_start - 1] if overlap_start > 0 else None
+                )
+                after_overlap = text[overlap] if overlap < len(text) else None
+                tokens = re.findall(r"[\w]+", candidate, flags=re.UNICODE)
+                if (
+                    text.startswith(candidate)
+                    and not self._is_word_char(before_overlap)
+                    and not self._is_word_char(after_overlap)
+                    and (len(tokens) >= 2 or any(len(token) >= 5 for token in tokens))
+                ):
+                    return re.sub(r"^\s+", "", text[overlap:])
+            return text
+
+        def _adapt_legacy_stream_block(
+            self,
+            *,
+            block_type: str,
+            delta: str,
+            done: bool,
+            source: str | None,
+            block_id: str,
+            lane_id: str,
+            operation: str,
+            base_seq: int | None,
+            seq: int | None,
+        ) -> tuple[str, str, str, str, int | None, bool]:
+            resolved_block_id = block_id
+            resolved_lane_id = lane_id
+            resolved_delta = delta
+            resolved_base_seq = base_seq
+            if (
+                operation == "replace"
+                and block_type == "text"
+                and source in {"final_snapshot", "finalize_snapshot"}
+            ):
+                latest_text_index = self._find_last_text_block_index()
+                if latest_text_index is not None:
+                    latest_text = self._blocks[latest_text_index]
+                    existing_block_id = str(latest_text.get("block_id") or "")
+                    existing_lane_id = str(latest_text.get("lane_id") or "")
+                    if existing_block_id:
+                        resolved_block_id = existing_block_id
+                    if existing_lane_id:
+                        resolved_lane_id = existing_lane_id
+                resolved_delta = self._trim_overlapping_reasoning_prefix(resolved_delta)
+                if resolved_base_seq is None:
+                    resolved_base_seq = seq
+            return (
+                resolved_block_id,
+                resolved_lane_id,
+                operation,
+                resolved_delta,
+                resolved_base_seq,
+                done,
+            )
+
+        def _push_new_block(
+            self,
+            block_type: str,
+            block_id: str,
+            lane_id: str,
+            delta: str,
+            done: bool,
+            base_seq: int | None,
+        ) -> None:
             now = self._block_seq
             self._block_seq += 1
             self._blocks.append(
                 {
                     "id": f"block-{now + 1}",
+                    "block_id": block_id,
+                    "lane_id": lane_id,
                     "type": block_type,
                     "content": delta,
                     "is_finished": done,
+                    "base_seq": base_seq,
                     "seq": now,
                 }
             )
@@ -494,41 +574,67 @@ class A2AInvokeService:
             append: bool,
             done: bool,
             source: str | None,
+            block_id: str,
+            lane_id: str,
+            operation: str,
+            base_seq: int | None,
         ) -> None:
-            if not delta:
+            if not delta and operation != "finalize":
                 return
-            overwrite = (not append) or source == "final_snapshot"
             last = self._blocks[-1] if self._blocks else None
+            target_index = self._find_block_index(block_id)
+            target = self._blocks[target_index] if target_index is not None else None
 
-            if overwrite:
-                if (
-                    isinstance(last, dict)
-                    and last.get("type") == block_type
-                    and last.get("is_finished") is False
-                ):
-                    last["content"] = delta
-                    last["is_finished"] = done
+            if operation == "finalize":
+                if isinstance(target, dict):
+                    target["is_finished"] = True
+                    if base_seq is not None:
+                        target["base_seq"] = base_seq
+                return
+
+            if operation == "replace":
+                if isinstance(target, dict):
+                    target["type"] = block_type
+                    target["lane_id"] = lane_id
+                    target["content"] = delta
+                    target["is_finished"] = done
+                    if base_seq is not None:
+                        target["base_seq"] = base_seq
                     return
                 if isinstance(last, dict) and last.get("is_finished") is False:
                     last["is_finished"] = True
-                self._push_new_block(block_type, delta, done)
+                self._push_new_block(
+                    block_type,
+                    block_id,
+                    lane_id,
+                    delta,
+                    done,
+                    base_seq,
+                )
                 return
 
-            if (
-                isinstance(last, dict)
-                and last.get("type") == block_type
-                and last.get("is_finished") is False
-            ):
-                current = last.get("content")
-                last["content"] = (
+            if isinstance(target, dict):
+                current = target.get("content")
+                target["type"] = block_type
+                target["lane_id"] = lane_id
+                target["content"] = (
                     f"{current if isinstance(current, str) else ''}{delta}"
                 )
-                last["is_finished"] = done
+                target["is_finished"] = done
+                if base_seq is not None:
+                    target["base_seq"] = base_seq
                 return
 
             if isinstance(last, dict) and last.get("is_finished") is False:
                 last["is_finished"] = True
-            self._push_new_block(block_type, delta, done)
+            self._push_new_block(
+                block_type,
+                block_id,
+                lane_id,
+                delta,
+                done,
+                base_seq,
+            )
 
         def consume(
             self,
@@ -547,16 +653,62 @@ class A2AInvokeService:
             delta = resolved_stream_block.get("content")
             if not isinstance(block_type, str) or not isinstance(delta, str):
                 return
-            self._apply_block_update(
+            block_id = resolved_stream_block.get("block_id")
+            lane_id = resolved_stream_block.get("lane_id")
+            operation = resolved_stream_block.get("op")
+            base_seq = resolved_stream_block.get("base_seq")
+            if not isinstance(block_id, str) or not block_id:
+                block_id = f"stream:{block_type}"
+            if not isinstance(lane_id, str) or not lane_id:
+                lane_id = "primary_text" if block_type == "text" else block_type
+            if not isinstance(operation, str) or not operation:
+                operation = (
+                    "replace"
+                    if (not bool(resolved_stream_block.get("append", True)))
+                    or str(resolved_stream_block.get("source") or "")
+                    in {"final_snapshot", "finalize_snapshot"}
+                    else "append"
+                )
+            (
+                block_id,
+                lane_id,
+                operation,
+                delta,
+                base_seq,
+                done,
+            ) = self._adapt_legacy_stream_block(
                 block_type=block_type,
                 delta=delta,
-                append=bool(resolved_stream_block.get("append", True)),
                 done=bool(resolved_stream_block.get("is_finished", False)),
                 source=(
                     str(resolved_stream_block.get("source"))
                     if isinstance(resolved_stream_block.get("source"), str)
                     else None
                 ),
+                block_id=block_id,
+                lane_id=lane_id,
+                operation=operation,
+                base_seq=base_seq if isinstance(base_seq, int) else None,
+                seq=(
+                    resolved_stream_block.get("seq")
+                    if isinstance(resolved_stream_block.get("seq"), int)
+                    else None
+                ),
+            )
+            self._apply_block_update(
+                block_type=block_type,
+                delta=delta,
+                append=bool(resolved_stream_block.get("append", True)),
+                done=done,
+                source=(
+                    str(resolved_stream_block.get("source"))
+                    if isinstance(resolved_stream_block.get("source"), str)
+                    else None
+                ),
+                block_id=block_id,
+                lane_id=lane_id,
+                operation=operation,
+                base_seq=base_seq,
             )
 
         def result(self) -> str:
@@ -604,6 +756,11 @@ class A2AInvokeService:
         event_sequence: int,
     ) -> None:
         payload["seq"] = event_sequence
+        if (
+            payload.get("kind") != "artifact-update"
+            and cls.extract_stream_chunk_from_serialized_event(payload) is not None
+        ):
+            payload["kind"] = "artifact-update"
         if payload.get("kind") != "artifact-update":
             return
 
@@ -752,45 +909,6 @@ class A2AInvokeService:
                 seen_names.add(name)
                 items.append(resolved)
         return items
-
-    @classmethod
-    def _extract_missing_params_from_message(
-        cls,
-        message: str | None,
-    ) -> list[dict[str, Any]]:
-        if not message:
-            return []
-        for pattern in cls._MISSING_PARAM_MESSAGE_PATTERNS:
-            match = pattern.search(message)
-            if not match:
-                continue
-            return cls._coerce_missing_params(match.group("names"))
-        return []
-
-    @classmethod
-    def _extract_missing_params(
-        cls,
-        *,
-        data: Any,
-        message: str | None,
-    ) -> list[dict[str, Any]]:
-        if isinstance(data, dict):
-            for key in (
-                "missing_params",
-                "missingParams",
-                "missing_fields",
-                "required_fields",
-                "fields",
-                "params",
-                "missing",
-                "field",
-                "param",
-                "name",
-            ):
-                resolved = cls._coerce_missing_params(data.get(key))
-                if resolved:
-                    return resolved
-        return cls._extract_missing_params_from_message(message)
 
     @classmethod
     def _sanitize_upstream_error_data(
@@ -1096,13 +1214,20 @@ class A2AInvokeService:
                         idle_seconds=max(time.monotonic() - last_event_at, 0.0),
                         terminal_event_seen=terminal_event_seen,
                     )
+                finalization_event: dict[str, Any] | None = None
                 if final_outcome is not None:
-                    await self._call_callback_safely(
+                    finalized_callback_result = await self._call_callback_safely(
                         on_finalized,
                         final_outcome,
                         logger=logger,
                         log_extra=log_extra,
                         warning_message="A2A SSE finalized callback failed",
+                    )
+                    if isinstance(finalized_callback_result, dict):
+                        finalization_event = finalized_callback_result
+                if finalization_event is not None and not client_disconnected:
+                    yield (
+                        f"data: {json_dumps(finalization_event, ensure_ascii=False)}\n\n"
                     )
                 if not client_disconnected:
                     yield "event: stream_end\ndata: {}\n\n"
@@ -1321,13 +1446,20 @@ class A2AInvokeService:
         finally:
             if cache_key and self._is_terminal_status_event(serialized):
                 await global_stream_cache.mark_completed(cache_key)
+            finalization_event: dict[str, Any] | None = None
             if final_outcome is not None:
-                await self._call_callback_safely(
+                finalized_callback_result = await self._call_callback_safely(
                     on_finalized,
                     final_outcome,
                     logger=logger,
                     log_extra=log_extra,
                     warning_message="A2A WS finalized callback failed",
+                )
+                if isinstance(finalized_callback_result, dict):
+                    finalization_event = finalized_callback_result
+            if finalization_event is not None and not client_disconnected:
+                await websocket.send_text(
+                    json_dumps(finalization_event, ensure_ascii=False)
                 )
             if send_stream_end and not client_disconnected:
                 await self.send_ws_stream_end(websocket)

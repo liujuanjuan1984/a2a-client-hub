@@ -16,9 +16,8 @@ from app.integrations.a2a_client.errors import A2APeerProtocolError
 
 
 class _BrokenGateway:
-    async def stream(self, **kwargs):
-        raise RuntimeError("stream failed")
-        yield  # pragma: no cover
+    def stream(self, **kwargs):  # noqa: ARG002
+        return _FailingAsyncIterator(RuntimeError("stream failed"))
 
 
 class _DumpableEvent:
@@ -26,6 +25,7 @@ class _DumpableEvent:
         self._payload = payload
 
     def model_dump(self, exclude_none: bool = True):  # noqa: ARG002
+        _ = exclude_none
         return self._payload
 
 
@@ -82,32 +82,41 @@ class _SessionNotFoundError(RuntimeError):
         self.error_code = error_code
 
 
+class _FailingAsyncIterator:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise self._error
+
+
 class _BrokenGatewayWithSessionNotFound:
-    async def stream(self, **kwargs):  # noqa: ARG001
-        if False:
-            yield  # pragma: no cover
-        raise _SessionNotFoundError("session not found", "session_not_found")
+    def stream(self, **kwargs):  # noqa: ARG001
+        return _FailingAsyncIterator(
+            _SessionNotFoundError("session not found", "session_not_found")
+        )
 
 
 class _GatewayWithUnstructuredError:
-    async def stream(self, **kwargs):  # noqa: ARG001
-        if False:
-            yield  # pragma: no cover
-        raise RuntimeError("session missing")
+    def stream(self, **kwargs):  # noqa: ARG001
+        return _FailingAsyncIterator(RuntimeError("session missing"))
 
 
 class _GatewayWithStructuredProtocolError:
-    async def stream(self, **kwargs):  # noqa: ARG001
-        if False:
-            yield  # pragma: no cover
-        raise A2APeerProtocolError(
-            "project_id/channel_id required",
-            error_code="invalid_params",
-            rpc_code=-32602,
-            data={
-                "missing_params": ["project_id", "channel_id"],
-                "details": {"token": "secret"},
-            },
+    def stream(self, **kwargs):  # noqa: ARG001
+        return _FailingAsyncIterator(
+            A2APeerProtocolError(
+                "project_id/channel_id required",
+                error_code="invalid_params",
+                rpc_code=-32602,
+                data={
+                    "missing_params": ["project_id", "channel_id"],
+                    "details": {"token": "secret"},
+                },
+            )
         )
 
 
@@ -972,6 +981,59 @@ async def test_sse_breaks_stream_after_terminal_status_update():
 
 
 @pytest.mark.asyncio
+async def test_sse_emits_persisted_completion_ack_before_stream_end():
+    async def _on_finalized(_outcome):
+        return {
+            "kind": "status-update",
+            "final": True,
+            "status": {"state": "completed"},
+            "message_id": "msg-persisted-sse-1",
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "message_id": "msg-persisted-sse-1",
+                        "completion_phase": "persisted",
+                    }
+                }
+            },
+        }
+
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-persisted-sse:stream",
+                    text="ok",
+                    block_type="text",
+                ),
+                {
+                    "kind": "status-update",
+                    "status": {"state": "completed"},
+                    "final": True,
+                },
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_finalized=_on_finalized,
+    )
+
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    payload = "".join(chunks)
+    persisted_index = payload.index('"completion_phase": "persisted"')
+    stream_end_index = payload.index("event: stream_end")
+    assert persisted_index < stream_end_index
+
+
+@pytest.mark.asyncio
 async def test_ws_breaks_stream_after_terminal_status_update():
     websocket = _DummyWebSocket()
     await a2a_invoke_service.stream_ws(
@@ -1001,6 +1063,71 @@ async def test_ws_breaks_stream_after_terminal_status_update():
     assert not any(
         item.get("content") == "should-not-be-forwarded" for item in payloads
     )
+
+
+@pytest.mark.asyncio
+async def test_ws_emits_persisted_completion_ack_before_stream_end():
+    websocket = _DummyWebSocket()
+
+    async def _on_finalized(_outcome):
+        return {
+            "kind": "status-update",
+            "final": True,
+            "status": {"state": "completed"},
+            "message_id": "msg-persisted-ws-1",
+            "metadata": {
+                "shared": {
+                    "stream": {
+                        "message_id": "msg-persisted-ws-1",
+                        "completion_phase": "persisted",
+                    }
+                }
+            },
+        }
+
+    await a2a_invoke_service.stream_ws(
+        websocket=websocket,
+        gateway=_GatewayWithEvents(
+            [
+                _artifact_event(
+                    artifact_id="task-persisted-ws:stream",
+                    text="ok",
+                    block_type="text",
+                ),
+                {
+                    "kind": "status-update",
+                    "status": {"state": "completed"},
+                    "final": True,
+                },
+            ]
+        ),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+        on_finalized=_on_finalized,
+    )
+
+    payloads = [json.loads(item) for item in websocket.sent]
+    persisted_index = next(
+        index
+        for index, item in enumerate(payloads)
+        if item.get("kind") == "status-update"
+        and item.get("metadata", {})
+        .get("shared", {})
+        .get("stream", {})
+        .get("completion_phase")
+        == "persisted"
+    )
+    stream_end_index = next(
+        index
+        for index, item in enumerate(payloads)
+        if item.get("event") == "stream_end"
+    )
+    assert persisted_index < stream_end_index
 
 
 @pytest.mark.asyncio
@@ -1556,7 +1683,7 @@ async def test_consume_stream_reports_total_timeout_with_partial_content(monkeyp
 
     wait_for_calls = {"value": 0}
 
-    async def _fake_wait_for(awaitable, timeout):  # noqa: ARG001
+    async def _fake_wait_for(awaitable, _timeout):
         wait_for_calls["value"] += 1
         if wait_for_calls["value"] == 1:
             return await awaitable
@@ -1605,7 +1732,7 @@ async def test_consume_stream_reports_idle_timeout_with_partial_content(monkeypa
 
     wait_for_calls = {"value": 0}
 
-    async def _fake_wait_for(awaitable, timeout):  # noqa: ARG001
+    async def _fake_wait_for(awaitable, _timeout):
         wait_for_calls["value"] += 1
         if wait_for_calls["value"] == 1:
             return await awaitable
@@ -2147,7 +2274,8 @@ def test_extract_usage_hints_from_serialized_event_falls_back_to_legacy_metadata
 
 def test_coerce_payload_to_dict_raises_exception(caplog):
     class MockUnserializablePayload:
-        def model_dump(self, exclude_none=True):
+        def model_dump(self, exclude_none=True):  # noqa: ARG002
+            _ = exclude_none
             raise ValueError("Cannot serialize this mock payload")
 
     payload = MockUnserializablePayload()

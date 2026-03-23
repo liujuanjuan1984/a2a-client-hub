@@ -45,6 +45,8 @@ describe("runtime status contract", () => {
       isFinal: true,
       interrupt: null,
       seq: null,
+      completionPhase: null,
+      messageId: null,
     });
   });
 

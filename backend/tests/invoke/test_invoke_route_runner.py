@@ -51,7 +51,7 @@ class _CancelableCloseWebSocket:
         self.close_finished = asyncio.Event()
         self.close_codes: list[int | None] = []
 
-    async def accept(self, subprotocol: str | None = None) -> None:  # noqa: ARG002
+    async def accept(self, _subprotocol: str | None = None) -> None:
         return None
 
     async def receive_json(self) -> object:
@@ -453,7 +453,7 @@ async def test_run_http_invoke_records_usage_metadata(monkeypatch: pytest.Monkey
         async def __aenter__(self) -> object:
             return object()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
@@ -556,8 +556,10 @@ async def test_run_http_invoke_returns_structured_error_details(
 ) -> None:
     class _Gateway:
         async def stream(self, **kwargs):  # noqa: ARG002
-            if False:
-                yield {}
+            if kwargs:
+                await asyncio.sleep(0)
+            for event in ():
+                yield event
 
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
@@ -637,7 +639,7 @@ async def test_build_consume_stream_callbacks_persists_outcome_content_and_metad
         async def __aenter__(self) -> object:
             return object()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_record_local_invoke_messages(
@@ -745,7 +747,7 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(
@@ -1060,7 +1062,7 @@ async def test_persist_stream_block_update_rewrites_when_only_agent_message_id_i
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
@@ -1148,7 +1150,7 @@ async def test_persist_stream_block_update_consumes_and_persists_optional_fields
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
@@ -1249,7 +1251,7 @@ async def test_persist_stream_block_update_flushes_when_block_type_changes(
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
@@ -1352,7 +1354,7 @@ async def test_persist_stream_block_update_generates_local_event_id_when_missing
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
@@ -1440,7 +1442,7 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_append_agent_message_block_updates(_db, **kwargs):  # noqa: ANN001
@@ -1527,7 +1529,7 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
     )
     assert len(state.chunk_buffer) == 1
 
-    await on_finalized(
+    persisted_ack = await on_finalized(
         StreamOutcome(
             success=True,
             finish_reason=StreamFinishReason.SUCCESS,
@@ -1545,6 +1547,22 @@ async def test_on_finalized_flushes_remaining_stream_buffer(
     assert state.chunk_buffer == []
     assert state.persisted_block_count == 1
     assert captured_outcome["response_content"] == "partial"
+    assert persisted_ack == {
+        "kind": "status-update",
+        "final": True,
+        "status": {"state": "completed"},
+        "message_id": str(state.message_refs["agent_message_id"]),
+        "metadata": {
+            "shared": {
+                "stream": {
+                    "message_id": str(state.message_refs["agent_message_id"]),
+                    "completion_phase": "persisted",
+                    "finish_reason": "success",
+                    "success": True,
+                }
+            }
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -1562,7 +1580,7 @@ async def test_persist_local_outcome_synthesizes_final_chunk_when_absent(
         async def __aenter__(self) -> _DummySession:
             return _DummySession()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_has_agent_message_blocks(_db, **_kwargs) -> bool:  # noqa: ANN001
@@ -1667,7 +1685,7 @@ async def test_run_http_invoke_stream_uses_finalized_callback_for_persistence(
         async def __aenter__(self) -> object:
             return object()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
@@ -1770,7 +1788,7 @@ async def test_run_ws_invoke_uses_finalized_callback_for_persistence(
         async def __aenter__(self) -> object:
             return object()
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
     async def fake_prepare_state(**kwargs):  # noqa: ARG001
@@ -1953,7 +1971,7 @@ async def test_run_http_invoke_route_retries_session_not_found_once(
         validate_message=lambda _: [],
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
         invoke_log_message="test invoke",
-        invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+        invoke_log_extra_builder=lambda _req, _runtime: {},
     )
 
     assert isinstance(response, A2AAgentInvokeResponse)
@@ -2047,7 +2065,7 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
         validate_message=lambda _: [],
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
         invoke_log_message="test invoke",
-        invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+        invoke_log_extra_builder=lambda _req, _runtime: {},
     )
 
     assert isinstance(response, JSONResponse)
@@ -2396,7 +2414,7 @@ async def test_run_ws_invoke_route_invalid_payload_close_is_cancellation_safe(
                 error=lambda *args, **kwargs: None,
             ),
             invoke_log_message="test invoke ws route",
-            invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+            invoke_log_extra_builder=lambda _req, _runtime: {},
             unexpected_log_message="unexpected",
         )
     )
@@ -2440,7 +2458,7 @@ async def test_run_ws_invoke_route_finally_close_suppresses_secondary_cancellati
                 error=lambda *args, **kwargs: None,
             ),
             invoke_log_message="test invoke ws route",
-            invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+            invoke_log_extra_builder=lambda _req, _runtime: {},
             unexpected_log_message="unexpected",
         )
     )
@@ -2532,7 +2550,7 @@ async def test_run_http_invoke_route_returns_status_for_error_code(
         validate_message=lambda _: [],
         logger=SimpleNamespace(info=lambda *args, **kwargs: None),
         invoke_log_message="test invoke",
-        invoke_log_extra_builder=lambda req, runtime: {},  # noqa: ARG001
+        invoke_log_extra_builder=lambda _req, _runtime: {},
     )
     assert isinstance(response, JSONResponse)
     assert response.status_code == expected_status

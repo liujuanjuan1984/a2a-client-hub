@@ -17,6 +17,9 @@ export type SessionMessageItem = {
     type: string;
     content?: string | null;
     isFinished: boolean;
+    blockId?: string | null;
+    laneId?: string | null;
+    baseSeq?: number | null;
     toolCall?: ToolCallView | null;
   }[];
 };
@@ -77,6 +80,18 @@ const mapBlocks = (item: SessionMessageItem): MessageBlock[] => {
       type: block.type,
       content: typeof block.content === "string" ? block.content : "",
       isFinished: block.isFinished === true,
+      blockId:
+        typeof block.blockId === "string" && block.blockId.trim().length > 0
+          ? block.blockId.trim()
+          : undefined,
+      laneId:
+        typeof block.laneId === "string" && block.laneId.trim().length > 0
+          ? block.laneId.trim()
+          : undefined,
+      baseSeq:
+        typeof block.baseSeq === "number" && Number.isInteger(block.baseSeq)
+          ? block.baseSeq
+          : null,
       createdAt,
       updatedAt: createdAt,
     };

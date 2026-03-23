@@ -102,7 +102,7 @@ def test_invoke_agent_ws_success(monkeypatch, mock_user):
 
     # Mock validate_message to return empty list
     monkeypatch.setattr(
-        "app.features.personal_agents.router.validate_message", lambda x: []
+        "app.features.personal_agents.router.validate_message", lambda _value: []
     )
 
     client = TestClient(app)
