@@ -142,6 +142,7 @@ You can observe these via `/health` under `a2a.ops_metrics`:
 - Frontend details: [frontend/README.md](frontend/README.md)
 - Authentication conventions: [docs/authentication.md](docs/authentication.md)
 - Production security baseline: [docs/security-baseline.md](docs/security-baseline.md)
+- Release automation: [docs/release-workflow.md](docs/release-workflow.md)
 - Shared session query contract:
   [docs/contracts/shared-session-query-canonical-contract.md](docs/contracts/shared-session-query-canonical-contract.md)
 - Architecture and API examples:
