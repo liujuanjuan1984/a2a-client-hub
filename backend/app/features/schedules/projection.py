@@ -92,6 +92,10 @@ class A2AScheduleProjectionService:
         size: int,
     ) -> tuple[list[A2AScheduleTask], int]:
         offset = (page - 1) * size
+        activity_at = func.greatest(
+            A2AScheduleTask.updated_at,
+            func.coalesce(A2AScheduleTask.last_run_at, A2AScheduleTask.updated_at),
+        )
         stmt = (
             select(A2AScheduleTask)
             .where(
@@ -99,7 +103,11 @@ class A2AScheduleProjectionService:
                 A2AScheduleTask.deleted_at.is_(None),
                 A2AScheduleTask.delete_requested_at.is_(None),
             )
-            .order_by(A2AScheduleTask.created_at.desc())
+            .order_by(
+                A2AScheduleTask.enabled.desc(),
+                activity_at.desc(),
+                A2AScheduleTask.id.desc(),
+            )
             .offset(offset)
             .limit(size)
         )

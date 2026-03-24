@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
@@ -40,6 +41,13 @@ class A2AScheduleTask(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
             "ix_a2a_schedule_tasks_user_id_created_at",
             "user_id",
             "created_at",
+        ),
+        Index(
+            "ix_a2a_schedule_tasks_user_enabled_activity",
+            "user_id",
+            "enabled",
+            text("GREATEST(updated_at, COALESCE(last_run_at, updated_at)) DESC"),
+            postgresql_where=text("deleted_at IS NULL AND delete_requested_at IS NULL"),
         ),
         {"schema": SCHEMA_NAME},
     )

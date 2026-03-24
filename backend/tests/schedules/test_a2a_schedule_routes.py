@@ -165,6 +165,77 @@ async def test_schedule_routes_crud_and_toggle(
         assert after_delete_resp.status_code == 404
 
 
+async def test_schedule_list_orders_enabled_tasks_before_recent_activity(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="ordering")
+
+    enabled_stale = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        timezone_str=user.timezone or "UTC",
+        name="Enabled stale",
+        agent_id=agent.id,
+        prompt="first",
+        cycle_type="daily",
+        time_point={"time": "08:00"},
+        enabled=True,
+    )
+    enabled_recent_run = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        timezone_str=user.timezone or "UTC",
+        name="Enabled recent run",
+        agent_id=agent.id,
+        prompt="second",
+        cycle_type="daily",
+        time_point={"time": "09:00"},
+        enabled=True,
+    )
+    disabled_newest = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        timezone_str=user.timezone or "UTC",
+        name="Disabled newest",
+        agent_id=agent.id,
+        prompt="third",
+        cycle_type="daily",
+        time_point={"time": "10:00"},
+        enabled=False,
+    )
+
+    now = utc_now()
+    enabled_stale.updated_at = now - timedelta(hours=6)
+    enabled_stale.last_run_at = now - timedelta(hours=6)
+    enabled_recent_run.updated_at = now - timedelta(hours=5)
+    enabled_recent_run.last_run_at = now - timedelta(minutes=10)
+    disabled_newest.updated_at = now
+    disabled_newest.last_run_at = None
+    await async_db_session.commit()
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        list_resp = await client.get(
+            "/me/a2a/schedules",
+            params={"page": 1, "size": 20},
+        )
+
+    assert list_resp.status_code == 200
+    assert [item["id"] for item in list_resp.json()["items"][:3]] == [
+        str(enabled_recent_run.id),
+        str(enabled_stale.id),
+        str(disabled_newest.id),
+    ]
+
+
 async def test_schedule_conversation_policy_persists_on_create_and_update(
     async_db_session,
     async_session_maker,
