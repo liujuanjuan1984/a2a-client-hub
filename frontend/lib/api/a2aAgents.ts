@@ -55,7 +55,6 @@ export type A2AAgentUpdateRequest = Partial<A2AAgentCreateRequest>;
 export type A2AAgentInvokeRequest = {
   query: string;
   conversationId?: string;
-  contextId?: string;
   userMessageId?: string;
   agentMessageId?: string;
   resumeFromSequence?: number;

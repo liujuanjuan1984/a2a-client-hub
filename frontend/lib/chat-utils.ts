@@ -27,7 +27,6 @@ export type AgentSession = {
   agentId: string;
   createdAt?: string;
   source?: "manual" | "scheduled" | null;
-  contextId: string | null;
   runtimeStatus?: string | null;
   pendingInterrupts: PendingRuntimeInterrupt[];
   pendingInterrupt?: PendingRuntimeInterrupt | null;
@@ -54,7 +53,6 @@ export const createAgentSession = (agentId: string): AgentSession => ({
   agentId,
   createdAt: new Date().toISOString(),
   source: null,
-  contextId: null,
   runtimeStatus: null,
   pendingInterrupts: [],
   pendingInterrupt: null,
@@ -202,9 +200,6 @@ export const buildInvokePayload = (
   if (options?.resumeFromSequence !== undefined) {
     payload.resumeFromSequence = options.resumeFromSequence;
   }
-  if (session.contextId) {
-    payload.contextId = session.contextId;
-  }
   const metadata = withoutSharedSessionBinding(session.metadata);
   const externalProvider = session.externalSessionRef?.provider?.trim();
   const externalSessionId =
@@ -267,7 +262,6 @@ const normalizeSessionForPersistence = (
     agentId: session.agentId,
     createdAt: getSessionCreatedAt(session),
     source: null,
-    contextId: null,
     runtimeStatus: null,
     pendingInterrupts: [],
     pendingInterrupt: null,

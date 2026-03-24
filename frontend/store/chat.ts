@@ -123,7 +123,6 @@ type ChatState = {
       source?: "manual" | "scheduled" | null;
       provider?: string | null;
       externalSessionId?: string | null;
-      contextId?: string | null;
       metadata?: Record<string, unknown>;
     },
   ) => void;
@@ -216,10 +215,6 @@ export const useChatStore = create<ChatState>()(
                 state.sessions[conversationId]?.externalSessionRef,
                 payload,
               ),
-              contextId:
-                payload.contextId === undefined
-                  ? (state.sessions[conversationId]?.contextId ?? null)
-                  : payload.contextId,
               lastActiveAt: new Date().toISOString(),
             },
           },

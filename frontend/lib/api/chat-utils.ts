@@ -291,12 +291,6 @@ const isRuntimeInterrupt = (value: unknown): value is RuntimeInterrupt => {
 };
 
 export const extractSessionMeta = (data: Record<string, unknown>) => {
-  const contextId =
-    typeof data.context_id === "string"
-      ? data.context_id
-      : typeof data.contextId === "string"
-        ? data.contextId
-        : null;
   const session = getPreferredSessionMetadata(data);
   const externalSessionId =
     pickString(session, ["id", "externalSessionId"]) ?? undefined;
@@ -310,7 +304,6 @@ export const extractSessionMeta = (data: Record<string, unknown>) => {
     coerceStringArray(data.output_modes) ?? coerceStringArray(data.outputModes);
 
   return {
-    contextId,
     provider,
     externalSessionId,
     transport,

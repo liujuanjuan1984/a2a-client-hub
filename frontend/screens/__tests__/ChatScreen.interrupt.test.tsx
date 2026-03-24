@@ -185,7 +185,6 @@ jest.mock("@/components/chat/ChatComposer", () => ({
 type MockAgentSession = {
   agentId: string;
   source: "manual" | "scheduled" | null;
-  contextId: string | null;
   runtimeStatus: string | null;
   pendingInterrupt: unknown;
   lastResolvedInterrupt: unknown;
@@ -205,7 +204,6 @@ type MockAgentSession = {
 const baseSession = (): MockAgentSession => ({
   agentId: "agent-1",
   source: "manual",
-  contextId: "ctx-1",
   runtimeStatus: "input-required",
   pendingInterrupt: null,
   lastResolvedInterrupt: null,

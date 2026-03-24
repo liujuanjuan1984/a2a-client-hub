@@ -155,11 +155,10 @@ unknown block types with a fallback view.
 
 Continue binding is unified via
 `POST /me/conversations/{conversation_id}:continue` so Chat always restores
-`contextId`/`metadata` through one entrypoint.
+binding metadata through one entrypoint.
 
 The continue payload also includes canonical binding fields:
 
 - `conversationId`
 - `metadata.provider`
 - `metadata.externalSessionId`
-- `metadata.contextId`
