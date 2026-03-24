@@ -73,7 +73,29 @@ async def _ensure_unique_code(db: AsyncSession, *, max_attempts: int = 5) -> str
 
 @dataclass(slots=True)
 class InvitationCreateResult:
-    invitation: Invitation
+    id: UUID
+    code: str
+    creator_user_id: UUID
+    target_email: str
+    status: InvitationStatus
+    memo: str | None
+    created_at: object
+    updated_at: object
+    deleted_at: object | None
+
+    @classmethod
+    def from_invitation(cls, invitation: Invitation) -> InvitationCreateResult:
+        return cls(
+            id=cast(UUID, invitation.id),
+            code=cast(str, invitation.code),
+            creator_user_id=cast(UUID, invitation.creator_user_id),
+            target_email=cast(str, invitation.target_email),
+            status=cast(InvitationStatus, invitation.status),
+            memo=cast(str | None, invitation.memo),
+            created_at=cast(object, invitation.created_at),
+            updated_at=cast(object, invitation.updated_at),
+            deleted_at=cast(object | None, invitation.deleted_at),
+        )
 
 
 async def create_invitation(
@@ -126,7 +148,7 @@ async def create_invitation(
             },
         )
 
-        return InvitationCreateResult(invitation=existing_revoked)
+        return InvitationCreateResult.from_invitation(existing_revoked)
 
     # If no revoked invitation exists, execute original uniqueness check
     await ensure_invitation_unique_for_creator(
@@ -176,7 +198,7 @@ async def create_invitation(
         },
     )
 
-    return InvitationCreateResult(invitation=invitation)
+    return InvitationCreateResult.from_invitation(invitation)
 
 
 async def get_invitation_by_code(db: AsyncSession, *, code: str) -> Invitation:

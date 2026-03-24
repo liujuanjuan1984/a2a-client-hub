@@ -16,7 +16,6 @@ from app.api.deps import (
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
-from app.db.session import AsyncSessionLocal
 from app.features.agents_shared.card_validation import fetch_and_validate_agent_card
 from app.features.hub_agents.runtime import (
     HubA2ARuntimeNotFoundError,
@@ -142,38 +141,38 @@ async def invoke_hub_agent(
     agent_id: UUID,
     payload: A2AAgentInvokeRequest,
     response: Response,
+    db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     stream: bool = Query(False, description="Set to true for SSE streaming responses."),
 ) -> Any:
     response.headers["Cache-Control"] = "no-store"
-    async with AsyncSessionLocal() as db:
-        current_user_id = cast(UUID, current_user.id)
-        return await run_http_invoke_route(
-            db=db,
-            user_id=current_user_id,
-            agent_id=agent_id,
-            agent_source="shared",
-            payload=payload,
-            stream=stream,
-            gateway=cast(Any, get_a2a_service()).gateway,
-            runtime_builder=lambda: hub_a2a_runtime_builder.build(
-                db, user_id=current_user_id, agent_id=agent_id
-            ),
-            runtime_not_found_errors=(HubA2ARuntimeNotFoundError,),
-            runtime_not_found_status_code=404,
-            runtime_validation_errors=(HubA2ARuntimeValidationError,),
-            runtime_validation_status_code=502,
-            validate_message=validate_message,
-            logger=logger,
-            invoke_log_message="Hub A2A agent invoke requested",
-            invoke_log_extra_builder=lambda request, runtime: {
-                "user_id": str(current_user_id),
-                "agent_id": str(agent_id),
-                "agent_url": redact_url_for_logging(runtime.resolved.url),
-                "stream": stream,
-                "query_meta": summarize_query(request.query),
-            },
-        )
+    current_user_id = cast(UUID, current_user.id)
+    return await run_http_invoke_route(
+        db=db,
+        user_id=current_user_id,
+        agent_id=agent_id,
+        agent_source="shared",
+        payload=payload,
+        stream=stream,
+        gateway=cast(Any, get_a2a_service()).gateway,
+        runtime_builder=lambda: hub_a2a_runtime_builder.build(
+            db, user_id=current_user_id, agent_id=agent_id
+        ),
+        runtime_not_found_errors=(HubA2ARuntimeNotFoundError,),
+        runtime_not_found_status_code=404,
+        runtime_validation_errors=(HubA2ARuntimeValidationError,),
+        runtime_validation_status_code=502,
+        validate_message=validate_message,
+        logger=logger,
+        invoke_log_message="Hub A2A agent invoke requested",
+        invoke_log_extra_builder=lambda request, runtime: {
+            "user_id": str(current_user_id),
+            "agent_id": str(agent_id),
+            "agent_url": redact_url_for_logging(runtime.resolved.url),
+            "stream": stream,
+            "query_meta": summarize_query(request.query),
+        },
+    )
 
 
 @router.post(

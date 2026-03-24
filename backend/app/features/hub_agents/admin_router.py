@@ -41,24 +41,23 @@ logger = get_logger(__name__)
 
 
 def _build_admin_response(record: HubA2AAgentRecord) -> HubA2AAgentAdminResponse:
-    agent = record.agent
     payload: dict[str, Any] = {
-        "id": agent.id,
-        "name": agent.name,
-        "card_url": agent.card_url,
-        "availability_policy": agent.availability_policy,
-        "auth_type": agent.auth_type,
-        "auth_header": agent.auth_header,
-        "auth_scheme": agent.auth_scheme,
-        "enabled": agent.enabled,
-        "tags": agent.tags or [],
-        "extra_headers": agent.extra_headers or {},
+        "id": record.id,
+        "name": record.name,
+        "card_url": record.card_url,
+        "availability_policy": record.availability_policy,
+        "auth_type": record.auth_type,
+        "auth_header": record.auth_header,
+        "auth_scheme": record.auth_scheme,
+        "enabled": record.enabled,
+        "tags": record.tags,
+        "extra_headers": record.extra_headers,
         "has_credential": record.has_credential,
         "token_last4": record.token_last4,
-        "created_by_user_id": agent.created_by_user_id,
-        "updated_by_user_id": agent.updated_by_user_id,
-        "created_at": agent.created_at,
-        "updated_at": agent.updated_at,
+        "created_by_user_id": record.created_by_user_id,
+        "updated_by_user_id": record.updated_by_user_id,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
     }
     return HubA2AAgentAdminResponse.model_validate(payload)
 
@@ -255,13 +254,13 @@ async def list_hub_agent_allowlist_admin(
     return HubA2AAllowlistListResponse(
         items=[
             HubA2AAllowlistEntryResponse(
-                id=cast(UUID, item.entry.id),
-                agent_id=cast(UUID, item.entry.agent_id),
-                user_id=cast(UUID, item.entry.user_id),
+                id=item.id,
+                agent_id=item.agent_id,
+                user_id=item.user_id,
                 user_email=item.user_email,
                 user_name=item.user_name,
-                created_by_user_id=cast(UUID, item.entry.created_by_user_id),
-                created_at=cast(Any, item.entry.created_at),
+                created_by_user_id=item.created_by_user_id,
+                created_at=cast(Any, item.created_at),
             )
             for item in records
         ]
@@ -309,13 +308,13 @@ async def add_hub_agent_allowlist_admin(
     except HubA2AAgentValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return HubA2AAllowlistEntryResponse(
-        id=cast(UUID, record.entry.id),
-        agent_id=cast(UUID, record.entry.agent_id),
-        user_id=cast(UUID, record.entry.user_id),
+        id=record.id,
+        agent_id=record.agent_id,
+        user_id=record.user_id,
         user_email=record.user_email,
         user_name=record.user_name,
-        created_by_user_id=cast(UUID, record.entry.created_by_user_id),
-        created_at=cast(Any, record.entry.created_at),
+        created_by_user_id=record.created_by_user_id,
+        created_at=cast(Any, record.created_at),
     )
 
 
@@ -365,13 +364,13 @@ async def replace_hub_agent_allowlist_admin(
     return HubA2AAllowlistListResponse(
         items=[
             HubA2AAllowlistEntryResponse(
-                id=cast(UUID, item.entry.id),
-                agent_id=cast(UUID, item.entry.agent_id),
-                user_id=cast(UUID, item.entry.user_id),
+                id=item.id,
+                agent_id=item.agent_id,
+                user_id=item.user_id,
                 user_email=item.user_email,
                 user_name=item.user_name,
-                created_by_user_id=cast(UUID, item.entry.created_by_user_id),
-                created_at=cast(Any, item.entry.created_at),
+                created_by_user_id=item.created_by_user_id,
+                created_at=cast(Any, item.created_at),
             )
             for item in records
         ]

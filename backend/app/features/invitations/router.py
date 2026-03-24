@@ -20,12 +20,32 @@ from app.features.invitations.schemas import (
     InvitationListResponse,
     InvitationLookupResponse,
     InvitationResponse,
+    InvitationStatusEnum,
     InvitationWithCreatorListResponse,
     InvitationWithCreatorResponse,
 )
 from app.utils.pagination import build_pagination_meta, compute_offset
 
 router = StrictAPIRouter(prefix="/invitations", tags=["invitations"])
+
+
+def _serialize_invitation_result(
+    result: invitation_service.InvitationCreateResult,
+) -> InvitationResponse:
+    return InvitationResponse(
+        id=result.id,
+        code=result.code,
+        creator_user_id=result.creator_user_id,
+        target_email=result.target_email,
+        status=InvitationStatusEnum(result.status.value),
+        target_user_id=None,
+        memo=result.memo,
+        created_at=cast(datetime, result.created_at),
+        updated_at=cast(datetime, result.updated_at),
+        deleted_at=cast(datetime | None, result.deleted_at),
+        registered_at=None,
+        revoked_at=None,
+    )
 
 
 def _serialize_invitation_with_creator(
@@ -67,7 +87,7 @@ async def create_invitation(
     except invitation_service.InvitationConflictError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    return InvitationResponse.model_validate(result.invitation)
+    return _serialize_invitation_result(result)
 
 
 router.add_api_route(

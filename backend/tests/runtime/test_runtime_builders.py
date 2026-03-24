@@ -22,10 +22,34 @@ def test_a2a_runtime_builder_build_from_agent_uses_prefetched_fields() -> None:
 
     runtime = a2a_runtime_builder.build_from_agent(agent=agent, credential=None)
 
-    assert runtime.agent is agent
+    assert runtime.agent_id == agent.id
+    assert runtime.agent_name == "Personal Agent"
+    assert runtime.agent_url == "https://personal.example.com"
+    assert runtime.agent_enabled is True
     assert runtime.resolved.url == "https://personal.example.com"
     assert runtime.resolved.headers == {"X-Test": "1"}
     assert runtime.token_last4 is None
+
+
+def test_hub_runtime_builder_build_from_agent_returns_scalar_runtime_fields() -> None:
+    agent = A2AAgent(
+        id=uuid4(),
+        user_id=uuid4(),
+        name="Shared Agent",
+        card_url="https://shared.example.com",
+        auth_type="none",
+        extra_headers={"X-Shared": "1"},
+        enabled=False,
+    )
+
+    runtime = hub_a2a_runtime_builder.build_from_agent(agent=agent, credential=None)
+
+    assert runtime.agent_id == agent.id
+    assert runtime.agent_name == "Shared Agent"
+    assert runtime.agent_url == "https://shared.example.com"
+    assert runtime.agent_enabled is False
+    assert runtime.resolved.url == "https://shared.example.com"
+    assert runtime.resolved.headers == {"X-Shared": "1"}
 
 
 def test_hub_runtime_builder_resolve_prefetched_builds_bearer_headers() -> None:

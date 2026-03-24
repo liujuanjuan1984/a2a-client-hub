@@ -36,7 +36,17 @@ class A2AAgentValidationError(A2AAgentError):
 
 @dataclass(frozen=True)
 class A2AAgentRecord:
-    agent: A2AAgent
+    id: UUID
+    name: str
+    card_url: str
+    auth_type: str
+    auth_header: str | None
+    auth_scheme: str | None
+    enabled: bool
+    tags: list[str]
+    extra_headers: dict[str, str]
+    created_at: object
+    updated_at: object
     token_last4: Optional[str]
 
 
@@ -48,6 +58,23 @@ class A2AAgentService(AgentValidationMixin):
 
     def __init__(self) -> None:
         self._vault = user_llm_secret_vault
+
+    @staticmethod
+    def _build_record(agent: A2AAgent, *, token_last4: Optional[str]) -> A2AAgentRecord:
+        return A2AAgentRecord(
+            id=cast(UUID, agent.id),
+            name=cast(str, agent.name),
+            card_url=cast(str, agent.card_url),
+            auth_type=cast(str, agent.auth_type),
+            auth_header=cast(str | None, agent.auth_header),
+            auth_scheme=cast(str | None, agent.auth_scheme),
+            enabled=bool(getattr(agent, "enabled", True)),
+            tags=cast(list[str], agent.tags or []),
+            extra_headers=cast(dict[str, str], agent.extra_headers or {}),
+            created_at=cast(object, agent.created_at),
+            updated_at=cast(object, agent.updated_at),
+            token_last4=token_last4,
+        )
 
     async def list_agents(
         self, db: AsyncSession, *, user_id: UUID
@@ -71,7 +98,12 @@ class A2AAgentService(AgentValidationMixin):
         )
         result = await db.execute(stmt)
         rows = result.all()
-        return [A2AAgentRecord(agent=row[0], token_last4=row[1]) for row in rows]
+        return [
+            self._build_record(
+                cast(A2AAgent, row[0]), token_last4=cast(str | None, row[1])
+            )
+            for row in rows
+        ]
 
     async def get_agent(
         self, db: AsyncSession, *, user_id: UUID, agent_id: UUID
@@ -136,7 +168,7 @@ class A2AAgentService(AgentValidationMixin):
 
         await commit_safely(db)
         await db.refresh(agent)
-        return A2AAgentRecord(agent=agent, token_last4=token_last4)
+        return self._build_record(agent, token_last4=token_last4)
 
     async def update_agent(
         self,
@@ -200,7 +232,7 @@ class A2AAgentService(AgentValidationMixin):
 
         await commit_safely(db)
         await db.refresh(agent)
-        return A2AAgentRecord(agent=agent, token_last4=token_last4)
+        return self._build_record(agent, token_last4=token_last4)
 
     async def delete_agent(
         self, db: AsyncSession, *, user_id: UUID, agent_id: UUID

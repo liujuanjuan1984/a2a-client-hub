@@ -33,6 +33,7 @@ class HubA2ARuntime:
     agent_id: UUID
     agent_name: str
     agent_url: str
+    agent_enabled: bool
     resolved: ResolvedAgent
 
 
@@ -86,6 +87,7 @@ class HubA2ARuntimeBuilder:
             agent_id=cast(UUID, agent.id),
             agent_name=cast(str, agent.name),
             agent_url=cast(str, agent.card_url),
+            agent_enabled=bool(getattr(agent, "enabled", True)),
             resolved=resolved,
         )
 
