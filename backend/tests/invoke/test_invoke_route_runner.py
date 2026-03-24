@@ -126,6 +126,62 @@ async def test_prepare_state_reuses_persisted_context_id_when_payload_missing(
 
 
 @pytest.mark.asyncio
+async def test_prepare_state_prefers_persisted_context_id_over_conflicting_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    local_session_id = uuid4()
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+            return None
+
+    async def fake_ensure_local_session_for_invoke(
+        db,  # noqa: ARG001
+        **kwargs,  # noqa: ARG001
+    ) -> tuple[SimpleNamespace, str]:
+        return (
+            SimpleNamespace(id=local_session_id, context_id="ctx-persisted"),
+            "manual",
+        )
+
+    async def fake_commit_safely(db):  # noqa: ARG001
+        return None
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "ensure_local_session_for_invoke",
+        fake_ensure_local_session_for_invoke,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(local_session_id),
+            "contextId": "ctx-from-client",
+            "metadata": {},
+        }
+    )
+
+    state = await invoke_route_runner._prepare_state(  # noqa: SLF001
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+    )
+
+    assert state.context_id == "ctx-persisted"
+
+
+@pytest.mark.asyncio
 async def test_run_issue_ws_ticket_route_maps_lock_contention_to_http_409(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -661,6 +717,94 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
     assert response.success is True
     assert response.content == "ok"
     assert captured["context_id"] == "ctx-reused"
+
+
+@pytest.mark.asyncio
+async def test_run_http_invoke_prefers_persisted_context_id_over_client_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    local_session_id = uuid4()
+    captured: dict[str, object] = {}
+
+    class _DummySessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+            return None
+
+    async def fake_ensure_local_session_for_invoke(
+        db,  # noqa: ARG001
+        **kwargs,  # noqa: ARG001
+    ) -> tuple[SimpleNamespace, str]:
+        return (
+            SimpleNamespace(id=local_session_id, context_id="ctx-persisted"),
+            "manual",
+        )
+
+    async def fake_commit_safely(db):  # noqa: ARG001
+        return None
+
+    async def fake_consume_stream(**kwargs):
+        captured["context_id"] = kwargs["context_id"]
+        return StreamOutcome(
+            success=True,
+            finish_reason=StreamFinishReason.SUCCESS,
+            final_text="ok",
+            error_message=None,
+            error_code=None,
+            elapsed_seconds=0.1,
+            idle_seconds=0.0,
+            terminal_event_seen=True,
+            source="upstream_a2a",
+        )
+
+    monkeypatch.setattr(
+        invoke_route_runner,
+        "AsyncSessionLocal",
+        lambda: _DummySessionContext(),
+    )
+    monkeypatch.setattr(
+        invoke_route_runner.session_hub_service,
+        "ensure_local_session_for_invoke",
+        fake_ensure_local_session_for_invoke,
+    )
+    monkeypatch.setattr(invoke_route_runner, "commit_safely", fake_commit_safely)
+    monkeypatch.setattr(
+        invoke_route_runner.a2a_invoke_service,
+        "consume_stream",
+        fake_consume_stream,
+    )
+
+    payload = A2AAgentInvokeRequest.model_validate(
+        {
+            "query": "hello",
+            "conversationId": str(local_session_id),
+            "contextId": "ctx-from-client",
+            "metadata": {},
+        }
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(name="Demo Agent", url="https://example.com/a2a")
+    )
+
+    response = await invoke_route_runner.run_http_invoke(
+        db=object(),
+        gateway=object(),
+        runtime=runtime,
+        user_id=uuid4(),
+        agent_id=uuid4(),
+        agent_source="shared",
+        payload=payload,
+        stream=False,
+        validate_message=lambda _: [],
+        logger=SimpleNamespace(info=lambda *args, **kwargs: None),
+        log_extra={},
+    )
+
+    assert response.success is True
+    assert response.content == "ok"
+    assert captured["context_id"] == "ctx-persisted"
 
 
 @pytest.mark.asyncio
