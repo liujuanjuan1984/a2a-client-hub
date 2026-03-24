@@ -9,7 +9,7 @@ import {
   withoutSharedSessionBinding,
 } from "@/lib/sharedMetadata";
 
-export type ExternalSessionRef = {
+type ExternalSessionRef = {
   provider?: string | null;
   externalSessionId?: string | null;
 };

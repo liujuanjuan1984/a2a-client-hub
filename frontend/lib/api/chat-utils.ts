@@ -49,7 +49,7 @@ export type StreamErrorDetails = {
   upstreamError: Record<string, unknown> | null;
 };
 
-export type ParsedStreamError = StreamErrorDetails & {
+type ParsedStreamError = StreamErrorDetails & {
   message: string;
 };
 
@@ -105,7 +105,7 @@ const BLOCK_OPERATION_TYPES = new Set(["append", "replace", "finalize"]);
 const REASONING_OVERLAP_WORD_PATTERN = /[\p{L}\p{N}_]+/gu;
 const MIN_REASONING_OVERLAP_WORD_LENGTH = 5;
 
-export type RuntimeStatusEvent = {
+type RuntimeStatusEvent = {
   state: string;
   isFinal: boolean;
   interrupt: RuntimeInterrupt | null;
@@ -177,13 +177,13 @@ const coerceStringArray = (value: unknown) =>
     ? (value as string[])
     : undefined;
 
-export type InterruptQuestionOption = {
+type InterruptQuestionOption = {
   label: string;
   description: string | null;
   value: string | null;
 };
 
-export type InterruptQuestion = {
+type InterruptQuestion = {
   header: string | null;
   description?: string | null;
   question: string;
@@ -1133,7 +1133,7 @@ const findLastTextBlockIndex = (blocks: MessageBlock[]): number => {
   return -1;
 };
 
-export const adaptStreamBlockUpdateForReducer = (
+const adaptStreamBlockUpdateForReducer = (
   current: MessageBlock[] | undefined,
   update: StreamBlockUpdate,
 ): StreamBlockUpdate => {
