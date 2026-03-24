@@ -91,6 +91,28 @@ describe("ScheduledJobsScreen sorting", () => {
   it("preserves backend order for scheduled jobs", async () => {
     mockJobs = [
       {
+        id: "enabled-attention",
+        enabled: true,
+        is_running: true,
+        status_summary: {
+          state: "running",
+          manual_intervention_recommended: true,
+        },
+        next_run_at_utc: "2026-02-23T10:00:00Z",
+        schedule_timezone: "UTC",
+      },
+      {
+        id: "enabled-running",
+        enabled: true,
+        is_running: true,
+        status_summary: {
+          state: "running",
+          manual_intervention_recommended: false,
+        },
+        next_run_at_utc: "2026-02-23T11:00:00Z",
+        schedule_timezone: "UTC",
+      },
+      {
         id: "enabled-recent",
         enabled: true,
         last_run_status: "success",
@@ -98,18 +120,7 @@ describe("ScheduledJobsScreen sorting", () => {
           state: "idle",
           manual_intervention_recommended: false,
         },
-        next_run_at_utc: "2026-02-23T10:00:00Z",
-        schedule_timezone: "UTC",
-      },
-      {
-        id: "enabled-stale",
-        enabled: true,
-        last_run_status: "success",
-        status_summary: {
-          state: "idle",
-          manual_intervention_recommended: false,
-        },
-        next_run_at_utc: "2026-02-23T11:00:00Z",
+        next_run_at_utc: "2026-02-23T12:00:00Z",
         schedule_timezone: "UTC",
       },
       {
@@ -120,7 +131,7 @@ describe("ScheduledJobsScreen sorting", () => {
           state: "recent_failed",
           manual_intervention_recommended: false,
         },
-        next_run_at_utc: "2026-02-23T12:00:00Z",
+        next_run_at_utc: "2026-02-23T13:00:00Z",
         schedule_timezone: "UTC",
       },
     ];
@@ -130,8 +141,9 @@ describe("ScheduledJobsScreen sorting", () => {
     });
 
     expect(mockRenderedCardProps.map(({ job }) => job.id)).toEqual([
+      "enabled-attention",
+      "enabled-running",
       "enabled-recent",
-      "enabled-stale",
       "disabled-newest",
     ]);
   });
