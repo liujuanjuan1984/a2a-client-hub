@@ -58,6 +58,50 @@ jest.mock("@react-navigation/native", () => ({
   useFocusEffect: (cb: any) => cb(),
 }));
 
+jest.mock("react-native", () => {
+  const React = jest.requireActual("react");
+  const actual = jest.requireActual("react-native");
+
+  const FlatList = ({
+    data,
+    renderItem,
+    ListHeaderComponent,
+    ListEmptyComponent,
+    ListFooterComponent,
+  }: any) => {
+    const children: any[] = [];
+
+    if (ListHeaderComponent) {
+      children.push(ListHeaderComponent);
+    }
+
+    if (data?.length) {
+      data.forEach((item: any, index: number) => {
+        const element = renderItem?.({ item, index });
+        if (element) {
+          children.push(element);
+        }
+      });
+    } else if (ListEmptyComponent) {
+      children.push(ListEmptyComponent);
+    }
+
+    if (ListFooterComponent) {
+      children.push(ListFooterComponent);
+    }
+
+    return React.createElement(React.Fragment, null, ...children);
+  };
+
+  const RefreshControl = () => null;
+
+  return {
+    ...actual,
+    FlatList,
+    RefreshControl,
+  };
+});
+
 let mockRenderedCardProps: any[] = [];
 jest.mock("@/components/scheduled/ScheduledJobCard", () => ({
   ScheduledJobCard: (props: any) => {
