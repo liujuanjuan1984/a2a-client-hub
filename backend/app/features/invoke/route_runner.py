@@ -164,7 +164,7 @@ async def _prepare_state(
         await commit_safely(prepare_db)
 
     resolved_context_id, resolved_invoke_metadata = normalize_invoke_binding_state(
-        context_id=persisted_context_id or normalize_non_empty_text(payload.context_id),
+        context_id=persisted_context_id,
         metadata=payload.metadata,
     )
     normalized_user_message_id = _normalize_optional_message_id(payload.user_message_id)

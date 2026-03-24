@@ -40,7 +40,6 @@ def test_build_rebound_invoke_payload_applies_continue_binding_fields() -> None:
         {
             "query": "hello",
             "conversationId": str(uuid4()),
-            "contextId": "ctx-old",
             "metadata": {
                 "locale": "zh-CN",
                 "provider": "legacy",
@@ -62,7 +61,6 @@ def test_build_rebound_invoke_payload_applies_continue_binding_fields() -> None:
     )
 
     assert rebound.conversation_id == "conv-next"
-    assert rebound.context_id == "ctx-next"
     assert rebound.session_binding is not None
     assert rebound.session_binding.provider == "opencode"
     assert rebound.session_binding.external_session_id == "ses-upstream-1"

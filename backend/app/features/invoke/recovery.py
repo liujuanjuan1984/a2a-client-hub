@@ -21,7 +21,6 @@ from app.schemas.a2a_invoke import (
 )
 from app.utils.payload_extract import (
     as_dict,
-    extract_context_id,
     extract_provider_and_external_session_id,
 )
 from app.utils.session_identity import normalize_non_empty_text
@@ -30,17 +29,15 @@ from app.utils.session_identity import normalize_non_empty_text
 def extract_rebound_continue_binding_fields(
     *,
     continue_payload: dict[str, Any],
-) -> tuple[str | None, str | None, str | None]:
-    """Resolve provider/context binding from the continue payload metadata."""
+) -> tuple[str | None, str | None]:
+    """Resolve provider/session binding from the continue payload metadata."""
     continue_payload_dict = as_dict(continue_payload)
     continue_metadata = as_dict(continue_payload_dict.get("metadata"))
 
     provider, external_session_id = extract_provider_and_external_session_id(
         continue_metadata
     )
-    context_id = extract_context_id(continue_metadata)
-
-    return provider, external_session_id, context_id
+    return provider, external_session_id
 
 
 def build_rebound_invoke_payload(
@@ -48,17 +45,14 @@ def build_rebound_invoke_payload(
     payload: A2AAgentInvokeRequest,
     continue_payload: dict[str, Any],
 ) -> A2AAgentInvokeRequest:
-    (
-        provider,
-        external_session_id,
-        context_id,
-    ) = extract_rebound_continue_binding_fields(continue_payload=continue_payload)
+    provider, external_session_id = extract_rebound_continue_binding_fields(
+        continue_payload=continue_payload
+    )
     conversation_id = continue_payload.get("conversationId")
 
     normalized_provider = provider.lower() if provider else None
     normalized_external_session_id = external_session_id or None
     next_metadata = strip_session_binding_metadata(payload.metadata or {})
-    next_context_id = normalize_non_empty_text(context_id) or payload.context_id
     next_conversation_id = (
         normalize_non_empty_text(conversation_id) or payload.conversation_id
     )
@@ -72,7 +66,6 @@ def build_rebound_invoke_payload(
     return payload.model_copy(
         update={
             "conversation_id": next_conversation_id,
-            "context_id": next_context_id,
             "metadata": next_metadata,
             "session_binding": next_session_binding,
         },

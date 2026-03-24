@@ -31,16 +31,10 @@ def build_invoke_guard_key(
         if isinstance(payload.conversation_id, str)
         else ""
     )
-    context_id = (
-        payload.context_id.strip() if isinstance(payload.context_id, str) else ""
-    )
-    if not conversation_id and not context_id:
+    if not conversation_id:
         return None
     normalized_query = normalize_query_for_invoke_guard(payload.query)
-    return (
-        f"{user_id}:{agent_source}:{agent_id}:{conversation_id}:{context_id}:"
-        f"{normalized_query}"
-    )
+    return f"{user_id}:{agent_source}:{agent_id}:{conversation_id}::{normalized_query}"
 
 
 @asynccontextmanager
