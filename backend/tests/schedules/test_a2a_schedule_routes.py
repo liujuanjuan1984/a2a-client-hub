@@ -165,6 +165,121 @@ async def test_schedule_routes_crud_and_toggle(
         assert after_delete_resp.status_code == 404
 
 
+async def test_schedule_list_prioritizes_attention_then_running_then_recent_activity(
+    async_db_session,
+    async_session_maker,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(async_db_session, user_id=user.id, suffix="ordering")
+
+    enabled_attention = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        timezone_str=user.timezone or "UTC",
+        name="Enabled attention",
+        agent_id=agent.id,
+        prompt="first",
+        cycle_type="daily",
+        time_point={"time": "08:00"},
+        enabled=True,
+    )
+    enabled_running = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        timezone_str=user.timezone or "UTC",
+        name="Enabled running",
+        agent_id=agent.id,
+        prompt="second",
+        cycle_type="daily",
+        time_point={"time": "09:00"},
+        enabled=True,
+    )
+    enabled_recent_run = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        timezone_str=user.timezone or "UTC",
+        name="Enabled recent run",
+        agent_id=agent.id,
+        prompt="third",
+        cycle_type="daily",
+        time_point={"time": "10:00"},
+        enabled=True,
+    )
+    disabled_newest = await a2a_schedule_service.create_task(
+        async_db_session,
+        user_id=user.id,
+        is_superuser=False,
+        timezone_str=user.timezone or "UTC",
+        name="Disabled newest",
+        agent_id=agent.id,
+        prompt="fourth",
+        cycle_type="daily",
+        time_point={"time": "11:00"},
+        enabled=False,
+    )
+
+    now = utc_now()
+    async_db_session.add_all(
+        [
+            A2AScheduleExecution(
+                user_id=user.id,
+                task_id=enabled_attention.id,
+                run_id=uuid4(),
+                scheduled_for=now - timedelta(minutes=20),
+                started_at=now - timedelta(minutes=20),
+                last_heartbeat_at=now - timedelta(minutes=20),
+                status=A2AScheduleExecution.STATUS_RUNNING,
+            ),
+            A2AScheduleExecution(
+                user_id=user.id,
+                task_id=enabled_running.id,
+                run_id=uuid4(),
+                scheduled_for=now - timedelta(minutes=5),
+                started_at=now - timedelta(minutes=5),
+                last_heartbeat_at=now - timedelta(seconds=10),
+                status=A2AScheduleExecution.STATUS_RUNNING,
+            ),
+        ]
+    )
+    enabled_attention.updated_at = now - timedelta(hours=6)
+    enabled_attention.last_run_at = now - timedelta(hours=6)
+    enabled_running.updated_at = now - timedelta(hours=5)
+    enabled_running.last_run_at = now - timedelta(hours=5)
+    enabled_recent_run.updated_at = now - timedelta(hours=4)
+    enabled_recent_run.last_run_at = now - timedelta(minutes=10)
+    disabled_newest.updated_at = now
+    disabled_newest.last_run_at = None
+    await async_db_session.commit()
+
+    async with create_test_client(
+        a2a_schedules.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+    ) as client:
+        list_resp = await client.get(
+            "/me/a2a/schedules",
+            params={"page": 1, "size": 20},
+        )
+
+    assert list_resp.status_code == 200
+    assert [item["id"] for item in list_resp.json()["items"][:4]] == [
+        str(enabled_attention.id),
+        str(enabled_running.id),
+        str(enabled_recent_run.id),
+        str(disabled_newest.id),
+    ]
+    assert (
+        list_resp.json()["items"][0]["status_summary"][
+            "manual_intervention_recommended"
+        ]
+        is True
+    )
+    assert list_resp.json()["items"][1]["is_running"] is True
+
+
 async def test_schedule_conversation_policy_persists_on_create_and_update(
     async_db_session,
     async_session_maker,

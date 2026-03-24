@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.a2a_schedule_execution import A2AScheduleExecution
 from app.db.models.a2a_schedule_task import A2AScheduleTask
 from app.features.schedules.common import A2AScheduleValidationError
-from app.features.schedules.runtime_summary import build_schedule_status_summary
+from app.features.schedules.runtime_summary import (
+    build_schedule_status_summary,
+    derive_schedule_recovery_timeouts,
+)
 from app.features.schedules.support import A2AScheduleSupport
 from app.features.schedules.time import A2AScheduleTimeHelper
-from app.utils.timezone_util import ensure_utc
+from app.utils.timezone_util import ensure_utc, utc_now
 
 
 class A2AScheduleProjectionService:
@@ -92,14 +95,55 @@ class A2AScheduleProjectionService:
         size: int,
     ) -> tuple[list[A2AScheduleTask], int]:
         offset = (page - 1) * size
+        now_utc = ensure_utc(utc_now())
+        heartbeat_stale_seconds, _hard_timeout_seconds = (
+            derive_schedule_recovery_timeouts()
+        )
+        heartbeat_stale_cutoff = now_utc - timedelta(seconds=heartbeat_stale_seconds)
+        running_executions = (
+            select(
+                A2AScheduleExecution.task_id.label("task_id"),
+                func.coalesce(
+                    A2AScheduleExecution.last_heartbeat_at,
+                    A2AScheduleExecution.started_at,
+                    A2AScheduleExecution.scheduled_for,
+                ).label("heartbeat_at"),
+            )
+            .where(
+                A2AScheduleExecution.user_id == user_id,
+                A2AScheduleExecution.status == A2AScheduleExecution.STATUS_RUNNING,
+            )
+            .subquery()
+        )
+        manual_intervention_priority = case(
+            (running_executions.c.heartbeat_at <= heartbeat_stale_cutoff, 1),
+            else_=0,
+        )
+        running_priority = case(
+            (running_executions.c.task_id.is_not(None), 1),
+            else_=0,
+        )
+        activity_at = func.greatest(
+            A2AScheduleTask.updated_at,
+            func.coalesce(A2AScheduleTask.last_run_at, A2AScheduleTask.updated_at),
+        )
         stmt = (
             select(A2AScheduleTask)
+            .outerjoin(
+                running_executions, running_executions.c.task_id == A2AScheduleTask.id
+            )
             .where(
                 A2AScheduleTask.user_id == user_id,
                 A2AScheduleTask.deleted_at.is_(None),
                 A2AScheduleTask.delete_requested_at.is_(None),
             )
-            .order_by(A2AScheduleTask.created_at.desc())
+            .order_by(
+                A2AScheduleTask.enabled.desc(),
+                manual_intervention_priority.desc(),
+                running_priority.desc(),
+                activity_at.desc(),
+                A2AScheduleTask.id.desc(),
+            )
             .offset(offset)
             .limit(size)
         )

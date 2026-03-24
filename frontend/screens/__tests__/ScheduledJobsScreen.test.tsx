@@ -7,6 +7,7 @@ const mockMarkJobFailed = jest.fn();
 const mockRemoveJob = jest.fn();
 const mockLoadFirstPage = jest.fn();
 const mockLoadMore = jest.fn();
+const mockExecutionLoadMore = jest.fn();
 let mockJobs: any[] = [];
 
 jest.mock("@/hooks/useScheduledJobs", () => ({
@@ -36,7 +37,7 @@ jest.mock("@/hooks/useScheduledJobExecutionsQuery", () => ({
     loading: false,
     loadingMore: false,
     loadFirstPage: jest.fn(),
-    loadMore: jest.fn(),
+    loadMore: mockExecutionLoadMore,
   }),
 }));
 
@@ -57,10 +58,54 @@ jest.mock("@react-navigation/native", () => ({
   useFocusEffect: (cb: any) => cb(),
 }));
 
-let mockRenderedCards: any[] = [];
+jest.mock("react-native", () => {
+  const React = jest.requireActual("react");
+  const actual = jest.requireActual("react-native");
+
+  const FlatList = ({
+    data,
+    renderItem,
+    ListHeaderComponent,
+    ListEmptyComponent,
+    ListFooterComponent,
+  }: any) => {
+    const children: any[] = [];
+
+    if (ListHeaderComponent) {
+      children.push(ListHeaderComponent);
+    }
+
+    if (data?.length) {
+      data.forEach((item: any, index: number) => {
+        const element = renderItem?.({ item, index });
+        if (element) {
+          children.push(element);
+        }
+      });
+    } else if (ListEmptyComponent) {
+      children.push(ListEmptyComponent);
+    }
+
+    if (ListFooterComponent) {
+      children.push(ListFooterComponent);
+    }
+
+    return React.createElement(React.Fragment, null, ...children);
+  };
+
+  const RefreshControl = () => null;
+
+  return {
+    ...actual,
+    FlatList,
+    RefreshControl,
+  };
+});
+
+let mockRenderedCardProps: any[] = [];
 jest.mock("@/components/scheduled/ScheduledJobCard", () => ({
-  ScheduledJobCard: ({ job }: any) => {
-    mockRenderedCards.push(job);
+  ScheduledJobCard: (props: any) => {
+    mockRenderedCardProps.push(props);
     return null;
   },
 }));
@@ -83,27 +128,27 @@ jest.mock("@/components/ui/Button", () => ({
 
 describe("ScheduledJobsScreen sorting", () => {
   beforeEach(() => {
-    mockRenderedCards = [];
+    mockRenderedCardProps = [];
+    mockExecutionLoadMore.mockClear();
   });
 
-  it("sorts jobs according to priority: enabled > running > next_run_at", async () => {
+  it("preserves backend order for scheduled jobs", async () => {
     mockJobs = [
       {
-        id: "1",
-        enabled: false,
-        last_run_status: "failed",
+        id: "enabled-attention",
+        enabled: true,
+        is_running: true,
         status_summary: {
-          state: "recent_failed",
-          manual_intervention_recommended: false,
+          state: "running",
+          manual_intervention_recommended: true,
         },
         next_run_at_utc: "2026-02-23T10:00:00Z",
         schedule_timezone: "UTC",
       },
       {
-        id: "2",
+        id: "enabled-running",
         enabled: true,
         is_running: true,
-        last_run_status: "success",
         status_summary: {
           state: "running",
           manual_intervention_recommended: false,
@@ -112,19 +157,7 @@ describe("ScheduledJobsScreen sorting", () => {
         schedule_timezone: "UTC",
       },
       {
-        id: "3",
-        enabled: true,
-        is_running: true,
-        status_summary: {
-          state: "running",
-          manual_intervention_recommended: true,
-        },
-        last_run_status: "success",
-        next_run_at_utc: "2026-02-23T09:00:00Z",
-        schedule_timezone: "UTC",
-      },
-      {
-        id: "4",
+        id: "enabled-recent",
         enabled: true,
         last_run_status: "success",
         status_summary: {
@@ -135,15 +168,14 @@ describe("ScheduledJobsScreen sorting", () => {
         schedule_timezone: "UTC",
       },
       {
-        id: "5",
+        id: "disabled-newest",
         enabled: false,
-        is_running: true,
         last_run_status: "failed",
         status_summary: {
-          state: "running",
-          manual_intervention_recommended: true,
+          state: "recent_failed",
+          manual_intervention_recommended: false,
         },
-        next_run_at_utc: "2026-02-23T08:00:00Z",
+        next_run_at_utc: "2026-02-23T13:00:00Z",
         schedule_timezone: "UTC",
       },
     ];
@@ -152,12 +184,44 @@ describe("ScheduledJobsScreen sorting", () => {
       create(<ScheduledJobsScreen />);
     });
 
-    expect(mockRenderedCards.map((j) => j.id)).toEqual([
-      "3",
-      "2",
-      "4",
-      "5",
-      "1",
+    expect(mockRenderedCardProps.map(({ job }) => job.id)).toEqual([
+      "enabled-attention",
+      "enabled-running",
+      "enabled-recent",
+      "disabled-newest",
     ]);
+  });
+
+  it("opens executions panel and loads more history from the rendered card", async () => {
+    mockJobs = [
+      {
+        id: "job-with-executions",
+        enabled: true,
+        last_run_status: "success",
+        status_summary: {
+          state: "idle",
+          manual_intervention_recommended: false,
+        },
+        next_run_at_utc: "2026-02-23T10:00:00Z",
+        schedule_timezone: "UTC",
+      },
+    ];
+
+    await act(async () => {
+      create(<ScheduledJobsScreen />);
+    });
+
+    await act(async () => {
+      mockRenderedCardProps[0].onToggleExecutions();
+    });
+
+    const openCardProps = mockRenderedCardProps.at(-1);
+    expect(openCardProps.executionsOpen).toBe(true);
+
+    await act(async () => {
+      await openCardProps.onLoadMoreExecutions();
+    });
+
+    expect(mockExecutionLoadMore).toHaveBeenCalledTimes(1);
   });
 });

@@ -48,38 +48,6 @@ export function ScheduledJobsScreen() {
     loadMore,
   } = useScheduledJobsQuery({ enabled: true });
 
-  const sortedJobs = useMemo(() => {
-    return [...jobs].sort((a, b) => {
-      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
-
-      const aNeedsAttention = Boolean(
-        a.status_summary?.manual_intervention_recommended,
-      );
-      const bNeedsAttention = Boolean(
-        b.status_summary?.manual_intervention_recommended,
-      );
-      if (aNeedsAttention !== bNeedsAttention) {
-        return aNeedsAttention ? -1 : 1;
-      }
-
-      if (a.enabled && b.enabled) {
-        const ar = Boolean(a.is_running);
-        const br = Boolean(b.is_running);
-        if (ar !== br) return ar ? -1 : 1;
-
-        const at = a.next_run_at_utc
-          ? new Date(a.next_run_at_utc).getTime()
-          : Number.POSITIVE_INFINITY;
-        const bt = b.next_run_at_utc
-          ? new Date(b.next_run_at_utc).getTime()
-          : Number.POSITIVE_INFINITY;
-        if (at !== bt) return at - bt;
-      }
-
-      return String(a.id).localeCompare(String(b.id));
-    });
-  }, [jobs]);
-
   const executionsQuery = useScheduledJobExecutionsQuery({
     taskId: expandedExecutionsTaskId ?? undefined,
     enabled: Boolean(expandedExecutionsTaskId),
@@ -199,7 +167,7 @@ export function ScheduledJobsScreen() {
       />
 
       <FlatList
-        data={sortedJobs}
+        data={jobs}
         renderItem={renderJobItem}
         keyExtractor={(item) => item.id}
         style={{ marginTop: PAGE_HEADER_CONTENT_GAP }}
