@@ -144,6 +144,7 @@ async def _prepare_state(
 ) -> _InvokeState:
     local_session_id: UUID | None = None
     local_source: Literal["manual", "scheduled"] | None = None
+    persisted_context_id: str | None = None
     async with AsyncSessionLocal() as prepare_db:
         (
             local_session,
@@ -157,10 +158,13 @@ async def _prepare_state(
         )
         if local_session is not None:
             local_session_id = cast(UUID, local_session.id)
+            persisted_context_id = normalize_non_empty_text(
+                cast(str | None, local_session.context_id)
+            )
         await commit_safely(prepare_db)
 
     resolved_context_id, resolved_invoke_metadata = normalize_invoke_binding_state(
-        context_id=payload.context_id,
+        context_id=normalize_non_empty_text(payload.context_id) or persisted_context_id,
         metadata=payload.metadata,
     )
     normalized_user_message_id = _normalize_optional_message_id(payload.user_message_id)
@@ -1085,7 +1089,7 @@ async def run_http_invoke(
                 gateway=gateway,
                 resolved=runtime.resolved,
                 query=payload.query,
-                context_id=payload.context_id,
+                context_id=state.context_id,
                 metadata=payload.metadata,
                 validate_message=validate_message,
                 logger=logger,
@@ -1116,7 +1120,7 @@ async def run_http_invoke(
             gateway=gateway,
             resolved=runtime.resolved,
             query=payload.query,
-            context_id=payload.context_id,
+            context_id=state.context_id,
             metadata=payload.metadata,
             validate_message=validate_message,
             logger=logger,
@@ -1217,7 +1221,7 @@ async def run_background_invoke(
             invoke_session=invoke_session,
             resolved=runtime.resolved,
             query=payload.query,
-            context_id=payload.context_id,
+            context_id=state.context_id,
             metadata=payload.metadata,
             validate_message=validate_message,
             logger=logger,
@@ -1318,7 +1322,7 @@ async def run_ws_invoke(
             gateway=gateway,
             resolved=runtime.resolved,
             query=payload.query,
-            context_id=payload.context_id,
+            context_id=state.context_id,
             metadata=payload.metadata,
             validate_message=validate_message,
             logger=logger,
