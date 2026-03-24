@@ -124,6 +124,7 @@ async def test_prepare_state_reuses_persisted_context_id_when_payload_missing(
     assert state.context_id == "ctx-persisted"
     assert state.metadata == {"locale": "zh-CN"}
 
+
 @pytest.mark.asyncio
 async def test_run_issue_ws_ticket_route_maps_lock_contention_to_http_409(
     monkeypatch: pytest.MonkeyPatch,
@@ -660,6 +661,7 @@ async def test_run_http_invoke_uses_recovered_state_context_id_for_upstream_requ
     assert response.success is True
     assert response.content == "ok"
     assert captured["context_id"] == "ctx-reused"
+
 
 @pytest.mark.asyncio
 async def test_run_http_invoke_returns_structured_error_details(
