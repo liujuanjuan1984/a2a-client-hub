@@ -183,7 +183,6 @@ describe("mmkvStateStorage web quota recovery", () => {
             agentId: "agent-1",
             createdAt: "2026-01-01T00:00:00.000Z",
             source: null,
-            contextId: null,
             runtimeStatus: null,
             pendingInterrupt: null,
             streamState: "idle",

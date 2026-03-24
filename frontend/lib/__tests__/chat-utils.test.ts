@@ -15,7 +15,6 @@ describe("chat store utils", () => {
   it("creates default serializable session state", () => {
     const session = createAgentSession("agent-1");
     expect(session.agentId).toBe("agent-1");
-    expect(session.contextId).toBeNull();
     expect(session.streamState).toBe("idle");
     expect(session.pendingInterrupts).toEqual([]);
     expect(session.pendingInterrupt).toBeNull();
@@ -62,7 +61,6 @@ describe("chat store utils", () => {
 
   it("builds invoke payload with optional fields", () => {
     const session = createAgentSession("agent-2");
-    session.contextId = "ctx-2";
     session.metadata = { locale: "zh-CN" };
 
     expect(
@@ -73,7 +71,6 @@ describe("chat store utils", () => {
     ).toEqual({
       query: "hello",
       conversationId: "session-1",
-      contextId: "ctx-2",
       userMessageId: "user-msg-1",
       agentMessageId: "agent-msg-1",
       metadata: { locale: "zh-CN" },
@@ -260,7 +257,6 @@ describe("chat store utils", () => {
     const newest = createAgentSession("agent-1");
     newest.lastActiveAt = "2026-02-14T12:00:00.000Z";
     newest.source = "manual";
-    newest.contextId = "ctx-1";
     newest.metadata = {
       locale: "zh-CN",
       opencode: {
@@ -316,7 +312,6 @@ describe("chat store utils", () => {
     expect(persisted.newest.lastResolvedInterrupt).toBeNull();
     expect(persisted.newest.transport).toBe("http_json");
     expect(persisted.newest.source).toBeNull();
-    expect(persisted.newest.contextId).toBeNull();
     expect(persisted.newest.metadata).toEqual({
       opencode: {
         directory: "/workspace/app",

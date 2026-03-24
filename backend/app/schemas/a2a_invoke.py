@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class A2AAgentInvokeSessionBinding(BaseModel):
@@ -27,11 +27,6 @@ class A2AAgentInvokeRequest(BaseModel):
         default=None,
         alias="conversationId",
         description="Optional conversation identifier for server-side history tracking.",
-    )
-    context_id: Optional[str] = Field(
-        default=None,
-        alias="contextId",
-        description="Optional A2A context identifier",
     )
     user_message_id: Optional[str] = Field(
         default=None,
@@ -59,6 +54,13 @@ class A2AAgentInvokeRequest(BaseModel):
     )
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_client_owned_context_id(cls, value: Any) -> Any:
+        if isinstance(value, dict) and ("contextId" in value or "context_id" in value):
+            raise ValueError("contextId is server-managed and must not be provided")
+        return value
 
 
 class A2AAgentInvokeResponse(BaseModel):

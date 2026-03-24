@@ -364,7 +364,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
   };
 
   const updateSessionMeta = (meta: {
-    contextId?: string | null;
     provider?: string | null;
     externalSessionId?: string | null;
     runtimeStatus?: string | null;
@@ -378,12 +377,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
       if (!current) return state;
 
       const nextPatch: Partial<AgentSession> = {};
-      if (
-        meta.contextId !== undefined &&
-        meta.contextId !== current.contextId
-      ) {
-        nextPatch.contextId = meta.contextId;
-      }
       if (
         meta.runtimeStatus !== undefined &&
         meta.runtimeStatus !== current.runtimeStatus
@@ -822,7 +815,6 @@ export const executeChatRuntime = async <TState extends ChatRuntimeState>(
     const runtimeStatus = runtimeStatusEvent?.state ?? null;
     const hasRuntimeStatusEvent = runtimeStatusEvent !== null;
     if (
-      meta.contextId ||
       meta.provider !== undefined ||
       meta.externalSessionId !== undefined ||
       meta.transport ||

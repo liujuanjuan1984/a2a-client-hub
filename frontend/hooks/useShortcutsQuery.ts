@@ -9,7 +9,7 @@ import {
 } from "@/lib/api/shortcuts";
 import { queryKeys } from "@/lib/queryKeys";
 
-export type Shortcut = {
+type Shortcut = {
   id: string;
   title: string;
   prompt: string;

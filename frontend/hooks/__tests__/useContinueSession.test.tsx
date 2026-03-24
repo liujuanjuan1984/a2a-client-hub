@@ -125,7 +125,6 @@ describe("useContinueSession", () => {
       source: "manual",
       provider: "opencode",
       externalSessionId: "upstream-1",
-      contextId: undefined,
       metadata: {
         opencode: {
           directory: "/workspace/app",
@@ -182,7 +181,6 @@ describe("useContinueSession", () => {
         source: "manual",
         provider: "opencode",
         externalSessionId: "upstream-1",
-        contextId: undefined,
         metadata: {
           opencode: {
             directory: "/workspace/app",

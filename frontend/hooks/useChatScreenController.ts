@@ -395,14 +395,10 @@ export function useChatScreenController({
         }
         const current = useChatStore.getState().sessions[conversationId];
         const hasLocalBinding =
-          (typeof current?.contextId === "string" &&
-            current.contextId.trim()) ||
           (typeof current?.externalSessionRef?.externalSessionId === "string" &&
             current.externalSessionRef.externalSessionId.trim()) ||
           Object.keys(current?.metadata ?? {}).length > 0;
         const hasBindingMetadata =
-          (typeof binding.metadata?.contextId === "string" &&
-            binding.metadata.contextId.trim()) ||
           (typeof binding.metadata?.externalSessionId === "string" &&
             binding.metadata.externalSessionId.trim()) ||
           (typeof binding.metadata?.provider === "string" &&

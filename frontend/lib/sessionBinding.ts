@@ -14,8 +14,6 @@ export const buildContinueBindingPayload = (
     source: binding.source,
     provider: sessionBinding.provider ?? undefined,
     externalSessionId: sessionBinding.externalSessionId ?? undefined,
-    contextId:
-      typeof metadata.contextId === "string" ? metadata.contextId : undefined,
     ...(opencodeMetadata ? { metadata: opencodeMetadata } : {}),
   };
 };

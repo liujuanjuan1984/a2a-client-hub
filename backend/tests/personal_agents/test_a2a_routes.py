@@ -99,6 +99,42 @@ async def test_personal_agent_http_invoke_works_with_dependency_injected_db(
 
 
 @pytest.mark.asyncio
+async def test_personal_agent_http_invoke_rejects_client_owned_context_id(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+    user = await create_user(async_db_session, email="personal-invalid@example.com")
+    record = await a2a_agent_service.create_agent(
+        async_db_session,
+        user_id=user.id,
+        name="Personal HTTP Agent",
+        card_url="https://example.com/.well-known/agent-card.json",
+        auth_type="none",
+        enabled=True,
+        tags=[],
+        extra_headers={},
+    )
+
+    async with create_test_client(
+        personal_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        response = await client.post(
+            f"{settings.api_v1_prefix}/me/a2a/agents/{record.id}/invoke",
+            json={
+                "query": "hello",
+                "conversationId": str(uuid4()),
+                "contextId": "ctx-client",
+                "metadata": {},
+            },
+        )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_personal_agent_sse_invoke_streams_with_dependency_injected_db(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

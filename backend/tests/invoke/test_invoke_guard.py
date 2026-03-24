@@ -6,14 +6,11 @@ from app.features.invoke import guard as invoke_guard
 from app.schemas.a2a_invoke import A2AAgentInvokeRequest
 
 
-def test_build_invoke_guard_key_normalizes_query_and_uses_conversation_or_context() -> (
-    None
-):
+def test_build_invoke_guard_key_normalizes_query_and_uses_conversation_id() -> None:
     payload = A2AAgentInvokeRequest.model_validate(
         {
             "query": "  run   task  ",
             "conversationId": str(uuid4()),
-            "contextId": " ctx-1 ",
             "metadata": {},
         }
     )
@@ -27,7 +24,7 @@ def test_build_invoke_guard_key_normalizes_query_and_uses_conversation_or_contex
 
     assert guard_key is not None
     assert "run task" in guard_key
-    assert ":ctx-1:" in guard_key
+    assert "::run task" in guard_key
 
 
 @pytest.mark.asyncio
