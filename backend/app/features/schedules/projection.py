@@ -343,19 +343,14 @@ class A2AScheduleProjectionService:
             setattr(task, "enabled", False)
             setattr(task, "next_run_at", None)
             setattr(task, "delete_requested_at", None)
-        elif cast(str, task.cycle_type) == A2AScheduleTask.CYCLE_SEQUENTIAL:
-            if cast(bool, task.enabled):
-                setattr(
-                    task,
-                    "next_run_at",
-                    self._time_helper.compute_sequential_next_run_at(
-                        time_point=dict(
-                            cast(dict[str, Any] | None, task.time_point) or {}
-                        ),
-                        after_utc=finished_at_utc,
-                    ),
-                )
-            else:
-                setattr(task, "next_run_at", None)
-        else:
+        elif not cast(bool, task.enabled):
             setattr(task, "next_run_at", None)
+        elif cast(str, task.cycle_type) == A2AScheduleTask.CYCLE_SEQUENTIAL:
+            setattr(
+                task,
+                "next_run_at",
+                self._time_helper.compute_sequential_next_run_at(
+                    time_point=dict(cast(dict[str, Any] | None, task.time_point) or {}),
+                    after_utc=finished_at_utc,
+                ),
+            )
