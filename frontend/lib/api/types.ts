@@ -28,20 +28,26 @@ export interface UserProfile {
   timezone: string;
 }
 
-export interface ApiErrorDetail {
+export interface ApiFieldErrorDetail {
   msg?: string;
   message?: string;
   loc?: (string | number)[];
   type?: string;
 }
 
-export interface ApiErrorResponse {
-  detail?: string | ApiErrorDetail[];
+export interface ApiStructuredErrorDetail {
   message?: string;
-  error?: string;
   error_code?: string | null;
   source?: string | null;
   jsonrpc_code?: number | null;
   missing_params?: { name: string; required: boolean }[] | null;
   upstream_error?: Record<string, unknown> | null;
+  errors?: ApiFieldErrorDetail[];
+  meta?: Record<string, unknown> | null;
+}
+
+export interface ApiErrorResponse {
+  detail?: string | ApiFieldErrorDetail[] | ApiStructuredErrorDetail;
+  message?: string;
+  error?: string;
 }

@@ -8,6 +8,7 @@ const mockRouter = {
   replace: jest.fn(),
   canGoBack: jest.fn(() => true),
 };
+const mockAgentsCatalog = [] as Record<string, unknown>[];
 const mockCreateAgent = jest.fn();
 const mockUpdateAgent = jest.fn();
 const mockDeleteAgent = jest.fn();
@@ -25,7 +26,7 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/hooks/useAgentsCatalogQuery", () => ({
   useAgentsCatalogQuery: () => ({
-    data: [],
+    data: mockAgentsCatalog,
     isFetched: true,
   }),
   useCreateAgentMutation: () => ({
@@ -156,6 +157,7 @@ jest.mock("@/components/ui/KeyValueInputRow", () => ({
 describe("AgentFormScreen auto allowlist create flow", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAgentsCatalog.length = 0;
     useSessionStore.setState({
       user: {
         id: "admin-1",
@@ -189,7 +191,7 @@ describe("AgentFormScreen auto allowlist create flow", () => {
       screen.getByPlaceholderText(
         "https://agent.example.com/.well-known/agent.json",
       ),
-      "https://blocked.example.com/agent.json",
+      "https://blocked.example.com:8443/agent.json",
     );
     fireEvent.press(screen.getByText("Save"));
 
@@ -203,7 +205,7 @@ describe("AgentFormScreen auto allowlist create flow", () => {
     });
     await waitFor(() => {
       expect(mockCreateProxyAllowlistEntry).toHaveBeenCalledWith({
-        host_pattern: "blocked.example.com",
+        host_pattern: "blocked.example.com:8443",
       });
     });
     await waitFor(() => {
@@ -215,5 +217,67 @@ describe("AgentFormScreen auto allowlist create flow", () => {
         "Agent saved successfully.",
       );
     });
+  });
+
+  it("allows admin users to auto-add host to allowlist and continue update", async () => {
+    mockAgentsCatalog.push({
+      id: "agent-1",
+      name: "Existing Agent",
+      cardUrl: "https://existing.example.com/agent.json",
+      authType: "none",
+      bearerToken: "",
+      apiKeyHeader: "X-API-Key", // pragma: allowlist secret
+      apiKeyValue: "",
+      basicUsername: "",
+      basicPassword: "",
+      extraHeaders: [],
+      source: "user",
+    });
+    mockUpdateAgent
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Card URL host is not allowed"), {
+          status: 403,
+          errorCode: "card_url_host_not_allowed",
+        }),
+      )
+      .mockResolvedValueOnce({ id: "agent-1" });
+    mockConfirmAction.mockResolvedValue(true);
+    mockCreateProxyAllowlistEntry.mockResolvedValue({ id: "allow-2" });
+
+    const screen = render(<AgentFormScreen agentId="agent-1" />);
+
+    fireEvent.changeText(
+      screen.getByPlaceholderText(
+        "https://agent.example.com/.well-known/agent.json",
+      ),
+      "https://edited.example.com:8443/agent.json",
+    );
+    fireEvent.press(screen.getByText("Save"));
+
+    await waitFor(() => {
+      expect(mockConfirmAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Host not allowlisted",
+          confirmLabel: "Add and Continue",
+          cancelLabel: "Keep Editing",
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(mockCreateProxyAllowlistEntry).toHaveBeenCalledWith({
+        host_pattern: "edited.example.com:8443",
+      });
+    });
+    await waitFor(() => {
+      expect(mockUpdateAgent).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(mockToastSuccess).toHaveBeenCalledWith(
+        "Success",
+        "Agent saved successfully.",
+      );
+    });
+    expect(mockAllowNextNavigation).toHaveBeenCalledTimes(1);
+    expect(mockBackOrHome).toHaveBeenCalled();
   });
 });

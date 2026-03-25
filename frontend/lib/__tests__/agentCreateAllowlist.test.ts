@@ -1,5 +1,5 @@
 import {
-  createWithAdminAutoAllowlist,
+  executeWithAdminAutoAllowlist,
   extractCardUrlHost,
   isAllowlistEntryAlreadyExistsError,
   isCardUrlHostNotAllowedError,
@@ -12,6 +12,18 @@ describe("agentCreateAllowlist", () => {
   it("extracts a normalized host from card url", () => {
     expect(
       extractCardUrlHost(" https://Example.COM/.well-known/agent.json "),
+    ).toBe("example.com");
+  });
+
+  it("preserves non-default ports when extracting host from card url", () => {
+    expect(
+      extractCardUrlHost(" http://Example.COM:8080/.well-known/agent.json "),
+    ).toBe("example.com:8080");
+  });
+
+  it("normalizes explicit default https ports when extracting host", () => {
+    expect(
+      extractCardUrlHost(" https://Example.COM:443/.well-known/agent.json "),
     ).toBe("example.com");
   });
 
@@ -55,13 +67,13 @@ describe("agentCreateAllowlist", () => {
     const addHostToAllowlist = jest.fn().mockResolvedValue(undefined);
     const onCancelCreate = jest.fn();
 
-    const result = await createWithAdminAutoAllowlist({
+    const result = await executeWithAdminAutoAllowlist({
       isAdmin: true,
       cardUrl: "https://example.com/agent.json",
-      create,
+      run: create,
       confirmAddHost,
       addHostToAllowlist,
-      onCancelCreate,
+      onCancel: onCancelCreate,
     });
 
     expect(result).toEqual({ status: "created", value: { id: "agent-1" } });
@@ -89,13 +101,13 @@ describe("agentCreateAllowlist", () => {
         createApiError("Host pattern 'example.com' already exists", 400),
       );
 
-    const result = await createWithAdminAutoAllowlist({
+    const result = await executeWithAdminAutoAllowlist({
       isAdmin: true,
       cardUrl: "https://example.com/agent.json",
-      create,
+      run: create,
       confirmAddHost,
       addHostToAllowlist,
-      onCancelCreate: jest.fn(),
+      onCancel: jest.fn(),
     });
 
     expect(result).toEqual({ status: "created", value: { id: "agent-2" } });
@@ -116,13 +128,13 @@ describe("agentCreateAllowlist", () => {
     const addHostToAllowlist = jest.fn();
     const onCancelCreate = jest.fn();
 
-    const result = await createWithAdminAutoAllowlist({
+    const result = await executeWithAdminAutoAllowlist({
       isAdmin: true,
       cardUrl: "https://example.com/agent.json",
-      create,
+      run: create,
       confirmAddHost,
       addHostToAllowlist,
-      onCancelCreate,
+      onCancel: onCancelCreate,
     });
 
     expect(result).toEqual({ status: "cancelled" });
@@ -139,13 +151,13 @@ describe("agentCreateAllowlist", () => {
     );
 
     await expect(
-      createWithAdminAutoAllowlist({
+      executeWithAdminAutoAllowlist({
         isAdmin: false,
         cardUrl: "https://example.com/agent.json",
-        create: jest.fn().mockRejectedValue(error),
+        run: jest.fn().mockRejectedValue(error),
         confirmAddHost: jest.fn(),
         addHostToAllowlist: jest.fn(),
-        onCancelCreate: jest.fn(),
+        onCancel: jest.fn(),
       }),
     ).rejects.toBe(error);
   });

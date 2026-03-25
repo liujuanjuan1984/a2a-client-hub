@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_user
 from app.api.error_codes import status_code_for_extension_error_code
+from app.api.error_handlers import build_error_detail, build_error_response
 from app.api.routing import StrictAPIRouter
 from app.core.logging import get_logger
 from app.db.models.user import User
@@ -125,22 +126,21 @@ def create_extension_capability_router(
         upstream_error: Optional[Dict[str, Any]] = None,
         meta: Optional[Dict[str, Any]] = None,
     ) -> JSONResponse:
-        payload = A2AExtensionResponse(
-            success=False,
-            result=None,
-            error_code=error_code,
-            source=source,
-            jsonrpc_code=jsonrpc_code,
-            missing_params=missing_params,
-            upstream_error=(
-                upstream_error if upstream_error is not None else {"message": message}
+        return build_error_response(
+            status_code=status_code_for_extension_error_code(error_code),
+            detail=build_error_detail(
+                message=message,
+                error_code=error_code,
+                source=source,
+                jsonrpc_code=jsonrpc_code,
+                missing_params=missing_params,
+                upstream_error=(
+                    upstream_error
+                    if upstream_error is not None
+                    else {"message": message}
+                ),
+                meta=meta or {},
             ),
-            meta=meta or {},
-        )
-        status_code = status_code_for_extension_error_code(error_code)
-        return JSONResponse(
-            status_code=status_code,
-            content=payload.model_dump(),
         )
 
     def _extensions_service() -> Any:
@@ -275,17 +275,45 @@ def create_extension_capability_router(
             status_code = status_code_for_extension_error_code(response.error_code)
             if status_code == status.HTTP_200_OK:
                 return response
-            return JSONResponse(
+            detail_message = (
+                str(response.upstream_error.get("message"))
+                if isinstance(response.upstream_error, dict)
+                and isinstance(response.upstream_error.get("message"), str)
+                else str(exc)
+            )
+            return build_error_response(
                 status_code=status_code,
-                content=response.model_dump(),
+                detail=build_error_detail(
+                    message=detail_message,
+                    error_code=response.error_code,
+                    source=response.source,
+                    jsonrpc_code=response.jsonrpc_code,
+                    missing_params=response.missing_params,
+                    upstream_error=response.upstream_error,
+                    meta=response.meta or {},
+                ),
             )
         response = _to_extension_response(result)
         status_code = status_code_for_extension_error_code(response.error_code)
         if response.success or status_code == status.HTTP_200_OK:
             return response
-        return JSONResponse(
+        detail_message = (
+            str(response.upstream_error.get("message"))
+            if isinstance(response.upstream_error, dict)
+            and isinstance(response.upstream_error.get("message"), str)
+            else str(response.error_code or "Extension call failed")
+        )
+        return build_error_response(
             status_code=status_code,
-            content=response.model_dump(),
+            detail=build_error_detail(
+                message=detail_message,
+                error_code=response.error_code,
+                source=response.source,
+                jsonrpc_code=response.jsonrpc_code,
+                missing_params=response.missing_params,
+                upstream_error=response.upstream_error,
+                meta=response.meta or {},
+            ),
         )
 
     @router.get(

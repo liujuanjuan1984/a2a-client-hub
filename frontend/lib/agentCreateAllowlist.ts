@@ -10,12 +10,29 @@ const asApiLikeError = (error: unknown): ApiLikeError | null => {
   if (!error || typeof error !== "object") {
     return null;
   }
-  return error as ApiLikeError;
+  const record = error as Record<string, unknown>;
+  const status = typeof record.status === "number" ? record.status : undefined;
+  const message =
+    typeof record.message === "string" ? record.message : undefined;
+  const errorCode =
+    typeof record.errorCode === "string"
+      ? record.errorCode
+      : typeof record.error_code === "string"
+        ? record.error_code
+        : undefined;
+  if (
+    status === undefined &&
+    message === undefined &&
+    errorCode === undefined
+  ) {
+    return null;
+  }
+  return { status, message, errorCode };
 };
 
 export const extractCardUrlHost = (cardUrl: string): string | null => {
   try {
-    const host = new URL(cardUrl.trim()).hostname.trim().toLowerCase();
+    const host = new URL(cardUrl.trim()).host.trim().toLowerCase();
     return host || null;
   } catch {
     return null;
@@ -41,29 +58,29 @@ export const isAllowlistEntryAlreadyExistsError = (error: unknown): boolean => {
   );
 };
 
-type AutoAllowlistCreateOptions<T> = {
+type AutoAllowlistActionOptions<T> = {
   isAdmin: boolean;
   cardUrl: string;
-  create: () => Promise<T>;
+  run: () => Promise<T>;
   confirmAddHost: (host: string) => Promise<boolean>;
   addHostToAllowlist: (host: string) => Promise<void>;
-  onCancelCreate: () => void | Promise<void>;
+  onCancel: () => void | Promise<void>;
 };
 
-type AutoAllowlistCreateResult<T> =
+type AutoAllowlistActionResult<T> =
   | { status: "created"; value: T }
   | { status: "cancelled" };
 
-export const createWithAdminAutoAllowlist = async <T>({
+export const executeWithAdminAutoAllowlist = async <T>({
   isAdmin,
   cardUrl,
-  create,
+  run,
   confirmAddHost,
   addHostToAllowlist,
-  onCancelCreate,
-}: AutoAllowlistCreateOptions<T>): Promise<AutoAllowlistCreateResult<T>> => {
+  onCancel,
+}: AutoAllowlistActionOptions<T>): Promise<AutoAllowlistActionResult<T>> => {
   try {
-    return { status: "created", value: await create() };
+    return { status: "created", value: await run() };
   } catch (error) {
     if (!isAdmin || !isCardUrlHostNotAllowedError(error)) {
       throw error;
@@ -76,7 +93,7 @@ export const createWithAdminAutoAllowlist = async <T>({
 
     const confirmed = await confirmAddHost(host);
     if (!confirmed) {
-      await onCancelCreate();
+      await onCancel();
       return { status: "cancelled" };
     }
 
@@ -88,6 +105,8 @@ export const createWithAdminAutoAllowlist = async <T>({
       }
     }
 
-    return { status: "created", value: await create() };
+    return { status: "created", value: await run() };
   }
 };
+
+export const createWithAdminAutoAllowlist = executeWithAdminAutoAllowlist;

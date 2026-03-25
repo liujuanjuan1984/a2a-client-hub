@@ -11,6 +11,8 @@ import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
+import { executeWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
+import { createProxyAllowlistEntry } from "@/lib/api/adminProxyAllowlist";
 import {
   deleteHubAgentAdmin,
   getHubAgentAdmin,
@@ -142,7 +144,26 @@ export function AdminHubAgentDetailScreen({
 
     setSaving(true);
     try {
-      await updateHubAgentAdmin(agentId, buildPayload());
+      const payload = buildPayload();
+      const result = await executeWithAdminAutoAllowlist({
+        isAdmin,
+        cardUrl: payload.card_url,
+        run: () => updateHubAgentAdmin(agentId, payload),
+        confirmAddHost: (host) =>
+          confirmAction({
+            title: "Host not allowlisted",
+            message: `The card URL host "${host}" is not in the proxy allowlist. Add it automatically and continue saving the shared agent?`,
+            confirmLabel: "Add and Continue",
+            cancelLabel: "Keep Editing",
+          }),
+        addHostToAllowlist: async (host) => {
+          await createProxyAllowlistEntry({ host_pattern: host });
+        },
+        onCancel: async () => undefined,
+      });
+      if (result.status === "cancelled") {
+        return;
+      }
       await queryClient.invalidateQueries({
         queryKey: queryKeys.admin.hubAgents(),
       });
@@ -162,6 +183,7 @@ export function AdminHubAgentDetailScreen({
     agentId,
     allowNextNavigation,
     buildPayload,
+    isAdmin,
     queryClient,
     router,
     saving,

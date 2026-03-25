@@ -579,10 +579,6 @@ const parseApiErrorDetails = async (
   }
 
   const errorBody = details?.detail || details?.message || details?.error;
-  const detailsRecord =
-    details && typeof details === "object" && !Array.isArray(details)
-      ? (details as JsonRecord)
-      : undefined;
   const detailRecord =
     details?.detail &&
     typeof details.detail === "object" &&
@@ -590,28 +586,18 @@ const parseApiErrorDetails = async (
       ? (details.detail as JsonRecord)
       : undefined;
   const errorCode =
-    typeof detailsRecord?.error_code === "string"
-      ? detailsRecord.error_code
-      : typeof detailRecord?.error_code === "string"
-        ? detailRecord.error_code
-        : null;
-  const source =
-    typeof detailsRecord?.source === "string"
-      ? detailsRecord.source
-      : typeof detailRecord?.source === "string"
-        ? detailRecord.source
-        : null;
-  const jsonrpcCodeRaw =
-    typeof detailsRecord?.jsonrpc_code === "number"
-      ? detailsRecord.jsonrpc_code
-      : typeof detailRecord?.jsonrpc_code === "number"
-        ? detailRecord.jsonrpc_code
-        : null;
-  const missingParamsRaw = Array.isArray(detailsRecord?.missing_params)
-    ? detailsRecord.missing_params
-    : Array.isArray(detailRecord?.missing_params)
-      ? detailRecord.missing_params
+    typeof detailRecord?.error_code === "string"
+      ? detailRecord.error_code
       : null;
+  const source =
+    typeof detailRecord?.source === "string" ? detailRecord.source : null;
+  const jsonrpcCodeRaw =
+    typeof detailRecord?.jsonrpc_code === "number"
+      ? detailRecord.jsonrpc_code
+      : null;
+  const missingParamsRaw = Array.isArray(detailRecord?.missing_params)
+    ? detailRecord.missing_params
+    : null;
   const missingParams = missingParamsRaw
     ?.map((item) => {
       if (!item || typeof item !== "object") {
@@ -635,11 +621,7 @@ const parseApiErrorDetails = async (
     typeof detailRecord.upstream_error === "object" &&
     !Array.isArray(detailRecord.upstream_error)
       ? (detailRecord.upstream_error as JsonRecord)
-      : detailsRecord?.upstream_error &&
-          typeof detailsRecord.upstream_error === "object" &&
-          !Array.isArray(detailsRecord.upstream_error)
-        ? (detailsRecord.upstream_error as JsonRecord)
-        : null;
+      : null;
   let message: string;
 
   if (typeof errorBody === "string") {

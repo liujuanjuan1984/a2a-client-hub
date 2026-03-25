@@ -1,19 +1,37 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 
-import { AdminHubAgentNewScreen } from "@/screens/admin/AdminHubAgentNewScreen";
+import { AdminHubAgentDetailScreen } from "@/screens/admin/AdminHubAgentDetailScreen";
 
-const mockCreateHubAgentAdmin = jest.fn();
+const mockUpdateHubAgentAdmin = jest.fn();
+const mockDeleteHubAgentAdmin = jest.fn();
 const mockCreateProxyAllowlistEntry = jest.fn();
 const mockConfirmAction = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockAllowNextNavigation = jest.fn();
 const mockToastSuccess = jest.fn();
 const mockToastError = jest.fn();
-const mockBackOrHome = jest.fn();
+const mockRefetch = jest.fn().mockResolvedValue({ data: null });
+const mockAgentQueryData = {
+  id: "shared-1",
+  name: "Shared Agent",
+  card_url: "https://existing.example.com/agent.json",
+  availability_policy: "public",
+  auth_type: "none",
+  enabled: true,
+  tags: [],
+  extra_headers: {},
+  has_credential: false,
+  token_last4: null,
+  created_by_user_id: "admin-1",
+  updated_by_user_id: "admin-1",
+  created_at: "2026-03-25T00:00:00Z",
+  updated_at: "2026-03-25T00:00:00Z",
+};
 const mockRouter = {
-  back: jest.fn(),
   replace: jest.fn(),
+  push: jest.fn(),
   canGoBack: jest.fn(() => true),
+  back: jest.fn(),
 };
 
 jest.mock("expo-router", () => ({
@@ -23,6 +41,13 @@ jest.mock("expo-router", () => ({
 jest.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({
     invalidateQueries: mockInvalidateQueries,
+  }),
+  useQuery: () => ({
+    data: mockAgentQueryData,
+    isRefetching: false,
+    isError: false,
+    error: null,
+    refetch: mockRefetch,
   }),
 }));
 
@@ -40,7 +65,9 @@ jest.mock("@/hooks/usePreventRemoveWhenDirty", () => ({
 }));
 
 jest.mock("@/lib/api/hubA2aAgentsAdmin", () => ({
-  createHubAgentAdmin: (...args: unknown[]) => mockCreateHubAgentAdmin(...args),
+  getHubAgentAdmin: jest.fn(),
+  updateHubAgentAdmin: (...args: unknown[]) => mockUpdateHubAgentAdmin(...args),
+  deleteHubAgentAdmin: (...args: unknown[]) => mockDeleteHubAgentAdmin(...args),
 }));
 
 jest.mock("@/lib/api/adminProxyAllowlist", () => ({
@@ -64,7 +91,7 @@ jest.mock("@/lib/focus", () => ({
 }));
 
 jest.mock("@/lib/navigation", () => ({
-  backOrHome: (...args: unknown[]) => mockBackOrHome(...args),
+  backOrHome: jest.fn(),
 }));
 
 jest.mock("@/components/layout/ScreenContainer", () => ({
@@ -112,11 +139,12 @@ jest.mock("@/screens/admin/HubAgentFormSections", () => ({
 }));
 
 jest.mock("@/screens/admin/hubAgentFormState", () => ({
+  buildHubAgentComparablePayloadFromRecord: () => ({}),
   useHubAgentFormState: () => ({
-    values: {},
+    values: { availabilityPolicy: "public", authType: "none" },
     errors: {},
     canSave: true,
-    hasDraftInput: true,
+    comparablePayload: {},
     setName: jest.fn(),
     setCardUrl: jest.fn(),
     setEnabled: jest.fn(),
@@ -129,6 +157,7 @@ jest.mock("@/screens/admin/hubAgentFormState", () => ({
     setHeaderRow: jest.fn(),
     removeHeaderRow: jest.fn(),
     addHeaderRow: jest.fn(),
+    hydrateFromRecord: jest.fn(),
     validate: () => true,
     buildPayload: () => ({
       name: "Shared Agent",
@@ -138,17 +167,18 @@ jest.mock("@/screens/admin/hubAgentFormState", () => ({
       enabled: true,
       tags: [],
       extra_headers: {},
+      token: null,
     }),
   }),
 }));
 
-describe("AdminHubAgentNewScreen auto allowlist create flow", () => {
+describe("AdminHubAgentDetailScreen auto allowlist update flow", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it("allows admin shared-agent creation to auto-add host and retry create", async () => {
-    mockCreateHubAgentAdmin
+  it("allows admin shared-agent updates to auto-add host and retry save", async () => {
+    mockUpdateHubAgentAdmin
       .mockRejectedValueOnce(
         Object.assign(new Error("Card URL host is not allowed"), {
           status: 403,
@@ -159,15 +189,16 @@ describe("AdminHubAgentNewScreen auto allowlist create flow", () => {
     mockConfirmAction.mockResolvedValue(true);
     mockCreateProxyAllowlistEntry.mockResolvedValue({ id: "allow-1" });
 
-    const screen = render(<AdminHubAgentNewScreen />);
+    const screen = render(<AdminHubAgentDetailScreen agentId="shared-1" />);
 
-    fireEvent.press(screen.getByText("Create"));
+    fireEvent.press(screen.getByText("Save"));
 
     await waitFor(() => {
       expect(mockConfirmAction).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Host not allowlisted",
           confirmLabel: "Add and Continue",
+          cancelLabel: "Keep Editing",
         }),
       );
     });
@@ -177,13 +208,16 @@ describe("AdminHubAgentNewScreen auto allowlist create flow", () => {
       });
     });
     await waitFor(() => {
-      expect(mockCreateHubAgentAdmin).toHaveBeenCalledTimes(2);
+      expect(mockUpdateHubAgentAdmin).toHaveBeenCalledTimes(2);
     });
     await waitFor(() => {
       expect(mockToastSuccess).toHaveBeenCalledWith(
-        "Shared agent created",
-        "Shared Agent",
+        "Saved",
+        "Shared agent updated.",
       );
     });
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
+    expect(mockAllowNextNavigation).toHaveBeenCalledTimes(1);
+    expect(mockRouter.replace).toHaveBeenCalledWith("/admin/hub-a2a");
   });
 });

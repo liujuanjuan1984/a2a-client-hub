@@ -20,7 +20,7 @@ import {
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { type AgentAuthType } from "@/lib/agentAuth";
 import { AGENT_ERROR_MESSAGES } from "@/lib/agentCatalogCache";
-import { createWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
+import { executeWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
 import { createProxyAllowlistEntry } from "@/lib/api/adminProxyAllowlist";
 import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
@@ -311,34 +311,39 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
       basicPassword: basicPassword.trim(),
       extraHeaders,
     };
+    const isEditing = Boolean(agentId && agent);
     try {
-      if (agentId && agent) {
-        await updateAgentMutation.mutateAsync({ id: agentId, payload });
-      } else {
-        const result = await createWithAdminAutoAllowlist({
-          isAdmin,
-          cardUrl: payload.cardUrl,
-          create: () => createAgentMutation.mutateAsync(payload),
-          confirmAddHost: (host) =>
-            confirmAction({
-              title: "Host not allowlisted",
-              message: `The card URL host "${host}" is not in the proxy allowlist. Add it automatically and continue creating the agent?`,
-              confirmLabel: "Add and Continue",
-              cancelLabel: "Exit Create",
-            }),
-          addHostToAllowlist: async (host) => {
-            await createProxyAllowlistEntry({ host_pattern: host });
-          },
-          onCancelCreate: async () => {
-            allowNextNavigation();
-            goBackOrHome();
-          },
-        });
+      const result = await executeWithAdminAutoAllowlist({
+        isAdmin,
+        cardUrl: payload.cardUrl,
+        run: () =>
+          isEditing
+            ? updateAgentMutation.mutateAsync({ id: agentId!, payload })
+            : createAgentMutation.mutateAsync(payload),
+        confirmAddHost: (host) =>
+          confirmAction({
+            title: "Host not allowlisted",
+            message: `The card URL host "${host}" is not in the proxy allowlist. Add it automatically and continue ${
+              isEditing ? "saving" : "creating"
+            } the agent?`,
+            confirmLabel: "Add and Continue",
+            cancelLabel: isEditing ? "Keep Editing" : "Exit Create",
+          }),
+        addHostToAllowlist: async (host) => {
+          await createProxyAllowlistEntry({ host_pattern: host });
+        },
+        onCancel: async () => {
+          if (isEditing) {
+            return;
+          }
+          allowNextNavigation();
+          goBackOrHome();
+        },
+      });
 
-        if (result.status === "cancelled") {
-          setSaveStatus("idle");
-          return;
-        }
+      if (result.status === "cancelled") {
+        setSaveStatus("idle");
+        return;
       }
       initialSnapshotRef.current = buildSnapshot({
         name: payload.name,
