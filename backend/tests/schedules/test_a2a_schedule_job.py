@@ -388,9 +388,33 @@ async def test_finalize_task_run_soft_deletes_when_delete_was_requested(
     assert task.next_run_at is None
 
 
+@pytest.mark.parametrize(
+    ("cycle_type", "time_point"),
+    [
+        (
+            A2AScheduleTask.CYCLE_DAILY,
+            {"time": "09:00"},
+        ),
+        (
+            A2AScheduleTask.CYCLE_WEEKLY,
+            {"time": "09:00", "weekday": 1},
+        ),
+        (
+            A2AScheduleTask.CYCLE_MONTHLY,
+            {"time": "09:00", "day": 1},
+        ),
+        (
+            A2AScheduleTask.CYCLE_INTERVAL,
+            {"minutes": 60},
+        ),
+    ],
+    ids=["daily", "weekly", "monthly", "interval"],
+)
 async def test_finalize_task_run_keeps_precomputed_next_run_for_non_sequential_task(
     async_db_session,
     async_session_maker,
+    cycle_type: str,
+    time_point: dict[str, object],
 ) -> None:
     user = await create_user(async_db_session, skip_onboarding_defaults=True)
     agent = await _create_agent(
@@ -406,6 +430,8 @@ async def test_finalize_task_run_keeps_precomputed_next_run_for_non_sequential_t
         user_id=user.id,
         agent_id=agent.id,
         next_run_at=current_run_at,
+        cycle_type=cycle_type,
+        time_point=time_point,
     )
     run_id = await _mark_task_claimed(async_db_session, task=task)
     task.next_run_at = projected_next_run_at
