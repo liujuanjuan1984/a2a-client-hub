@@ -132,7 +132,7 @@ jest.mock("@/screens/admin/hubAgentFormState", () => ({
     validate: () => true,
     buildPayload: () => ({
       name: "Shared Agent",
-      card_url: "https://blocked.example.com/agent.json",
+      card_url: "https://blocked.example.com:8443/agent.json",
       availability_policy: "public",
       auth_type: "none",
       enabled: true,
@@ -173,7 +173,7 @@ describe("AdminHubAgentNewScreen auto allowlist create flow", () => {
     });
     await waitFor(() => {
       expect(mockCreateProxyAllowlistEntry).toHaveBeenCalledWith({
-        host_pattern: "blocked.example.com",
+        host_pattern: "blocked.example.com:8443",
       });
     });
     await waitFor(() => {

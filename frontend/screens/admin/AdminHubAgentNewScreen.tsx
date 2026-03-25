@@ -11,7 +11,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePreventRemoveWhenDirty } from "@/hooks/usePreventRemoveWhenDirty";
 import { useRequireAdmin } from "@/hooks/useRequireAdmin";
-import { createWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
+import { executeWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
 import { createProxyAllowlistEntry } from "@/lib/api/adminProxyAllowlist";
 import { createHubAgentAdmin } from "@/lib/api/hubA2aAgentsAdmin";
 import { confirmAction } from "@/lib/confirm";
@@ -61,10 +61,10 @@ export function AdminHubAgentNewScreen() {
     setSaving(true);
     try {
       const payload = buildPayload();
-      const result = await createWithAdminAutoAllowlist({
+      const result = await executeWithAdminAutoAllowlist({
         isAdmin,
         cardUrl: payload.card_url,
-        create: () => createHubAgentAdmin(payload),
+        run: () => createHubAgentAdmin(payload),
         confirmAddHost: (host) =>
           confirmAction({
             title: "Host not allowlisted",
@@ -75,7 +75,7 @@ export function AdminHubAgentNewScreen() {
         addHostToAllowlist: async (host) => {
           await createProxyAllowlistEntry({ host_pattern: host });
         },
-        onCancelCreate: async () => {
+        onCancel: async () => {
           allowNextNavigation();
           backOrHome(router, "/admin/hub-a2a");
         },
