@@ -76,8 +76,13 @@ jobs:
       - name: Run backend tests
         run: uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=30
 
-      - name: Run backend dependency audit
-        run: uv run pip-audit
+      - name: Export backend runtime requirements for audit
+        run: >
+          uv export --format requirements.txt --no-dev --locked --no-emit-project
+          --output-file /tmp/backend-runtime-requirements.txt >/dev/null
+
+      - name: Run backend runtime dependency audit
+        run: uv run pip-audit --requirement /tmp/backend-runtime-requirements.txt
 
   frontend:
     name: Frontend Checks
