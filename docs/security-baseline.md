@@ -45,9 +45,8 @@ When `APP_ENV=production`, the backend enforces:
 ## Dependency Audit Policy
 
 - Blocking CI checks audit backend runtime dependencies exported from `uv.lock`.
-- Development-only dependencies are audited in a separate scheduled or manually
-  triggered workflow so they remain visible without blocking unrelated product
-  changes.
+- Development-only dependency findings should be triaged through normal issue
+  tracking and maintenance work without blocking unrelated product changes.
 - Treat runtime dependency findings as release-blocking until fixed or
   explicitly triaged.
 - Treat development dependency findings as maintenance work unless they affect
