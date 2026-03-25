@@ -73,8 +73,7 @@ jobs:
             - `.github/workflows/release.yml` 将从合并后的主干提交创建标签和 GitHub Release
 
             ### 关联
-            - Closes: #586
-            - Related: #440
+            - Tracking: #586
           branch: "release/version-${{ steps.version.outputs.version }}"
           base: master
           commit-message: "chore(release): sync version metadata for ${{ steps.version.outputs.version }} (#586)"
