@@ -2195,8 +2195,7 @@ async def test_run_http_invoke_route_retries_once_for_session_not_found(
     assert isinstance(response, JSONResponse)
     assert response.status_code == 404
     response_payload = json.loads(response.body.decode())
-    assert response_payload["success"] is False
-    assert response_payload["error_code"] == "session_not_found"
+    assert response_payload["detail"]["error_code"] == "session_not_found"
     assert attempt == 2
 
 
@@ -2679,8 +2678,7 @@ async def test_run_http_invoke_route_returns_status_for_error_code(
     assert isinstance(response, JSONResponse)
     assert response.status_code == expected_status
     response_payload = json.loads(response.body.decode())
-    assert response_payload["success"] is False
-    assert response_payload["error_code"] == error_code
+    assert response_payload["detail"]["error_code"] == error_code
 
 
 @pytest.mark.asyncio

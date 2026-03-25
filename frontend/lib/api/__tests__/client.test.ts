@@ -432,13 +432,15 @@ describe("api client auth refresh flow", () => {
     const fetchMock = global.fetch as jest.Mock;
     fetchMock.mockResolvedValueOnce(
       createJsonResponse(400, {
-        error: "Upstream streaming failed",
-        error_code: "invalid_params",
-        source: "upstream_a2a",
-        jsonrpc_code: -32602,
-        missing_params: [{ name: "project_id", required: true }],
-        upstream_error: {
-          message: "project_id required",
+        detail: {
+          message: "Upstream streaming failed",
+          error_code: "invalid_params",
+          source: "upstream_a2a",
+          jsonrpc_code: -32602,
+          missing_params: [{ name: "project_id", required: true }],
+          upstream_error: {
+            message: "project_id required",
+          },
         },
       }),
     );

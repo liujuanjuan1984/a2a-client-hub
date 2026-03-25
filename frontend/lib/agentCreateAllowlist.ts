@@ -10,7 +10,24 @@ const asApiLikeError = (error: unknown): ApiLikeError | null => {
   if (!error || typeof error !== "object") {
     return null;
   }
-  return error as ApiLikeError;
+  const record = error as Record<string, unknown>;
+  const status = typeof record.status === "number" ? record.status : undefined;
+  const message =
+    typeof record.message === "string" ? record.message : undefined;
+  const errorCode =
+    typeof record.errorCode === "string"
+      ? record.errorCode
+      : typeof record.error_code === "string"
+        ? record.error_code
+        : undefined;
+  if (
+    status === undefined &&
+    message === undefined &&
+    errorCode === undefined
+  ) {
+    return null;
+  }
+  return { status, message, errorCode };
 };
 
 export const extractCardUrlHost = (cardUrl: string): string | null => {

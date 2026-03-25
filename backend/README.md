@@ -206,6 +206,8 @@ Notes:
   constraints (default size / max size).
 - Responses include a stable envelope with `success`, `result` (upstream
   envelope), `error_code`, and `upstream_error`.
+- Non-2xx HTTP errors are normalized under `detail`, for example:
+  `{"detail":{"message":"...","error_code":"...","source":"...","jsonrpc_code":...}}`.
 - Interrupt callback payloads intentionally follow the strict upstream contract:
   `request_id` is required; legacy fields such as `requestID`, `decision`,
   `allow` or `deny` are not accepted.

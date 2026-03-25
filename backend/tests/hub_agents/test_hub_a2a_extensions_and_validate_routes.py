@@ -1219,9 +1219,9 @@ async def test_hub_opencode_session_continue_maps_extension_error_to_http_status
         )
         assert resp.status_code == expected_status
         payload = resp.json()
-        assert payload["success"] is False
-        assert payload["error_code"] == error_code
-        assert payload["upstream_error"] == {"message": message}
+        detail = payload["detail"]
+        assert detail["error_code"] == error_code
+        assert detail["upstream_error"] == {"message": message}
 
 
 @pytest.mark.asyncio
@@ -1265,12 +1265,12 @@ async def test_hub_opencode_session_continue_preserves_structured_error_details(
 
     assert resp.status_code == 400
     payload = resp.json()
-    assert payload["success"] is False
-    assert payload["error_code"] == "invalid_params"
-    assert payload["source"] == "upstream_a2a"
-    assert payload["jsonrpc_code"] == -32602
-    assert payload["missing_params"] == [{"name": "project_id", "required": True}]
-    assert payload["upstream_error"] == {"message": "project_id required"}
+    detail = payload["detail"]
+    assert detail["error_code"] == "invalid_params"
+    assert detail["source"] == "upstream_a2a"
+    assert detail["jsonrpc_code"] == -32602
+    assert detail["missing_params"] == [{"name": "project_id", "required": True}]
+    assert detail["upstream_error"] == {"message": "project_id required"}
 
 
 @pytest.mark.parametrize(
@@ -1328,9 +1328,9 @@ async def test_hub_opencode_permission_reply_maps_extension_error_to_http_status
         )
         assert resp.status_code == expected_status
         payload = resp.json()
-        assert payload["success"] is False
-        assert payload["error_code"] == error_code
-        assert payload["upstream_error"] == {"message": message}
+        detail = payload["detail"]
+        assert detail["error_code"] == error_code
+        assert detail["upstream_error"] == {"message": message}
     assert len(fake_extensions.calls) == 1
     assert fake_extensions.calls[0]["reply"] == reply
 
@@ -1384,5 +1384,5 @@ async def test_hub_opencode_session_continue_contract_or_support_errors_use_4xx(
         )
         assert resp.status_code == 400
         payload = resp.json()
-        assert payload["success"] is False
-        assert payload["error_code"] == error_code
+        detail = payload["detail"]
+        assert detail["error_code"] == error_code

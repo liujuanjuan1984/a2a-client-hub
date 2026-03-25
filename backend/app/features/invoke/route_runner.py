@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.error_codes import status_code_for_invoke_error_code
+from app.api.error_handlers import build_error_detail, build_error_response
 from app.api.retry_after import db_busy_retry_after_headers
 from app.db.locking import (
     RetryableDbLockError,
@@ -1659,9 +1660,16 @@ async def run_http_invoke_route(
 
         if not response.success:
             await _release_invoke_guard(guard_key)
-            return JSONResponse(
+            return build_error_response(
                 status_code=status_code_for_invoke_error_code(response.error_code),
-                content=response.model_dump(),
+                detail=build_error_detail(
+                    message=response.error or "Invoke failed",
+                    error_code=response.error_code,
+                    source=response.source,
+                    jsonrpc_code=response.jsonrpc_code,
+                    missing_params=response.missing_params,
+                    upstream_error=response.upstream_error,
+                ),
             )
         await _release_invoke_guard(guard_key)
         return response
@@ -1691,9 +1699,16 @@ async def run_http_invoke_route(
 
             if response.success:
                 return response
-            return JSONResponse(
+            return build_error_response(
                 status_code=status_code_for_invoke_error_code(response.error_code),
-                content=response.model_dump(),
+                detail=build_error_detail(
+                    message=response.error or "Invoke failed",
+                    error_code=response.error_code,
+                    source=response.source,
+                    jsonrpc_code=response.jsonrpc_code,
+                    missing_params=response.missing_params,
+                    upstream_error=response.upstream_error,
+                ),
             )
     except ValueError as exc:
         raise HTTPException(
