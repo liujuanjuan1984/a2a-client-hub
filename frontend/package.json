@@ -1,6 +1,6 @@
 {
   "name": "a2a-client-hub",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "private": true,
   "description": "Frontend app for a2a-client-hub (Expo + React Native)",
   "license": "Apache-2.0",
