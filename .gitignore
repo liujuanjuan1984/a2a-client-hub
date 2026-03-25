@@ -234,3 +234,4 @@ frontend/.env
 frontend/.env.*
 !frontend/.env.example
 .swival/
+*.db
