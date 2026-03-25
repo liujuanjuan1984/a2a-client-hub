@@ -226,7 +226,7 @@ describe("AgentFormScreen auto allowlist create flow", () => {
       cardUrl: "https://existing.example.com/agent.json",
       authType: "none",
       bearerToken: "",
-      apiKeyHeader: "X-API-Key",
+      apiKeyHeader: "X-API-Key", // pragma: allowlist secret
       apiKeyValue: "",
       basicUsername: "",
       basicPassword: "",
