@@ -1,38 +1,55 @@
 # Release Workflow
 
 This document describes the repository release automation defined in
-`.github/workflows/release.yml`.
+`.github/workflows/release-prepare.yml` and `.github/workflows/release.yml`.
 
-## Trigger
+## Trigger Model
 
-The workflow listens for pushed Git tags that match the `v*` pattern.
+The repository now uses a two-stage release flow:
 
-Example:
+1. A maintainer manually starts `Prepare Release`.
+2. The workflow opens a Draft PR that synchronizes version metadata.
+3. After that PR is merged into `master`, `Release` creates the Git tag and
+   GitHub Release from the synchronized `master` commit.
 
-- `v1.0.0`
+This keeps the published tag aligned with the final merged commit that contains
+the authoritative version metadata.
 
-When such a tag is pushed, GitHub Actions creates a GitHub Release
-automatically.
+## Prepare Release
 
-## What the Workflow Does
+The preparation workflow is defined in `.github/workflows/release-prepare.yml`
+and is triggered manually with a target version, for example `1.3.2`.
 
-1. Resolve the release version from the pushed tag.
-2. Synchronize repository version metadata with
+It performs these steps:
+
+1. Normalize the requested version and derive the target tag name.
+2. Refuse to continue if the target tag already exists on `origin`.
+3. Synchronize repository version metadata with
    `scripts/sync_release_version.py --write`.
-3. Validate the synchronized metadata with
+4. Validate the synchronized metadata with
    `scripts/sync_release_version.py --check`.
-4. Create a GitHub Release with generated release notes.
-5. Open a follow-up pull request if versioned repository files changed during
-   metadata synchronization.
+5. Open a Draft PR with the synchronized version files.
+
+## Release
+
+The publishing workflow is defined in `.github/workflows/release.yml`.
+
+It runs when a push to `master` changes `VERSION`. The workflow then:
+
+1. Reads the release version from the checked-in `VERSION` file.
+2. Verifies that the repository metadata is already synchronized.
+3. Refuses to reuse a tag that points at a different commit.
+4. Creates the release tag from the current `master` commit.
+5. Creates a GitHub Release with generated release notes.
 
 ## Version Source of Truth
 
 `VERSION` is the unified repository version source.
 
-During a tag-driven release, the workflow treats the pushed tag as the release
-identity and synchronizes versioned repository metadata to that version. This
-means you do not need to manually bump every metadata file before cutting a
-release tag.
+The preparation workflow writes this version into the repository metadata
+before the release is cut, and the publish workflow reads it back from the
+merged `master` commit. This means the tag, release notes, and checked-in
+version files are derived from the same commit.
 
 The workflow currently checks and may update these files:
 
@@ -45,10 +62,10 @@ The workflow currently checks and may update these files:
 ## Recommended Release Flow
 
 1. Choose the target version.
-2. Push a matching Git tag such as `v1.0.0`.
-3. Let `.github/workflows/release.yml` create the GitHub Release.
-4. Review the auto-created version sync pull request if repository metadata was
-   updated during the release.
+2. Run `Prepare Release` with a version such as `1.3.2`.
+3. Review and merge the auto-created Draft PR.
+4. Let `.github/workflows/release.yml` create the Git tag and GitHub Release
+   from the merged `master` commit.
 
 ## Local or CI Validation
 
@@ -65,15 +82,16 @@ Use this command to write the synchronized metadata locally when needed:
 python3 scripts/sync_release_version.py --version 1.0.0 --write
 ```
 
-## Follow-Up Pull Request Behavior
+## Release Preparation Pull Request Behavior
 
 If synchronized metadata differs from the checked-in repository files, the
-workflow automatically opens a follow-up pull request to persist those changes.
+preparation workflow automatically opens a Draft pull request to persist those
+changes.
 
-Current behavior in `.github/workflows/release.yml`:
+Current behavior in `.github/workflows/release-prepare.yml`:
 
 - PR branch pattern: `release/version-<version>`
 - Commit title style: `chore(release): sync version metadata for <version> (#586)`
 - Base branch: `master`
 
-Review the workflow file directly if any of these conventions change.
+Review the workflow files directly if any of these conventions change.
