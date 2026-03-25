@@ -383,7 +383,133 @@ async def test_finalize_task_run_soft_deletes_when_delete_was_requested(
     await async_db_session.refresh(task)
 
     assert task.deleted_at is not None
+    assert task.enabled is False
     assert task.delete_requested_at is None
+    assert task.next_run_at is None
+
+
+@pytest.mark.parametrize(
+    ("cycle_type", "time_point"),
+    [
+        (
+            A2AScheduleTask.CYCLE_DAILY,
+            {"time": "09:00"},
+        ),
+        (
+            A2AScheduleTask.CYCLE_WEEKLY,
+            {"time": "09:00", "weekday": 1},
+        ),
+        (
+            A2AScheduleTask.CYCLE_MONTHLY,
+            {"time": "09:00", "day": 1},
+        ),
+        (
+            A2AScheduleTask.CYCLE_INTERVAL,
+            {"minutes": 60},
+        ),
+    ],
+    ids=["daily", "weekly", "monthly", "interval"],
+)
+async def test_finalize_task_run_keeps_precomputed_next_run_for_non_sequential_task(
+    async_db_session,
+    async_session_maker,
+    cycle_type: str,
+    time_point: dict[str, object],
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="finalize-preserve-next-run",
+    )
+    now = utc_now()
+    current_run_at = now
+    projected_next_run_at = now + timedelta(days=1)
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=current_run_at,
+        cycle_type=cycle_type,
+        time_point=time_point,
+    )
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    task.next_run_at = projected_next_run_at
+    await async_db_session.commit()
+
+    finalized = await a2a_schedule_service.finalize_task_run(
+        async_db_session,
+        task_id=task.id,
+        user_id=user.id,
+        run_id=run_id,
+        final_status=A2AScheduleTask.STATUS_SUCCESS,
+        finished_at=now + timedelta(minutes=1),
+    )
+    assert finalized is True
+    await real_commit_safely(async_db_session)
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+        )
+
+    assert refreshed_task is not None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_SUCCESS
+    assert refreshed_task.next_run_at == projected_next_run_at
+
+
+async def test_finalize_task_run_clears_next_run_when_failure_threshold_disables_task(
+    async_db_session,
+    async_session_maker,
+    monkeypatch,
+) -> None:
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    agent = await _create_agent(
+        async_db_session,
+        user_id=user.id,
+        suffix="finalize-disable-next-run",
+    )
+    now = utc_now()
+    projected_next_run_at = now + timedelta(days=1)
+    task = await _create_schedule_task(
+        async_db_session,
+        user_id=user.id,
+        agent_id=agent.id,
+        next_run_at=now,
+    )
+    run_id = await _mark_task_claimed(async_db_session, task=task)
+    task.next_run_at = projected_next_run_at
+    await async_db_session.commit()
+
+    monkeypatch.setattr(
+        settings,
+        "a2a_schedule_task_failure_threshold",
+        1,
+        raising=False,
+    )
+
+    finalized = await a2a_schedule_service.finalize_task_run(
+        async_db_session,
+        task_id=task.id,
+        user_id=user.id,
+        run_id=run_id,
+        final_status=A2AScheduleTask.STATUS_FAILED,
+        finished_at=now + timedelta(minutes=1),
+        error_message="run failed",
+        error_code="task_failed",
+    )
+    assert finalized is True
+    await real_commit_safely(async_db_session)
+
+    async with async_session_maker() as check_db:
+        refreshed_task = await check_db.scalar(
+            select(A2AScheduleTask).where(A2AScheduleTask.id == task.id)
+        )
+
+    assert refreshed_task is not None
+    assert refreshed_task.last_run_status == A2AScheduleTask.STATUS_FAILED
+    assert refreshed_task.enabled is False
+    assert refreshed_task.next_run_at is None
 
 
 async def test_delete_task_returns_conflict_when_row_locked(
