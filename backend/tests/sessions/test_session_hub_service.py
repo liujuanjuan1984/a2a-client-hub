@@ -12,6 +12,7 @@ from app.db.models.conversation_thread import ConversationThread
 from app.features.sessions import (
     history_projection as session_history_projection_module,
 )
+from app.features.sessions.common import serialize_interrupt_event_block_content
 from app.features.sessions.identity import conversation_identity_service
 from app.features.sessions.service import session_hub_service
 from app.utils.idempotency_key import (
@@ -39,6 +40,97 @@ async def _list_message_items(
         limit=limit,
     )
     return items
+
+
+async def test_append_agent_message_block_update_preserves_interrupt_request_content_on_resolve(
+    async_db_session,
+):
+    user = await create_user(async_db_session, skip_onboarding_defaults=True)
+    thread = ConversationThread(
+        id=uuid4(),
+        user_id=user.id,
+        source=ConversationThread.SOURCE_MANUAL,
+        agent_id=uuid4(),
+        agent_source="personal",
+        title="Interrupt Preserve Content",
+        last_active_at=utc_now(),
+        status=ConversationThread.STATUS_ACTIVE,
+    )
+    async_db_session.add(thread)
+    await async_db_session.flush()
+
+    agent_message = AgentMessage(
+        user_id=user.id,
+        sender="agent",
+        conversation_id=thread.id,
+        status="streaming",
+    )
+    async_db_session.add(agent_message)
+    await async_db_session.flush()
+
+    block_id = "msg-1:interrupt:perm-1"
+    asked_content = serialize_interrupt_event_block_content(
+        {
+            "request_id": "perm-1",
+            "type": "permission",
+            "phase": "asked",
+            "details": {
+                "permission": "write",
+                "patterns": ["/repo/config.yml"],
+            },
+        }
+    )
+    resolved_content = serialize_interrupt_event_block_content(
+        {
+            "request_id": "perm-1",
+            "type": "permission",
+            "phase": "resolved",
+            "resolution": "replied",
+        }
+    )
+
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message.id,
+        seq=1,
+        block_type="interrupt_event",
+        content=asked_content,
+        append=False,
+        is_finished=True,
+        block_id=block_id,
+        lane_id="interrupt_event",
+        operation="replace",
+        source="interrupt_lifecycle",
+    )
+    await session_hub_service.append_agent_message_block_update(
+        async_db_session,
+        user_id=user.id,
+        agent_message_id=agent_message.id,
+        seq=2,
+        block_type="interrupt_event",
+        content=resolved_content,
+        append=False,
+        is_finished=True,
+        block_id=block_id,
+        lane_id="interrupt_event",
+        operation="replace",
+        source="interrupt_lifecycle",
+    )
+    await async_db_session.flush()
+
+    persisted_blocks = list(
+        (
+            await async_db_session.scalars(
+                select(AgentMessageBlock)
+                .where(AgentMessageBlock.message_id == agent_message.id)
+                .order_by(AgentMessageBlock.block_seq.asc())
+            )
+        ).all()
+    )
+
+    assert len(persisted_blocks) == 1
+    assert persisted_blocks[0].content == asked_content
 
 
 async def test_cancel_session_returns_no_inflight_when_no_active_task(async_db_session):

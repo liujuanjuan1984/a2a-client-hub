@@ -21,6 +21,7 @@ interface ToolCallBlockProps {
 
 const STATUS_LABELS = {
   running: "Running",
+  completed: "Completed",
   success: "Success",
   failed: "Failed",
   interrupted: "Interrupted",
@@ -31,6 +32,10 @@ const STATUS_STYLES = {
   running: {
     container: "border-emerald-500/30 bg-emerald-500/10",
     text: "text-emerald-300",
+  },
+  completed: {
+    container: "border-sky-500/30 bg-sky-500/10",
+    text: "text-sky-300",
   },
   success: {
     container: "border-sky-500/30 bg-sky-500/10",
@@ -79,7 +84,7 @@ const deriveFallbackStatus = (
     return "running";
   }
   if (block.isFinished) {
-    return "success";
+    return "completed";
   }
   return "unknown";
 };

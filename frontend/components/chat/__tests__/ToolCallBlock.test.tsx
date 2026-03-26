@@ -22,7 +22,7 @@ describe("ToolCallBlock", () => {
           isFinished: true,
           toolCall: {
             name: "bash",
-            status: "success",
+            status: "completed",
             callId: "call-1",
             arguments: {
               command: "pwd",
@@ -32,7 +32,7 @@ describe("ToolCallBlock", () => {
           },
           toolCallDetail: {
             name: "bash",
-            status: "success",
+            status: "completed",
             callId: "call-1",
             title: "Inspect repository state.",
             arguments: {
@@ -67,9 +67,9 @@ describe("ToolCallBlock", () => {
     );
 
     expect(screen.getByText("Show Tool Call")).toBeTruthy();
-    expect(screen.getByText("Success")).toBeTruthy();
+    expect(screen.getByText("Completed")).toBeTruthy();
 
-    fireEvent.press(screen.getByLabelText("Show Tool Call Success"));
+    fireEvent.press(screen.getByLabelText("Show Tool Call Completed"));
 
     await waitFor(() => {
       expect(screen.getByText("bash")).toBeTruthy();
@@ -80,7 +80,7 @@ describe("ToolCallBlock", () => {
       expect(screen.getByText("Result")).toBeTruthy();
       expect(screen.getByText("Pending")).toBeTruthy();
       expect(screen.getByText("Running")).toBeTruthy();
-      expect(screen.getByText("Completed")).toBeTruthy();
+      expect(screen.getAllByText("Completed").length).toBeGreaterThan(0);
       expect(screen.getByText("Command")).toBeTruthy();
       expect(screen.getByText("pwd")).toBeTruthy();
       expect(
@@ -127,7 +127,13 @@ describe("ToolCallBlock", () => {
     function TestHarness() {
       const [toolCallDetail, setToolCallDetail] = useState<{
         name?: string | null;
-        status: "running" | "success" | "failed" | "interrupted" | "unknown";
+        status:
+          | "running"
+          | "completed"
+          | "success"
+          | "failed"
+          | "interrupted"
+          | "unknown";
         callId?: string | null;
         title?: string | null;
         arguments?: unknown;
@@ -145,7 +151,7 @@ describe("ToolCallBlock", () => {
             isFinished: true,
             toolCall: {
               name: "bash",
-              status: "success",
+              status: "completed",
               callId: "call-3",
               arguments: { command: "pwd" },
               result: "done",
@@ -159,7 +165,7 @@ describe("ToolCallBlock", () => {
           onLoadBlockContent={async () => {
             setToolCallDetail({
               name: "bash",
-              status: "success",
+              status: "completed",
               callId: "call-3",
               title: "Inspect repository state.",
               arguments: {
@@ -183,12 +189,12 @@ describe("ToolCallBlock", () => {
 
     const screen = render(<TestHarness />);
 
-    fireEvent.press(screen.getByLabelText("Show Tool Call Success"));
+    fireEvent.press(screen.getByLabelText("Show Tool Call Completed"));
 
     await waitFor(() => {
       expect(screen.getAllByText("Inspect repository state.").length).toBe(2);
       expect(screen.getByText("Progress")).toBeTruthy();
-      expect(screen.getByText("Completed")).toBeTruthy();
+      expect(screen.getAllByText("Completed").length).toBeGreaterThan(0);
     });
   });
 
@@ -205,14 +211,14 @@ describe("ToolCallBlock", () => {
             isFinished: true,
             toolCall: {
               name: "bash",
-              status: "success",
+              status: "completed",
               callId: "call-4",
               arguments: { command: "pwd" },
               result: "done",
             },
             toolCallDetail: {
               name: "bash",
-              status: "success",
+              status: "completed",
               callId: "call-4",
               arguments: { command: "pwd" },
               result: "done",

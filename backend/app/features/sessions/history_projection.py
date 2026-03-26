@@ -23,6 +23,7 @@ from app.features.sessions.common import (
     create_block_with_conflict_recovery,
     derive_session_title_from_invoke_metadata,
     derive_session_title_from_query,
+    deserialize_interrupt_event_block_content,
     is_agent_message_pk_violation,
     is_idempotency_unique_violation,
     is_primary_text_snapshot_source,
@@ -45,6 +46,18 @@ MIN_REASONING_OVERLAP_WORD_LENGTH = 5
 
 def _default_lane_id(block_type: str) -> str:
     return "primary_text" if block_type == "text" else block_type
+
+
+def _should_preserve_existing_interrupt_content(
+    *,
+    block_type: str,
+    operation: str,
+    incoming_content: str,
+) -> bool:
+    if block_type != "interrupt_event" or operation != "replace":
+        return False
+    _, interrupt = deserialize_interrupt_event_block_content(incoming_content)
+    return bool(interrupt and interrupt.get("phase") == "resolved")
 
 
 def _normalize_block_operation(
@@ -1009,13 +1022,21 @@ class SessionHistoryProjectionService:
             )
             persisted_block = target_block
         elif target_block is not None:
+            should_preserve_interrupt_content = (
+                _should_preserve_existing_interrupt_content(
+                    block_type=normalized_type,
+                    operation=normalized_operation,
+                    incoming_content=normalized_content,
+                )
+            )
             if normalized_operation == "append":
                 current_content = cast(str | None, target_block.content) or ""
                 setattr(
                     target_block, "content", f"{current_content}{normalized_content}"
                 )
             else:
-                setattr(target_block, "content", normalized_content)
+                if not should_preserve_interrupt_content:
+                    setattr(target_block, "content", normalized_content)
             setattr(target_block, "block_type", normalized_type)
             setattr(target_block, "lane_id", normalized_lane_id)
             setattr(target_block, "is_finished", bool(is_finished))

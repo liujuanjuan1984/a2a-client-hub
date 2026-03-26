@@ -280,7 +280,7 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks?.[0]?.type).toBe("interrupt_event");
     expect(blocks?.[0]?.content).toBe(
-      "Authorization request was handled. Agent resumed.",
+      "Agent requested authorization: write.\nTargets: /repo/config.yml",
     );
     expect(blocks?.[0]?.interrupt).toEqual({
       requestId: "perm-2",
@@ -440,6 +440,156 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[0]?.content).toBe("draft");
     expect(blocks?.[0]?.isFinished).toBe(true);
     expect(blocks?.[0]?.blockId).toBe("block-text-main");
+  });
+
+  it("promotes a finished tool_call block from running to success when the next block starts", () => {
+    let blocks: MessageBlock[] | undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "tool_call",
+          delta: '{"tool":"bash","status":"running"}',
+          artifactId: "task-tools:stream:tool-1",
+          blockId: "block-tool-1",
+          laneId: "tool_call",
+          taskId: "task-tools",
+          seq: 1,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "tool_call",
+          delta: '{"tool":"grep","status":"running"}',
+          artifactId: "task-tools:stream:tool-2",
+          blockId: "block-tool-2",
+          laneId: "tool_call",
+          taskId: "task-tools",
+          seq: 2,
+        }),
+      ),
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks?.[0]).toMatchObject({
+      blockId: "block-tool-1",
+      isFinished: true,
+      toolCall: {
+        name: "bash",
+        status: "completed",
+      },
+    });
+    expect(blocks?.[1]).toMatchObject({
+      blockId: "block-tool-2",
+      isFinished: false,
+      toolCall: {
+        name: "grep",
+        status: "running",
+      },
+    });
+  });
+
+  it("promotes the last finished tool_call block from running to success during finalization", () => {
+    const blocks = finalizeMessageBlocks([
+      {
+        id: "block-tool-last",
+        blockId: "block-tool-last",
+        laneId: "tool_call",
+        type: "tool_call",
+        content: '{"tool":"bash","status":"running"}',
+        isFinished: false,
+        toolCall: {
+          name: "bash",
+          status: "running",
+          callId: null,
+          arguments: undefined,
+          result: undefined,
+          error: undefined,
+        },
+        createdAt: "2026-03-26T00:00:00.000Z",
+        updatedAt: "2026-03-26T00:00:00.000Z",
+      },
+    ]);
+
+    expect(blocks?.[0]).toMatchObject({
+      isFinished: true,
+      toolCall: {
+        name: "bash",
+        status: "completed",
+      },
+    });
+  });
+
+  it("replaces inferred completed tool_call status when a later explicit success arrives", () => {
+    let blocks = finalizeMessageBlocks([
+      {
+        id: "block-tool-late-success",
+        blockId: "block-tool-late-success",
+        laneId: "tool_call",
+        type: "tool_call",
+        content: '{"tool":"bash","status":"running"}',
+        isFinished: false,
+        toolCall: {
+          name: "bash",
+          status: "running",
+          callId: null,
+          arguments: undefined,
+          result: undefined,
+          error: undefined,
+        },
+        createdAt: "2026-03-26T00:00:00.000Z",
+        updatedAt: "2026-03-26T00:00:00.000Z",
+      },
+    ]);
+
+    expect(blocks?.[0]).toMatchObject({
+      isFinished: true,
+      toolCall: {
+        name: "bash",
+        status: "completed",
+      },
+    });
+
+    blocks = applyStreamBlockUpdate(blocks, {
+      eventId: "evt-tool-late-success",
+      eventIdSource: "upstream",
+      seq: 3,
+      taskId: "task-tools",
+      artifactId: "task-tools:stream:tool-late-success",
+      blockId: "block-tool-late-success",
+      laneId: "tool_call",
+      blockType: "tool_call",
+      op: "replace",
+      baseSeq: 3,
+      source: "tool_part_update",
+      messageId: "msg-tool-late-success",
+      role: "agent",
+      delta:
+        '{"call_id":"call-late-success","tool":"bash","status":"success","output":"done"}',
+      append: false,
+      done: true,
+      toolCall: {
+        name: "bash",
+        status: "success",
+        callId: "call-late-success",
+        arguments: undefined,
+        result: "done",
+        error: undefined,
+      },
+    });
+
+    expect(blocks?.[0]).toMatchObject({
+      isFinished: true,
+      toolCall: {
+        name: "bash",
+        status: "success",
+        callId: "call-late-success",
+        result: "done",
+      },
+    });
   });
 
   it("rejects stale replace operations when base_seq moves backwards", () => {
