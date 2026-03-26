@@ -38,6 +38,11 @@ class HubA2AUserCredential(Base, TimestampMixin):
         nullable=False,
         comment="Encrypted auth payload (Fernet)",
     )
+    auth_type = Column(
+        String(24),
+        nullable=False,
+        comment="Auth type used when the user credential payload was stored",
+    )
     token_last4 = Column(
         String(12),
         nullable=True,

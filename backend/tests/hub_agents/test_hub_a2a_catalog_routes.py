@@ -776,3 +776,95 @@ async def test_shared_invoke_returns_409_for_missing_user_credential(
         )
         assert invoke_resp.status_code == 409
         assert invoke_resp.json()["detail"] == "credential required"
+
+
+@pytest.mark.asyncio
+async def test_user_credential_becomes_incompatible_after_auth_type_change(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    admin = await create_user(
+        async_db_session, email="admin_user_compat@example.com", is_superuser=True
+    )
+    alice = await create_user(
+        async_db_session, email="alice_user_compat@example.com", is_superuser=False
+    )
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        create_resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents",
+            json={
+                "name": "Per User Agent",
+                "card_url": "https://example.com/per-user/.well-known/agent-card.json",
+                "availability_policy": "public",
+                "auth_type": "bearer",
+                "credential_mode": "user",
+                "enabled": True,
+                "tags": [],
+                "extra_headers": {},
+            },
+        )
+        assert create_resp.status_code == 201
+        agent_id = create_resp.json()["id"]
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=alice,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        put_resp = await user_client.put(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/credential",
+            json={"token": "user-token-1234"},
+        )
+        assert put_resp.status_code == 200
+        assert put_resp.json()["configured"] is True
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        update_resp = await admin_client.put(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}",
+            json={
+                "auth_type": "basic",
+                "credential_mode": "user",
+            },
+        )
+        assert update_resp.status_code == 200
+        assert update_resp.json()["auth_type"] == "basic"
+        assert update_resp.json()["credential_mode"] == "user"
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=alice,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        status_resp = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/credential"
+        )
+        assert status_resp.status_code == 200
+        status_payload = status_resp.json()
+        assert status_payload["configured"] is False
+        assert status_payload["token_last4"] == "1234"
+
+        list_resp = await user_client.get(f"{settings.api_v1_prefix}/a2a/agents")
+        assert list_resp.status_code == 200
+        item = list_resp.json()["items"][0]
+        assert item["credential_configured"] is False
+        assert item["credential_display_hint"] is None
+
+        invoke_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/invoke",
+            json={"query": "hi", "metadata": {}},
+        )
+        assert invoke_resp.status_code == 409

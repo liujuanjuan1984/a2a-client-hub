@@ -404,16 +404,6 @@ class HubA2AAgentService(AgentValidationMixin):
             basic_username=basic_username,
             basic_password=basic_password,
         )
-        if (
-            previous_auth_type != cast(str, agent.auth_type)
-            and cast(str, getattr(agent, "credential_mode", A2AAgent.CREDENTIAL_NONE))
-            == A2AAgent.CREDENTIAL_USER
-        ):
-            await db.execute(
-                delete(HubA2AUserCredential).where(
-                    HubA2AUserCredential.agent_id == cast(UUID, agent.id)
-                )
-            )
 
         setattr(agent, "updated_by_user_id", admin_user_id)
         await commit_safely(db)
@@ -510,6 +500,7 @@ class HubA2AAgentService(AgentValidationMixin):
                 A2AAgent,
                 admin_credential.token_last4,
                 admin_credential.username_hint,
+                user_credential.auth_type,
                 user_credential.token_last4,
                 user_credential.username_hint,
             )
@@ -547,8 +538,9 @@ class HubA2AAgentService(AgentValidationMixin):
                     ),
                     admin_token_last4=cast(str | None, row[1]),
                     admin_username_hint=cast(str | None, row[2]),
-                    user_token_last4=cast(str | None, row[3]),
-                    user_username_hint=cast(str | None, row[4]),
+                    user_auth_type=cast(str | None, row[3]),
+                    user_token_last4=cast(str | None, row[4]),
+                    user_username_hint=cast(str | None, row[5]),
                 ),
                 credential_display_hint=self._resolve_user_visible_credential_hint(
                     auth_type=cast(str, agent.auth_type),
@@ -556,8 +548,9 @@ class HubA2AAgentService(AgentValidationMixin):
                         str,
                         getattr(agent, "credential_mode", A2AAgent.CREDENTIAL_NONE),
                     ),
-                    user_token_last4=cast(str | None, row[3]),
-                    user_username_hint=cast(str | None, row[4]),
+                    user_auth_type=cast(str | None, row[3]),
+                    user_token_last4=cast(str | None, row[4]),
+                    user_username_hint=cast(str | None, row[5]),
                 ),
                 tags=cast(list[str], agent.tags or []),
             )
@@ -629,6 +622,7 @@ class HubA2AAgentService(AgentValidationMixin):
                 admin_username_hint=cast(
                     str | None, getattr(admin_credential, "username_hint", None)
                 ),
+                user_auth_type=cast(str | None, getattr(credential, "auth_type", None)),
                 user_token_last4=cast(
                     str | None, getattr(credential, "token_last4", None)
                 ),
@@ -685,6 +679,7 @@ class HubA2AAgentService(AgentValidationMixin):
                 agent_id=agent_id,
                 user_id=user_id,
                 encrypted_token=encrypted_value,
+                auth_type=auth_type,
                 token_last4=last4,
                 username_hint=username_hint,
                 encryption_version=1,
@@ -692,6 +687,7 @@ class HubA2AAgentService(AgentValidationMixin):
             db.add(credential)
         else:
             setattr(credential, "encrypted_token", encrypted_value)
+            setattr(credential, "auth_type", auth_type)
             setattr(credential, "token_last4", last4)
             setattr(credential, "username_hint", username_hint)
         await commit_safely(db)
@@ -1016,6 +1012,7 @@ class HubA2AAgentService(AgentValidationMixin):
         credential_mode: str,
         admin_token_last4: str | None,
         admin_username_hint: str | None,
+        user_auth_type: str | None,
         user_token_last4: str | None,
         user_username_hint: str | None,
     ) -> bool:
@@ -1023,6 +1020,8 @@ class HubA2AAgentService(AgentValidationMixin):
             return False
         if credential_mode == A2AAgent.CREDENTIAL_SHARED:
             return bool(admin_token_last4 or admin_username_hint)
+        if user_auth_type != auth_type:
+            return False
         return bool(user_token_last4 or user_username_hint)
 
     @staticmethod
@@ -1030,10 +1029,13 @@ class HubA2AAgentService(AgentValidationMixin):
         *,
         auth_type: str,
         credential_mode: str,
+        user_auth_type: str | None,
         user_token_last4: str | None,
         user_username_hint: str | None,
     ) -> str | None:
         if auth_type == "none" or credential_mode != A2AAgent.CREDENTIAL_USER:
+            return None
+        if user_auth_type != auth_type:
             return None
         if user_username_hint:
             return user_username_hint

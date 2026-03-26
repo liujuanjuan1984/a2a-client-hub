@@ -150,7 +150,9 @@ class HubA2ARuntimeBuilder:
                 )
             )
             credential = cast(HubA2AUserCredential | None, await db.scalar(stmt))
-            if credential is None:
+            if credential is None or cast(str | None, credential.auth_type) != cast(
+                str, agent.auth_type
+            ):
                 raise HubA2AUserCredentialRequiredError(
                     "This shared agent requires your credential. Open agent details and save it first."
                 )
