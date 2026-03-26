@@ -280,7 +280,7 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks?.[0]?.type).toBe("interrupt_event");
     expect(blocks?.[0]?.content).toBe(
-      "Authorization request was handled. Agent resumed.",
+      "Agent requested authorization: write.\nTargets: /repo/config.yml",
     );
     expect(blocks?.[0]?.interrupt).toEqual({
       requestId: "perm-2",

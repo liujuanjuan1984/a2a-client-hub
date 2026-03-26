@@ -1410,13 +1410,21 @@ export const applyStreamBlockUpdate = (
     ) {
       return nextBlocks;
     }
+    const shouldPreserveInterruptEventContent =
+      resolvedUpdate.blockType === "interrupt_event" &&
+      resolvedUpdate.interrupt?.phase === "resolved" &&
+      targetBlock.type === "interrupt_event" &&
+      typeof targetBlock.content === "string" &&
+      targetBlock.content.trim().length > 0;
     nextBlocks[index] = {
       ...targetBlock,
       type: resolvedUpdate.blockType,
       blockId: resolvedUpdate.blockId,
       laneId: resolvedUpdate.laneId,
       baseSeq: resolvedUpdate.baseSeq ?? currentBaseSeq,
-      content,
+      content: shouldPreserveInterruptEventContent
+        ? targetBlock.content
+        : content,
       isFinished: resolvedUpdate.done,
       ...(resolvedUpdate.toolCall !== undefined
         ? { toolCall: resolvedUpdate.toolCall ?? null }
