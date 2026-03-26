@@ -16,7 +16,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine.url import make_url
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
