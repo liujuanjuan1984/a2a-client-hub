@@ -211,6 +211,36 @@ class A2AAgentService(AgentValidationMixin):
             counts,
         )
 
+    async def list_all_agents(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+    ) -> list[A2AAgentRecord]:
+        stmt = (
+            select(A2AAgent, A2AAgentCredential.token_last4)
+            .outerjoin(
+                A2AAgentCredential,
+                A2AAgentCredential.agent_id == A2AAgent.id,
+            )
+            .where(
+                and_(
+                    A2AAgent.user_id == user_id,
+                    A2AAgent.agent_scope == A2AAgent.SCOPE_PERSONAL,
+                    A2AAgent.deleted_at.is_(None),
+                )
+            )
+            .order_by(A2AAgent.created_at.desc(), A2AAgent.id.desc())
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
+        return [
+            self._build_record(
+                cast(A2AAgent, row[0]), token_last4=cast(str | None, row[1])
+            )
+            for row in rows
+        ]
+
     async def check_agents_health(
         self,
         db: AsyncSession,

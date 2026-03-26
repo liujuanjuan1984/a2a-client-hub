@@ -176,7 +176,9 @@ class ShortcutService:
             .order_by(ShortcutModel.sort_order.asc(), ShortcutModel.created_at.asc())
         )
 
-        # Handle global offset/limit across combined list (Defaults first)
+        # Pagination is intentionally mixed here: built-in defaults are a small,
+        # fixed in-memory source that must stay ahead of user-defined shortcuts,
+        # while custom shortcuts continue to use DB offset/limit.
         start_index = (page - 1) * size
         end_index = start_index + size
 

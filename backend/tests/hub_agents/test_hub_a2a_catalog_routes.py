@@ -557,3 +557,66 @@ async def test_admin_delete_purges_allowlist_and_credentials(
         )
     )
     assert allow_entry is None
+
+
+@pytest.mark.asyncio
+async def test_admin_list_uses_database_pagination(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    admin = await create_user(
+        async_db_session, email="admin_pagination@example.com", is_superuser=True
+    )
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        for index in range(3):
+            create_payload = {
+                "name": f"Paged Agent {index + 1}",
+                "card_url": (
+                    f"https://example.com/agent-{index + 1}/.well-known/agent-card.json"
+                ),
+                "availability_policy": "public",
+                "auth_type": "none",
+                "enabled": True,
+                "tags": [],
+                "extra_headers": {},
+            }
+            resp = await admin_client.post(
+                f"{settings.api_v1_prefix}/admin/a2a/agents", json=create_payload
+            )
+            assert resp.status_code == 201
+
+        first_page_resp = await admin_client.get(
+            f"{settings.api_v1_prefix}/admin/a2a/agents?page=1&size=2"
+        )
+        assert first_page_resp.status_code == 200
+        first_page = first_page_resp.json()
+        assert first_page["pagination"] == {
+            "page": 1,
+            "size": 2,
+            "total": 3,
+            "pages": 2,
+        }
+        assert [item["name"] for item in first_page["items"]] == [
+            "Paged Agent 1",
+            "Paged Agent 2",
+        ]
+
+        second_page_resp = await admin_client.get(
+            f"{settings.api_v1_prefix}/admin/a2a/agents?page=2&size=2"
+        )
+        assert second_page_resp.status_code == 200
+        second_page = second_page_resp.json()
+        assert second_page["pagination"] == {
+            "page": 2,
+            "size": 2,
+            "total": 3,
+            "pages": 2,
+        }
+        assert [item["name"] for item in second_page["items"]] == ["Paged Agent 3"]
