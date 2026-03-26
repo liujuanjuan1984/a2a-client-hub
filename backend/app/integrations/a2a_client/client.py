@@ -45,6 +45,7 @@ from app.integrations.a2a_client.errors import (
     A2APeerProtocolError,
     A2AUnsupportedBindingError,
     A2AUnsupportedOperationError,
+    A2AUpstreamTimeoutError,
 )
 from app.integrations.a2a_client.http_clients import (
     SharedSDKTransportInvalidatedError,
@@ -253,16 +254,18 @@ class A2AClient:
                     "raw": final_payload,
                 }
             except Exception as exc:  # noqa: BLE001
-                http_error = _unwrap_httpx_error(exc)
-                if http_error and _should_reset_http_error(http_error):
+                translated_error = _translate_httpx_error(exc, agent_url=self.agent_url)
+                if isinstance(translated_error, A2AClientResetRequiredError):
                     logger.warning(
                         "Detected unrecoverable HTTP error, scheduling client reset",
                         extra={
                             "agent_url": redact_url_for_logging(self.agent_url),
-                            "error_type": type(http_error).__name__,
+                            "error_type": type(translated_error).__name__,
                         },
                     )
-                    raise A2AClientResetRequiredError(str(http_error)) from exc
+                    raise translated_error from exc
+                if translated_error is not None:
+                    exc = translated_error
                 logger.exception(
                     "Blocking invocation to %s failed",
                     redact_url_for_logging(self.agent_url),
@@ -310,22 +313,28 @@ class A2AClient:
     ) -> AsyncIterator[Any]:
         """Stream responses from the downstream agent."""
 
-        async with self._request_usage():
-            logger.info(
-                "Calling A2A agent %s (streaming)",
-                redact_url_for_logging(self.agent_url),
-                extra={
-                    "query_meta": summarize_query(query),
-                },
-            )
+        try:
+            async with self._request_usage():
+                logger.info(
+                    "Calling A2A agent %s (streaming)",
+                    redact_url_for_logging(self.agent_url),
+                    extra={
+                        "query_meta": summarize_query(query),
+                    },
+                )
 
-            request = A2AMessageRequest(
-                query=query,
-                context_id=context_id,
-                metadata=metadata,
-            )
-            async for payload in self._stream_with_fallback(request):
-                yield payload
+                request = A2AMessageRequest(
+                    query=query,
+                    context_id=context_id,
+                    metadata=metadata,
+                )
+                async for payload in self._stream_with_fallback(request):
+                    yield payload
+        except Exception as exc:  # noqa: BLE001
+            translated_error = _translate_httpx_error(exc, agent_url=self.agent_url)
+            if translated_error is not None:
+                raise translated_error from exc
+            raise
 
     async def cancel_task(
         self,
@@ -399,9 +408,10 @@ class A2AClient:
                     "error_code": getattr(exc, "error_code", "unsupported_operation"),
                 }
             except Exception as exc:  # noqa: BLE001
-                http_error = _unwrap_httpx_error(exc)
-                if http_error and _should_reset_http_error(http_error):
-                    raise A2AClientResetRequiredError(str(http_error)) from exc
+                translated_error = _translate_httpx_error(exc, agent_url=self.agent_url)
+                if isinstance(translated_error, A2AClientResetRequiredError):
+                    raise translated_error from exc
+                resolved_error = translated_error or exc
                 logger.exception(
                     "Failed to cancel A2A task %s for %s",
                     normalized_task_id,
@@ -411,8 +421,12 @@ class A2AClient:
                     "success": False,
                     "agent_url": self.agent_url,
                     "task_id": normalized_task_id,
-                    "error": str(exc),
-                    "error_code": "cancel_failed",
+                    "error": str(resolved_error),
+                    "error_code": getattr(
+                        resolved_error,
+                        "error_code",
+                        "cancel_failed",
+                    ),
                 }
 
     async def get_task(
@@ -489,9 +503,10 @@ class A2AClient:
                     "error_code": getattr(exc, "error_code", "unsupported_operation"),
                 }
             except Exception as exc:  # noqa: BLE001
-                http_error = _unwrap_httpx_error(exc)
-                if http_error and _should_reset_http_error(http_error):
-                    raise A2AClientResetRequiredError(str(http_error)) from exc
+                translated_error = _translate_httpx_error(exc, agent_url=self.agent_url)
+                if isinstance(translated_error, A2AClientResetRequiredError):
+                    raise translated_error from exc
+                resolved_error = translated_error or exc
                 logger.exception(
                     "Failed to fetch A2A task %s for %s",
                     normalized_task_id,
@@ -501,8 +516,12 @@ class A2AClient:
                     "success": False,
                     "agent_url": self.agent_url,
                     "task_id": normalized_task_id,
-                    "error": str(exc),
-                    "error_code": "task_query_failed",
+                    "error": str(resolved_error),
+                    "error_code": getattr(
+                        resolved_error,
+                        "error_code",
+                        "task_query_failed",
+                    ),
                 }
 
     async def get_agent_card(self) -> AgentCard:
@@ -1123,6 +1142,19 @@ class A2AClient:
             return True
         if _is_closed_http_client_error(exc):
             return True
+        translated_error = _translate_httpx_error(
+            exc,
+            agent_url=(
+                getattr(getattr(adapter, "descriptor", None), "agent_url", None)
+                or getattr(getattr(adapter, "descriptor", None), "selected_url", None)
+                or ""
+            ),
+        )
+        if isinstance(
+            translated_error,
+            (A2AAgentUnavailableError, A2AUpstreamTimeoutError),
+        ):
+            return False
         http_error = _unwrap_httpx_error(exc)
         return bool(http_error and isinstance(http_error, httpx.TransportError))
 
@@ -1142,6 +1174,19 @@ class A2AClient:
             return False
         if _is_closed_http_client_error(exc):
             return True
+        translated_error = _translate_httpx_error(
+            exc,
+            agent_url=(
+                getattr(getattr(adapter, "descriptor", None), "agent_url", None)
+                or getattr(getattr(adapter, "descriptor", None), "selected_url", None)
+                or ""
+            ),
+        )
+        if isinstance(
+            translated_error,
+            (A2AAgentUnavailableError, A2AUpstreamTimeoutError),
+        ):
+            return False
         http_error = _unwrap_httpx_error(exc)
         return bool(http_error and isinstance(http_error, httpx.TransportError))
 
@@ -1386,6 +1431,44 @@ def _is_closed_http_client_error(exc: Exception) -> bool:
             current, "__context__", None
         )
     return False
+
+
+def _format_upstream_agent_label(agent_url: str) -> str:
+    redacted = redact_url_for_logging(agent_url or "")
+    return redacted or "<unknown>"
+
+
+def _translate_httpx_error(
+    exc: Exception,
+    *,
+    agent_url: str,
+) -> A2AAgentUnavailableError | A2AClientResetRequiredError | None:
+    if _is_closed_http_client_error(exc):
+        return A2AClientResetRequiredError("A2A transport client has been closed")
+
+    http_error = _unwrap_httpx_error(exc)
+    if http_error is None:
+        return None
+
+    agent_label = _format_upstream_agent_label(agent_url)
+
+    if isinstance(http_error, httpx.ConnectTimeout):
+        return A2AUpstreamTimeoutError(
+            f"A2A agent '{agent_label}' timed out while establishing a connection"
+        )
+
+    if isinstance(http_error, httpx.TimeoutException):
+        return A2AUpstreamTimeoutError(
+            f"A2A agent '{agent_label}' timed out before completing the request"
+        )
+
+    if isinstance(http_error, (httpx.ConnectError, httpx.NetworkError)):
+        return A2AAgentUnavailableError(f"Unable to reach A2A agent '{agent_label}'")
+
+    if _should_reset_http_error(http_error):
+        return A2AClientResetRequiredError(str(http_error))
+
+    return None
 
 
 def _should_reset_http_error(error: httpx.HTTPError) -> bool:

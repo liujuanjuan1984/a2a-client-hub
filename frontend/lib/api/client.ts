@@ -561,7 +561,7 @@ const executeJsonRequest = async (
   });
 };
 
-const parseApiErrorDetails = async (
+export const parseApiErrorResponse = async (
   response: Response,
 ): Promise<{
   message: string;
@@ -736,7 +736,7 @@ export async function apiRequest<Response, Body = unknown>(
   );
 
   if (!response.ok) {
-    const parsed = await parseApiErrorDetails(response);
+    const parsed = await parseApiErrorResponse(response);
     throw new ApiRequestError(parsed.message, response.status, {
       errorCode: parsed.errorCode,
       source: parsed.source,

@@ -12,7 +12,10 @@ from app.core.config import settings
 from app.features.invoke.payload_analysis import coerce_payload_to_dict
 from app.features.invoke.service import StreamFinishReason, a2a_invoke_service
 from app.features.invoke.stream_diagnostics import build_artifact_update_log_sample
-from app.integrations.a2a_client.errors import A2APeerProtocolError
+from app.integrations.a2a_client.errors import (
+    A2APeerProtocolError,
+    A2AUpstreamTimeoutError,
+)
 
 
 class _BrokenGateway:
@@ -117,6 +120,13 @@ class _GatewayWithStructuredProtocolError:
                     "details": {"token": "secret"},
                 },
             )
+        )
+
+
+class _GatewayWithTimeoutError:
+    def stream(self, **kwargs):  # noqa: ARG001
+        return _FailingAsyncIterator(
+            A2AUpstreamTimeoutError("Timed out before completing the request")
         )
 
 
@@ -242,6 +252,31 @@ async def test_sse_error_event_exposes_structured_upstream_payload():
         "message": "project_id/channel_id required",
         "data": {"missing_params": ["project_id", "channel_id"]},
     }
+
+
+@pytest.mark.asyncio
+async def test_sse_error_event_preserves_timeout_error_code():
+    response = a2a_invoke_service.stream_sse(
+        gateway=_GatewayWithTimeoutError(),
+        resolved=object(),
+        query="hello",
+        context_id=None,
+        metadata=None,
+        validate_message=lambda _: [],
+        logger=logging.getLogger(__name__),
+        log_extra={},
+    )
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    payload = "".join(chunks)
+    error_data_line = next(
+        line for line in payload.splitlines() if line.startswith("data: {")
+    )
+    error_data = json.loads(error_data_line.removeprefix("data: "))
+    assert error_data["message"] == "Upstream streaming failed"
+    assert error_data["error_code"] == "timeout"
 
 
 @pytest.mark.asyncio
