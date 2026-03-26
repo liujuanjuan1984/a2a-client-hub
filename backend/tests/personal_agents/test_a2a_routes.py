@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.core.config import settings
+from app.db.models.a2a_agent import A2AAgent
 from app.features.personal_agents import router as personal_router
 from app.features.personal_agents.service import a2a_agent_service
 from tests.support.api_utils import create_test_client
@@ -187,3 +191,180 @@ async def test_personal_agent_sse_invoke_streams_with_dependency_injected_db(
 
     assert len(fake_gateway.calls) == 1
     assert fake_gateway.calls[0]["stream"] is True
+
+
+@pytest.mark.asyncio
+async def test_personal_agents_list_supports_health_bucket_and_counts(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+    user = await create_user(async_db_session, email="personal-health-list@example.com")
+
+    for index in range(3):
+        await a2a_agent_service.create_agent(
+            async_db_session,
+            user_id=user.id,
+            name=f"Personal Agent {index + 1}",
+            card_url=f"https://example.com/agent-{index + 1}/.well-known/agent-card.json",
+            auth_type="none",
+            enabled=True,
+            tags=[],
+            extra_headers={},
+        )
+
+    records = (
+        await async_db_session.execute(
+            select(A2AAgent)
+            .where(
+                A2AAgent.user_id == user.id,
+                A2AAgent.agent_scope == A2AAgent.SCOPE_PERSONAL,
+            )
+            .order_by(A2AAgent.created_at.asc(), A2AAgent.id.asc())
+        )
+    ).scalars()
+    agents = list(records)
+    assert len(agents) == 3
+
+    agents[0].health_status = A2AAgent.HEALTH_HEALTHY
+    agents[1].health_status = A2AAgent.HEALTH_DEGRADED
+    agents[2].health_status = A2AAgent.HEALTH_UNKNOWN
+    await async_db_session.commit()
+
+    async with create_test_client(
+        personal_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        healthy_response = await client.get(
+            f"{settings.api_v1_prefix}/me/a2a/agents",
+            params={"page": 1, "size": 10, "health_bucket": "healthy"},
+        )
+        assert healthy_response.status_code == 200
+        healthy_payload = healthy_response.json()
+        assert [item["health_status"] for item in healthy_payload["items"]] == [
+            "healthy"
+        ]
+        assert healthy_payload["meta"]["counts"] == {
+            "healthy": 1,
+            "degraded": 1,
+            "unavailable": 0,
+            "unknown": 1,
+        }
+
+        attention_response = await client.get(
+            f"{settings.api_v1_prefix}/me/a2a/agents",
+            params={"page": 1, "size": 10, "health_bucket": "attention"},
+        )
+        assert attention_response.status_code == 200
+        attention_payload = attention_response.json()
+        assert {item["health_status"] for item in attention_payload["items"]} == {
+            "degraded",
+            "unknown",
+        }
+
+
+@pytest.mark.asyncio
+async def test_personal_agents_health_check_routes_return_summary_and_items(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+    user = await create_user(
+        async_db_session, email="personal-health-check@example.com"
+    )
+
+    record = await a2a_agent_service.create_agent(
+        async_db_session,
+        user_id=user.id,
+        name="Personal Health Agent",
+        card_url="https://example.com/.well-known/agent-card.json",
+        auth_type="none",
+        enabled=True,
+        tags=[],
+        extra_headers={},
+    )
+
+    captured_calls: list[dict[str, Any]] = []
+
+    async def _fake_check_agents_health(
+        _db,
+        *,
+        user_id,
+        force: bool = False,
+        agent_id=None,
+    ):
+        captured_calls.append(
+            {
+                "user_id": user_id,
+                "force": force,
+                "agent_id": agent_id,
+            }
+        )
+        checked_at = datetime(2026, 3, 25, 12, 0, tzinfo=UTC)
+        summary = SimpleNamespace(
+            requested=1,
+            checked=1,
+            skipped_cooldown=0,
+            healthy=1,
+            degraded=0,
+            unavailable=0,
+            unknown=0,
+        )
+        items = [
+            SimpleNamespace(
+                agent_id=record.id,
+                health_status="healthy",
+                checked_at=checked_at,
+                skipped_cooldown=False,
+                error=None,
+            )
+        ]
+        return summary, items
+
+    monkeypatch.setattr(
+        a2a_agent_service, "check_agents_health", _fake_check_agents_health
+    )
+
+    async with create_test_client(
+        personal_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as client:
+        batch_response = await client.post(
+            f"{settings.api_v1_prefix}/me/a2a/agents/check-health",
+            params={"force": "false"},
+        )
+        assert batch_response.status_code == 200
+        assert batch_response.json()["summary"] == {
+            "requested": 1,
+            "checked": 1,
+            "skipped_cooldown": 0,
+            "healthy": 1,
+            "degraded": 0,
+            "unavailable": 0,
+            "unknown": 0,
+        }
+
+        single_response = await client.post(
+            f"{settings.api_v1_prefix}/me/a2a/agents/{record.id}/check-health",
+            params={"force": "true"},
+        )
+        assert single_response.status_code == 200
+        single_payload = single_response.json()
+        assert len(single_payload["items"]) == 1
+        assert single_payload["items"][0]["agent_id"] == str(record.id)
+        assert single_payload["items"][0]["health_status"] == "healthy"
+
+    assert captured_calls == [
+        {
+            "user_id": user.id,
+            "force": False,
+            "agent_id": None,
+        },
+        {
+            "user_id": user.id,
+            "force": True,
+            "agent_id": record.id,
+        },
+    ]

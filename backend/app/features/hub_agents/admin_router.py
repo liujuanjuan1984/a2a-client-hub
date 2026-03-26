@@ -70,13 +70,12 @@ async def list_hub_agents_admin(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=200, description="Page size"),
 ) -> HubA2AAgentAdminListResponse:
-    items = await hub_a2a_agent_service.list_agents_admin(db)
-    total = len(items)
+    items, total = await hub_a2a_agent_service.list_agents_admin(
+        db, page=page, size=size
+    )
     pages = (total + size - 1) // size if size else 0
-    offset = (page - 1) * size
-    page_items = items[offset : offset + size]
     return HubA2AAgentAdminListResponse(
-        items=[_build_admin_response(item) for item in page_items],
+        items=[_build_admin_response(item) for item in items],
         pagination=HubA2AAgentPagination(
             page=page,
             size=size,

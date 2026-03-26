@@ -599,6 +599,16 @@ class Settings(BaseSettings):
         alias="A2A_SCHEDULE_EXECUTION_RETENTION_DAYS",
         description="Number of days to retain terminal scheduled execution history before cleanup.",
     )
+    a2a_agent_health_check_cooldown_seconds: int = Field(
+        default=3600,
+        alias="A2A_AGENT_HEALTH_CHECK_COOLDOWN_SECONDS",
+        description="Cooldown window in seconds before a personal agent is eligible for another automatic health check.",
+    )
+    a2a_agent_health_unavailable_threshold: int = Field(
+        default=3,
+        alias="A2A_AGENT_HEALTH_UNAVAILABLE_THRESHOLD",
+        description="Consecutive failed health checks before a personal agent is marked unavailable.",
+    )
     a2a_schedule_min_interval_minutes: int = Field(
         default=60,
         alias="A2A_SCHEDULE_MIN_INTERVAL_MINUTES",
@@ -741,6 +751,30 @@ class Settings(BaseSettings):
             )
         if value > 3600:
             raise ValueError("A2A schedule heartbeat interval must not exceed 3600")
+        return value
+
+    @field_validator("a2a_agent_health_check_cooldown_seconds")
+    @classmethod
+    def validate_a2a_agent_health_check_cooldown_seconds(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError(
+                "A2A agent health check cooldown seconds must be non-negative"
+            )
+        if value > 86_400:
+            raise ValueError(
+                "A2A agent health check cooldown seconds must not exceed 86400"
+            )
+        return value
+
+    @field_validator("a2a_agent_health_unavailable_threshold")
+    @classmethod
+    def validate_a2a_agent_health_unavailable_threshold(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("A2A agent health unavailable threshold must be positive")
+        if value > 100:
+            raise ValueError(
+                "A2A agent health unavailable threshold must not exceed 100"
+            )
         return value
 
 

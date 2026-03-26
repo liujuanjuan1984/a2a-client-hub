@@ -62,13 +62,13 @@ async def list_hub_agents_for_user(
     size: int = Query(50, ge=1, le=200, description="Page size"),
 ) -> HubA2AAgentUserListResponse:
     current_user_id = cast(UUID, current_user.id)
-    items = await hub_a2a_agent_service.list_visible_agents_for_user(
-        db, user_id=current_user_id
+    items, total = await hub_a2a_agent_service.list_visible_agents_for_user(
+        db,
+        user_id=current_user_id,
+        page=page,
+        size=size,
     )
-    total = len(items)
     pages = (total + size - 1) // size if size else 0
-    offset = (page - 1) * size
-    page_items = items[offset : offset + size]
     return HubA2AAgentUserListResponse(
         items=[
             HubA2AAgentUserResponse(
@@ -77,7 +77,7 @@ async def list_hub_agents_for_user(
                 card_url=cast(str, item.card_url),
                 tags=cast(list[str], item.tags or []),
             )
-            for item in page_items
+            for item in items
         ],
         pagination=HubA2AAgentPagination(
             page=page,

@@ -2,6 +2,58 @@ export const queryKeys = {
   me: () => ["auth", "me"] as const,
   agents: {
     catalog: () => ["agents", "catalog"] as const,
+    listRoot: () => ["agents", "list"] as const,
+    list: (filters?: {
+      page?: number;
+      size?: number;
+      healthBucket?: string;
+    }) => {
+      const resolvedFilters: Record<string, string | number> = {};
+      if (
+        typeof filters?.page === "number" &&
+        Number.isFinite(filters.page) &&
+        filters.page > 0
+      ) {
+        resolvedFilters.page = Math.floor(filters.page);
+      }
+      if (
+        typeof filters?.size === "number" &&
+        Number.isFinite(filters.size) &&
+        filters.size > 0
+      ) {
+        resolvedFilters.size = Math.floor(filters.size);
+      }
+      if (
+        typeof filters?.healthBucket === "string" &&
+        filters.healthBucket.trim()
+      ) {
+        resolvedFilters.health_bucket = filters.healthBucket.trim();
+      }
+      return Object.keys(resolvedFilters).length > 0
+        ? (["agents", "list", resolvedFilters] as const)
+        : (["agents", "list"] as const);
+    },
+    sharedListRoot: () => ["agents", "shared-list"] as const,
+    sharedList: (filters?: { page?: number; size?: number }) => {
+      const resolvedFilters: Record<string, number> = {};
+      if (
+        typeof filters?.page === "number" &&
+        Number.isFinite(filters.page) &&
+        filters.page > 0
+      ) {
+        resolvedFilters.page = Math.floor(filters.page);
+      }
+      if (
+        typeof filters?.size === "number" &&
+        Number.isFinite(filters.size) &&
+        filters.size > 0
+      ) {
+        resolvedFilters.size = Math.floor(filters.size);
+      }
+      return Object.keys(resolvedFilters).length > 0
+        ? (["agents", "shared-list", resolvedFilters] as const)
+        : (["agents", "shared-list"] as const);
+    },
     extensionCapabilities: (input: {
       agentId: string;
       source: "personal" | "shared";

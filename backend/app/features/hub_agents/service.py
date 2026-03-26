@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, cast
+from typing import Any, Dict, Iterable, List, Optional, Sequence, cast
 from uuid import UUID
 
-from sqlalchemy import and_, delete, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secret_vault import hub_a2a_secret_vault
@@ -128,8 +128,11 @@ class HubA2AAgentService(AgentValidationMixin):
             created_at=cast(object, entry.created_at),
         )
 
-    async def list_agents_admin(self, db: AsyncSession) -> List[HubA2AAgentRecord]:
-        stmt = (
+    async def list_agents_admin(
+        self, db: AsyncSession, *, page: int, size: int
+    ) -> tuple[list[HubA2AAgentRecord], int]:
+        offset = (page - 1) * size
+        base_stmt = (
             select(A2AAgent, A2AAgentCredential.token_last4)
             .outerjoin(
                 A2AAgentCredential,
@@ -141,10 +144,16 @@ class HubA2AAgentService(AgentValidationMixin):
                     A2AAgent.deleted_at.is_(None),
                 )
             )
-            .order_by(A2AAgent.created_at.asc())
+        )
+        count_stmt = select(func.count()).select_from(base_stmt.subquery())
+        stmt = (
+            base_stmt.order_by(A2AAgent.created_at.asc(), A2AAgent.id.asc())
+            .offset(offset)
+            .limit(size)
         )
         result = await db.execute(stmt)
         rows = result.all()
+        total = await db.scalar(count_stmt)
         records: list[HubA2AAgentRecord] = []
         for agent, token_last4 in rows:
             records.append(
@@ -154,7 +163,7 @@ class HubA2AAgentService(AgentValidationMixin):
                     token_last4=cast(str | None, token_last4),
                 )
             )
-        return records
+        return records, int(total or 0)
 
     async def get_agent_admin(
         self, db: AsyncSession, *, agent_id: UUID
@@ -333,9 +342,8 @@ class HubA2AAgentService(AgentValidationMixin):
         )
         await commit_safely(db)
 
-    async def list_visible_agents_for_user(
-        self, db: AsyncSession, *, user_id: UUID
-    ) -> List[A2AAgent]:
+    @staticmethod
+    def _build_visible_agent_ids_subquery(user_id: UUID) -> Any:
         allowlisted_stmt = (
             select(A2AAgent.id)
             .join(
@@ -360,14 +368,46 @@ class HubA2AAgentService(AgentValidationMixin):
                 A2AAgent.availability_policy == "public",
             )
         )
-        ids_stmt = select(A2AAgent).where(
-            and_(
-                A2AAgent.id.in_(public_stmt.union_all(allowlisted_stmt)),
-                A2AAgent.agent_scope == A2AAgent.SCOPE_SHARED,
-            )
+        return public_stmt.union(allowlisted_stmt).subquery()
+
+    async def list_all_visible_agents_for_user(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+    ) -> list[A2AAgent]:
+        visible_ids = self._build_visible_agent_ids_subquery(user_id)
+        items_stmt = (
+            select(A2AAgent)
+            .join(visible_ids, visible_ids.c.id == A2AAgent.id)
+            .where(A2AAgent.agent_scope == A2AAgent.SCOPE_SHARED)
+            .order_by(A2AAgent.created_at.desc(), A2AAgent.id.desc())
         )
-        result = await db.execute(ids_stmt.order_by(A2AAgent.created_at.asc()))
+        result = await db.execute(items_stmt)
         return list(result.scalars().all())
+
+    async def list_visible_agents_for_user(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        page: int,
+        size: int,
+    ) -> tuple[List[A2AAgent], int]:
+        visible_ids = self._build_visible_agent_ids_subquery(user_id)
+        total_stmt = select(func.count()).select_from(visible_ids)
+        total = int((await db.execute(total_stmt)).scalar() or 0)
+        offset = max(page - 1, 0) * size
+        items_stmt = (
+            select(A2AAgent)
+            .join(visible_ids, visible_ids.c.id == A2AAgent.id)
+            .where(A2AAgent.agent_scope == A2AAgent.SCOPE_SHARED)
+            .order_by(A2AAgent.created_at.desc(), A2AAgent.id.desc())
+            .offset(offset)
+            .limit(size)
+        )
+        result = await db.execute(items_stmt)
+        return list(result.scalars().all()), total
 
     async def ensure_visible_for_user(
         self, db: AsyncSession, *, user_id: UUID, agent_id: UUID

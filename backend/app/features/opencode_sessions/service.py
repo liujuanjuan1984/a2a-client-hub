@@ -407,6 +407,10 @@ class OpencodeSessionDirectoryService:
             user_id=user_id,
             refresh=refresh,
         )
+        # This endpoint paginates a per-request directory snapshot rather than a
+        # raw DB result set. The snapshot-level metadata (`refresh`, cache hits,
+        # and partial failures) describes the whole aggregation pass, so slicing
+        # happens only after the snapshot is assembled.
         total = len(directory_items)
         pages = (total + size - 1) // size if size else 0
         offset = (page - 1) * size
@@ -422,7 +426,7 @@ class OpencodeSessionDirectoryService:
     async def _list_visible_agents(
         self, db: AsyncSession, *, user_id: UUID
     ) -> List[_AgentRef]:
-        personal_records = await a2a_agent_service.list_agents(db, user_id=user_id)
+        personal_records = await a2a_agent_service.list_all_agents(db, user_id=user_id)
         personal = [
             _AgentRef(
                 agent_id=record.id,
@@ -437,7 +441,7 @@ class OpencodeSessionDirectoryService:
             for record in personal_records
             if record.enabled
         ]
-        hub_agents = await hub_a2a_agent_service.list_visible_agents_for_user(
+        hub_agents = await hub_a2a_agent_service.list_all_visible_agents_for_user(
             db, user_id=user_id
         )
         shared = [
