@@ -49,11 +49,13 @@ def _build_admin_response(record: HubA2AAgentRecord) -> HubA2AAgentAdminResponse
         "auth_type": record.auth_type,
         "auth_header": record.auth_header,
         "auth_scheme": record.auth_scheme,
+        "credential_mode": record.credential_mode,
         "enabled": record.enabled,
         "tags": record.tags,
         "extra_headers": record.extra_headers,
         "has_credential": record.has_credential,
         "token_last4": record.token_last4,
+        "username_hint": record.username_hint,
         "created_by_user_id": record.created_by_user_id,
         "updated_by_user_id": record.updated_by_user_id,
         "created_at": record.created_at,
@@ -127,10 +129,13 @@ async def create_hub_agent_admin(
             auth_type=payload.auth_type,
             auth_header=payload.auth_header,
             auth_scheme=payload.auth_scheme,
+            credential_mode=payload.credential_mode,
             enabled=payload.enabled,
             tags=payload.tags,
             extra_headers=payload.extra_headers,
             token=payload.token,
+            basic_username=payload.basic_username,
+            basic_password=payload.basic_password,
         )
     except HubA2AAgentValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -200,10 +205,13 @@ async def update_hub_agent_admin(
             auth_type=payload.auth_type,
             auth_header=payload.auth_header,
             auth_scheme=payload.auth_scheme,
+            credential_mode=payload.credential_mode,
             enabled=payload.enabled,
             tags=payload.tags,
             extra_headers=payload.extra_headers,
             token=payload.token,
+            basic_username=payload.basic_username,
+            basic_password=payload.basic_password,
         )
     except HubA2AAgentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

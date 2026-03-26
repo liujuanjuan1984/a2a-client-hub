@@ -43,7 +43,12 @@ const toAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
   source: "personal",
   name: agent.name,
   cardUrl: agent.card_url,
-  authType: agent.auth_type === "bearer" ? "bearer" : "none",
+  authType:
+    agent.auth_type === "bearer"
+      ? "bearer"
+      : agent.auth_type === "basic"
+        ? "basic"
+        : "none",
   bearerToken: "",
   apiKeyHeader: "X-API-Key",
   apiKeyValue: "",

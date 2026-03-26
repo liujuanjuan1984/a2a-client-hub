@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from typing import Any, Tuple, Type
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
 from app.integrations.a2a_client.types import ResolvedAgent
-from app.utils.auth_headers import build_auth_header_pair
+from app.utils.auth_headers import (
+    DEFAULT_AUTH_HEADER,
+    DEFAULT_BASIC_AUTH_SCHEME,
+    build_auth_header_pair,
+)
 
 
 def resolve_runtime_auth_headers(
@@ -25,10 +31,12 @@ def resolve_runtime_auth_headers(
 
     if auth_type == "none":
         return resolved_headers, None
-    if auth_type != "bearer":
+    if auth_type not in {"bearer", "basic"}:
         raise validation_error_cls("Unsupported auth_type")
     if credential is None:
-        raise validation_error_cls("Bearer token is required")
+        if auth_type == "bearer":
+            raise validation_error_cls("Bearer token is required")
+        raise validation_error_cls("Basic credential is required")
     if not vault.is_configured:
         raise validation_error_cls("Credential encryption key is missing")
 
@@ -37,14 +45,36 @@ def resolve_runtime_auth_headers(
     except SecretVaultNotConfiguredError as exc:
         raise validation_error_cls(str(exc)) from exc
 
+    if auth_type == "bearer":
+        header_name, header_value = build_auth_header_pair(
+            auth_header=auth_header,
+            auth_scheme=auth_scheme,
+            token=decrypted.value,
+        )
+        resolved_headers[header_name] = header_value
+        token_last4 = decrypted.last4 or getattr(credential, "token_last4", None)
+        return resolved_headers, token_last4
+
+    try:
+        payload = json.loads(decrypted.value)
+    except json.JSONDecodeError as exc:
+        raise validation_error_cls("Stored basic credential is invalid") from exc
+    username = payload.get("username") if isinstance(payload, dict) else None
+    password = payload.get("password") if isinstance(payload, dict) else None
+    if not isinstance(username, str) or not username.strip():
+        raise validation_error_cls("Stored basic credential is invalid")
+    if not isinstance(password, str) or not password.strip():
+        raise validation_error_cls("Stored basic credential is invalid")
+    encoded = base64.b64encode(
+        f"{username.strip()}:{password.strip()}".encode("utf-8")
+    ).decode("ascii")
     header_name, header_value = build_auth_header_pair(
-        auth_header=auth_header,
-        auth_scheme=auth_scheme,
-        token=decrypted.value,
+        auth_header=DEFAULT_AUTH_HEADER,
+        auth_scheme=DEFAULT_BASIC_AUTH_SCHEME,
+        token=encoded,
     )
     resolved_headers[header_name] = header_value
-    token_last4 = decrypted.last4 or getattr(credential, "token_last4", None)
-    return resolved_headers, token_last4
+    return resolved_headers, getattr(credential, "username_hint", None)
 
 
 def build_resolved_runtime_agent(

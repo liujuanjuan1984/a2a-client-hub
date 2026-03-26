@@ -55,7 +55,7 @@ class A2ARuntimeBuilder:
     ) -> A2ARuntime:
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
         credential = None
-        if agent.auth_type == "bearer":
+        if agent.auth_type in {"bearer", "basic"}:
             credential = await self._get_credential(db, agent_id=cast(UUID, agent.id))
         return self.build_from_agent(agent=agent, credential=credential)
 

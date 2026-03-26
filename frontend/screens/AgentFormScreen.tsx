@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -22,10 +23,16 @@ import { type AgentAuthType } from "@/lib/agentAuth";
 import { AGENT_ERROR_MESSAGES } from "@/lib/agentCatalogCache";
 import { executeWithAdminAutoAllowlist } from "@/lib/agentCreateAllowlist";
 import { createProxyAllowlistEntry } from "@/lib/api/adminProxyAllowlist";
+import {
+  deleteHubAgentCredential,
+  getHubAgentCredentialStatus,
+  upsertHubAgentCredential,
+} from "@/lib/api/hubA2aAgentsUser";
 import { confirmAction } from "@/lib/confirm";
 import { blurActiveElement } from "@/lib/focus";
 import { generateId } from "@/lib/id";
 import { backOrHome } from "@/lib/navigation";
+import { queryKeys } from "@/lib/queryKeys";
 import { toast } from "@/lib/toast";
 import { type AgentHeader } from "@/store/agents";
 import { useSessionStore } from "@/store/session";
@@ -94,6 +101,7 @@ const buildSnapshot = (value: {
 
 export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const isAdmin = Boolean(useSessionStore((state) => state.user?.is_superuser));
   const { data: agents = [], isFetched: hasFetchedAgents } =
     useAgentsCatalogQuery(true);
@@ -131,11 +139,22 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     "idle" | "saving" | "success" | "error"
   >("idle");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [savingSharedCredential, setSavingSharedCredential] = useState(false);
+  const [deletingSharedCredential, setDeletingSharedCredential] =
+    useState(false);
+  const [sharedToken, setSharedToken] = useState("");
+  const [sharedBasicUsername, setSharedBasicUsername] = useState("");
+  const [sharedBasicPassword, setSharedBasicPassword] = useState("");
   const initializedFromAgentRef = useRef(false);
   const initialSnapshotRef = useRef<Snapshot | null>(null);
 
   const goBackOrHome = useCallback(() => backOrHome(router), [router]);
   const isSharedAgent = Boolean(agentId && agent && agent.source === "shared");
+  const sharedCredentialQuery = useQuery({
+    queryKey: ["agents", "shared-credential", agentId ?? "none"],
+    queryFn: () => getHubAgentCredentialStatus(agentId!),
+    enabled: Boolean(isSharedAgent && agentId),
+  });
 
   useEffect(() => {
     if (!agentId || agent) {
@@ -394,12 +413,110 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
     }
   };
 
+  const refreshSharedCredentialState = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.agents.sharedListRoot(),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.agents.catalog(),
+      }),
+      sharedCredentialQuery.refetch(),
+    ]);
+  }, [queryClient, sharedCredentialQuery]);
+
+  const handleSaveSharedCredential = useCallback(async () => {
+    if (!agentId || !sharedCredentialQuery.data) {
+      return;
+    }
+    const authType = sharedCredentialQuery.data.auth_type;
+    if (authType === "bearer" && !sharedToken.trim()) {
+      toast.error("Validation failed", "Bearer token is required.");
+      return;
+    }
+    if (authType === "basic") {
+      if (!sharedBasicUsername.trim()) {
+        toast.error("Validation failed", "Username is required.");
+        return;
+      }
+      if (!sharedBasicPassword.trim()) {
+        toast.error("Validation failed", "Password is required.");
+        return;
+      }
+    }
+
+    blurActiveElement();
+    setSavingSharedCredential(true);
+    try {
+      await upsertHubAgentCredential(agentId, {
+        token: authType === "bearer" ? sharedToken.trim() : undefined,
+        basic_username:
+          authType === "basic" ? sharedBasicUsername.trim() : undefined,
+        basic_password:
+          authType === "basic" ? sharedBasicPassword.trim() : undefined,
+      });
+      setSharedToken("");
+      setSharedBasicPassword("");
+      toast.success("Credential saved", "Shared agent credential updated.");
+      await refreshSharedCredentialState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Save failed.";
+      toast.error("Save failed", message);
+    } finally {
+      setSavingSharedCredential(false);
+    }
+  }, [
+    agentId,
+    refreshSharedCredentialState,
+    sharedBasicPassword,
+    sharedBasicUsername,
+    sharedCredentialQuery.data,
+    sharedToken,
+  ]);
+
+  const handleDeleteSharedCredential = useCallback(async () => {
+    if (!agentId) {
+      return;
+    }
+    blurActiveElement();
+    const confirmed = await confirmAction({
+      title: "Delete credential",
+      message:
+        "Remove your saved credential for this shared agent? You will need to configure it again before chat.",
+      confirmLabel: "Delete",
+      isDestructive: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+    setDeletingSharedCredential(true);
+    try {
+      await deleteHubAgentCredential(agentId);
+      setSharedToken("");
+      setSharedBasicUsername("");
+      setSharedBasicPassword("");
+      toast.success(
+        "Credential deleted",
+        "Your shared agent credential was removed.",
+      );
+      await refreshSharedCredentialState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Delete failed.";
+      toast.error("Delete failed", message);
+    } finally {
+      setDeletingSharedCredential(false);
+    }
+  }, [agentId, refreshSharedCredentialState]);
+
   if (isSharedAgent) {
+    const sharedStatus = sharedCredentialQuery.data;
+    const credentialMode = sharedStatus?.credential_mode ?? "none";
+    const authType = sharedStatus?.auth_type ?? "none";
     return (
       <ScreenContainer>
         <PageHeader
           title="Agent"
-          subtitle="This agent is provided by an admin and cannot be edited here."
+          subtitle="This shared agent is admin-managed. You can only manage your own credential when required."
           rightElement={<BackButton variant="outline" onPress={handleCancel} />}
         />
         <View className="mt-8 rounded-2xl bg-surface p-6 shadow-sm">
@@ -409,6 +526,18 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
           <Text className="mt-2 text-[11px] font-medium text-slate-400">
             Please contact your administrator if you need changes to this agent.
           </Text>
+          <View className="mt-5 gap-2">
+            <Text className="text-xs text-slate-300">Name: {agent?.name}</Text>
+            <Text className="text-xs text-slate-400">
+              URL: {agent?.cardUrl}
+            </Text>
+            <Text className="text-xs text-slate-400">
+              Auth: {sharedStatus?.auth_type ?? "Loading..."}
+            </Text>
+            <Text className="text-xs text-slate-400">
+              Credential mode: {credentialMode}
+            </Text>
+          </View>
           <View className="mt-6">
             <Button
               label="Test connection"
@@ -419,6 +548,87 @@ export function AgentFormScreen({ agentId }: AgentFormScreenProps) {
               onPress={handleTest}
             />
           </View>
+        </View>
+
+        <View className="mt-6 rounded-2xl bg-surface p-6 shadow-sm">
+          <Text className="text-base font-bold text-white">Credential</Text>
+          {sharedCredentialQuery.isLoading && !sharedStatus ? (
+            <Text className="mt-2 text-[11px] font-medium text-slate-400">
+              Loading credential status...
+            </Text>
+          ) : credentialMode === "user" ? (
+            <>
+              <Text className="mt-2 text-[11px] font-medium text-slate-400">
+                {sharedStatus?.configured
+                  ? authType === "basic"
+                    ? `Your ${authType} credential is configured (${sharedStatus.username_hint ?? "saved"}).`
+                    : `Your ${authType} credential is configured${sharedStatus?.token_last4 ? ` (****${sharedStatus.token_last4})` : ""}.`
+                  : `This shared agent requires your ${authType} credential before chat.`}
+              </Text>
+              <View className="mt-4 gap-3">
+                {authType === "bearer" ? (
+                  <Input
+                    label="Token"
+                    placeholder="Enter your bearer token"
+                    secureTextEntry
+                    value={sharedToken}
+                    onChangeText={setSharedToken}
+                  />
+                ) : null}
+                {authType === "basic" ? (
+                  <View className="gap-3">
+                    <Input
+                      label="Username"
+                      placeholder="Enter username"
+                      value={sharedBasicUsername}
+                      onChangeText={setSharedBasicUsername}
+                    />
+                    <Input
+                      label="Password"
+                      placeholder="Enter password"
+                      secureTextEntry
+                      value={sharedBasicPassword}
+                      onChangeText={setSharedBasicPassword}
+                    />
+                  </View>
+                ) : null}
+                <View className="flex-row gap-3">
+                  <Button
+                    label={
+                      savingSharedCredential ? "Saving..." : "Save credential"
+                    }
+                    loading={savingSharedCredential}
+                    onPress={() => {
+                      handleSaveSharedCredential().catch(() => undefined);
+                    }}
+                  />
+                  {sharedStatus?.configured ? (
+                    <Button
+                      label={
+                        deletingSharedCredential
+                          ? "Deleting..."
+                          : "Delete credential"
+                      }
+                      variant="danger"
+                      loading={deletingSharedCredential}
+                      onPress={() => {
+                        handleDeleteSharedCredential().catch(() => undefined);
+                      }}
+                    />
+                  ) : null}
+                </View>
+              </View>
+            </>
+          ) : credentialMode === "shared" ? (
+            <Text className="mt-2 text-[11px] font-medium text-slate-400">
+              This shared agent uses an admin-managed credential. No personal
+              credential is needed.
+            </Text>
+          ) : (
+            <Text className="mt-2 text-[11px] font-medium text-slate-400">
+              This shared agent does not require credentials.
+            </Text>
+          )}
         </View>
       </ScreenContainer>
     );

@@ -1577,6 +1577,9 @@ async def run_http_invoke_route(
     runtime_not_found_status_code: int,
     runtime_validation_errors: tuple[type[Exception], ...],
     runtime_validation_status_code: int,
+    runtime_validation_status_overrides: (
+        tuple[tuple[type[Exception], int], ...] | None
+    ) = None,
     validate_message: Callable[[dict[str, Any]], list[Any]],
     logger: Any,
     invoke_log_message: str,
@@ -1593,8 +1596,14 @@ async def run_http_invoke_route(
             detail=str(exc),
         ) from exc
     except runtime_validation_errors as exc:
+        status_code = runtime_validation_status_code
+        if runtime_validation_status_overrides:
+            for error_type, override in runtime_validation_status_overrides:
+                if isinstance(exc, error_type):
+                    status_code = override
+                    break
         raise HTTPException(
-            status_code=runtime_validation_status_code,
+            status_code=status_code,
             detail=str(exc),
         ) from exc
     await _close_open_transaction(db)

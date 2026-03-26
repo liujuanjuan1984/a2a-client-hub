@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react-native";
 import type { HubA2AAgentAdminResponse } from "@/lib/api/hubA2aAgentsAdmin";
 import {
   buildHubAgentComparablePayload,
+  buildHubAgentComparablePayloadFromRecord,
   buildHubAgentPayload,
   createHubAgentFormValuesFromRecord,
   useHubAgentFormState,
@@ -17,9 +18,12 @@ describe("hubAgentFormState", () => {
       enabled: true,
       availabilityPolicy: "allowlist",
       authType: "none",
+      credentialMode: "none",
       authHeader: " Authorization ",
       authScheme: " Bearer ",
       token: "  secret-token  ",
+      basicUsername: "",
+      basicPassword: "",
       tagsText: "alpha, beta, alpha",
       extraHeaders: [
         { id: "1", key: " X-Trace-Id ", value: " 123 " },
@@ -33,6 +37,7 @@ describe("hubAgentFormState", () => {
       enabled: true,
       availability_policy: "allowlist",
       auth_type: "none",
+      credential_mode: "none",
       auth_header: null,
       auth_scheme: null,
       tags: ["alpha", "beta"],
@@ -47,9 +52,12 @@ describe("hubAgentFormState", () => {
       enabled: false,
       availabilityPolicy: "public",
       authType: "bearer",
+      credentialMode: "shared",
       authHeader: " Authorization ",
       authScheme: " Bearer ",
       token: "  ",
+      basicUsername: "",
+      basicPassword: "",
       tagsText: "prod, stable",
       extraHeaders: [{ id: "1", key: "X-Env", value: "prod" }],
     };
@@ -59,6 +67,7 @@ describe("hubAgentFormState", () => {
       card_url: "https://example.com/card.json",
       availability_policy: "public",
       auth_type: "bearer",
+      credential_mode: "shared",
       auth_header: "Authorization",
       auth_scheme: "Bearer",
       enabled: false,
@@ -74,6 +83,7 @@ describe("hubAgentFormState", () => {
       card_url: "https://example.com/agent.json",
       availability_policy: "public",
       auth_type: "none",
+      credential_mode: "none",
       auth_header: null,
       auth_scheme: null,
       enabled: true,
@@ -81,6 +91,7 @@ describe("hubAgentFormState", () => {
       extra_headers: {},
       has_credential: false,
       token_last4: null,
+      username_hint: null,
       created_by_user_id: "user-1",
       updated_by_user_id: null,
       created_at: "2026-02-12T00:00:00.000Z",
@@ -113,5 +124,34 @@ describe("hubAgentFormState", () => {
     expect(hydrated.extraHeaders).toHaveLength(1);
     expect(hydrated.extraHeaders[0]?.id).toBeTruthy();
     expect(result.current.errors).toEqual({});
+  });
+
+  it("keeps basic auth comparable payload aligned with persisted record", () => {
+    const record: HubA2AAgentAdminResponse = {
+      id: "agent-basic",
+      name: "Basic Shared Agent",
+      card_url: "https://example.com/basic.json",
+      availability_policy: "public",
+      auth_type: "basic",
+      credential_mode: "shared",
+      auth_header: "Authorization",
+      auth_scheme: "Basic",
+      enabled: true,
+      tags: [],
+      extra_headers: {},
+      has_credential: true,
+      token_last4: null,
+      username_hint: "alice",
+      created_by_user_id: "user-1",
+      updated_by_user_id: null,
+      created_at: "2026-02-12T00:00:00.000Z",
+      updated_at: "2026-02-12T00:00:00.000Z",
+    };
+
+    expect(
+      buildHubAgentComparablePayload(
+        createHubAgentFormValuesFromRecord(record),
+      ),
+    ).toEqual(buildHubAgentComparablePayloadFromRecord(record));
   });
 });

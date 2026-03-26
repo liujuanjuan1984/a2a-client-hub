@@ -5,6 +5,7 @@ import type {
   HubA2AAgentAdminResponse,
   HubA2AAuthType,
   HubA2AAvailabilityPolicy,
+  HubA2ACredentialMode,
 } from "@/lib/api/hubA2aAgentsAdmin";
 import { generateId } from "@/lib/id";
 import {
@@ -26,9 +27,12 @@ export type HubAgentFormValues = {
   enabled: boolean;
   availabilityPolicy: HubA2AAvailabilityPolicy;
   authType: HubA2AAuthType;
+  credentialMode: HubA2ACredentialMode;
   authHeader: string;
   authScheme: string;
   token: string;
+  basicUsername: string;
+  basicPassword: string;
   tagsText: string;
   extraHeaders: HeaderRow[];
 };
@@ -39,9 +43,12 @@ const createDefaultHubAgentFormValues = (): HubAgentFormValues => ({
   enabled: true,
   availabilityPolicy: "public",
   authType: "none",
+  credentialMode: "none",
   authHeader: "Authorization",
   authScheme: "Bearer",
   token: "",
+  basicUsername: "",
+  basicPassword: "",
   tagsText: "",
   extraHeaders: recordToHeaderRows({}),
 });
@@ -54,9 +61,12 @@ export const createHubAgentFormValuesFromRecord = (
   enabled: Boolean(record.enabled),
   availabilityPolicy: record.availability_policy,
   authType: record.auth_type,
+  credentialMode: record.credential_mode,
   authHeader: record.auth_header ?? "Authorization",
   authScheme: record.auth_scheme ?? "Bearer",
   token: "",
+  basicUsername: "",
+  basicPassword: "",
   tagsText: (record.tags ?? []).join(", "),
   extraHeaders: recordToHeaderRows(record.extra_headers ?? {}),
 });
@@ -67,6 +77,7 @@ type HubAgentComparablePayload = {
   enabled: boolean;
   availability_policy: HubA2AAvailabilityPolicy;
   auth_type: HubA2AAuthType;
+  credential_mode: HubA2ACredentialMode;
   auth_header: string | null;
   auth_scheme: string | null;
   tags: string[];
@@ -81,8 +92,15 @@ export const buildHubAgentComparablePayload = (
   enabled: values.enabled,
   availability_policy: values.availabilityPolicy,
   auth_type: values.authType,
-  auth_header: values.authType === "bearer" ? values.authHeader.trim() : null,
-  auth_scheme: values.authType === "bearer" ? values.authScheme.trim() : null,
+  credential_mode: values.credentialMode,
+  auth_header:
+    values.authType === "bearer" || values.authType === "basic"
+      ? values.authHeader.trim()
+      : null,
+  auth_scheme:
+    values.authType === "bearer" || values.authType === "basic"
+      ? values.authScheme.trim()
+      : null,
   tags: parseTags(values.tagsText),
   extra_headers: headerRowsToRecord(values.extraHeaders),
 });
@@ -95,6 +113,7 @@ export const buildHubAgentComparablePayloadFromRecord = (
   enabled: record.enabled,
   availability_policy: record.availability_policy,
   auth_type: record.auth_type,
+  credential_mode: record.credential_mode,
   auth_header: record.auth_header ?? null,
   auth_scheme: record.auth_scheme ?? null,
   tags: record.tags ?? [],
@@ -109,8 +128,15 @@ export const buildHubAgentPayload = (
     card_url: values.cardUrl.trim(),
     availability_policy: values.availabilityPolicy,
     auth_type: values.authType,
-    auth_header: values.authType === "bearer" ? values.authHeader.trim() : null,
-    auth_scheme: values.authType === "bearer" ? values.authScheme.trim() : null,
+    credential_mode: values.credentialMode,
+    auth_header:
+      values.authType === "bearer" || values.authType === "basic"
+        ? values.authHeader.trim()
+        : null,
+    auth_scheme:
+      values.authType === "bearer" || values.authType === "basic"
+        ? values.authScheme.trim()
+        : null,
     enabled: values.enabled,
     tags: parseTags(values.tagsText),
     extra_headers: headerRowsToRecord(values.extraHeaders),
@@ -118,6 +144,14 @@ export const buildHubAgentPayload = (
   const trimmedToken = values.token.trim();
   if (trimmedToken) {
     payload.token = trimmedToken;
+  }
+  const trimmedBasicUsername = values.basicUsername.trim();
+  const trimmedBasicPassword = values.basicPassword.trim();
+  if (trimmedBasicUsername) {
+    payload.basic_username = trimmedBasicUsername;
+  }
+  if (trimmedBasicPassword) {
+    payload.basic_password = trimmedBasicPassword;
   }
   return payload;
 };
@@ -127,6 +161,8 @@ const hasDraftValue = (values: HubAgentFormValues): boolean =>
   Boolean(values.cardUrl.trim()) ||
   values.tagsText.trim().length > 0 ||
   values.token.trim().length > 0 ||
+  values.basicUsername.trim().length > 0 ||
+  values.basicPassword.trim().length > 0 ||
   values.extraHeaders.some((row) => row.key.trim() || row.value.trim());
 
 export const useHubAgentFormState = () => {
@@ -151,7 +187,31 @@ export const useHubAgentFormState = () => {
     [],
   );
   const setAuthType = useCallback((value: HubA2AAuthType) => {
-    setValues((prev) => ({ ...prev, authType: value }));
+    setValues((prev) => ({
+      ...prev,
+      authType: value,
+      credentialMode:
+        value === "none"
+          ? "none"
+          : prev.credentialMode === "none"
+            ? "shared"
+            : prev.credentialMode,
+      authHeader: value === "bearer" ? prev.authHeader : "Authorization",
+      authScheme:
+        value === "bearer" ? prev.authScheme : value === "basic" ? "Basic" : "",
+      token: "",
+      basicUsername: "",
+      basicPassword: "",
+    }));
+  }, []);
+  const setCredentialMode = useCallback((value: HubA2ACredentialMode) => {
+    setValues((prev) => ({
+      ...prev,
+      credentialMode: value,
+      token: "",
+      basicUsername: "",
+      basicPassword: "",
+    }));
   }, []);
   const setAuthHeader = useCallback((value: string) => {
     setValues((prev) => ({ ...prev, authHeader: value }));
@@ -161,6 +221,12 @@ export const useHubAgentFormState = () => {
   }, []);
   const setToken = useCallback((value: string) => {
     setValues((prev) => ({ ...prev, token: value }));
+  }, []);
+  const setBasicUsername = useCallback((value: string) => {
+    setValues((prev) => ({ ...prev, basicUsername: value }));
+  }, []);
+  const setBasicPassword = useCallback((value: string) => {
+    setValues((prev) => ({ ...prev, basicPassword: value }));
   }, []);
   const setTagsText = useCallback((value: string) => {
     setValues((prev) => ({ ...prev, tagsText: value }));
@@ -241,9 +307,12 @@ export const useHubAgentFormState = () => {
     setEnabled,
     setAvailabilityPolicy,
     setAuthType,
+    setCredentialMode,
     setAuthHeader,
     setAuthScheme,
     setToken,
+    setBasicUsername,
+    setBasicPassword,
     setTagsText,
     setHeaderRow,
     removeHeaderRow,

@@ -291,19 +291,50 @@ export function AgentListScreen() {
             SHARED
           </Text>
         </View>
+        <Text className="mt-3 text-xs text-slate-400">
+          {agent.credential_mode === "user"
+            ? agent.credential_configured
+              ? `Uses your saved ${agent.auth_type} credential${
+                  agent.credential_display_hint
+                    ? ` (${agent.credential_display_hint})`
+                    : ""
+                }.`
+              : `Requires your ${agent.auth_type} credential before chat.`
+            : agent.credential_mode === "shared"
+              ? "Uses an admin-managed shared credential."
+              : "No credential required."}
+        </Text>
       </View>
 
       <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
-        <Button
-          label="Details"
-          size="sm"
-          variant="secondary"
-          iconLeft="information-outline"
-          onPress={() => {
-            blurActiveElement();
-            router.push(`/agents/${agent.id}`);
-          }}
-        />
+        <View className="flex-row gap-2">
+          <Button
+            label="Details"
+            size="sm"
+            variant="secondary"
+            iconLeft="information-outline"
+            onPress={() => {
+              blurActiveElement();
+              router.push(`/agents/${agent.id}`);
+            }}
+          />
+          {agent.credential_mode === "user" ? (
+            <Button
+              label={
+                agent.credential_configured
+                  ? "Edit credential"
+                  : "Set credential"
+              }
+              size="sm"
+              variant="secondary"
+              iconLeft="key-outline"
+              onPress={() => {
+                blurActiveElement();
+                router.push(`/agents/${agent.id}`);
+              }}
+            />
+          ) : null}
+        </View>
 
         <Button
           label="Chat"
@@ -311,6 +342,9 @@ export function AgentListScreen() {
           variant="primary"
           iconRight="chevron-forward"
           onPress={() => handleChat(agent.id)}
+          disabled={
+            agent.credential_mode === "user" && !agent.credential_configured
+          }
           accessibilityRole="button"
           accessibilityLabel="Open chat"
           accessibilityHint={`Open chat with ${agent.name}`}

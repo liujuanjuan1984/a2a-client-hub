@@ -100,3 +100,19 @@ async def test_upsert_keeps_single_credential_row(async_db_session):
     credentials = list(rows)
     assert len(credentials) == 1
     assert credentials[0].token_last4 == "9999"
+
+
+@pytest.mark.asyncio
+async def test_changing_auth_type_requires_new_credential(async_db_session):
+    user = await create_user(async_db_session, email="a2a-switch-auth-type@example.com")
+    record = await _create_bearer_agent(
+        async_db_session, user_id=user.id, suffix=f"switch-{uuid4().hex}"
+    )
+
+    with pytest.raises(Exception, match="New credentials are required"):
+        await a2a_agent_service.update_agent(
+            async_db_session,
+            user_id=user.id,
+            agent_id=record.id,
+            auth_type="basic",
+        )

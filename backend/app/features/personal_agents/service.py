@@ -67,6 +67,7 @@ class A2AAgentRecord:
     created_at: object
     updated_at: object
     token_last4: Optional[str]
+    username_hint: Optional[str]
 
 
 @dataclass(frozen=True)
@@ -123,7 +124,12 @@ class A2AAgentService(AgentValidationMixin):
         self._vault = user_llm_secret_vault
 
     @staticmethod
-    def _build_record(agent: A2AAgent, *, token_last4: Optional[str]) -> A2AAgentRecord:
+    def _build_record(
+        agent: A2AAgent,
+        *,
+        token_last4: Optional[str],
+        username_hint: Optional[str],
+    ) -> A2AAgentRecord:
         return A2AAgentRecord(
             id=cast(UUID, agent.id),
             name=cast(str, agent.name),
@@ -156,6 +162,7 @@ class A2AAgentService(AgentValidationMixin):
             created_at=cast(object, agent.created_at),
             updated_at=cast(object, agent.updated_at),
             token_last4=token_last4,
+            username_hint=username_hint,
         )
 
     async def list_agents(
@@ -184,7 +191,11 @@ class A2AAgentService(AgentValidationMixin):
             else_=3,
         )
         stmt = (
-            select(A2AAgent, A2AAgentCredential.token_last4)
+            select(
+                A2AAgent,
+                A2AAgentCredential.token_last4,
+                A2AAgentCredential.username_hint,
+            )
             .outerjoin(
                 A2AAgentCredential,
                 A2AAgentCredential.agent_id == A2AAgent.id,
@@ -203,7 +214,9 @@ class A2AAgentService(AgentValidationMixin):
         return (
             [
                 self._build_record(
-                    cast(A2AAgent, row[0]), token_last4=cast(str | None, row[1])
+                    cast(A2AAgent, row[0]),
+                    token_last4=cast(str | None, row[1]),
+                    username_hint=cast(str | None, row[2]),
                 )
                 for row in rows
             ],
@@ -218,7 +231,11 @@ class A2AAgentService(AgentValidationMixin):
         user_id: UUID,
     ) -> list[A2AAgentRecord]:
         stmt = (
-            select(A2AAgent, A2AAgentCredential.token_last4)
+            select(
+                A2AAgent,
+                A2AAgentCredential.token_last4,
+                A2AAgentCredential.username_hint,
+            )
             .outerjoin(
                 A2AAgentCredential,
                 A2AAgentCredential.agent_id == A2AAgent.id,
@@ -236,7 +253,9 @@ class A2AAgentService(AgentValidationMixin):
         rows = result.all()
         return [
             self._build_record(
-                cast(A2AAgent, row[0]), token_last4=cast(str | None, row[1])
+                cast(A2AAgent, row[0]),
+                token_last4=cast(str | None, row[1]),
+                username_hint=cast(str | None, row[2]),
             )
             for row in rows
         ]
@@ -452,6 +471,8 @@ class A2AAgentService(AgentValidationMixin):
         tags: Optional[Iterable[str]] = None,
         extra_headers: Optional[Dict[str, str]] = None,
         token: Optional[str] = None,
+        basic_username: Optional[str] = None,
+        basic_password: Optional[str] = None,
     ) -> A2AAgentRecord:
         normalized_name = self._normalize_name(name)
         normalized_url = self._normalize_card_url(card_url)
@@ -482,19 +503,35 @@ class A2AAgentService(AgentValidationMixin):
         await db.flush()
 
         token_last4: Optional[str] = None
-        if normalized_auth_type == "none" and token is not None:
-            raise A2AAgentValidationError("Bearer token provided for auth_type=none")
-        if normalized_auth_type == "bearer":
-            token_last4 = await self._upsert_credential(
+        username_hint: Optional[str] = None
+        if normalized_auth_type == "none" and (
+            token is not None
+            or basic_username is not None
+            or basic_password is not None
+        ):
+            raise A2AAgentValidationError("Credential provided for auth_type=none")
+        if normalized_auth_type in {"bearer", "basic"}:
+            preview = await self._upsert_credential(
                 db,
                 user_id=user_id,
                 agent_id=cast(UUID, agent.id),
+                auth_type=normalized_auth_type,
                 token=token,
+                basic_username=basic_username,
+                basic_password=basic_password,
             )
+            if normalized_auth_type == "basic":
+                username_hint = (basic_username or "").strip() or None
+            else:
+                token_last4 = preview
 
         await commit_safely(db)
         await db.refresh(agent)
-        return self._build_record(agent, token_last4=token_last4)
+        return self._build_record(
+            agent,
+            token_last4=token_last4,
+            username_hint=username_hint,
+        )
 
     async def update_agent(
         self,
@@ -511,8 +548,11 @@ class A2AAgentService(AgentValidationMixin):
         tags: Optional[Iterable[str]] = None,
         extra_headers: Optional[Dict[str, str]] = None,
         token: Optional[str] = None,
+        basic_username: Optional[str] = None,
+        basic_password: Optional[str] = None,
     ) -> A2AAgentRecord:
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
+        previous_auth_type = cast(str, agent.auth_type)
 
         if name is not None:
             setattr(agent, "name", self._normalize_name(name))
@@ -546,19 +586,30 @@ class A2AAgentService(AgentValidationMixin):
         setattr(agent, "auth_header", auth_header_value)
         setattr(agent, "auth_scheme", auth_scheme_value)
 
-        if token is not None and cast(str, agent.auth_type) == "none":
-            raise A2AAgentValidationError("Bearer token provided for auth_type=none")
+        if cast(str, agent.auth_type) == "none" and (
+            token is not None
+            or basic_username is not None
+            or basic_password is not None
+        ):
+            raise A2AAgentValidationError("Credential provided for auth_type=none")
 
-        token_last4: Optional[str] = await self._sync_credentials(
+        token_last4, username_hint = await self._sync_credentials(
             db,
             user_id=user_id,
             agent=agent,
+            previous_auth_type=previous_auth_type,
             token=token,
+            basic_username=basic_username,
+            basic_password=basic_password,
         )
 
         await commit_safely(db)
         await db.refresh(agent)
-        return self._build_record(agent, token_last4=token_last4)
+        return self._build_record(
+            agent,
+            token_last4=token_last4,
+            username_hint=username_hint,
+        )
 
     async def delete_agent(
         self, db: AsyncSession, *, user_id: UUID, agent_id: UUID
@@ -614,29 +665,47 @@ class A2AAgentService(AgentValidationMixin):
         *,
         user_id: UUID,
         agent: A2AAgent,
+        previous_auth_type: Optional[str] = None,
         token: Optional[str],
-    ) -> Optional[str]:
+        basic_username: Optional[str],
+        basic_password: Optional[str],
+    ) -> tuple[Optional[str], Optional[str]]:
         auth_type = cast(str, agent.auth_type)
         agent_id = cast(UUID, agent.id)
         if auth_type == "none":
             await delete_agent_credentials(db, agent_id=agent_id)
-            return None
+            return None, None
 
-        if auth_type != "bearer":
+        if auth_type not in {"bearer", "basic"}:
             raise A2AAgentValidationError("Unsupported auth_type")
 
         credential = await get_agent_credential(db, agent_id=agent_id)
-        if token is None:
+        if token is None and basic_username is None and basic_password is None:
             if credential is None:
-                raise A2AAgentValidationError("Bearer token is required")
-            return cast(str | None, credential.token_last4)
+                if auth_type == "bearer":
+                    raise A2AAgentValidationError("Bearer token is required")
+                raise A2AAgentValidationError("Basic credentials are required")
+            if previous_auth_type is not None and previous_auth_type != auth_type:
+                raise A2AAgentValidationError(
+                    "New credentials are required when changing auth_type"
+                )
+            return (
+                cast(str | None, credential.token_last4),
+                cast(str | None, credential.username_hint),
+            )
 
-        return await self._upsert_credential(
+        preview = await self._upsert_credential(
             db,
             user_id=user_id,
             agent_id=agent_id,
+            auth_type=auth_type,
             token=token,
+            basic_username=basic_username,
+            basic_password=basic_password,
         )
+        if auth_type == "basic":
+            return None, (basic_username or "").strip() or None
+        return preview, None
 
     async def _upsert_credential(
         self,
@@ -644,16 +713,23 @@ class A2AAgentService(AgentValidationMixin):
         *,
         user_id: UUID,
         agent_id: UUID,
+        auth_type: str,
         token: Optional[str],
+        basic_username: Optional[str] = None,
+        basic_password: Optional[str] = None,
     ) -> Optional[str]:
-        return await upsert_agent_credential(
+        value = await upsert_agent_credential(
             db,
             vault=self._vault,
+            auth_type=auth_type,
             agent_id=agent_id,
             user_id=user_id,
             token=token,
+            basic_username=basic_username,
+            basic_password=basic_password,
             validation_error_cls=A2AAgentValidationError,
         )
+        return value or None
 
     async def _list_counts(
         self,

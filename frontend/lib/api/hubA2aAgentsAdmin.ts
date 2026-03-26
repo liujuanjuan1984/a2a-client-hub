@@ -1,7 +1,8 @@
 import { apiRequest } from "@/lib/api/client";
 
 export type HubA2AAvailabilityPolicy = "public" | "allowlist";
-export type HubA2AAuthType = "none" | "bearer";
+export type HubA2AAuthType = "none" | "bearer" | "basic";
+export type HubA2ACredentialMode = "none" | "shared" | "user";
 
 export type HubA2AAgentAdminResponse = {
   id: string;
@@ -11,11 +12,13 @@ export type HubA2AAgentAdminResponse = {
   auth_type: HubA2AAuthType;
   auth_header?: string | null;
   auth_scheme?: string | null;
+  credential_mode: HubA2ACredentialMode;
   enabled: boolean;
   tags: string[];
   extra_headers: Record<string, string>;
   has_credential: boolean;
   token_last4?: string | null;
+  username_hint?: string | null;
   created_by_user_id: string;
   updated_by_user_id?: string | null;
   created_at: string;
@@ -40,10 +43,13 @@ export type HubA2AAgentAdminCreate = {
   auth_type: HubA2AAuthType;
   auth_header?: string | null;
   auth_scheme?: string | null;
+  credential_mode: HubA2ACredentialMode;
   enabled: boolean;
   tags: string[];
   extra_headers: Record<string, string>;
   token?: string | null;
+  basic_username?: string | null;
+  basic_password?: string | null;
 };
 
 export type HubA2AAgentAdminUpdate = Partial<HubA2AAgentAdminCreate>;

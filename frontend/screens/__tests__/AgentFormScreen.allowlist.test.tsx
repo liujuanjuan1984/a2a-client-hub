@@ -1,7 +1,10 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import type { ReactElement } from "react";
 
 import { AgentFormScreen } from "@/screens/AgentFormScreen";
 import { useSessionStore } from "@/store/session";
+import { createTestQueryClient } from "@/test-utils/queryClient";
 
 const mockRouter = {
   back: jest.fn(),
@@ -22,6 +25,15 @@ const mockConfirmAction = jest.fn();
 
 jest.mock("expo-router", () => ({
   useRouter: () => mockRouter,
+}));
+
+jest.mock("@/lib/storage/mmkv", () => ({
+  buildPersistStorageName: (key: string) => key,
+  createPersistStorage: () => ({
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+  }),
 }));
 
 jest.mock("@/hooks/useAgentsCatalogQuery", () => ({
@@ -155,6 +167,13 @@ jest.mock("@/components/ui/KeyValueInputRow", () => ({
 }));
 
 describe("AgentFormScreen auto allowlist create flow", () => {
+  const renderScreen = (ui: ReactElement) =>
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        {ui}
+      </QueryClientProvider>,
+    );
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockAgentsCatalog.length = 0;
@@ -181,7 +200,7 @@ describe("AgentFormScreen auto allowlist create flow", () => {
     mockConfirmAction.mockResolvedValue(true);
     mockCreateProxyAllowlistEntry.mockResolvedValue({ id: "allow-1" });
 
-    const screen = render(<AgentFormScreen />);
+    const screen = renderScreen(<AgentFormScreen />);
 
     fireEvent.changeText(
       screen.getByPlaceholderText("Agent name"),
@@ -244,7 +263,7 @@ describe("AgentFormScreen auto allowlist create flow", () => {
     mockConfirmAction.mockResolvedValue(true);
     mockCreateProxyAllowlistEntry.mockResolvedValue({ id: "allow-2" });
 
-    const screen = render(<AgentFormScreen agentId="agent-1" />);
+    const screen = renderScreen(<AgentFormScreen agentId="agent-1" />);
 
     fireEvent.changeText(
       screen.getByPlaceholderText(

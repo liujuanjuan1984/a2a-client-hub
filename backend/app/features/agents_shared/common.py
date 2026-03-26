@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 from typing import Any, Optional, Type, cast
 from urllib.parse import urlparse
 from uuid import UUID
@@ -12,10 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secret_vault import SecretVaultNotConfiguredError
 from app.db.models.a2a_agent_credential import A2AAgentCredential
-from app.utils.auth_headers import resolve_stored_auth_fields
+from app.utils.auth_headers import (
+    DEFAULT_AUTH_HEADER,
+    DEFAULT_BASIC_AUTH_SCHEME,
+    resolve_stored_auth_fields,
+)
 
-ALLOWED_AUTH_TYPES = {"none", "bearer"}
+ALLOWED_AUTH_TYPES = {"none", "bearer", "basic"}
 ALLOWED_AVAILABILITY_POLICIES = {"public", "allowlist"}
+ALLOWED_SHARED_CREDENTIAL_MODES = {"none", "shared", "user"}
 
 
 def normalize_required_text(
@@ -59,15 +65,23 @@ def resolve_agent_auth_fields(
 
     if auth_type == "none":
         return None, None
-    if auth_type != "bearer":
-        raise validation_error_cls("Unsupported auth_type")
-
-    return resolve_stored_auth_fields(
-        auth_header=auth_header,
-        auth_scheme=auth_scheme,
-        existing_auth_header=existing_auth_header,
-        existing_auth_scheme=existing_auth_scheme,
-    )
+    if auth_type == "bearer":
+        return resolve_stored_auth_fields(
+            auth_header=auth_header,
+            auth_scheme=auth_scheme,
+            existing_auth_header=existing_auth_header,
+            existing_auth_scheme=existing_auth_scheme,
+        )
+    if auth_type == "basic":
+        return resolve_stored_auth_fields(
+            auth_header=auth_header,
+            auth_scheme=auth_scheme,
+            existing_auth_header=existing_auth_header,
+            existing_auth_scheme=existing_auth_scheme,
+            default_header=DEFAULT_AUTH_HEADER,
+            default_scheme=DEFAULT_BASIC_AUTH_SCHEME,
+        )
+    raise validation_error_cls("Unsupported auth_type")
 
 
 def encrypt_bearer_token(
@@ -87,6 +101,48 @@ def encrypt_bearer_token(
         return cast(tuple[str, str], vault.encrypt(token.strip()))
     except SecretVaultNotConfiguredError as exc:
         raise validation_error_cls(str(exc)) from exc
+
+
+def encrypt_auth_payload(
+    *,
+    vault: Any,
+    auth_type: str,
+    token: Optional[str],
+    basic_username: Optional[str],
+    basic_password: Optional[str],
+    validation_error_cls: Type[Exception],
+) -> tuple[str, str | None, str | None]:
+    """Validate and encrypt auth payload, returning encrypted value and previews."""
+
+    if auth_type == "bearer":
+        encrypted_value, last4 = encrypt_bearer_token(
+            vault=vault,
+            token=token,
+            validation_error_cls=validation_error_cls,
+        )
+        return encrypted_value, last4, None
+
+    if auth_type == "basic":
+        username = (basic_username or "").strip()
+        password = (basic_password or "").strip()
+        if not username:
+            raise validation_error_cls("Basic username is required")
+        if not password:
+            raise validation_error_cls("Basic password is required")
+        if not vault.is_configured:
+            raise validation_error_cls("Credential encryption key is missing")
+        payload = json.dumps(
+            {"username": username, "password": password},
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        try:
+            encrypted_value, _ = cast(tuple[str, str | None], vault.encrypt(payload))
+        except SecretVaultNotConfiguredError as exc:
+            raise validation_error_cls(str(exc)) from exc
+        return encrypted_value, None, username
+
+    raise validation_error_cls("Unsupported auth_type")
 
 
 async def get_agent_credential(
@@ -114,15 +170,21 @@ async def upsert_agent_credential(
     db: AsyncSession,
     *,
     vault: Any,
+    auth_type: str = "bearer",
     agent_id: UUID,
     user_id: UUID,
     token: Optional[str],
+    basic_username: Optional[str] = None,
+    basic_password: Optional[str] = None,
     validation_error_cls: Type[Exception],
 ) -> str:
     """Validate, encrypt, and store agent credential."""
-    encrypted_value, last4 = encrypt_bearer_token(
+    encrypted_value, last4, username_hint = encrypt_auth_payload(
         vault=vault,
+        auth_type=auth_type,
         token=token,
+        basic_username=basic_username,
+        basic_password=basic_password,
         validation_error_cls=validation_error_cls,
     )
 
@@ -135,15 +197,17 @@ async def upsert_agent_credential(
             created_by_user_id=user_id,
             encrypted_token=encrypted_value,
             token_last4=last4,
+            username_hint=username_hint,
             encryption_version=1,
         )
         db.add(credential)
     else:
         setattr(credential, "encrypted_token", encrypted_value)
         setattr(credential, "token_last4", last4)
+        setattr(credential, "username_hint", username_hint)
         setattr(credential, "created_by_user_id", user_id)
 
-    return last4
+    return username_hint or last4 or ""
 
 
 class AgentValidationMixin:
@@ -221,8 +285,10 @@ __all__ = [
     "ALLOWED_AVAILABILITY_POLICIES",
     "AgentValidationMixin",
     "delete_agent_credentials",
+    "encrypt_auth_payload",
     "encrypt_bearer_token",
     "get_agent_credential",
+    "ALLOWED_SHARED_CREDENTIAL_MODES",
     "normalize_auth_type",
     "normalize_required_text",
     "resolve_agent_auth_fields",

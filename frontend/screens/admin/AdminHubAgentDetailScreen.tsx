@@ -56,9 +56,12 @@ export function AdminHubAgentDetailScreen({
     setEnabled,
     setAvailabilityPolicy,
     setAuthType,
+    setCredentialMode,
     setAuthHeader,
     setAuthScheme,
     setToken,
+    setBasicUsername,
+    setBasicPassword,
     setTagsText,
     setHeaderRow,
     removeHeaderRow,
@@ -243,12 +246,23 @@ export function AdminHubAgentDetailScreen({
   }
 
   const tokenFootnote =
-    agent?.has_credential && values.authType === "bearer" ? (
+    values.credentialMode === "user" && values.authType !== "none" ? (
+      <Text className="text-xs text-muted">
+        Users must save their own credentials for this shared agent.
+      </Text>
+    ) : agent?.has_credential && values.authType === "bearer" ? (
       <Text className="text-xs text-muted">
         Credential is configured
         {agent.token_last4 ? ` (****${agent.token_last4}).` : "."}
       </Text>
+    ) : agent?.has_credential && values.authType === "basic" ? (
+      <Text className="text-xs text-muted">
+        Credential is configured
+        {agent.username_hint ? ` (${agent.username_hint}).` : "."}
+      </Text>
     ) : values.authType === "bearer" ? (
+      <Text className="text-xs text-muted">No credential configured.</Text>
+    ) : values.authType === "basic" ? (
       <Text className="text-xs text-muted">No credential configured.</Text>
     ) : null;
 
@@ -293,9 +307,12 @@ export function AdminHubAgentDetailScreen({
           onEnabledChange={setEnabled}
           onAvailabilityPolicyChange={setAvailabilityPolicy}
           onAuthTypeChange={setAuthType}
+          onCredentialModeChange={setCredentialMode}
           onAuthHeaderChange={setAuthHeader}
           onAuthSchemeChange={setAuthScheme}
           onTokenChange={setToken}
+          onBasicUsernameChange={setBasicUsername}
+          onBasicPasswordChange={setBasicPassword}
           onTagsTextChange={setTagsText}
           onHeaderRowChange={setHeaderRow}
           onHeaderRowRemove={removeHeaderRow}

@@ -37,6 +37,9 @@ class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
 
     SCOPE_PERSONAL = "personal"
     SCOPE_SHARED = "shared"
+    CREDENTIAL_NONE = "none"
+    CREDENTIAL_SHARED = "shared"
+    CREDENTIAL_USER = "user"
     HEALTH_UNKNOWN = "unknown"
     HEALTH_HEALTHY = "healthy"
     HEALTH_DEGRADED = "degraded"
@@ -82,6 +85,14 @@ class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         String(64),
         nullable=True,
         comment="Authentication scheme (e.g., Bearer)",
+    )
+    credential_mode = Column(
+        String(16),
+        nullable=False,
+        default=CREDENTIAL_NONE,
+        server_default=CREDENTIAL_NONE,
+        index=True,
+        comment="Credential source mode (none/shared/user).",
     )
     enabled = Column(
         Boolean,
