@@ -22,6 +22,20 @@ _SENSITIVE_KEYWORDS = (
     "x-api-key",
 )
 
+_SAFE_HEADER_ALLOWLIST = {
+    "accept",
+    "accept-encoding",
+    "accept-language",
+    "content-length",
+    "content-type",
+    "host",
+    "origin",
+    "traceparent",
+    "tracestate",
+    "user-agent",
+    "x-request-id",
+}
+
 
 def redact_sensitive_value(value: str | None) -> str | None:
     """Redact a sensitive value by keeping the first 6 characters and adding a hash.
@@ -46,14 +60,22 @@ def redact_sensitive_value(value: str | None) -> str | None:
 
 
 def redact_headers_for_logging(headers: Mapping[str, str]) -> dict[str, str]:
-    """Redact sensitive headers."""
+    """Redact headers for logs using a secure-by-default policy.
+
+    Only a small allowlist of operationally useful headers keeps its original
+    value. All other headers are hidden by default so user-defined custom
+    authentication headers do not leak into logs. Known sensitive headers keep a
+    stable prefix+hash representation to preserve limited debugging value.
+    """
     redacted: dict[str, str] = {}
     for key, value in headers.items():
         lower_key = key.lower()
-        if any(keyword in lower_key for keyword in _SENSITIVE_KEYWORDS):
+        if lower_key in _SAFE_HEADER_ALLOWLIST:
+            redacted[key] = value
+        elif any(keyword in lower_key for keyword in _SENSITIVE_KEYWORDS):
             redacted[key] = redact_sensitive_value(value) or "<redacted>"
         else:
-            redacted[key] = value
+            redacted[key] = "<redacted>"
     return redacted
 
 

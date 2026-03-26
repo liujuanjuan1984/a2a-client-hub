@@ -23,6 +23,7 @@ def test_redact_headers_for_logging():
     headers = {
         "Authorization": "Bearer super-secret-token-123456789",
         "X-API-Key": "my-secret-key-123456789",
+        "X-Custom-Credential": "opaque-user-secret",
         "Sec-WebSocket-Protocol": "a" * 48,
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0",
@@ -32,6 +33,7 @@ def test_redact_headers_for_logging():
     assert redacted["Authorization"].startswith("Bearer")
     assert "..." in redacted["Authorization"]
     assert redacted["X-API-Key"].startswith("my-sec")
+    assert redacted["X-Custom-Credential"] == "<redacted>"
     assert "..." in redacted["Sec-WebSocket-Protocol"]
     assert redacted["Content-Type"] == "application/json"
     assert redacted["User-Agent"] == "Mozilla/5.0"
