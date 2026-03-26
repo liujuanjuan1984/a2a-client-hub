@@ -56,7 +56,8 @@ def _normalize_status(
     normalized_status = normalize_non_empty_text(raw_status)
     if normalized_status:
         if normalized_status in _RUNNING_STATES:
-            return "running"
+            if not is_finished:
+                return "running"
         if normalized_status in _SUCCESS_STATES:
             return "success"
         if normalized_status in _FAILED_STATES:

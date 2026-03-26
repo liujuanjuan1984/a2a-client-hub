@@ -97,6 +97,13 @@ export type StreamBlockUpdate = {
   interrupt?: RuntimeInterrupt | null;
 };
 
+const finalizeRunningToolCallView = (
+  toolCall: ToolCallView | null | undefined,
+): ToolCallView | null | undefined =>
+  toolCall?.status === "running"
+    ? { ...toolCall, status: "success" }
+    : toolCall;
+
 const PRIMARY_TEXT_SNAPSHOT_SOURCES = new Set([
   "final_snapshot",
   "finalize_snapshot",
@@ -693,13 +700,39 @@ const extractToolCallView = (
     return null;
   }
   return {
-    name: pickRawString(source, ["name"]) ?? null,
+    name:
+      pickRawString(source, ["name", "tool", "tool_name", "function_name"]) ??
+      null,
     status,
     callId: pickRawString(source, ["callId", "call_id"]) ?? null,
     arguments: source.arguments,
     result: source.result,
     error: source.error,
   };
+};
+
+const extractToolCallViewFromRawContent = (
+  rawContent: string,
+): ToolCallView | null => {
+  const trimmed = rawContent.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed)) {
+      for (let index = parsed.length - 1; index >= 0; index -= 1) {
+        const candidate = extractToolCallView(asRecord(parsed[index]));
+        if (candidate) {
+          return candidate;
+        }
+      }
+      return null;
+    }
+    return extractToolCallView(asRecord(parsed));
+  } catch {
+    return null;
+  }
 };
 
 export const normalizeRuntimeState = (
@@ -1351,12 +1384,12 @@ export const extractStreamBlockUpdate = (
   );
   const toolCall =
     blockType === "tool_call"
-      ? extractToolCallView(
+      ? (extractToolCallView(
           asRecord(data.tool_call) ??
             asRecord(data.toolCall) ??
             asRecord(artifact?.tool_call) ??
             asRecord(artifact?.toolCall),
-        )
+        ) ?? extractToolCallViewFromRawContent(delta))
       : null;
   const interruptPayload =
     blockType === "interrupt_event"
@@ -1416,6 +1449,16 @@ export const applyStreamBlockUpdate = (
       targetBlock.type === "interrupt_event" &&
       typeof targetBlock.content === "string" &&
       targetBlock.content.trim().length > 0;
+    const nextToolCall =
+      resolvedUpdate.toolCall !== undefined
+        ? resolvedUpdate.done
+          ? (finalizeRunningToolCallView(resolvedUpdate.toolCall) ?? null)
+          : (resolvedUpdate.toolCall ?? null)
+        : targetBlock.toolCall !== undefined
+          ? resolvedUpdate.done
+            ? (finalizeRunningToolCallView(targetBlock.toolCall) ?? null)
+            : (targetBlock.toolCall ?? null)
+          : undefined;
     nextBlocks[index] = {
       ...targetBlock,
       type: resolvedUpdate.blockType,
@@ -1426,11 +1469,7 @@ export const applyStreamBlockUpdate = (
         ? targetBlock.content
         : content,
       isFinished: resolvedUpdate.done,
-      ...(resolvedUpdate.toolCall !== undefined
-        ? { toolCall: resolvedUpdate.toolCall ?? null }
-        : targetBlock.toolCall !== undefined
-          ? { toolCall: targetBlock.toolCall ?? null }
-          : {}),
+      ...(nextToolCall !== undefined ? { toolCall: nextToolCall } : {}),
       ...(resolvedUpdate.interrupt !== undefined
         ? { interrupt: resolvedUpdate.interrupt ?? null }
         : targetBlock.interrupt !== undefined
@@ -1446,12 +1485,24 @@ export const applyStreamBlockUpdate = (
       nextBlocks[nextBlocks.length - 1] = {
         ...lastNextBlock,
         isFinished: true,
+        ...(lastNextBlock.toolCall !== undefined
+          ? {
+              toolCall:
+                finalizeRunningToolCallView(lastNextBlock.toolCall) ?? null,
+            }
+          : {}),
         updatedAt: now,
       };
     }
   };
 
   const pushNewBlock = (content: string) => {
+    const nextToolCall =
+      resolvedUpdate.toolCall !== undefined
+        ? resolvedUpdate.done
+          ? (finalizeRunningToolCallView(resolvedUpdate.toolCall) ?? null)
+          : (resolvedUpdate.toolCall ?? null)
+        : undefined;
     nextBlocks.push({
       id: `${resolvedUpdate.messageId}:${nextBlocks.length + 1}`,
       type: resolvedUpdate.blockType,
@@ -1460,9 +1511,7 @@ export const applyStreamBlockUpdate = (
       baseSeq: resolvedUpdate.baseSeq,
       content,
       isFinished: resolvedUpdate.done,
-      ...(resolvedUpdate.toolCall !== undefined
-        ? { toolCall: resolvedUpdate.toolCall ?? null }
-        : {}),
+      ...(nextToolCall !== undefined ? { toolCall: nextToolCall } : {}),
       ...(resolvedUpdate.interrupt !== undefined
         ? { interrupt: resolvedUpdate.interrupt ?? null }
         : {}),
@@ -1570,6 +1619,11 @@ export const finalizeMessageBlocks = (
   nextBlocks[nextBlocks.length - 1] = {
     ...lastBlock,
     isFinished: true,
+    ...(lastBlock.toolCall !== undefined
+      ? {
+          toolCall: finalizeRunningToolCallView(lastBlock.toolCall) ?? null,
+        }
+      : {}),
     updatedAt: new Date().toISOString(),
   };
   return nextBlocks;

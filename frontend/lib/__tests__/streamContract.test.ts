@@ -442,6 +442,87 @@ describe("block-based stream parser and reducer", () => {
     expect(blocks?.[0]?.blockId).toBe("block-text-main");
   });
 
+  it("promotes a finished tool_call block from running to success when the next block starts", () => {
+    let blocks: MessageBlock[] | undefined;
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "tool_call",
+          delta: '{"tool":"bash","status":"running"}',
+          artifactId: "task-tools:stream:tool-1",
+          blockId: "block-tool-1",
+          laneId: "tool_call",
+          taskId: "task-tools",
+          seq: 1,
+        }),
+      ),
+    );
+    blocks = applyStreamBlockUpdate(
+      blocks,
+      mustParse(
+        buildBlockUpdatePayload({
+          blockType: "tool_call",
+          delta: '{"tool":"grep","status":"running"}',
+          artifactId: "task-tools:stream:tool-2",
+          blockId: "block-tool-2",
+          laneId: "tool_call",
+          taskId: "task-tools",
+          seq: 2,
+        }),
+      ),
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks?.[0]).toMatchObject({
+      blockId: "block-tool-1",
+      isFinished: true,
+      toolCall: {
+        name: "bash",
+        status: "success",
+      },
+    });
+    expect(blocks?.[1]).toMatchObject({
+      blockId: "block-tool-2",
+      isFinished: false,
+      toolCall: {
+        name: "grep",
+        status: "running",
+      },
+    });
+  });
+
+  it("promotes the last finished tool_call block from running to success during finalization", () => {
+    const blocks = finalizeMessageBlocks([
+      {
+        id: "block-tool-last",
+        blockId: "block-tool-last",
+        laneId: "tool_call",
+        type: "tool_call",
+        content: '{"tool":"bash","status":"running"}',
+        isFinished: false,
+        toolCall: {
+          name: "bash",
+          status: "running",
+          callId: null,
+          arguments: undefined,
+          result: undefined,
+          error: undefined,
+        },
+        createdAt: "2026-03-26T00:00:00.000Z",
+        updatedAt: "2026-03-26T00:00:00.000Z",
+      },
+    ]);
+
+    expect(blocks?.[0]).toMatchObject({
+      isFinished: true,
+      toolCall: {
+        name: "bash",
+        status: "success",
+      },
+    });
+  });
+
   it("rejects stale replace operations when base_seq moves backwards", () => {
     let blocks: MessageBlock[] | undefined;
     blocks = applyStreamBlockUpdate(
