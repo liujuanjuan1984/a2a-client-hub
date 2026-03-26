@@ -66,6 +66,7 @@ def upgrade() -> None:
         "hub_a2a_user_credentials",
         sa.Column("agent_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("auth_type", sa.String(length=24), nullable=False),
         sa.Column("encrypted_token", sa.Text(), nullable=False),
         sa.Column("token_last4", sa.String(length=12), nullable=True),
         sa.Column("username_hint", sa.String(length=120), nullable=True),
