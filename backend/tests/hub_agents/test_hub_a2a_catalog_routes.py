@@ -12,6 +12,10 @@ from app.db.models.conversation_thread import ConversationThread
 from app.db.models.hub_a2a_agent_allowlist import HubA2AAgentAllowlistEntry
 from app.features.hub_agents import admin_router
 from app.features.hub_agents import router as hub_router
+from app.features.hub_agents.runtime import (
+    HubA2ARuntimeValidationError,
+    HubA2AUserCredentialRequiredError,
+)
 from tests.support.api_utils import create_test_client
 from tests.support.utils import create_user
 
@@ -620,3 +624,155 @@ async def test_admin_list_uses_database_pagination(
             "pages": 2,
         }
         assert [item["name"] for item in second_page["items"]] == ["Paged Agent 3"]
+
+
+@pytest.mark.asyncio
+async def test_admin_update_auth_type_requires_new_shared_credential(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    admin = await create_user(
+        async_db_session, email="admin_switch_shared@example.com", is_superuser=True
+    )
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        create_payload = {
+            "name": "Shared Switch Agent",
+            "card_url": "https://example.com/switch/.well-known/agent-card.json",
+            "availability_policy": "public",
+            "auth_type": "bearer",
+            "credential_mode": "shared",
+            "token": "secret-token-switch",
+            "enabled": True,
+            "tags": [],
+            "extra_headers": {},
+        }
+        create_resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents", json=create_payload
+        )
+        assert create_resp.status_code == 201
+        agent_id = create_resp.json()["id"]
+
+        update_resp = await admin_client.put(
+            f"{settings.api_v1_prefix}/admin/a2a/agents/{agent_id}",
+            json={"auth_type": "basic", "credential_mode": "shared"},
+        )
+        assert update_resp.status_code == 400
+        assert "New admin credentials are required" in update_resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_shared_invoke_keeps_runtime_validation_as_502(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    admin = await create_user(
+        async_db_session, email="admin_invoke_validation@example.com", is_superuser=True
+    )
+    alice = await create_user(
+        async_db_session, email="alice_invoke_validation@example.com"
+    )
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        create_resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents",
+            json={
+                "name": "Runtime Validation Agent",
+                "card_url": "https://example.com/runtime/.well-known/agent-card.json",
+                "availability_policy": "public",
+                "auth_type": "none",
+                "enabled": True,
+                "tags": [],
+                "extra_headers": {},
+            },
+        )
+        assert create_resp.status_code == 201
+        agent_id = create_resp.json()["id"]
+
+    async def _raise_runtime_validation(*args, **kwargs):
+        raise HubA2ARuntimeValidationError("runtime validation failed")
+
+    monkeypatch.setattr(
+        hub_router.hub_a2a_runtime_builder, "build", _raise_runtime_validation
+    )
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=alice,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        invoke_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/invoke",
+            json={"query": "hi", "metadata": {}},
+        )
+        assert invoke_resp.status_code == 502
+        assert invoke_resp.json()["detail"] == "runtime validation failed"
+
+
+@pytest.mark.asyncio
+async def test_shared_invoke_returns_409_for_missing_user_credential(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    admin = await create_user(
+        async_db_session, email="admin_invoke_user_cred@example.com", is_superuser=True
+    )
+    alice = await create_user(
+        async_db_session, email="alice_invoke_user_cred@example.com"
+    )
+
+    async with create_test_client(
+        admin_router.router,
+        async_session_maker=async_session_maker,
+        current_user=admin,
+        base_prefix=settings.api_v1_prefix,
+    ) as admin_client:
+        create_resp = await admin_client.post(
+            f"{settings.api_v1_prefix}/admin/a2a/agents",
+            json={
+                "name": "User Credential Agent",
+                "card_url": "https://example.com/user-cred/.well-known/agent-card.json",
+                "availability_policy": "public",
+                "auth_type": "basic",
+                "credential_mode": "user",
+                "enabled": True,
+                "tags": [],
+                "extra_headers": {},
+            },
+        )
+        assert create_resp.status_code == 201
+        agent_id = create_resp.json()["id"]
+
+    async def _raise_user_credential(*args, **kwargs):
+        raise HubA2AUserCredentialRequiredError("credential required")
+
+    monkeypatch.setattr(
+        hub_router.hub_a2a_runtime_builder, "build", _raise_user_credential
+    )
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=alice,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        invoke_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/invoke",
+            json={"query": "hi", "metadata": {}},
+        )
+        assert invoke_resp.status_code == 409
+        assert invoke_resp.json()["detail"] == "credential required"

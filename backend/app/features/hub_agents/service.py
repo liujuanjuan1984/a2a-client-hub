@@ -302,6 +302,7 @@ class HubA2AAgentService(AgentValidationMixin):
                 admin_user_id=admin_user_id,
                 agent_id=cast(UUID, agent.id),
                 auth_type=normalized_auth_type,
+                previous_auth_type=None,
                 credential_mode=normalized_credential_mode,
                 token=token,
                 basic_username=basic_username,
@@ -338,6 +339,7 @@ class HubA2AAgentService(AgentValidationMixin):
         basic_password: Optional[str] = None,
     ) -> HubA2AAgentRecord:
         agent = await self._get_agent(db, agent_id=agent_id)
+        previous_auth_type = cast(str, agent.auth_type)
 
         if name is not None:
             setattr(agent, "name", self._normalize_name(name))
@@ -394,6 +396,7 @@ class HubA2AAgentService(AgentValidationMixin):
             admin_user_id=admin_user_id,
             agent_id=cast(UUID, agent.id),
             auth_type=cast(str, agent.auth_type),
+            previous_auth_type=previous_auth_type,
             credential_mode=cast(
                 str, getattr(agent, "credential_mode", A2AAgent.CREDENTIAL_NONE)
             ),
@@ -401,6 +404,16 @@ class HubA2AAgentService(AgentValidationMixin):
             basic_username=basic_username,
             basic_password=basic_password,
         )
+        if (
+            previous_auth_type != cast(str, agent.auth_type)
+            and cast(str, getattr(agent, "credential_mode", A2AAgent.CREDENTIAL_NONE))
+            == A2AAgent.CREDENTIAL_USER
+        ):
+            await db.execute(
+                delete(HubA2AUserCredential).where(
+                    HubA2AUserCredential.agent_id == cast(UUID, agent.id)
+                )
+            )
 
         setattr(agent, "updated_by_user_id", admin_user_id)
         await commit_safely(db)
@@ -856,6 +869,7 @@ class HubA2AAgentService(AgentValidationMixin):
         admin_user_id: UUID,
         agent_id: UUID,
         auth_type: str,
+        previous_auth_type: Optional[str],
         credential_mode: str,
         token: Optional[str],
         basic_username: Optional[str],
@@ -882,6 +896,10 @@ class HubA2AAgentService(AgentValidationMixin):
                     )
                 raise HubA2AAgentValidationError(
                     "Admin basic credential is required for shared mode"
+                )
+            if previous_auth_type is not None and previous_auth_type != auth_type:
+                raise HubA2AAgentValidationError(
+                    "New admin credentials are required when changing auth_type"
                 )
             return (
                 cast(str | None, credential.token_last4),

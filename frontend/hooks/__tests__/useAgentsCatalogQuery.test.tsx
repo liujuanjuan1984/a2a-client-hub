@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook } from "@testing-library/react-native";
+import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { type PropsWithChildren } from "react";
 
 import {
+  useAgentsCatalogQuery,
   useCreateAgentMutation,
   useDeleteAgentMutation,
   useUpdateAgentMutation,
@@ -98,6 +99,40 @@ describe("useAgentsCatalogQuery mutations", () => {
     queryClient = createTestQueryClient();
     jest.clearAllMocks();
     useAgentStore.setState({ activeAgentId: null });
+  });
+
+  it("does not hydrate editable basic username from server hint", async () => {
+    mocks.listAgents.mockResolvedValue({
+      items: [
+        {
+          id: "agent-basic",
+          name: "Basic Agent",
+          card_url: "https://example.com/basic.json",
+          auth_type: "basic",
+          username_hint: "alice",
+          enabled: true,
+          tags: [],
+          extra_headers: {},
+          created_at: "2026-02-12T00:00:00.000Z",
+          updated_at: "2026-02-12T00:01:00.000Z",
+        },
+      ],
+    });
+    mocks.listHubAgents.mockResolvedValue({ items: [] });
+
+    const { result } = renderHook(() => useAgentsCatalogQuery(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual([
+        expect.objectContaining({
+          id: "agent-basic",
+          authType: "basic",
+          basicUsername: "",
+        }),
+      ]);
+    });
   });
 
   afterEach(async () => {

@@ -93,8 +93,14 @@ export const buildHubAgentComparablePayload = (
   availability_policy: values.availabilityPolicy,
   auth_type: values.authType,
   credential_mode: values.credentialMode,
-  auth_header: values.authType === "bearer" ? values.authHeader.trim() : null,
-  auth_scheme: values.authType === "bearer" ? values.authScheme.trim() : null,
+  auth_header:
+    values.authType === "bearer" || values.authType === "basic"
+      ? values.authHeader.trim()
+      : null,
+  auth_scheme:
+    values.authType === "bearer" || values.authType === "basic"
+      ? values.authScheme.trim()
+      : null,
   tags: parseTags(values.tagsText),
   extra_headers: headerRowsToRecord(values.extraHeaders),
 });
@@ -123,8 +129,14 @@ export const buildHubAgentPayload = (
     availability_policy: values.availabilityPolicy,
     auth_type: values.authType,
     credential_mode: values.credentialMode,
-    auth_header: values.authType === "bearer" ? values.authHeader.trim() : null,
-    auth_scheme: values.authType === "bearer" ? values.authScheme.trim() : null,
+    auth_header:
+      values.authType === "bearer" || values.authType === "basic"
+        ? values.authHeader.trim()
+        : null,
+    auth_scheme:
+      values.authType === "bearer" || values.authType === "basic"
+        ? values.authScheme.trim()
+        : null,
     enabled: values.enabled,
     tags: parseTags(values.tagsText),
     extra_headers: headerRowsToRecord(values.extraHeaders),

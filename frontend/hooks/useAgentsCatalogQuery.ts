@@ -52,7 +52,7 @@ const toAgentConfig = (agent: A2AAgentResponse): AgentConfig => ({
   bearerToken: "",
   apiKeyHeader: "X-API-Key",
   apiKeyValue: "",
-  basicUsername: agent.username_hint ?? "",
+  basicUsername: "",
   basicPassword: "",
   extraHeaders: headersToEntries(agent.extra_headers ?? {}),
   status: "idle",

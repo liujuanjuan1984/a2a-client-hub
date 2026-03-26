@@ -552,6 +552,7 @@ class A2AAgentService(AgentValidationMixin):
         basic_password: Optional[str] = None,
     ) -> A2AAgentRecord:
         agent = await self._get_agent(db, user_id=user_id, agent_id=agent_id)
+        previous_auth_type = cast(str, agent.auth_type)
 
         if name is not None:
             setattr(agent, "name", self._normalize_name(name))
@@ -596,6 +597,7 @@ class A2AAgentService(AgentValidationMixin):
             db,
             user_id=user_id,
             agent=agent,
+            previous_auth_type=previous_auth_type,
             token=token,
             basic_username=basic_username,
             basic_password=basic_password,
@@ -663,6 +665,7 @@ class A2AAgentService(AgentValidationMixin):
         *,
         user_id: UUID,
         agent: A2AAgent,
+        previous_auth_type: Optional[str] = None,
         token: Optional[str],
         basic_username: Optional[str],
         basic_password: Optional[str],
@@ -682,6 +685,10 @@ class A2AAgentService(AgentValidationMixin):
                 if auth_type == "bearer":
                     raise A2AAgentValidationError("Bearer token is required")
                 raise A2AAgentValidationError("Basic credentials are required")
+            if previous_auth_type is not None and previous_auth_type != auth_type:
+                raise A2AAgentValidationError(
+                    "New credentials are required when changing auth_type"
+                )
             return (
                 cast(str | None, credential.token_last4),
                 cast(str | None, credential.username_hint),
