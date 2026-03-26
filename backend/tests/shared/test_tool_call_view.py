@@ -66,12 +66,12 @@ def test_build_tool_call_detail_emits_timeline_and_raw_payload():
     }
 
 
-def test_build_tool_call_view_treats_finished_running_status_as_success():
+def test_build_tool_call_view_treats_finished_running_status_as_completed():
     raw_content = '{"call_id":"call-2","tool":"bash","status":"running","input":{}}'
 
     assert build_tool_call_view(raw_content, is_finished=True) == {
         "name": "bash",
-        "status": "success",
+        "status": "completed",
         "callId": "call-2",
         "arguments": {},
         "result": None,

@@ -95,7 +95,9 @@ class SessionMessageBlocksQueryRequest(BaseModel):
 
 class ToolCallViewItem(BaseModel):
     name: Optional[str] = None
-    status: Literal["running", "success", "failed", "interrupted", "unknown"]
+    status: Literal[
+        "running", "completed", "success", "failed", "interrupted", "unknown"
+    ]
     call_id: Optional[str] = Field(alias="callId", default=None)
     arguments: Optional[Any] = None
     result: Optional[Any] = None

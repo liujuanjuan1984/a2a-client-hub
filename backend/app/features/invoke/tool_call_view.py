@@ -58,6 +58,7 @@ def _normalize_status(
         if normalized_status in _RUNNING_STATES:
             if not is_finished:
                 return "running"
+            return "completed"
         if normalized_status in _SUCCESS_STATES:
             return "success"
         if normalized_status in _FAILED_STATES:

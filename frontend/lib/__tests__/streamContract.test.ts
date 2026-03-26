@@ -479,7 +479,7 @@ describe("block-based stream parser and reducer", () => {
       isFinished: true,
       toolCall: {
         name: "bash",
-        status: "success",
+        status: "completed",
       },
     });
     expect(blocks?.[1]).toMatchObject({
@@ -518,7 +518,7 @@ describe("block-based stream parser and reducer", () => {
       isFinished: true,
       toolCall: {
         name: "bash",
-        status: "success",
+        status: "completed",
       },
     });
   });

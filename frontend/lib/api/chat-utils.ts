@@ -55,7 +55,13 @@ type ParsedStreamError = StreamErrorDetails & {
 
 export type ToolCallView = {
   name?: string | null;
-  status: "running" | "success" | "failed" | "interrupted" | "unknown";
+  status:
+    | "running"
+    | "completed"
+    | "success"
+    | "failed"
+    | "interrupted"
+    | "unknown";
   callId?: string | null;
   arguments?: unknown;
   result?: unknown;
@@ -101,7 +107,7 @@ const finalizeRunningToolCallView = (
   toolCall: ToolCallView | null | undefined,
 ): ToolCallView | null | undefined =>
   toolCall?.status === "running"
-    ? { ...toolCall, status: "success" }
+    ? { ...toolCall, status: "completed" }
     : toolCall;
 
 const PRIMARY_TEXT_SNAPSHOT_SOURCES = new Set([
