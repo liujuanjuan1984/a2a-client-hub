@@ -20,6 +20,7 @@ from app.features.agents_shared.card_validation import fetch_and_validate_agent_
 from app.features.hub_agents.runtime import (
     HubA2ARuntimeNotFoundError,
     HubA2ARuntimeValidationError,
+    HubA2AUserCredentialRequiredError,
     hub_a2a_runtime_builder,
 )
 from app.features.hub_agents.schemas import (
@@ -27,9 +28,12 @@ from app.features.hub_agents.schemas import (
     HubA2AAgentPagination,
     HubA2AAgentUserListResponse,
     HubA2AAgentUserResponse,
+    HubA2AUserCredentialStatusResponse,
+    HubA2AUserCredentialUpsertRequest,
 )
 from app.features.hub_agents.service import (
     HubA2AAgentNotFoundError,
+    HubA2AAgentValidationError,
     hub_a2a_agent_service,
 )
 from app.features.invoke.route_runner import (
@@ -72,9 +76,13 @@ async def list_hub_agents_for_user(
     return HubA2AAgentUserListResponse(
         items=[
             HubA2AAgentUserResponse(
-                id=cast(UUID, item.id),
-                name=cast(str, item.name),
-                card_url=cast(str, item.card_url),
+                id=item.id,
+                name=item.name,
+                card_url=item.card_url,
+                auth_type=cast(Any, item.auth_type),
+                credential_mode=cast(Any, item.credential_mode),
+                credential_configured=bool(item.credential_configured),
+                credential_display_hint=item.credential_display_hint,
                 tags=cast(list[str], item.tags or []),
             )
             for item in items
@@ -87,6 +95,99 @@ async def list_hub_agents_for_user(
         ),
         meta=HubA2AAgentListMeta(),
     )
+
+
+@router.get(
+    "/{agent_id}/credential",
+    response_model=HubA2AUserCredentialStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_hub_agent_user_credential_status(
+    *,
+    agent_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> HubA2AUserCredentialStatusResponse:
+    current_user_id = cast(UUID, current_user.id)
+    try:
+        status_record = await hub_a2a_agent_service.get_user_credential_status(
+            db,
+            user_id=current_user_id,
+            agent_id=agent_id,
+        )
+    except HubA2AAgentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HubA2AAgentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return HubA2AUserCredentialStatusResponse(
+        agent_id=status_record.agent_id,
+        auth_type=cast(Any, status_record.auth_type),
+        credential_mode=cast(Any, status_record.credential_mode),
+        configured=status_record.configured,
+        token_last4=status_record.token_last4,
+        username_hint=status_record.username_hint,
+    )
+
+
+@router.put(
+    "/{agent_id}/credential",
+    response_model=HubA2AUserCredentialStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def upsert_hub_agent_user_credential(
+    *,
+    agent_id: UUID,
+    payload: HubA2AUserCredentialUpsertRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> HubA2AUserCredentialStatusResponse:
+    current_user_id = cast(UUID, current_user.id)
+    try:
+        status_record = await hub_a2a_agent_service.upsert_user_credential(
+            db,
+            user_id=current_user_id,
+            agent_id=agent_id,
+            token=payload.token,
+            basic_username=payload.basic_username,
+            basic_password=payload.basic_password,
+        )
+    except HubA2AAgentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HubA2AAgentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return HubA2AUserCredentialStatusResponse(
+        agent_id=status_record.agent_id,
+        auth_type=cast(Any, status_record.auth_type),
+        credential_mode=cast(Any, status_record.credential_mode),
+        configured=status_record.configured,
+        token_last4=status_record.token_last4,
+        username_hint=status_record.username_hint,
+    )
+
+
+@router.delete(
+    "/{agent_id}/credential",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_hub_agent_user_credential(
+    *,
+    agent_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    current_user_id = cast(UUID, current_user.id)
+    try:
+        await hub_a2a_agent_service.delete_user_credential(
+            db,
+            user_id=current_user_id,
+            agent_id=agent_id,
+        )
+    except HubA2AAgentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HubA2AAgentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -111,6 +212,8 @@ async def validate_hub_agent_card(
         )
     except HubA2ARuntimeNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except HubA2AUserCredentialRequiredError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except HubA2ARuntimeValidationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -160,8 +263,11 @@ async def invoke_hub_agent(
         ),
         runtime_not_found_errors=(HubA2ARuntimeNotFoundError,),
         runtime_not_found_status_code=404,
-        runtime_validation_errors=(HubA2ARuntimeValidationError,),
-        runtime_validation_status_code=502,
+        runtime_validation_errors=(
+            HubA2AUserCredentialRequiredError,
+            HubA2ARuntimeValidationError,
+        ),
+        runtime_validation_status_code=409,
         validate_message=validate_message,
         logger=logger,
         invoke_log_message="Hub A2A agent invoke requested",
@@ -227,7 +333,10 @@ async def invoke_hub_agent_ws(
         runtime_not_found_errors=(HubA2ARuntimeNotFoundError,),
         runtime_not_found_message="Agent is unavailable",
         runtime_not_found_code="agent_unavailable",
-        runtime_validation_errors=(HubA2ARuntimeValidationError,),
+        runtime_validation_errors=(
+            HubA2AUserCredentialRequiredError,
+            HubA2ARuntimeValidationError,
+        ),
         validate_message=validate_message,
         logger=logger,
         invoke_log_message="Hub A2A agent invoke WS requested",

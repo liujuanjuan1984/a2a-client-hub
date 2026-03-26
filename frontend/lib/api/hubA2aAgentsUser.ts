@@ -5,6 +5,10 @@ export type HubA2AAgentUserResponse = {
   id: string;
   name: string;
   card_url: string;
+  auth_type: "none" | "bearer" | "basic";
+  credential_mode: "none" | "shared" | "user";
+  credential_configured: boolean;
+  credential_display_hint?: string | null;
   tags: string[];
 };
 
@@ -51,6 +55,21 @@ export type HubWsTicketResponse = {
   expires_in: number;
 };
 
+export type HubA2AUserCredentialStatusResponse = {
+  agent_id: string;
+  auth_type: "none" | "bearer" | "basic";
+  credential_mode: "none" | "shared" | "user";
+  configured: boolean;
+  token_last4?: string | null;
+  username_hint?: string | null;
+};
+
+export type HubA2AUserCredentialUpsertRequest = {
+  token?: string | null;
+  basic_username?: string | null;
+  basic_password?: string | null;
+};
+
 export const listHubAgents = (page = 1, size = 200) =>
   apiRequest<HubA2AAgentUserListResponse>("/a2a/agents", {
     query: { page, size },
@@ -77,3 +96,25 @@ export const validateHubAgentCard = (agentId: string) =>
     `/a2a/agents/${encodeURIComponent(agentId)}/card:validate`,
     { method: "POST" },
   );
+
+export const getHubAgentCredentialStatus = (agentId: string) =>
+  apiRequest<HubA2AUserCredentialStatusResponse>(
+    `/a2a/agents/${encodeURIComponent(agentId)}/credential`,
+  );
+
+export const upsertHubAgentCredential = (
+  agentId: string,
+  payload: HubA2AUserCredentialUpsertRequest,
+) =>
+  apiRequest<
+    HubA2AUserCredentialStatusResponse,
+    HubA2AUserCredentialUpsertRequest
+  >(`/a2a/agents/${encodeURIComponent(agentId)}/credential`, {
+    method: "PUT",
+    body: payload,
+  });
+
+export const deleteHubAgentCredential = (agentId: string) =>
+  apiRequest<void>(`/a2a/agents/${encodeURIComponent(agentId)}/credential`, {
+    method: "DELETE",
+  });

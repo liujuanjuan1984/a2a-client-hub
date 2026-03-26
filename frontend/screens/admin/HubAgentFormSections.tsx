@@ -7,6 +7,7 @@ import { KeyValueInputRow } from "@/components/ui/KeyValueInputRow";
 import type {
   HubA2AAuthType,
   HubA2AAvailabilityPolicy,
+  HubA2ACredentialMode,
 } from "@/lib/api/hubA2aAgentsAdmin";
 import type {
   HubAgentFormErrors,
@@ -17,6 +18,12 @@ import type { HeaderRow } from "@/screens/admin/hubAgentFormUtils";
 const authTypes: { label: string; value: HubA2AAuthType }[] = [
   { label: "No Auth", value: "none" },
   { label: "Bearer", value: "bearer" },
+  { label: "Basic", value: "basic" },
+];
+
+const credentialModes: { label: string; value: HubA2ACredentialMode }[] = [
+  { label: "Shared", value: "shared" },
+  { label: "Per User", value: "user" },
 ];
 
 const policies: { label: string; value: HubA2AAvailabilityPolicy }[] = [
@@ -40,9 +47,12 @@ type HubAgentFormSectionsProps = {
   onEnabledChange: (value: boolean) => void;
   onAvailabilityPolicyChange: (value: HubA2AAvailabilityPolicy) => void;
   onAuthTypeChange: (value: HubA2AAuthType) => void;
+  onCredentialModeChange: (value: HubA2ACredentialMode) => void;
   onAuthHeaderChange: (value: string) => void;
   onAuthSchemeChange: (value: string) => void;
   onTokenChange: (value: string) => void;
+  onBasicUsernameChange: (value: string) => void;
+  onBasicPasswordChange: (value: string) => void;
   onTagsTextChange: (value: string) => void;
   onHeaderRowChange: (
     id: string,
@@ -69,9 +79,12 @@ export function HubAgentFormSections({
   onEnabledChange,
   onAvailabilityPolicyChange,
   onAuthTypeChange,
+  onCredentialModeChange,
   onAuthHeaderChange,
   onAuthSchemeChange,
   onTokenChange,
+  onBasicUsernameChange,
+  onBasicPasswordChange,
   onTagsTextChange,
   onHeaderRowChange,
   onHeaderRowRemove,
@@ -172,7 +185,32 @@ export function HubAgentFormSections({
           ))}
         </View>
 
-        {values.authType === "bearer" ? (
+        {values.authType !== "none" ? (
+          <View className="mt-4 gap-3">
+            <Text className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+              Credential mode
+            </Text>
+            <View className="flex-row flex-wrap gap-2">
+              {credentialModes.map((option) => (
+                <Pressable
+                  key={option.value}
+                  className={`rounded-full border px-4 py-2 ${
+                    values.credentialMode === option.value
+                      ? "border-primary bg-primary/20"
+                      : "border-slate-700"
+                  }`}
+                  onPress={() => onCredentialModeChange(option.value)}
+                  accessibilityRole="button"
+                  accessibilityLabel={option.label}
+                >
+                  <Text className="text-xs text-white">{option.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {values.authType === "bearer" && values.credentialMode === "shared" ? (
           <View className="mt-4 gap-3">
             <Input
               label="Auth header"
@@ -195,6 +233,32 @@ export function HubAgentFormSections({
             />
             {tokenFootnote}
           </View>
+        ) : null}
+
+        {values.authType === "basic" && values.credentialMode === "shared" ? (
+          <View className="mt-4 gap-3">
+            <Input
+              label="Username"
+              placeholder="Enter upstream username"
+              value={values.basicUsername}
+              onChangeText={onBasicUsernameChange}
+            />
+            <Input
+              label="Password"
+              placeholder="Enter upstream password"
+              secureTextEntry
+              value={values.basicPassword}
+              onChangeText={onBasicPasswordChange}
+            />
+            {tokenFootnote}
+          </View>
+        ) : null}
+
+        {values.authType !== "none" && values.credentialMode === "user" ? (
+          <Text className="mt-4 text-xs text-muted">
+            Each user must save their own credential before invoking this shared
+            agent.
+          </Text>
         ) : null}
       </View>
 

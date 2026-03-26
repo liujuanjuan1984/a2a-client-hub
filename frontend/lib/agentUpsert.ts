@@ -60,9 +60,15 @@ export const buildAgentUpsertPayload = (
     }
 
     case "api_key":
-    case "basic":
       payload.auth_type = "none";
       payload.extra_headers = mergedHeaders;
+      break;
+
+    case "basic":
+      payload.auth_type = "basic";
+      payload.basic_username = input.basicUsername.trim() || undefined;
+      payload.basic_password = input.basicPassword.trim() || undefined;
+      payload.extra_headers = customHeaders;
       break;
 
     case "none":

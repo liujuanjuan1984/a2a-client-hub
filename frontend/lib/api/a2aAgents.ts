@@ -1,6 +1,6 @@
 import { apiRequest } from "@/lib/api/client";
 
-export type A2AAuthType = "none" | "bearer";
+export type A2AAuthType = "none" | "bearer" | "basic";
 export type A2AAgentHealthStatus =
   | "unknown"
   | "healthy"
@@ -34,6 +34,7 @@ export type A2AAgentResponse = {
   tags: string[];
   extra_headers: Record<string, string>;
   token_last4?: string | null;
+  username_hint?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -82,6 +83,8 @@ export type A2AAgentCreateRequest = {
   auth_header?: string;
   auth_scheme?: string;
   token?: string;
+  basic_username?: string;
+  basic_password?: string;
   enabled: boolean;
   tags: string[];
   extra_headers: Record<string, string>;

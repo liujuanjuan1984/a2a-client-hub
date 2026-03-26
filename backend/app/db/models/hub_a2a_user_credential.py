@@ -1,4 +1,4 @@
-"""Encrypted credentials for stored A2A auth payloads."""
+"""User-owned credentials for shared hub A2A agents."""
 
 from sqlalchemy import Column, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
@@ -6,14 +6,15 @@ from sqlalchemy.dialects.postgresql import UUID
 from app.db.models.base import SCHEMA_NAME, Base, TimestampMixin
 
 
-class A2AAgentCredential(Base, TimestampMixin):
-    """Stored auth payload for a unified A2A agent."""
+class HubA2AUserCredential(Base, TimestampMixin):
+    """User-provided auth payload for a shared A2A agent."""
 
-    __tablename__ = "a2a_agent_credentials"
+    __tablename__ = "hub_a2a_user_credentials"
     __table_args__ = (
         UniqueConstraint(
             "agent_id",
-            name="uq_a2a_agent_credentials_agent",
+            "user_id",
+            name="uq_hub_a2a_user_credentials_agent_user",
         ),
         {"schema": SCHEMA_NAME},
     )
@@ -23,13 +24,14 @@ class A2AAgentCredential(Base, TimestampMixin):
         ForeignKey(f"{SCHEMA_NAME}.a2a_agents.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment="Related A2A agent id",
+        comment="Related shared A2A agent id",
     )
-    created_by_user_id = Column(
+    user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.users.id", ondelete="RESTRICT"),
-        nullable=True,
-        comment="Admin/user id that created/updated this credential.",
+        ForeignKey(f"{SCHEMA_NAME}.users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Owning user id",
     )
     encrypted_token = Column(
         Text,
@@ -55,7 +57,10 @@ class A2AAgentCredential(Base, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return f"<A2AAgentCredential(id={self.id}, agent_id={self.agent_id})>"
+        return (
+            f"<HubA2AUserCredential(id={self.id}, agent_id={self.agent_id}, "
+            f"user_id={self.user_id})>"
+        )
 
 
-__all__ = ["A2AAgentCredential"]
+__all__ = ["HubA2AUserCredential"]

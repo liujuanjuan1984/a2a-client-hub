@@ -38,9 +38,12 @@ export function AdminHubAgentNewScreen() {
     setEnabled,
     setAvailabilityPolicy,
     setAuthType,
+    setCredentialMode,
     setAuthHeader,
     setAuthScheme,
     setToken,
+    setBasicUsername,
+    setBasicPassword,
     setTagsText,
     setHeaderRow,
     removeHeaderRow,
@@ -148,9 +151,12 @@ export function AdminHubAgentNewScreen() {
           onEnabledChange={setEnabled}
           onAvailabilityPolicyChange={setAvailabilityPolicy}
           onAuthTypeChange={setAuthType}
+          onCredentialModeChange={setCredentialMode}
           onAuthHeaderChange={setAuthHeader}
           onAuthSchemeChange={setAuthScheme}
           onTokenChange={setToken}
+          onBasicUsernameChange={setBasicUsername}
+          onBasicPasswordChange={setBasicPassword}
           onTagsTextChange={setTagsText}
           onHeaderRowChange={setHeaderRow}
           onHeaderRowRemove={removeHeaderRow}

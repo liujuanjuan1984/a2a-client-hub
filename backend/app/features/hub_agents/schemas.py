@@ -10,7 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.pagination import ListResponse, Pagination
 
-HubA2AAuthType = Literal["none", "bearer"]
+HubA2AAuthType = Literal["none", "bearer", "basic"]
+HubA2ACredentialMode = Literal["none", "shared", "user"]
 HubA2AAvailabilityPolicy = Literal["public", "allowlist"]
 
 
@@ -21,6 +22,7 @@ class HubA2AAgentBase(BaseModel):
     auth_type: HubA2AAuthType = Field(default="none")
     auth_header: Optional[str] = Field(default=None)
     auth_scheme: Optional[str] = Field(default=None)
+    credential_mode: HubA2ACredentialMode = Field(default="none")
     enabled: bool = Field(default=True)
     tags: List[str] = Field(default_factory=list)
     extra_headers: Dict[str, str] = Field(default_factory=dict)
@@ -32,6 +34,8 @@ class HubA2AAgentAdminCreate(HubA2AAgentBase):
         min_length=1,
         description="Bearer token to encrypt when auth_type=bearer",
     )
+    basic_username: Optional[str] = Field(default=None, min_length=1)
+    basic_password: Optional[str] = Field(default=None, min_length=1)
 
 
 class HubA2AAgentAdminUpdate(BaseModel):
@@ -41,6 +45,7 @@ class HubA2AAgentAdminUpdate(BaseModel):
     auth_type: Optional[HubA2AAuthType] = None
     auth_header: Optional[str] = None
     auth_scheme: Optional[str] = None
+    credential_mode: Optional[HubA2ACredentialMode] = None
     enabled: Optional[bool] = None
     tags: Optional[List[str]] = None
     extra_headers: Optional[Dict[str, str]] = None
@@ -49,6 +54,8 @@ class HubA2AAgentAdminUpdate(BaseModel):
         min_length=1,
         description="New bearer token to replace the stored secret",
     )
+    basic_username: Optional[str] = Field(default=None, min_length=1)
+    basic_password: Optional[str] = Field(default=None, min_length=1)
 
 
 class HubA2AAgentAdminResponse(HubA2AAgentBase):
@@ -58,6 +65,10 @@ class HubA2AAgentAdminResponse(HubA2AAgentBase):
     )
     token_last4: Optional[str] = Field(
         default=None, description="Last four characters of the stored token"
+    )
+    username_hint: Optional[str] = Field(
+        default=None,
+        description="Non-secret username hint for basic auth credentials",
     )
     created_by_user_id: UUID
     updated_by_user_id: Optional[UUID] = None
@@ -71,6 +82,10 @@ class HubA2AAgentUserResponse(BaseModel):
     id: UUID
     name: str
     card_url: str
+    auth_type: HubA2AAuthType
+    credential_mode: HubA2ACredentialMode
+    credential_configured: bool = False
+    credential_display_hint: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
@@ -125,9 +140,25 @@ class HubA2AAllowlistReplaceRequest(BaseModel):
     entries: List[HubA2AAllowlistAddRequest] = Field(default_factory=list)
 
 
+class HubA2AUserCredentialStatusResponse(BaseModel):
+    agent_id: UUID
+    auth_type: HubA2AAuthType
+    credential_mode: HubA2ACredentialMode
+    configured: bool = False
+    token_last4: Optional[str] = None
+    username_hint: Optional[str] = None
+
+
+class HubA2AUserCredentialUpsertRequest(BaseModel):
+    token: Optional[str] = Field(default=None, min_length=1)
+    basic_username: Optional[str] = Field(default=None, min_length=1)
+    basic_password: Optional[str] = Field(default=None, min_length=1)
+
+
 __all__ = [
     "HubA2AAuthType",
     "HubA2AAvailabilityPolicy",
+    "HubA2ACredentialMode",
     "HubA2AAgentAdminCreate",
     "HubA2AAgentAdminUpdate",
     "HubA2AAgentAdminResponse",
@@ -138,4 +169,6 @@ __all__ = [
     "HubA2AAllowlistEntryResponse",
     "HubA2AAllowlistListResponse",
     "HubA2AAllowlistReplaceRequest",
+    "HubA2AUserCredentialStatusResponse",
+    "HubA2AUserCredentialUpsertRequest",
 ]

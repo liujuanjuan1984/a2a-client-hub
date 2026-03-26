@@ -19,6 +19,8 @@ class A2AAgentCardProxyRequest(BaseModel):
         min_length=1,
         description="Bearer token used when auth_type=bearer",
     )
+    basic_username: Optional[str] = Field(default=None, min_length=1)
+    basic_password: Optional[str] = Field(default=None, min_length=1)
     extra_headers: Dict[str, str] = Field(default_factory=dict)
 
 

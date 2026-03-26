@@ -6,12 +6,13 @@ from dataclasses import dataclass
 from typing import Optional, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secret_vault import hub_a2a_secret_vault
 from app.db.models.a2a_agent import A2AAgent
 from app.db.models.a2a_agent_credential import A2AAgentCredential
+from app.db.models.hub_a2a_user_credential import HubA2AUserCredential
 from app.features.agents_shared.runtime_auth import build_resolved_runtime_agent
 from app.integrations.a2a_client.types import ResolvedAgent
 
@@ -26,6 +27,12 @@ class HubA2ARuntimeNotFoundError(HubA2ARuntimeError):
 
 class HubA2ARuntimeValidationError(HubA2ARuntimeError):
     """Raised when runtime data is invalid or incomplete."""
+
+
+class HubA2AUserCredentialRequiredError(HubA2ARuntimeValidationError):
+    """Raised when a shared agent requires user-owned credentials."""
+
+    error_code = "credential_required"
 
 
 @dataclass(frozen=True)
@@ -63,8 +70,12 @@ class HubA2ARuntimeBuilder:
             raise HubA2ARuntimeNotFoundError(str(exc)) from exc
 
         credential = None
-        if agent.auth_type == "bearer":
-            credential = await self._get_credential(db, agent_id=cast(UUID, agent.id))
+        if agent.auth_type in {"bearer", "basic"}:
+            credential = await self._get_credential(
+                db,
+                user_id=user_id,
+                agent=agent,
+            )
         return self.build_from_agent(agent=agent, credential=credential)
 
     def build_from_agent(
@@ -115,10 +126,36 @@ class HubA2ARuntimeBuilder:
         )
 
     async def _get_credential(
-        self, db: AsyncSession, *, agent_id: UUID
-    ) -> Optional[A2AAgentCredential]:
-        stmt = select(A2AAgentCredential).where(A2AAgentCredential.agent_id == agent_id)
-        return cast(A2AAgentCredential | None, await db.scalar(stmt))
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        agent: A2AAgent,
+    ) -> Optional[A2AAgentCredential | HubA2AUserCredential]:
+        agent_id = cast(UUID, agent.id)
+        credential_mode = cast(
+            str,
+            getattr(agent, "credential_mode", A2AAgent.CREDENTIAL_NONE),
+        )
+        if credential_mode == A2AAgent.CREDENTIAL_SHARED:
+            stmt = select(A2AAgentCredential).where(
+                A2AAgentCredential.agent_id == agent_id
+            )
+            return cast(A2AAgentCredential | None, await db.scalar(stmt))
+        if credential_mode == A2AAgent.CREDENTIAL_USER:
+            stmt = select(HubA2AUserCredential).where(
+                and_(
+                    HubA2AUserCredential.agent_id == agent_id,
+                    HubA2AUserCredential.user_id == user_id,
+                )
+            )
+            credential = cast(HubA2AUserCredential | None, await db.scalar(stmt))
+            if credential is None:
+                raise HubA2AUserCredentialRequiredError(
+                    "This shared agent requires your credential. Open agent details and save it first."
+                )
+            return credential
+        return None
 
 
 hub_a2a_runtime_builder = HubA2ARuntimeBuilder()
@@ -128,5 +165,6 @@ __all__ = [
     "HubA2ARuntimeError",
     "HubA2ARuntimeNotFoundError",
     "HubA2ARuntimeValidationError",
+    "HubA2AUserCredentialRequiredError",
     "hub_a2a_runtime_builder",
 ]

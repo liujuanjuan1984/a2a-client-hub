@@ -82,6 +82,7 @@ def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
         "tags": record.tags,
         "extra_headers": record.extra_headers,
         "token_last4": record.token_last4,
+        "username_hint": record.username_hint,
         "created_at": record.created_at,
         "updated_at": record.updated_at,
     }
@@ -100,6 +101,8 @@ def _build_proxy_headers(payload: A2AAgentCardProxyRequest) -> dict[str, str]:
         return build_proxy_auth_headers(
             auth_type=payload.auth_type,
             token=payload.token,
+            basic_username=payload.basic_username,
+            basic_password=payload.basic_password,
             auth_header=payload.auth_header,
             auth_scheme=payload.auth_scheme,
             extra_headers=payload.extra_headers,
@@ -194,6 +197,8 @@ async def create_agent(
             tags=payload.tags,
             extra_headers=payload.extra_headers,
             token=payload.token,
+            basic_username=payload.basic_username,
+            basic_password=payload.basic_password,
         )
         return _build_response(record)
     except A2AAgentValidationError as exc:
@@ -243,6 +248,8 @@ async def update_agent(
             tags=payload.tags,
             extra_headers=payload.extra_headers,
             token=payload.token,
+            basic_username=payload.basic_username,
+            basic_password=payload.basic_password,
         )
         return _build_response(record)
     except A2AAgentValidationError as exc:

@@ -10,7 +10,7 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from app.schemas.pagination import ListResponse, Pagination
 
-A2AAuthType = Literal["none", "bearer"]
+A2AAuthType = Literal["none", "bearer", "basic"]
 A2AAgentHealthStatus = Literal["unknown", "healthy", "degraded", "unavailable"]
 A2AAgentHealthBucket = Literal["all", "healthy", "attention"]
 
@@ -32,6 +32,8 @@ class A2AAgentCreate(A2AAgentBase):
         min_length=1,
         description="Bearer token to encrypt when auth_type=bearer",
     )
+    basic_username: Optional[str] = Field(default=None, min_length=1)
+    basic_password: Optional[str] = Field(default=None, min_length=1)
 
 
 class A2AAgentUpdate(BaseModel):
@@ -50,6 +52,8 @@ class A2AAgentUpdate(BaseModel):
         min_length=1,
         description="New bearer token to replace the stored secret",
     )
+    basic_username: Optional[str] = Field(default=None, min_length=1)
+    basic_password: Optional[str] = Field(default=None, min_length=1)
 
 
 class A2AAgentResponse(A2AAgentBase):
@@ -61,6 +65,10 @@ class A2AAgentResponse(A2AAgentBase):
     last_health_check_error: Optional[str] = None
     token_last4: Optional[str] = Field(
         default=None, description="Last four characters of the stored token"
+    )
+    username_hint: Optional[str] = Field(
+        default=None,
+        description="Non-secret username hint for basic auth",
     )
     created_at: datetime
     updated_at: datetime

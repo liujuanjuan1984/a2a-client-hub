@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+
 DEFAULT_AUTH_HEADER = "Authorization"
 DEFAULT_AUTH_SCHEME = "Bearer"
+DEFAULT_BASIC_AUTH_SCHEME = "Basic"
 
 
 def resolve_stored_auth_fields(
@@ -12,6 +15,8 @@ def resolve_stored_auth_fields(
     auth_scheme: str | None,
     existing_auth_header: str | None = None,
     existing_auth_scheme: str | None = None,
+    default_header: str = DEFAULT_AUTH_HEADER,
+    default_scheme: str = DEFAULT_AUTH_SCHEME,
 ) -> tuple[str, str]:
     """Resolve stored auth fields for persistence/update flows.
 
@@ -24,15 +29,15 @@ def resolve_stored_auth_fields(
     header_value = (
         (auth_header if auth_header is not None else None)
         or existing_auth_header
-        or DEFAULT_AUTH_HEADER
+        or default_header
     )
     scheme_value = (
         (auth_scheme if auth_scheme is not None else None)
         or existing_auth_scheme
-        or DEFAULT_AUTH_SCHEME
+        or default_scheme
     )
-    normalized_header = header_value.strip() or DEFAULT_AUTH_HEADER
-    normalized_scheme = scheme_value.strip() or DEFAULT_AUTH_SCHEME
+    normalized_header = header_value.strip() or default_header
+    normalized_scheme = scheme_value.strip() or default_scheme
     return normalized_header, normalized_scheme
 
 
@@ -60,6 +65,8 @@ def build_proxy_auth_headers(
     *,
     auth_type: str,
     token: str | None,
+    basic_username: str | None = None,
+    basic_password: str | None = None,
     auth_header: str | None = None,
     auth_scheme: str | None = None,
     extra_headers: dict[str, str] | None = None,
@@ -77,6 +84,22 @@ def build_proxy_auth_headers(
             token=token_value,
         )
         headers[header_name] = header_value
+    elif auth_type == "basic":
+        username = (basic_username or "").strip()
+        password = (basic_password or "").strip()
+        if not username:
+            raise ValueError("Basic username is required")
+        if not password:
+            raise ValueError("Basic password is required")
+        encoded = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode(
+            "ascii"
+        )
+        header_name, header_value = build_auth_header_pair(
+            auth_header=DEFAULT_AUTH_HEADER,
+            auth_scheme=DEFAULT_BASIC_AUTH_SCHEME,
+            token=encoded,
+        )
+        headers[header_name] = header_value
     elif auth_type != "none":
         raise ValueError(f"Unsupported auth_type: {auth_type}")
     return headers
@@ -86,4 +109,5 @@ __all__ = [
     "build_auth_header_pair",
     "build_proxy_auth_headers",
     "resolve_stored_auth_fields",
+    "DEFAULT_BASIC_AUTH_SCHEME",
 ]
