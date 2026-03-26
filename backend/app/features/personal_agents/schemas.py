@@ -11,6 +11,8 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 from app.schemas.pagination import ListResponse, Pagination
 
 A2AAuthType = Literal["none", "bearer"]
+A2AAgentHealthStatus = Literal["unknown", "healthy", "degraded", "unavailable"]
+A2AAgentHealthBucket = Literal["all", "healthy", "attention"]
 
 
 class A2AAgentBase(BaseModel):
@@ -52,6 +54,11 @@ class A2AAgentUpdate(BaseModel):
 
 class A2AAgentResponse(A2AAgentBase):
     id: UUID
+    health_status: A2AAgentHealthStatus
+    consecutive_health_check_failures: int
+    last_health_check_at: Optional[datetime] = None
+    last_successful_health_check_at: Optional[datetime] = None
+    last_health_check_error: Optional[str] = None
     token_last4: Optional[str] = Field(
         default=None, description="Last four characters of the stored token"
     )
@@ -65,8 +72,17 @@ class A2AAgentPagination(Pagination):
     """Pagination metadata for A2A agent listings."""
 
 
+class A2AAgentListCounts(BaseModel):
+    healthy: int = 0
+    degraded: int = 0
+    unavailable: int = 0
+    unknown: int = 0
+
+
 class A2AAgentListMeta(BaseModel):
     """Additional list metadata for agents."""
+
+    counts: A2AAgentListCounts = Field(default_factory=A2AAgentListCounts)
 
 
 class A2AAgentListResponse(ListResponse[A2AAgentResponse, A2AAgentListMeta]):
@@ -75,11 +91,40 @@ class A2AAgentListResponse(ListResponse[A2AAgentResponse, A2AAgentListMeta]):
     meta: A2AAgentListMeta
 
 
+class A2AAgentHealthCheckItem(BaseModel):
+    agent_id: UUID
+    health_status: A2AAgentHealthStatus
+    checked_at: datetime
+    skipped_cooldown: bool = False
+    error: Optional[str] = None
+
+
+class A2AAgentHealthCheckSummary(BaseModel):
+    requested: int
+    checked: int
+    skipped_cooldown: int
+    healthy: int
+    degraded: int
+    unavailable: int
+    unknown: int
+
+
+class A2AAgentHealthCheckResponse(BaseModel):
+    summary: A2AAgentHealthCheckSummary
+    items: List[A2AAgentHealthCheckItem]
+
+
 __all__ = [
     "A2AAgentCreate",
+    "A2AAgentHealthBucket",
+    "A2AAgentHealthCheckItem",
+    "A2AAgentHealthCheckResponse",
+    "A2AAgentHealthCheckSummary",
+    "A2AAgentHealthStatus",
     "A2AAgentUpdate",
     "A2AAgentResponse",
     "A2AAgentListResponse",
+    "A2AAgentListCounts",
     "A2AAgentPagination",
     "A2AAgentListMeta",
 ]

@@ -26,6 +26,11 @@ from app.features.personal_agents.runtime import (
 )
 from app.features.personal_agents.schemas import (
     A2AAgentCreate,
+    A2AAgentHealthBucket,
+    A2AAgentHealthCheckItem,
+    A2AAgentHealthCheckResponse,
+    A2AAgentHealthCheckSummary,
+    A2AAgentListCounts,
     A2AAgentListMeta,
     A2AAgentListResponse,
     A2AAgentPagination,
@@ -69,6 +74,11 @@ def _build_response(record: A2AAgentRecord) -> A2AAgentResponse:
         "auth_header": record.auth_header,
         "auth_scheme": record.auth_scheme,
         "enabled": record.enabled,
+        "health_status": record.health_status,
+        "consecutive_health_check_failures": record.consecutive_health_check_failures,
+        "last_health_check_at": record.last_health_check_at,
+        "last_successful_health_check_at": record.last_successful_health_check_at,
+        "last_health_check_error": record.last_health_check_error,
         "tags": record.tags,
         "extra_headers": record.extra_headers,
         "token_last4": record.token_last4,
@@ -105,6 +115,10 @@ async def list_agents(
     current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=200, description="Page size"),
+    health_bucket: A2AAgentHealthBucket = Query(
+        "all",
+        description="Optional personal agent health bucket filter.",
+    ),
 ) -> A2AAgentListResponse:
     current_user_id = cast(UUID, current_user.id)
     logger.info(
@@ -113,22 +127,36 @@ async def list_agents(
             "user_id": str(current_user_id),
             "page": page,
             "size": size,
+            "health_bucket": health_bucket,
         },
     )
-    items = await a2a_agent_service.list_agents(db, user_id=current_user_id)
-    total = len(items)
+    try:
+        items, total, counts = await a2a_agent_service.list_agents(
+            db,
+            user_id=current_user_id,
+            page=page,
+            size=size,
+            health_bucket=health_bucket,
+        )
+    except A2AAgentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     pages = (total + size - 1) // size if size else 0
-    offset = (page - 1) * size
-    page_items = items[offset : offset + size]
     return A2AAgentListResponse(
-        items=[_build_response(item) for item in page_items],
+        items=[_build_response(item) for item in items],
         pagination=A2AAgentPagination(
             page=page,
             size=size,
             total=total,
             pages=pages,
         ),
-        meta=A2AAgentListMeta(),
+        meta=A2AAgentListMeta(
+            counts=A2AAgentListCounts(
+                healthy=counts.healthy,
+                degraded=counts.degraded,
+                unavailable=counts.unavailable,
+                unknown=counts.unknown,
+            )
+        ),
     )
 
 
@@ -251,6 +279,112 @@ async def delete_agent(
     except A2AAgentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/check-health",
+    response_model=A2AAgentHealthCheckResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def check_agents_health(
+    *,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+    force: bool = Query(
+        False,
+        description="Set to true to bypass cooldown and force checks for eligible personal agents.",
+    ),
+) -> A2AAgentHealthCheckResponse:
+    current_user_id = cast(UUID, current_user.id)
+    logger.info(
+        "A2A agents health check requested",
+        extra={
+            "user_id": str(current_user_id),
+            "force": force,
+        },
+    )
+    summary, items = await a2a_agent_service.check_agents_health(
+        db,
+        user_id=current_user_id,
+        force=force,
+    )
+    return A2AAgentHealthCheckResponse(
+        summary=A2AAgentHealthCheckSummary(
+            requested=summary.requested,
+            checked=summary.checked,
+            skipped_cooldown=summary.skipped_cooldown,
+            healthy=summary.healthy,
+            degraded=summary.degraded,
+            unavailable=summary.unavailable,
+            unknown=summary.unknown,
+        ),
+        items=[
+            A2AAgentHealthCheckItem(
+                agent_id=item.agent_id,
+                health_status=cast(Any, item.health_status),
+                checked_at=item.checked_at,
+                skipped_cooldown=item.skipped_cooldown,
+                error=item.error,
+            )
+            for item in items
+        ],
+    )
+
+
+@router.post(
+    "/{agent_id}/check-health",
+    response_model=A2AAgentHealthCheckResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def check_single_agent_health(
+    *,
+    agent_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+    force: bool = Query(
+        True,
+        description="Set to false to respect cooldown for this single-agent check.",
+    ),
+) -> A2AAgentHealthCheckResponse:
+    current_user_id = cast(UUID, current_user.id)
+    logger.info(
+        "A2A single agent health check requested",
+        extra={
+            "user_id": str(current_user_id),
+            "agent_id": str(agent_id),
+            "force": force,
+        },
+    )
+    try:
+        summary, items = await a2a_agent_service.check_agents_health(
+            db,
+            user_id=current_user_id,
+            agent_id=agent_id,
+            force=force,
+        )
+    except A2AAgentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return A2AAgentHealthCheckResponse(
+        summary=A2AAgentHealthCheckSummary(
+            requested=summary.requested,
+            checked=summary.checked,
+            skipped_cooldown=summary.skipped_cooldown,
+            healthy=summary.healthy,
+            degraded=summary.degraded,
+            unavailable=summary.unavailable,
+            unknown=summary.unknown,
+        ),
+        items=[
+            A2AAgentHealthCheckItem(
+                agent_id=item.agent_id,
+                health_status=cast(Any, item.health_status),
+                checked_at=item.checked_at,
+                skipped_cooldown=item.skipped_cooldown,
+                error=item.error,
+            )
+            for item in items
+        ],
+    )
 
 
 @router.post(

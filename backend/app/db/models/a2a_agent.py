@@ -1,6 +1,15 @@
 """Unified A2A agent configuration model."""
 
-from sqlalchemy import Boolean, Column, ForeignKey, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSON, UUID
 
 from app.db.models.base import (
@@ -28,6 +37,10 @@ class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
 
     SCOPE_PERSONAL = "personal"
     SCOPE_SHARED = "shared"
+    HEALTH_UNKNOWN = "unknown"
+    HEALTH_HEALTHY = "healthy"
+    HEALTH_DEGRADED = "degraded"
+    HEALTH_UNAVAILABLE = "unavailable"
 
     name = Column(
         String(120),
@@ -76,6 +89,36 @@ class A2AAgent(Base, TimestampMixin, SoftDeleteMixin, UserOwnedMixin):
         default=True,
         server_default="true",
         comment="Whether this agent is enabled for invocation",
+    )
+    health_status = Column(
+        String(16),
+        nullable=False,
+        default=HEALTH_UNKNOWN,
+        server_default=HEALTH_UNKNOWN,
+        index=True,
+        comment="Latest persisted health check status.",
+    )
+    consecutive_health_check_failures = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Consecutive failed health checks.",
+    )
+    last_health_check_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp of the latest health check attempt.",
+    )
+    last_successful_health_check_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp of the latest successful health check attempt.",
+    )
+    last_health_check_error = Column(
+        Text,
+        nullable=True,
+        comment="Latest persisted health check error summary.",
     )
     tags = Column(
         JSON,

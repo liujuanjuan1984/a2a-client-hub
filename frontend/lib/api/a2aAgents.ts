@@ -1,6 +1,12 @@
 import { apiRequest } from "@/lib/api/client";
 
 export type A2AAuthType = "none" | "bearer";
+export type A2AAgentHealthStatus =
+  | "unknown"
+  | "healthy"
+  | "degraded"
+  | "unavailable";
+export type A2AAgentHealthBucket = "all" | "healthy" | "attention";
 
 export type A2AAgentCardValidationResponse = {
   success: boolean;
@@ -20,6 +26,11 @@ export type A2AAgentResponse = {
   auth_header?: string | null;
   auth_scheme?: string | null;
   enabled: boolean;
+  health_status: A2AAgentHealthStatus;
+  consecutive_health_check_failures: number;
+  last_health_check_at?: string | null;
+  last_successful_health_check_at?: string | null;
+  last_health_check_error?: string | null;
   tags: string[];
   extra_headers: Record<string, string>;
   token_last4?: string | null;
@@ -35,7 +46,33 @@ export type A2AAgentListResponse = {
     total: number;
     pages: number;
   };
-  meta: Record<string, unknown>;
+  meta: {
+    counts: {
+      healthy: number;
+      degraded: number;
+      unavailable: number;
+      unknown: number;
+    };
+  };
+};
+
+export type A2AAgentHealthCheckResponse = {
+  summary: {
+    requested: number;
+    checked: number;
+    skipped_cooldown: number;
+    healthy: number;
+    degraded: number;
+    unavailable: number;
+    unknown: number;
+  };
+  items: {
+    agent_id: string;
+    health_status: A2AAgentHealthStatus;
+    checked_at: string;
+    skipped_cooldown: boolean;
+    error?: string | null;
+  }[];
 };
 
 export type A2AAgentCreateRequest = {
@@ -84,9 +121,13 @@ export type WsTicketResponse = {
   expires_in: number;
 };
 
-export const listAgents = (page = 1, size = 50) =>
+export const listAgents = (
+  page = 1,
+  size = 50,
+  healthBucket: A2AAgentHealthBucket = "all",
+) =>
   apiRequest<A2AAgentListResponse>("/me/a2a/agents", {
-    query: { page, size },
+    query: { page, size, health_bucket: healthBucket },
   });
 
 export const createAgent = (payload: A2AAgentCreateRequest) =>
@@ -112,6 +153,21 @@ export const validateAgentCard = (agentId: string) =>
     `/me/a2a/agents/${agentId}/card:validate`,
     {
       method: "POST",
+    },
+  );
+
+export const checkAgentsHealth = (force = false) =>
+  apiRequest<A2AAgentHealthCheckResponse>("/me/a2a/agents/check-health", {
+    method: "POST",
+    query: { force: force ? "true" : "false" },
+  });
+
+export const checkAgentHealth = (agentId: string, force = true) =>
+  apiRequest<A2AAgentHealthCheckResponse>(
+    `/me/a2a/agents/${agentId}/check-health`,
+    {
+      method: "POST",
+      query: { force: force ? "true" : "false" },
     },
   );
 
