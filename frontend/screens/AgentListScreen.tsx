@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer";
@@ -92,6 +92,25 @@ export function AgentListScreen() {
     personalQuery.isFetching ||
     attentionQuery.isFetching ||
     sharedQuery.isFetching;
+
+  useEffect(() => {
+    const totalPages = Math.max(personalQuery.data?.pagination.pages ?? 1, 1);
+    setPersonalPage((value) => Math.min(value, totalPages));
+  }, [personalQuery.data?.pagination.pages]);
+
+  useEffect(() => {
+    if (attentionCount === 0) {
+      setAttentionPage(1);
+      return;
+    }
+    const totalPages = Math.max(attentionQuery.data?.pagination.pages ?? 1, 1);
+    setAttentionPage((value) => Math.min(value, totalPages));
+  }, [attentionCount, attentionQuery.data?.pagination.pages]);
+
+  useEffect(() => {
+    const totalPages = Math.max(sharedQuery.data?.pagination.pages ?? 1, 1);
+    setSharedPage((value) => Math.min(value, totalPages));
+  }, [sharedQuery.data?.pagination.pages]);
 
   const invalidateAgentQueries = async () => {
     await Promise.all([
@@ -348,6 +367,7 @@ export function AgentListScreen() {
   const attentionAgents = attentionQuery.data?.items ?? [];
   const sharedAgents = sharedQuery.data?.items ?? [];
   const showEmptyState =
+    !isFetching &&
     healthyAgents.length === 0 &&
     attentionCount === 0 &&
     sharedAgents.length === 0;
