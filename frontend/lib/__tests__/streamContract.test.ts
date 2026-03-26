@@ -523,6 +523,75 @@ describe("block-based stream parser and reducer", () => {
     });
   });
 
+  it("replaces inferred completed tool_call status when a later explicit success arrives", () => {
+    let blocks = finalizeMessageBlocks([
+      {
+        id: "block-tool-late-success",
+        blockId: "block-tool-late-success",
+        laneId: "tool_call",
+        type: "tool_call",
+        content: '{"tool":"bash","status":"running"}',
+        isFinished: false,
+        toolCall: {
+          name: "bash",
+          status: "running",
+          callId: null,
+          arguments: undefined,
+          result: undefined,
+          error: undefined,
+        },
+        createdAt: "2026-03-26T00:00:00.000Z",
+        updatedAt: "2026-03-26T00:00:00.000Z",
+      },
+    ]);
+
+    expect(blocks?.[0]).toMatchObject({
+      isFinished: true,
+      toolCall: {
+        name: "bash",
+        status: "completed",
+      },
+    });
+
+    blocks = applyStreamBlockUpdate(blocks, {
+      eventId: "evt-tool-late-success",
+      eventIdSource: "upstream",
+      seq: 3,
+      taskId: "task-tools",
+      artifactId: "task-tools:stream:tool-late-success",
+      blockId: "block-tool-late-success",
+      laneId: "tool_call",
+      blockType: "tool_call",
+      op: "replace",
+      baseSeq: 3,
+      source: "tool_part_update",
+      messageId: "msg-tool-late-success",
+      role: "agent",
+      delta:
+        '{"call_id":"call-late-success","tool":"bash","status":"success","output":"done"}',
+      append: false,
+      done: true,
+      toolCall: {
+        name: "bash",
+        status: "success",
+        callId: "call-late-success",
+        arguments: undefined,
+        result: "done",
+        error: undefined,
+      },
+    });
+
+    expect(blocks?.[0]).toMatchObject({
+      isFinished: true,
+      toolCall: {
+        name: "bash",
+        status: "success",
+        callId: "call-late-success",
+        result: "done",
+      },
+    });
+  });
+
   it("rejects stale replace operations when base_seq moves backwards", () => {
     let blocks: MessageBlock[] | undefined;
     blocks = applyStreamBlockUpdate(
