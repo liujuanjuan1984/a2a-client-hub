@@ -7,6 +7,12 @@ class A2AAgentUnavailableError(RuntimeError):
     error_code = "agent_unavailable"
 
 
+class A2AUpstreamTimeoutError(A2AAgentUnavailableError):
+    """Raised when a downstream A2A agent times out before responding."""
+
+    error_code = "timeout"
+
+
 class A2AOutboundNotAllowedError(A2AAgentUnavailableError):
     """Raised when an outbound A2A URL is blocked by the allowlist."""
 
@@ -60,6 +66,7 @@ __all__ = [
     "A2AClientResetRequiredError",
     "A2APeerProtocolError",
     "A2AStreamingNotSupportedError",
+    "A2AUpstreamTimeoutError",
     "A2AUnsupportedBindingError",
     "A2AUnsupportedOperationError",
 ]

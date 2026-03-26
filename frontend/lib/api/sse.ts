@@ -9,6 +9,7 @@ import {
   AuthRecoverableError,
   ensureFreshAccessToken,
   handleAuthExpiredOnce,
+  parseApiErrorResponse,
   refreshAccessTokenWithOutcome,
 } from "@/lib/api/client";
 import { useSessionStore } from "@/store/session";
@@ -229,13 +230,14 @@ export const fetchSSE = async (
             throw new AuthExpiredError();
           }
           if (!retryResponse.ok) {
-            const errorText = await retryResponse
-              .text()
-              .catch(() => "Unknown error");
-            throw new ApiRequestError(
-              `SSE request failed (${retryResponse.status}): ${errorText}`,
-              retryResponse.status,
-            );
+            const parsed = await parseApiErrorResponse(retryResponse);
+            throw new ApiRequestError(parsed.message, retryResponse.status, {
+              errorCode: parsed.errorCode,
+              source: parsed.source,
+              jsonrpcCode: parsed.jsonrpcCode,
+              missingParams: parsed.missingParams,
+              upstreamError: parsed.upstreamError,
+            });
           }
           await consumeSseStream(retryResponse, handlers, {
             resetIdleTimer,
@@ -255,11 +257,14 @@ export const fetchSSE = async (
       }
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => "Unknown error");
-        throw new ApiRequestError(
-          `SSE request failed (${response.status}): ${errorText}`,
-          response.status,
-        );
+        const parsed = await parseApiErrorResponse(response);
+        throw new ApiRequestError(parsed.message, response.status, {
+          errorCode: parsed.errorCode,
+          source: parsed.source,
+          jsonrpcCode: parsed.jsonrpcCode,
+          missingParams: parsed.missingParams,
+          upstreamError: parsed.upstreamError,
+        });
       }
 
       await consumeSseStream(response, handlers, {

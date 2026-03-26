@@ -176,6 +176,7 @@ class A2AGateway:
                     "error_code": "outbound_not_allowed",
                 }
             except A2AAgentUnavailableError as exc:
+                error_code = getattr(exc, "error_code", "agent_unavailable")
                 elapsed = time.monotonic() - start_time
                 logger.error(
                     "A2A unavailable",
@@ -188,14 +189,14 @@ class A2AGateway:
                 a2a_metrics.record_call(
                     resolved.name,
                     success=False,
-                    error_code="agent_unavailable",
+                    error_code=error_code,
                 )
                 return {
                     "success": False,
                     "agent_name": resolved.name,
                     "agent_url": resolved.url,
                     "error": str(exc),
-                    "error_code": "agent_unavailable",
+                    "error_code": error_code,
                 }
             except asyncio.TimeoutError:
                 elapsed = time.monotonic() - start_time
@@ -377,6 +378,7 @@ class A2AGateway:
                 "error_code": "outbound_not_allowed",
             }
         except A2AAgentUnavailableError as exc:
+            error_code = getattr(exc, "error_code", "agent_unavailable")
             elapsed = time.monotonic() - start_time
             logger.error(
                 "A2A task cancel unavailable",
@@ -390,7 +392,7 @@ class A2AGateway:
             a2a_metrics.record_call(
                 resolved.name,
                 success=False,
-                error_code="agent_unavailable",
+                error_code=error_code,
             )
             return {
                 "success": False,
@@ -398,7 +400,7 @@ class A2AGateway:
                 "agent_url": resolved.url,
                 "task_id": normalized_task_id,
                 "error": str(exc),
-                "error_code": "agent_unavailable",
+                "error_code": error_code,
             }
         except Exception as exc:  # noqa: BLE001
             elapsed = time.monotonic() - start_time
@@ -544,6 +546,7 @@ class A2AGateway:
                 "error_code": "outbound_not_allowed",
             }
         except A2AAgentUnavailableError as exc:
+            error_code = getattr(exc, "error_code", "agent_unavailable")
             elapsed = time.monotonic() - start_time
             logger.error(
                 "A2A task get unavailable",
@@ -557,7 +560,7 @@ class A2AGateway:
             a2a_metrics.record_call(
                 resolved.name,
                 success=False,
-                error_code="agent_unavailable",
+                error_code=error_code,
             )
             return {
                 "success": False,
@@ -565,7 +568,7 @@ class A2AGateway:
                 "agent_url": resolved.url,
                 "task_id": normalized_task_id,
                 "error": str(exc),
-                "error_code": "agent_unavailable",
+                "error_code": error_code,
             }
         except Exception as exc:  # noqa: BLE001
             elapsed = time.monotonic() - start_time

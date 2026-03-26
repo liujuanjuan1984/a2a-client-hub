@@ -7,6 +7,7 @@ import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 from a2a.client.errors import A2AClientHTTPError
 from a2a.types import Message, Role, TextPart
@@ -25,6 +26,7 @@ from app.integrations.a2a_client.config import A2ASettings
 from app.integrations.a2a_client.errors import (
     A2AClientResetRequiredError,
     A2APeerProtocolError,
+    A2AUpstreamTimeoutError,
 )
 from app.integrations.a2a_client.http_clients import (
     SharedSDKTransportInvalidatedError,
@@ -845,6 +847,37 @@ async def test_call_agent_returns_structured_protocol_error_details() -> None:
 
 
 @pytest.mark.asyncio
+async def test_call_agent_maps_connect_error_to_agent_unavailable() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._send_with_fallback = AsyncMock(
+        side_effect=httpx.ConnectError("All connection attempts failed")
+    )
+
+    result = await a2a_client.call_agent("hello")
+
+    assert result["success"] is False
+    assert result["error_code"] == "agent_unavailable"
+    assert result["error"] == (
+        "Unable to reach A2A agent 'http://example-agent.internal:24020'"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_maps_connect_timeout_to_timeout() -> None:
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+
+    async def _failing_stream(_request):
+        raise httpx.ConnectTimeout("timed out")
+        yield  # pragma: no cover
+
+    a2a_client._stream_with_fallback = _failing_stream
+
+    with pytest.raises(A2AUpstreamTimeoutError, match="timed out while establishing"):
+        async for _ in a2a_client.stream_agent("hello"):
+            pass
+
+
+@pytest.mark.asyncio
 async def test_cancel_task_returns_success_for_valid_request() -> None:
     a2a_client = A2AClient("http://example-agent.internal:24020")
     a2a_client._cancel_with_fallback = AsyncMock(return_value={"id": "task-1"})
@@ -979,6 +1012,41 @@ async def test_gateway_get_task_returns_success_payload(
         history_length=2,
         metadata=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_gateway_get_task_preserves_timeout_error_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={},
+        name="TestAgent",
+    )
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_open_invoke_session(**_kwargs):
+        raise A2AUpstreamTimeoutError("Timed out before completing the request")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(gateway, "open_invoke_session", fake_open_invoke_session)
+
+    result = await gateway.get_task(
+        resolved=resolved,
+        task_id="task-1",
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "timeout"
 
 
 @pytest.mark.asyncio

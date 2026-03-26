@@ -2,16 +2,41 @@ jest.mock("@/lib/api/client", () => {
   class MockApiRequestError extends Error {
     status: number;
     errorCode: string | null;
+    source: string | null;
+    jsonrpcCode: number | null;
+    missingParams: { name: string; required: boolean }[] | null;
+    upstreamError: Record<string, unknown> | null;
 
     constructor(
       message: string,
       status: number,
-      errorCode: string | null = null,
+      options:
+        | string
+        | {
+            errorCode?: string | null;
+            source?: string | null;
+            jsonrpcCode?: number | null;
+            missingParams?: { name: string; required: boolean }[] | null;
+            upstreamError?: Record<string, unknown> | null;
+          }
+        | null = null,
     ) {
       super(message);
       this.name = "ApiRequestError";
       this.status = status;
-      this.errorCode = errorCode;
+      if (typeof options === "string" || options == null) {
+        this.errorCode = options ?? null;
+        this.source = null;
+        this.jsonrpcCode = null;
+        this.missingParams = null;
+        this.upstreamError = null;
+        return;
+      }
+      this.errorCode = options.errorCode ?? null;
+      this.source = options.source ?? null;
+      this.jsonrpcCode = options.jsonrpcCode ?? null;
+      this.missingParams = options.missingParams ?? null;
+      this.upstreamError = options.upstreamError ?? null;
     }
   }
 
@@ -37,6 +62,55 @@ jest.mock("@/lib/api/client", () => {
     AuthRecoverableError: MockAuthRecoverableError,
     ensureFreshAccessToken: jest.fn(async () => null),
     handleAuthExpiredOnce: jest.fn(),
+    parseApiErrorResponse: jest.fn(async (response: Response) => {
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+      const detail =
+        payload && typeof payload === "object" && "detail" in payload
+          ? (payload as { detail?: unknown }).detail
+          : null;
+      const detailRecord =
+        detail && typeof detail === "object" && !Array.isArray(detail)
+          ? (detail as Record<string, unknown>)
+          : null;
+      return {
+        message:
+          (detailRecord &&
+            typeof detailRecord.message === "string" &&
+            detailRecord.message) ||
+          `Request failed (${response.status})`,
+        errorCode:
+          detailRecord && typeof detailRecord.error_code === "string"
+            ? detailRecord.error_code
+            : null,
+        source:
+          detailRecord && typeof detailRecord.source === "string"
+            ? detailRecord.source
+            : null,
+        jsonrpcCode:
+          detailRecord && typeof detailRecord.jsonrpc_code === "number"
+            ? detailRecord.jsonrpc_code
+            : null,
+        missingParams:
+          detailRecord && Array.isArray(detailRecord.missing_params)
+            ? (detailRecord.missing_params as {
+                name: string;
+                required: boolean;
+              }[])
+            : null,
+        upstreamError:
+          detailRecord &&
+          detailRecord.upstream_error &&
+          typeof detailRecord.upstream_error === "object" &&
+          !Array.isArray(detailRecord.upstream_error)
+            ? (detailRecord.upstream_error as Record<string, unknown>)
+            : null,
+      };
+    }),
     refreshAccessToken: jest.fn(async () => null),
     refreshAccessTokenWithOutcome: jest.fn(async () => ({
       result: null,
@@ -113,6 +187,34 @@ describe("fetchSSE", () => {
       missingParams: [{ name: "project_id", required: true }],
       upstreamError: { message: "project_id required" },
     });
+  });
+
+  it("parses non-2xx SSE handshake failures into structured ApiRequestError", async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        detail: {
+          message: "Outbound A2A URL is not allowed",
+          error_code: "outbound_not_allowed",
+          source: "hub_policy",
+        },
+      }),
+    } as Response);
+
+    const onError = jest.fn();
+
+    await fetchSSE("https://example.test/stream", { onError });
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "ApiRequestError",
+        status: 403,
+        errorCode: "outbound_not_allowed",
+        source: "hub_policy",
+        message: "Outbound A2A URL is not allowed",
+      }),
+    );
   });
 
   it("does not reset auth state when sse refresh fails transiently after 401", async () => {
