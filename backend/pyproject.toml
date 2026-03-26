@@ -48,6 +48,7 @@ dependencies = [
     "pydantic-settings>=2.1.0",
     # HTTP client and utilities
     "httpx>=0.25.0",
+    "requests>=2.33.0",
     # Environment and configuration
     "python-dotenv>=1.0.0",
     # JSON handling
