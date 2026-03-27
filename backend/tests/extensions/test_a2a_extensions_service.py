@@ -9,6 +9,7 @@ from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
     ExtensionCallResult,
     InterruptCallbackCapabilitySnapshot,
+    InterruptRecoveryCapabilitySnapshot,
     ModelSelectionCapabilitySnapshot,
     ProviderDiscoveryCapabilitySnapshot,
     ResolvedCapabilitySnapshot,
@@ -23,6 +24,7 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
     ResolvedSessionQueryRuntimeCapability,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    INTERRUPT_RECOVERY_URI,
     PROVIDER_DISCOVERY_URI,
     SHARED_INTERRUPT_CALLBACK_URI,
     SHARED_SESSION_BINDING_URI,
@@ -36,6 +38,7 @@ from app.integrations.a2a_extensions.types import (
     PageSizePagination,
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
+    ResolvedInterruptRecoveryExtension,
     ResolvedModelSelectionExtension,
     ResolvedProviderDiscoveryExtension,
     ResolvedSessionControlMethodCapability,
@@ -125,6 +128,21 @@ def _provider_discovery_snapshot(
     )
 
 
+def _interrupt_recovery_snapshot(
+    *,
+    status: str = "unsupported",
+    ext: ResolvedInterruptRecoveryExtension | None = None,
+    jsonrpc_url: str | None = None,
+    error: str | None = None,
+) -> InterruptRecoveryCapabilitySnapshot:
+    return InterruptRecoveryCapabilitySnapshot(
+        status=status,
+        ext=ext,
+        jsonrpc_url=jsonrpc_url,
+        error=error,
+    )
+
+
 def _model_selection_snapshot(
     *,
     status: str = "unsupported",
@@ -145,6 +163,7 @@ def _capability_snapshot(
     session_query: SessionQueryCapabilitySnapshot,
     session_binding: SessionBindingCapabilitySnapshot | None = None,
     interrupt_callback: InterruptCallbackCapabilitySnapshot | None = None,
+    interrupt_recovery: InterruptRecoveryCapabilitySnapshot | None = None,
     model_selection: ModelSelectionCapabilitySnapshot | None = None,
     provider_discovery: ProviderDiscoveryCapabilitySnapshot | None = None,
     stream_hints: StreamHintsCapabilitySnapshot | None = None,
@@ -153,6 +172,7 @@ def _capability_snapshot(
         session_query=session_query,
         session_binding=session_binding or _binding_snapshot(status="unsupported"),
         interrupt_callback=interrupt_callback or _interrupt_snapshot(),
+        interrupt_recovery=interrupt_recovery or _interrupt_recovery_snapshot(),
         model_selection=model_selection or _model_selection_snapshot(),
         provider_discovery=provider_discovery or _provider_discovery_snapshot(),
         stream_hints=stream_hints
@@ -220,6 +240,22 @@ def _provider_discovery_extension_fixture() -> ResolvedProviderDiscoveryExtensio
         methods={
             "list_providers": "providers.list",
             "list_models": "models.list",
+        },
+        business_code_map={},
+    )
+
+
+def _interrupt_recovery_extension_fixture() -> ResolvedInterruptRecoveryExtension:
+    return ResolvedInterruptRecoveryExtension(
+        uri=INTERRUPT_RECOVERY_URI,
+        required=False,
+        provider="opencode",
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={
+            "list_permissions": "opencode.permissions.list",
+            "list_questions": "opencode.questions.list",
         },
         business_code_map={},
     )
@@ -1582,3 +1618,147 @@ async def test_provider_and_interrupt_share_single_card_fetch(
     assert providers.success is True
     assert interrupt.success is True
     assert fetch_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_recover_interrupts_merges_and_filters_by_session_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
+    ext = _interrupt_recovery_extension_fixture()
+    calls: list[str] = []
+
+    async def _fake_snapshot(*, runtime):
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_recovery=_interrupt_recovery_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
+
+    async def _fake_invoke(**kwargs):
+        calls.append(kwargs["method_key"])
+        if kwargs["method_key"] == "list_permissions":
+            return ExtensionCallResult(
+                success=True,
+                result={
+                    "items": [
+                        {
+                            "request_id": "perm-1",
+                            "session_id": "sess-1",
+                            "type": "permission",
+                            "details": {"permission": "write"},
+                            "expires_at": 20,
+                        },
+                        {
+                            "request_id": "perm-2",
+                            "session_id": "sess-2",
+                            "type": "permission",
+                            "details": {"permission": "read"},
+                            "expires_at": 25,
+                        },
+                    ]
+                },
+                meta={},
+            )
+        return ExtensionCallResult(
+            success=True,
+            result={
+                "items": [
+                    {
+                        "request_id": "perm-1",
+                        "session_id": "sess-1",
+                        "type": "permission",
+                        "details": {"permission": "write"},
+                        "expires_at": 20,
+                    },
+                    {
+                        "request_id": "q-1",
+                        "session_id": "sess-1",
+                        "type": "question",
+                        "details": {"questions": []},
+                        "expires_at": 10,
+                    },
+                ]
+            },
+            meta={},
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._interrupt_recovery, "invoke_method", _fake_invoke)
+
+    result = await service.recover_interrupts(runtime=runtime, session_id="sess-1")
+
+    assert result.success is True
+    assert calls == ["list_permissions", "list_questions"]
+    assert result.result == {
+        "items": [
+            {
+                "request_id": "q-1",
+                "session_id": "sess-1",
+                "type": "question",
+                "details": {"questions": []},
+                "expires_at": 10,
+            },
+            {
+                "request_id": "perm-1",
+                "session_id": "sess-1",
+                "type": "permission",
+                "details": {"permission": "write"},
+                "expires_at": 20,
+            },
+        ]
+    }
+
+
+@pytest.mark.asyncio
+async def test_recover_interrupts_returns_method_not_supported_when_upstream_missing_method(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(resolved=SimpleNamespace(url="https://example.com"))
+    ext = ResolvedInterruptRecoveryExtension(
+        uri=INTERRUPT_RECOVERY_URI,
+        required=False,
+        provider="opencode",
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={
+            "list_permissions": "opencode.permissions.list",
+            "list_questions": None,
+        },
+        business_code_map={},
+    )
+
+    async def _fake_snapshot(*, runtime):
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_recovery=_interrupt_recovery_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
+
+    async def _fake_invoke(**kwargs):
+        if kwargs["method_key"] == "list_permissions":
+            return ExtensionCallResult(success=True, result={"items": []}, meta={})
+        assert kwargs["method_key"] == "list_questions"
+        return ExtensionCallResult(
+            success=False,
+            error_code="method_not_supported",
+            upstream_error={"message": "Method list_questions is not supported"},
+            meta={},
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._interrupt_recovery, "invoke_method", _fake_invoke)
+
+    result = await service.recover_interrupts(runtime=runtime, session_id="sess-1")
+
+    assert result.success is False
+    assert result.error_code == "method_not_supported"

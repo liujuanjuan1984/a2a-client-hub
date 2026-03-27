@@ -1,4 +1,7 @@
-import type { RuntimeStatusContract } from "@/lib/api/chat-utils";
+import type {
+  PendingRuntimeInterrupt,
+  RuntimeStatusContract,
+} from "@/lib/api/chat-utils";
 import { apiRequest } from "@/lib/api/client";
 
 export type A2AExtensionResponse = {
@@ -15,6 +18,7 @@ export type A2AExtensionResponse = {
 export type A2AExtensionCapabilities = {
   modelSelection: boolean;
   providerDiscovery: boolean;
+  interruptRecovery: boolean;
   sessionPromptAsync: boolean;
   sessionControl: {
     promptAsync: {
@@ -289,6 +293,27 @@ type SessionCommandResult = {
   item: SessionCommandResultItem | null;
 };
 
+type InterruptRecoveryResponseItem = {
+  requestId: string;
+  sessionId: string;
+  type: "permission" | "question";
+  details?: Record<string, unknown> | null;
+  taskId?: string | null;
+  contextId?: string | null;
+  expiresAt?: number | null;
+  source: "recovery";
+};
+
+type InterruptRecoveryResult = {
+  items: PendingRuntimeInterrupt[];
+};
+
+type RecoveryInterruptQuestion = NonNullable<
+  PendingRuntimeInterrupt["details"]["questions"]
+>[number];
+type RecoveryInterruptQuestionOption =
+  RecoveryInterruptQuestion["options"][number];
+
 const assertPromptAsyncResult = (
   response: A2AExtensionResponse,
   sessionId: string,
@@ -391,6 +416,116 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
     ? (value as Record<string, unknown>)
     : null;
 
+const asInterruptQuestions = (
+  value: unknown,
+): PendingRuntimeInterrupt["details"]["questions"] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const questions: RecoveryInterruptQuestion[] = [];
+  value.forEach((item) => {
+    const candidate = asRecord(item);
+    if (!candidate || typeof candidate.question !== "string") {
+      return;
+    }
+
+    const options: RecoveryInterruptQuestionOption[] = [];
+    if (Array.isArray(candidate.options)) {
+      candidate.options.forEach((option) => {
+        const resolved = asRecord(option);
+        if (!resolved || typeof resolved.label !== "string") {
+          return;
+        }
+        options.push({
+          label: resolved.label,
+          description:
+            typeof resolved.description === "string"
+              ? resolved.description
+              : null,
+          value: typeof resolved.value === "string" ? resolved.value : null,
+        });
+      });
+    }
+
+    questions.push({
+      header: typeof candidate.header === "string" ? candidate.header : null,
+      description:
+        typeof candidate.description === "string"
+          ? candidate.description
+          : null,
+      question: candidate.question,
+      options,
+    });
+  });
+  return questions;
+};
+
+const asRecoveryInterruptItem = (
+  value: unknown,
+): PendingRuntimeInterrupt | null => {
+  const item = asRecord(value);
+  if (!item) {
+    return null;
+  }
+  const requestId =
+    typeof item.requestId === "string" ? item.requestId.trim() : "";
+  const sessionId =
+    typeof item.sessionId === "string" ? item.sessionId.trim() : "";
+  const interruptType = item.type;
+  if (
+    !requestId ||
+    !sessionId ||
+    (interruptType !== "permission" && interruptType !== "question")
+  ) {
+    return null;
+  }
+
+  const details = asRecord(item.details) ?? {};
+  const base: Omit<PendingRuntimeInterrupt, "details"> = {
+    requestId,
+    sessionId,
+    type: interruptType,
+    phase: "asked",
+    source: "recovery",
+    taskId: typeof item.taskId === "string" ? item.taskId : null,
+    contextId: typeof item.contextId === "string" ? item.contextId : null,
+    expiresAt: typeof item.expiresAt === "number" ? item.expiresAt : null,
+  };
+
+  if (interruptType === "permission") {
+    return {
+      ...base,
+      details: {
+        ...details,
+        permission:
+          typeof details.permission === "string" ? details.permission : null,
+        patterns: Array.isArray(details.patterns)
+          ? details.patterns.filter(
+              (pattern): pattern is string =>
+                typeof pattern === "string" && pattern.trim().length > 0,
+            )
+          : [],
+        displayMessage:
+          typeof details.displayMessage === "string"
+            ? details.displayMessage
+            : null,
+      },
+    };
+  }
+
+  return {
+    ...base,
+    details: {
+      ...details,
+      displayMessage:
+        typeof details.displayMessage === "string"
+          ? details.displayMessage
+          : null,
+      questions: asInterruptQuestions(details.questions),
+    },
+  };
+};
+
 const asProviderItems = (value: unknown): ModelProviderSummary[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -427,6 +562,27 @@ export const getExtensionCapabilities = async (input: {
     },
   );
   return response;
+};
+
+export const recoverInterrupts = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+  sessionId?: string | null;
+}): Promise<InterruptRecoveryResult> => {
+  const response = await apiRequest<
+    { items?: InterruptRecoveryResponseItem[] },
+    { sessionId?: string }
+  >(buildExtensionPath(input.source, input.agentId, "interrupts:recover"), {
+    method: "POST",
+    body: input.sessionId?.trim() ? { sessionId: input.sessionId.trim() } : {},
+  });
+  return {
+    items: Array.isArray(response.items)
+      ? response.items
+          .map((item) => asRecoveryInterruptItem(item))
+          .filter((item): item is PendingRuntimeInterrupt => Boolean(item))
+      : [],
+  };
 };
 
 export const listModelProviders = async (input: {

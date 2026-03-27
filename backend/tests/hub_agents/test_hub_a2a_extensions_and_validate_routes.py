@@ -92,6 +92,7 @@ class _FakeExtensionsService:
         self.capability_snapshot: Any = SimpleNamespace(
             model_selection=SimpleNamespace(status="unsupported"),
             provider_discovery=SimpleNamespace(status="unsupported"),
+            interrupt_recovery=SimpleNamespace(status="unsupported"),
             session_query=SimpleNamespace(status="unsupported", capability=None),
         )
 
@@ -233,6 +234,25 @@ class _FakeExtensionsService:
             result={"ok": True, "request_id": request_id},
             meta={},
         )
+
+    async def recover_interrupts(self, *, runtime, session_id: str | None = None):
+        self.calls.append(
+            {
+                "fn": "recover_interrupts",
+                "runtime": runtime,
+                "session_id": session_id,
+            }
+        )
+        items = [
+            {
+                "request_id": "perm-1",
+                "session_id": session_id or "sess-1",
+                "type": "permission",
+                "details": {"permission": "write"},
+                "expires_at": 123.0,
+            }
+        ]
+        return _FakeExtensionResult(success=True, result={"items": items}, meta={})
 
     async def prompt_session_async(
         self,
@@ -828,6 +848,24 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
             "request_id": "q-2",
         }
 
+        interrupt_recovery_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts:recover",
+            json={"sessionId": "sess-1"},
+        )
+        assert interrupt_recovery_resp.status_code == 200
+        assert interrupt_recovery_resp.json() == {
+            "items": [
+                {
+                    "requestId": "perm-1",
+                    "sessionId": "sess-1",
+                    "type": "permission",
+                    "details": {"permission": "write"},
+                    "expiresAt": 123.0,
+                    "source": "recovery",
+                }
+            ]
+        }
+
         prompt_async_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions/sess-1:prompt-async",
             json={
@@ -864,7 +902,7 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
             }
         }
 
-    assert len(fake_extensions.calls) == 8
+    assert len(fake_extensions.calls) == 9
     prompt_calls = [
         c for c in fake_extensions.calls if c["fn"] == "prompt_session_async"
     ]
@@ -903,6 +941,10 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         "provider": "opencode",
         "requestScope": "shared",
     }
+    recovery_calls = [
+        c for c in fake_extensions.calls if c["fn"] == "recover_interrupts"
+    ]
+    assert recovery_calls[0]["session_id"] == "sess-1"
     for call in fake_extensions.calls:
         resolved = call["runtime"].resolved
         assert resolved.headers["Authorization"].endswith("secret-token-opencode")
@@ -989,6 +1031,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
     fake_extensions.capability_snapshot = SimpleNamespace(
         model_selection=SimpleNamespace(status="supported"),
         provider_discovery=SimpleNamespace(status="supported"),
+        interrupt_recovery=SimpleNamespace(status="supported"),
         session_query=SimpleNamespace(
             status="supported",
             capability=SimpleNamespace(
@@ -1033,6 +1076,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
     assert response.json() == {
         "modelSelection": True,
         "providerDiscovery": True,
+        "interruptRecovery": True,
         "sessionPromptAsync": True,
         "sessionControl": {
             "promptAsync": {
@@ -1083,6 +1127,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
     fake_extensions.capability_snapshot = SimpleNamespace(
         model_selection=SimpleNamespace(status="supported"),
         provider_discovery=SimpleNamespace(status="unsupported"),
+        interrupt_recovery=SimpleNamespace(status="unsupported"),
         session_query=SimpleNamespace(
             status="supported",
             capability=SimpleNamespace(
@@ -1126,6 +1171,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
     assert response.json() == {
         "modelSelection": True,
         "providerDiscovery": False,
+        "interruptRecovery": False,
         "sessionPromptAsync": False,
         "sessionControl": {
             "promptAsync": {
@@ -1176,6 +1222,7 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
     fake_extensions.capability_snapshot = SimpleNamespace(
         model_selection=SimpleNamespace(status="unsupported"),
         provider_discovery=SimpleNamespace(status="supported"),
+        interrupt_recovery=SimpleNamespace(status="unsupported"),
         session_query=SimpleNamespace(
             status="supported",
             capability=SimpleNamespace(
@@ -1220,6 +1267,7 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
     assert response.json() == {
         "modelSelection": False,
         "providerDiscovery": True,
+        "interruptRecovery": False,
         "sessionPromptAsync": True,
         "sessionControl": {
             "promptAsync": {

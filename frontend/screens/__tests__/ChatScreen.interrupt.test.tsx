@@ -8,6 +8,7 @@ const mockReplyQuestion = jest.fn();
 const mockRejectQuestion = jest.fn();
 const mockPromptSessionAsync = jest.fn();
 const mockCommandSession = jest.fn();
+const mockRecoverInterrupts = jest.fn();
 const mockAddConversationOverlayMessage = jest.fn();
 const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
@@ -24,6 +25,7 @@ type MockCapabilityStatus = "supported" | "unsupported" | "unknown";
 const mockExtensionCapabilitiesState = {
   modelSelectionStatus: "supported" as MockCapabilityStatus,
   providerDiscoveryStatus: "supported" as MockCapabilityStatus,
+  interruptRecoveryStatus: "supported" as MockCapabilityStatus,
   sessionPromptAsyncStatus: "supported" as MockCapabilityStatus,
   sessionCommandStatus: "supported" as MockCapabilityStatus,
   canShowModelPicker: true,
@@ -228,6 +230,7 @@ const mockChatState: {
   sendMessage: jest.Mock;
   cancelMessage: jest.Mock;
   clearPendingInterrupt: jest.Mock;
+  replaceRecoveredInterrupts: jest.Mock;
   bindExternalSession: jest.Mock;
   setOpencodeDirectory: jest.Mock;
   getSessionsByAgentId: jest.Mock;
@@ -238,6 +241,7 @@ const mockChatState: {
   sendMessage: jest.fn(),
   cancelMessage: jest.fn(),
   clearPendingInterrupt: jest.fn(),
+  replaceRecoveredInterrupts: jest.fn(),
   bindExternalSession: jest.fn(),
   setOpencodeDirectory: jest.fn(),
   getSessionsByAgentId: jest.fn(() => []),
@@ -371,6 +375,7 @@ jest.mock("@/lib/api/a2aExtensions", () => ({
   },
   commandSession: (...args: unknown[]) => mockCommandSession(...args),
   promptSessionAsync: (...args: unknown[]) => mockPromptSessionAsync(...args),
+  recoverInterrupts: (...args: unknown[]) => mockRecoverInterrupts(...args),
   replyPermissionInterrupt: (...args: unknown[]) =>
     mockReplyPermission(...args),
   replyQuestionInterrupt: (...args: unknown[]) => mockReplyQuestion(...args),
@@ -421,6 +426,7 @@ describe("ChatScreen interrupt handling", () => {
     mockChatState.sendMessage.mockReset();
     mockChatState.cancelMessage.mockReset();
     mockChatState.clearPendingInterrupt.mockReset();
+    mockChatState.replaceRecoveredInterrupts.mockReset();
     mockChatState.bindExternalSession.mockReset();
     mockChatState.setOpencodeDirectory.mockReset();
     mockPromptSessionAsync.mockReset().mockResolvedValue({
@@ -434,8 +440,10 @@ describe("ChatScreen interrupt handling", () => {
         parts: [{ type: "text", text: "Review complete." }],
       },
     });
+    mockRecoverInterrupts.mockReset().mockResolvedValue({ items: [] });
     mockAddConversationOverlayMessage.mockReset();
     mockExtensionCapabilitiesState.modelSelectionStatus = "supported";
+    mockExtensionCapabilitiesState.interruptRecoveryStatus = "supported";
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "supported";
     mockExtensionCapabilitiesState.sessionCommandStatus = "supported";
     mockExtensionCapabilitiesState.canShowModelPicker = true;
@@ -470,6 +478,68 @@ describe("ChatScreen interrupt handling", () => {
       callback(0);
       return 0;
     }) as unknown as (callback: FrameRequestCallback) => number;
+  });
+
+  it("recovers pending interrupts for a bound upstream session", async () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      externalSessionRef: {
+        provider: "opencode",
+        externalSessionId: "sess-1",
+      },
+    };
+    mockRecoverInterrupts.mockResolvedValue({
+      items: [
+        {
+          requestId: "perm-1",
+          sessionId: "sess-1",
+          type: "permission",
+          phase: "asked",
+          source: "recovery",
+          taskId: null,
+          contextId: null,
+          expiresAt: 120,
+          details: {
+            permission: "write",
+            patterns: ["src/**"],
+            displayMessage: "Approve write access",
+          },
+        },
+      ],
+    });
+
+    renderChatScreen(conversationId);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockRecoverInterrupts).toHaveBeenCalledWith({
+      source: "personal",
+      agentId: "agent-1",
+      sessionId: "sess-1",
+    });
+    expect(mockChatState.replaceRecoveredInterrupts).toHaveBeenCalledWith(
+      conversationId,
+      [
+        {
+          requestId: "perm-1",
+          sessionId: "sess-1",
+          type: "permission",
+          phase: "asked",
+          source: "recovery",
+          taskId: null,
+          contextId: null,
+          expiresAt: 120,
+          details: {
+            permission: "write",
+            patterns: ["src/**"],
+            displayMessage: "Approve write access",
+          },
+        },
+      ],
+      { sessionId: "sess-1" },
+    );
   });
 
   it("disables sending and shows prompt when pending permission interrupt exists", () => {

@@ -32,6 +32,7 @@ from app.integrations.a2a_runtime_status_contract import (
 )
 from app.schemas.a2a_extension import (
     A2AExtensionCapabilitiesResponse,
+    A2AExtensionInterruptRecoveryRequest,
     A2AExtensionPermissionReplyRequest,
     A2AExtensionPromptAsyncRequest,
     A2AExtensionQueryRequest,
@@ -40,6 +41,7 @@ from app.schemas.a2a_extension import (
     A2AExtensionQuestionReplyRequest,
     A2AExtensionResponse,
     A2AExtensionSessionCommandRequest,
+    A2AInterruptRecoveryResponse,
     A2AModelDiscoveryRequest,
     A2ARuntimeStatusContractResponse,
     A2ASessionControlCapabilitiesResponse,
@@ -205,6 +207,7 @@ def create_extension_capability_router(
         )
         model_selection = snapshot.model_selection.status == "supported"
         provider_discovery = snapshot.provider_discovery.status == "supported"
+        interrupt_recovery = snapshot.interrupt_recovery.status == "supported"
         session_control = _build_session_control_response(snapshot)
         session_prompt_async = (
             session_control.prompt_async.declared
@@ -214,6 +217,7 @@ def create_extension_capability_router(
         return A2AExtensionCapabilitiesResponse(
             modelSelection=model_selection,
             providerDiscovery=provider_discovery,
+            interruptRecovery=interrupt_recovery,
             sessionPromptAsync=session_prompt_async,
             sessionControl=session_control,
             runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
@@ -527,6 +531,49 @@ def create_extension_capability_router(
                 request_payload=payload.request,
                 metadata=payload.metadata,
             )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/interrupts:recover",
+        response_model=A2AInterruptRecoveryResponse,
+        status_code=status.HTTP_200_OK,
+        response_model_exclude_none=True,
+    )
+    async def recover_interrupts(
+        *,
+        agent_id: UUID,
+        payload: A2AExtensionInterruptRecoveryRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AInterruptRecoveryResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension interrupt recovery requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": payload.session_id,
+            },
+        )
+
+        result = await _run_extension_call(
+            _extensions_service().recover_interrupts(
+                runtime=runtime,
+                session_id=payload.session_id,
+            )
+        )
+        if isinstance(result, JSONResponse):
+            return result
+        resolved_result = (
+            result.result if isinstance(result.result, dict) else {"items": []}
+        )
+        items = resolved_result.get("items")
+        return A2AInterruptRecoveryResponse.model_validate(
+            {"items": items if isinstance(items, list) else []}
         )
 
     @router.post(

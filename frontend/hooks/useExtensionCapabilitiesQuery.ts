@@ -62,6 +62,12 @@ export const useExtensionCapabilitiesQuery = ({
       : query.data?.providerDiscovery === false
         ? "unsupported"
         : "unknown";
+  const interruptRecoveryStatus: GenericCapabilityStatus =
+    query.data?.interruptRecovery === true
+      ? "supported"
+      : query.data?.interruptRecovery === false
+        ? "unsupported"
+        : "unknown";
   const sessionPromptAsyncStatus: GenericCapabilityStatus =
     query.data?.sessionControl?.promptAsync != null
       ? resolveSessionControlStatus(query.data.sessionControl.promptAsync)
@@ -84,6 +90,7 @@ export const useExtensionCapabilitiesQuery = ({
     runtimeStatusContract: query.data?.runtimeStatus ?? null,
     modelSelectionStatus,
     providerDiscoveryStatus,
+    interruptRecoveryStatus,
     sessionPromptAsyncStatus,
     sessionCommandStatus,
     sessionShellStatus,

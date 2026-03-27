@@ -206,6 +206,11 @@ type InterruptQuestion = {
 type RuntimeInterruptBase = {
   requestId: string;
   type: "permission" | "question";
+  source?: "stream" | "recovery";
+  sessionId?: string | null;
+  taskId?: string | null;
+  contextId?: string | null;
+  expiresAt?: number | null;
 };
 
 export type PendingRuntimeInterrupt = RuntimeInterruptBase & {
@@ -869,6 +874,7 @@ const extractRuntimeInterrupt = (
       type: interruptType,
       phase: "resolved",
       resolution,
+      source: "stream",
     };
   }
   if (phase !== "asked") {
@@ -881,6 +887,7 @@ const extractRuntimeInterrupt = (
       requestId,
       type: "permission",
       phase: "asked",
+      source: "stream",
       details: {
         permission: pickRawString(details, ["permission"]) ?? null,
         patterns: coerceStringArray(details?.patterns) ?? [],
@@ -901,6 +908,7 @@ const extractRuntimeInterrupt = (
       requestId,
       type: "question",
       phase: "asked",
+      source: "stream",
       details: {
         displayMessage: extractInterruptDisplayMessage(details),
         questions,

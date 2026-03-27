@@ -354,4 +354,104 @@ describe("chat store idempotency semantics", () => {
     expect(runtimeCall?.[4]).toBe(agentMessageId);
     expect(chatConnectionService.cancelSession).not.toHaveBeenCalled();
   });
+
+  it("replaceRecoveredInterrupts reconciles recovery items without dropping live stream items", () => {
+    useChatStore.getState().ensureSession("conv-recovery", "agent-1");
+    useChatStore.setState((state) => ({
+      sessions: {
+        ...state.sessions,
+        "conv-recovery": {
+          ...state.sessions["conv-recovery"],
+          pendingInterrupts: [
+            {
+              requestId: "stream-1",
+              sessionId: "sess-1",
+              type: "permission",
+              phase: "asked",
+              source: "stream",
+              details: {
+                permission: "tool.exec",
+                patterns: ["src/**"],
+              },
+            },
+            {
+              requestId: "recovery-stale-1",
+              sessionId: "sess-1",
+              type: "question",
+              phase: "asked",
+              source: "recovery",
+              details: {
+                questions: [],
+              },
+            },
+          ],
+          pendingInterrupt: {
+            requestId: "stream-1",
+            sessionId: "sess-1",
+            type: "permission",
+            phase: "asked",
+            source: "stream",
+            details: {
+              permission: "tool.exec",
+              patterns: ["src/**"],
+            },
+          },
+        },
+      },
+    }));
+
+    useChatStore.getState().replaceRecoveredInterrupts(
+      "conv-recovery",
+      [
+        {
+          requestId: "stream-1",
+          sessionId: "sess-1",
+          type: "permission",
+          phase: "asked",
+          source: "recovery",
+          details: {
+            permission: "tool.exec",
+            patterns: ["src/**"],
+          },
+        },
+        {
+          requestId: "recovery-fresh-1",
+          sessionId: "sess-1",
+          type: "question",
+          phase: "asked",
+          source: "recovery",
+          details: {
+            questions: [],
+          },
+        },
+      ],
+      { sessionId: "sess-1" },
+    );
+
+    const session = useChatStore.getState().sessions["conv-recovery"];
+    expect(session?.pendingInterrupts).toEqual([
+      {
+        requestId: "stream-1",
+        sessionId: "sess-1",
+        type: "permission",
+        phase: "asked",
+        source: "stream",
+        details: {
+          permission: "tool.exec",
+          patterns: ["src/**"],
+        },
+      },
+      {
+        requestId: "recovery-fresh-1",
+        sessionId: "sess-1",
+        type: "question",
+        phase: "asked",
+        source: "recovery",
+        details: {
+          questions: [],
+        },
+      },
+    ]);
+    expect(session?.pendingInterrupt?.requestId).toBe("stream-1");
+  });
 });

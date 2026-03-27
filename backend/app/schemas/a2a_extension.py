@@ -112,6 +112,20 @@ class A2AExtensionPromptAsyncRequest(BaseModel):
     )
 
 
+class A2AExtensionInterruptRecoveryRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    session_id: Optional[str] = Field(
+        default=None,
+        alias="sessionId",
+        min_length=1,
+        description=(
+            "Optional upstream external session id used by the hub to narrow "
+            "recovered interrupts to the current session"
+        ),
+    )
+
+
 class A2AExtensionSessionCommandRequest(BaseModel):
     request: Dict[str, Any] = Field(
         ...,
@@ -178,6 +192,25 @@ class A2ASessionControlCapabilitiesResponse(BaseModel):
     shell: A2ASessionControlMethodResponse
 
 
+class A2AInterruptRecoveryItemResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    request_id: str = Field(..., alias="requestId")
+    session_id: str = Field(..., alias="sessionId")
+    type: Literal["permission", "question"]
+    details: Dict[str, Any] = Field(default_factory=dict)
+    task_id: Optional[str] = Field(default=None, alias="taskId")
+    context_id: Optional[str] = Field(default=None, alias="contextId")
+    expires_at: Optional[float] = Field(default=None, alias="expiresAt")
+    source: Literal["recovery"] = "recovery"
+
+
+class A2AInterruptRecoveryResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: List[A2AInterruptRecoveryItemResponse] = Field(default_factory=list)
+
+
 class A2AExtensionCapabilitiesResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -190,6 +223,11 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         ...,
         alias="providerDiscovery",
         description="Whether the agent exposes OpenCode provider/model discovery",
+    )
+    interrupt_recovery: bool = Field(
+        ...,
+        alias="interruptRecovery",
+        description="Whether the agent exposes Hub-consumed interrupt recovery support",
     )
     session_prompt_async: bool = Field(
         ...,
@@ -211,9 +249,12 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
 
 
 __all__ = [
+    "A2AExtensionInterruptRecoveryRequest",
     "A2AExtensionPromptAsyncRequest",
     "A2AExtensionSessionCommandRequest",
     "A2AExtensionCapabilitiesResponse",
+    "A2AInterruptRecoveryItemResponse",
+    "A2AInterruptRecoveryResponse",
     "A2ASessionControlCapabilitiesResponse",
     "A2ASessionControlMethodResponse",
     "A2AModelDiscoveryRequest",

@@ -6,6 +6,7 @@ import {
   listModelProviders,
   listModels,
   promptSessionAsync,
+  recoverInterrupts,
   replyPermissionInterrupt,
 } from "@/lib/api/a2aExtensions";
 import { apiRequest } from "@/lib/api/client";
@@ -233,6 +234,7 @@ describe("assertExtensionSuccess", () => {
     mockedApiRequest.mockResolvedValue({
       modelSelection: false,
       providerDiscovery: true,
+      interruptRecovery: true,
       sessionPromptAsync: true,
       sessionControl: {
         promptAsync: {
@@ -297,6 +299,7 @@ describe("assertExtensionSuccess", () => {
     );
     expect(result.modelSelection).toBe(false);
     expect(result.providerDiscovery).toBe(true);
+    expect(result.interruptRecovery).toBe(true);
     expect(result.sessionPromptAsync).toBe(true);
     expect(result.sessionControl.command.consumedByHub).toBe(true);
     expect(result.sessionControl.shell.availability).toBe("conditional");
@@ -344,5 +347,92 @@ describe("assertExtensionSuccess", () => {
       },
     );
     expect(result.items[0]?.model_id).toBe("gpt-5");
+  });
+
+  it("calls interrupt recovery endpoint and maps pending interrupts", async () => {
+    mockedApiRequest.mockResolvedValue({
+      items: [
+        {
+          requestId: "perm-1",
+          sessionId: "sess-1",
+          type: "permission",
+          details: {
+            permission: "write",
+            patterns: ["src/**"],
+            displayMessage: "Approve write access",
+          },
+          expiresAt: 120,
+          source: "recovery",
+        },
+        {
+          requestId: "q-1",
+          sessionId: "sess-1",
+          type: "question",
+          details: {
+            displayMessage: "Need an answer",
+            questions: [
+              {
+                header: "Scope",
+                question: "Which files?",
+                options: [{ label: "All", description: null, value: "all" }],
+              },
+            ],
+          },
+          source: "recovery",
+        },
+      ],
+    });
+
+    const result = await recoverInterrupts({
+      source: "shared",
+      agentId: "agent-1",
+      sessionId: "sess-1",
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/a2a/agents/agent-1/extensions/interrupts:recover",
+      {
+        method: "POST",
+        body: { sessionId: "sess-1" },
+      },
+    );
+    expect(result.items).toEqual([
+      {
+        requestId: "perm-1",
+        sessionId: "sess-1",
+        type: "permission",
+        phase: "asked",
+        source: "recovery",
+        taskId: null,
+        contextId: null,
+        expiresAt: 120,
+        details: {
+          permission: "write",
+          patterns: ["src/**"],
+          displayMessage: "Approve write access",
+        },
+      },
+      {
+        requestId: "q-1",
+        sessionId: "sess-1",
+        type: "question",
+        phase: "asked",
+        source: "recovery",
+        taskId: null,
+        contextId: null,
+        expiresAt: null,
+        details: {
+          displayMessage: "Need an answer",
+          questions: [
+            {
+              header: "Scope",
+              description: null,
+              question: "Which files?",
+              options: [{ label: "All", description: null, value: "all" }],
+            },
+          ],
+        },
+      },
+    ]);
   });
 });

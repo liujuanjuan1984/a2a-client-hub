@@ -1136,6 +1136,7 @@ describe("block-based stream parser and reducer", () => {
         requestId: "perm-1",
         type: "permission",
         phase: "asked",
+        source: "stream",
         details: {
           permission: "read",
           patterns: ["/repo/.env"],
@@ -1172,6 +1173,7 @@ describe("block-based stream parser and reducer", () => {
       requestId: "perm-2",
       type: "permission",
       phase: "asked",
+      source: "stream",
       details: {
         permission: "approval",
         patterns: ["/repo/.env"],
@@ -1209,6 +1211,7 @@ describe("block-based stream parser and reducer", () => {
         requestId: "q-1",
         type: "question",
         phase: "asked",
+        source: "stream",
         details: {
           displayMessage: null,
           questions: [
@@ -1255,6 +1258,7 @@ describe("block-based stream parser and reducer", () => {
       requestId: "q-2",
       type: "question",
       phase: "asked",
+      source: "stream",
       details: {
         displayMessage: "Please confirm how the agent should continue.",
         questions: [
@@ -1291,6 +1295,7 @@ describe("block-based stream parser and reducer", () => {
         requestId: "q-1",
         type: "question",
         phase: "resolved",
+        source: "stream",
         resolution: "rejected",
       },
       seq: null,
@@ -1400,6 +1405,7 @@ describe("block-based stream parser and reducer", () => {
       requestId: "perm-legacy-1",
       type: "permission",
       phase: "asked",
+      source: "stream",
       details: {
         permission: "read",
         patterns: ["/repo/.env"],

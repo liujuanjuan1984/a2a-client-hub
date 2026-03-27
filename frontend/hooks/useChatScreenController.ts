@@ -27,6 +27,7 @@ import {
   A2AExtensionCallError,
   commandSession,
   promptSessionAsync,
+  recoverInterrupts,
 } from "@/lib/api/a2aExtensions";
 import type { ChatMessage } from "@/lib/api/chat-utils";
 import { continueSession } from "@/lib/api/sessions";
@@ -58,6 +59,7 @@ import { useChatStore } from "@/store/chat";
 
 const HISTORY_AUTOLOAD_THRESHOLD = 72;
 const SEND_SCROLL_SETTLE_MS = Platform.OS === "ios" ? 120 : 60;
+const INTERRUPT_RECOVERY_THROTTLE_MS = 5_000;
 
 export function useChatScreenController({
   routeAgentId,
@@ -86,6 +88,9 @@ export function useChatScreenController({
   const cancelMessage = useChatStore((state) => state.cancelMessage);
   const clearPendingInterrupt = useChatStore(
     (state) => state.clearPendingInterrupt,
+  );
+  const replaceRecoveredInterrupts = useChatStore(
+    (state) => state.replaceRecoveredInterrupts,
   );
   const setOpencodeDirectory = useChatStore(
     (state) => state.setOpencodeDirectory,
@@ -118,6 +123,10 @@ export function useChatScreenController({
     offset: number;
     contentHeight: number;
   } | null>(null);
+  const lastInterruptRecoveryRef = useRef<{
+    key: string;
+    triggeredAt: number;
+  } | null>(null);
   const loadingEarlierRef = useRef(false);
   const isInitialLoadRef = useRef(true);
   const historyPaused = session?.streamState === "streaming";
@@ -143,6 +152,8 @@ export function useChatScreenController({
   const pendingInterrupt = getPendingInterrupt(session);
   const pendingInterruptCount = pendingInterrupts.length;
   const lastResolvedInterrupt = session?.lastResolvedInterrupt ?? null;
+  const boundExternalSessionId =
+    session?.externalSessionRef?.externalSessionId?.trim() ?? "";
   const selectedModel = getSharedModelSelection(session?.metadata);
   const opencodeDirectory = getOpencodeDirectory(session?.metadata);
   const extensionCapabilitiesQuery = useExtensionCapabilitiesQuery({
@@ -160,6 +171,10 @@ export function useChatScreenController({
     !activeAgentId || !agent?.source
       ? "unsupported"
       : extensionCapabilitiesQuery.providerDiscoveryStatus;
+  const interruptRecoveryStatus: GenericCapabilityStatus =
+    !activeAgentId || !agent?.source
+      ? "unsupported"
+      : extensionCapabilitiesQuery.interruptRecoveryStatus;
   const sessionCommandStatus: GenericCapabilityStatus =
     !activeAgentId || !agent?.source
       ? "unsupported"
@@ -413,6 +428,70 @@ export function useChatScreenController({
     ],
   );
 
+  const recoverPendingInterrupts = useCallback(
+    async ({
+      nextConversationId,
+      nextAgentId,
+      nextAgentSource,
+      nextSessionId,
+    }: {
+      nextConversationId: string;
+      nextAgentId: string;
+      nextAgentSource: AgentSource;
+      nextSessionId: string;
+    }) => {
+      if (interruptRecoveryStatus !== "supported") {
+        return;
+      }
+      const resolvedSessionId = nextSessionId.trim();
+      if (!resolvedSessionId) {
+        return;
+      }
+
+      const recoveryKey = `${nextConversationId}:${resolvedSessionId}`;
+      const lastRecovery = lastInterruptRecoveryRef.current;
+      if (
+        lastRecovery &&
+        lastRecovery.key === recoveryKey &&
+        Date.now() - lastRecovery.triggeredAt < INTERRUPT_RECOVERY_THROTTLE_MS
+      ) {
+        return;
+      }
+      lastInterruptRecoveryRef.current = {
+        key: recoveryKey,
+        triggeredAt: Date.now(),
+      };
+
+      try {
+        const result = await recoverInterrupts({
+          source: nextAgentSource,
+          agentId: nextAgentId,
+          sessionId: resolvedSessionId,
+        });
+        replaceRecoveredInterrupts(nextConversationId, result.items, {
+          sessionId: resolvedSessionId,
+        });
+      } catch (error) {
+        if (
+          error instanceof A2AExtensionCallError &&
+          error.errorCode === "not_supported"
+        ) {
+          return;
+        }
+        console.warn("[Chat] interrupt recovery failed", {
+          conversationId: nextConversationId,
+          agentId: nextAgentId,
+          sessionId: resolvedSessionId,
+          error:
+            error instanceof Error
+              ? error.message
+              : "interrupt_recovery_failed",
+        });
+      }
+    },
+    [interruptRecoveryStatus, replaceRecoveredInterrupts],
+  );
+
   const {
     interruptAction,
     questionAnswers,
@@ -544,6 +623,58 @@ export function useChatScreenController({
   ]);
 
   useEffect(() => {
+    if (
+      !conversationId ||
+      !activeAgentId ||
+      !agent?.source ||
+      !boundExternalSessionId
+    ) {
+      return;
+    }
+    if (interruptRecoveryStatus !== "supported") {
+      return;
+    }
+    recoverPendingInterrupts({
+      nextConversationId: conversationId,
+      nextAgentId: activeAgentId,
+      nextAgentSource: agent.source,
+      nextSessionId: boundExternalSessionId,
+    });
+  }, [
+    activeAgentId,
+    agent?.source,
+    boundExternalSessionId,
+    conversationId,
+    interruptRecoveryStatus,
+    recoverPendingInterrupts,
+  ]);
+
+  useEffect(() => {
+    if (
+      session?.streamState !== "recoverable" ||
+      !conversationId ||
+      !activeAgentId ||
+      !agent?.source ||
+      !boundExternalSessionId
+    ) {
+      return;
+    }
+    recoverPendingInterrupts({
+      nextConversationId: conversationId,
+      nextAgentId: activeAgentId,
+      nextAgentSource: agent.source,
+      nextSessionId: boundExternalSessionId,
+    });
+  }, [
+    activeAgentId,
+    agent?.source,
+    boundExternalSessionId,
+    conversationId,
+    recoverPendingInterrupts,
+    session?.streamState,
+  ]);
+
+  useEffect(() => {
     if (!pendingInterrupt) {
       return;
     }
@@ -588,10 +719,31 @@ export function useChatScreenController({
       if (!conversationId) {
         return;
       }
+      if (
+        activeAgentId &&
+        agent?.source &&
+        boundExternalSessionId &&
+        interruptRecoveryStatus === "supported"
+      ) {
+        recoverPendingInterrupts({
+          nextConversationId: conversationId,
+          nextAgentId: activeAgentId,
+          nextAgentSource: agent.source,
+          nextSessionId: boundExternalSessionId,
+        });
+      }
       forceScrollToBottomRef.current = true;
       shouldStickToBottomRef.current = true;
       scheduleStickToBottom(true);
-    }, [conversationId, scheduleStickToBottom]),
+    }, [
+      activeAgentId,
+      agent?.source,
+      boundExternalSessionId,
+      conversationId,
+      interruptRecoveryStatus,
+      recoverPendingInterrupts,
+      scheduleStickToBottom,
+    ]),
   );
 
   useEffect(() => {
