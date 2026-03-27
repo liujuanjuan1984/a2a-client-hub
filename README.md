@@ -41,6 +41,12 @@ Current compatibility framing:
 - Partial compatibility: standard A2A peers that only support invoke / stream
   without the shared extension workflows used for session continuity.
 
+Repository-level A2A service references that match the current target profile:
+
+- `Intelligent-Internet/opencode-a2a`
+- `liujuanjuan1984/codex-a2a`
+- `Swival/swival`
+
 See [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md)
 for the maintained compatibility notes and explicit non-goals.
 
