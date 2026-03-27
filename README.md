@@ -43,9 +43,9 @@ Current compatibility framing:
 
 Repository-level A2A service references that match the current target profile:
 
-- `Intelligent-Internet/opencode-a2a`
-- `liujuanjuan1984/codex-a2a`
-- `Swival/swival`
+- [`Intelligent-Internet/opencode-a2a`](https://github.com/Intelligent-Internet/opencode-a2a)
+- [`liujuanjuan1984/codex-a2a`](https://github.com/liujuanjuan1984/codex-a2a)
+- [`Swival/swival`](https://github.com/Swival/swival)
 
 See [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md)
 for the maintained compatibility notes and explicit non-goals.
