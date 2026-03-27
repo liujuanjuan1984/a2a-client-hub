@@ -84,7 +84,7 @@ def _summarize_metadata_keys(metadata: Optional[Dict[str, Any]]) -> list[str]:
 
 _SESSION_CONTROL_HUB_CONSUMPTION = {
     "prompt_async": True,
-    "command": False,
+    "command": True,
     "shell": False,
 }
 

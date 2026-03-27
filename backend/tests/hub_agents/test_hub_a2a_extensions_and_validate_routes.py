@@ -1045,7 +1045,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             },
             "command": {
                 "declared": True,
-                "consumedByHub": False,
+                "consumedByHub": True,
                 "availability": "always",
                 "method": "shared.sessions.command",
                 "enabledByDefault": None,
@@ -1138,7 +1138,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
             },
             "command": {
                 "declared": False,
-                "consumedByHub": False,
+                "consumedByHub": True,
                 "availability": "unsupported",
                 "method": None,
                 "enabledByDefault": None,
@@ -1232,7 +1232,7 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
             },
             "command": {
                 "declared": True,
-                "consumedByHub": False,
+                "consumedByHub": True,
                 "availability": "always",
                 "method": "shared.sessions.command",
                 "enabledByDefault": None,

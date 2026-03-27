@@ -197,7 +197,7 @@ describe("assertExtensionSuccess", () => {
         },
         command: {
           declared: true,
-          consumedByHub: false,
+          consumedByHub: true,
           availability: "always",
           method: "shared.sessions.command",
         },
@@ -252,7 +252,7 @@ describe("assertExtensionSuccess", () => {
     expect(result.modelSelection).toBe(false);
     expect(result.providerDiscovery).toBe(true);
     expect(result.sessionPromptAsync).toBe(true);
-    expect(result.sessionControl.command.consumedByHub).toBe(false);
+    expect(result.sessionControl.command.consumedByHub).toBe(true);
     expect(result.sessionControl.shell.availability).toBe("conditional");
     expect(result.runtimeStatus.version).toBe("v1");
     expect(result.runtimeStatus.aliases.canceled).toBe("cancelled");
