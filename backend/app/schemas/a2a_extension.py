@@ -14,14 +14,6 @@ class A2AExtensionQueryRequest(BaseModel):
         ge=1,
         description="Page size (uses card default when omitted)",
     )
-    before: Optional[str] = Field(
-        default=None,
-        min_length=1,
-        description=(
-            "Opaque cursor for loading older session messages when the runtime "
-            "declares cursor pagination support"
-        ),
-    )
     include_raw: bool = Field(
         default=False,
         description="Whether to include the upstream raw payload in the response",
@@ -86,6 +78,17 @@ class A2AExtensionQueryResult(BaseModel):
 
 class A2AExtensionQueryResponse(A2AExtensionResponse):
     result: Optional[A2AExtensionQueryResult] = None
+
+
+class A2AExtensionSessionMessagesQueryRequest(A2AExtensionQueryRequest):
+    before: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Opaque cursor for loading older session messages when the runtime "
+            "declares cursor pagination support"
+        ),
+    )
 
 
 class A2AExtensionPermissionReplyRequest(BaseModel):
@@ -271,6 +274,7 @@ __all__ = [
     "A2AExtensionInterruptRecoveryRequest",
     "A2AExtensionPromptAsyncRequest",
     "A2AExtensionSessionCommandRequest",
+    "A2AExtensionSessionMessagesQueryRequest",
     "A2AExtensionCapabilitiesResponse",
     "A2AInterruptRecoveryItemResponse",
     "A2AInterruptRecoveryResponse",

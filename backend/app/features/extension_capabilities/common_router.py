@@ -41,6 +41,7 @@ from app.schemas.a2a_extension import (
     A2AExtensionQuestionReplyRequest,
     A2AExtensionResponse,
     A2AExtensionSessionCommandRequest,
+    A2AExtensionSessionMessagesQueryRequest,
     A2AInterruptRecoveryResponse,
     A2AModelDiscoveryRequest,
     A2ARuntimeStatusContractResponse,
@@ -379,14 +380,6 @@ def create_extension_capability_router(
         page: int = Query(1, ge=1, description="Page number (1-indexed)"),
         size: Optional[int] = Query(
             None, ge=1, description="Page size (uses card default when omitted)"
-        ),
-        before: Optional[str] = Query(
-            None,
-            min_length=1,
-            description=(
-                "Opaque cursor for loading older session messages when supported "
-                "by the runtime contract"
-            ),
         ),
         include_raw: bool = Query(
             False,
@@ -804,7 +797,7 @@ def create_extension_capability_router(
         *,
         agent_id: UUID,
         session_id: str,
-        payload: A2AExtensionQueryRequest,
+        payload: A2AExtensionSessionMessagesQueryRequest,
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
