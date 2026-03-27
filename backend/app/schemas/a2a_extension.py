@@ -24,6 +24,28 @@ class A2AExtensionQueryRequest(BaseModel):
     )
 
 
+class A2AExtensionSessionListFilters(BaseModel):
+    directory: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Optional session directory filter under the Hub contract",
+    )
+    roots: Optional[bool] = Field(
+        default=None,
+        description="Optional roots-only filter under the Hub contract",
+    )
+    start: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Optional non-negative start offset under the Hub contract",
+    )
+    search: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description="Optional search text filter under the Hub contract",
+    )
+
+
 class A2AExtensionResponse(BaseModel):
     success: bool
     result: Optional[Any] = None
@@ -88,6 +110,13 @@ class A2AExtensionSessionMessagesQueryRequest(A2AExtensionQueryRequest):
             "Opaque cursor for loading older session messages when the runtime "
             "declares cursor pagination support"
         ),
+    )
+
+
+class A2AExtensionSessionListQueryRequest(A2AExtensionQueryRequest):
+    filters: Optional[A2AExtensionSessionListFilters] = Field(
+        default=None,
+        description="Optional typed session list filters under the Hub contract",
     )
 
 
@@ -274,6 +303,8 @@ __all__ = [
     "A2AExtensionInterruptRecoveryRequest",
     "A2AExtensionPromptAsyncRequest",
     "A2AExtensionSessionCommandRequest",
+    "A2AExtensionSessionListFilters",
+    "A2AExtensionSessionListQueryRequest",
     "A2AExtensionSessionMessagesQueryRequest",
     "A2AExtensionCapabilitiesResponse",
     "A2AInterruptRecoveryItemResponse",

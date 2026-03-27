@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -45,6 +46,8 @@ from app.integrations.a2a_extensions.types import (
     ResolvedSessionControlMethodCapability,
     ResolvedStreamHintsExtension,
     ResultEnvelopeMapping,
+    SessionListFilterFieldContract,
+    SessionListFiltersContract,
 )
 
 
@@ -185,6 +188,7 @@ def _resolved_extension(
     *,
     supports_offset: bool = False,
     supports_cursor: bool = False,
+    session_list_filters: SessionListFiltersContract | None = None,
 ) -> ResolvedExtension:
     return ResolvedExtension(
         uri=SHARED_SESSION_QUERY_URI,
@@ -217,6 +221,7 @@ def _resolved_extension(
             cursor_param="before" if supports_cursor else None,
             result_cursor_field="next_cursor" if supports_cursor else None,
         ),
+        session_list_filters=session_list_filters or SessionListFiltersContract(),
     )
 
 
@@ -757,6 +762,158 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
     }
     assert result.meta["session_id"] == "ses_123"
     assert result.meta["short_circuit_reason"] == "limit_without_offset"
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_routes_typed_filters_using_runtime_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(
+        supports_offset=True,
+        session_list_filters=SessionListFiltersContract(
+            directory=SessionListFilterFieldContract(top_level_param="directory"),
+            roots=SessionListFilterFieldContract(query_param="roots"),
+            start=SessionListFilterFieldContract(query_param="start"),
+            search=SessionListFilterFieldContract(top_level_param="search"),
+        ),
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    captured_meta_extra: dict[str, Any] | None = None
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+        )
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "list_sessions"
+        assert kwargs["params"]["offset"] == 20
+        assert kwargs["params"]["limit"] == 20
+        assert kwargs["params"]["directory"] == "services/api"
+        assert kwargs["params"]["search"] == "planner"
+        assert kwargs["params"]["query"] == {
+            "status": "open",
+            "roots": True,
+            "start": 40,
+        }
+        nonlocal captured_meta_extra
+        captured_meta_extra = kwargs.get("meta_extra")
+        return ExtensionCallResult(success=True, result={"items": []}, meta={})
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
+
+    result = await service.list_sessions(
+        runtime=runtime,
+        page=2,
+        size=20,
+        query={"status": "open"},
+        filters={
+            "directory": "services/api",
+            "roots": True,
+            "start": 40,
+            "search": "planner",
+        },
+        include_raw=False,
+    )
+
+    assert result.success is True
+    assert captured_meta_extra == {
+        "session_list_filters": {
+            "directory": "top_level",
+            "roots": "query",
+            "start": "query",
+            "search": "top_level",
+        }
+    }
+    assert result.meta == {}
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_rejects_unsupported_typed_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(supports_offset=True)
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
+
+    with pytest.raises(ValueError, match="directory filter is not supported"):
+        await service.list_sessions(
+            runtime=runtime,
+            page=1,
+            size=20,
+            query=None,
+            filters={"directory": "services/api"},
+            include_raw=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_rejects_conflicting_filter_and_query_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(
+        supports_offset=True,
+        session_list_filters=SessionListFiltersContract(
+            directory=SessionListFilterFieldContract(top_level_param="directory"),
+        ),
+    )
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
+
+    with pytest.raises(
+        ValueError, match="filters.directory conflicts with query.directory"
+    ):
+        await service.list_sessions(
+            runtime=runtime,
+            page=1,
+            size=20,
+            query={"directory": "legacy"},
+            filters={"directory": "services/api"},
+            include_raw=False,
+        )
 
 
 @pytest.mark.asyncio

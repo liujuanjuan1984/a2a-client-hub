@@ -101,6 +101,8 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
     assert resolved.pagination.params == ("page", "size")
     assert resolved.pagination.supports_offset is False
     assert resolved.result_envelope == ResultEnvelopeMapping()
+    assert resolved.session_list_filters.directory.top_level_param is None
+    assert resolved.session_list_filters.directory.query_param is None
 
     control_methods = resolve_session_query_control_methods(card, ext=resolved)
     assert control_methods["prompt_async"].declared is True
@@ -249,6 +251,55 @@ def test_resolve_extracts_message_cursor_pagination_contract() -> None:
 
     assert resolved.message_cursor_pagination.cursor_param == "before"
     assert resolved.message_cursor_pagination.result_cursor_field == "next_cursor"
+
+
+def test_resolve_extracts_session_list_filter_contract() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": SHARED_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "provider": "opencode",
+                "methods": {
+                    "list_sessions": "shared.sessions.list",
+                    "get_session_messages": "shared.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "limit",
+                    "default_limit": 20,
+                    "max_limit": 100,
+                },
+                "method_contracts": {
+                    "shared.sessions.list": {
+                        "params": {
+                            "optional_params": [
+                                "limit",
+                                "directory",
+                                "query.roots",
+                                "query.start",
+                                "search",
+                            ]
+                        }
+                    }
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {"raw": True, "items": True, "pagination": True},
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    resolved = resolve_session_query(card)
+
+    assert resolved.session_list_filters.directory.top_level_param == "directory"
+    assert resolved.session_list_filters.directory.query_param is None
+    assert resolved.session_list_filters.roots.top_level_param is None
+    assert resolved.session_list_filters.roots.query_param == "roots"
+    assert resolved.session_list_filters.start.top_level_param is None
+    assert resolved.session_list_filters.start.query_param == "start"
+    assert resolved.session_list_filters.search.top_level_param == "search"
+    assert resolved.session_list_filters.search.query_param is None
 
 
 def test_resolve_accepts_result_envelope_field_aliases() -> None:

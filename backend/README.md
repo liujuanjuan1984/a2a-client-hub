@@ -173,7 +173,11 @@ Endpoints:
       `{ "provider_id": "openai", "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
 - List sessions:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20&directory=services/api&roots=true&start=40&search=planner`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions:query`
+    - body example:
+      `{"page":1,"size":20,"filters":{"directory":"services/api","roots":true,"start":40,"search":"planner"},"query":{"status":"open"}}`
+    - the Hub contract keeps `filters.directory`, `filters.roots`, `filters.start`, and `filters.search` stable, then maps them to the upstream session-query contract declared by the runtime
 - Continue a session:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:continue`
 - Trigger async prompt for an existing upstream session:

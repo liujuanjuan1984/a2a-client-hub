@@ -35,12 +35,12 @@ from app.schemas.a2a_extension import (
     A2AExtensionInterruptRecoveryRequest,
     A2AExtensionPermissionReplyRequest,
     A2AExtensionPromptAsyncRequest,
-    A2AExtensionQueryRequest,
     A2AExtensionQueryResponse,
     A2AExtensionQuestionRejectRequest,
     A2AExtensionQuestionReplyRequest,
     A2AExtensionResponse,
     A2AExtensionSessionCommandRequest,
+    A2AExtensionSessionListQueryRequest,
     A2AExtensionSessionMessagesQueryRequest,
     A2AInterruptRecoveryResponse,
     A2AModelDiscoveryRequest,
@@ -83,6 +83,36 @@ def _summarize_metadata_keys(metadata: Optional[Dict[str, Any]]) -> list[str]:
     if not metadata:
         return []
     return sorted(str(k) for k in metadata.keys())[:20]
+
+
+def _build_session_list_filters(
+    *,
+    directory: Optional[str] = None,
+    roots: Optional[bool] = None,
+    start: Optional[int] = None,
+    search: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    filters: Dict[str, Any] = {}
+    if directory is not None:
+        filters["directory"] = directory
+    if roots is not None:
+        filters["roots"] = roots
+    if start is not None:
+        filters["start"] = start
+    if search is not None:
+        filters["search"] = search
+    return filters or None
+
+
+def _summarize_session_list_filters(
+    filters: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if not filters:
+        return {"keys": [], "size": 0}
+    return {
+        "keys": sorted(str(key) for key in filters.keys())[:20],
+        "size": len(filters),
+    }
 
 
 _SESSION_CONTROL_HUB_CONSUMPTION = {
@@ -385,6 +415,25 @@ def create_extension_capability_router(
             False,
             description="Whether to include the upstream raw payload in the response",
         ),
+        directory: Optional[str] = Query(
+            None,
+            min_length=1,
+            description="Optional Hub session list directory filter",
+        ),
+        roots: Optional[bool] = Query(
+            None,
+            description="Optional Hub roots-only filter for session list",
+        ),
+        start: Optional[int] = Query(
+            None,
+            ge=0,
+            description="Optional Hub session list start offset filter",
+        ),
+        search: Optional[str] = Query(
+            None,
+            min_length=1,
+            description="Optional Hub session list search filter",
+        ),
         query: Optional[str] = Query(
             None, description="Optional JSON object encoded as a string"
         ),
@@ -393,6 +442,12 @@ def create_extension_capability_router(
 
         runtime = await _get_runtime(db, current_user, agent_id)
         query_obj = _parse_query_param(query)
+        filter_obj = _build_session_list_filters(
+            directory=directory,
+            roots=roots,
+            start=start,
+            search=search,
+        )
         logger.info(
             _scope_message("Shared extension sessions list requested"),
             extra={
@@ -402,6 +457,7 @@ def create_extension_capability_router(
                 "page": page,
                 "size": size,
                 "include_raw": include_raw,
+                "filter_meta": _summarize_session_list_filters(filter_obj),
                 "query_meta": _summarize_query_object(query_obj),
             },
         )
@@ -413,6 +469,7 @@ def create_extension_capability_router(
                 size=size,
                 include_raw=include_raw,
                 query=query_obj,
+                filters=filter_obj,
             )
         )
 
@@ -692,7 +749,7 @@ def create_extension_capability_router(
     async def query_external_sessions(
         *,
         agent_id: UUID,
-        payload: A2AExtensionQueryRequest,
+        payload: A2AExtensionSessionListQueryRequest,
         response: Response,
         db: AsyncSession = Depends(get_async_db),
         current_user: User = Depends(get_current_user),
@@ -700,6 +757,11 @@ def create_extension_capability_router(
         response.headers["Cache-Control"] = "no-store"
 
         runtime = await _get_runtime(db, current_user, agent_id)
+        filters = (
+            payload.filters.model_dump(exclude_none=True)
+            if payload.filters is not None
+            else None
+        )
         logger.info(
             _scope_message("Shared extension sessions list requested (POST)"),
             extra={
@@ -709,6 +771,7 @@ def create_extension_capability_router(
                 "page": payload.page,
                 "size": payload.size,
                 "include_raw": payload.include_raw,
+                "filter_meta": _summarize_session_list_filters(filters),
                 "query_meta": _summarize_query_object(payload.query),
             },
         )
@@ -720,6 +783,7 @@ def create_extension_capability_router(
                 size=payload.size,
                 include_raw=payload.include_raw,
                 query=payload.query,
+                filters=filters,
             )
         )
 

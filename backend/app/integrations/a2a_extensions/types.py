@@ -35,6 +35,20 @@ class MessageCursorPaginationContract:
 
 
 @dataclass(frozen=True, slots=True)
+class SessionListFilterFieldContract:
+    top_level_param: str | None = None
+    query_param: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SessionListFiltersContract:
+    directory: SessionListFilterFieldContract = SessionListFilterFieldContract()
+    roots: SessionListFilterFieldContract = SessionListFilterFieldContract()
+    start: SessionListFilterFieldContract = SessionListFilterFieldContract()
+    search: SessionListFilterFieldContract = SessionListFilterFieldContract()
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedExtension:
     uri: str
     required: bool
@@ -47,6 +61,7 @@ class ResolvedExtension:
     message_cursor_pagination: MessageCursorPaginationContract = (
         MessageCursorPaginationContract()
     )
+    session_list_filters: SessionListFiltersContract = SessionListFiltersContract()
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,4 +154,6 @@ __all__ = [
     "ResolvedInterruptRecoveryExtension",
     "ResolvedSessionBindingExtension",
     "ResolvedStreamHintsExtension",
+    "SessionListFilterFieldContract",
+    "SessionListFiltersContract",
 ]
