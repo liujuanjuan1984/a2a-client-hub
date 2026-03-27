@@ -90,6 +90,7 @@ class _FakeExtensionsService:
     def __init__(self) -> None:
         self.calls: list[Dict[str, Any]] = []
         self.capability_snapshot: Any = SimpleNamespace(
+            model_selection=SimpleNamespace(status="unsupported"),
             provider_discovery=SimpleNamespace(status="unsupported"),
             session_query=SimpleNamespace(status="unsupported", capability=None),
         )
@@ -929,6 +930,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
 
     fake_extensions = _FakeExtensionsService()
     fake_extensions.capability_snapshot = SimpleNamespace(
+        model_selection=SimpleNamespace(status="supported"),
         provider_discovery=SimpleNamespace(status="supported"),
         session_query=SimpleNamespace(
             status="supported",
@@ -958,6 +960,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
     assert response.status_code == 200
     assert response.json() == {
         "modelSelection": True,
+        "providerDiscovery": True,
         "sessionPromptAsync": True,
         "runtimeStatus": runtime_status_contract_payload(),
     }
@@ -980,6 +983,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
 
     fake_extensions = _FakeExtensionsService()
     fake_extensions.capability_snapshot = SimpleNamespace(
+        model_selection=SimpleNamespace(status="supported"),
         provider_discovery=SimpleNamespace(status="unsupported"),
         session_query=SimpleNamespace(
             status="supported",
@@ -1006,11 +1010,64 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
 
     assert response.status_code == 200
     assert response.json() == {
-        "modelSelection": False,
+        "modelSelection": True,
+        "providerDiscovery": False,
         "sessionPromptAsync": False,
         "runtimeStatus": runtime_status_contract_payload(),
     }
     assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_hub_extension_capabilities_route_distinguishes_model_selection_from_provider_discovery(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_model_selection_only@example.com",
+        user_email="alice_model_selection_only@example.com",
+        token="secret-token-model-selection-only",
+    )
+
+    fake_extensions = _FakeExtensionsService()
+    fake_extensions.capability_snapshot = SimpleNamespace(
+        model_selection=SimpleNamespace(status="unsupported"),
+        provider_discovery=SimpleNamespace(status="supported"),
+        session_query=SimpleNamespace(
+            status="supported",
+            capability=SimpleNamespace(
+                ext=SimpleNamespace(
+                    methods={"prompt_async": "shared.sessions.prompt_async"}
+                )
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        response = await user_client.get(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/capabilities"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "modelSelection": False,
+        "providerDiscovery": True,
+        "sessionPromptAsync": True,
+        "runtimeStatus": runtime_status_contract_payload(),
+    }
 
 
 @pytest.mark.asyncio

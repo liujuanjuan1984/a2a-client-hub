@@ -105,6 +105,7 @@ export function ChatScreen({
         onClose={controller.closeModelPicker}
         agentId={controller.activeAgentId}
         source={controller.agent.source}
+        providerDiscoveryStatus={controller.providerDiscoveryStatus}
         sessionMetadata={controller.session?.metadata}
         selectedModel={controller.selectedModel}
         onSelectModel={controller.handleModelSelect}

@@ -20,6 +20,7 @@ from app.integrations.a2a_extensions.interrupt_callback import (
 from app.integrations.a2a_extensions.interrupt_extension_service import (
     InterruptExtensionService,
 )
+from app.integrations.a2a_extensions.model_selection import resolve_model_selection
 from app.integrations.a2a_extensions.opencode_discovery_service import (
     OpencodeDiscoveryService,
 )
@@ -41,6 +42,7 @@ from app.integrations.a2a_extensions.shared_support import (
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
 from app.integrations.a2a_extensions.types import (
     ResolvedInterruptCallbackExtension,
+    ResolvedModelSelectionExtension,
     ResolvedProviderDiscoveryExtension,
     ResolvedSessionBindingExtension,
     ResolvedStreamHintsExtension,
@@ -91,6 +93,14 @@ class ProviderDiscoveryCapabilitySnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelSelectionCapabilitySnapshot:
+    status: Literal["supported", "unsupported", "invalid"]
+    ext: ResolvedModelSelectionExtension | None = None
+    error: str | None = None
+    meta: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class StreamHintsCapabilitySnapshot:
     status: Literal["supported", "unsupported", "invalid"]
     ext: ResolvedStreamHintsExtension | None = None
@@ -103,6 +113,7 @@ class ResolvedCapabilitySnapshot:
     session_query: SessionQueryCapabilitySnapshot
     session_binding: SessionBindingCapabilitySnapshot
     interrupt_callback: InterruptCallbackCapabilitySnapshot
+    model_selection: ModelSelectionCapabilitySnapshot
     provider_discovery: ProviderDiscoveryCapabilitySnapshot
     stream_hints: StreamHintsCapabilitySnapshot
 
@@ -246,6 +257,43 @@ class A2AExtensionsService:
         )
 
     @staticmethod
+    def _build_model_selection_snapshot(card: Any) -> ModelSelectionCapabilitySnapshot:
+        try:
+            ext = resolve_model_selection(card)
+        except A2AExtensionNotSupportedError as exc:
+            return ModelSelectionCapabilitySnapshot(
+                status="unsupported",
+                error=str(exc),
+                meta={
+                    "model_selection_declared": False,
+                    "model_selection_applies_to_main_chat": False,
+                },
+            )
+        except A2AExtensionContractError as exc:
+            return ModelSelectionCapabilitySnapshot(
+                status="invalid",
+                error=str(exc),
+                meta={
+                    "model_selection_declared": True,
+                    "model_selection_applies_to_main_chat": False,
+                    "model_selection_contract_error": str(exc),
+                },
+            )
+
+        applies_to_main_chat = bool(
+            {"message/send", "message/stream"} & set(ext.applies_to_methods)
+        )
+        return ModelSelectionCapabilitySnapshot(
+            status="supported",
+            ext=ext,
+            meta={
+                "model_selection_declared": True,
+                "model_selection_applies_to_main_chat": applies_to_main_chat,
+                "model_selection_metadata_field": ext.metadata_field,
+            },
+        )
+
+    @staticmethod
     def _build_stream_hints_snapshot(card: Any) -> StreamHintsCapabilitySnapshot:
         try:
             ext = resolve_stream_hints(card)
@@ -299,6 +347,7 @@ class A2AExtensionsService:
             session_query=self._build_session_query_snapshot(card),
             session_binding=self._build_session_binding_snapshot(card),
             interrupt_callback=self._build_interrupt_callback_snapshot(card),
+            model_selection=self._build_model_selection_snapshot(card),
             provider_discovery=self._build_provider_discovery_snapshot(card),
             stream_hints=self._build_stream_hints_snapshot(card),
         )
@@ -599,6 +648,7 @@ __all__ = [
     "A2AExtensionsService",
     "ExtensionCallResult",
     "InterruptCallbackCapabilitySnapshot",
+    "ModelSelectionCapabilitySnapshot",
     "ProviderDiscoveryCapabilitySnapshot",
     "ResolvedCapabilitySnapshot",
     "SessionBindingCapabilitySnapshot",

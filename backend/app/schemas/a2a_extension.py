@@ -135,6 +135,11 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         alias="modelSelection",
         description="Whether the agent supports generic chat model selection",
     )
+    provider_discovery: bool = Field(
+        ...,
+        alias="providerDiscovery",
+        description="Whether the agent exposes OpenCode provider/model discovery",
+    )
     session_prompt_async: bool = Field(
         ...,
         alias="sessionPromptAsync",

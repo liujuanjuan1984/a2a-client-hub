@@ -14,6 +14,7 @@ export type A2AExtensionResponse = {
 
 export type A2AExtensionCapabilities = {
   modelSelection: boolean;
+  providerDiscovery: boolean;
   sessionPromptAsync: boolean;
   runtimeStatus: RuntimeStatusContract;
 };

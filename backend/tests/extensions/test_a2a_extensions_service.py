@@ -9,6 +9,7 @@ from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
     ExtensionCallResult,
     InterruptCallbackCapabilitySnapshot,
+    ModelSelectionCapabilitySnapshot,
     ProviderDiscoveryCapabilitySnapshot,
     ResolvedCapabilitySnapshot,
     SessionBindingCapabilitySnapshot,
@@ -35,6 +36,7 @@ from app.integrations.a2a_extensions.types import (
     PageSizePagination,
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
+    ResolvedModelSelectionExtension,
     ResolvedProviderDiscoveryExtension,
     ResolvedStreamHintsExtension,
     ResultEnvelopeMapping,
@@ -102,11 +104,27 @@ def _provider_discovery_snapshot(
     )
 
 
+def _model_selection_snapshot(
+    *,
+    status: str = "unsupported",
+    ext: ResolvedModelSelectionExtension | None = None,
+    error: str | None = None,
+    meta: dict | None = None,
+) -> ModelSelectionCapabilitySnapshot:
+    return ModelSelectionCapabilitySnapshot(
+        status=status,
+        ext=ext,
+        error=error,
+        meta=meta or {},
+    )
+
+
 def _capability_snapshot(
     *,
     session_query: SessionQueryCapabilitySnapshot,
     session_binding: SessionBindingCapabilitySnapshot | None = None,
     interrupt_callback: InterruptCallbackCapabilitySnapshot | None = None,
+    model_selection: ModelSelectionCapabilitySnapshot | None = None,
     provider_discovery: ProviderDiscoveryCapabilitySnapshot | None = None,
     stream_hints: StreamHintsCapabilitySnapshot | None = None,
 ) -> ResolvedCapabilitySnapshot:
@@ -114,6 +132,7 @@ def _capability_snapshot(
         session_query=session_query,
         session_binding=session_binding or _binding_snapshot(status="unsupported"),
         interrupt_callback=interrupt_callback or _interrupt_snapshot(),
+        model_selection=model_selection or _model_selection_snapshot(),
         provider_discovery=provider_discovery or _provider_discovery_snapshot(),
         stream_hints=stream_hints
         or StreamHintsCapabilitySnapshot(status="unsupported", meta={}),

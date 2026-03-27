@@ -21,6 +21,7 @@ type MockCapabilityStatus = "supported" | "unsupported" | "unknown";
 
 const mockExtensionCapabilitiesState = {
   modelSelectionStatus: "supported" as MockCapabilityStatus,
+  providerDiscoveryStatus: "supported" as MockCapabilityStatus,
   sessionPromptAsyncStatus: "supported" as MockCapabilityStatus,
   canShowModelPicker: true,
 };

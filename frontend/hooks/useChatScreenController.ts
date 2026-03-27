@@ -152,6 +152,10 @@ export function useChatScreenController({
     !activeAgentId || !agent?.source
       ? "unsupported"
       : extensionCapabilitiesQuery.modelSelectionStatus;
+  const providerDiscoveryStatus: GenericCapabilityStatus =
+    !activeAgentId || !agent?.source
+      ? "unsupported"
+      : extensionCapabilitiesQuery.providerDiscoveryStatus;
   const sessionPromptAsyncStatus: GenericCapabilityStatus =
     !activeAgentId || !agent?.source
       ? "unsupported"
@@ -683,6 +687,7 @@ export function useChatScreenController({
     session,
     sessionSource,
     modelSelectionStatus,
+    providerDiscoveryStatus,
     selectedModel,
     opencodeDirectory,
     quickShortcuts,
