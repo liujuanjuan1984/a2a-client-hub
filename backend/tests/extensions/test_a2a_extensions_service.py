@@ -372,6 +372,16 @@ def test_map_business_error_code_prefers_error_data_type() -> None:
         )
         == "method_disabled"
     )
+    assert (
+        A2AExtensionSupport.map_business_error_code(
+            {
+                "code": -32003,
+                "data": {"type": "UPSTREAM_UNAUTHORIZED"},
+            },
+            ext,
+        )
+        == "upstream_unauthorized"
+    )
 
 
 def test_map_business_error_code_maps_jsonrpc_invalid_params() -> None:

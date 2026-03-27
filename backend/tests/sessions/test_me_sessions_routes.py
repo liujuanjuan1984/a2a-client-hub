@@ -26,6 +26,12 @@ _create_agent = create_a2a_agent
     [
         ("session_not_found", 404),
         ("session_forbidden", 403),
+        ("upstream_unauthorized", 401),
+        ("upstream_permission_denied", 403),
+        ("upstream_resource_not_found", 404),
+        ("upstream_quota_exceeded", 429),
+        ("upstream_bad_request", 400),
+        ("upstream_unreachable", 503),
         ("upstream_http_error", 502),
         ("invalid_conversation_id", 400),
     ],

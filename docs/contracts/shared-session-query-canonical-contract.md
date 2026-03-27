@@ -45,6 +45,15 @@ The optional canonical declaration may provide:
 - `params.errors.business_codes`
 - `params.result_envelope`
 
+If `params.errors.business_codes` is declared, the published keys should match
+the upstream wire contract exactly. For the current OpenCode cross-repo
+contract, that means uppercase enum-style tokens such as
+`SESSION_NOT_FOUND` or `UPSTREAM_HTTP_ERROR`.
+
+Hub normalizes those declared keys into its own lowercase internal
+`error_code` values during runtime parsing. The extension declaration itself
+should not pre-normalize them to Hub-internal naming.
+
 ## Methods
 
 Canonical method keys consumed by Hub:
