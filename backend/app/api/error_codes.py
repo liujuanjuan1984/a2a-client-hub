@@ -30,6 +30,13 @@ class _A2AErrorCodeStatus:
         # client-side coordination
         "invoke_inflight": 409,
         # upstream-related
+        "upstream_bad_request": 400,
+        "upstream_unauthorized": 401,
+        "upstream_permission_denied": 403,
+        "upstream_resource_not_found": 404,
+        "upstream_quota_exceeded": 429,
+        "upstream_client_error": 502,
+        "upstream_server_error": 502,
         "upstream_unreachable": 503,
         "upstream_http_error": 502,
         "upstream_error": 502,

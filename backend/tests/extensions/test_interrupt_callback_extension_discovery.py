@@ -51,6 +51,8 @@ def test_resolve_extracts_methods_business_codes_and_provider() -> None:
                 "errors": {
                     "business_codes": {
                         "INTERRUPT_REQUEST_NOT_FOUND": -32004,
+                        "INTERRUPT_REQUEST_EXPIRED": -32007,
+                        "INTERRUPT_TYPE_MISMATCH": -32008,
                     }
                 },
             },
@@ -68,6 +70,8 @@ def test_resolve_extracts_methods_business_codes_and_provider() -> None:
     assert resolved.methods["reply_question"] == "shared.question.reply"
     assert resolved.methods["reject_question"] == "shared.question.reject"
     assert resolved.business_code_map[-32004] == "interrupt_request_not_found"
+    assert resolved.business_code_map[-32007] == "interrupt_request_expired"
+    assert resolved.business_code_map[-32008] == "interrupt_type_mismatch"
     assert resolved.jsonrpc.url == "https://api.example.com/jsonrpc"
     assert resolved.jsonrpc.fallback_used is False
 

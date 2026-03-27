@@ -28,8 +28,11 @@ from app.features.sessions.service import session_hub_service
 router = StrictAPIRouter(prefix="/me/conversations", tags=["me-conversations"])
 
 _UPSTREAM_ERRORS = {
+    "upstream_bad_request",
+    "upstream_client_error",
     "upstream_unreachable",
     "upstream_http_error",
+    "upstream_server_error",
     "upstream_error",
     "runtime_invalid",
 }
@@ -43,9 +46,21 @@ def _status_code_for_session_error(detail: str) -> int:
         return 404
     if detail == "block_not_found":
         return 404
+    if detail == "upstream_resource_not_found":
+        return 404
+    if detail == "upstream_unauthorized":
+        return 401
+    if detail == "upstream_quota_exceeded":
+        return 429
     if detail in _FORBIDDEN_ERRORS:
         return 403
+    if detail == "upstream_permission_denied":
+        return 403
     if detail in _UPSTREAM_ERRORS:
+        if detail == "upstream_bad_request":
+            return 400
+        if detail == "upstream_unreachable":
+            return 503
         return 502
     return 400
 
