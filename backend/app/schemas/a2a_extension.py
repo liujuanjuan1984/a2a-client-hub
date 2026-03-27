@@ -286,7 +286,7 @@ class A2AInterruptRecoveryItemResponse(BaseModel):
 
     request_id: str = Field(..., alias="requestId")
     session_id: str = Field(..., alias="sessionId")
-    type: Literal["permission", "question"]
+    type: Literal["permission", "question", "permissions", "elicitation"]
     details: Dict[str, Any] = Field(default_factory=dict)
     task_id: Optional[str] = Field(default=None, alias="taskId")
     context_id: Optional[str] = Field(default=None, alias="contextId")

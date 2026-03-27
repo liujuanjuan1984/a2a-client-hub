@@ -203,9 +203,29 @@ type InterruptQuestion = {
   options: InterruptQuestionOption[];
 };
 
+export type InterruptType =
+  | "permission"
+  | "question"
+  | "permissions"
+  | "elicitation";
+
+type RuntimeInterruptDetails = {
+  permission?: string | null;
+  patterns?: string[];
+  displayMessage?: string | null;
+  questions?: InterruptQuestion[];
+  permissions?: Record<string, unknown> | null;
+  serverName?: string | null;
+  mode?: string | null;
+  requestedSchema?: unknown;
+  url?: string | null;
+  elicitationId?: string | null;
+  meta?: Record<string, unknown> | null;
+};
+
 type RuntimeInterruptBase = {
   requestId: string;
-  type: "permission" | "question";
+  type: InterruptType;
   source?: "stream" | "recovery";
   sessionId?: string | null;
   taskId?: string | null;
@@ -215,12 +235,7 @@ type RuntimeInterruptBase = {
 
 export type PendingRuntimeInterrupt = RuntimeInterruptBase & {
   phase: "asked";
-  details: {
-    permission?: string | null;
-    patterns?: string[];
-    displayMessage?: string | null;
-    questions?: InterruptQuestion[];
-  };
+  details: RuntimeInterruptDetails;
 };
 
 export type ResolvedRuntimeInterrupt = RuntimeInterruptBase & {
@@ -274,9 +289,16 @@ const isRuntimeInterrupt = (value: unknown): value is RuntimeInterrupt => {
     return false;
   }
   const candidate = value as RuntimeInterrupt;
+  const isInterruptType = (
+    input: RuntimeInterrupt["type"],
+  ): input is InterruptType =>
+    input === "permission" ||
+    input === "question" ||
+    input === "permissions" ||
+    input === "elicitation";
   if (
     typeof candidate.requestId !== "string" ||
-    (candidate.type !== "permission" && candidate.type !== "question")
+    !isInterruptType(candidate.type)
   ) {
     return false;
   }
@@ -304,7 +326,26 @@ const isRuntimeInterrupt = (value: unknown): value is RuntimeInterrupt => {
       typeof details.displayMessage === "string") &&
     (details.questions === undefined ||
       (Array.isArray(details.questions) &&
-        details.questions.every(isInterruptQuestion)))
+        details.questions.every(isInterruptQuestion))) &&
+    (details.permissions === undefined ||
+      details.permissions === null ||
+      (typeof details.permissions === "object" &&
+        !Array.isArray(details.permissions))) &&
+    (details.serverName === undefined ||
+      details.serverName === null ||
+      typeof details.serverName === "string") &&
+    (details.mode === undefined ||
+      details.mode === null ||
+      typeof details.mode === "string") &&
+    (details.url === undefined ||
+      details.url === null ||
+      typeof details.url === "string") &&
+    (details.elicitationId === undefined ||
+      details.elicitationId === null ||
+      typeof details.elicitationId === "string") &&
+    (details.meta === undefined ||
+      details.meta === null ||
+      (typeof details.meta === "object" && !Array.isArray(details.meta)))
   );
 };
 
@@ -856,7 +897,10 @@ const extractRuntimeInterrupt = (
   const interruptType = pickString(interrupt, ["type"])?.toLowerCase();
   if (
     !requestId ||
-    (interruptType !== "permission" && interruptType !== "question")
+    (interruptType !== "permission" &&
+      interruptType !== "question" &&
+      interruptType !== "permissions" &&
+      interruptType !== "elicitation")
   ) {
     return null;
   }
@@ -895,6 +939,18 @@ const extractRuntimeInterrupt = (
       },
     };
   }
+  if (interruptType === "permissions") {
+    return {
+      requestId,
+      type: "permissions",
+      phase: "asked",
+      source: "stream",
+      details: {
+        permissions: asRecord(details?.permissions),
+        displayMessage: extractInterruptDisplayMessage(details),
+      },
+    };
+  }
   if (interruptType === "question") {
     const rawQuestions = pickFirstArray(details, [
       ["questions"],
@@ -915,6 +971,26 @@ const extractRuntimeInterrupt = (
       },
     };
   }
+  if (interruptType === "elicitation") {
+    return {
+      requestId,
+      type: "elicitation",
+      phase: "asked",
+      source: "stream",
+      details: {
+        displayMessage: extractInterruptDisplayMessage(details),
+        serverName:
+          pickRawString(details, ["server_name", "serverName"]) ?? null,
+        mode: pickRawString(details, ["mode"]) ?? null,
+        requestedSchema:
+          details?.requested_schema ?? details?.requestedSchema ?? null,
+        url: pickRawString(details, ["url"]) ?? null,
+        elicitationId:
+          pickRawString(details, ["elicitation_id", "elicitationId"]) ?? null,
+        meta: asRecord(details?.meta),
+      },
+    };
+  }
   return null;
 };
 
@@ -923,12 +999,22 @@ const buildInterruptEventMessageCode = (
 ):
   | "permission_requested"
   | "permission_resolved"
+  | "permissions_requested"
+  | "permissions_resolved"
   | "question_requested"
   | "question_answer_received"
   | "question_rejected" => {
   if (interrupt.phase === "resolved") {
     if (interrupt.type === "permission") {
       return "permission_resolved";
+    }
+    if (interrupt.type === "permissions") {
+      return "permissions_resolved";
+    }
+    if (interrupt.type === "elicitation") {
+      return interrupt.resolution === "rejected"
+        ? "question_rejected"
+        : "question_answer_received";
     }
     if (interrupt.resolution === "rejected") {
       return "question_rejected";
@@ -938,7 +1024,21 @@ const buildInterruptEventMessageCode = (
   if (interrupt.type === "permission") {
     return "permission_requested";
   }
+  if (interrupt.type === "permissions") {
+    return "permissions_requested";
+  }
   return "question_requested";
+};
+
+const stringifyInterruptObject = (value: unknown): string | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
 };
 
 const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
@@ -946,10 +1046,19 @@ const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
   if (messageCode === "permission_resolved") {
     return "Authorization request was handled. Agent resumed.";
   }
+  if (messageCode === "permissions_resolved") {
+    return "Permissions request was handled. Agent resumed.";
+  }
   if (messageCode === "question_rejected") {
+    if (interrupt.type === "elicitation") {
+      return "Additional input request was declined. Interrupt closed.";
+    }
     return "Question request was rejected. Interrupt closed.";
   }
   if (messageCode === "question_answer_received") {
+    if (interrupt.type === "elicitation") {
+      return "Additional input was submitted. Agent resumed.";
+    }
     return "Question answer received. Agent resumed.";
   }
 
@@ -966,6 +1075,39 @@ const buildInterruptEventContent = (interrupt: RuntimeInterrupt): string => {
       return `${baseMessage}\nTargets: ${patterns.join(", ")}`;
     }
     return baseMessage;
+  }
+  if (messageCode === "permissions_requested") {
+    const displayMessage =
+      askedInterrupt.details.displayMessage?.trim() || null;
+    const permissionsText =
+      stringifyInterruptObject(askedInterrupt.details.permissions) ?? null;
+    if (displayMessage && permissionsText) {
+      return `${displayMessage}\nRequested permissions: ${permissionsText}`;
+    }
+    if (displayMessage) {
+      return displayMessage;
+    }
+    if (permissionsText) {
+      return `Agent requested permissions approval: ${permissionsText}`;
+    }
+    return "Agent requested permissions approval.";
+  }
+  if (askedInterrupt.type === "elicitation") {
+    const displayMessage =
+      askedInterrupt.details.displayMessage?.trim() || null;
+    const lines = [
+      displayMessage || "Agent requested additional structured input.",
+    ];
+    if (askedInterrupt.details.mode?.trim()) {
+      lines.push(`Mode: ${askedInterrupt.details.mode.trim()}`);
+    }
+    if (askedInterrupt.details.serverName?.trim()) {
+      lines.push(`Server: ${askedInterrupt.details.serverName.trim()}`);
+    }
+    if (askedInterrupt.details.url?.trim()) {
+      lines.push(`URL: ${askedInterrupt.details.url.trim()}`);
+    }
+    return lines.join("\n");
   }
 
   const displayMessage = askedInterrupt.details.displayMessage?.trim() || null;

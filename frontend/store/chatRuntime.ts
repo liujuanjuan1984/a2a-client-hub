@@ -70,60 +70,9 @@ const isSamePendingInterrupt = (
   if (lhs.requestId !== rhs.requestId || lhs.type !== rhs.type) {
     return false;
   }
-
-  if (lhs.type === "permission" && rhs.type === "permission") {
-    const leftPatterns = lhs.details.patterns ?? [];
-    const rightPatterns = rhs.details.patterns ?? [];
-    if (lhs.details.permission !== rhs.details.permission) {
-      return false;
-    }
-    return leftPatterns.join("|") === rightPatterns.join("|");
-  }
-
-  if (lhs.type === "question" && rhs.type === "question") {
-    const leftQuestions = lhs.details.questions ?? [];
-    const rightQuestions = rhs.details.questions ?? [];
-    if (leftQuestions.length !== rightQuestions.length) {
-      return false;
-    }
-    for (let index = 0; index < leftQuestions.length; index += 1) {
-      const leftQuestion = leftQuestions[index];
-      const rightQuestion = rightQuestions[index];
-      if (!leftQuestion || !rightQuestion) {
-        return false;
-      }
-      if (
-        leftQuestion.header !== rightQuestion.header ||
-        leftQuestion.question !== rightQuestion.question
-      ) {
-        return false;
-      }
-      if (leftQuestion.options.length !== rightQuestion.options.length) {
-        return false;
-      }
-      for (
-        let optionIndex = 0;
-        optionIndex < leftQuestion.options.length;
-        optionIndex += 1
-      ) {
-        const leftOption = leftQuestion.options[optionIndex];
-        const rightOption = rightQuestion.options[optionIndex];
-        if (!leftOption || !rightOption) {
-          return false;
-        }
-        if (
-          leftOption.label !== rightOption.label ||
-          leftOption.value !== rightOption.value ||
-          leftOption.description !== rightOption.description
-        ) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  return false;
+  return (
+    JSON.stringify(lhs.details ?? {}) === JSON.stringify(rhs.details ?? {})
+  );
 };
 
 const isSameResolvedInterrupt = (

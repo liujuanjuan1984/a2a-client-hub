@@ -4,7 +4,9 @@ import json
 from typing import Any
 
 from app.features.invoke.interrupt_metadata import (
+    normalize_elicitation_interrupt_details,
     normalize_permission_interrupt_details,
+    normalize_permissions_interrupt_details,
     normalize_question_interrupt_details,
 )
 from app.features.invoke.shared_metadata import (
@@ -442,7 +444,12 @@ def extract_interrupt_lifecycle_from_serialized_event(
 
     request_id = _pick_non_empty_str(interrupt, ("request_id", "requestId"))
     interrupt_type = _pick_non_empty_str(interrupt, ("type",))
-    if not request_id or interrupt_type not in {"permission", "question"}:
+    if not request_id or interrupt_type not in {
+        "permission",
+        "question",
+        "permissions",
+        "elicitation",
+    }:
         return None
 
     phase = _pick_non_empty_str(interrupt, ("phase",))
@@ -466,6 +473,12 @@ def extract_interrupt_lifecycle_from_serialized_event(
     details = as_dict(interrupt.get("details")) or {}
     if interrupt_type == "permission":
         payload_event["details"] = normalize_permission_interrupt_details(details)
+        return payload_event
+    if interrupt_type == "permissions":
+        payload_event["details"] = normalize_permissions_interrupt_details(details)
+        return payload_event
+    if interrupt_type == "elicitation":
+        payload_event["details"] = normalize_elicitation_interrupt_details(details)
         return payload_event
 
     payload_event["details"] = normalize_question_interrupt_details(details)

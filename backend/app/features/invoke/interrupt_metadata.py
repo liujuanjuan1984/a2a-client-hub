@@ -93,6 +93,17 @@ def normalize_permission_interrupt_details(details: dict[str, Any]) -> dict[str,
     return normalized
 
 
+def normalize_permissions_interrupt_details(details: dict[str, Any]) -> dict[str, Any]:
+    permissions = as_dict(details.get("permissions"))
+    normalized: dict[str, Any] = {
+        "permissions": dict(permissions) if permissions is not None else None,
+    }
+    display_message = extract_interrupt_display_message(details)
+    if display_message:
+        normalized["display_message"] = display_message
+    return normalized
+
+
 def _normalize_question_option(entry: Any) -> dict[str, Any] | None:
     option = as_dict(entry)
     if not option:
@@ -191,6 +202,29 @@ def normalize_question_interrupt_details(details: dict[str, Any]) -> dict[str, A
         if normalized is not None
     ]
     normalized: dict[str, Any] = {"questions": normalized_questions}
+    display_message = extract_interrupt_display_message(details)
+    if display_message:
+        normalized["display_message"] = display_message
+    return normalized
+
+
+def normalize_elicitation_interrupt_details(details: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {
+        "server_name": _pick_non_empty_text(details, ("server_name", "serverName")),
+        "mode": _pick_non_empty_text(details, ("mode",)),
+        "requested_schema": (
+            details.get("requested_schema")
+            if details.get("requested_schema") is not None
+            else details.get("requestedSchema")
+        ),
+        "url": _pick_non_empty_text(details, ("url",)),
+        "elicitation_id": _pick_non_empty_text(
+            details, ("elicitation_id", "elicitationId")
+        ),
+    }
+    meta = as_dict(details.get("meta"))
+    if meta is not None:
+        normalized["meta"] = dict(meta)
     display_message = extract_interrupt_display_message(details)
     if display_message:
         normalized["display_message"] = display_message

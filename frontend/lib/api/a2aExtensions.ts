@@ -1,4 +1,5 @@
 import type {
+  InterruptType,
   PendingRuntimeInterrupt,
   RuntimeStatusContract,
 } from "@/lib/api/chat-utils";
@@ -274,6 +275,62 @@ export const rejectQuestionInterrupt = async (input: {
   return assertInterruptAckResult(response, input.requestId);
 };
 
+export const replyPermissionsInterrupt = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+  requestId: string;
+  permissions: Record<string, unknown>;
+  scope?: "turn" | "session";
+  metadata?: Record<string, unknown>;
+}): Promise<InterruptAckResult> => {
+  const response = await apiRequest<
+    A2AExtensionResponse,
+    {
+      request_id: string;
+      permissions: Record<string, unknown>;
+      scope?: "turn" | "session";
+      metadata?: Record<string, unknown>;
+    }
+  >(buildInterruptPath(input.source, input.agentId, "permissions:reply"), {
+    method: "POST",
+    body: {
+      request_id: input.requestId,
+      permissions: input.permissions,
+      ...(input.scope ? { scope: input.scope } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+    },
+  });
+  return assertInterruptAckResult(response, input.requestId);
+};
+
+export const replyElicitationInterrupt = async (input: {
+  source: ExtensionAgentSource;
+  agentId: string;
+  requestId: string;
+  action: "accept" | "decline" | "cancel";
+  content?: unknown;
+  metadata?: Record<string, unknown>;
+}): Promise<InterruptAckResult> => {
+  const response = await apiRequest<
+    A2AExtensionResponse,
+    {
+      request_id: string;
+      action: "accept" | "decline" | "cancel";
+      content?: unknown;
+      metadata?: Record<string, unknown>;
+    }
+  >(buildInterruptPath(input.source, input.agentId, "elicitation:reply"), {
+    method: "POST",
+    body: {
+      request_id: input.requestId,
+      action: input.action,
+      ...(input.content !== undefined ? { content: input.content } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+    },
+  });
+  return assertInterruptAckResult(response, input.requestId);
+};
+
 type PromptAsyncAckResult = {
   ok: true;
   sessionId: string;
@@ -296,7 +353,7 @@ type SessionCommandResult = {
 type InterruptRecoveryResponseItem = {
   requestId: string;
   sessionId: string;
-  type: "permission" | "question";
+  type: InterruptType;
   details?: Record<string, unknown> | null;
   taskId?: string | null;
   contextId?: string | null;
@@ -475,7 +532,10 @@ const asRecoveryInterruptItem = (
   if (
     !requestId ||
     !sessionId ||
-    (interruptType !== "permission" && interruptType !== "question")
+    (interruptType !== "permission" &&
+      interruptType !== "question" &&
+      interruptType !== "permissions" &&
+      interruptType !== "elicitation")
   ) {
     return null;
   }
@@ -508,7 +568,56 @@ const asRecoveryInterruptItem = (
         displayMessage:
           typeof details.displayMessage === "string"
             ? details.displayMessage
-            : null,
+            : typeof details.display_message === "string"
+              ? details.display_message
+              : null,
+      },
+    };
+  }
+
+  if (interruptType === "permissions") {
+    return {
+      ...base,
+      details: {
+        permissions: asRecord(details.permissions),
+        displayMessage:
+          typeof details.displayMessage === "string"
+            ? details.displayMessage
+            : typeof details.display_message === "string"
+              ? details.display_message
+              : null,
+      },
+    };
+  }
+
+  if (interruptType === "elicitation") {
+    const meta = asRecord(details.meta);
+    return {
+      ...base,
+      details: {
+        displayMessage:
+          typeof details.displayMessage === "string"
+            ? details.displayMessage
+            : typeof details.display_message === "string"
+              ? details.display_message
+              : null,
+        serverName:
+          typeof details.serverName === "string"
+            ? details.serverName
+            : typeof details.server_name === "string"
+              ? details.server_name
+              : null,
+        mode: typeof details.mode === "string" ? details.mode : null,
+        requestedSchema:
+          details.requestedSchema ?? details.requested_schema ?? null,
+        url: typeof details.url === "string" ? details.url : null,
+        elicitationId:
+          typeof details.elicitationId === "string"
+            ? details.elicitationId
+            : typeof details.elicitation_id === "string"
+              ? details.elicitation_id
+              : null,
+        ...(meta ? { meta } : {}),
       },
     };
   }
@@ -520,7 +629,9 @@ const asRecoveryInterruptItem = (
       displayMessage:
         typeof details.displayMessage === "string"
           ? details.displayMessage
-          : null,
+          : typeof details.display_message === "string"
+            ? details.display_message
+            : null,
       questions: asInterruptQuestions(details.questions),
     },
   };

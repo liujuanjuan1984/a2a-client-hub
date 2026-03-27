@@ -50,10 +50,22 @@ const resolveInterruptTitle = (block: MessageBlock): string => {
     if (interrupt.type === "permission") {
       return "Authorization update";
     }
+    if (interrupt.type === "permissions") {
+      return "Permissions update";
+    }
+    if (interrupt.type === "elicitation") {
+      return "Structured input update";
+    }
     return "Question update";
   }
   if (interrupt.type === "permission") {
     return "Authorization requested";
+  }
+  if (interrupt.type === "permissions") {
+    return "Permissions approval requested";
+  }
+  if (interrupt.type === "elicitation") {
+    return "Structured input requested";
   }
   return "Additional input requested";
 };
@@ -81,6 +93,30 @@ export function InterruptEventBlock({
     interrupt?.phase === "asked" && interrupt.type === "question"
       ? (interrupt.details.questions ?? [])
       : [];
+  const requestedPermissions =
+    interrupt?.phase === "asked" && interrupt.type === "permissions"
+      ? (() => {
+          try {
+            return JSON.stringify(interrupt.details.permissions ?? {}, null, 2);
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+  const requestedSchema =
+    interrupt?.phase === "asked" && interrupt.type === "elicitation"
+      ? (() => {
+          try {
+            return JSON.stringify(
+              interrupt.details.requestedSchema ?? {},
+              null,
+              2,
+            );
+          } catch {
+            return null;
+          }
+        })()
+      : null;
 
   return (
     <View
@@ -153,6 +189,56 @@ export function InterruptEventBlock({
               ) : null}
             </View>
           ))}
+        </View>
+      ) : null}
+
+      {interrupt?.phase === "asked" && interrupt.type === "permissions" ? (
+        <View className="mt-3 rounded-lg border border-white/10 bg-white/5 p-2.5">
+          <Text className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Requested Permissions
+          </Text>
+          {requestedPermissions ? (
+            <Text className="mt-2 font-mono text-[11px] leading-5 text-slate-100">
+              {requestedPermissions}
+            </Text>
+          ) : (
+            <Text className="mt-2 text-[12px] leading-5 text-slate-100">
+              No structured permissions payload was provided.
+            </Text>
+          )}
+        </View>
+      ) : null}
+
+      {interrupt?.phase === "asked" && interrupt.type === "elicitation" ? (
+        <View className="mt-3 rounded-lg border border-white/10 bg-white/5 p-2.5">
+          <Text className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Elicitation
+          </Text>
+          {interrupt.details.mode ? (
+            <Text className="mt-2 text-[12px] leading-5 text-slate-100">
+              Mode: {interrupt.details.mode}
+            </Text>
+          ) : null}
+          {interrupt.details.serverName ? (
+            <Text className="mt-1 text-[12px] leading-5 text-slate-100">
+              Server: {interrupt.details.serverName}
+            </Text>
+          ) : null}
+          {interrupt.details.url ? (
+            <Text className="mt-1 text-[12px] leading-5 text-slate-100">
+              URL: {interrupt.details.url}
+            </Text>
+          ) : null}
+          {requestedSchema ? (
+            <>
+              <Text className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Requested Schema
+              </Text>
+              <Text className="mt-1 font-mono text-[11px] leading-5 text-slate-100">
+                {requestedSchema}
+              </Text>
+            </>
+          ) : null}
         </View>
       ) : null}
     </View>

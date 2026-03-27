@@ -88,7 +88,10 @@ const isPendingRuntimeInterrupt = (
   const candidate = value as PendingRuntimeInterrupt;
   return (
     typeof candidate.requestId === "string" &&
-    (candidate.type === "permission" || candidate.type === "question") &&
+    (candidate.type === "permission" ||
+      candidate.type === "question" ||
+      candidate.type === "permissions" ||
+      candidate.type === "elicitation") &&
     candidate.phase === "asked"
   );
 };

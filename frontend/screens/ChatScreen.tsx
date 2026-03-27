@@ -77,11 +77,15 @@ export function ChatScreen({
         pendingInterruptCount={controller.pendingInterruptCount}
         interruptAction={controller.interruptAction}
         questionAnswers={controller.questionAnswers}
+        structuredResponseInput={controller.structuredResponseInput}
         onPermissionReply={controller.handlePermissionReply}
+        onPermissionsReply={controller.handlePermissionsReply}
         onQuestionAnswerChange={controller.handleQuestionAnswerChange}
         onQuestionOptionPick={controller.handleQuestionOptionPick}
         onQuestionReply={controller.handleQuestionReply}
         onQuestionReject={controller.handleQuestionReject}
+        onStructuredResponseChange={controller.handleStructuredResponseChange}
+        onElicitationReply={controller.handleElicitationReply}
       />
 
       <ShortcutManagerModal
