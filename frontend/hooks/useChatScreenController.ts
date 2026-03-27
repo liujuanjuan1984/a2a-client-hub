@@ -25,6 +25,7 @@ import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import { useShortcutsQuery } from "@/hooks/useShortcutsQuery";
 import {
   A2AExtensionCallError,
+  commandSession,
   promptSessionAsync,
 } from "@/lib/api/a2aExtensions";
 import type { ChatMessage } from "@/lib/api/chat-utils";
@@ -48,6 +49,9 @@ import {
 } from "@/lib/opencodeMetadata";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
+import { parseComposerInput } from "@/lib/sessionCommand";
+import { mapA2AMessageToChatMessage } from "@/lib/sessionHistory";
+import { readSharedSessionBinding } from "@/lib/sharedMetadata";
 import { toast } from "@/lib/toast";
 import { type AgentSource, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
@@ -156,6 +160,10 @@ export function useChatScreenController({
     !activeAgentId || !agent?.source
       ? "unsupported"
       : extensionCapabilitiesQuery.providerDiscoveryStatus;
+  const sessionCommandStatus: GenericCapabilityStatus =
+    !activeAgentId || !agent?.source
+      ? "unsupported"
+      : extensionCapabilitiesQuery.sessionCommandStatus;
   const sessionPromptAsyncStatus: GenericCapabilityStatus =
     !activeAgentId || !agent?.source
       ? "unsupported"
@@ -228,6 +236,93 @@ export function useChatScreenController({
       content: string,
       nextAgentSource: AgentSource,
     ) => {
+      const parsedInput = parseComposerInput(content);
+      if (parsedInput.kind === "command") {
+        if (sessionCommandStatus !== "supported") {
+          toast.error(
+            "Command unavailable",
+            "This agent does not expose session command support.",
+          );
+          const error = new Error("Session command is not supported.");
+          (error as Error & { skipToast?: boolean }).skipToast = true;
+          throw error;
+        }
+
+        const currentSession =
+          useChatStore.getState().sessions[nextConversationId];
+        const externalSessionId =
+          currentSession?.externalSessionRef?.externalSessionId?.trim() ?? "";
+        if (!externalSessionId) {
+          toast.error(
+            "Command unavailable",
+            "This conversation is not bound to an upstream session yet.",
+          );
+          const error = new Error(
+            "Session command requires an upstream session.",
+          );
+          (error as Error & { skipToast?: boolean }).skipToast = true;
+          throw error;
+        }
+
+        const sessionBinding = readSharedSessionBinding(
+          currentSession?.metadata,
+        );
+        const provider =
+          currentSession?.externalSessionRef?.provider?.trim() ||
+          sessionBinding.provider;
+        const metadata = {
+          ...(pickOpencodeDirectoryMetadata(currentSession?.metadata) ?? {}),
+          ...(provider ? { provider } : {}),
+          externalSessionId,
+        };
+        const createdAt = new Date().toISOString();
+        const result = await commandSession({
+          source: nextAgentSource,
+          agentId: nextAgentId,
+          sessionId: externalSessionId,
+          request: {
+            command: parsedInput.command,
+            arguments: parsedInput.arguments,
+            ...(parsedInput.prompt
+              ? {
+                  parts: [
+                    {
+                      type: "text",
+                      text: parsedInput.prompt,
+                    },
+                  ],
+                }
+              : {}),
+          },
+          metadata,
+        });
+        addConversationOverlayMessage(nextConversationId, {
+          id: generateUuid(),
+          role: "user",
+          content: parsedInput.prompt
+            ? `${parsedInput.command}${
+                parsedInput.arguments ? ` ${parsedInput.arguments}` : ""
+              }\n${parsedInput.prompt}`
+            : `${parsedInput.command}${
+                parsedInput.arguments ? ` ${parsedInput.arguments}` : ""
+              }`,
+          createdAt,
+          status: "done",
+        });
+        const mapped = mapA2AMessageToChatMessage(result.item, {
+          fallbackCreatedAt: createdAt,
+        });
+        if (!mapped) {
+          throw new Error(
+            "Session command response did not include a usable message.",
+          );
+        }
+        addConversationOverlayMessage(nextConversationId, mapped);
+        toast.success("Command executed", parsedInput.command);
+        return;
+      }
+
+      const effectiveContent = parsedInput.text;
       const currentSession =
         useChatStore.getState().sessions[nextConversationId];
       const isActivelyStreaming = currentSession?.streamState === "streaming";
@@ -247,14 +342,14 @@ export function useChatScreenController({
             sessionId: externalSessionId,
             request: {
               messageID: promptMessageId,
-              parts: [{ type: "text", text: content.trim() }],
+              parts: [{ type: "text", text: effectiveContent.trim() }],
             },
             metadata: pickOpencodeDirectoryMetadata(currentSession?.metadata),
           });
           addConversationOverlayMessage(nextConversationId, {
             id: promptMessageId,
             role: "user",
-            content: content.trim(),
+            content: effectiveContent.trim(),
             createdAt: new Date().toISOString(),
             status: "done",
           });
@@ -305,12 +400,17 @@ export function useChatScreenController({
       await sendMessage(
         nextConversationId,
         nextAgentId,
-        content,
+        effectiveContent,
         nextAgentSource,
         runtimeStatusContract,
       );
     },
-    [runtimeStatusContract, sendMessage, sessionPromptAsyncStatus],
+    [
+      runtimeStatusContract,
+      sendMessage,
+      sessionCommandStatus,
+      sessionPromptAsyncStatus,
+    ],
   );
 
   const {
@@ -688,6 +788,7 @@ export function useChatScreenController({
     sessionSource,
     modelSelectionStatus,
     providerDiscoveryStatus,
+    sessionCommandStatus,
     selectedModel,
     opencodeDirectory,
     quickShortcuts,

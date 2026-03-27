@@ -257,6 +257,35 @@ class _FakeExtensionsService:
             meta={},
         )
 
+    async def command_session(
+        self,
+        *,
+        runtime,
+        session_id: str,
+        request_payload,
+        metadata,
+    ):
+        self.calls.append(
+            {
+                "fn": "command_session",
+                "runtime": runtime,
+                "session_id": session_id,
+                "request_payload": request_payload,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={
+                "item": {
+                    "kind": "message",
+                    "messageId": "msg-cmd-1",
+                    "role": "assistant",
+                }
+            },
+            meta={},
+        )
+
     async def reply_question_interrupt(
         self,
         *,
@@ -815,13 +844,41 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
             "session_id": "sess-1",
         }
 
-    assert len(fake_extensions.calls) == 7
+        command_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions/sess-1:command",
+            json={
+                "request": {
+                    "command": "/review",
+                    "arguments": "--quick",
+                    "parts": [{"type": "text", "text": "Focus on tests"}],
+                },
+                "metadata": {"provider": "opencode", "externalSessionId": "sess-1"},
+            },
+        )
+        assert command_resp.status_code == 200
+        assert command_resp.json()["result"] == {
+            "item": {
+                "kind": "message",
+                "messageId": "msg-cmd-1",
+                "role": "assistant",
+            }
+        }
+
+    assert len(fake_extensions.calls) == 8
     prompt_calls = [
         c for c in fake_extensions.calls if c["fn"] == "prompt_session_async"
     ]
     assert len(prompt_calls) == 1
     assert prompt_calls[0]["request_payload"]["parts"][0]["text"].startswith("Continue")
     assert prompt_calls[0]["metadata"] == {
+        "provider": "opencode",
+        "externalSessionId": "sess-1",
+    }
+    command_calls = [c for c in fake_extensions.calls if c["fn"] == "command_session"]
+    assert len(command_calls) == 1
+    assert command_calls[0]["request_payload"]["command"] == "/review"
+    assert command_calls[0]["request_payload"]["arguments"] == "--quick"
+    assert command_calls[0]["metadata"] == {
         "provider": "opencode",
         "externalSessionId": "sess-1",
     }
@@ -988,7 +1045,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
             },
             "command": {
                 "declared": True,
-                "consumedByHub": False,
+                "consumedByHub": True,
                 "availability": "always",
                 "method": "shared.sessions.command",
                 "enabledByDefault": None,
@@ -1081,7 +1138,7 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
             },
             "command": {
                 "declared": False,
-                "consumedByHub": False,
+                "consumedByHub": True,
                 "availability": "unsupported",
                 "method": None,
                 "enabledByDefault": None,
@@ -1175,7 +1232,7 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
             },
             "command": {
                 "declared": True,
-                "consumedByHub": False,
+                "consumedByHub": True,
                 "availability": "always",
                 "method": "shared.sessions.command",
                 "enabledByDefault": None,

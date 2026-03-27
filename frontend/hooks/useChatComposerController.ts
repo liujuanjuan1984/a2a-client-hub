@@ -138,7 +138,13 @@ export function useChatComposerController({
     );
     sendPromise.catch((error: unknown) => {
       const message = error instanceof Error ? error.message : "Unknown error.";
-      toast.error("Send failed", message);
+      const skipToast =
+        Boolean(error) &&
+        typeof error === "object" &&
+        (error as { skipToast?: boolean }).skipToast === true;
+      if (!skipToast) {
+        toast.error("Send failed", message);
+      }
       if (draftInputRef.current.length === 0) {
         replaceInput(input, { focus: true });
       }

@@ -7,6 +7,8 @@ const mockReplyPermission = jest.fn();
 const mockReplyQuestion = jest.fn();
 const mockRejectQuestion = jest.fn();
 const mockPromptSessionAsync = jest.fn();
+const mockCommandSession = jest.fn();
+const mockAddConversationOverlayMessage = jest.fn();
 const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
 const mockToastError = jest.fn();
@@ -23,6 +25,7 @@ const mockExtensionCapabilitiesState = {
   modelSelectionStatus: "supported" as MockCapabilityStatus,
   providerDiscoveryStatus: "supported" as MockCapabilityStatus,
   sessionPromptAsyncStatus: "supported" as MockCapabilityStatus,
+  sessionCommandStatus: "supported" as MockCapabilityStatus,
   canShowModelPicker: true,
 };
 
@@ -366,11 +369,17 @@ jest.mock("@/lib/api/a2aExtensions", () => ({
     errorCode: string | null = null;
     upstreamError: Record<string, unknown> | null = null;
   },
+  commandSession: (...args: unknown[]) => mockCommandSession(...args),
   promptSessionAsync: (...args: unknown[]) => mockPromptSessionAsync(...args),
   replyPermissionInterrupt: (...args: unknown[]) =>
     mockReplyPermission(...args),
   replyQuestionInterrupt: (...args: unknown[]) => mockReplyQuestion(...args),
   rejectQuestionInterrupt: (...args: unknown[]) => mockRejectQuestion(...args),
+}));
+
+jest.mock("@/lib/chatHistoryCache", () => ({
+  addConversationOverlayMessage: (...args: unknown[]) =>
+    mockAddConversationOverlayMessage(...args),
 }));
 
 jest.mock("@/lib/toast", () => ({
@@ -418,8 +427,17 @@ describe("ChatScreen interrupt handling", () => {
       ok: true,
       sessionId: "ses-upstream-1",
     });
+    mockCommandSession.mockReset().mockResolvedValue({
+      item: {
+        messageId: "msg-cmd-1",
+        role: "assistant",
+        parts: [{ type: "text", text: "Review complete." }],
+      },
+    });
+    mockAddConversationOverlayMessage.mockReset();
     mockExtensionCapabilitiesState.modelSelectionStatus = "supported";
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "supported";
+    mockExtensionCapabilitiesState.sessionCommandStatus = "supported";
     mockExtensionCapabilitiesState.canShowModelPicker = true;
     mockSessionHistoryState.loadMore.mockReset();
     mockSessionHistoryState.messages = [];
@@ -912,6 +930,123 @@ describe("ChatScreen interrupt handling", () => {
     expect(warnSpy).toHaveBeenCalled();
 
     warnSpy.mockRestore();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("routes slash command input through session command when a bound upstream session exists", async () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      metadata: {
+        opencode: {
+          directory: "/workspace/app",
+        },
+      },
+      externalSessionRef: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-4",
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("/review --quick\nFocus on tests");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
+
+    expect(mockCommandSession).toHaveBeenCalledWith({
+      source: "personal",
+      agentId: "agent-1",
+      sessionId: "ses-upstream-4",
+      request: {
+        command: "/review",
+        arguments: "--quick",
+        parts: [{ type: "text", text: "Focus on tests" }],
+      },
+      metadata: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-4",
+        opencode: {
+          directory: "/workspace/app",
+        },
+      },
+    });
+    expect(mockAddConversationOverlayMessage).toHaveBeenCalledTimes(2);
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      "Command executed",
+      "/review",
+    );
+
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("treats escaped slash input as a normal message", async () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      externalSessionRef: null,
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("//status");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
+
+    expect(mockCommandSession).not.toHaveBeenCalled();
+    expect(mockChatState.sendMessage).toHaveBeenCalledWith(
+      conversationId,
+      "agent-1",
+      "/status",
+      "personal",
+      undefined,
+    );
+
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("restores slash command input and shows an error when no upstream session is bound", async () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      externalSessionRef: null,
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("/status");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockCommandSession).not.toHaveBeenCalled();
+    expect(mockChatState.sendMessage).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Command unavailable",
+      "This conversation is not bound to an upstream session yet.",
+    );
+
     act(() => {
       tree.unmount();
     });

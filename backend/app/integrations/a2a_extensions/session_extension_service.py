@@ -49,6 +49,46 @@ class SessionExtensionService:
             params["metadata"] = normalized_metadata
         return resolved_session_id, params
 
+    def prepare_session_command(
+        self,
+        *,
+        session_id: str,
+        request_payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, Dict[str, Any]]:
+        resolved_session_id = (session_id or "").strip()
+        if not resolved_session_id:
+            raise ValueError("session_id is required")
+
+        if not isinstance(request_payload, dict):
+            raise ValueError("request must be an object")
+
+        command = request_payload.get("command")
+        if not isinstance(command, str) or not command.strip():
+            raise ValueError("request.command must be a non-empty string")
+
+        arguments = request_payload.get("arguments")
+        if not isinstance(arguments, str):
+            raise ValueError("request.arguments must be a string")
+
+        parts = request_payload.get("parts")
+        if parts is not None and not isinstance(parts, list):
+            raise ValueError("request.parts must be an array")
+
+        for key in ("agent", "variant", "messageID"):
+            value = request_payload.get(key)
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"request.{key} must be a string")
+
+        params: Dict[str, Any] = {
+            "session_id": resolved_session_id,
+            "request": dict(request_payload),
+        }
+        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
+        return resolved_session_id, params
+
     @staticmethod
     def _normalize_envelope(
         result: Any,
@@ -579,5 +619,40 @@ class SessionExtensionService:
             meta_extra={
                 "session_id": resolved_session_id,
                 "control_method": "prompt_async",
+            },
+        )
+
+    async def command_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedExtension,
+        selection_meta: Optional[Dict[str, Any]],
+        session_id: str,
+        request_payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        resolved_session_id, params = self.prepare_session_command(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+
+        jsonrpc_url = self._support.ensure_outbound_allowed(
+            ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+        )
+        return await self.invoke_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            selection_meta=selection_meta,
+            method_key="command",
+            params=params,
+            page=1,
+            size=1,
+            normalize_envelope=False,
+            meta_extra={
+                "session_id": resolved_session_id,
+                "control_method": "command",
             },
         )

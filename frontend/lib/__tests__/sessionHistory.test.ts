@@ -1,4 +1,7 @@
-import { mapSessionMessagesToChatMessages } from "@/lib/sessionHistory";
+import {
+  mapA2AMessageToChatMessage,
+  mapSessionMessagesToChatMessages,
+} from "@/lib/sessionHistory";
 
 describe("session history mapping", () => {
   it("maps canonical ids from block-based history", () => {
@@ -261,5 +264,35 @@ describe("session history mapping", () => {
     expect(mapped).toHaveLength(1);
     expect(mapped[0]?.content).toBe("final answer");
     expect(mapped[0]?.blocks?.[0]?.content).toBe("draft");
+  });
+
+  it("maps an A2A command result message into a chat message", () => {
+    const mapped = mapA2AMessageToChatMessage(
+      {
+        messageId: "msg-cmd-1",
+        role: "assistant",
+        parts: [{ type: "text", text: "Review complete." }],
+      },
+      { fallbackCreatedAt: "2026-03-27T00:00:00.000Z" },
+    );
+
+    expect(mapped).toEqual({
+      id: "msg-cmd-1",
+      role: "agent",
+      content: "Review complete.",
+      createdAt: "2026-03-27T00:00:00.000Z",
+      status: "done",
+      blocks: [],
+    });
+  });
+
+  it("rejects A2A messages without usable text content", () => {
+    const mapped = mapA2AMessageToChatMessage({
+      messageId: "msg-cmd-empty",
+      role: "assistant",
+      parts: [{ type: "data", data: { ok: true } }],
+    });
+
+    expect(mapped).toBeNull();
   });
 });

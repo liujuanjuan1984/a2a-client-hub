@@ -39,6 +39,7 @@ from app.schemas.a2a_extension import (
     A2AExtensionQuestionRejectRequest,
     A2AExtensionQuestionReplyRequest,
     A2AExtensionResponse,
+    A2AExtensionSessionCommandRequest,
     A2AModelDiscoveryRequest,
     A2ARuntimeStatusContractResponse,
     A2ASessionControlCapabilitiesResponse,
@@ -83,7 +84,7 @@ def _summarize_metadata_keys(metadata: Optional[Dict[str, Any]]) -> list[str]:
 
 _SESSION_CONTROL_HUB_CONSUMPTION = {
     "prompt_async": True,
-    "command": False,
+    "command": True,
     "shell": False,
 }
 
@@ -481,6 +482,46 @@ def create_extension_capability_router(
 
         return await _run_extension_call(
             _extensions_service().prompt_session_async(
+                runtime=runtime,
+                session_id=session_id,
+                request_payload=payload.request,
+                metadata=payload.metadata,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/sessions/{session_id}:command",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def command_external_session(
+        *,
+        agent_id: UUID,
+        session_id: str,
+        payload: A2AExtensionSessionCommandRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime(db, current_user, agent_id)
+        request_keys = sorted(payload.request.keys())[:20]
+        metadata_keys = _summarize_metadata_keys(payload.metadata)
+        logger.info(
+            _scope_message("Shared extension session command requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "session_id": session_id,
+                "request_keys": request_keys,
+                "metadata_keys": metadata_keys,
+            },
+        )
+
+        return await _run_extension_call(
+            _extensions_service().command_session(
                 runtime=runtime,
                 session_id=session_id,
                 request_payload=payload.request,

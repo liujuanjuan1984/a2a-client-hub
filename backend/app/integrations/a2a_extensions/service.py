@@ -502,6 +502,30 @@ class A2AExtensionsService:
             metadata=metadata,
         )
 
+    async def command_session(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str,
+        request_payload: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        self._session_extensions.prepare_session_command(
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        capability = self._require_session_query_capability(snapshot.session_query)
+        return await self._session_extensions.command_session(
+            runtime=runtime,
+            ext=capability.ext,
+            selection_meta=snapshot.session_query.selection_meta,
+            session_id=session_id,
+            request_payload=request_payload,
+            metadata=metadata,
+        )
+
     async def list_model_providers(
         self,
         *,

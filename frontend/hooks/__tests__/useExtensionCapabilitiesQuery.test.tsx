@@ -78,7 +78,7 @@ const createSessionControl = (overrides?: {
   },
   command: {
     declared: true,
-    consumedByHub: false,
+    consumedByHub: true,
     availability: "always" as const,
     ...overrides?.command,
   },
@@ -126,7 +126,7 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.providerDiscoveryStatus).toBe("supported");
     expect(result.current.runtimeStatusContract?.version).toBe("v1");
     expect(result.current.sessionPromptAsyncStatus).toBe("supported");
-    expect(result.current.sessionCommandStatus).toBe("unsupported");
+    expect(result.current.sessionCommandStatus).toBe("supported");
     expect(result.current.sessionShellStatus).toBe("unsupported");
   });
 

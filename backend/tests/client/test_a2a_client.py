@@ -866,9 +866,15 @@ async def test_call_agent_maps_connect_error_to_agent_unavailable() -> None:
 async def test_stream_agent_maps_connect_timeout_to_timeout() -> None:
     a2a_client = A2AClient("http://example-agent.internal:24020")
 
-    async def _failing_stream(_request):
-        raise httpx.ConnectTimeout("timed out")
-        yield  # pragma: no cover
+    class _FailingStream:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise httpx.ConnectTimeout("timed out")
+
+    def _failing_stream(_request):
+        return _FailingStream()
 
     a2a_client._stream_with_fallback = _failing_stream
 
@@ -1031,12 +1037,15 @@ async def test_gateway_get_task_preserves_timeout_error_code(
         name="TestAgent",
     )
 
-    from contextlib import asynccontextmanager
+    class _FailingInvokeSession:
+        async def __aenter__(self):
+            raise A2AUpstreamTimeoutError("Timed out before completing the request")
 
-    @asynccontextmanager
-    async def fake_open_invoke_session(**_kwargs):
-        raise A2AUpstreamTimeoutError("Timed out before completing the request")
-        yield  # pragma: no cover
+        async def __aexit__(self, _exc_type, _exc, _tb):
+            return False
+
+    def fake_open_invoke_session(**_kwargs):
+        return _FailingInvokeSession()
 
     monkeypatch.setattr(gateway, "open_invoke_session", fake_open_invoke_session)
 
