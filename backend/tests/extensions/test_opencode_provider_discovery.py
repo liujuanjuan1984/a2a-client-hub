@@ -53,6 +53,7 @@ def test_resolve_extracts_provider_discovery_methods_and_interface() -> None:
                     "business_codes": {
                         "UPSTREAM_UNREACHABLE": -32002,
                         "UPSTREAM_HTTP_ERROR": -32003,
+                        "UPSTREAM_PAYLOAD_ERROR": -32005,
                     }
                 },
             },
@@ -71,6 +72,7 @@ def test_resolve_extracts_provider_discovery_methods_and_interface() -> None:
     assert resolved.methods["list_providers"] == "opencode.providers.list"
     assert resolved.methods["list_models"] == "opencode.models.list"
     assert resolved.business_code_map[-32002] == "upstream_unreachable"
+    assert resolved.business_code_map[-32005] == "upstream_payload_error"
     assert resolved.jsonrpc.url == "https://api.example.com/jsonrpc"
     assert resolved.jsonrpc.fallback_used is False
 
