@@ -165,6 +165,7 @@ class _FakeExtensionsService:
         session_id: str,
         page: int,
         size,
+        before,
         query,
         include_raw=False,
     ):
@@ -184,6 +185,7 @@ class _FakeExtensionsService:
                 "session_id": session_id,
                 "page": page,
                 "size": size,
+                "before": before,
                 "include_raw": include_raw,
                 "query": query,
             }
@@ -202,6 +204,10 @@ class _FakeExtensionsService:
                 "size": size or 50,
                 "total": 1,
                 "pages": 1,
+            },
+            "pageInfo": {
+                "hasMoreBefore": True,
+                "nextBefore": "cursor-2" if before else None,
             },
         }
         if include_raw:
@@ -995,12 +1001,22 @@ async def test_hub_session_query_routes_exclude_raw_by_default_and_allow_include
 
         messages_raw_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/sessions/sess-1/messages:query",
-            json={"page": 1, "size": 50, "include_raw": True, "query": {}},
+            json={
+                "page": 1,
+                "size": 50,
+                "before": "cursor-1",
+                "include_raw": True,
+                "query": {},
+            },
         )
         assert messages_raw_resp.status_code == 200
         messages_raw_payload = messages_raw_resp.json()
         assert messages_raw_payload["success"] is True
         assert messages_raw_payload["result"]["raw"][0]["provider"] == "opencode"
+        assert messages_raw_payload["result"]["pageInfo"] == {
+            "hasMoreBefore": True,
+            "nextBefore": "cursor-2",
+        }
 
     session_calls = [
         call for call in fake_extensions.calls if call["fn"] == "list_sessions"
@@ -1010,6 +1026,7 @@ async def test_hub_session_query_routes_exclude_raw_by_default_and_allow_include
         call for call in fake_extensions.calls if call["fn"] == "get_session_messages"
     ]
     assert [call["include_raw"] for call in message_calls] == [True]
+    assert [call["before"] for call in message_calls] == ["cursor-1"]
 
 
 @pytest.mark.asyncio

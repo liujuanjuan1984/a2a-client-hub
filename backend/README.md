@@ -182,7 +182,12 @@ Endpoints:
       `{"request":{"parts":[{"type":"text","text":"Continue and summarize next steps."}],"noReply":true},"metadata":{"provider":"opencode","externalSessionId":"ses-123"}}`
 - List messages for a session:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages?page=1&size=50`
+  - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages?page=1&size=50&before=<opaque-cursor>`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages:query`
+    - body example:
+      `{"page":1,"size":50,"before":"<opaque-cursor>","include_raw":false}`
+    - cursor-capable runtimes also return:
+      `{"result":{"items":[...],"pagination":{"page":1,"size":50},"pageInfo":{"hasMoreBefore":true,"nextBefore":"<opaque-cursor>"}}}`
 - Reply interrupt callbacks:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts:recover`
     - body: `{ "sessionId": "ses-123" }`
@@ -203,6 +208,13 @@ Optional query (passthrough):
 - Or use the POST endpoints and pass `query` as a JSON object in the request body.
 
 Notes:
+
+- `before` is a Hub-stable request field for extension session message history.
+  The backend maps it to the upstream runtime's declared cursor param when the
+  session-query contract advertises cursor pagination support.
+- `result.pageInfo.nextBefore` is the Hub-stable cursor field. It is derived
+  from the upstream runtime's declared cursor result field and omitted when the
+  runtime does not expose cursor pagination.
 
 - The backend discovers the JSON-RPC interface URL and method names via the Agent
   Card extension contract, and enforces the declared `page/size` pagination

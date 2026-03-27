@@ -29,6 +29,12 @@ class ResultEnvelopeMapping:
 
 
 @dataclass(frozen=True, slots=True)
+class MessageCursorPaginationContract:
+    cursor_param: str | None = None
+    result_cursor_field: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedExtension:
     uri: str
     required: bool
@@ -38,6 +44,9 @@ class ResolvedExtension:
     pagination: PageSizePagination
     business_code_map: Mapping[int, str]
     result_envelope: Optional[ResultEnvelopeMapping]
+    message_cursor_pagination: MessageCursorPaginationContract = (
+        MessageCursorPaginationContract()
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +128,7 @@ class ResolvedStreamHintsExtension:
 
 __all__ = [
     "JsonRpcInterface",
+    "MessageCursorPaginationContract",
     "PageSizePagination",
     "ResultEnvelopeMapping",
     "ResolvedModelSelectionExtension",

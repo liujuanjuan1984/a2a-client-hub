@@ -57,16 +57,38 @@ class A2AExtensionQueryPagination(BaseModel):
     pages: Optional[int] = None
 
 
+class A2AExtensionQueryPageInfo(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    has_more_before: bool = Field(..., alias="hasMoreBefore")
+    next_before: Optional[str] = Field(default=None, alias="nextBefore")
+
+
 class A2AExtensionQueryResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     items: List[Dict[str, Any]]
     pagination: A2AExtensionQueryPagination
+    page_info: Optional[A2AExtensionQueryPageInfo] = Field(
+        default=None,
+        alias="pageInfo",
+    )
     raw: Optional[Any] = None
 
 
 class A2AExtensionQueryResponse(A2AExtensionResponse):
     result: Optional[A2AExtensionQueryResult] = None
+
+
+class A2AExtensionSessionMessagesQueryRequest(A2AExtensionQueryRequest):
+    before: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Opaque cursor for loading older session messages when the runtime "
+            "declares cursor pagination support"
+        ),
+    )
 
 
 class A2AExtensionPermissionReplyRequest(BaseModel):
@@ -252,6 +274,7 @@ __all__ = [
     "A2AExtensionInterruptRecoveryRequest",
     "A2AExtensionPromptAsyncRequest",
     "A2AExtensionSessionCommandRequest",
+    "A2AExtensionSessionMessagesQueryRequest",
     "A2AExtensionCapabilitiesResponse",
     "A2AInterruptRecoveryItemResponse",
     "A2AInterruptRecoveryResponse",

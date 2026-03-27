@@ -96,6 +96,7 @@ class SessionExtensionService:
         page: int,
         size: int,
         result_envelope: ResultEnvelopeMapping | None = None,
+        page_info: Dict[str, Any] | None = None,
         include_raw: bool = False,
     ) -> Optional[Dict[str, Any]]:
         if result is None:
@@ -106,6 +107,8 @@ class SessionExtensionService:
                 "items": result,
                 "pagination": {"page": page, "size": size},
             }
+            if page_info is not None:
+                normalized_envelope["pageInfo"] = page_info
             if include_raw:
                 normalized_envelope["raw"] = result
             return SessionExtensionService._validate_query_result(normalized_envelope)
@@ -115,6 +118,8 @@ class SessionExtensionService:
                 "items": [],
                 "pagination": {"page": page, "size": size},
             }
+            if page_info is not None:
+                normalized_envelope["pageInfo"] = page_info
             if include_raw:
                 normalized_envelope["raw"] = result
             return SessionExtensionService._validate_query_result(normalized_envelope)
@@ -195,6 +200,8 @@ class SessionExtensionService:
             "items": items,
             "pagination": pagination,
         }
+        if page_info is not None:
+            envelope["pageInfo"] = page_info
         if include_raw:
             envelope["raw"] = raw
         return SessionExtensionService._validate_query_result(envelope)
@@ -230,7 +237,8 @@ class SessionExtensionService:
     def _validate_query_result(envelope: Dict[str, Any]) -> Dict[str, Any]:
         try:
             return A2AExtensionQueryResult.model_validate(envelope).model_dump(
-                exclude_none=True
+                by_alias=True,
+                exclude_none=True,
             )
         except ValidationError as exc:
             raise A2AExtensionContractError(
@@ -274,6 +282,29 @@ class SessionExtensionService:
                 )
             return {"limit": size}
         raise ValueError(f"unsupported pagination mode: {mode}")
+
+    @staticmethod
+    def _resolve_message_next_before(
+        *,
+        result: Any,
+        ext: ResolvedExtension,
+    ) -> str | None:
+        field = ext.message_cursor_pagination.result_cursor_field
+        if not field or not isinstance(result, Mapping):
+            return None
+        value, found = SessionExtensionService._resolve_result_field(
+            result,
+            path=field,
+            fallback_path=None,
+        )
+        if not found or value is None:
+            return None
+        if not isinstance(value, str):
+            raise A2AExtensionContractError(
+                "Extension result cursor field must resolve to a string or null"
+            )
+        normalized = value.strip()
+        return normalized or None
 
     @staticmethod
     def _build_call_meta(
@@ -454,12 +485,21 @@ class SessionExtensionService:
         session_id: str,
         page: int,
         size: Optional[int],
+        before: str | None,
         query: Optional[Dict[str, Any]],
         include_raw: bool = False,
     ) -> ExtensionCallResult:
         resolved_session_id = (session_id or "").strip()
         if not resolved_session_id:
             raise ValueError("session_id is required")
+        resolved_before = (before or "").strip() or None
+        if resolved_before is not None and int(page) > 1:
+            raise ValueError("before cannot be combined with page > 1")
+        if (
+            resolved_before is not None
+            and not ext.message_cursor_pagination.cursor_param
+        ):
+            raise ValueError("before is not supported by this runtime")
 
         jsonrpc_url = self._support.ensure_outbound_allowed(
             ext.jsonrpc.url, purpose="JSON-RPC interface URL"
@@ -468,13 +508,14 @@ class SessionExtensionService:
         resolved_page, resolved_size = self._coerce_page_size(
             default_size=ext.pagination.default_size,
             max_size=ext.pagination.max_size,
-            page=page,
+            page=1 if resolved_before is not None else page,
             size=size,
         )
         if (
             ext.pagination.mode == "limit"
             and resolved_page > 1
             and not ext.pagination.supports_offset
+            and resolved_before is None
         ):
             return ExtensionCallResult(
                 success=True,
@@ -507,8 +548,12 @@ class SessionExtensionService:
         }
         if query is not None:
             params["query"] = query
+        if resolved_before is not None:
+            cursor_param = ext.message_cursor_pagination.cursor_param
+            assert cursor_param is not None
+            params[cursor_param] = resolved_before
 
-        return await self.invoke_method(
+        result = await self.invoke_method(
             runtime=runtime,
             ext=ext,
             jsonrpc_url=jsonrpc_url,
@@ -518,7 +563,33 @@ class SessionExtensionService:
             page=resolved_page,
             size=resolved_size,
             include_raw=include_raw,
+            normalize_envelope=False,
             meta_extra={"session_id": resolved_session_id},
+        )
+        if not result.success:
+            return result
+
+        next_before = self._resolve_message_next_before(result=result.result, ext=ext)
+        normalized_result = self._normalize_envelope(
+            result.result,
+            page=resolved_page,
+            size=resolved_size,
+            result_envelope=ext.result_envelope,
+            page_info={
+                "hasMoreBefore": next_before is not None,
+                "nextBefore": next_before,
+            },
+            include_raw=include_raw,
+        )
+        return ExtensionCallResult(
+            success=True,
+            result=normalized_result,
+            error_code=result.error_code,
+            source=result.source,
+            jsonrpc_code=result.jsonrpc_code,
+            missing_params=result.missing_params,
+            upstream_error=result.upstream_error,
+            meta=result.meta,
         )
 
     async def continue_session(
