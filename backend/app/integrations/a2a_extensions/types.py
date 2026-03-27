@@ -76,6 +76,18 @@ class ResolvedProviderDiscoveryExtension:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedModelSelectionExtension:
+    uri: str
+    required: bool
+    provider: str
+    metadata_field: str
+    behavior: str
+    applies_to_methods: tuple[str, ...]
+    supported_metadata: tuple[str, ...]
+    provider_private_metadata: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedStreamHintsExtension:
     uri: str
     required: bool
@@ -90,6 +102,7 @@ __all__ = [
     "JsonRpcInterface",
     "PageSizePagination",
     "ResultEnvelopeMapping",
+    "ResolvedModelSelectionExtension",
     "ResolvedProviderDiscoveryExtension",
     "ResolvedExtension",
     "ResolvedInterruptCallbackExtension",

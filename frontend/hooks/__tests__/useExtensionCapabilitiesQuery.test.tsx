@@ -68,6 +68,7 @@ describe("useExtensionCapabilitiesQuery", () => {
   it("returns supported when model selection is available", async () => {
     mockedGetExtensionCapabilities.mockResolvedValue({
       modelSelection: true,
+      providerDiscovery: true,
       sessionPromptAsync: true,
       runtimeStatus: createRuntimeStatus(),
     });
@@ -84,6 +85,7 @@ describe("useExtensionCapabilitiesQuery", () => {
     await waitFor(() => {
       expect(result.current.modelSelectionStatus).toBe("supported");
     });
+    expect(result.current.providerDiscoveryStatus).toBe("supported");
     expect(result.current.runtimeStatusContract?.version).toBe("v1");
     expect(result.current.sessionPromptAsyncStatus).toBe("supported");
   });
@@ -91,6 +93,7 @@ describe("useExtensionCapabilitiesQuery", () => {
   it("returns unsupported when model selection is unavailable", async () => {
     mockedGetExtensionCapabilities.mockResolvedValue({
       modelSelection: false,
+      providerDiscovery: false,
       sessionPromptAsync: false,
       runtimeStatus: createRuntimeStatus(),
     });
@@ -107,7 +110,31 @@ describe("useExtensionCapabilitiesQuery", () => {
     await waitFor(() => {
       expect(result.current.modelSelectionStatus).toBe("unsupported");
     });
+    expect(result.current.providerDiscoveryStatus).toBe("unsupported");
     expect(result.current.sessionPromptAsyncStatus).toBe("unsupported");
+  });
+
+  it("distinguishes model selection from provider discovery", async () => {
+    mockedGetExtensionCapabilities.mockResolvedValue({
+      modelSelection: true,
+      providerDiscovery: false,
+      sessionPromptAsync: false,
+      runtimeStatus: createRuntimeStatus(),
+    });
+
+    const { result } = renderHook(
+      () =>
+        useExtensionCapabilitiesQuery({
+          agentId: "agent-1",
+          source: "shared",
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.modelSelectionStatus).toBe("supported");
+    });
+    expect(result.current.providerDiscoveryStatus).toBe("unsupported");
   });
 
   it("returns unknown when capability lookup fails", async () => {
@@ -127,6 +154,7 @@ describe("useExtensionCapabilitiesQuery", () => {
     });
 
     expect(result.current.modelSelectionStatus).toBe("unknown");
+    expect(result.current.providerDiscoveryStatus).toBe("unknown");
     expect(result.current.sessionPromptAsyncStatus).toBe("unknown");
   });
 });

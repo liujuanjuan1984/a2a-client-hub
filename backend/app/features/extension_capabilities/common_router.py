@@ -163,7 +163,8 @@ def create_extension_capability_router(
         snapshot = await _extensions_service().resolve_capability_snapshot(
             runtime=runtime
         )
-        model_selection = snapshot.provider_discovery.status == "supported"
+        model_selection = snapshot.model_selection.status == "supported"
+        provider_discovery = snapshot.provider_discovery.status == "supported"
         session_prompt_async = bool(
             snapshot.session_query.capability
             and snapshot.session_query.capability.ext.methods.get("prompt_async")
@@ -171,6 +172,7 @@ def create_extension_capability_router(
 
         return A2AExtensionCapabilitiesResponse(
             modelSelection=model_selection,
+            providerDiscovery=provider_discovery,
             sessionPromptAsync=session_prompt_async,
             runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
                 runtime_status_contract_payload()

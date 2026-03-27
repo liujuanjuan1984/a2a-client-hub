@@ -3,11 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { ModelPickerModal } from "../ModelPickerModal";
 
-import {
-  A2AExtensionCallError,
-  listModelProviders,
-  listModels,
-} from "@/lib/api/a2aExtensions";
+import { listModelProviders, listModels } from "@/lib/api/a2aExtensions";
 
 jest.mock("react-native/Libraries/Modal/Modal", () => {
   return {
@@ -69,6 +65,7 @@ const baseProps: ModelPickerModalProps = {
   onClose: jest.fn(),
   agentId: "agent-1",
   source: "shared" as const,
+  providerDiscoveryStatus: "supported",
   sessionMetadata: {
     shared: { model: { providerID: "openai", modelID: "gpt-5" } },
     opencode: { directory: "/workspace" },
@@ -154,29 +151,21 @@ describe("ModelPickerModal", () => {
   });
 
   it("renders provider-agnostic not-supported copy", async () => {
-    mockedListModelProviders.mockRejectedValue(
-      new A2AExtensionCallError("Extension call failed (not_supported)", {
-        errorCode: "not_supported",
-      }),
-    );
-
     const tree = await renderModal({
       source: "personal",
+      providerDiscoveryStatus: "unsupported",
       selectedModel: null,
     });
 
     const textNodes = tree.root.findAll(
       (node) =>
-        node.props?.children === "This agent does not expose model discovery.",
-    );
-    const legacyTextNodes = tree.root.findAll(
-      (node) =>
         node.props?.children ===
-        "This agent does not expose OpenCode model discovery.",
+        "This agent supports request-scoped model overrides but does not expose model discovery.",
     );
 
     expect(textNodes.length).toBeGreaterThan(0);
-    expect(legacyTextNodes).toHaveLength(0);
+    expect(mockedListModelProviders).not.toHaveBeenCalled();
+    expect(mockedListModels).not.toHaveBeenCalled();
 
     act(() => {
       tree.unmount();

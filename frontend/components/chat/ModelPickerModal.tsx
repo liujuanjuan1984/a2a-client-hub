@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, Modal, Pressable, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
+import { type GenericCapabilityStatus } from "@/hooks/useExtensionCapabilitiesQuery";
 import {
   A2AExtensionCallError,
   listModelProviders,
@@ -90,6 +91,7 @@ export function ModelPickerModal({
   onClose,
   agentId,
   source,
+  providerDiscoveryStatus,
   sessionMetadata,
   selectedModel,
   onSelectModel,
@@ -99,6 +101,7 @@ export function ModelPickerModal({
   onClose: () => void;
   agentId?: string | null;
   source: AgentSource;
+  providerDiscoveryStatus: GenericCapabilityStatus;
   sessionMetadata?: Record<string, unknown>;
   selectedModel: SharedModelSelection | null;
   onSelectModel: (selection: SharedModelSelection) => void;
@@ -121,9 +124,17 @@ export function ModelPickerModal({
     (item: ModelSummary) => `${item.provider_id}:${item.model_id}`,
     [],
   );
+  const discoveryUnavailable = providerDiscoveryStatus === "unsupported";
 
   useEffect(() => {
-    if (!visible || !agentId) {
+    if (!visible || !agentId || discoveryUnavailable) {
+      if (discoveryUnavailable) {
+        setProviders([]);
+        setSelectedProviderId(null);
+        setProviderError(
+          "This agent supports request-scoped model overrides but does not expose model discovery.",
+        );
+      }
       return;
     }
     let cancelled = false;
@@ -165,10 +176,17 @@ export function ModelPickerModal({
     return () => {
       cancelled = true;
     };
-  }, [agentId, selectedModel?.providerID, sessionMetadata, source, visible]);
+  }, [
+    agentId,
+    discoveryUnavailable,
+    selectedModel?.providerID,
+    sessionMetadata,
+    source,
+    visible,
+  ]);
 
   useEffect(() => {
-    if (!visible || !agentId || !selectedProviderId) {
+    if (!visible || !agentId || !selectedProviderId || discoveryUnavailable) {
       setModels([]);
       return;
     }
@@ -202,7 +220,14 @@ export function ModelPickerModal({
     return () => {
       cancelled = true;
     };
-  }, [agentId, selectedProviderId, sessionMetadata, source, visible]);
+  }, [
+    agentId,
+    discoveryUnavailable,
+    selectedProviderId,
+    sessionMetadata,
+    source,
+    visible,
+  ]);
   const handleClearModelSelection = useCallback(() => {
     onClearModelSelection();
     onClose();
