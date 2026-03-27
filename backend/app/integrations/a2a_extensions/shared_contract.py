@@ -22,6 +22,7 @@ SUPPORTED_SESSION_QUERY_URIS = (
 
 MODEL_SELECTION_URI = "urn:a2a:model-selection/v1"
 PROVIDER_DISCOVERY_URI = "urn:opencode-a2a:provider-discovery/v1"
+INTERRUPT_RECOVERY_URI = "urn:opencode-a2a:interrupt-recovery/v1"
 
 SHARED_INTERRUPT_CALLBACK_URI = "urn:a2a:interactive-interrupt/v1"
 LEGACY_SHARED_INTERRUPT_CALLBACK_URI = "urn:shared-a2a:interrupt-callback:v1"
@@ -49,6 +50,7 @@ SHARED_MODEL_FIELD = "metadata.shared.model"
 __all__ = [
     "CANONICAL_EXTERNAL_SESSION_ID_KEY",
     "CANONICAL_PROVIDER_KEY",
+    "INTERRUPT_RECOVERY_URI",
     "LEGACY_SHARED_INTERRUPT_CALLBACK_URI",
     "LEGACY_SHARED_SESSION_BINDING_URI",
     "LEGACY_SHARED_SESSION_QUERY_URI",

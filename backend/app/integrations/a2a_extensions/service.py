@@ -20,6 +20,12 @@ from app.integrations.a2a_extensions.interrupt_callback import (
 from app.integrations.a2a_extensions.interrupt_extension_service import (
     InterruptExtensionService,
 )
+from app.integrations.a2a_extensions.interrupt_recovery import (
+    resolve_interrupt_recovery,
+)
+from app.integrations.a2a_extensions.interrupt_recovery_service import (
+    InterruptRecoveryService,
+)
 from app.integrations.a2a_extensions.model_selection import resolve_model_selection
 from app.integrations.a2a_extensions.opencode_discovery_service import (
     OpencodeDiscoveryService,
@@ -42,6 +48,7 @@ from app.integrations.a2a_extensions.shared_support import (
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
 from app.integrations.a2a_extensions.types import (
     ResolvedInterruptCallbackExtension,
+    ResolvedInterruptRecoveryExtension,
     ResolvedModelSelectionExtension,
     ResolvedProviderDiscoveryExtension,
     ResolvedSessionBindingExtension,
@@ -85,6 +92,14 @@ class InterruptCallbackCapabilitySnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class InterruptRecoveryCapabilitySnapshot:
+    status: Literal["supported", "unsupported", "invalid"]
+    ext: ResolvedInterruptRecoveryExtension | None = None
+    jsonrpc_url: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderDiscoveryCapabilitySnapshot:
     status: Literal["supported", "unsupported", "invalid"]
     ext: ResolvedProviderDiscoveryExtension | None = None
@@ -113,6 +128,7 @@ class ResolvedCapabilitySnapshot:
     session_query: SessionQueryCapabilitySnapshot
     session_binding: SessionBindingCapabilitySnapshot
     interrupt_callback: InterruptCallbackCapabilitySnapshot
+    interrupt_recovery: InterruptRecoveryCapabilitySnapshot
     model_selection: ModelSelectionCapabilitySnapshot
     provider_discovery: ProviderDiscoveryCapabilitySnapshot
     stream_hints: StreamHintsCapabilitySnapshot
@@ -129,6 +145,7 @@ class A2AExtensionsService:
         self._support = A2AExtensionSupport()
         self._session_extensions = SessionExtensionService(self._support)
         self._interrupt_extensions = InterruptExtensionService(self._support)
+        self._interrupt_recovery = InterruptRecoveryService(self._support)
         self._opencode_discovery = OpencodeDiscoveryService(self._support)
         self._capability_snapshot_cache_lock = asyncio.Lock()
         self._capability_snapshot_cache: dict[
@@ -225,6 +242,30 @@ class A2AExtensionsService:
             )
 
         return InterruptCallbackCapabilitySnapshot(
+            status="supported",
+            ext=ext,
+            jsonrpc_url=self._support.ensure_outbound_allowed(
+                ext.jsonrpc.url, purpose="JSON-RPC interface URL"
+            ),
+        )
+
+    def _build_interrupt_recovery_snapshot(
+        self, card: Any
+    ) -> InterruptRecoveryCapabilitySnapshot:
+        try:
+            ext = resolve_interrupt_recovery(card)
+        except A2AExtensionNotSupportedError as exc:
+            return InterruptRecoveryCapabilitySnapshot(
+                status="unsupported",
+                error=str(exc),
+            )
+        except A2AExtensionContractError as exc:
+            return InterruptRecoveryCapabilitySnapshot(
+                status="invalid",
+                error=str(exc),
+            )
+
+        return InterruptRecoveryCapabilitySnapshot(
             status="supported",
             ext=ext,
             jsonrpc_url=self._support.ensure_outbound_allowed(
@@ -347,6 +388,7 @@ class A2AExtensionsService:
             session_query=self._build_session_query_snapshot(card),
             session_binding=self._build_session_binding_snapshot(card),
             interrupt_callback=self._build_interrupt_callback_snapshot(card),
+            interrupt_recovery=self._build_interrupt_recovery_snapshot(card),
             model_selection=self._build_model_selection_snapshot(card),
             provider_discovery=self._build_provider_discovery_snapshot(card),
             stream_hints=self._build_stream_hints_snapshot(card),
@@ -384,6 +426,20 @@ class A2AExtensionsService:
             )
         raise A2AExtensionNotSupportedError(
             snapshot.error or "Shared interrupt callback extension not found"
+        )
+
+    @staticmethod
+    def _require_interrupt_recovery_capability(
+        snapshot: InterruptRecoveryCapabilitySnapshot,
+    ) -> tuple[ResolvedInterruptRecoveryExtension, str]:
+        if snapshot.ext is not None and snapshot.jsonrpc_url is not None:
+            return snapshot.ext, snapshot.jsonrpc_url
+        if snapshot.status == "invalid":
+            raise A2AExtensionContractError(
+                snapshot.error or "Interrupt recovery contract is invalid"
+            )
+        raise A2AExtensionNotSupportedError(
+            snapshot.error or "Interrupt recovery extension not found"
         )
 
     @staticmethod
@@ -648,6 +704,23 @@ class A2AExtensionsService:
             metadata=normalized_metadata,
         )
 
+    async def recover_interrupts(
+        self,
+        *,
+        runtime: A2ARuntime,
+        session_id: str | None = None,
+    ) -> ExtensionCallResult:
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        ext, jsonrpc_url = self._require_interrupt_recovery_capability(
+            snapshot.interrupt_recovery
+        )
+        return await self._interrupt_recovery.recover_interrupts(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            session_id=session_id,
+        )
+
 
 _service_instance: Optional[A2AExtensionsService] = None
 
@@ -672,6 +745,7 @@ __all__ = [
     "A2AExtensionsService",
     "ExtensionCallResult",
     "InterruptCallbackCapabilitySnapshot",
+    "InterruptRecoveryCapabilitySnapshot",
     "ModelSelectionCapabilitySnapshot",
     "ProviderDiscoveryCapabilitySnapshot",
     "ResolvedCapabilitySnapshot",

@@ -60,6 +60,16 @@ class ResolvedInterruptCallbackExtension:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedInterruptRecoveryExtension:
+    uri: str
+    required: bool
+    provider: str
+    jsonrpc: JsonRpcInterface
+    methods: Mapping[str, Optional[str]]
+    business_code_map: Mapping[int, str]
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedSessionBindingExtension:
     uri: str
     required: bool
@@ -116,6 +126,7 @@ __all__ = [
     "ResolvedSessionControlMethodCapability",
     "ResolvedExtension",
     "ResolvedInterruptCallbackExtension",
+    "ResolvedInterruptRecoveryExtension",
     "ResolvedSessionBindingExtension",
     "ResolvedStreamHintsExtension",
 ]

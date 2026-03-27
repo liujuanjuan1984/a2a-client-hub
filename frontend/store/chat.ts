@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import { type RuntimeStatusContract } from "@/lib/api/chat-utils";
+import {
+  type PendingRuntimeInterrupt,
+  type RuntimeStatusContract,
+} from "@/lib/api/chat-utils";
 import {
   buildPendingInterruptState,
   buildPersistedSessions,
@@ -137,6 +140,11 @@ type ChatState = {
     selection: SharedModelSelection | null,
   ) => void;
   clearPendingInterrupt: (conversationId: string, requestId?: string) => void;
+  replaceRecoveredInterrupts: (
+    conversationId: string,
+    interrupts: PendingRuntimeInterrupt[],
+    options?: { sessionId?: string | null },
+  ) => void;
   getLatestConversationIdByAgentId: (agentId: string) => string | undefined;
   cleanupSessions: () => void;
   generateConversationId: () => string;
@@ -285,6 +293,52 @@ export const useChatStore = create<ChatState>()(
           if (nextQueue.length === currentQueue.length) {
             return state;
           }
+          return {
+            sessions: {
+              ...state.sessions,
+              [conversationId]: {
+                ...current,
+                ...buildPendingInterruptState(nextQueue),
+              },
+            },
+          };
+        });
+      },
+      replaceRecoveredInterrupts: (conversationId, interrupts, options) => {
+        set((state) => {
+          const current = state.sessions[conversationId];
+          if (!current) {
+            return state;
+          }
+          const targetSessionId = options?.sessionId?.trim() || null;
+          const currentQueue = getPendingInterruptQueue(current);
+          const retainedQueue = currentQueue.filter((interrupt) => {
+            if (interrupt.source !== "recovery") {
+              return true;
+            }
+            if (!targetSessionId) {
+              return false;
+            }
+            return interrupt.sessionId !== targetSessionId;
+          });
+
+          const seenRequestIds = new Set(
+            retainedQueue.map((interrupt) => interrupt.requestId),
+          );
+          const nextQueue = [...retainedQueue];
+
+          interrupts.forEach((interrupt) => {
+            if (seenRequestIds.has(interrupt.requestId)) {
+              return;
+            }
+            seenRequestIds.add(interrupt.requestId);
+            nextQueue.push(interrupt);
+          });
+
+          if (JSON.stringify(currentQueue) === JSON.stringify(nextQueue)) {
+            return state;
+          }
+
           return {
             sessions: {
               ...state.sessions,

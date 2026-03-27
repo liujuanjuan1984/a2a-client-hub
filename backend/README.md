@@ -184,6 +184,9 @@ Endpoints:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages?page=1&size=50`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages:query`
 - Reply interrupt callbacks:
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts:recover`
+    - body: `{ "sessionId": "ses-123" }`
+    - returns: `{ "items": [{ "requestId": "...", "sessionId": "ses-123", "type": "permission|question", "details": { ... }, "expiresAt": 123.0, "source": "recovery" }] }`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts/permission:reply`
     - body: `{ "request_id": "...", "reply": "once|always|reject" }`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts/question:reply`
@@ -211,6 +214,9 @@ Notes:
 - Interrupt callback payloads intentionally follow the strict upstream contract:
   `request_id` is required; legacy fields such as `requestID`, `decision`,
   `allow` or `deny` are not accepted.
+- Interrupt recovery is exposed as a Hub-stable route. The backend hides the
+  upstream provider-private JSON-RPC methods and merges the recovery views for
+  pending permissions/questions before returning them to the frontend.
 
 Unified error semantics (`error_code` -> HTTP status):
 
