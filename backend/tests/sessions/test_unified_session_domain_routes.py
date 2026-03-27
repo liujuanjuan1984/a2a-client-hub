@@ -991,18 +991,22 @@ async def test_messages_query_keeps_interrupt_event_blocks_inline_on_agent_messa
     assert returned_message["blocks"][1]["content"].startswith(
         "Agent requested authorization: read."
     )
-    assert returned_message["blocks"][1]["interrupt"] == {
-        "requestId": "perm-inline-1",
-        "type": "permission",
-        "phase": "asked",
-        "resolution": None,
-        "details": {
-            "permission": "read",
-            "patterns": ["/repo/.env"],
-            "displayMessage": None,
-            "questions": [],
-        },
-    }
+    interrupt = returned_message["blocks"][1]["interrupt"]
+    assert interrupt["requestId"] == "perm-inline-1"
+    assert interrupt["type"] == "permission"
+    assert interrupt["phase"] == "asked"
+    assert interrupt["resolution"] is None
+    assert interrupt["details"]["permission"] == "read"
+    assert interrupt["details"]["patterns"] == ["/repo/.env"]
+    assert interrupt["details"]["displayMessage"] is None
+    assert interrupt["details"]["questions"] == []
+    assert interrupt["details"]["permissions"] is None
+    assert interrupt["details"]["serverName"] is None
+    assert interrupt["details"]["mode"] is None
+    assert interrupt["details"]["requestedSchema"] is None
+    assert interrupt["details"]["url"] is None
+    assert interrupt["details"]["elicitationId"] is None
+    assert interrupt["details"]["meta"] is None
 
 
 async def test_messages_query_keeps_non_interrupt_system_messages(

@@ -415,7 +415,7 @@ def build_interrupt_block_view(event: dict[str, Any]) -> dict[str, Any]:
     normalized_details = details if isinstance(details, dict) else {}
     raw_patterns = normalized_details.get("patterns")
     raw_questions = normalized_details.get("questions")
-    item["details"] = {
+    details_item: dict[str, Any] = {
         "permission": normalize_non_empty_text(normalized_details.get("permission")),
         "patterns": (
             [pattern for pattern in raw_patterns if isinstance(pattern, str)]
@@ -431,32 +431,53 @@ def build_interrupt_block_view(event: dict[str, Any]) -> dict[str, Any]:
             if isinstance(raw_questions, list)
             else []
         ),
-        "permissions": (
-            dict(cast(dict[str, Any], normalized_details.get("permissions")))
-            if isinstance(normalized_details.get("permissions"), dict)
-            else None
-        ),
-        "serverName": normalize_non_empty_text(
-            normalized_details.get("server_name")
-            or normalized_details.get("serverName")
-        ),
-        "mode": normalize_non_empty_text(normalized_details.get("mode")),
-        "requestedSchema": (
-            normalized_details.get("requested_schema")
-            if normalized_details.get("requested_schema") is not None
-            else normalized_details.get("requestedSchema")
-        ),
-        "url": normalize_non_empty_text(normalized_details.get("url")),
-        "elicitationId": normalize_non_empty_text(
-            normalized_details.get("elicitation_id")
-            or normalized_details.get("elicitationId")
-        ),
-        "meta": (
-            dict(cast(dict[str, Any], normalized_details.get("meta")))
-            if isinstance(normalized_details.get("meta"), dict)
-            else None
-        ),
     }
+    permissions = (
+        dict(cast(dict[str, Any], normalized_details.get("permissions")))
+        if isinstance(normalized_details.get("permissions"), dict)
+        else None
+    )
+    if permissions is not None:
+        details_item["permissions"] = permissions
+
+    server_name = normalize_non_empty_text(
+        normalized_details.get("server_name") or normalized_details.get("serverName")
+    )
+    if server_name:
+        details_item["serverName"] = server_name
+
+    mode = normalize_non_empty_text(normalized_details.get("mode"))
+    if mode:
+        details_item["mode"] = mode
+
+    requested_schema = (
+        normalized_details.get("requested_schema")
+        if normalized_details.get("requested_schema") is not None
+        else normalized_details.get("requestedSchema")
+    )
+    if requested_schema is not None:
+        details_item["requestedSchema"] = requested_schema
+
+    url = normalize_non_empty_text(normalized_details.get("url"))
+    if url:
+        details_item["url"] = url
+
+    elicitation_id = normalize_non_empty_text(
+        normalized_details.get("elicitation_id")
+        or normalized_details.get("elicitationId")
+    )
+    if elicitation_id:
+        details_item["elicitationId"] = elicitation_id
+
+    meta = (
+        dict(cast(dict[str, Any], normalized_details.get("meta")))
+        if isinstance(normalized_details.get("meta"), dict)
+        else None
+    )
+    if meta is not None:
+        details_item["meta"] = meta
+
+    item["details"] = details_item
     return item
 
 

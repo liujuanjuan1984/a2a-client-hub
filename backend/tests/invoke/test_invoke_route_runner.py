@@ -971,17 +971,21 @@ async def test_build_consume_stream_callbacks_persists_interrupt_lifecycle_event
         interrupt_call["content"]
     )
     assert content == "Agent requested authorization: read.\nTargets: /repo/.env"
-    assert interrupt == {
-        "requestId": "perm-1",
-        "type": "permission",
-        "phase": "asked",
-        "details": {
-            "permission": "read",
-            "patterns": ["/repo/.env"],
-            "displayMessage": None,
-            "questions": [],
-        },
-    }
+    assert interrupt is not None
+    assert interrupt["requestId"] == "perm-1"
+    assert interrupt["type"] == "permission"
+    assert interrupt["phase"] == "asked"
+    assert interrupt["details"]["permission"] == "read"
+    assert interrupt["details"]["patterns"] == ["/repo/.env"]
+    assert interrupt["details"]["displayMessage"] is None
+    assert interrupt["details"]["questions"] == []
+    assert "permissions" not in interrupt["details"]
+    assert "serverName" not in interrupt["details"]
+    assert "mode" not in interrupt["details"]
+    assert "requestedSchema" not in interrupt["details"]
+    assert "url" not in interrupt["details"]
+    assert "elicitationId" not in interrupt["details"]
+    assert "meta" not in interrupt["details"]
     assert state.chunk_buffer == []
     assert state.persisted_block_count == 2
     assert state.next_event_seq == 4
