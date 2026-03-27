@@ -22,8 +22,6 @@ across multiple READMEs.
   [`architecture-and-api.md`](architecture-and-api.md)
 - Authentication and session model:
   [`authentication.md`](authentication.md)
-- OpenCode JSON-RPC error contract assessment:
-  [`opencode-jsonrpc-error-contract-assessment.md`](opencode-jsonrpc-error-contract-assessment.md)
 - Release automation and version synchronization:
   [`release-workflow.md`](release-workflow.md)
 - Production security baseline:
