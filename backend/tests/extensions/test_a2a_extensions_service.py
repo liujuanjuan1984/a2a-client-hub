@@ -35,6 +35,7 @@ from app.integrations.a2a_extensions.shared_contract import (
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
     JsonRpcInterface,
+    MessageCursorPaginationContract,
     PageSizePagination,
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
@@ -180,7 +181,11 @@ def _capability_snapshot(
     )
 
 
-def _resolved_extension(*, supports_offset: bool = False) -> ResolvedExtension:
+def _resolved_extension(
+    *,
+    supports_offset: bool = False,
+    supports_cursor: bool = False,
+) -> ResolvedExtension:
     return ResolvedExtension(
         uri=SHARED_SESSION_QUERY_URI,
         required=False,
@@ -208,6 +213,10 @@ def _resolved_extension(*, supports_offset: bool = False) -> ResolvedExtension:
             -32006: "session_forbidden",
         },
         result_envelope=None,
+        message_cursor_pagination=MessageCursorPaginationContract(
+            cursor_param="before" if supports_cursor else None,
+            result_cursor_field="next_cursor" if supports_cursor else None,
+        ),
     )
 
 
@@ -736,6 +745,7 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
         session_id="ses_123",
         page=2,
         size=20,
+        before=None,
         include_raw=False,
         query=None,
     )
@@ -747,6 +757,92 @@ async def test_get_session_messages_short_circuits_when_limit_has_no_offset(
     }
     assert result.meta["session_id"] == "ses_123"
     assert result.meta["short_circuit_reason"] == "limit_without_offset"
+
+
+@pytest.mark.asyncio
+async def test_get_session_messages_forwards_before_and_normalizes_page_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(supports_cursor=True)
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+        )
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "get_session_messages"
+        assert kwargs["params"]["before"] == "cursor-1"
+        return ExtensionCallResult(
+            success=True,
+            result={
+                "items": [{"id": "msg-1", "role": "assistant"}],
+                "next_cursor": "cursor-2",
+            },
+            meta=dict(kwargs.get("selection_meta") or {}),
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
+
+    result = await service.get_session_messages(
+        runtime=runtime,
+        session_id="ses_123",
+        page=1,
+        size=20,
+        before="cursor-1",
+        include_raw=False,
+        query=None,
+    )
+
+    assert result.success is True
+    assert result.result == {
+        "items": [{"id": "msg-1", "role": "assistant"}],
+        "pagination": {"page": 1, "size": 20},
+        "pageInfo": {"hasMoreBefore": True, "nextBefore": "cursor-2"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_session_messages_rejects_before_when_runtime_lacks_cursor_support(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+
+    with pytest.raises(ValueError, match="before is not supported by this runtime"):
+        await service.get_session_messages(
+            runtime=runtime,
+            session_id="ses_123",
+            page=1,
+            size=20,
+            before="cursor-1",
+            include_raw=False,
+            query=None,
+        )
 
 
 def test_normalize_envelope_excludes_raw_by_default() -> None:

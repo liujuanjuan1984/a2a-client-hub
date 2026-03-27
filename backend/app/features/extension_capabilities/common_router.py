@@ -380,6 +380,14 @@ def create_extension_capability_router(
         size: Optional[int] = Query(
             None, ge=1, description="Page size (uses card default when omitted)"
         ),
+        before: Optional[str] = Query(
+            None,
+            min_length=1,
+            description=(
+                "Opaque cursor for loading older session messages when supported "
+                "by the runtime contract"
+            ),
+        ),
         include_raw: bool = Query(
             False,
             description="Whether to include the upstream raw payload in the response",
@@ -739,6 +747,14 @@ def create_extension_capability_router(
         size: Optional[int] = Query(
             None, ge=1, description="Page size (uses card default when omitted)"
         ),
+        before: Optional[str] = Query(
+            None,
+            min_length=1,
+            description=(
+                "Opaque cursor for loading older session messages when supported "
+                "by the runtime contract"
+            ),
+        ),
         include_raw: bool = Query(
             False,
             description="Whether to include the upstream raw payload in the response",
@@ -760,6 +776,7 @@ def create_extension_capability_router(
                 "session_id": session_id,
                 "page": page,
                 "size": size,
+                "before": before,
                 "include_raw": include_raw,
                 "query_meta": _summarize_query_object(query_obj),
             },
@@ -771,6 +788,7 @@ def create_extension_capability_router(
                 session_id=session_id,
                 page=page,
                 size=size,
+                before=before,
                 include_raw=include_raw,
                 query=query_obj,
             )
@@ -803,6 +821,7 @@ def create_extension_capability_router(
                 "session_id": session_id,
                 "page": payload.page,
                 "size": payload.size,
+                "before": payload.before,
                 "include_raw": payload.include_raw,
                 "query_meta": _summarize_query_object(payload.query),
             },
@@ -814,6 +833,7 @@ def create_extension_capability_router(
                 session_id=session_id,
                 page=payload.page,
                 size=payload.size,
+                before=payload.before,
                 include_raw=payload.include_raw,
                 query=payload.query,
             )

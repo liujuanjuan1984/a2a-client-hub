@@ -14,6 +14,14 @@ class A2AExtensionQueryRequest(BaseModel):
         ge=1,
         description="Page size (uses card default when omitted)",
     )
+    before: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Opaque cursor for loading older session messages when the runtime "
+            "declares cursor pagination support"
+        ),
+    )
     include_raw: bool = Field(
         default=False,
         description="Whether to include the upstream raw payload in the response",
@@ -57,11 +65,22 @@ class A2AExtensionQueryPagination(BaseModel):
     pages: Optional[int] = None
 
 
+class A2AExtensionQueryPageInfo(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    has_more_before: bool = Field(..., alias="hasMoreBefore")
+    next_before: Optional[str] = Field(default=None, alias="nextBefore")
+
+
 class A2AExtensionQueryResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     items: List[Dict[str, Any]]
     pagination: A2AExtensionQueryPagination
+    page_info: Optional[A2AExtensionQueryPageInfo] = Field(
+        default=None,
+        alias="pageInfo",
+    )
     raw: Optional[Any] = None
 
 

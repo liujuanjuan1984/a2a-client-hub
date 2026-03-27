@@ -23,6 +23,7 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_SESSION_QUERY_URI,
 )
 from app.integrations.a2a_extensions.types import (
+    MessageCursorPaginationContract,
     PageSizePagination,
     ResolvedExtension,
     ResolvedSessionControlMethodCapability,
@@ -123,6 +124,42 @@ def _resolve_result_envelope(value: Any) -> Optional[ResultEnvelopeMapping]:
             field="result_envelope.raw",
             default="raw",
         ),
+    )
+
+
+def _resolve_message_cursor_pagination(
+    pagination: Dict[str, Any],
+    *,
+    get_messages_method: str,
+) -> MessageCursorPaginationContract:
+    raw_cursor_applies_to = pagination.get("cursor_applies_to")
+    cursor_applies_to: set[str] = set()
+    if isinstance(raw_cursor_applies_to, list):
+        for item in raw_cursor_applies_to:
+            if isinstance(item, str) and item.strip():
+                cursor_applies_to.add(item.strip())
+
+    if cursor_applies_to and get_messages_method not in cursor_applies_to:
+        return MessageCursorPaginationContract()
+
+    raw_cursor_param = pagination.get("cursor_param")
+    raw_result_cursor_field = pagination.get("result_cursor_field")
+    if raw_cursor_param is None and raw_result_cursor_field is None:
+        return MessageCursorPaginationContract()
+    if not isinstance(raw_cursor_param, str) or not raw_cursor_param.strip():
+        raise A2AExtensionContractError(
+            "Extension contract missing/invalid 'pagination.cursor_param'"
+        )
+    if (
+        not isinstance(raw_result_cursor_field, str)
+        or not raw_result_cursor_field.strip()
+    ):
+        raise A2AExtensionContractError(
+            "Extension contract missing/invalid 'pagination.result_cursor_field'"
+        )
+    return MessageCursorPaginationContract(
+        cursor_param=raw_cursor_param.strip(),
+        result_cursor_field=raw_result_cursor_field.strip(),
     )
 
 
@@ -247,6 +284,10 @@ def _resolve_extension(
     code_to_error = build_business_code_map(errors.get("business_codes"))
 
     envelope_mapping = _resolve_result_envelope(params.get("result_envelope"))
+    message_cursor_pagination = _resolve_message_cursor_pagination(
+        pagination,
+        get_messages_method=get_messages_method,
+    )
 
     return ResolvedExtension(
         uri=str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI)),
@@ -269,6 +310,7 @@ def _resolve_extension(
         ),
         business_code_map=code_to_error,
         result_envelope=envelope_mapping,
+        message_cursor_pagination=message_cursor_pagination,
     )
 
 

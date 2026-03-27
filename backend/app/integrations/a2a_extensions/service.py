@@ -502,6 +502,7 @@ class A2AExtensionsService:
         session_id: str,
         page: int,
         size: Optional[int],
+        before: str | None,
         query: Optional[Dict[str, Any]],
         include_raw: bool = False,
     ) -> ExtensionCallResult:
@@ -514,6 +515,7 @@ class A2AExtensionsService:
             session_id=session_id,
             page=page,
             size=size,
+            before=before,
             query=query,
             include_raw=include_raw,
         )
