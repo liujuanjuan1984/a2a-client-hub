@@ -202,6 +202,10 @@ Endpoints:
     - body: `{ "request_id": "...", "answers": [["A"], ["B"]] }`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts/question:reject`
     - body: `{ "request_id": "..." }`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts/permissions:reply`
+    - body: `{ "request_id": "...", "permissions": { "fileSystem": { "write": ["/workspace/project"] } }, "scope": "turn|session" }`
+  - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts/elicitation:reply`
+    - body: `{ "request_id": "...", "action": "accept|decline|cancel", "content": { "approved": true } }`
   - Optional metadata for all interrupt callbacks:
     - `{ "metadata": { "provider": "opencode", "requestScope": "shared" } }`
 
@@ -230,6 +234,9 @@ Notes:
 - Interrupt callback payloads intentionally follow the strict upstream contract:
   `request_id` is required; legacy fields such as `requestID`, `decision`,
   `allow` or `deny` are not accepted.
+- `permissions:reply` and `elicitation:reply` are Hub-stable routes for the new
+  shared interrupt callback methods. The backend keeps upstream method names and
+  provider-specific JSON-RPC details behind the extension compatibility layer.
 - Interrupt recovery is exposed as a Hub-stable route. The backend hides the
   upstream provider-private JSON-RPC methods and merges the recovery views for
   pending permissions/questions before returning them to the frontend.

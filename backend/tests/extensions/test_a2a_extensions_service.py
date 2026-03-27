@@ -237,6 +237,8 @@ def _interrupt_extension_fixture() -> ResolvedInterruptCallbackExtension:
             "reply_permission": None,
             "reply_question": None,
             "reject_question": None,
+            "reply_permissions": None,
+            "reply_elicitation": None,
         },
         business_code_map={},
     )
@@ -1700,6 +1702,8 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
             "reply_permission": "shared.permission.reply",
             "reply_question": None,
             "reject_question": "shared.question.reject",
+            "reply_permissions": "shared.permissions.reply",
+            "reply_elicitation": "shared.elicitation.reply",
         },
         business_code_map=ext.business_code_map,
     )
@@ -1729,6 +1733,225 @@ async def test_reply_question_interrupt_returns_method_not_supported_if_missing(
     assert result.success is False
     assert result.error_code == "method_not_supported"
     assert result.meta["extension_uri"] == SHARED_INTERRUPT_CALLBACK_URI
+
+
+@pytest.mark.asyncio
+async def test_reply_permissions_interrupt_uses_request_id_permissions_and_scope_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = ResolvedInterruptCallbackExtension(
+        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        required=False,
+        provider="opencode",
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={"reply_permissions": "shared.permissions.reply"},
+        business_code_map={-32004: "interrupt_request_not_found"},
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_callback=_interrupt_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "reply_permissions"
+        assert kwargs["jsonrpc_url"] == "https://example.com/jsonrpc"
+        assert kwargs["params"] == {
+            "request_id": "perm-v2-1",
+            "permissions": {"fileSystem": {"write": ["/workspace/project"]}},
+            "scope": "session",
+        }
+        return ExtensionCallResult(
+            success=True,
+            result={"ok": True, "request_id": "perm-v2-1"},
+            meta={"request_id": "perm-v2-1"},
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
+
+    result = await service.reply_permissions_interrupt(
+        runtime=runtime,
+        request_id="perm-v2-1",
+        permissions={"fileSystem": {"write": ["/workspace/project"]}},
+        scope="session",
+    )
+    assert result.success is True
+    assert result.result == {"ok": True, "request_id": "perm-v2-1"}
+
+
+@pytest.mark.asyncio
+async def test_reply_permissions_interrupt_rejects_non_object_permissions() -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    with pytest.raises(ValueError, match="permissions must be an object"):
+        await service.reply_permissions_interrupt(
+            runtime=runtime,
+            request_id="perm-v2-1",
+            permissions=[],  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_reply_permissions_interrupt_returns_method_not_supported_if_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_callback=_interrupt_snapshot(
+                status="supported",
+                ext=_interrupt_extension_fixture(),
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
+
+    async def _unexpected_remote_call(**_kwargs):
+        raise AssertionError("method should be short-circuited as unsupported")
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
+
+    result = await service.reply_permissions_interrupt(
+        runtime=runtime,
+        request_id="perm-v2-1",
+        permissions={"fileSystem": {"write": ["/workspace/project"]}},
+    )
+    assert result.success is False
+    assert result.error_code == "method_not_supported"
+    assert result.meta == {"extension_uri": SHARED_INTERRUPT_CALLBACK_URI}
+
+
+@pytest.mark.asyncio
+async def test_reply_elicitation_interrupt_uses_request_id_action_and_content_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = ResolvedInterruptCallbackExtension(
+        uri=SHARED_INTERRUPT_CALLBACK_URI,
+        required=False,
+        provider="opencode",
+        jsonrpc=JsonRpcInterface(
+            url="https://example.com/jsonrpc", fallback_used=False
+        ),
+        methods={"reply_elicitation": "shared.elicitation.reply"},
+        business_code_map={-32004: "interrupt_request_not_found"},
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_callback=_interrupt_snapshot(
+                status="supported",
+                ext=ext,
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "reply_elicitation"
+        assert kwargs["jsonrpc_url"] == "https://example.com/jsonrpc"
+        assert kwargs["params"] == {
+            "request_id": "eli-1",
+            "action": "accept",
+            "content": {"approved": True},
+        }
+        return ExtensionCallResult(
+            success=True,
+            result={"ok": True, "request_id": "eli-1"},
+            meta={"request_id": "eli-1"},
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._interrupt_extensions, "invoke_method", _fake_invoke)
+
+    result = await service.reply_elicitation_interrupt(
+        runtime=runtime,
+        request_id="eli-1",
+        action="accept",
+        content={"approved": True},
+    )
+    assert result.success is True
+    assert result.result == {"ok": True, "request_id": "eli-1"}
+
+
+@pytest.mark.asyncio
+async def test_reply_elicitation_interrupt_rejects_non_null_content_for_decline() -> (
+    None
+):
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    with pytest.raises(
+        ValueError, match="content must be null when action is decline or cancel"
+    ):
+        await service.reply_elicitation_interrupt(
+            runtime=runtime,
+            request_id="eli-1",
+            action="decline",
+            content={"approved": False},
+        )
+
+
+@pytest.mark.asyncio
+async def test_reply_elicitation_interrupt_returns_method_not_supported_if_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(_resolved_extension()),
+            interrupt_callback=_interrupt_snapshot(
+                status="supported",
+                ext=_interrupt_extension_fixture(),
+                jsonrpc_url="https://example.com/jsonrpc",
+            ),
+        )
+
+    async def _unexpected_remote_call(**_kwargs):
+        raise AssertionError("method should be short-circuited as unsupported")
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
+
+    result = await service.reply_elicitation_interrupt(
+        runtime=runtime,
+        request_id="eli-1",
+        action="cancel",
+    )
+    assert result.success is False
+    assert result.error_code == "method_not_supported"
+    assert result.meta == {"extension_uri": SHARED_INTERRUPT_CALLBACK_URI}
 
 
 @pytest.mark.asyncio

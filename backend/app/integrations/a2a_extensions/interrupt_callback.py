@@ -59,6 +59,14 @@ def resolve_interrupt_callback(
         methods.get("reject_question"),
         field="methods.reject_question",
     )
+    reply_permissions_method = normalize_method_name(
+        methods.get("reply_permissions"),
+        field="methods.reply_permissions",
+    )
+    reply_elicitation_method = normalize_method_name(
+        methods.get("reply_elicitation"),
+        field="methods.reply_elicitation",
+    )
 
     errors = as_dict(params.get("errors"))
     code_to_error = build_business_code_map(errors.get("business_codes"))
@@ -72,6 +80,8 @@ def resolve_interrupt_callback(
             "reply_permission": reply_permission_method,
             "reply_question": reply_question_method,
             "reject_question": reject_question_method,
+            "reply_permissions": reply_permissions_method,
+            "reply_elicitation": reply_elicitation_method,
         },
         business_code_map=code_to_error,
     )

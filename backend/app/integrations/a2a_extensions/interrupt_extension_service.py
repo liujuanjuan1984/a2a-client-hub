@@ -53,6 +53,52 @@ class InterruptExtensionService:
         normalized_metadata = self._support.normalize_extension_metadata(metadata)
         return resolved_request_id, normalized_metadata
 
+    def prepare_reply_permissions_interrupt(
+        self,
+        *,
+        request_id: str,
+        permissions: Dict[str, Any],
+        scope: str | None = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, Dict[str, Any], str | None, Optional[Dict[str, Any]]]:
+        resolved_request_id = (request_id or "").strip()
+        if not resolved_request_id:
+            raise ValueError("request_id is required")
+        if not isinstance(permissions, dict):
+            raise ValueError("permissions must be an object")
+        resolved_scope: str | None = None
+        if scope is not None:
+            normalized_scope = scope.strip().lower()
+            if normalized_scope not in {"turn", "session"}:
+                raise ValueError("scope must be one of: turn, session")
+            resolved_scope = normalized_scope
+        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        return (
+            resolved_request_id,
+            dict(permissions),
+            resolved_scope,
+            normalized_metadata,
+        )
+
+    def prepare_reply_elicitation_interrupt(
+        self,
+        *,
+        request_id: str,
+        action: str,
+        content: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, str, Any, Optional[Dict[str, Any]]]:
+        resolved_request_id = (request_id or "").strip()
+        if not resolved_request_id:
+            raise ValueError("request_id is required")
+        resolved_action = (action or "").strip().lower()
+        if resolved_action not in {"accept", "decline", "cancel"}:
+            raise ValueError("action must be one of: accept, decline, cancel")
+        if resolved_action in {"decline", "cancel"} and content is not None:
+            raise ValueError("content must be null when action is decline or cancel")
+        normalized_metadata = self._support.normalize_extension_metadata(metadata)
+        return resolved_request_id, resolved_action, content, normalized_metadata
+
     async def invoke_method(
         self,
         *,
@@ -205,6 +251,86 @@ class InterruptExtensionService:
             ext=ext,
             jsonrpc_url=jsonrpc_url,
             method_key="reject_question",
+            params=params,
+            meta_extra={"request_id": resolved_request_id},
+        )
+
+    async def reply_permissions_interrupt(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedInterruptCallbackExtension,
+        jsonrpc_url: str,
+        request_id: str,
+        permissions: Dict[str, Any],
+        scope: str | None = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        (
+            resolved_request_id,
+            resolved_permissions,
+            resolved_scope,
+            normalized_metadata,
+        ) = self.prepare_reply_permissions_interrupt(
+            request_id=request_id,
+            permissions=permissions,
+            scope=scope,
+            metadata=metadata,
+        )
+
+        params: Dict[str, Any] = {
+            "request_id": resolved_request_id,
+            "permissions": resolved_permissions,
+        }
+        if resolved_scope is not None:
+            params["scope"] = resolved_scope
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
+        return await self.invoke_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="reply_permissions",
+            params=params,
+            meta_extra={"request_id": resolved_request_id},
+        )
+
+    async def reply_elicitation_interrupt(
+        self,
+        *,
+        runtime: A2ARuntime,
+        ext: ResolvedInterruptCallbackExtension,
+        jsonrpc_url: str,
+        request_id: str,
+        action: str,
+        content: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        (
+            resolved_request_id,
+            resolved_action,
+            resolved_content,
+            normalized_metadata,
+        ) = self.prepare_reply_elicitation_interrupt(
+            request_id=request_id,
+            action=action,
+            content=content,
+            metadata=metadata,
+        )
+
+        params: Dict[str, Any] = {
+            "request_id": resolved_request_id,
+            "action": resolved_action,
+        }
+        if resolved_content is not None or resolved_action == "accept":
+            params["content"] = resolved_content
+        if normalized_metadata is not None:
+            params["metadata"] = normalized_metadata
+        return await self.invoke_method(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            method_key="reply_elicitation",
             params=params,
             meta_extra={"request_id": resolved_request_id},
         )
