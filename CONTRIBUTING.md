@@ -26,32 +26,39 @@ To avoid keeping multiple setup guides in sync, use:
 
 Run relevant checks before opening or updating a PR.
 
+Default local verification mode is the same low-load, serial, scope-based flow
+defined in [AGENTS.md](AGENTS.md). CI may still run broader checks.
+
 ### Backend changes
 
 ```bash
 cd backend
-uv sync --extra dev --locked
-uv run --locked pre-commit run --all-files --config ../.pre-commit-config.yaml
-uv run --locked pytest
+uv run --locked pre-commit run --files <changed_backend_files...> --config ../.pre-commit-config.yaml
+uv run --locked pytest <changed_tests_or_module>
 ```
 
 Notes:
 
 - Keep `backend/pyproject.toml` and `backend/uv.lock` synchronized. Metadata-only version bumps must update the lockfile in the same change.
 - If `cd backend && uv lock --check` fails, treat it as lockfile drift and fix it explicitly instead of relying on `uv run` to rewrite `uv.lock` during routine verification.
+- Run `uv sync --extra dev --locked` only when dependencies changed or the local environment drifted.
+- Use full backend regressions when a human asks for them, when a PR is moving out of Draft, or when scoped checks are insufficient for cross-module changes.
 
 ### Frontend changes
 
 ```bash
 cd frontend
-npm install
 npm run lint
 export NODE_OPTIONS="--max-old-space-size=1024"
 npm run check-types
-npm test
+npm test -- --findRelatedTests <changed_frontend_files...> --maxWorkers=25%
 ```
 
-If your change affects both backend and frontend, run both suites.
+Notes:
+
+- Run `npm install` only when dependencies changed or the local environment drifted.
+- If your change affects both backend and frontend, run backend checks first, then frontend checks.
+- Use full frontend regressions when a human asks for them, when a PR is moving out of Draft, or when scoped checks are insufficient for cross-module changes.
 
 ## Pull Request Guidelines
 

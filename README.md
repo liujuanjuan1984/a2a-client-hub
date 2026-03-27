@@ -5,6 +5,7 @@ need one place to manage, invoke, and operate multiple A2A agents across web
 and mobile.
 
 It is a client/control plane, not an A2A provider itself.
+It is also not an MCP server, MCP registry, or MCP gateway.
 
 ## Why this project exists
 
@@ -18,6 +19,30 @@ When A2A adoption grows, teams usually face the same problems:
 `a2a-client-hub` addresses this by providing a unified frontend + backend system
 for agent discovery, invocation, session continuity, scheduling, and controlled
 outbound access.
+
+## Ecosystem Positioning
+
+This project is designed for the A2A ecosystem first.
+
+- It aims to work with multiple A2A peer profiles rather than one provider only.
+- Current repository examples still use OpenCode-flavored contracts heavily
+  because that profile is one of the most fully exercised in this codebase.
+- The Hub is not intended to replace MCP. MCP is an agent-internal tool/context
+  protocol; this project focuses on agent-to-agent integration and control-plane
+  concerns.
+
+Current compatibility framing:
+
+- First-class today: A2A peers that expose standard Agent Cards plus the shared
+  session / interrupt capabilities consumed by the Hub.
+- Explicitly exercised in this repository: OpenCode-compatible peers and other
+  coding-agent peers, including Codex-family deployments, when they publish a
+  compatible A2A surface.
+- Partial compatibility: standard A2A peers that only support invoke / stream
+  without the shared extension workflows used for session continuity.
+
+See [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md)
+for the maintained compatibility notes and explicit non-goals.
 
 ## What value it delivers
 
@@ -147,6 +172,8 @@ You can observe these via `/health` under `a2a.ops_metrics`:
   [docs/contracts/shared-session-query-canonical-contract.md](docs/contracts/shared-session-query-canonical-contract.md)
 - Architecture and API examples:
   [docs/architecture-and-api.md](docs/architecture-and-api.md)
+- Compatibility notes and non-goals:
+  [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md)
 
 ## License
 

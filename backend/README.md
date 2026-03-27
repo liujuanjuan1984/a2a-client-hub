@@ -139,10 +139,15 @@ Credentials:
 
 - Configure `HUB_A2A_TOKEN_ENCRYPTION_KEY` (falls back to `USER_LLM_TOKEN_ENCRYPTION_KEY`).
 
-## OpenCode Session Query & Interrupt Callback (A2A Extension)
+## Shared Session Query / Interrupt Callback Compatibility
 
 This backend supports querying upstream sessions and message history via a
 shared A2A Agent Card extension contract.
+
+The current examples in this section use OpenCode-flavored contracts because
+that profile is deeply exercised in this repository, but the Hub is not meant
+to be OpenCode-only. Other coding-agent peers, including Codex-family A2A
+deployments, can participate when they publish a compatible A2A surface.
 
 Contract references:
 
@@ -152,12 +157,17 @@ Contract references:
   [`docs/contracts/shared-session-query-reference-payloads.json`](../docs/contracts/shared-session-query-reference-payloads.json)
 - Cross-cutting API examples:
   [`docs/architecture-and-api.md`](../docs/architecture-and-api.md)
+- Compatibility notes and non-goals:
+  [`docs/compatibility-and-non-goals.md`](../docs/compatibility-and-non-goals.md)
 
 Requirements:
 
 - Configure `A2A_PROXY_ALLOWED_HOSTS` to allow the downstream host(s).
 - Create an A2A agent record pointing at the downstream Agent Card URL (e.g.
   `https://<host>/.well-known/agent-card.json`) using the `/me/a2a/agents` API.
+
+The examples below still use OpenCode-flavored naming where the upstream
+profile itself is provider-specific.
 
 Endpoints:
 
