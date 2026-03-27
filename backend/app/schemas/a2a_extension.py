@@ -112,6 +112,17 @@ class A2AExtensionPromptAsyncRequest(BaseModel):
     )
 
 
+class A2AExtensionSessionCommandRequest(BaseModel):
+    request: Dict[str, Any] = Field(
+        ...,
+        description="Session command payload forwarded through the hub contract",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional extension metadata object forwarded to upstream",
+    )
+
+
 class A2AModelDiscoveryRequest(BaseModel):
     provider_id: Optional[str] = Field(
         default=None,
@@ -201,6 +212,7 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
 
 __all__ = [
     "A2AExtensionPromptAsyncRequest",
+    "A2AExtensionSessionCommandRequest",
     "A2AExtensionCapabilitiesResponse",
     "A2ASessionControlCapabilitiesResponse",
     "A2ASessionControlMethodResponse",

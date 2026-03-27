@@ -172,6 +172,8 @@ def _resolved_extension(*, supports_offset: bool = False) -> ResolvedExtension:
             "list_sessions": "shared.sessions.list",
             "get_session_messages": "shared.sessions.messages.list",
             "prompt_async": "shared.sessions.prompt_async",
+            "command": "shared.sessions.command",
+            "shell": None,
         },
         pagination=PageSizePagination(
             mode="limit",
@@ -954,6 +956,168 @@ async def test_prompt_session_async_rejects_non_object_metadata() -> None:
             runtime=runtime,
             session_id="ses_123",
             request_payload={"parts": [{"type": "text", "text": "continue"}]},
+            metadata=[],
+        )
+
+
+@pytest.mark.asyncio
+async def test_command_session_forwards_request_and_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(supports_offset=True)
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+        )
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "command"
+        assert kwargs["params"]["session_id"] == "ses_123"
+        assert kwargs["params"]["request"] == {
+            "command": "/review",
+            "arguments": "--quick",
+            "parts": [{"type": "text", "text": "Focus on tests"}],
+        }
+        assert kwargs["params"]["metadata"] == {
+            "provider": "opencode",
+            "externalSessionId": "ses_123",
+        }
+        assert kwargs["normalize_envelope"] is False
+        return ExtensionCallResult(
+            success=True,
+            result={"item": {"kind": "message", "messageId": "msg-cmd-1"}},
+            meta={"session_id": "ses_123"},
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
+
+    result = await service.command_session(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={
+            "command": "/review",
+            "arguments": "--quick",
+            "parts": [{"type": "text", "text": "Focus on tests"}],
+        },
+        metadata={"provider": "opencode", "externalSessionId": "ses_123"},
+    )
+
+    assert result.success is True
+    assert result.result == {"item": {"kind": "message", "messageId": "msg-cmd-1"}}
+
+
+@pytest.mark.asyncio
+async def test_command_session_returns_method_not_supported_if_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    ext = _resolved_extension()
+    ext = ResolvedExtension(
+        uri=ext.uri,
+        required=ext.required,
+        provider=ext.provider,
+        jsonrpc=ext.jsonrpc,
+        methods={
+            "list_sessions": ext.methods["list_sessions"],
+            "get_session_messages": ext.methods["get_session_messages"],
+            "prompt_async": ext.methods["prompt_async"],
+            "command": None,
+            "shell": ext.methods["shell"],
+        },
+        pagination=ext.pagination,
+        business_code_map=ext.business_code_map,
+        result_envelope=ext.result_envelope,
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+        )
+
+    async def _unexpected_remote_call(**_kwargs):
+        raise AssertionError("method should be short-circuited as unsupported")
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._support, "_call_with_retry", _unexpected_remote_call)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
+
+    result = await service.command_session(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={"command": "/review", "arguments": "--quick"},
+    )
+    assert result.success is False
+    assert result.error_code == "method_not_supported"
+    assert result.meta == {
+        "extension_uri": SHARED_SESSION_QUERY_URI,
+        "session_query_contract_mode": "canonical",
+        "session_query_selection_mode": "canonical_parser",
+    }
+
+
+@pytest.mark.asyncio
+async def test_command_session_requires_non_empty_command() -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    with pytest.raises(ValueError, match="request.command must be a non-empty string"):
+        await service.command_session(
+            runtime=runtime,
+            session_id="ses_123",
+            request_payload={"command": "", "arguments": "--quick"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_command_session_requires_non_empty_arguments() -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    with pytest.raises(
+        ValueError, match="request.arguments must be a non-empty string"
+    ):
+        await service.command_session(
+            runtime=runtime,
+            session_id="ses_123",
+            request_payload={"command": "/review", "arguments": ""},
+        )
+
+
+@pytest.mark.asyncio
+async def test_command_session_rejects_non_object_metadata() -> None:
+    service = A2AExtensionsService()
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+    with pytest.raises(ValueError, match="metadata must be an object"):
+        await service.command_session(
+            runtime=runtime,
+            session_id="ses_123",
+            request_payload={"command": "/review", "arguments": "--quick"},
             metadata=[],
         )
 
