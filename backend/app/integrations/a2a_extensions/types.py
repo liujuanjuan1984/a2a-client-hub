@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping, Optional
+from typing import Literal, Mapping, Optional
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +38,15 @@ class ResolvedExtension:
     pagination: PageSizePagination
     business_code_map: Mapping[int, str]
     result_envelope: Optional[ResultEnvelopeMapping]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedSessionControlMethodCapability:
+    method: Optional[str]
+    declared: bool
+    availability: Literal["always", "conditional", "unsupported"]
+    enabled_by_default: bool | None = None
+    config_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +113,7 @@ __all__ = [
     "ResultEnvelopeMapping",
     "ResolvedModelSelectionExtension",
     "ResolvedProviderDiscoveryExtension",
+    "ResolvedSessionControlMethodCapability",
     "ResolvedExtension",
     "ResolvedInterruptCallbackExtension",
     "ResolvedSessionBindingExtension",

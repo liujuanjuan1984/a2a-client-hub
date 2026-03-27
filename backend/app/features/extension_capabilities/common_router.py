@@ -8,7 +8,7 @@ This module centralises the route implementations to avoid drift.
 from __future__ import annotations
 
 import json
-from typing import Any, Awaitable, Callable, Dict, Optional, Type, cast
+from typing import Any, Awaitable, Callable, Dict, Literal, Optional, Type, cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, status
@@ -41,6 +41,8 @@ from app.schemas.a2a_extension import (
     A2AExtensionResponse,
     A2AModelDiscoveryRequest,
     A2ARuntimeStatusContractResponse,
+    A2ASessionControlCapabilitiesResponse,
+    A2ASessionControlMethodResponse,
 )
 from app.utils.logging_redaction import redact_url_for_logging
 
@@ -77,6 +79,43 @@ def _summarize_metadata_keys(metadata: Optional[Dict[str, Any]]) -> list[str]:
     if not metadata:
         return []
     return sorted(str(k) for k in metadata.keys())[:20]
+
+
+_SESSION_CONTROL_HUB_CONSUMPTION = {
+    "prompt_async": True,
+    "command": False,
+    "shell": False,
+}
+
+
+def _build_session_control_response(
+    snapshot: Any,
+) -> A2ASessionControlCapabilitiesResponse:
+    resolved_methods = {}
+    capability = getattr(snapshot.session_query, "capability", None)
+    if capability is not None:
+        resolved_methods = dict(getattr(capability, "control_methods", {}) or {})
+
+    def _build_method(method_key: str) -> A2ASessionControlMethodResponse:
+        resolved = resolved_methods.get(method_key)
+        availability: Literal["always", "conditional", "unsupported"] = cast(
+            Literal["always", "conditional", "unsupported"],
+            getattr(resolved, "availability", "unsupported"),
+        )
+        return A2ASessionControlMethodResponse(
+            declared=bool(getattr(resolved, "declared", False)),
+            consumedByHub=_SESSION_CONTROL_HUB_CONSUMPTION[method_key],
+            availability=availability,
+            method=getattr(resolved, "method", None),
+            enabledByDefault=getattr(resolved, "enabled_by_default", None),
+            configKey=getattr(resolved, "config_key", None),
+        )
+
+    return A2ASessionControlCapabilitiesResponse(
+        promptAsync=_build_method("prompt_async"),
+        command=_build_method("command"),
+        shell=_build_method("shell"),
+    )
 
 
 def create_extension_capability_router(
@@ -165,15 +204,17 @@ def create_extension_capability_router(
         )
         model_selection = snapshot.model_selection.status == "supported"
         provider_discovery = snapshot.provider_discovery.status == "supported"
-        session_prompt_async = bool(
-            snapshot.session_query.capability
-            and snapshot.session_query.capability.ext.methods.get("prompt_async")
+        session_control = _build_session_control_response(snapshot)
+        session_prompt_async = (
+            session_control.prompt_async.declared
+            and session_control.prompt_async.consumed_by_hub
         )
 
         return A2AExtensionCapabilitiesResponse(
             modelSelection=model_selection,
             providerDiscovery=provider_discovery,
             sessionPromptAsync=session_prompt_async,
+            sessionControl=session_control,
             runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
                 runtime_status_contract_payload()
             ),

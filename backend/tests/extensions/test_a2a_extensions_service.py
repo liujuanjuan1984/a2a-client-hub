@@ -38,6 +38,7 @@ from app.integrations.a2a_extensions.types import (
     ResolvedInterruptCallbackExtension,
     ResolvedModelSelectionExtension,
     ResolvedProviderDiscoveryExtension,
+    ResolvedSessionControlMethodCapability,
     ResolvedStreamHintsExtension,
     ResultEnvelopeMapping,
 )
@@ -49,12 +50,32 @@ def _session_query_snapshot(
     contract_mode: str = "canonical",
     selection_mode: str = "canonical_parser",
 ) -> SessionQueryCapabilitySnapshot:
+    control_methods = {
+        "prompt_async": ResolvedSessionControlMethodCapability(
+            method=ext.methods.get("prompt_async"),
+            declared=bool(ext.methods.get("prompt_async")),
+            availability="always" if ext.methods.get("prompt_async") else "unsupported",
+        ),
+        "command": ResolvedSessionControlMethodCapability(
+            method=ext.methods.get("command"),
+            declared=bool(ext.methods.get("command")),
+            availability="always" if ext.methods.get("command") else "unsupported",
+        ),
+        "shell": ResolvedSessionControlMethodCapability(
+            method=ext.methods.get("shell"),
+            declared=bool(ext.methods.get("shell")),
+            availability="conditional" if ext.methods.get("shell") else "unsupported",
+            enabled_by_default=False if ext.methods.get("shell") else None,
+            config_key="A2A_ENABLE_SESSION_SHELL" if ext.methods.get("shell") else None,
+        ),
+    }
     return SessionQueryCapabilitySnapshot(
         status="supported",
         capability=ResolvedSessionQueryRuntimeCapability(
             ext=ext,
             contract_mode=contract_mode,
             selection_mode=selection_mode,
+            control_methods=control_methods,
         ),
     )
 

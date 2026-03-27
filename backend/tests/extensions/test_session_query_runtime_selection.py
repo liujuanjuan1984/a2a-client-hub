@@ -53,6 +53,14 @@ def _build_card(
                 "methods": {
                     "list_sessions": "shared.sessions.list",
                     "get_session_messages": "shared.sessions.messages.list",
+                    "prompt_async": "shared.sessions.prompt_async",
+                    "command": "shared.sessions.command",
+                },
+                "control_method_flags": {
+                    "shell": {
+                        "enabled_by_default": False,
+                        "config_key": "A2A_ENABLE_SESSION_SHELL",
+                    }
                 },
                 "pagination": pagination
                 or {
@@ -87,6 +95,13 @@ def test_resolve_runtime_session_query_selects_canonical_parser() -> None:
     assert capability.contract_mode == "canonical"
     assert capability.selection_mode == "canonical_parser"
     assert capability.ext.uri == SHARED_SESSION_QUERY_URI
+    assert capability.control_methods["prompt_async"].declared is True
+    assert capability.control_methods["prompt_async"].availability == "always"
+    assert capability.control_methods["command"].declared is True
+    assert capability.control_methods["command"].availability == "always"
+    assert capability.control_methods["shell"].declared is False
+    assert capability.control_methods["shell"].availability == "conditional"
+    assert capability.control_methods["shell"].config_key == "A2A_ENABLE_SESSION_SHELL"
 
 
 def test_resolve_runtime_session_query_selects_legacy_compatibility() -> None:

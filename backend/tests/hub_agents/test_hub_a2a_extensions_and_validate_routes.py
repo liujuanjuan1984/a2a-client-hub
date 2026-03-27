@@ -935,9 +935,24 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         session_query=SimpleNamespace(
             status="supported",
             capability=SimpleNamespace(
-                ext=SimpleNamespace(
-                    methods={"prompt_async": "shared.sessions.prompt_async"}
-                )
+                control_methods={
+                    "prompt_async": SimpleNamespace(
+                        declared=True,
+                        availability="always",
+                        method="shared.sessions.prompt_async",
+                    ),
+                    "command": SimpleNamespace(
+                        declared=True,
+                        availability="always",
+                        method="shared.sessions.command",
+                    ),
+                    "shell": SimpleNamespace(
+                        declared=False,
+                        availability="conditional",
+                        config_key="A2A_ENABLE_SESSION_SHELL",
+                        enabled_by_default=False,
+                    ),
+                }
             ),
         ),
     )
@@ -962,6 +977,32 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         "modelSelection": True,
         "providerDiscovery": True,
         "sessionPromptAsync": True,
+        "sessionControl": {
+            "promptAsync": {
+                "declared": True,
+                "consumedByHub": True,
+                "availability": "always",
+                "method": "shared.sessions.prompt_async",
+                "enabledByDefault": None,
+                "configKey": None,
+            },
+            "command": {
+                "declared": True,
+                "consumedByHub": False,
+                "availability": "always",
+                "method": "shared.sessions.command",
+                "enabledByDefault": None,
+                "configKey": None,
+            },
+            "shell": {
+                "declared": False,
+                "consumedByHub": False,
+                "availability": "conditional",
+                "method": None,
+                "enabledByDefault": False,
+                "configKey": "A2A_ENABLE_SESSION_SHELL",
+            },
+        },
         "runtimeStatus": runtime_status_contract_payload(),
     }
     assert response.headers["cache-control"] == "no-store"
@@ -988,7 +1029,23 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         session_query=SimpleNamespace(
             status="supported",
             capability=SimpleNamespace(
-                ext=SimpleNamespace(methods={"prompt_async": None})
+                control_methods={
+                    "prompt_async": SimpleNamespace(
+                        declared=False,
+                        availability="unsupported",
+                        method=None,
+                    ),
+                    "command": SimpleNamespace(
+                        declared=False,
+                        availability="unsupported",
+                        method=None,
+                    ),
+                    "shell": SimpleNamespace(
+                        declared=False,
+                        availability="unsupported",
+                        method=None,
+                    ),
+                }
             ),
         ),
     )
@@ -1013,6 +1070,32 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         "modelSelection": True,
         "providerDiscovery": False,
         "sessionPromptAsync": False,
+        "sessionControl": {
+            "promptAsync": {
+                "declared": False,
+                "consumedByHub": True,
+                "availability": "unsupported",
+                "method": None,
+                "enabledByDefault": None,
+                "configKey": None,
+            },
+            "command": {
+                "declared": False,
+                "consumedByHub": False,
+                "availability": "unsupported",
+                "method": None,
+                "enabledByDefault": None,
+                "configKey": None,
+            },
+            "shell": {
+                "declared": False,
+                "consumedByHub": False,
+                "availability": "unsupported",
+                "method": None,
+                "enabledByDefault": None,
+                "configKey": None,
+            },
+        },
         "runtimeStatus": runtime_status_contract_payload(),
     }
     assert response.headers["cache-control"] == "no-store"
@@ -1039,9 +1122,24 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
         session_query=SimpleNamespace(
             status="supported",
             capability=SimpleNamespace(
-                ext=SimpleNamespace(
-                    methods={"prompt_async": "shared.sessions.prompt_async"}
-                )
+                control_methods={
+                    "prompt_async": SimpleNamespace(
+                        declared=True,
+                        availability="always",
+                        method="shared.sessions.prompt_async",
+                    ),
+                    "command": SimpleNamespace(
+                        declared=True,
+                        availability="always",
+                        method="shared.sessions.command",
+                    ),
+                    "shell": SimpleNamespace(
+                        declared=False,
+                        availability="conditional",
+                        config_key="A2A_ENABLE_SESSION_SHELL",
+                        enabled_by_default=False,
+                    ),
+                }
             ),
         ),
     )
@@ -1066,6 +1164,32 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
         "modelSelection": False,
         "providerDiscovery": True,
         "sessionPromptAsync": True,
+        "sessionControl": {
+            "promptAsync": {
+                "declared": True,
+                "consumedByHub": True,
+                "availability": "always",
+                "method": "shared.sessions.prompt_async",
+                "enabledByDefault": None,
+                "configKey": None,
+            },
+            "command": {
+                "declared": True,
+                "consumedByHub": False,
+                "availability": "always",
+                "method": "shared.sessions.command",
+                "enabledByDefault": None,
+                "configKey": None,
+            },
+            "shell": {
+                "declared": False,
+                "consumedByHub": False,
+                "availability": "conditional",
+                "method": None,
+                "enabledByDefault": False,
+                "configKey": "A2A_ENABLE_SESSION_SHELL",
+            },
+        },
         "runtimeStatus": runtime_status_contract_payload(),
     }
 

@@ -188,6 +188,27 @@ describe("assertExtensionSuccess", () => {
       modelSelection: false,
       providerDiscovery: true,
       sessionPromptAsync: true,
+      sessionControl: {
+        promptAsync: {
+          declared: true,
+          consumedByHub: true,
+          availability: "always",
+          method: "shared.sessions.prompt_async",
+        },
+        command: {
+          declared: true,
+          consumedByHub: false,
+          availability: "always",
+          method: "shared.sessions.command",
+        },
+        shell: {
+          declared: false,
+          consumedByHub: false,
+          availability: "conditional",
+          configKey: "A2A_ENABLE_SESSION_SHELL",
+          enabledByDefault: false,
+        },
+      },
       runtimeStatus: {
         version: "v1",
         canonicalStates: [
@@ -231,6 +252,8 @@ describe("assertExtensionSuccess", () => {
     expect(result.modelSelection).toBe(false);
     expect(result.providerDiscovery).toBe(true);
     expect(result.sessionPromptAsync).toBe(true);
+    expect(result.sessionControl.command.consumedByHub).toBe(false);
+    expect(result.sessionControl.shell.availability).toBe("conditional");
     expect(result.runtimeStatus.version).toBe("v1");
     expect(result.runtimeStatus.aliases.canceled).toBe("cancelled");
   });

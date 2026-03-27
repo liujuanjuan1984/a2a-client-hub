@@ -13,11 +13,15 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_extensions.session_query import (
     resolve_canonical_session_query,
     resolve_legacy_session_query,
+    resolve_session_query_control_methods,
 )
 from app.integrations.a2a_extensions.session_query_diagnostics import (
     diagnose_session_query,
 )
-from app.integrations.a2a_extensions.types import ResolvedExtension
+from app.integrations.a2a_extensions.types import (
+    ResolvedExtension,
+    ResolvedSessionControlMethodCapability,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +31,7 @@ class ResolvedSessionQueryRuntimeCapability:
     ext: ResolvedExtension
     contract_mode: str
     selection_mode: str
+    control_methods: dict[str, ResolvedSessionControlMethodCapability]
 
 
 def resolve_runtime_session_query(
@@ -35,17 +40,21 @@ def resolve_runtime_session_query(
     diagnostic = diagnose_session_query(card)
 
     if diagnostic.status == "canonical":
+        ext = resolve_canonical_session_query(card)
         return ResolvedSessionQueryRuntimeCapability(
-            ext=resolve_canonical_session_query(card),
+            ext=ext,
             contract_mode="canonical",
             selection_mode="canonical_parser",
+            control_methods=resolve_session_query_control_methods(card, ext=ext),
         )
 
     if diagnostic.status == "legacy":
+        ext = resolve_legacy_session_query(card)
         return ResolvedSessionQueryRuntimeCapability(
-            ext=resolve_legacy_session_query(card),
+            ext=ext,
             contract_mode="legacy",
             selection_mode="legacy_compatibility",
+            control_methods=resolve_session_query_control_methods(card, ext=ext),
         )
 
     if diagnostic.status == "invalid":
