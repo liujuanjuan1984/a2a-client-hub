@@ -7,6 +7,8 @@ const mockReplyPermission = jest.fn();
 const mockReplyQuestion = jest.fn();
 const mockRejectQuestion = jest.fn();
 const mockPromptSessionAsync = jest.fn();
+const mockCommandSession = jest.fn();
+const mockAddConversationOverlayMessage = jest.fn();
 const mockToastInfo = jest.fn();
 const mockToastSuccess = jest.fn();
 const mockToastError = jest.fn();
@@ -23,6 +25,7 @@ const mockExtensionCapabilitiesState = {
   modelSelectionStatus: "supported" as MockCapabilityStatus,
   providerDiscoveryStatus: "supported" as MockCapabilityStatus,
   sessionPromptAsyncStatus: "supported" as MockCapabilityStatus,
+  sessionCommandStatus: "supported" as MockCapabilityStatus,
   canShowModelPicker: true,
 };
 
@@ -80,6 +83,45 @@ jest.mock("@/components/chat/SessionPickerModal", () => ({
 
 jest.mock("@/components/chat/OpencodeDirectoryModal", () => ({
   OpencodeDirectoryModal: () => null,
+}));
+
+jest.mock("@/components/chat/SessionCommandModal", () => ({
+  SessionCommandModal: (props: {
+    visible?: boolean;
+    onClose?: () => void;
+    onSubmit?: (draft: {
+      command: string;
+      arguments: string;
+      prompt: string;
+    }) => Promise<boolean>;
+  }) => {
+    if (!props.visible) {
+      return null;
+    }
+    const { Pressable, Text, View } = require("react-native");
+    return (
+      <View>
+        <Pressable
+          testID="session-command-submit"
+          onPress={() =>
+            props.onSubmit?.({
+              command: "/review",
+              arguments: "--quick",
+              prompt: "Focus on tests",
+            })
+          }
+        >
+          <Text>Run session command</Text>
+        </Pressable>
+        <Pressable
+          testID="session-command-close"
+          onPress={() => props.onClose?.()}
+        >
+          <Text>Close session command</Text>
+        </Pressable>
+      </View>
+    );
+  },
 }));
 
 jest.mock("@/components/chat/ShortcutManagerModal", () => ({
@@ -163,8 +205,10 @@ jest.mock("@/components/chat/ChatComposer", () => ({
     pendingInterrupt?: unknown;
     onInputChange?: (value: string) => void;
     onSubmit?: () => void;
+    showSessionCommandAction?: boolean;
+    onOpenSessionCommand?: () => void;
   }) => {
-    const { Pressable, TextInput, View } = require("react-native");
+    const { Pressable, Text, TextInput, View } = require("react-native");
     const disabled = Boolean(props.pendingInterrupt);
     return (
       <View>
@@ -173,6 +217,14 @@ jest.mock("@/components/chat/ChatComposer", () => ({
           value={props.input ?? ""}
           onChangeText={props.onInputChange}
         />
+        {props.showSessionCommandAction ? (
+          <Pressable
+            testID="chat-session-command-button"
+            onPress={props.onOpenSessionCommand}
+          >
+            <Text>Session command</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           testID="chat-send-button"
           disabled={disabled}
@@ -366,11 +418,17 @@ jest.mock("@/lib/api/a2aExtensions", () => ({
     errorCode: string | null = null;
     upstreamError: Record<string, unknown> | null = null;
   },
+  commandSession: (...args: unknown[]) => mockCommandSession(...args),
   promptSessionAsync: (...args: unknown[]) => mockPromptSessionAsync(...args),
   replyPermissionInterrupt: (...args: unknown[]) =>
     mockReplyPermission(...args),
   replyQuestionInterrupt: (...args: unknown[]) => mockReplyQuestion(...args),
   rejectQuestionInterrupt: (...args: unknown[]) => mockRejectQuestion(...args),
+}));
+
+jest.mock("@/lib/chatHistoryCache", () => ({
+  addConversationOverlayMessage: (...args: unknown[]) =>
+    mockAddConversationOverlayMessage(...args),
 }));
 
 jest.mock("@/lib/toast", () => ({
@@ -418,8 +476,17 @@ describe("ChatScreen interrupt handling", () => {
       ok: true,
       sessionId: "ses-upstream-1",
     });
+    mockCommandSession.mockReset().mockResolvedValue({
+      item: {
+        messageId: "msg-cmd-1",
+        role: "assistant",
+        parts: [{ type: "text", text: "Review complete." }],
+      },
+    });
+    mockAddConversationOverlayMessage.mockReset();
     mockExtensionCapabilitiesState.modelSelectionStatus = "supported";
     mockExtensionCapabilitiesState.sessionPromptAsyncStatus = "supported";
+    mockExtensionCapabilitiesState.sessionCommandStatus = "supported";
     mockExtensionCapabilitiesState.canShowModelPicker = true;
     mockSessionHistoryState.loadMore.mockReset();
     mockSessionHistoryState.messages = [];
@@ -912,6 +979,80 @@ describe("ChatScreen interrupt handling", () => {
     expect(warnSpy).toHaveBeenCalled();
 
     warnSpy.mockRestore();
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("runs session command from the chat composer when a bound upstream session exists", async () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      metadata: {
+        opencode: {
+          directory: "/workspace/app",
+        },
+      },
+      externalSessionRef: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-4",
+      },
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+
+    await act(async () => {
+      root
+        .findByProps({ testID: "chat-session-command-button" })
+        .props.onPress();
+    });
+    await act(async () => {
+      await root
+        .findByProps({ testID: "session-command-submit" })
+        .props.onPress();
+    });
+
+    expect(mockCommandSession).toHaveBeenCalledWith({
+      source: "personal",
+      agentId: "agent-1",
+      sessionId: "ses-upstream-4",
+      request: {
+        command: "/review",
+        arguments: "--quick",
+        parts: [{ type: "text", text: "Focus on tests" }],
+      },
+      metadata: {
+        provider: "OpenCode",
+        externalSessionId: "ses-upstream-4",
+        opencode: {
+          directory: "/workspace/app",
+        },
+      },
+    });
+    expect(mockAddConversationOverlayMessage).toHaveBeenCalledTimes(2);
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      "Command executed",
+      "/review",
+    );
+
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("does not expose the session command button when no upstream session is bound", () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      externalSessionRef: null,
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+
+    expect(() =>
+      root.findByProps({ testID: "chat-session-command-button" }),
+    ).toThrow();
+
     act(() => {
       tree.unmount();
     });

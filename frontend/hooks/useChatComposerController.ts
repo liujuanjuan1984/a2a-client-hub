@@ -64,6 +64,7 @@ export function useChatComposerController({
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showDirectoryPicker, setShowDirectoryPicker] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const [showSessionCommandModal, setShowSessionCommandModal] = useState(false);
   const minInputHeight = 44;
   const maxInputHeight = 128;
   const [inputHeight, setInputHeight] = useState(minInputHeight);
@@ -178,6 +179,14 @@ export function useChatComposerController({
     setShowDirectoryPicker(false);
   }, []);
 
+  const openSessionCommandModal = useCallback(() => {
+    setShowSessionCommandModal(true);
+  }, []);
+
+  const closeSessionCommandModal = useCallback(() => {
+    setShowSessionCommandModal(false);
+  }, []);
+
   const handleModelSelect = useCallback(
     (selection: SharedModelSelection) => {
       if (!conversationId || !activeAgentId) {
@@ -279,10 +288,13 @@ export function useChatComposerController({
     showShortcutManager,
     showDirectoryPicker,
     showModelPicker,
+    showSessionCommandModal,
     openShortcutManager,
     closeShortcutManager,
     openDirectoryPicker,
     closeDirectoryPicker,
+    openSessionCommandModal,
+    closeSessionCommandModal,
     openModelPicker,
     closeModelPicker,
     handleModelSelect,

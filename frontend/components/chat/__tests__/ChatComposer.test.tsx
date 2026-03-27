@@ -11,12 +11,14 @@ jest.mock("@expo/vector-icons", () => ({
 describe("ChatComposer clear button", () => {
   const mockProps = {
     modelSelectionStatus: "supported" as const,
+    showSessionCommandAction: false,
     currentDirectory: null,
     quickShortcuts: [],
     pendingInterrupt: null,
     pendingInterruptCount: 0,
     showShortcutManager: false,
     onOpenDirectoryPicker: jest.fn(),
+    onOpenSessionCommand: jest.fn(),
     onOpenShortcutManager: jest.fn(),
     onUseShortcut: jest.fn(),
     selectedModel: null,
@@ -93,6 +95,34 @@ describe("ChatComposer clear button", () => {
 
     fireEvent.press(getByLabelText("Configure working directory"));
     expect(onOpenDirectoryPicker).toHaveBeenCalled();
+  });
+
+  it("opens the session command modal when the action is available", () => {
+    const onOpenSessionCommand = jest.fn();
+    const { getByLabelText } = render(
+      <ChatComposer
+        {...mockProps}
+        showSessionCommandAction
+        onOpenSessionCommand={onOpenSessionCommand}
+      />,
+    );
+
+    fireEvent.press(getByLabelText("Run session command"));
+    expect(onOpenSessionCommand).toHaveBeenCalled();
+  });
+
+  it("disables the session command action when no bound upstream session exists", () => {
+    const onOpenSessionCommand = jest.fn();
+    const { getByLabelText } = render(
+      <ChatComposer
+        {...mockProps}
+        showSessionCommandAction={false}
+        onOpenSessionCommand={onOpenSessionCommand}
+      />,
+    );
+
+    fireEvent.press(getByLabelText("Run session command"));
+    expect(onOpenSessionCommand).not.toHaveBeenCalled();
   });
 
   it("renders selected provider/model in button", () => {

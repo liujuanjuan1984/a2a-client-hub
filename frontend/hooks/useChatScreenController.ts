@@ -25,6 +25,7 @@ import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import { useShortcutsQuery } from "@/hooks/useShortcutsQuery";
 import {
   A2AExtensionCallError,
+  commandSession,
   promptSessionAsync,
 } from "@/lib/api/a2aExtensions";
 import type { ChatMessage } from "@/lib/api/chat-utils";
@@ -48,6 +49,8 @@ import {
 } from "@/lib/opencodeMetadata";
 import { buildChatRoute } from "@/lib/routes";
 import { buildContinueBindingPayload } from "@/lib/sessionBinding";
+import { mapA2AMessageToChatMessage } from "@/lib/sessionHistory";
+import { readSharedSessionBinding } from "@/lib/sharedMetadata";
 import { toast } from "@/lib/toast";
 import { type AgentSource, useAgentStore } from "@/store/agents";
 import { useChatStore } from "@/store/chat";
@@ -156,6 +159,10 @@ export function useChatScreenController({
     !activeAgentId || !agent?.source
       ? "unsupported"
       : extensionCapabilitiesQuery.providerDiscoveryStatus;
+  const sessionCommandStatus: GenericCapabilityStatus =
+    !activeAgentId || !agent?.source
+      ? "unsupported"
+      : extensionCapabilitiesQuery.sessionCommandStatus;
   const sessionPromptAsyncStatus: GenericCapabilityStatus =
     !activeAgentId || !agent?.source
       ? "unsupported"
@@ -164,6 +171,9 @@ export function useChatScreenController({
     pendingInterrupt?.type === "question"
       ? (pendingInterrupt.details.questions?.length ?? 0)
       : 0;
+  const boundExternalSessionId =
+    session?.externalSessionRef?.externalSessionId?.trim() ?? "";
+  const [runningSessionCommand, setRunningSessionCommand] = useState(false);
   const quickShortcuts = useMemo(
     () =>
       shortcutsQuery
@@ -345,10 +355,13 @@ export function useChatScreenController({
     showShortcutManager,
     showDirectoryPicker,
     showModelPicker,
+    showSessionCommandModal,
     openShortcutManager,
     closeShortcutManager,
     openDirectoryPicker,
     closeDirectoryPicker,
+    openSessionCommandModal,
+    closeSessionCommandModal,
     openModelPicker,
     closeModelPicker,
     handleModelSelect,
@@ -615,6 +628,107 @@ export function useChatScreenController({
     toast.success("Working directory cleared", "Using upstream default.");
   }, [activeAgentId, conversationId, ensureSession, setOpencodeDirectory]);
 
+  const handleSessionCommand = useCallback(
+    async (draft: { command: string; arguments: string; prompt: string }) => {
+      if (
+        !activeAgentId ||
+        !agent?.source ||
+        !conversationId ||
+        !boundExternalSessionId
+      ) {
+        toast.error(
+          "Command unavailable",
+          "This session is not bound to an upstream session yet.",
+        );
+        return false;
+      }
+      if (runningSessionCommand) {
+        return false;
+      }
+
+      const normalizedCommand = draft.command.trim();
+      const normalizedArguments = draft.arguments.trim();
+      const normalizedPrompt = draft.prompt.trim();
+      if (!normalizedCommand || !normalizedArguments) {
+        toast.error(
+          "Missing command",
+          "Command and arguments are required for session control.",
+        );
+        return false;
+      }
+
+      const currentSession = useChatStore.getState().sessions[conversationId];
+      const sessionBinding = readSharedSessionBinding(currentSession?.metadata);
+      const provider =
+        currentSession?.externalSessionRef?.provider?.trim() ||
+        sessionBinding.provider;
+      const metadata = {
+        ...(pickOpencodeDirectoryMetadata(currentSession?.metadata) ?? {}),
+        ...(provider ? { provider } : {}),
+        externalSessionId: boundExternalSessionId,
+      };
+      const createdAt = new Date().toISOString();
+
+      try {
+        setRunningSessionCommand(true);
+        const result = await commandSession({
+          source: agent.source,
+          agentId: activeAgentId,
+          sessionId: boundExternalSessionId,
+          request: {
+            command: normalizedCommand,
+            arguments: normalizedArguments,
+            ...(normalizedPrompt
+              ? {
+                  parts: [
+                    {
+                      type: "text",
+                      text: normalizedPrompt,
+                    },
+                  ],
+                }
+              : {}),
+          },
+          metadata,
+        });
+        addConversationOverlayMessage(conversationId, {
+          id: generateUuid(),
+          role: "user",
+          content: normalizedPrompt
+            ? `${normalizedCommand} ${normalizedArguments}\n${normalizedPrompt}`
+            : `${normalizedCommand} ${normalizedArguments}`,
+          createdAt,
+          status: "done",
+        });
+        const mapped = mapA2AMessageToChatMessage(result.item, {
+          fallbackCreatedAt: createdAt,
+        });
+        if (!mapped) {
+          throw new Error(
+            "Session command response did not include a usable message.",
+          );
+        }
+        addConversationOverlayMessage(conversationId, mapped);
+        toast.success("Command executed", normalizedCommand);
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Session command failed.";
+        toast.error("Command failed", message);
+        return false;
+      } finally {
+        setRunningSessionCommand(false);
+      }
+    },
+    [
+      activeAgentId,
+      agent?.source,
+      boundExternalSessionId,
+      conversationId,
+      runningSessionCommand,
+    ],
+  );
+
   const handleRetry = useCallback(() => {
     if (
       !conversationId ||
@@ -688,6 +802,7 @@ export function useChatScreenController({
     sessionSource,
     modelSelectionStatus,
     providerDiscoveryStatus,
+    sessionCommandStatus,
     selectedModel,
     opencodeDirectory,
     quickShortcuts,
@@ -709,18 +824,25 @@ export function useChatScreenController({
     showSessionPicker,
     showDirectoryPicker,
     showModelPicker,
+    showSessionCommandModal,
     openShortcutManager,
     closeShortcutManager,
     openSessionPicker,
     closeSessionPicker,
     openDirectoryPicker,
     closeDirectoryPicker,
+    openSessionCommandModal,
+    closeSessionCommandModal,
     openModelPicker,
     closeModelPicker,
     handleModelSelect,
     clearModelSelection,
     handleSaveOpencodeDirectory,
     handleClearOpencodeDirectory,
+    handleSessionCommand,
+    runningSessionCommand,
+    canRunSessionCommand:
+      sessionCommandStatus === "supported" && Boolean(boundExternalSessionId),
     handleUseShortcut,
     handleSessionSelect,
     handleTest,
