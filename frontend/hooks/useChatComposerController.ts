@@ -64,7 +64,6 @@ export function useChatComposerController({
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showDirectoryPicker, setShowDirectoryPicker] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
-  const [showSessionCommandModal, setShowSessionCommandModal] = useState(false);
   const minInputHeight = 44;
   const maxInputHeight = 128;
   const [inputHeight, setInputHeight] = useState(minInputHeight);
@@ -139,7 +138,13 @@ export function useChatComposerController({
     );
     sendPromise.catch((error: unknown) => {
       const message = error instanceof Error ? error.message : "Unknown error.";
-      toast.error("Send failed", message);
+      const skipToast =
+        Boolean(error) &&
+        typeof error === "object" &&
+        (error as { skipToast?: boolean }).skipToast === true;
+      if (!skipToast) {
+        toast.error("Send failed", message);
+      }
       if (draftInputRef.current.length === 0) {
         replaceInput(input, { focus: true });
       }
@@ -177,14 +182,6 @@ export function useChatComposerController({
 
   const closeDirectoryPicker = useCallback(() => {
     setShowDirectoryPicker(false);
-  }, []);
-
-  const openSessionCommandModal = useCallback(() => {
-    setShowSessionCommandModal(true);
-  }, []);
-
-  const closeSessionCommandModal = useCallback(() => {
-    setShowSessionCommandModal(false);
   }, []);
 
   const handleModelSelect = useCallback(
@@ -288,13 +285,10 @@ export function useChatComposerController({
     showShortcutManager,
     showDirectoryPicker,
     showModelPicker,
-    showSessionCommandModal,
     openShortcutManager,
     closeShortcutManager,
     openDirectoryPicker,
     closeDirectoryPicker,
-    openSessionCommandModal,
-    closeSessionCommandModal,
     openModelPicker,
     closeModelPicker,
     handleModelSelect,

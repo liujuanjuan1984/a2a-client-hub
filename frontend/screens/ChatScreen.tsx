@@ -6,7 +6,6 @@ import { ChatHeaderPanel } from "@/components/chat/ChatHeaderPanel";
 import { ChatTimelinePanel } from "@/components/chat/ChatTimelinePanel";
 import { ModelPickerModal } from "@/components/chat/ModelPickerModal";
 import { OpencodeDirectoryModal } from "@/components/chat/OpencodeDirectoryModal";
-import { SessionCommandModal } from "@/components/chat/SessionCommandModal";
 import { SessionPickerModal } from "@/components/chat/SessionPickerModal";
 import { ShortcutManagerModal } from "@/components/chat/ShortcutManagerModal";
 import { FullscreenLoader } from "@/components/ui/FullscreenLoader";
@@ -121,26 +120,14 @@ export function ChatScreen({
         onClear={controller.handleClearOpencodeDirectory}
       />
 
-      <SessionCommandModal
-        visible={controller.showSessionCommandModal}
-        onClose={controller.closeSessionCommandModal}
-        externalSessionId={
-          controller.session?.externalSessionRef?.externalSessionId ?? ""
-        }
-        onSubmit={controller.handleSessionCommand}
-        submitting={controller.runningSessionCommand}
-      />
-
       <ChatComposer
         modelSelectionStatus={controller.modelSelectionStatus}
-        showSessionCommandAction={controller.canRunSessionCommand}
         currentDirectory={controller.opencodeDirectory}
         quickShortcuts={controller.quickShortcuts}
         pendingInterrupt={controller.pendingInterrupt}
         pendingInterruptCount={controller.pendingInterruptCount}
         showShortcutManager={controller.showShortcutManager}
         onOpenDirectoryPicker={controller.openDirectoryPicker}
-        onOpenSessionCommand={controller.openSessionCommandModal}
         onOpenShortcutManager={controller.openShortcutManager}
         onUseShortcut={controller.handleUseShortcut}
         selectedModel={controller.selectedModel}

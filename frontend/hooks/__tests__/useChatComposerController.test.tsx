@@ -173,18 +173,4 @@ describe("useChatComposerController", () => {
       "Messages are limited to 50,000 characters.",
     );
   });
-
-  it("opens and closes the session command modal", () => {
-    const { result } = renderComposer();
-
-    act(() => {
-      result.current.openSessionCommandModal();
-    });
-    expect(result.current.showSessionCommandModal).toBe(true);
-
-    act(() => {
-      result.current.closeSessionCommandModal();
-    });
-    expect(result.current.showSessionCommandModal).toBe(false);
-  });
 });

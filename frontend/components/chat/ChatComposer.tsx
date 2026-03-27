@@ -20,14 +20,12 @@ import { type SharedModelSelection } from "@/lib/chat-utils";
 
 export const ChatComposer = memo(function ChatComposer({
   modelSelectionStatus,
-  showSessionCommandAction,
   currentDirectory,
   quickShortcuts,
   pendingInterrupt,
   pendingInterruptCount,
   showShortcutManager,
   onOpenDirectoryPicker,
-  onOpenSessionCommand,
   onOpenShortcutManager,
   onUseShortcut,
   selectedModel,
@@ -49,14 +47,12 @@ export const ChatComposer = memo(function ChatComposer({
   onScrollToBottom,
 }: {
   modelSelectionStatus: GenericCapabilityStatus;
-  showSessionCommandAction: boolean;
   currentDirectory?: string | null;
   quickShortcuts: ShortcutSuggestionItem[];
   pendingInterrupt: PendingRuntimeInterrupt | null;
   pendingInterruptCount: number;
   showShortcutManager: boolean;
   onOpenDirectoryPicker: () => void;
-  onOpenSessionCommand: () => void;
   onOpenShortcutManager: () => void;
   onUseShortcut: (prompt: string) => void;
   selectedModel: SharedModelSelection | null;
@@ -132,23 +128,6 @@ export const ChatComposer = memo(function ChatComposer({
               </Text>
             </Pressable>
           )}
-
-          <Pressable
-            className={`h-9 w-14 items-center justify-center rounded-xl ${
-              showSessionCommandAction ? "bg-primary/85" : "bg-slate-800/40"
-            } ${pendingInterrupt ? "opacity-40" : ""}`}
-            onPress={onOpenSessionCommand}
-            accessibilityRole="button"
-            accessibilityLabel="Run session command"
-            accessibilityHint="Open the session command modal for the bound upstream session"
-            disabled={!showSessionCommandAction || Boolean(pendingInterrupt)}
-          >
-            <Ionicons
-              name={showSessionCommandAction ? "terminal" : "terminal-outline"}
-              size={18}
-              color={showSessionCommandAction ? "#000000" : "#FFFFFF"}
-            />
-          </Pressable>
 
           <Pressable
             className={`h-9 w-14 items-center justify-center rounded-xl ${

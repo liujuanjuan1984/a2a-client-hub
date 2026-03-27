@@ -85,45 +85,6 @@ jest.mock("@/components/chat/OpencodeDirectoryModal", () => ({
   OpencodeDirectoryModal: () => null,
 }));
 
-jest.mock("@/components/chat/SessionCommandModal", () => ({
-  SessionCommandModal: (props: {
-    visible?: boolean;
-    onClose?: () => void;
-    onSubmit?: (draft: {
-      command: string;
-      arguments: string;
-      prompt: string;
-    }) => Promise<boolean>;
-  }) => {
-    if (!props.visible) {
-      return null;
-    }
-    const { Pressable, Text, View } = require("react-native");
-    return (
-      <View>
-        <Pressable
-          testID="session-command-submit"
-          onPress={() =>
-            props.onSubmit?.({
-              command: "/review",
-              arguments: "--quick",
-              prompt: "Focus on tests",
-            })
-          }
-        >
-          <Text>Run session command</Text>
-        </Pressable>
-        <Pressable
-          testID="session-command-close"
-          onPress={() => props.onClose?.()}
-        >
-          <Text>Close session command</Text>
-        </Pressable>
-      </View>
-    );
-  },
-}));
-
 jest.mock("@/components/chat/ShortcutManagerModal", () => ({
   ShortcutManagerModal: () => null,
 }));
@@ -205,10 +166,8 @@ jest.mock("@/components/chat/ChatComposer", () => ({
     pendingInterrupt?: unknown;
     onInputChange?: (value: string) => void;
     onSubmit?: () => void;
-    showSessionCommandAction?: boolean;
-    onOpenSessionCommand?: () => void;
   }) => {
-    const { Pressable, Text, TextInput, View } = require("react-native");
+    const { Pressable, TextInput, View } = require("react-native");
     const disabled = Boolean(props.pendingInterrupt);
     return (
       <View>
@@ -217,14 +176,6 @@ jest.mock("@/components/chat/ChatComposer", () => ({
           value={props.input ?? ""}
           onChangeText={props.onInputChange}
         />
-        {props.showSessionCommandAction ? (
-          <Pressable
-            testID="chat-session-command-button"
-            onPress={props.onOpenSessionCommand}
-          >
-            <Text>Session command</Text>
-          </Pressable>
-        ) : null}
         <Pressable
           testID="chat-send-button"
           disabled={disabled}
@@ -984,7 +935,7 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("runs session command from the chat composer when a bound upstream session exists", async () => {
+  it("routes slash command input through session command when a bound upstream session exists", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       metadata: {
@@ -1000,16 +951,14 @@ describe("ChatScreen interrupt handling", () => {
 
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
 
-    await act(async () => {
-      root
-        .findByProps({ testID: "chat-session-command-button" })
-        .props.onPress();
+    act(() => {
+      input.props.onChangeText("/review --quick\nFocus on tests");
     });
     await act(async () => {
-      await root
-        .findByProps({ testID: "session-command-submit" })
-        .props.onPress();
+      await sendButton.props.onPress();
     });
 
     expect(mockCommandSession).toHaveBeenCalledWith({
@@ -1040,7 +989,7 @@ describe("ChatScreen interrupt handling", () => {
     });
   });
 
-  it("does not expose the session command button when no upstream session is bound", () => {
+  it("treats escaped slash input as a normal message", async () => {
     mockChatState.sessions[conversationId] = {
       ...baseSession(),
       externalSessionRef: null,
@@ -1048,10 +997,55 @@ describe("ChatScreen interrupt handling", () => {
 
     const tree = renderChatScreen(conversationId);
     const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
 
-    expect(() =>
-      root.findByProps({ testID: "chat-session-command-button" }),
-    ).toThrow();
+    act(() => {
+      input.props.onChangeText("//status");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+    });
+
+    expect(mockCommandSession).not.toHaveBeenCalled();
+    expect(mockChatState.sendMessage).toHaveBeenCalledWith(
+      conversationId,
+      "agent-1",
+      "/status",
+      "personal",
+      undefined,
+    );
+
+    act(() => {
+      tree.unmount();
+    });
+  });
+
+  it("restores slash command input and shows an error when no upstream session is bound", async () => {
+    mockChatState.sessions[conversationId] = {
+      ...baseSession(),
+      externalSessionRef: null,
+    };
+
+    const tree = renderChatScreen(conversationId);
+    const root = tree.root;
+    const input = root.findByProps({ placeholder: "Type your message" });
+    const sendButton = root.findByProps({ testID: "chat-send-button" });
+
+    act(() => {
+      input.props.onChangeText("/status");
+    });
+    await act(async () => {
+      await sendButton.props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockCommandSession).not.toHaveBeenCalled();
+    expect(mockChatState.sendMessage).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Command unavailable",
+      "This conversation is not bound to an upstream session yet.",
+    );
 
     act(() => {
       tree.unmount();

@@ -1092,19 +1092,69 @@ async def test_command_session_requires_non_empty_command() -> None:
 
 
 @pytest.mark.asyncio
-async def test_command_session_requires_non_empty_arguments() -> None:
+async def test_command_session_requires_string_arguments() -> None:
     service = A2AExtensionsService()
     runtime = SimpleNamespace(
         resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
     )
-    with pytest.raises(
-        ValueError, match="request.arguments must be a non-empty string"
-    ):
+    with pytest.raises(ValueError, match="request.arguments must be a string"):
         await service.command_session(
             runtime=runtime,
             session_id="ses_123",
-            request_payload={"command": "/review", "arguments": ""},
+            request_payload={"command": "/review", "arguments": None},
         )
+
+
+@pytest.mark.asyncio
+async def test_command_session_allows_empty_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = A2AExtensionsService()
+    ext = _resolved_extension(supports_offset=True)
+    runtime = SimpleNamespace(
+        resolved=SimpleNamespace(url="https://example.com/.well-known/agent-card.json")
+    )
+
+    async def _fake_snapshot(*, runtime):
+        assert runtime is not None
+        return _capability_snapshot(
+            session_query=_session_query_snapshot(ext),
+            session_binding=_binding_snapshot(status="unsupported"),
+        )
+
+    async def _fake_invoke(**kwargs):
+        assert kwargs["method_key"] == "command"
+        assert kwargs["params"]["request"] == {
+            "command": "/status",
+            "arguments": "",
+        }
+        return ExtensionCallResult(
+            success=True,
+            result={"item": {"kind": "message", "messageId": "msg-cmd-status-1"}},
+            meta={"session_id": "ses_123"},
+        )
+
+    monkeypatch.setattr(service, "resolve_capability_snapshot", _fake_snapshot)
+    monkeypatch.setattr(service._session_extensions, "invoke_method", _fake_invoke)
+    monkeypatch.setattr(
+        service._support,
+        "ensure_outbound_allowed",
+        lambda url, *, purpose: url,
+    )
+
+    result = await service.command_session(
+        runtime=runtime,
+        session_id="ses_123",
+        request_payload={
+            "command": "/status",
+            "arguments": "",
+        },
+    )
+
+    assert result.success is True
+    assert result.result == {
+        "item": {"kind": "message", "messageId": "msg-cmd-status-1"}
+    }
 
 
 @pytest.mark.asyncio
