@@ -12,6 +12,7 @@ from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
     ResultEnvelopeMapping,
+    SessionListFilterFieldContract,
 )
 from app.schemas.a2a_extension import A2AExtensionQueryResult
 
@@ -284,6 +285,71 @@ class SessionExtensionService:
         raise ValueError(f"unsupported pagination mode: {mode}")
 
     @staticmethod
+    def _apply_session_list_filter(
+        *,
+        params: Dict[str, Any],
+        query: Dict[str, Any] | None,
+        field_name: str,
+        value: Any,
+        contract: SessionListFilterFieldContract,
+    ) -> tuple[Dict[str, Any] | None, str]:
+        if query is not None and field_name in query:
+            raise ValueError(f"filters.{field_name} conflicts with query.{field_name}")
+
+        if contract.top_level_param:
+            params[contract.top_level_param] = value
+            return query, "top_level"
+
+        if contract.query_param:
+            resolved_query = dict(query or {})
+            resolved_query[contract.query_param] = value
+            return resolved_query, "query"
+
+        raise ValueError(f"{field_name} filter is not supported by this runtime")
+
+    @staticmethod
+    def _build_session_list_params(
+        *,
+        ext: ResolvedExtension,
+        page: int,
+        size: int,
+        query: Optional[Dict[str, Any]],
+        filters: Optional[Dict[str, Any]],
+    ) -> tuple[Dict[str, Any], Dict[str, str]]:
+        params: Dict[str, Any] = SessionExtensionService._build_pagination_params(
+            mode=ext.pagination.mode,
+            page=page,
+            size=size,
+            supports_offset=ext.pagination.supports_offset,
+        )
+
+        normalized_query = dict(query) if query is not None else None
+        filter_meta: Dict[str, str] = {}
+
+        if filters:
+            for field_name in ("directory", "roots", "start", "search"):
+                if field_name not in filters:
+                    continue
+                value = filters[field_name]
+                if value is None:
+                    continue
+                contract = getattr(ext.session_list_filters, field_name)
+                normalized_query, location = (
+                    SessionExtensionService._apply_session_list_filter(
+                        params=params,
+                        query=normalized_query,
+                        field_name=field_name,
+                        value=value,
+                        contract=contract,
+                    )
+                )
+                filter_meta[field_name] = location
+
+        if normalized_query is not None:
+            params["query"] = normalized_query
+        return params, filter_meta
+
+    @staticmethod
     def _resolve_message_next_before(
         *,
         result: Any,
@@ -421,6 +487,7 @@ class SessionExtensionService:
         page: int,
         size: Optional[int],
         query: Optional[Dict[str, Any]],
+        filters: Optional[Dict[str, Any]],
         include_raw: bool = False,
     ) -> ExtensionCallResult:
         jsonrpc_url = self._support.ensure_outbound_allowed(
@@ -455,14 +522,13 @@ class SessionExtensionService:
                 ),
             )
 
-        params: Dict[str, Any] = self._build_pagination_params(
-            mode=ext.pagination.mode,
+        params, filter_meta = self._build_session_list_params(
+            ext=ext,
             page=resolved_page,
             size=resolved_size,
-            supports_offset=ext.pagination.supports_offset,
+            query=query,
+            filters=filters,
         )
-        if query is not None:
-            params["query"] = query
 
         return await self.invoke_method(
             runtime=runtime,
@@ -474,6 +540,7 @@ class SessionExtensionService:
             page=resolved_page,
             size=resolved_size,
             include_raw=include_raw,
+            meta_extra={"session_list_filters": filter_meta} if filter_meta else None,
         )
 
     async def get_session_messages(

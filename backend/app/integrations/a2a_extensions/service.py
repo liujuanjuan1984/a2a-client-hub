@@ -481,6 +481,7 @@ class A2AExtensionsService:
         page: int,
         size: Optional[int],
         query: Optional[Dict[str, Any]],
+        filters: Optional[Dict[str, Any]] = None,
         include_raw: bool = False,
     ) -> ExtensionCallResult:
         snapshot = await self.resolve_capability_snapshot(runtime=runtime)
@@ -492,6 +493,7 @@ class A2AExtensionsService:
             page=page,
             size=size,
             query=query,
+            filters=filters,
             include_raw=include_raw,
         )
 

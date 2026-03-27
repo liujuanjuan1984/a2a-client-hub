@@ -28,6 +28,8 @@ from app.integrations.a2a_extensions.types import (
     ResolvedExtension,
     ResolvedSessionControlMethodCapability,
     ResultEnvelopeMapping,
+    SessionListFilterFieldContract,
+    SessionListFiltersContract,
 )
 
 
@@ -163,6 +165,81 @@ def _resolve_message_cursor_pagination(
     )
 
 
+def _resolve_method_contract_optional_params(
+    params: Dict[str, Any],
+    *,
+    method_name: str,
+) -> set[str]:
+    raw_method_contracts = params.get("method_contracts")
+    if raw_method_contracts is None:
+        return set()
+
+    method_contracts = as_dict(raw_method_contracts)
+    raw_method_contract = method_contracts.get(method_name)
+    if raw_method_contract is None:
+        return set()
+
+    method_contract = as_dict(raw_method_contract)
+    raw_params_contract = method_contract.get("params")
+    if raw_params_contract is None:
+        return set()
+
+    params_contract = as_dict(raw_params_contract)
+    raw_optional_params = params_contract.get("optional_params")
+    if raw_optional_params is None:
+        return set()
+    if not isinstance(raw_optional_params, list):
+        raise A2AExtensionContractError(
+            f"Extension method_contracts.{method_name}.params.optional_params must be an array if provided"
+        )
+
+    optional_params: set[str] = set()
+    for item in raw_optional_params:
+        if not isinstance(item, str):
+            raise A2AExtensionContractError(
+                f"Extension method_contracts.{method_name}.params.optional_params must contain only strings"
+            )
+        token = item.strip()
+        if token:
+            optional_params.add(token)
+    return optional_params
+
+
+def _resolve_session_list_filter_field(
+    optional_params: set[str],
+    *,
+    field_name: str,
+) -> SessionListFilterFieldContract:
+    top_level_param = field_name if field_name in optional_params else None
+    query_param = field_name if f"query.{field_name}" in optional_params else None
+    return SessionListFilterFieldContract(
+        top_level_param=top_level_param,
+        query_param=query_param,
+    )
+
+
+def _resolve_session_list_filters(
+    params: Dict[str, Any],
+    *,
+    list_sessions_method: str,
+) -> SessionListFiltersContract:
+    optional_params = _resolve_method_contract_optional_params(
+        params,
+        method_name=list_sessions_method,
+    )
+    if not optional_params:
+        return SessionListFiltersContract()
+
+    return SessionListFiltersContract(
+        directory=_resolve_session_list_filter_field(
+            optional_params, field_name="directory"
+        ),
+        roots=_resolve_session_list_filter_field(optional_params, field_name="roots"),
+        start=_resolve_session_list_filter_field(optional_params, field_name="start"),
+        search=_resolve_session_list_filter_field(optional_params, field_name="search"),
+    )
+
+
 def _find_session_query_extension(
     card: AgentCard,
     *,
@@ -288,6 +365,10 @@ def _resolve_extension(
         pagination,
         get_messages_method=get_messages_method,
     )
+    session_list_filters = _resolve_session_list_filters(
+        params,
+        list_sessions_method=list_sessions_method,
+    )
 
     return ResolvedExtension(
         uri=str(getattr(ext, "uri", SHARED_SESSION_QUERY_URI)),
@@ -311,6 +392,7 @@ def _resolve_extension(
         business_code_map=code_to_error,
         result_envelope=envelope_mapping,
         message_cursor_pagination=message_cursor_pagination,
+        session_list_filters=session_list_filters,
     )
 
 
