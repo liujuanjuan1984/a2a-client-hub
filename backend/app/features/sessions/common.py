@@ -18,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.agent_message_block import AgentMessageBlock
 from app.db.models.conversation_thread import ConversationThread
 from app.features.invoke.interrupt_metadata import (
+    normalize_elicitation_interrupt_details,
     normalize_permission_interrupt_details,
+    normalize_permissions_interrupt_details,
     normalize_question_interrupt_details,
 )
 from app.features.invoke.tool_call_view import (
@@ -202,7 +204,12 @@ def normalize_interrupt_lifecycle_event(
     request_id = normalize_non_empty_text(event.get("request_id"))
     interrupt_type = normalize_non_empty_text(event.get("type"))
     phase = normalize_non_empty_text(event.get("phase"))
-    if not request_id or interrupt_type not in {"permission", "question"}:
+    if not request_id or interrupt_type not in {
+        "permission",
+        "question",
+        "permissions",
+        "elicitation",
+    }:
         return None
     if phase not in {"asked", "resolved"}:
         return None
@@ -224,6 +231,12 @@ def normalize_interrupt_lifecycle_event(
         details = {}
     if interrupt_type == "permission":
         normalized["details"] = normalize_permission_interrupt_details(details)
+        return normalized
+    if interrupt_type == "permissions":
+        normalized["details"] = normalize_permissions_interrupt_details(details)
+        return normalized
+    if interrupt_type == "elicitation":
+        normalized["details"] = normalize_elicitation_interrupt_details(details)
         return normalized
 
     normalized["details"] = normalize_question_interrupt_details(details)
@@ -248,11 +261,21 @@ def build_interrupt_lifecycle_message_code(event: dict[str, Any]) -> str:
     if phase == "resolved":
         if interrupt_type == "permission":
             return "permission_resolved"
+        if interrupt_type == "permissions":
+            return "permissions_resolved"
+        if interrupt_type == "elicitation":
+            if event.get("resolution") == "rejected":
+                return "elicitation_rejected"
+            return "elicitation_answer_received"
         if event.get("resolution") == "rejected":
             return "question_rejected"
         return "question_answer_received"
     if interrupt_type == "permission":
         return "permission_requested"
+    if interrupt_type == "permissions":
+        return "permissions_requested"
+    if interrupt_type == "elicitation":
+        return "elicitation_requested"
     return "question_requested"
 
 
@@ -260,10 +283,16 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
     message_code = build_interrupt_lifecycle_message_code(event)
     if message_code == "permission_resolved":
         return "Authorization request was handled. Agent resumed."
+    if message_code == "permissions_resolved":
+        return "Permissions request was handled. Agent resumed."
     if message_code == "question_rejected":
         return "Question request was rejected. Interrupt closed."
     if message_code == "question_answer_received":
         return "Question answer received. Agent resumed."
+    if message_code == "elicitation_rejected":
+        return "Additional input request was declined. Interrupt closed."
+    if message_code == "elicitation_answer_received":
+        return "Additional input was submitted. Agent resumed."
 
     details = event.get("details")
     if not isinstance(details, dict):
@@ -285,6 +314,45 @@ def build_interrupt_lifecycle_message_content(event: dict[str, Any]) -> str:
         if normalized_patterns:
             return f"{base_message}\nTargets: {', '.join(normalized_patterns)}"
         return base_message
+    if message_code == "permissions_requested":
+        display_message = normalize_non_empty_text(
+            details.get("display_message") or details.get("displayMessage")
+        )
+        permissions = details.get("permissions")
+        if isinstance(permissions, dict) and permissions:
+            pretty_permissions = json.dumps(
+                permissions,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            if display_message:
+                return f"{display_message}\nRequested permissions: {pretty_permissions}"
+            return f"Agent requested permissions approval: {pretty_permissions}"
+        if display_message:
+            return display_message
+        return "Agent requested permissions approval."
+    if message_code == "elicitation_requested":
+        display_message = normalize_non_empty_text(
+            details.get("display_message") or details.get("displayMessage")
+        )
+        mode = normalize_non_empty_text(details.get("mode"))
+        url = normalize_non_empty_text(details.get("url"))
+        server_name = normalize_non_empty_text(
+            details.get("server_name") or details.get("serverName")
+        )
+        lines: list[str] = []
+        if display_message:
+            lines.append(display_message)
+        else:
+            lines.append("Agent requested additional structured input.")
+        if mode:
+            lines.append(f"Mode: {mode}")
+        if server_name:
+            lines.append(f"Server: {server_name}")
+        if url:
+            lines.append(f"URL: {url}")
+        return "\n".join(lines)
 
     questions = details.get("questions")
     normalized_questions = (
@@ -347,7 +415,7 @@ def build_interrupt_block_view(event: dict[str, Any]) -> dict[str, Any]:
     normalized_details = details if isinstance(details, dict) else {}
     raw_patterns = normalized_details.get("patterns")
     raw_questions = normalized_details.get("questions")
-    item["details"] = {
+    details_item: dict[str, Any] = {
         "permission": normalize_non_empty_text(normalized_details.get("permission")),
         "patterns": (
             [pattern for pattern in raw_patterns if isinstance(pattern, str)]
@@ -364,6 +432,52 @@ def build_interrupt_block_view(event: dict[str, Any]) -> dict[str, Any]:
             else []
         ),
     }
+    permissions = (
+        dict(cast(dict[str, Any], normalized_details.get("permissions")))
+        if isinstance(normalized_details.get("permissions"), dict)
+        else None
+    )
+    if permissions is not None:
+        details_item["permissions"] = permissions
+
+    server_name = normalize_non_empty_text(
+        normalized_details.get("server_name") or normalized_details.get("serverName")
+    )
+    if server_name:
+        details_item["serverName"] = server_name
+
+    mode = normalize_non_empty_text(normalized_details.get("mode"))
+    if mode:
+        details_item["mode"] = mode
+
+    requested_schema = (
+        normalized_details.get("requested_schema")
+        if normalized_details.get("requested_schema") is not None
+        else normalized_details.get("requestedSchema")
+    )
+    if requested_schema is not None:
+        details_item["requestedSchema"] = requested_schema
+
+    url = normalize_non_empty_text(normalized_details.get("url"))
+    if url:
+        details_item["url"] = url
+
+    elicitation_id = normalize_non_empty_text(
+        normalized_details.get("elicitation_id")
+        or normalized_details.get("elicitationId")
+    )
+    if elicitation_id:
+        details_item["elicitationId"] = elicitation_id
+
+    meta = (
+        dict(cast(dict[str, Any], normalized_details.get("meta")))
+        if isinstance(normalized_details.get("meta"), dict)
+        else None
+    )
+    if meta is not None:
+        details_item["meta"] = meta
+
+    item["details"] = details_item
     return item
 
 

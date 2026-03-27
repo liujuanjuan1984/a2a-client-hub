@@ -3,7 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   A2AExtensionCallError,
   rejectQuestionInterrupt,
+  replyElicitationInterrupt,
   replyPermissionInterrupt,
+  replyPermissionsInterrupt,
   replyQuestionInterrupt,
 } from "@/lib/api/a2aExtensions";
 import { type PendingRuntimeInterrupt } from "@/lib/api/chat-utils";
@@ -20,7 +22,7 @@ const TERMINAL_INTERRUPT_ERROR_CODES = new Set([
 
 type ResolvedInterruptKeyInput = {
   requestId: string;
-  type: "permission" | "question";
+  type: "permission" | "question" | "permissions" | "elicitation";
   resolution: "replied" | "rejected";
 };
 
@@ -47,6 +49,8 @@ export function useChatInterruptController({
 }: UseChatInterruptControllerParams) {
   const [interruptAction, setInterruptAction] = useState<string | null>(null);
   const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
+  const [structuredResponseInput, setStructuredResponseInput] =
+    useState<string>("");
   const handledResolvedInterruptKeysRef = useRef<Set<string>>(new Set());
   const locallyAcknowledgedResolvedInterruptKeysRef = useRef<Set<string>>(
     new Set(),
@@ -114,7 +118,7 @@ export function useChatInterruptController({
   const acknowledgeLocalInterruptResolution = useCallback(
     (
       requestId: string,
-      interruptType: "permission" | "question",
+      interruptType: "permission" | "question" | "permissions" | "elicitation",
       resolution: "replied" | "rejected",
     ) => {
       locallyAcknowledgedResolvedInterruptKeysRef.current.add(
@@ -134,6 +138,25 @@ export function useChatInterruptController({
         return {
           title: "Interrupt resolved",
           message: "Authorization request was handled.",
+        };
+      }
+      if (interrupt.type === "permissions") {
+        return {
+          title: "Interrupt resolved",
+          message: "Permissions request was handled.",
+        };
+      }
+      if (interrupt.type === "elicitation") {
+        if (interrupt.resolution === "rejected") {
+          return {
+            title: "Interrupt resolved",
+            message:
+              "Additional input request was declined and the interrupt is closed.",
+          };
+        }
+        return {
+          title: "Interrupt resolved",
+          message: "Additional input submitted. Agent resumed.",
         };
       }
       if (interrupt.resolution === "rejected") {
@@ -235,6 +258,53 @@ export function useChatInterruptController({
     pendingInterrupt?.type,
     pendingQuestionCount,
   ]);
+
+  useEffect(() => {
+    if (!pendingInterrupt) {
+      setStructuredResponseInput("");
+      return;
+    }
+    if (pendingInterrupt.type === "permissions") {
+      try {
+        setStructuredResponseInput(
+          JSON.stringify(pendingInterrupt.details.permissions ?? {}, null, 2),
+        );
+      } catch {
+        setStructuredResponseInput("{}");
+      }
+      return;
+    }
+    if (pendingInterrupt.type === "elicitation") {
+      setStructuredResponseInput("");
+      return;
+    }
+    setStructuredResponseInput("");
+  }, [pendingInterrupt?.requestId, pendingInterrupt?.type]);
+
+  const parseStructuredResponseInput = useCallback(
+    ({
+      rawValue,
+      emptyMessage,
+      invalidMessage,
+    }: {
+      rawValue: string;
+      emptyMessage: string;
+      invalidMessage: string;
+    }) => {
+      const trimmed = rawValue.trim();
+      if (!trimmed) {
+        toast.error("Invalid response", emptyMessage);
+        return null;
+      }
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        toast.error("Invalid response", invalidMessage);
+        return null;
+      }
+    },
+    [],
+  );
 
   const handlePermissionReply = useCallback(
     (reply: "once" | "always" | "reject") => {
@@ -397,13 +467,152 @@ export function useChatInterruptController({
     sessionMetadata,
   ]);
 
+  const handleStructuredResponseChange = useCallback((value: string) => {
+    setStructuredResponseInput(value);
+  }, []);
+
+  const handlePermissionsReply = useCallback(
+    (scope: "turn" | "session") => {
+      if (
+        !activeAgentId ||
+        !agentSource ||
+        !conversationId ||
+        !pendingInterrupt ||
+        pendingInterrupt.type !== "permissions"
+      ) {
+        return;
+      }
+      const permissions = parseStructuredResponseInput({
+        rawValue: structuredResponseInput,
+        emptyMessage: "Provide a JSON permissions subset first.",
+        invalidMessage: "Permissions subset must be valid JSON.",
+      });
+      if (
+        !permissions ||
+        typeof permissions !== "object" ||
+        Array.isArray(permissions)
+      ) {
+        toast.error(
+          "Invalid response",
+          "Permissions subset must be a JSON object.",
+        );
+        return;
+      }
+      const requestId = pendingInterrupt.requestId;
+      runInterruptAction(
+        `permissions:${scope}`,
+        async () => {
+          await replyPermissionsInterrupt({
+            source: agentSource,
+            agentId: activeAgentId,
+            requestId,
+            permissions,
+            scope,
+            metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
+          });
+          acknowledgeLocalInterruptResolution(
+            requestId,
+            "permissions",
+            "replied",
+          );
+          clearPendingInterrupt(conversationId, requestId);
+        },
+        `Permissions reply delivered to upstream (${scope}).`,
+        {
+          conversationId,
+          requestId,
+        },
+      ).catch(() => undefined);
+    },
+    [
+      activeAgentId,
+      agentSource,
+      acknowledgeLocalInterruptResolution,
+      clearPendingInterrupt,
+      conversationId,
+      parseStructuredResponseInput,
+      pendingInterrupt,
+      runInterruptAction,
+      sessionMetadata,
+      structuredResponseInput,
+    ],
+  );
+
+  const handleElicitationReply = useCallback(
+    (action: "accept" | "decline" | "cancel") => {
+      if (
+        !activeAgentId ||
+        !agentSource ||
+        !conversationId ||
+        !pendingInterrupt ||
+        pendingInterrupt.type !== "elicitation"
+      ) {
+        return;
+      }
+      const content =
+        action === "accept"
+          ? parseStructuredResponseInput({
+              rawValue: structuredResponseInput,
+              emptyMessage: "Provide a JSON elicitation response first.",
+              invalidMessage: "Elicitation response must be valid JSON.",
+            })
+          : undefined;
+      if (action === "accept" && content === null) {
+        return;
+      }
+      const requestId = pendingInterrupt.requestId;
+      runInterruptAction(
+        `elicitation:${action}`,
+        async () => {
+          await replyElicitationInterrupt({
+            source: agentSource,
+            agentId: activeAgentId,
+            requestId,
+            action,
+            ...(action === "accept" ? { content } : {}),
+            metadata: pickOpencodeDirectoryMetadata(sessionMetadata),
+          });
+          acknowledgeLocalInterruptResolution(
+            requestId,
+            "elicitation",
+            action === "accept" ? "replied" : "rejected",
+          );
+          clearPendingInterrupt(conversationId, requestId);
+        },
+        action === "accept"
+          ? "Elicitation response delivered to upstream."
+          : "Elicitation request closed.",
+        {
+          conversationId,
+          requestId,
+        },
+      ).catch(() => undefined);
+    },
+    [
+      activeAgentId,
+      agentSource,
+      acknowledgeLocalInterruptResolution,
+      clearPendingInterrupt,
+      conversationId,
+      parseStructuredResponseInput,
+      pendingInterrupt,
+      runInterruptAction,
+      sessionMetadata,
+      structuredResponseInput,
+    ],
+  );
+
   return {
     interruptAction,
     questionAnswers,
+    structuredResponseInput,
     handlePermissionReply,
+    handlePermissionsReply,
     handleQuestionAnswerChange,
     handleQuestionOptionPick,
     handleQuestionReply,
     handleQuestionReject,
+    handleStructuredResponseChange,
+    handleElicitationReply,
   };
 }

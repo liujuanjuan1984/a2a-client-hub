@@ -41,7 +41,12 @@ class InterruptRecoveryService:
             )
 
         interrupt_type = item.get("interrupt_type")
-        if interrupt_type not in {"permission", "question"}:
+        if interrupt_type not in {
+            "permission",
+            "question",
+            "permissions",
+            "elicitation",
+        }:
             raise A2AExtensionContractError(
                 "Interrupt recovery item has invalid interrupt_type"
             )

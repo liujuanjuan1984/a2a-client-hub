@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class A2AExtensionQueryRequest(BaseModel):
@@ -152,6 +152,44 @@ class A2AExtensionQuestionRejectRequest(BaseModel):
     )
 
 
+class A2AExtensionPermissionsReplyRequest(BaseModel):
+    request_id: str = Field(..., min_length=1, description="Interrupt request id")
+    permissions: Dict[str, Any] = Field(
+        ...,
+        description="Granted permissions subset object forwarded to upstream",
+    )
+    scope: Optional[Literal["turn", "session"]] = Field(
+        default=None,
+        description="Optional permission persistence scope",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional extension metadata object forwarded to upstream",
+    )
+
+
+class A2AExtensionElicitationReplyRequest(BaseModel):
+    request_id: str = Field(..., min_length=1, description="Interrupt request id")
+    action: Literal["accept", "decline", "cancel"] = Field(
+        ...,
+        description="Elicitation reply action",
+    )
+    content: Any = Field(
+        default=None,
+        description="Structured elicitation response payload when accepted",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional extension metadata object forwarded to upstream",
+    )
+
+    @model_validator(mode="after")
+    def validate_content_for_action(self) -> "A2AExtensionElicitationReplyRequest":
+        if self.action in {"decline", "cancel"} and self.content is not None:
+            raise ValueError("content must be null when action is decline or cancel")
+        return self
+
+
 class A2AExtensionPromptAsyncRequest(BaseModel):
     request: Dict[str, Any] = Field(
         ...,
@@ -248,7 +286,7 @@ class A2AInterruptRecoveryItemResponse(BaseModel):
 
     request_id: str = Field(..., alias="requestId")
     session_id: str = Field(..., alias="sessionId")
-    type: Literal["permission", "question"]
+    type: Literal["permission", "question", "permissions", "elicitation"]
     details: Dict[str, Any] = Field(default_factory=dict)
     task_id: Optional[str] = Field(default=None, alias="taskId")
     context_id: Optional[str] = Field(default=None, alias="contextId")
@@ -313,11 +351,13 @@ __all__ = [
     "A2ASessionControlMethodResponse",
     "A2AModelDiscoveryRequest",
     "A2AExtensionPermissionReplyRequest",
+    "A2AExtensionPermissionsReplyRequest",
     "A2ARuntimeStatusContractResponse",
     "A2AExtensionQueryPagination",
     "A2AExtensionQueryResponse",
     "A2AExtensionQueryRequest",
     "A2AExtensionQueryResult",
+    "A2AExtensionElicitationReplyRequest",
     "A2AExtensionQuestionRejectRequest",
     "A2AExtensionQuestionReplyRequest",
     "A2AExtensionResponse",

@@ -495,11 +495,15 @@ export function useChatScreenController({
   const {
     interruptAction,
     questionAnswers,
+    structuredResponseInput,
     handlePermissionReply,
+    handlePermissionsReply,
     handleQuestionAnswerChange,
     handleQuestionOptionPick,
     handleQuestionReply,
     handleQuestionReject,
+    handleStructuredResponseChange,
+    handleElicitationReply,
   } = useChatInterruptController({
     activeAgentId,
     agentSource: agent?.source,
@@ -954,6 +958,7 @@ export function useChatScreenController({
     pendingInterruptCount,
     interruptAction,
     questionAnswers,
+    structuredResponseInput,
     showDetails,
     toggleDetails,
     showScrollToBottom,
@@ -1001,9 +1006,12 @@ export function useChatScreenController({
     handleRetry,
     handleInterruptStream,
     handlePermissionReply,
+    handlePermissionsReply,
     handleQuestionAnswerChange,
     handleQuestionOptionPick,
     handleQuestionReply,
     handleQuestionReject,
+    handleStructuredResponseChange,
+    handleElicitationReply,
   };
 }

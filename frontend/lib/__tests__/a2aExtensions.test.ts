@@ -7,7 +7,9 @@ import {
   listModels,
   promptSessionAsync,
   recoverInterrupts,
+  replyElicitationInterrupt,
   replyPermissionInterrupt,
+  replyPermissionsInterrupt,
 } from "@/lib/api/a2aExtensions";
 import { apiRequest } from "@/lib/api/client";
 
@@ -186,6 +188,68 @@ describe("assertExtensionSuccess", () => {
       },
     );
     expect(result).toEqual({ ok: true, requestId: "perm-1" });
+  });
+
+  it("calls shared permissions reply endpoint and returns ack", async () => {
+    mockedApiRequest.mockResolvedValue({
+      success: true,
+      result: { ok: true, request_id: "perms-1" },
+    });
+
+    const result = await replyPermissionsInterrupt({
+      source: "shared",
+      agentId: "agent-1",
+      requestId: "perms-1",
+      permissions: { fileSystem: { write: ["/workspace/project"] } },
+      scope: "session",
+      metadata: { provider: "opencode" },
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/a2a/agents/agent-1/extensions/interrupts/permissions:reply",
+      {
+        method: "POST",
+        body: {
+          request_id: "perms-1",
+          permissions: {
+            fileSystem: { write: ["/workspace/project"] },
+          },
+          scope: "session",
+          metadata: { provider: "opencode" },
+        },
+      },
+    );
+    expect(result).toEqual({ ok: true, requestId: "perms-1" });
+  });
+
+  it("calls personal elicitation reply endpoint and returns ack", async () => {
+    mockedApiRequest.mockResolvedValue({
+      success: true,
+      result: { ok: true, request_id: "eli-1" },
+    });
+
+    const result = await replyElicitationInterrupt({
+      source: "personal",
+      agentId: "agent-1",
+      requestId: "eli-1",
+      action: "accept",
+      content: { folder: "docs" },
+      metadata: { provider: "opencode" },
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "/me/a2a/agents/agent-1/extensions/interrupts/elicitation:reply",
+      {
+        method: "POST",
+        body: {
+          request_id: "eli-1",
+          action: "accept",
+          content: { folder: "docs" },
+          metadata: { provider: "opencode" },
+        },
+      },
+    );
+    expect(result).toEqual({ ok: true, requestId: "eli-1" });
   });
 
   it("calls provider discovery endpoint and normalizes response", async () => {
@@ -380,6 +444,35 @@ describe("assertExtensionSuccess", () => {
           },
           source: "recovery",
         },
+        {
+          requestId: "perms-1",
+          sessionId: "sess-1",
+          type: "permissions",
+          details: {
+            displayMessage: "Approve workspace access",
+            permissions: {
+              fileSystem: { write: ["/workspace/project"] },
+            },
+          },
+          source: "recovery",
+        },
+        {
+          requestId: "eli-1",
+          sessionId: "sess-1",
+          type: "elicitation",
+          details: {
+            display_message: "Select the target folder",
+            mode: "form",
+            server_name: "workspace-server",
+            requested_schema: {
+              type: "object",
+              properties: { folder: { type: "string" } },
+            },
+            url: "https://example.com/form",
+            elicitation_id: "elicitation-1",
+          },
+          source: "recovery",
+        },
       ],
     });
 
@@ -431,6 +524,43 @@ describe("assertExtensionSuccess", () => {
               options: [{ label: "All", description: null, value: "all" }],
             },
           ],
+        },
+      },
+      {
+        requestId: "perms-1",
+        sessionId: "sess-1",
+        type: "permissions",
+        phase: "asked",
+        source: "recovery",
+        taskId: null,
+        contextId: null,
+        expiresAt: null,
+        details: {
+          displayMessage: "Approve workspace access",
+          permissions: {
+            fileSystem: { write: ["/workspace/project"] },
+          },
+        },
+      },
+      {
+        requestId: "eli-1",
+        sessionId: "sess-1",
+        type: "elicitation",
+        phase: "asked",
+        source: "recovery",
+        taskId: null,
+        contextId: null,
+        expiresAt: null,
+        details: {
+          displayMessage: "Select the target folder",
+          mode: "form",
+          serverName: "workspace-server",
+          requestedSchema: {
+            type: "object",
+            properties: { folder: { type: "string" } },
+          },
+          url: "https://example.com/form",
+          elicitationId: "elicitation-1",
         },
       },
     ]);

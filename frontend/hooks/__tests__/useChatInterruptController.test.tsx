@@ -3,7 +3,9 @@ import { act, renderHook } from "@testing-library/react-native";
 import { useChatInterruptController } from "@/hooks/useChatInterruptController";
 import {
   rejectQuestionInterrupt,
+  replyElicitationInterrupt,
   replyPermissionInterrupt,
+  replyPermissionsInterrupt,
   replyQuestionInterrupt,
 } from "@/lib/api/a2aExtensions";
 import { ApiRequestError } from "@/lib/api/client";
@@ -11,8 +13,10 @@ import { toast } from "@/lib/toast";
 
 jest.mock("@/lib/api/a2aExtensions", () => ({
   replyPermissionInterrupt: jest.fn(),
+  replyPermissionsInterrupt: jest.fn(),
   replyQuestionInterrupt: jest.fn(),
   rejectQuestionInterrupt: jest.fn(),
+  replyElicitationInterrupt: jest.fn(),
   A2AExtensionCallError: class extends Error {},
 }));
 
@@ -58,8 +62,10 @@ jest.mock("@/lib/toast", () => ({
 }));
 
 const mockedReplyPermissionInterrupt = jest.mocked(replyPermissionInterrupt);
+const mockedReplyPermissionsInterrupt = jest.mocked(replyPermissionsInterrupt);
 const mockedReplyQuestionInterrupt = jest.mocked(replyQuestionInterrupt);
 const mockedRejectQuestionInterrupt = jest.mocked(rejectQuestionInterrupt);
+const mockedReplyElicitationInterrupt = jest.mocked(replyElicitationInterrupt);
 const mockedToast = toast as jest.Mocked<typeof toast>;
 
 describe("useChatInterruptController", () => {
@@ -71,6 +77,10 @@ describe("useChatInterruptController", () => {
       ok: true,
       requestId: "perm-1",
     });
+    mockedReplyPermissionsInterrupt.mockResolvedValue({
+      ok: true,
+      requestId: "perm-v2-1",
+    });
     mockedReplyQuestionInterrupt.mockResolvedValue({
       ok: true,
       requestId: "question-1",
@@ -78,6 +88,10 @@ describe("useChatInterruptController", () => {
     mockedRejectQuestionInterrupt.mockResolvedValue({
       ok: true,
       requestId: "question-1",
+    });
+    mockedReplyElicitationInterrupt.mockResolvedValue({
+      ok: true,
+      requestId: "eli-1",
     });
   });
 
@@ -183,6 +197,105 @@ describe("useChatInterruptController", () => {
       "Action submitted",
       "Question answers delivered to upstream.",
     );
+  });
+
+  it("parses permissions JSON and routes scope-aware replies", async () => {
+    const { result } = renderHook(() =>
+      useChatInterruptController({
+        activeAgentId: "agent-1",
+        agentSource: "personal",
+        conversationId: "conv-1",
+        pendingInterrupt: {
+          requestId: "perm-v2-1",
+          type: "permissions",
+          phase: "asked",
+          details: {
+            permissions: {
+              fileSystem: { write: ["/workspace/project"] },
+            },
+          },
+        },
+        lastResolvedInterrupt: null,
+        pendingQuestionCount: 0,
+        sessionMetadata: {
+          opencode: {
+            directory: "/workspace/app",
+          },
+        },
+        clearPendingInterrupt,
+      }),
+    );
+
+    await act(async () => {
+      result.current.handlePermissionsReply("session");
+      await Promise.resolve();
+    });
+
+    expect(mockedReplyPermissionsInterrupt).toHaveBeenCalledWith({
+      source: "personal",
+      agentId: "agent-1",
+      requestId: "perm-v2-1",
+      permissions: {
+        fileSystem: { write: ["/workspace/project"] },
+      },
+      scope: "session",
+      metadata: {
+        opencode: {
+          directory: "/workspace/app",
+        },
+      },
+    });
+    expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "perm-v2-1");
+  });
+
+  it("parses elicitation JSON and submits accept replies", async () => {
+    const { result } = renderHook(() =>
+      useChatInterruptController({
+        activeAgentId: "agent-1",
+        agentSource: "personal",
+        conversationId: "conv-1",
+        pendingInterrupt: {
+          requestId: "eli-1",
+          type: "elicitation",
+          phase: "asked",
+          details: {
+            displayMessage: "Select the target folder.",
+            mode: "form",
+          },
+        },
+        lastResolvedInterrupt: null,
+        pendingQuestionCount: 0,
+        sessionMetadata: {
+          opencode: {
+            directory: "/workspace/app",
+          },
+        },
+        clearPendingInterrupt,
+      }),
+    );
+
+    act(() => {
+      result.current.handleStructuredResponseChange('{"folder":"docs"}');
+    });
+
+    await act(async () => {
+      result.current.handleElicitationReply("accept");
+      await Promise.resolve();
+    });
+
+    expect(mockedReplyElicitationInterrupt).toHaveBeenCalledWith({
+      source: "personal",
+      agentId: "agent-1",
+      requestId: "eli-1",
+      action: "accept",
+      content: { folder: "docs" },
+      metadata: {
+        opencode: {
+          directory: "/workspace/app",
+        },
+      },
+    });
+    expect(clearPendingInterrupt).toHaveBeenCalledWith("conv-1", "eli-1");
   });
 
   it("clears stale permission interrupts when upstream reports expiration", async () => {

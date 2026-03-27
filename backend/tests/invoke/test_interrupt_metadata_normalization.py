@@ -103,6 +103,82 @@ def test_extract_interrupt_lifecycle_keeps_question_descriptions() -> None:
     }
 
 
+def test_extract_interrupt_lifecycle_keeps_permissions_display_message() -> None:
+    payload = {
+        "kind": "status-update",
+        "status": {"state": "input-required"},
+        "metadata": {
+            "shared": {
+                "interrupt": {
+                    "request_id": "perms-1",
+                    "type": "permissions",
+                    "details": {
+                        "display_message": "Approve the requested workspace access.",
+                        "permissions": {
+                            "fileSystem": {"write": ["/workspace/project"]}
+                        },
+                    },
+                }
+            }
+        },
+    }
+
+    assert extract_interrupt_lifecycle_from_serialized_event(payload) == {
+        "request_id": "perms-1",
+        "type": "permissions",
+        "phase": "asked",
+        "details": {
+            "display_message": "Approve the requested workspace access.",
+            "permissions": {"fileSystem": {"write": ["/workspace/project"]}},
+        },
+    }
+
+
+def test_extract_interrupt_lifecycle_keeps_elicitation_details() -> None:
+    payload = {
+        "kind": "status-update",
+        "status": {"state": "input_required"},
+        "metadata": {
+            "shared": {
+                "interrupt": {
+                    "request_id": "eli-1",
+                    "type": "elicitation",
+                    "details": {
+                        "description": "Select the target folder.",
+                        "mode": "form",
+                        "server_name": "workspace-server",
+                        "requested_schema": {
+                            "type": "object",
+                            "properties": {"folder": {"type": "string"}},
+                        },
+                        "url": "https://example.com/form",
+                        "elicitation_id": "elicitation-1",
+                        "meta": {"source": "upstream"},
+                    },
+                }
+            }
+        },
+    }
+
+    assert extract_interrupt_lifecycle_from_serialized_event(payload) == {
+        "request_id": "eli-1",
+        "type": "elicitation",
+        "phase": "asked",
+        "details": {
+            "display_message": "Select the target folder.",
+            "mode": "form",
+            "server_name": "workspace-server",
+            "requested_schema": {
+                "type": "object",
+                "properties": {"folder": {"type": "string"}},
+            },
+            "url": "https://example.com/form",
+            "elicitation_id": "elicitation-1",
+            "meta": {"source": "upstream"},
+        },
+    }
+
+
 def test_extract_interrupt_lifecycle_treats_auth_required_as_asked() -> None:
     payload = {
         "kind": "status-update",

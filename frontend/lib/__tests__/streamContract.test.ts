@@ -301,7 +301,12 @@ describe("block-based stream parser and reducer", () => {
       if (event.phase === "resolved") {
         return {
           requestId: String(event.request_id),
-          type: event.type === "permission" ? "permission" : "question",
+          type:
+            event.type === "permission" ||
+            event.type === "permissions" ||
+            event.type === "elicitation"
+              ? event.type
+              : "question",
           phase: "resolved",
           resolution: event.resolution === "rejected" ? "rejected" : "replied",
         };
@@ -327,6 +332,60 @@ describe("block-based stream parser and reducer", () => {
                 : typeof details.displayMessage === "string"
                   ? details.displayMessage
                   : null,
+          },
+        };
+      }
+      if (event.type === "permissions") {
+        return {
+          requestId: String(event.request_id),
+          type: "permissions",
+          phase: "asked",
+          details: {
+            permissions:
+              details.permissions && typeof details.permissions === "object"
+                ? (details.permissions as Record<string, unknown>)
+                : null,
+            displayMessage:
+              typeof details.display_message === "string"
+                ? details.display_message
+                : typeof details.displayMessage === "string"
+                  ? details.displayMessage
+                  : null,
+          },
+        };
+      }
+      if (event.type === "elicitation") {
+        return {
+          requestId: String(event.request_id),
+          type: "elicitation",
+          phase: "asked",
+          details: {
+            displayMessage:
+              typeof details.display_message === "string"
+                ? details.display_message
+                : typeof details.displayMessage === "string"
+                  ? details.displayMessage
+                  : null,
+            serverName:
+              typeof details.server_name === "string"
+                ? details.server_name
+                : typeof details.serverName === "string"
+                  ? details.serverName
+                  : null,
+            mode: typeof details.mode === "string" ? details.mode : null,
+            requestedSchema:
+              details.requested_schema ?? details.requestedSchema ?? null,
+            url: typeof details.url === "string" ? details.url : null,
+            elicitationId:
+              typeof details.elicitation_id === "string"
+                ? details.elicitation_id
+                : typeof details.elicitationId === "string"
+                  ? details.elicitationId
+                  : null,
+            meta:
+              details.meta && typeof details.meta === "object"
+                ? (details.meta as Record<string, unknown>)
+                : null,
           },
         };
       }

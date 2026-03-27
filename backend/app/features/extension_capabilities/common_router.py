@@ -32,8 +32,10 @@ from app.integrations.a2a_runtime_status_contract import (
 )
 from app.schemas.a2a_extension import (
     A2AExtensionCapabilitiesResponse,
+    A2AExtensionElicitationReplyRequest,
     A2AExtensionInterruptRecoveryRequest,
     A2AExtensionPermissionReplyRequest,
+    A2AExtensionPermissionsReplyRequest,
     A2AExtensionPromptAsyncRequest,
     A2AExtensionQueryResponse,
     A2AExtensionQuestionRejectRequest,
@@ -83,6 +85,15 @@ def _summarize_metadata_keys(metadata: Optional[Dict[str, Any]]) -> list[str]:
     if not metadata:
         return []
     return sorted(str(k) for k in metadata.keys())[:20]
+
+
+def _summarize_object_keys(value: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not value:
+        return {"keys": [], "size": 0}
+    return {
+        "keys": sorted(str(key) for key in value.keys())[:20],
+        "size": len(value),
+    }
 
 
 def _build_session_list_filters(
@@ -736,6 +747,82 @@ def create_extension_capability_router(
             _extensions_service().reject_question_interrupt(
                 runtime=runtime,
                 request_id=payload.request_id,
+                metadata=payload.metadata,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/interrupts/permissions:reply",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def reply_permissions_interrupt(
+        *,
+        agent_id: UUID,
+        payload: A2AExtensionPermissionsReplyRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension permissions interrupt reply requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "request_id": payload.request_id,
+                "scope": payload.scope,
+                "permissions_meta": _summarize_object_keys(payload.permissions),
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+            },
+        )
+        return await _run_extension_call(
+            _extensions_service().reply_permissions_interrupt(
+                runtime=runtime,
+                request_id=payload.request_id,
+                permissions=payload.permissions,
+                scope=payload.scope,
+                metadata=payload.metadata,
+            )
+        )
+
+    @router.post(
+        "/{agent_id}/extensions/interrupts/elicitation:reply",
+        response_model=A2AExtensionResponse,
+        status_code=status.HTTP_200_OK,
+    )
+    async def reply_elicitation_interrupt(
+        *,
+        agent_id: UUID,
+        payload: A2AExtensionElicitationReplyRequest,
+        response: Response,
+        db: AsyncSession = Depends(get_async_db),
+        current_user: User = Depends(get_current_user),
+    ) -> A2AExtensionResponse | JSONResponse:
+        response.headers["Cache-Control"] = "no-store"
+
+        runtime = await _get_runtime(db, current_user, agent_id)
+        logger.info(
+            _scope_message("Shared extension elicitation interrupt reply requested"),
+            extra={
+                "user_id": str(current_user.id),
+                "agent_id": str(agent_id),
+                "agent_url": redact_url_for_logging(runtime.resolved.url),
+                "request_id": payload.request_id,
+                "action": payload.action,
+                "has_content": payload.content is not None,
+                "metadata_keys": _summarize_metadata_keys(payload.metadata),
+            },
+        )
+        return await _run_extension_call(
+            _extensions_service().reply_elicitation_interrupt(
+                runtime=runtime,
+                request_id=payload.request_id,
+                action=payload.action,
+                content=payload.content,
                 metadata=payload.metadata,
             )
         )

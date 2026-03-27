@@ -138,13 +138,20 @@ class InterruptDetailsItem(BaseModel):
     patterns: list[str] = Field(default_factory=list)
     display_message: Optional[str] = Field(alias="displayMessage", default=None)
     questions: list[InterruptQuestionItem] = Field(default_factory=list)
+    permissions: Optional[dict[str, Any]] = None
+    server_name: Optional[str] = Field(alias="serverName", default=None)
+    mode: Optional[str] = None
+    requested_schema: Optional[Any] = Field(alias="requestedSchema", default=None)
+    url: Optional[str] = None
+    elicitation_id: Optional[str] = Field(alias="elicitationId", default=None)
+    meta: Optional[dict[str, Any]] = None
 
     model_config = {"populate_by_name": True}
 
 
 class InterruptViewItem(BaseModel):
     request_id: str = Field(alias="requestId")
-    type: Literal["permission", "question"]
+    type: Literal["permission", "question", "permissions", "elicitation"]
     phase: Literal["asked", "resolved"]
     resolution: Optional[Literal["replied", "rejected"]] = None
     details: Optional[InterruptDetailsItem] = None

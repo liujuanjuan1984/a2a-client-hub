@@ -26,6 +26,37 @@
     "content": "Authorization request was handled. Agent resumed."
   },
   {
+    "name": "permissions_asked_with_display_message_and_payload",
+    "code": "permissions_requested",
+    "event": {
+      "request_id": "perms-1",
+      "type": "permissions",
+      "phase": "asked",
+      "details": {
+        "display_message": "Approve the requested workspace permissions.",
+        "permissions": {
+          "fileSystem": {
+            "write": [
+              "/workspace/project"
+            ]
+          }
+        }
+      }
+    },
+    "content": "Approve the requested workspace permissions.\nRequested permissions: {\"fileSystem\":{\"write\":[\"/workspace/project\"]}}"
+  },
+  {
+    "name": "permissions_resolved",
+    "code": "permissions_resolved",
+    "event": {
+      "request_id": "perms-2",
+      "type": "permissions",
+      "phase": "resolved",
+      "resolution": "replied"
+    },
+    "content": "Permissions request was handled. Agent resumed."
+  },
+  {
     "name": "question_asked_with_display_message_and_details",
     "code": "question_requested",
     "event": {
@@ -65,5 +96,43 @@
       "resolution": "rejected"
     },
     "content": "Question request was rejected. Interrupt closed."
+  },
+  {
+    "name": "elicitation_asked_with_context",
+    "code": "elicitation_requested",
+    "event": {
+      "request_id": "eli-1",
+      "type": "elicitation",
+      "phase": "asked",
+      "details": {
+        "display_message": "Select the output folder.",
+        "mode": "form",
+        "server_name": "workspace-server",
+        "url": "https://example.com/form"
+      }
+    },
+    "content": "Select the output folder.\nMode: form\nServer: workspace-server\nURL: https://example.com/form"
+  },
+  {
+    "name": "elicitation_resolved_replied",
+    "code": "elicitation_answer_received",
+    "event": {
+      "request_id": "eli-2",
+      "type": "elicitation",
+      "phase": "resolved",
+      "resolution": "replied"
+    },
+    "content": "Additional input was submitted. Agent resumed."
+  },
+  {
+    "name": "elicitation_resolved_rejected",
+    "code": "elicitation_rejected",
+    "event": {
+      "request_id": "eli-3",
+      "type": "elicitation",
+      "phase": "resolved",
+      "resolution": "rejected"
+    },
+    "content": "Additional input request was declined. Interrupt closed."
   }
 ]

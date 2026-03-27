@@ -725,6 +725,74 @@ class A2AExtensionsService:
             session_id=session_id,
         )
 
+    async def reply_permissions_interrupt(
+        self,
+        *,
+        runtime: A2ARuntime,
+        request_id: str,
+        permissions: Dict[str, Any],
+        scope: str | None = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        (
+            resolved_request_id,
+            resolved_permissions,
+            resolved_scope,
+            normalized_metadata,
+        ) = self._interrupt_extensions.prepare_reply_permissions_interrupt(
+            request_id=request_id,
+            permissions=permissions,
+            scope=scope,
+            metadata=metadata,
+        )
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        ext, jsonrpc_url = self._require_interrupt_callback_capability(
+            snapshot.interrupt_callback
+        )
+        return await self._interrupt_extensions.reply_permissions_interrupt(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            request_id=resolved_request_id,
+            permissions=resolved_permissions,
+            scope=resolved_scope,
+            metadata=normalized_metadata,
+        )
+
+    async def reply_elicitation_interrupt(
+        self,
+        *,
+        runtime: A2ARuntime,
+        request_id: str,
+        action: str,
+        content: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ExtensionCallResult:
+        (
+            resolved_request_id,
+            resolved_action,
+            resolved_content,
+            normalized_metadata,
+        ) = self._interrupt_extensions.prepare_reply_elicitation_interrupt(
+            request_id=request_id,
+            action=action,
+            content=content,
+            metadata=metadata,
+        )
+        snapshot = await self.resolve_capability_snapshot(runtime=runtime)
+        ext, jsonrpc_url = self._require_interrupt_callback_capability(
+            snapshot.interrupt_callback
+        )
+        return await self._interrupt_extensions.reply_elicitation_interrupt(
+            runtime=runtime,
+            ext=ext,
+            jsonrpc_url=jsonrpc_url,
+            request_id=resolved_request_id,
+            action=resolved_action,
+            content=resolved_content,
+            metadata=normalized_metadata,
+        )
+
 
 _service_instance: Optional[A2AExtensionsService] = None
 

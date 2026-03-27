@@ -44,11 +44,15 @@ export function ChatTimelinePanel({
   pendingInterruptCount,
   interruptAction,
   questionAnswers,
+  structuredResponseInput,
   onPermissionReply,
+  onPermissionsReply,
   onQuestionAnswerChange,
   onQuestionOptionPick,
   onQuestionReply,
   onQuestionReject,
+  onStructuredResponseChange,
+  onElicitationReply,
 }: {
   listRef: React.RefObject<FlatList<ChatMessage> | null>;
   messages: ChatMessage[];
@@ -69,11 +73,15 @@ export function ChatTimelinePanel({
   pendingInterruptCount: number;
   interruptAction: string | null;
   questionAnswers: string[];
+  structuredResponseInput: string;
   onPermissionReply: (reply: "once" | "always" | "reject") => void;
+  onPermissionsReply: (scope: "turn" | "session") => void;
   onQuestionAnswerChange: (index: number, value: string) => void;
   onQuestionOptionPick: (index: number, value: string) => void;
   onQuestionReply: () => void;
   onQuestionReject: () => void;
+  onStructuredResponseChange: (value: string) => void;
+  onElicitationReply: (action: "accept" | "decline" | "cancel") => void;
 }) {
   const keyExtractor = useCallback((item: ChatMessage) => item.id, []);
   const renderMessageItem = useCallback(
@@ -137,23 +145,31 @@ export function ChatTimelinePanel({
           pendingInterruptCount={pendingInterruptCount}
           interruptAction={interruptAction}
           questionAnswers={questionAnswers}
+          structuredResponseInput={structuredResponseInput}
           onPermissionReply={onPermissionReply}
+          onPermissionsReply={onPermissionsReply}
           onQuestionAnswerChange={onQuestionAnswerChange}
           onQuestionOptionPick={onQuestionOptionPick}
           onQuestionReply={onQuestionReply}
           onQuestionReject={onQuestionReject}
+          onStructuredResponseChange={onStructuredResponseChange}
+          onElicitationReply={onElicitationReply}
         />
       ) : null,
     [
       interruptAction,
+      onElicitationReply,
       onPermissionReply,
+      onPermissionsReply,
       onQuestionAnswerChange,
       onQuestionOptionPick,
       onQuestionReject,
       onQuestionReply,
+      onStructuredResponseChange,
       pendingInterrupt,
       pendingInterruptCount,
       questionAnswers,
+      structuredResponseInput,
     ],
   );
 

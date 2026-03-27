@@ -47,6 +47,8 @@ def test_resolve_extracts_methods_business_codes_and_provider() -> None:
                     "reply_permission": "shared.permission.reply",
                     "reply_question": "shared.question.reply",
                     "reject_question": "shared.question.reject",
+                    "reply_permissions": "shared.permissions.reply",
+                    "reply_elicitation": "shared.elicitation.reply",
                 },
                 "errors": {
                     "business_codes": {
@@ -69,6 +71,8 @@ def test_resolve_extracts_methods_business_codes_and_provider() -> None:
     assert resolved.methods["reply_permission"] == "shared.permission.reply"
     assert resolved.methods["reply_question"] == "shared.question.reply"
     assert resolved.methods["reject_question"] == "shared.question.reject"
+    assert resolved.methods["reply_permissions"] == "shared.permissions.reply"
+    assert resolved.methods["reply_elicitation"] == "shared.elicitation.reply"
     assert resolved.business_code_map[-32004] == "interrupt_request_not_found"
     assert resolved.business_code_map[-32007] == "interrupt_request_expired"
     assert resolved.business_code_map[-32008] == "interrupt_type_mismatch"
@@ -96,6 +100,8 @@ def test_resolve_accepts_missing_interrupt_method_fields() -> None:
     resolved = resolve_interrupt_callback(card)
     assert resolved.methods.get("reply_permission") == "shared.permission.reply"
     assert resolved.methods.get("reject_question") is None
+    assert resolved.methods.get("reply_permissions") is None
+    assert resolved.methods.get("reply_elicitation") is None
 
 
 def test_resolve_treats_empty_or_blank_interrupt_method_as_missing() -> None:
@@ -110,6 +116,8 @@ def test_resolve_treats_empty_or_blank_interrupt_method_as_missing() -> None:
                     "reply_permission": "   ",
                     "reply_question": "",
                     "reject_question": "\n\t",
+                    "reply_permissions": " ",
+                    "reply_elicitation": "\t",
                 },
             },
         }
@@ -120,6 +128,8 @@ def test_resolve_treats_empty_or_blank_interrupt_method_as_missing() -> None:
     assert resolved.methods.get("reply_permission") is None
     assert resolved.methods.get("reply_question") is None
     assert resolved.methods.get("reject_question") is None
+    assert resolved.methods.get("reply_permissions") is None
+    assert resolved.methods.get("reply_elicitation") is None
 
 
 def test_resolve_defaults_provider_to_opencode_when_missing() -> None:

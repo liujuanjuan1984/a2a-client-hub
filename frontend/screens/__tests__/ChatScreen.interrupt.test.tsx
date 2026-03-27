@@ -4,8 +4,10 @@ import { ApiRequestError } from "@/lib/api/client";
 import { ChatScreen } from "@/screens/ChatScreen";
 
 const mockReplyPermission = jest.fn();
+const mockReplyPermissions = jest.fn();
 const mockReplyQuestion = jest.fn();
 const mockRejectQuestion = jest.fn();
+const mockReplyElicitation = jest.fn();
 const mockPromptSessionAsync = jest.fn();
 const mockCommandSession = jest.fn();
 const mockRecoverInterrupts = jest.fn();
@@ -378,8 +380,12 @@ jest.mock("@/lib/api/a2aExtensions", () => ({
   recoverInterrupts: (...args: unknown[]) => mockRecoverInterrupts(...args),
   replyPermissionInterrupt: (...args: unknown[]) =>
     mockReplyPermission(...args),
+  replyPermissionsInterrupt: (...args: unknown[]) =>
+    mockReplyPermissions(...args),
   replyQuestionInterrupt: (...args: unknown[]) => mockReplyQuestion(...args),
   rejectQuestionInterrupt: (...args: unknown[]) => mockRejectQuestion(...args),
+  replyElicitationInterrupt: (...args: unknown[]) =>
+    mockReplyElicitation(...args),
 }));
 
 jest.mock("@/lib/chatHistoryCache", () => ({
@@ -413,8 +419,10 @@ describe("ChatScreen interrupt handling", () => {
     mockUpdateShortcut.mockReset().mockResolvedValue(undefined);
     mockRemoveShortcut.mockReset().mockResolvedValue(undefined);
     mockReplyPermission.mockReset();
+    mockReplyPermissions.mockReset();
     mockReplyQuestion.mockReset();
     mockRejectQuestion.mockReset();
+    mockReplyElicitation.mockReset();
     mockToastInfo.mockReset();
     mockToastSuccess.mockReset();
     mockToastError.mockReset();
@@ -469,8 +477,10 @@ describe("ChatScreen interrupt handling", () => {
     );
     mockContinueSession.mockResolvedValue({});
     mockReplyPermission.mockResolvedValue({ ok: true, requestId: "perm-1" });
+    mockReplyPermissions.mockResolvedValue({ ok: true, requestId: "perms-1" });
     mockReplyQuestion.mockResolvedValue({ ok: true, requestId: "q-1" });
     mockRejectQuestion.mockResolvedValue({ ok: true, requestId: "q-1" });
+    mockReplyElicitation.mockResolvedValue({ ok: true, requestId: "eli-1" });
     mockChatState.sessions = {
       [conversationId]: baseSession(),
     };

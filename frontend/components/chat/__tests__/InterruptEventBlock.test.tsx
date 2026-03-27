@@ -72,4 +72,81 @@ describe("InterruptEventBlock", () => {
       screen.getByText("Authorization request was handled. Agent resumed."),
     ).toBeTruthy();
   });
+
+  it("renders asked permissions interrupt with structured payload details", () => {
+    const block: MessageBlock = {
+      id: "interrupt-asked-2",
+      type: "interrupt_event",
+      content:
+        'Approve the requested workspace permissions.\nRequested permissions: {"fileSystem":{"write":["/repo"]}}',
+      isFinished: true,
+      interrupt: {
+        requestId: "perms-1",
+        type: "permissions",
+        phase: "asked",
+        details: {
+          displayMessage: "Approve the requested workspace permissions.",
+          permissions: {
+            fileSystem: { write: ["/repo"] },
+          },
+        },
+      },
+      createdAt: "2026-03-27T00:00:00.000Z",
+      updatedAt: "2026-03-27T00:00:00.000Z",
+    };
+
+    const screen = render(
+      <InterruptEventBlock
+        block={block}
+        fallbackBlockId="interrupt-fallback-3"
+        isFirst
+      />,
+    );
+
+    expect(screen.getByText("Permissions approval requested")).toBeTruthy();
+    expect(screen.getByText("Action Required")).toBeTruthy();
+    expect(screen.getByText("Requested Permissions")).toBeTruthy();
+    expect(screen.getAllByText(/fileSystem/).length).toBeGreaterThan(0);
+  });
+
+  it("renders asked elicitation interrupt context fields", () => {
+    const block: MessageBlock = {
+      id: "interrupt-asked-3",
+      type: "interrupt_event",
+      content:
+        "Select the target folder.\nMode: form\nServer: workspace-server\nURL: https://example.com/form",
+      isFinished: true,
+      interrupt: {
+        requestId: "eli-1",
+        type: "elicitation",
+        phase: "asked",
+        details: {
+          displayMessage: "Select the target folder.",
+          mode: "form",
+          serverName: "workspace-server",
+          url: "https://example.com/form",
+          requestedSchema: {
+            type: "object",
+            properties: { folder: { type: "string" } },
+          },
+        },
+      },
+      createdAt: "2026-03-27T00:00:00.000Z",
+      updatedAt: "2026-03-27T00:00:00.000Z",
+    };
+
+    const screen = render(
+      <InterruptEventBlock
+        block={block}
+        fallbackBlockId="interrupt-fallback-4"
+        isFirst
+      />,
+    );
+
+    expect(screen.getByText("Structured input requested")).toBeTruthy();
+    expect(screen.getByText("Action Required")).toBeTruthy();
+    expect(screen.getByText("Mode: form")).toBeTruthy();
+    expect(screen.getByText("Server: workspace-server")).toBeTruthy();
+    expect(screen.getByText("Requested Schema")).toBeTruthy();
+  });
 });

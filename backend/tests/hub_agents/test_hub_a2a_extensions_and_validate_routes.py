@@ -261,6 +261,31 @@ class _FakeExtensionsService:
         ]
         return _FakeExtensionResult(success=True, result={"items": items}, meta={})
 
+    async def reply_permissions_interrupt(
+        self,
+        *,
+        runtime,
+        request_id: str,
+        permissions: Dict[str, Any],
+        scope: str | None = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        self.calls.append(
+            {
+                "fn": "reply_permissions_interrupt",
+                "runtime": runtime,
+                "request_id": request_id,
+                "permissions": permissions,
+                "scope": scope,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "request_id": request_id},
+            meta={},
+        )
+
     async def prompt_session_async(
         self,
         *,
@@ -327,6 +352,31 @@ class _FakeExtensionsService:
                 "runtime": runtime,
                 "request_id": request_id,
                 "answers": answers,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=True,
+            result={"ok": True, "request_id": request_id},
+            meta={},
+        )
+
+    async def reply_elicitation_interrupt(
+        self,
+        *,
+        runtime,
+        request_id: str,
+        action: str,
+        content=None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        self.calls.append(
+            {
+                "fn": "reply_elicitation_interrupt",
+                "runtime": runtime,
+                "request_id": request_id,
+                "action": action,
+                "content": content,
                 "metadata": metadata,
             }
         )
@@ -478,6 +528,72 @@ class _FakePermissionReplyErrorService:
                 "runtime": runtime,
                 "request_id": request_id,
                 "reply": reply,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=False,
+            error_code=self.error_code,
+            upstream_error={"message": self.message},
+            meta={},
+        )
+
+
+class _FakePermissionsReplyErrorService:
+    def __init__(self, *, error_code: str, message: str) -> None:
+        self.calls: list[Dict[str, Any]] = []
+        self.error_code = error_code
+        self.message = message
+
+    async def reply_permissions_interrupt(
+        self,
+        *,
+        runtime,
+        request_id: str,
+        permissions: Dict[str, Any],
+        scope: str | None = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        self.calls.append(
+            {
+                "fn": "reply_permissions_interrupt",
+                "runtime": runtime,
+                "request_id": request_id,
+                "permissions": permissions,
+                "scope": scope,
+                "metadata": metadata,
+            }
+        )
+        return _FakeExtensionResult(
+            success=False,
+            error_code=self.error_code,
+            upstream_error={"message": self.message},
+            meta={},
+        )
+
+
+class _FakeElicitationReplyErrorService:
+    def __init__(self, *, error_code: str, message: str) -> None:
+        self.calls: list[Dict[str, Any]] = []
+        self.error_code = error_code
+        self.message = message
+
+    async def reply_elicitation_interrupt(
+        self,
+        *,
+        runtime,
+        request_id: str,
+        action: str,
+        content=None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        self.calls.append(
+            {
+                "fn": "reply_elicitation_interrupt",
+                "runtime": runtime,
+                "request_id": request_id,
+                "action": action,
+                "content": content,
                 "metadata": metadata,
             }
         )
@@ -855,6 +971,36 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
             "request_id": "q-2",
         }
 
+        permissions_reply_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/permissions:reply",
+            json={
+                "request_id": "perm-v2-1",
+                "permissions": {"fileSystem": {"write": ["/workspace/project"]}},
+                "scope": "session",
+                "metadata": {"provider": "opencode", "requestScope": "shared"},
+            },
+        )
+        assert permissions_reply_resp.status_code == 200
+        assert permissions_reply_resp.json()["result"] == {
+            "ok": True,
+            "request_id": "perm-v2-1",
+        }
+
+        elicitation_reply_resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/elicitation:reply",
+            json={
+                "request_id": "eli-1",
+                "action": "accept",
+                "content": {"approved": True},
+                "metadata": {"provider": "opencode", "requestScope": "shared"},
+            },
+        )
+        assert elicitation_reply_resp.status_code == 200
+        assert elicitation_reply_resp.json()["result"] == {
+            "ok": True,
+            "request_id": "eli-1",
+        }
+
         interrupt_recovery_resp = await user_client.post(
             f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts:recover",
             json={"sessionId": "sess-1"},
@@ -909,7 +1055,7 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
             }
         }
 
-    assert len(fake_extensions.calls) == 9
+    assert len(fake_extensions.calls) == 11
     prompt_calls = [
         c for c in fake_extensions.calls if c["fn"] == "prompt_session_async"
     ]
@@ -945,6 +1091,26 @@ async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
         c for c in fake_extensions.calls if c["fn"] == "reject_question_interrupt"
     ]
     assert question_reject_calls[0]["metadata"] == {
+        "provider": "opencode",
+        "requestScope": "shared",
+    }
+    permissions_reply_calls = [
+        c for c in fake_extensions.calls if c["fn"] == "reply_permissions_interrupt"
+    ]
+    assert permissions_reply_calls[0]["permissions"] == {
+        "fileSystem": {"write": ["/workspace/project"]}
+    }
+    assert permissions_reply_calls[0]["scope"] == "session"
+    assert permissions_reply_calls[0]["metadata"] == {
+        "provider": "opencode",
+        "requestScope": "shared",
+    }
+    elicitation_reply_calls = [
+        c for c in fake_extensions.calls if c["fn"] == "reply_elicitation_interrupt"
+    ]
+    assert elicitation_reply_calls[0]["action"] == "accept"
+    assert elicitation_reply_calls[0]["content"] == {"approved": True}
+    assert elicitation_reply_calls[0]["metadata"] == {
         "provider": "opencode",
         "requestScope": "shared",
     }
@@ -1490,6 +1656,46 @@ async def test_hub_interrupt_reply_rejects_legacy_payload_fields(
     assert fake_extensions.calls == []
 
 
+@pytest.mark.asyncio
+async def test_hub_interrupt_reply_rejects_invalid_elicitation_content_for_decline(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_interrupt_elicitation_invalid@example.com",
+        user_email="alice_interrupt_elicitation_invalid@example.com",
+        token="secret-token-opencode",
+    )
+
+    fake_extensions = _FakeExtensionsService()
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/elicitation:reply",
+            json={
+                "request_id": "eli-1",
+                "action": "decline",
+                "content": {"approved": False},
+            },
+        )
+        assert resp.status_code == 422
+
+    assert fake_extensions.calls == []
+
+
 @pytest.mark.parametrize("reply", ["once", "reject", "always"])
 @pytest.mark.asyncio
 async def test_hub_opencode_permission_reply_accepts_supported_reply_values(
@@ -1708,6 +1914,128 @@ async def test_hub_opencode_permission_reply_maps_extension_error_to_http_status
         assert detail["upstream_error"] == {"message": message}
     assert len(fake_extensions.calls) == 1
     assert fake_extensions.calls[0]["reply"] == reply
+
+
+@pytest.mark.parametrize(
+    ("error_code", "message", "expected_status"),
+    [
+        ("interrupt_request_not_found", "Interrupt request not found", 404),
+        ("interrupt_request_expired", "Interrupt request expired", 409),
+        ("interrupt_type_mismatch", "Interrupt type mismatch", 409),
+        ("invalid_params", "Invalid params", 400),
+    ],
+)
+@pytest.mark.asyncio
+async def test_hub_opencode_permissions_reply_maps_extension_error_to_http_status(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    error_code: str,
+    message: str,
+    expected_status: int,
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_permissions_status_map@example.com",
+        user_email="alice_permissions_status_map@example.com",
+        token="secret-token-opencode-status-permissions",
+    )
+
+    fake_extensions = _FakePermissionsReplyErrorService(
+        error_code=error_code,
+        message=message,
+    )
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/permissions:reply",
+            json={
+                "request_id": "perm-v2-404",
+                "permissions": {"fileSystem": {"write": ["/workspace/project"]}},
+                "scope": "session",
+            },
+        )
+        assert resp.status_code == expected_status
+        payload = resp.json()
+        detail = payload["detail"]
+        assert detail["error_code"] == error_code
+        assert detail["upstream_error"] == {"message": message}
+    assert len(fake_extensions.calls) == 1
+    assert fake_extensions.calls[0]["scope"] == "session"
+
+
+@pytest.mark.parametrize(
+    ("error_code", "message", "expected_status"),
+    [
+        ("interrupt_request_not_found", "Interrupt request not found", 404),
+        ("interrupt_request_expired", "Interrupt request expired", 409),
+        ("interrupt_type_mismatch", "Interrupt type mismatch", 409),
+        ("invalid_params", "Invalid params", 400),
+    ],
+)
+@pytest.mark.asyncio
+async def test_hub_opencode_elicitation_reply_maps_extension_error_to_http_status(
+    async_session_maker,
+    async_db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    error_code: str,
+    message: str,
+    expected_status: int,
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_elicitation_status_map@example.com",
+        user_email="alice_elicitation_status_map@example.com",
+        token="secret-token-opencode-status-elicitation",
+    )
+
+    fake_extensions = _FakeElicitationReplyErrorService(
+        error_code=error_code,
+        message=message,
+    )
+    monkeypatch.setattr(
+        extension_router_common,
+        "get_a2a_extensions_service",
+        lambda: fake_extensions,
+    )
+
+    async with create_test_client(
+        hub_extension_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/extensions/interrupts/elicitation:reply",
+            json={
+                "request_id": "eli-404",
+                "action": "accept",
+                "content": {"approved": True},
+            },
+        )
+        assert resp.status_code == expected_status
+        payload = resp.json()
+        detail = payload["detail"]
+        assert detail["error_code"] == error_code
+        assert detail["upstream_error"] == {"message": message}
+    assert len(fake_extensions.calls) == 1
+    assert fake_extensions.calls[0]["action"] == "accept"
 
 
 @pytest.mark.parametrize(
