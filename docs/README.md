@@ -20,6 +20,8 @@ across multiple READMEs.
 
 - Architecture overview and API examples:
   [`architecture-and-api.md`](architecture-and-api.md)
+- Compatibility notes and non-goals:
+  [`compatibility-and-non-goals.md`](compatibility-and-non-goals.md)
 - Authentication and session model:
   [`authentication.md`](authentication.md)
 - Release automation and version synchronization:
