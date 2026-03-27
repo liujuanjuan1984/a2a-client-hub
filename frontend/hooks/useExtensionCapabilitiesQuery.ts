@@ -5,6 +5,19 @@ import { queryKeys } from "@/lib/queryKeys";
 import { type AgentSource } from "@/store/agents";
 
 export type GenericCapabilityStatus = "unknown" | "supported" | "unsupported";
+type SessionControlMethodCapability = {
+  declared: boolean;
+  consumedByHub: boolean;
+};
+
+const resolveSessionControlStatus = (
+  method?: SessionControlMethodCapability | null,
+): GenericCapabilityStatus => {
+  if (!method) {
+    return "unknown";
+  }
+  return method.declared && method.consumedByHub ? "supported" : "unsupported";
+};
 
 export const useExtensionCapabilitiesQuery = ({
   agentId,
@@ -50,11 +63,21 @@ export const useExtensionCapabilitiesQuery = ({
         ? "unsupported"
         : "unknown";
   const sessionPromptAsyncStatus: GenericCapabilityStatus =
-    query.data?.sessionPromptAsync === true
-      ? "supported"
-      : query.data?.sessionPromptAsync === false
-        ? "unsupported"
-        : "unknown";
+    query.data?.sessionControl?.promptAsync != null
+      ? resolveSessionControlStatus(query.data.sessionControl.promptAsync)
+      : query.data?.sessionPromptAsync === true
+        ? "supported"
+        : query.data?.sessionPromptAsync === false
+          ? "unsupported"
+          : "unknown";
+  const sessionCommandStatus: GenericCapabilityStatus =
+    query.data?.sessionControl?.command != null
+      ? resolveSessionControlStatus(query.data.sessionControl.command)
+      : "unknown";
+  const sessionShellStatus: GenericCapabilityStatus =
+    query.data?.sessionControl?.shell != null
+      ? resolveSessionControlStatus(query.data.sessionControl.shell)
+      : "unknown";
 
   return {
     ...query,
@@ -62,6 +85,9 @@ export const useExtensionCapabilitiesQuery = ({
     modelSelectionStatus,
     providerDiscoveryStatus,
     sessionPromptAsyncStatus,
+    sessionCommandStatus,
+    sessionShellStatus,
+    sessionControl: query.data?.sessionControl ?? null,
     canShowModelPicker: modelSelectionStatus !== "unsupported",
   };
 };

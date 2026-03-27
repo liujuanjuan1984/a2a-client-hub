@@ -53,6 +53,43 @@ const createRuntimeStatus = (): RuntimeStatusContract => ({
   passthroughUnknown: true,
 });
 
+const createSessionControl = (overrides?: {
+  promptAsync?: Partial<{
+    declared: boolean;
+    consumedByHub: boolean;
+    availability: "always" | "conditional" | "unsupported";
+  }>;
+  command?: Partial<{
+    declared: boolean;
+    consumedByHub: boolean;
+    availability: "always" | "conditional" | "unsupported";
+  }>;
+  shell?: Partial<{
+    declared: boolean;
+    consumedByHub: boolean;
+    availability: "always" | "conditional" | "unsupported";
+  }>;
+}) => ({
+  promptAsync: {
+    declared: true,
+    consumedByHub: true,
+    availability: "always" as const,
+    ...overrides?.promptAsync,
+  },
+  command: {
+    declared: true,
+    consumedByHub: false,
+    availability: "always" as const,
+    ...overrides?.command,
+  },
+  shell: {
+    declared: false,
+    consumedByHub: false,
+    availability: "conditional" as const,
+    ...overrides?.shell,
+  },
+});
+
 describe("useExtensionCapabilitiesQuery", () => {
   let queryClient: QueryClient;
 
@@ -70,6 +107,7 @@ describe("useExtensionCapabilitiesQuery", () => {
       modelSelection: true,
       providerDiscovery: true,
       sessionPromptAsync: true,
+      sessionControl: createSessionControl(),
       runtimeStatus: createRuntimeStatus(),
     });
 
@@ -88,6 +126,8 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.providerDiscoveryStatus).toBe("supported");
     expect(result.current.runtimeStatusContract?.version).toBe("v1");
     expect(result.current.sessionPromptAsyncStatus).toBe("supported");
+    expect(result.current.sessionCommandStatus).toBe("unsupported");
+    expect(result.current.sessionShellStatus).toBe("unsupported");
   });
 
   it("returns unsupported when model selection is unavailable", async () => {
@@ -95,6 +135,19 @@ describe("useExtensionCapabilitiesQuery", () => {
       modelSelection: false,
       providerDiscovery: false,
       sessionPromptAsync: false,
+      sessionControl: createSessionControl({
+        promptAsync: { declared: false, availability: "unsupported" },
+        command: {
+          declared: false,
+          consumedByHub: false,
+          availability: "unsupported",
+        },
+        shell: {
+          declared: false,
+          consumedByHub: false,
+          availability: "unsupported",
+        },
+      }),
       runtimeStatus: createRuntimeStatus(),
     });
 
@@ -119,6 +172,9 @@ describe("useExtensionCapabilitiesQuery", () => {
       modelSelection: true,
       providerDiscovery: false,
       sessionPromptAsync: false,
+      sessionControl: createSessionControl({
+        promptAsync: { declared: false, availability: "unsupported" },
+      }),
       runtimeStatus: createRuntimeStatus(),
     });
 
@@ -156,5 +212,7 @@ describe("useExtensionCapabilitiesQuery", () => {
     expect(result.current.modelSelectionStatus).toBe("unknown");
     expect(result.current.providerDiscoveryStatus).toBe("unknown");
     expect(result.current.sessionPromptAsyncStatus).toBe("unknown");
+    expect(result.current.sessionCommandStatus).toBe("unknown");
+    expect(result.current.sessionShellStatus).toBe("unknown");
   });
 });

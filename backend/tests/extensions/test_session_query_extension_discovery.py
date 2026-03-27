@@ -7,7 +7,10 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
-from app.integrations.a2a_extensions.session_query import resolve_session_query
+from app.integrations.a2a_extensions.session_query import (
+    resolve_session_query,
+    resolve_session_query_control_methods,
+)
 from app.integrations.a2a_extensions.shared_contract import (
     LEGACY_SHARED_SESSION_QUERY_URI,
     SHARED_SESSION_QUERY_URI,
@@ -47,6 +50,14 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
                     "list_sessions": "shared.sessions.list",
                     "get_session_messages": "shared.sessions.messages.list",
                     "prompt_async": "shared.sessions.prompt_async",
+                    "command": "shared.sessions.command",
+                    "shell": "shared.sessions.shell",
+                },
+                "control_method_flags": {
+                    "shell": {
+                        "enabled_by_default": False,
+                        "config_key": "A2A_ENABLE_SESSION_SHELL",
+                    }
                 },
                 "pagination": {
                     "mode": "page_size",
@@ -78,6 +89,8 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
     assert resolved.methods["list_sessions"] == "shared.sessions.list"
     assert resolved.methods["get_session_messages"] == "shared.sessions.messages.list"
     assert resolved.methods["prompt_async"] == "shared.sessions.prompt_async"
+    assert resolved.methods["command"] == "shared.sessions.command"
+    assert resolved.methods["shell"] == "shared.sessions.shell"
     assert resolved.pagination.default_size == 20
     assert resolved.pagination.max_size == 100
     assert resolved.jsonrpc.url == "https://api.example.com/jsonrpc"
@@ -88,6 +101,15 @@ def test_resolve_extracts_methods_pagination_provider_and_interface() -> None:
     assert resolved.pagination.params == ("page", "size")
     assert resolved.pagination.supports_offset is False
     assert resolved.result_envelope == ResultEnvelopeMapping()
+
+    control_methods = resolve_session_query_control_methods(card, ext=resolved)
+    assert control_methods["prompt_async"].declared is True
+    assert control_methods["prompt_async"].availability == "always"
+    assert control_methods["command"].declared is True
+    assert control_methods["command"].availability == "always"
+    assert control_methods["shell"].declared is True
+    assert control_methods["shell"].availability == "conditional"
+    assert control_methods["shell"].config_key == "A2A_ENABLE_SESSION_SHELL"
 
 
 def test_resolve_falls_back_to_card_url_when_interface_missing() -> None:

@@ -16,6 +16,32 @@ export type A2AExtensionCapabilities = {
   modelSelection: boolean;
   providerDiscovery: boolean;
   sessionPromptAsync: boolean;
+  sessionControl: {
+    promptAsync: {
+      declared: boolean;
+      consumedByHub: boolean;
+      availability: "always" | "conditional" | "unsupported";
+      method?: string | null;
+      enabledByDefault?: boolean | null;
+      configKey?: string | null;
+    };
+    command: {
+      declared: boolean;
+      consumedByHub: boolean;
+      availability: "always" | "conditional" | "unsupported";
+      method?: string | null;
+      enabledByDefault?: boolean | null;
+      configKey?: string | null;
+    };
+    shell: {
+      declared: boolean;
+      consumedByHub: boolean;
+      availability: "always" | "conditional" | "unsupported";
+      method?: string | null;
+      enabledByDefault?: boolean | null;
+      configKey?: string | null;
+    };
+  };
   runtimeStatus: RuntimeStatusContract;
 };
 

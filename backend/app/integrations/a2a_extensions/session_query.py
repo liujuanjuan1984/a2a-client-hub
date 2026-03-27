@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from a2a.types import AgentCard
 
@@ -25,6 +25,7 @@ from app.integrations.a2a_extensions.shared_contract import (
 from app.integrations.a2a_extensions.types import (
     PageSizePagination,
     ResolvedExtension,
+    ResolvedSessionControlMethodCapability,
     ResultEnvelopeMapping,
 )
 
@@ -184,6 +185,14 @@ def _resolve_extension(
         methods.get("prompt_async"),
         field="methods.prompt_async",
     )
+    command_method = normalize_method_name(
+        methods.get("command"),
+        field="methods.command",
+    )
+    shell_method = normalize_method_name(
+        methods.get("shell"),
+        field="methods.shell",
+    )
 
     pagination = as_dict(params.get("pagination"))
     mode = require_str(pagination.get("mode"), field="pagination.mode")
@@ -248,6 +257,8 @@ def _resolve_extension(
             "list_sessions": list_sessions_method,
             "get_session_messages": get_messages_method,
             "prompt_async": prompt_async_method,
+            "command": command_method,
+            "shell": shell_method,
         },
         pagination=PageSizePagination(
             mode=mode,
@@ -294,8 +305,78 @@ def resolve_legacy_session_query(card: AgentCard) -> ResolvedExtension:
     )
 
 
+def resolve_session_query_control_methods(
+    card: AgentCard,
+    *,
+    ext: ResolvedExtension,
+) -> dict[str, ResolvedSessionControlMethodCapability]:
+    """Resolve per-method session control capability metadata."""
+
+    raw_ext = _find_session_query_extension(card, allow_legacy_uri=True)
+    params: Dict[str, Any] = as_dict(getattr(raw_ext, "params", None))
+    raw_flags = as_dict(params.get("control_method_flags"))
+    control_methods: dict[str, ResolvedSessionControlMethodCapability] = {}
+
+    for method_key in ("prompt_async", "command", "shell"):
+        method_name = normalize_method_name(
+            ext.methods.get(method_key),
+            field=f"methods.{method_key}",
+        )
+        declared = method_name is not None
+        enabled_by_default: bool | None = None
+        config_key: str | None = None
+        availability: Literal["always", "conditional", "unsupported"] = (
+            "always" if declared else "unsupported"
+        )
+
+        raw_flag = raw_flags.get(method_key)
+        if raw_flag is not None:
+            if not isinstance(raw_flag, dict):
+                raise A2AExtensionContractError(
+                    f"'control_method_flags.{method_key}' must be an object if provided"
+                )
+
+            unknown_keys = sorted(
+                key
+                for key in raw_flag.keys()
+                if key not in {"enabled_by_default", "config_key"}
+            )
+            if unknown_keys:
+                raise A2AExtensionContractError(
+                    f"'control_method_flags.{method_key}' contains unsupported keys"
+                )
+
+            raw_enabled_by_default = raw_flag.get("enabled_by_default")
+            if raw_enabled_by_default is not None:
+                if not isinstance(raw_enabled_by_default, bool):
+                    raise A2AExtensionContractError(
+                        f"'control_method_flags.{method_key}.enabled_by_default' must be a boolean if provided"
+                    )
+                enabled_by_default = raw_enabled_by_default
+
+            raw_config_key = raw_flag.get("config_key")
+            if raw_config_key is not None:
+                config_key = require_str(
+                    raw_config_key,
+                    field=f"control_method_flags.{method_key}.config_key",
+                )
+
+            availability = "conditional"
+
+        control_methods[method_key] = ResolvedSessionControlMethodCapability(
+            method=method_name,
+            declared=declared,
+            availability=availability,
+            enabled_by_default=enabled_by_default,
+            config_key=config_key,
+        )
+
+    return control_methods
+
+
 __all__ = [
     "resolve_canonical_session_query",
     "resolve_legacy_session_query",
+    "resolve_session_query_control_methods",
     "resolve_session_query",
 ]

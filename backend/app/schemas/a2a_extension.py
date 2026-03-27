@@ -127,6 +127,46 @@ class A2AModelDiscoveryRequest(BaseModel):
     )
 
 
+class A2ASessionControlMethodResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    declared: bool = Field(
+        ...,
+        description="Whether the upstream extension currently declares this control method",
+    )
+    consumed_by_hub: bool = Field(
+        ...,
+        alias="consumedByHub",
+        description="Whether the hub currently consumes and exposes this control method",
+    )
+    availability: Literal["always", "conditional", "unsupported"] = Field(
+        ...,
+        description="Hub-normalized availability for this control method",
+    )
+    method: Optional[str] = Field(
+        default=None,
+        description="Declared upstream JSON-RPC method name when available",
+    )
+    enabled_by_default: Optional[bool] = Field(
+        default=None,
+        alias="enabledByDefault",
+        description="Whether the deployment-conditional method is enabled by default",
+    )
+    config_key: Optional[str] = Field(
+        default=None,
+        alias="configKey",
+        description="Configuration key that governs deployment-conditional availability",
+    )
+
+
+class A2ASessionControlCapabilitiesResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    prompt_async: A2ASessionControlMethodResponse = Field(..., alias="promptAsync")
+    command: A2ASessionControlMethodResponse
+    shell: A2ASessionControlMethodResponse
+
+
 class A2AExtensionCapabilitiesResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -147,6 +187,11 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
             "Whether the agent advertises shared session-query prompt_async support"
         ),
     )
+    session_control: A2ASessionControlCapabilitiesResponse = Field(
+        ...,
+        alias="sessionControl",
+        description="Hub-stable method-level session control capability contract",
+    )
     runtime_status: A2ARuntimeStatusContractResponse = Field(
         ...,
         alias="runtimeStatus",
@@ -157,6 +202,8 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
 __all__ = [
     "A2AExtensionPromptAsyncRequest",
     "A2AExtensionCapabilitiesResponse",
+    "A2ASessionControlCapabilitiesResponse",
+    "A2ASessionControlMethodResponse",
     "A2AModelDiscoveryRequest",
     "A2AExtensionPermissionReplyRequest",
     "A2ARuntimeStatusContractResponse",
