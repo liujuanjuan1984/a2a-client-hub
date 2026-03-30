@@ -245,8 +245,8 @@ Notes:
   runtime does not expose cursor pagination.
 
 - The backend discovers the JSON-RPC interface URL and method names via the Agent
-  Card extension contract, and enforces the declared `page/size` pagination
-  constraints (default size / max size).
+  Card extension contract, and enforces the declared pagination constraints
+  (`page/size`, `limit`, or `limit + cursor`, including default/max bounds).
 - Responses include a stable envelope with `success`, `result` (upstream
   envelope), `error_code`, and `upstream_error`.
 - Non-2xx HTTP errors are normalized under `detail`, for example:

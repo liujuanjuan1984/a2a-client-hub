@@ -253,6 +253,45 @@ def test_resolve_extracts_message_cursor_pagination_contract() -> None:
     assert resolved.message_cursor_pagination.result_cursor_field == "next_cursor"
 
 
+def test_resolve_accepts_limit_and_optional_cursor_mode() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": SHARED_SESSION_QUERY_URI,
+            "required": False,
+            "params": {
+                "provider": "opencode",
+                "methods": {
+                    "list_sessions": "opencode.sessions.list",
+                    "get_session_messages": "opencode.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "limit_and_optional_cursor",
+                    "default_limit": 20,
+                    "max_limit": 100,
+                    "params": ["limit", "before"],
+                    "cursor_param": "before",
+                    "result_cursor_field": "next_cursor",
+                    "cursor_applies_to": ["opencode.sessions.messages.list"],
+                },
+                "errors": {"business_codes": {}},
+                "result_envelope": {"raw": True, "items": True, "pagination": True},
+            },
+        }
+    ]
+
+    card = AgentCard.model_validate(payload)
+    resolved = resolve_session_query(card)
+
+    assert resolved.pagination.mode == "limit"
+    assert resolved.pagination.default_size == 20
+    assert resolved.pagination.max_size == 100
+    assert resolved.pagination.params == ("limit", "before")
+    assert resolved.pagination.supports_offset is False
+    assert resolved.message_cursor_pagination.cursor_param == "before"
+    assert resolved.message_cursor_pagination.result_cursor_field == "next_cursor"
+
+
 def test_resolve_extracts_session_list_filter_contract() -> None:
     payload = _base_card_payload()
     payload["capabilities"]["extensions"] = [

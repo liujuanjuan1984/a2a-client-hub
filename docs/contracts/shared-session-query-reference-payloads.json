@@ -65,6 +65,39 @@
       }
     },
     {
+      "name": "canonical_limit_with_optional_cursor_extension",
+      "description": "Canonical limit contract with backward cursor pagination metadata.",
+      "extension": {
+        "uri": "urn:opencode-a2a:session-query/v1",
+        "params": {
+          "provider": "opencode",
+          "methods": {
+            "list_sessions": "opencode.sessions.list",
+            "get_session_messages": "opencode.sessions.messages.list"
+          },
+          "pagination": {
+            "mode": "limit_and_optional_cursor",
+            "default_limit": 20,
+            "max_limit": 100,
+            "params": [
+              "limit",
+              "before"
+            ],
+            "cursor_param": "before",
+            "result_cursor_field": "next_cursor",
+            "cursor_applies_to": [
+              "opencode.sessions.messages.list"
+            ]
+          },
+          "result_envelope": {
+            "items": true,
+            "pagination": true,
+            "raw": true
+          }
+        }
+      }
+    },
+    {
       "name": "canonical_alias_mapping_extension",
       "description": "Canonical contract using explicit field-path aliases for the result envelope.",
       "extension": {

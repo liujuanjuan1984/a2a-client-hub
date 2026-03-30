@@ -66,10 +66,11 @@ Method names must be non-empty strings.
 
 ## Pagination
 
-Hub accepts two canonical pagination modes:
+Hub accepts three canonical pagination declarations:
 
 - `page_size`
 - `limit`
+- `limit_and_optional_cursor`
 
 ### `page_size`
 
@@ -100,12 +101,35 @@ Optional:
 
 - `offset`
 
+### `limit_and_optional_cursor`
+
+Required fields:
+
+- `pagination.mode = "limit_and_optional_cursor"`
+- `pagination.default_limit`
+- `pagination.max_limit`
+- `pagination.cursor_param`
+- `pagination.result_cursor_field`
+
+Allowed parameter names must include:
+
+- `limit`
+
+Optional:
+
+- `before`
+
+Hub normalizes this declaration into its internal `limit` pagination baseline
+plus cursor capability metadata. This mode is therefore an additive `v1`
+enhancement, not a breaking protocol fork.
+
 ### Shared pagination rules
 
 - size values must be positive integers
 - `default_size` / `default_limit` must be less than or equal to the matching
   max value
 - missing defaults or max values are invalid
+- `limit_and_optional_cursor` declarations must not advertise `offset`
 - unsupported pagination modes are invalid
 
 ## Result Envelope

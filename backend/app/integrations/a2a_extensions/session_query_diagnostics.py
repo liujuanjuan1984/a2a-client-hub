@@ -106,7 +106,11 @@ def diagnose_session_query(card: AgentCard) -> SharedSessionQueryDiagnostic:
         uri=resolved.uri,
         provider=resolved.provider,
         methods=sorted(key for key, value in resolved.methods.items() if value),
-        pagination_mode=resolved.pagination.mode,
+        pagination_mode=(
+            str(raw_pagination.get("mode")).strip()
+            if raw_pagination and raw_pagination.get("mode") is not None
+            else resolved.pagination.mode
+        ),
         pagination_params=list(resolved.pagination.params),
         result_envelope_declared=resolved.result_envelope is not None,
         jsonrpc_interface_fallback_used=resolved.jsonrpc.fallback_used,

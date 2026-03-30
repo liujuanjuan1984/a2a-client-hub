@@ -117,6 +117,66 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_session_query_contr
 
 
 @pytest.mark.asyncio
+async def test_fetch_and_validate_agent_card_accepts_limit_and_optional_cursor_mode() -> (
+    None
+):
+    class _ExtensionCard:
+        def model_dump(self, **kwargs):
+            return {
+                "name": "dummy",
+                "description": "dummy",
+                "url": "https://example.com",
+                "version": "1.0",
+                "capabilities": {
+                    "extensions": [
+                        {
+                            "uri": "urn:opencode-a2a:session-query/v1",
+                            "params": {
+                                "provider": "opencode",
+                                "methods": {
+                                    "list_sessions": "opencode.sessions.list",
+                                    "get_session_messages": (
+                                        "opencode.sessions.messages.list"
+                                    ),
+                                },
+                                "pagination": {
+                                    "mode": "limit_and_optional_cursor",
+                                    "default_limit": 20,
+                                    "max_limit": 100,
+                                    "params": ["limit", "before"],
+                                    "cursor_param": "before",
+                                    "result_cursor_field": "next_cursor",
+                                    "cursor_applies_to": [
+                                        "opencode.sessions.messages.list"
+                                    ],
+                                },
+                            },
+                        }
+                    ]
+                },
+                "defaultInputModes": [],
+                "defaultOutputModes": [],
+                "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+            }
+
+    class _ExtensionGateway:
+        async def fetch_agent_card_detail(self, **kwargs):
+            from a2a.types import AgentCard
+
+            return AgentCard.model_validate(_ExtensionCard().model_dump())
+
+    resp = await fetch_and_validate_agent_card(
+        gateway=_ExtensionGateway(), resolved=object()
+    )
+
+    assert resp.success is True
+    assert resp.shared_session_query is not None
+    assert resp.shared_session_query.status == "canonical"
+    assert resp.shared_session_query.pagination_mode == "limit_and_optional_cursor"
+    assert resp.message == "Agent card validated"
+
+
+@pytest.mark.asyncio
 async def test_fetch_and_validate_agent_card_exposes_invalid_compatibility_profile() -> (
     None
 ):
