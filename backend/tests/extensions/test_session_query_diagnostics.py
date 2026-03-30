@@ -7,6 +7,7 @@ from app.integrations.a2a_extensions.session_query_diagnostics import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     LEGACY_SHARED_SESSION_QUERY_URI,
+    OPENCODE_SHARED_SESSION_QUERY_URI,
     SHARED_SESSION_QUERY_URI,
 )
 
@@ -80,6 +81,39 @@ def test_diagnose_session_query_returns_legacy_status_for_legacy_uri() -> None:
     assert diagnostic.declared is True
     assert diagnostic.status == "legacy"
     assert diagnostic.uses_legacy_uri is True
+
+
+def test_diagnose_session_query_accepts_opencode_https_uri_as_canonical() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_SHARED_SESSION_QUERY_URI,
+            "params": {
+                "provider": "opencode",
+                "methods": {
+                    "list_sessions": "opencode.sessions.list",
+                    "get_session_messages": "opencode.sessions.messages.list",
+                },
+                "pagination": {
+                    "mode": "limit_and_optional_cursor",
+                    "default_limit": 20,
+                    "max_limit": 100,
+                    "params": ["limit", "before"],
+                    "cursor_param": "before",
+                    "result_cursor_field": "next_cursor",
+                    "cursor_applies_to": ["opencode.sessions.messages.list"],
+                },
+                "result_envelope": {"raw": True, "items": True, "pagination": True},
+            },
+        }
+    ]
+
+    diagnostic = diagnose_session_query(AgentCard.model_validate(payload))
+
+    assert diagnostic.declared is True
+    assert diagnostic.status == "canonical"
+    assert diagnostic.uses_legacy_uri is False
+    assert diagnostic.uri == OPENCODE_SHARED_SESSION_QUERY_URI
 
 
 def test_diagnose_session_query_returns_legacy_status_for_legacy_limit_fields() -> None:

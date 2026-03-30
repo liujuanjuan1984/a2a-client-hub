@@ -1,37 +1,118 @@
-"""Canonical A2A extension contract constants.
+"""Canonical A2A extension contract constants and alias helpers.
 
-The Hub now prefers the upstream ``urn:a2a:*`` / ``urn:opencode-a2a:*`` URIs,
-but still recognizes the older in-repo URIs during the transition window.
+The Hub keeps stable internal canonical identifiers while recognizing multiple
+upstream URI aliases, including the newer ``opencode-a2a`` HTTPS specification
+URIs and older ``urn:*`` transition forms.
 """
 
 from __future__ import annotations
 
+EXTENSION_SPECIFICATIONS_DOCUMENT_URL = (
+    "https://github.com/Intelligent-Internet/opencode-a2a/blob/main/"
+    "docs/extension-specifications.md"
+)
+
+
+def _spec_uri(fragment: str) -> str:
+    return f"{EXTENSION_SPECIFICATIONS_DOCUMENT_URL}#{fragment}"
+
+
 SHARED_SESSION_BINDING_URI = "urn:a2a:session-binding/v1"
+OPENCODE_SHARED_SESSION_BINDING_URI = _spec_uri("shared-session-binding-v1")
 LEGACY_SHARED_SESSION_BINDING_URI = "urn:shared-a2a:session-binding:v1"
 SUPPORTED_SESSION_BINDING_URIS = (
     SHARED_SESSION_BINDING_URI,
+    OPENCODE_SHARED_SESSION_BINDING_URI,
     LEGACY_SHARED_SESSION_BINDING_URI,
 )
 
 SHARED_SESSION_QUERY_URI = "urn:opencode-a2a:session-query/v1"
+OPENCODE_SHARED_SESSION_QUERY_URI = _spec_uri("opencode-session-query-v1")
 LEGACY_SHARED_SESSION_QUERY_URI = "urn:shared-a2a:session-query:v1"
 SUPPORTED_SESSION_QUERY_URIS = (
     SHARED_SESSION_QUERY_URI,
+    OPENCODE_SHARED_SESSION_QUERY_URI,
     LEGACY_SHARED_SESSION_QUERY_URI,
 )
 
 MODEL_SELECTION_URI = "urn:a2a:model-selection/v1"
+OPENCODE_MODEL_SELECTION_URI = _spec_uri("shared-model-selection-v1")
+SUPPORTED_MODEL_SELECTION_URIS = (
+    MODEL_SELECTION_URI,
+    OPENCODE_MODEL_SELECTION_URI,
+)
+
 COMPATIBILITY_PROFILE_URI = "urn:a2a:compatibility-profile/v1"
+OPENCODE_COMPATIBILITY_PROFILE_URI = _spec_uri("a2a-compatibility-profile-v1")
+SUPPORTED_COMPATIBILITY_PROFILE_URIS = (
+    COMPATIBILITY_PROFILE_URI,
+    OPENCODE_COMPATIBILITY_PROFILE_URI,
+)
+
 PROVIDER_DISCOVERY_URI = "urn:opencode-a2a:provider-discovery/v1"
+OPENCODE_PROVIDER_DISCOVERY_URI = _spec_uri("opencode-provider-discovery-v1")
+SUPPORTED_PROVIDER_DISCOVERY_URIS = (
+    PROVIDER_DISCOVERY_URI,
+    OPENCODE_PROVIDER_DISCOVERY_URI,
+)
+
 INTERRUPT_RECOVERY_URI = "urn:opencode-a2a:interrupt-recovery/v1"
+OPENCODE_INTERRUPT_RECOVERY_URI = _spec_uri("opencode-interrupt-recovery-v1")
+SUPPORTED_INTERRUPT_RECOVERY_URIS = (
+    INTERRUPT_RECOVERY_URI,
+    OPENCODE_INTERRUPT_RECOVERY_URI,
+)
 
 SHARED_INTERRUPT_CALLBACK_URI = "urn:a2a:interactive-interrupt/v1"
+OPENCODE_INTERRUPT_CALLBACK_URI = _spec_uri("shared-interactive-interrupt-v1")
 LEGACY_SHARED_INTERRUPT_CALLBACK_URI = "urn:shared-a2a:interrupt-callback:v1"
 SUPPORTED_INTERRUPT_CALLBACK_URIS = (
     SHARED_INTERRUPT_CALLBACK_URI,
+    OPENCODE_INTERRUPT_CALLBACK_URI,
     LEGACY_SHARED_INTERRUPT_CALLBACK_URI,
 )
 STREAM_HINTS_URI = "urn:a2a:stream-hints/v1"
+OPENCODE_STREAM_HINTS_URI = _spec_uri("shared-stream-hints-v1")
+SUPPORTED_STREAM_HINTS_URIS = (
+    STREAM_HINTS_URI,
+    OPENCODE_STREAM_HINTS_URI,
+)
+
+_PREFERRED_EXTENSION_URI_BY_ALIAS = {
+    alias: preferred
+    for preferred, aliases in (
+        (SHARED_SESSION_BINDING_URI, SUPPORTED_SESSION_BINDING_URIS),
+        (SHARED_SESSION_QUERY_URI, SUPPORTED_SESSION_QUERY_URIS),
+        (MODEL_SELECTION_URI, SUPPORTED_MODEL_SELECTION_URIS),
+        (COMPATIBILITY_PROFILE_URI, SUPPORTED_COMPATIBILITY_PROFILE_URIS),
+        (PROVIDER_DISCOVERY_URI, SUPPORTED_PROVIDER_DISCOVERY_URIS),
+        (INTERRUPT_RECOVERY_URI, SUPPORTED_INTERRUPT_RECOVERY_URIS),
+        (SHARED_INTERRUPT_CALLBACK_URI, SUPPORTED_INTERRUPT_CALLBACK_URIS),
+        (STREAM_HINTS_URI, SUPPORTED_STREAM_HINTS_URIS),
+    )
+    for alias in aliases
+}
+
+
+def is_supported_extension_uri(
+    value: object,
+    supported_uris: tuple[str, ...],
+) -> bool:
+    """Return whether a declared extension URI matches any supported alias."""
+
+    return isinstance(value, str) and value.strip() in supported_uris
+
+
+def normalize_known_extension_uri(value: str | None) -> str | None:
+    """Normalize a known extension URI alias to the Hub's stable identifier."""
+
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return normalized
+    return _PREFERRED_EXTENSION_URI_BY_ALIAS.get(normalized, normalized)
+
 
 SHARED_METADATA_KEY = "shared"
 SHARED_SESSION_KEY = "session"
@@ -52,11 +133,20 @@ __all__ = [
     "CANONICAL_EXTERNAL_SESSION_ID_KEY",
     "CANONICAL_PROVIDER_KEY",
     "COMPATIBILITY_PROFILE_URI",
+    "EXTENSION_SPECIFICATIONS_DOCUMENT_URL",
     "INTERRUPT_RECOVERY_URI",
     "LEGACY_SHARED_INTERRUPT_CALLBACK_URI",
     "LEGACY_SHARED_SESSION_BINDING_URI",
     "LEGACY_SHARED_SESSION_QUERY_URI",
     "MODEL_SELECTION_URI",
+    "OPENCODE_COMPATIBILITY_PROFILE_URI",
+    "OPENCODE_INTERRUPT_CALLBACK_URI",
+    "OPENCODE_INTERRUPT_RECOVERY_URI",
+    "OPENCODE_MODEL_SELECTION_URI",
+    "OPENCODE_PROVIDER_DISCOVERY_URI",
+    "OPENCODE_SHARED_SESSION_BINDING_URI",
+    "OPENCODE_SHARED_SESSION_QUERY_URI",
+    "OPENCODE_STREAM_HINTS_URI",
     "PROVIDER_DISCOVERY_URI",
     "SHARED_MODEL_FIELD",
     "SHARED_INTERRUPT_KEY",
@@ -72,8 +162,15 @@ __all__ = [
     "SHARED_STREAM_KEY",
     "SHARED_USAGE_FIELD",
     "SHARED_USAGE_KEY",
+    "SUPPORTED_COMPATIBILITY_PROFILE_URIS",
     "SUPPORTED_INTERRUPT_CALLBACK_URIS",
+    "SUPPORTED_INTERRUPT_RECOVERY_URIS",
+    "SUPPORTED_MODEL_SELECTION_URIS",
+    "SUPPORTED_PROVIDER_DISCOVERY_URIS",
     "SUPPORTED_SESSION_BINDING_URIS",
     "SUPPORTED_SESSION_QUERY_URIS",
+    "SUPPORTED_STREAM_HINTS_URIS",
     "STREAM_HINTS_URI",
+    "is_supported_extension_uri",
+    "normalize_known_extension_uri",
 ]

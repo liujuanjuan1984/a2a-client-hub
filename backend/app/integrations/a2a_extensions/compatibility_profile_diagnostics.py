@@ -11,7 +11,11 @@ from app.integrations.a2a_extensions.compatibility_profile import (
 )
 from app.integrations.a2a_extensions.contract_utils import as_dict
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
-from app.integrations.a2a_extensions.shared_contract import COMPATIBILITY_PROFILE_URI
+from app.integrations.a2a_extensions.shared_contract import (
+    COMPATIBILITY_PROFILE_URI,
+    SUPPORTED_COMPATIBILITY_PROFILE_URIS,
+    is_supported_extension_uri,
+)
 from app.schemas.a2a_compatibility_profile import (
     A2ACompatibilityProfileDiagnostic,
     A2ACompatibilityProfileEntry,
@@ -27,7 +31,7 @@ def _find_declared_extension(card: AgentCard) -> tuple[Any | None, str | None]:
     hinted = None
     for candidate in extensions:
         uri = str(getattr(candidate, "uri", "") or "").strip()
-        if uri == COMPATIBILITY_PROFILE_URI:
+        if is_supported_extension_uri(uri, SUPPORTED_COMPATIBILITY_PROFILE_URIS):
             return candidate, uri
         if hinted is None and "compatibility-profile" in uri:
             hinted = candidate, uri

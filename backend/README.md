@@ -174,7 +174,9 @@ Endpoints:
 - Read generic extension capabilities:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
   - The response also includes a `compatibilityProfile` block when the upstream
-    declares `urn:a2a:compatibility-profile/v1`, exposing
+    declares the compatibility-profile extension (either the standard
+    `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS
+    specification URI), exposing
     `extensionRetention`, `methodRetention`, `serviceBehaviors`, and
     `consumerGuidance` for Hub-side diagnostics.
 - Discover generic model providers:
@@ -197,7 +199,11 @@ Validation:
 
 - `POST /api/v1/me/a2a/agents/{agent_id}/card:validate` now returns a
   `compatibility_profile` diagnostic when the upstream card declares
-  `urn:a2a:compatibility-profile/v1`.
+  the compatibility-profile extension.
+- When an upstream advertises top-level `supportsAuthenticatedExtendedCard`,
+  Hub prefers fetching the authenticated extended card so provider-private
+  extension contracts can still be resolved even if the public Agent Card is
+  intentionally slimmed down.
 - Continue a session:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:continue`
 - Trigger async prompt for an existing upstream session:

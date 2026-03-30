@@ -730,12 +730,34 @@ class A2AGateway:
                 raise
             return None
         else:
+            extended_supported = bool(
+                getattr(card, "supports_authenticated_extended_card", False)
+            )
+            used_authenticated_extended_card = False
+            if extended_supported:
+                try:
+                    card = await session.client.get_authenticated_extended_agent_card()
+                    used_authenticated_extended_card = True
+                except (
+                    A2AAgentUnavailableError,
+                    A2AClientResetRequiredError,
+                    A2AOutboundNotAllowedError,
+                ) as exc:
+                    logger.info(
+                        "Falling back to public A2A agent card after extended-card fetch failure",
+                        extra={
+                            "agent_name": resolved.name,
+                            "error": str(exc),
+                            "agent_url": redact_url_for_logging(resolved.url),
+                        },
+                    )
             elapsed = time.monotonic() - start_time
             logger.info(
                 "Fetched A2A agent card detail",
                 extra={
                     "agent_name": resolved.name,
                     "card_name": getattr(card, "name", None),
+                    "extended_card_used": used_authenticated_extended_card,
                     "elapsed_seconds": round(elapsed, 3),
                 },
             )

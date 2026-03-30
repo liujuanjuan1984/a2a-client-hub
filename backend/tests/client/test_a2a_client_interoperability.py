@@ -380,6 +380,55 @@ async def test_get_agent_card_uses_sdk_exact_transport_matching_semantics(
 
 
 @pytest.mark.asyncio
+async def test_get_authenticated_extended_agent_card_prefers_extended_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    public_card = _build_card(supports_authenticated_extended_card=True)
+    extended_card = _build_card(
+        name="Extended Gateway",
+        supports_authenticated_extended_card=True,
+    )
+    resolver_paths: list[str | None] = []
+
+    def fake_validate_outbound_http_url(
+        url: str,
+        *,
+        allowed_hosts,
+        purpose: str = "outbound HTTP request",
+    ) -> str:
+        _ = allowed_hosts, purpose
+        return url
+
+    def build_resolver(_httpx_client, *, agent_card_path_override=None):
+        resolver_paths.append(agent_card_path_override)
+        return _FakeResolver(
+            extended_card
+            if agent_card_path_override == client_module.EXTENDED_AGENT_CARD_PATH
+            else public_card
+        )
+
+    monkeypatch.setattr(
+        client_module,
+        "validate_outbound_http_url",
+        fake_validate_outbound_http_url,
+    )
+    monkeypatch.setattr(
+        client_module.a2a_proxy_service,
+        "get_effective_allowed_hosts_sync",
+        lambda: ["example-agent.internal:24020"],
+    )
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._get_http_client = AsyncMock(return_value=Mock())
+    a2a_client._build_card_resolver = Mock(side_effect=build_resolver)
+
+    fetched = await a2a_client.get_authenticated_extended_agent_card()
+
+    assert fetched is extended_card
+    assert resolver_paths == [None, client_module.EXTENDED_AGENT_CARD_PATH]
+
+
+@pytest.mark.asyncio
 async def test_call_agent_falls_back_to_pascal_jsonrpc_on_method_not_found() -> None:
     card = _build_card()
     descriptor = client_module.build_peer_descriptor(

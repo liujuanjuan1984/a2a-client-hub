@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -24,6 +25,7 @@ from app.integrations.a2a_client.adapters.sdk import SDKA2AAdapter
 from app.integrations.a2a_client.client import A2AClient, ClientCacheEntry
 from app.integrations.a2a_client.config import A2ASettings
 from app.integrations.a2a_client.errors import (
+    A2AAgentUnavailableError,
     A2AClientResetRequiredError,
     A2APeerProtocolError,
     A2AUpstreamTimeoutError,
@@ -613,6 +615,92 @@ async def test_gateway_fetch_agent_card_detail_does_not_invalidate_fresh_probe_o
     temporary_client.close.assert_awaited_once()
     invalidate_mock.assert_not_awaited()
     create_client_mock.assert_called_once_with(resolved, card_fetch_timeout=None)
+
+
+@pytest.mark.asyncio
+async def test_gateway_fetch_agent_card_detail_prefers_authenticated_extended_card(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={"Authorization": "Bearer token"},
+        name="TestAgent",
+    )
+    public_card = SimpleNamespace(
+        name="Public Card",
+        supports_authenticated_extended_card=True,
+    )
+    extended_card = SimpleNamespace(
+        name="Extended Card",
+        supports_authenticated_extended_card=True,
+    )
+    session = SimpleNamespace(
+        snapshot=SimpleNamespace(agent_card=public_card),
+        client=SimpleNamespace(
+            get_authenticated_extended_agent_card=AsyncMock(return_value=extended_card)
+        ),
+    )
+
+    @asynccontextmanager
+    async def fake_open_invoke_session(**kwargs):
+        _ = kwargs
+        yield session
+
+    monkeypatch.setattr(gateway, "open_invoke_session", fake_open_invoke_session)
+
+    result = await gateway.fetch_agent_card_detail(resolved=resolved)
+
+    assert result is extended_card
+    session.client.get_authenticated_extended_agent_card.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_gateway_fetch_agent_card_detail_falls_back_to_public_card_when_extended_fetch_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = gateway_module.A2AGateway(
+        A2ASettings(
+            default_timeout=10.0,
+            use_client_preference=False,
+            client_idle_timeout=1.0,
+        )
+    )
+    resolved = SimpleNamespace(
+        url="http://example-agent.internal:24020",
+        headers={"Authorization": "Bearer token"},
+        name="TestAgent",
+    )
+    public_card = SimpleNamespace(
+        name="Public Card",
+        supports_authenticated_extended_card=True,
+    )
+    session = SimpleNamespace(
+        snapshot=SimpleNamespace(agent_card=public_card),
+        client=SimpleNamespace(
+            get_authenticated_extended_agent_card=AsyncMock(
+                side_effect=A2AAgentUnavailableError("extended card unavailable")
+            )
+        ),
+    )
+
+    @asynccontextmanager
+    async def fake_open_invoke_session(**kwargs):
+        _ = kwargs
+        yield session
+
+    monkeypatch.setattr(gateway, "open_invoke_session", fake_open_invoke_session)
+
+    result = await gateway.fetch_agent_card_detail(resolved=resolved)
+
+    assert result is public_card
+    session.client.get_authenticated_extended_agent_card.assert_awaited_once()
 
 
 @pytest.mark.asyncio

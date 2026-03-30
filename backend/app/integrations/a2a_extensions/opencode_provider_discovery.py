@@ -15,7 +15,11 @@ from app.integrations.a2a_extensions.contract_utils import (
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionNotSupportedError,
 )
-from app.integrations.a2a_extensions.shared_contract import PROVIDER_DISCOVERY_URI
+from app.integrations.a2a_extensions.shared_contract import (
+    PROVIDER_DISCOVERY_URI,
+    SUPPORTED_PROVIDER_DISCOVERY_URIS,
+    is_supported_extension_uri,
+)
 from app.integrations.a2a_extensions.types import ResolvedProviderDiscoveryExtension
 
 
@@ -31,7 +35,10 @@ def resolve_opencode_provider_discovery(
 
     ext = None
     for candidate in extensions:
-        if getattr(candidate, "uri", None) == PROVIDER_DISCOVERY_URI:
+        if is_supported_extension_uri(
+            getattr(candidate, "uri", None),
+            SUPPORTED_PROVIDER_DISCOVERY_URIS,
+        ):
             ext = candidate
             break
     if ext is None:

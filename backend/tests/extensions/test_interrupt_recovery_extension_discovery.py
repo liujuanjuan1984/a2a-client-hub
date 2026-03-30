@@ -11,6 +11,7 @@ from app.integrations.a2a_extensions.interrupt_recovery import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     INTERRUPT_RECOVERY_URI,
+    OPENCODE_INTERRUPT_RECOVERY_URI,
 )
 
 
@@ -87,6 +88,27 @@ def test_resolve_defaults_provider_to_opencode_when_missing() -> None:
     card = AgentCard.model_validate(payload)
     resolved = resolve_interrupt_recovery(card)
     assert resolved.provider == "opencode"
+
+
+def test_resolve_accepts_opencode_https_interrupt_recovery_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_INTERRUPT_RECOVERY_URI,
+            "required": False,
+            "params": {
+                "methods": {
+                    "list_permissions": "opencode.permissions.list",
+                    "list_questions": "opencode.questions.list",
+                },
+            },
+        }
+    ]
+
+    resolved = resolve_interrupt_recovery(AgentCard.model_validate(payload))
+
+    assert resolved.uri == OPENCODE_INTERRUPT_RECOVERY_URI
+    assert resolved.methods["list_permissions"] == "opencode.permissions.list"
 
 
 def test_resolve_treats_blank_interrupt_recovery_methods_as_missing() -> None:
