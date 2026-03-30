@@ -19,6 +19,9 @@ jobs:
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
+    env:
+      # Upstream softprops/action-gh-release@v2 still declares node20.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v5
