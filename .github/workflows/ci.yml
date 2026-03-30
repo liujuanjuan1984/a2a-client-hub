@@ -105,6 +105,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Run frontend production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Run frontend lint
         run: npm run lint
 
