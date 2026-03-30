@@ -15,6 +15,8 @@ from app.integrations.a2a_extensions.shared_contract import (
     SHARED_STREAM_FIELD,
     SHARED_USAGE_FIELD,
     STREAM_HINTS_URI,
+    SUPPORTED_STREAM_HINTS_URIS,
+    is_supported_extension_uri,
 )
 from app.integrations.a2a_extensions.types import ResolvedStreamHintsExtension
 
@@ -36,7 +38,10 @@ def resolve_stream_hints(card: AgentCard) -> ResolvedStreamHintsExtension:
 
     ext = None
     for candidate in extensions:
-        if getattr(candidate, "uri", None) == STREAM_HINTS_URI:
+        if is_supported_extension_uri(
+            getattr(candidate, "uri", None),
+            SUPPORTED_STREAM_HINTS_URIS,
+        ):
             ext = candidate
             break
     if ext is None:

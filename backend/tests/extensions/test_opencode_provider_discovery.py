@@ -12,7 +12,10 @@ from app.integrations.a2a_extensions.opencode_discovery_service import (
 from app.integrations.a2a_extensions.opencode_provider_discovery import (
     resolve_opencode_provider_discovery,
 )
-from app.integrations.a2a_extensions.shared_contract import PROVIDER_DISCOVERY_URI
+from app.integrations.a2a_extensions.shared_contract import (
+    OPENCODE_PROVIDER_DISCOVERY_URI,
+    PROVIDER_DISCOVERY_URI,
+)
 from app.integrations.a2a_extensions.types import (
     JsonRpcInterface,
     ResolvedProviderDiscoveryExtension,
@@ -75,6 +78,30 @@ def test_resolve_extracts_provider_discovery_methods_and_interface() -> None:
     assert resolved.business_code_map[-32005] == "upstream_payload_error"
     assert resolved.jsonrpc.url == "https://api.example.com/jsonrpc"
     assert resolved.jsonrpc.fallback_used is False
+
+
+def test_resolve_accepts_opencode_https_provider_discovery_uri() -> None:
+    payload = _base_card_payload()
+    payload["capabilities"]["extensions"] = [
+        {
+            "uri": OPENCODE_PROVIDER_DISCOVERY_URI,
+            "required": False,
+            "params": {
+                "methods": {
+                    "list_providers": "opencode.providers.list",
+                    "list_models": "opencode.models.list",
+                }
+            },
+        }
+    ]
+    payload["additionalInterfaces"] = [
+        {"transport": "jsonrpc", "url": "https://api.example.com/jsonrpc"}
+    ]
+
+    resolved = resolve_opencode_provider_discovery(AgentCard.model_validate(payload))
+
+    assert resolved.uri == OPENCODE_PROVIDER_DISCOVERY_URI
+    assert resolved.methods["list_providers"] == "opencode.providers.list"
 
 
 class _FakeSupport:

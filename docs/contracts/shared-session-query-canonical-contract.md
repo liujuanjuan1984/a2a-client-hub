@@ -10,9 +10,13 @@ may choose to publish.
 
 ## Status
 
-- Canonical extension URI: `urn:opencode-a2a:session-query/v1`
+- Hub-stable canonical identifier: `urn:opencode-a2a:session-query/v1`
+- Current `opencode-a2a` HTTPS alias also recognized by Hub:
+  `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1`
 - Legacy extension URI still recognized by Hub: `urn:shared-a2a:session-query:v1`
 - This document describes the canonical contract only
+- Hub normalizes known aliases back to its stable internal identifier where a
+  canonical URI value is required by downstream diagnostics
 
 ## Contract Goals
 
@@ -37,6 +41,11 @@ The canonical declaration must provide:
 - `params.methods.list_sessions`
 - `params.methods.get_session_messages`
 - `params.pagination`
+
+For upstreams that slim down the public Agent Card and move detailed extension
+contracts into an authenticated extended card, Hub should prefer consuming the
+extended card when available. The canonical runtime contract described here
+still applies; only the card discovery surface changes.
 
 The optional canonical declaration may provide:
 

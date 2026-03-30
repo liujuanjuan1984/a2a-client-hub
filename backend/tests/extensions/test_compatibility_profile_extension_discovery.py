@@ -10,6 +10,12 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
+from app.integrations.a2a_extensions.shared_contract import (
+    COMPATIBILITY_PROFILE_URI,
+    OPENCODE_COMPATIBILITY_PROFILE_URI,
+    OPENCODE_SHARED_SESSION_QUERY_URI,
+    SHARED_SESSION_QUERY_URI,
+)
 
 
 def _build_card(*, extension_payload: dict | None) -> AgentCard:
@@ -31,11 +37,11 @@ def _build_card(*, extension_payload: dict | None) -> AgentCard:
 def test_resolve_compatibility_profile_supports_declared_profile() -> None:
     card = _build_card(
         extension_payload={
-            "uri": "urn:a2a:compatibility-profile/v1",
+            "uri": COMPATIBILITY_PROFILE_URI,
             "required": False,
             "params": {
                 "extension_retention": {
-                    "urn:opencode-a2a:session-query/v1": {
+                    SHARED_SESSION_QUERY_URI: {
                         "surface": "jsonrpc-extension",
                         "availability": "always",
                         "retention": "stable",
@@ -46,7 +52,7 @@ def test_resolve_compatibility_profile_supports_declared_profile() -> None:
                         "surface": "extension",
                         "availability": "disabled",
                         "retention": "deployment-conditional",
-                        "extension_uri": "urn:opencode-a2a:session-query/v1",
+                        "extension_uri": SHARED_SESSION_QUERY_URI,
                         "toggle": "A2A_ENABLE_SESSION_SHELL",
                     }
                 },
@@ -63,7 +69,7 @@ def test_resolve_compatibility_profile_supports_declared_profile() -> None:
 
     resolved = resolve_compatibility_profile(card)
 
-    assert resolved.uri == "urn:a2a:compatibility-profile/v1"
+    assert resolved.uri == COMPATIBILITY_PROFILE_URI
     assert resolved.method_retention["opencode.sessions.shell"].toggle == (
         "A2A_ENABLE_SESSION_SHELL"
     )
@@ -75,7 +81,7 @@ def test_resolve_compatibility_profile_supports_declared_profile() -> None:
 def test_resolve_compatibility_profile_allows_empty_retention_maps() -> None:
     card = _build_card(
         extension_payload={
-            "uri": "urn:a2a:compatibility-profile/v1",
+            "uri": COMPATIBILITY_PROFILE_URI,
             "required": False,
             "params": {
                 "extension_retention": {},
@@ -98,7 +104,7 @@ def test_resolve_compatibility_profile_allows_empty_retention_maps() -> None:
 def test_resolve_compatibility_profile_rejects_non_object_retention_map() -> None:
     card = _build_card(
         extension_payload={
-            "uri": "urn:a2a:compatibility-profile/v1",
+            "uri": COMPATIBILITY_PROFILE_URI,
             "required": False,
             "params": {
                 "extension_retention": [],
@@ -124,3 +130,45 @@ def test_resolve_compatibility_profile_requires_declared_extension() -> None:
         match="Compatibility profile extension not found|Agent does not declare any extensions",
     ):
         resolve_compatibility_profile(card)
+
+
+def test_resolve_compatibility_profile_accepts_https_alias_and_normalizes_known_uris() -> (
+    None
+):
+    card = _build_card(
+        extension_payload={
+            "uri": OPENCODE_COMPATIBILITY_PROFILE_URI,
+            "required": False,
+            "params": {
+                "extension_retention": {
+                    OPENCODE_SHARED_SESSION_QUERY_URI: {
+                        "surface": "jsonrpc-extension",
+                        "availability": "always",
+                        "retention": "stable",
+                    }
+                },
+                "method_retention": {
+                    "opencode.sessions.shell": {
+                        "surface": "extension",
+                        "availability": "disabled",
+                        "retention": "deployment-conditional",
+                        "extension_uri": OPENCODE_SHARED_SESSION_QUERY_URI,
+                    }
+                },
+                "service_behaviors": {
+                    "classification": "stable-service-semantics",
+                    "methods": {"tasks/cancel": {"retention": "stable"}},
+                },
+                "consumer_guidance": ["Prefer extended card when available."],
+            },
+        }
+    )
+
+    resolved = resolve_compatibility_profile(card)
+
+    assert resolved.uri == OPENCODE_COMPATIBILITY_PROFILE_URI
+    assert SHARED_SESSION_QUERY_URI in resolved.extension_retention
+    assert (
+        resolved.method_retention["opencode.sessions.shell"].extension_uri
+        == SHARED_SESSION_QUERY_URI
+    )

@@ -15,10 +15,7 @@ export type WsConnection = {
   __cancelled?: boolean;
 };
 
-export type WsCtor = new (
-  url: string,
-  protocols?: string | string[],
-) => WsConnection;
+type WsCtor = new (url: string, protocols?: string | string[]) => WsConnection;
 
 export type StreamCallbacks = {
   onData: (data: Record<string, unknown>) => boolean | void;

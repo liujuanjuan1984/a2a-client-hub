@@ -1,12 +1,12 @@
 import { type SessionListItem } from "@/lib/api/sessions";
 import { formatLocalDateTimeYmdHm } from "@/lib/datetime";
 
-export type SessionAgentLookup = {
+type SessionAgentLookup = {
   name: string;
   source: "personal" | "shared";
 };
 
-export type SessionAgentPresentation = {
+type SessionAgentPresentation = {
   name: string;
   tone: "personal" | "shared" | "unknown";
 };

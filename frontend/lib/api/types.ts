@@ -1,4 +1,4 @@
-export type UUID = string;
+type UUID = string;
 
 export interface AuthResponse {
   access_token: string;
@@ -28,14 +28,14 @@ export interface UserProfile {
   timezone: string;
 }
 
-export interface ApiFieldErrorDetail {
+interface ApiFieldErrorDetail {
   msg?: string;
   message?: string;
   loc?: (string | number)[];
   type?: string;
 }
 
-export interface ApiStructuredErrorDetail {
+interface ApiStructuredErrorDetail {
   message?: string;
   error_code?: string | null;
   source?: string | null;

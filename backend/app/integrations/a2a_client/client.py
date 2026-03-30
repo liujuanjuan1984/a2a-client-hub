@@ -122,6 +122,7 @@ class A2AClient:
     ) -> None:
         self.agent_url = agent_url.rstrip("/")
         self._agent_card: Optional[AgentCard] = None
+        self._authenticated_extended_agent_card: Optional[AgentCard] = None
         self._peer_descriptor: A2APeerDescriptor | None = None
         self._timeout = timeout or self._build_timeout(timeout_seconds)
         self._http_client, self._owns_http_client = (
@@ -530,65 +531,10 @@ class A2AClient:
         async with self._request_usage():
             if self._agent_card is not None:
                 return self._agent_card
-
-            try:
-                validate_outbound_http_url(
-                    self.agent_url,
-                    allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
-                    purpose="Agent card URL",
-                )
-            except OutboundURLNotAllowedError as exc:
-                raise A2AOutboundNotAllowedError(str(exc)) from exc
-
-            httpx_client = await self._get_http_client()
-            request_http_kwargs: Dict[str, Any] = {}
-            if self._default_headers:
-                request_http_kwargs["headers"] = dict(self._default_headers)
-            request_http_kwargs["timeout"] = self._timeout
-            resolver = self._build_card_resolver(httpx_client)
-            logger.info(
-                "Requesting A2A agent card",
-                extra={
-                    "agent_url": redact_url_for_logging(self.agent_url),
-                    "resolver_base": redact_url_for_logging(resolver.base_url),
-                    "card_path": resolver.agent_card_path.split("?", 1)[0].split(
-                        "#", 1
-                    )[0],
-                },
+            card = await self._fetch_card(
+                agent_card_path_override=None,
+                log_label="A2A agent card",
             )
-            fetch_timeout = self._card_fetch_timeout
-            try:
-                if fetch_timeout and fetch_timeout > 0:
-                    card = await asyncio.wait_for(
-                        resolver.get_agent_card(http_kwargs=request_http_kwargs),
-                        timeout=fetch_timeout,
-                    )
-                else:
-                    card = await resolver.get_agent_card(
-                        http_kwargs=request_http_kwargs
-                    )
-            except asyncio.TimeoutError as exc:
-                logger.warning(
-                    "Timed out requesting A2A agent card",
-                    extra={
-                        "agent_url": redact_url_for_logging(self.agent_url),
-                        "timeout_seconds": fetch_timeout,
-                    },
-                )
-                raise A2AAgentUnavailableError(
-                    f"A2A agent '{redact_url_for_logging(self.agent_url)}' timed out while "
-                    "fetching metadata"
-                ) from exc
-            except Exception as exc:
-                logger.warning(
-                    "Failed to retrieve A2A agent card",
-                    exc_info=True,
-                    extra={"agent_url": redact_url_for_logging(self.agent_url)},
-                )
-                raise A2AAgentUnavailableError(
-                    f"Failed to fetch metadata for A2A agent "
-                    f"'{redact_url_for_logging(self.agent_url)}'"
-                ) from exc
 
             selected_transport, selected_url, supported_labels = (
                 self._resolve_negotiated_transport_target(card)
@@ -626,6 +572,27 @@ class A2AClient:
                 redact_url_for_logging(self.agent_url),
                 getattr(card, "name", "unknown"),
             )
+            return card
+
+    async def get_authenticated_extended_agent_card(self) -> AgentCard:
+        """Fetch and cache the authenticated extended agent card when supported."""
+
+        public_card = await self.get_agent_card()
+        if not getattr(public_card, "supports_authenticated_extended_card", False):
+            raise A2AAgentUnavailableError(
+                f"A2A agent '{redact_url_for_logging(self.agent_url)}' does not "
+                "advertise an authenticated extended agent card"
+            )
+
+        async with self._request_usage():
+            if self._authenticated_extended_agent_card is not None:
+                return self._authenticated_extended_agent_card
+
+            card = await self._fetch_card(
+                agent_card_path_override=EXTENDED_AGENT_CARD_PATH,
+                log_label="authenticated extended A2A agent card",
+            )
+            self._authenticated_extended_agent_card = card
             return card
 
     async def get_agent_resolution(self) -> tuple[AgentCard, Any]:
@@ -697,6 +664,7 @@ class A2AClient:
             entries = list(self._clients.values())
             self._clients.clear()
             self._agent_card = None
+            self._authenticated_extended_agent_card = None
             self._peer_descriptor = None
             owns_http_client = self._owns_http_client
             http_client = self._http_client if owns_http_client else None
@@ -1060,7 +1028,78 @@ class A2AClient:
             return exc.error_code == "method_not_found" or exc.code == -32601
         return False
 
-    def _build_card_resolver(self, httpx_client: httpx.AsyncClient) -> A2ACardResolver:
+    async def _fetch_card(
+        self,
+        *,
+        agent_card_path_override: str | None,
+        log_label: str,
+    ) -> AgentCard:
+        try:
+            validate_outbound_http_url(
+                self.agent_url,
+                allowed_hosts=a2a_proxy_service.get_effective_allowed_hosts_sync(),
+                purpose="Agent card URL",
+            )
+        except OutboundURLNotAllowedError as exc:
+            raise A2AOutboundNotAllowedError(str(exc)) from exc
+
+        httpx_client = await self._get_http_client()
+        request_http_kwargs: Dict[str, Any] = {}
+        if self._default_headers:
+            request_http_kwargs["headers"] = dict(self._default_headers)
+        request_http_kwargs["timeout"] = self._timeout
+        resolver = self._build_card_resolver(
+            httpx_client,
+            agent_card_path_override=agent_card_path_override,
+        )
+        logger.info(
+            "Requesting %s",
+            log_label,
+            extra={
+                "agent_url": redact_url_for_logging(self.agent_url),
+                "resolver_base": redact_url_for_logging(resolver.base_url),
+                "card_path": resolver.agent_card_path.split("?", 1)[0].split("#", 1)[0],
+            },
+        )
+        fetch_timeout = self._card_fetch_timeout
+        try:
+            if fetch_timeout and fetch_timeout > 0:
+                return await asyncio.wait_for(
+                    resolver.get_agent_card(http_kwargs=request_http_kwargs),
+                    timeout=fetch_timeout,
+                )
+            return await resolver.get_agent_card(http_kwargs=request_http_kwargs)
+        except asyncio.TimeoutError as exc:
+            logger.warning(
+                "Timed out requesting %s",
+                log_label,
+                extra={
+                    "agent_url": redact_url_for_logging(self.agent_url),
+                    "timeout_seconds": fetch_timeout,
+                },
+            )
+            raise A2AAgentUnavailableError(
+                f"A2A agent '{redact_url_for_logging(self.agent_url)}' timed out while "
+                "fetching metadata"
+            ) from exc
+        except Exception as exc:
+            logger.warning(
+                "Failed to retrieve %s",
+                log_label,
+                exc_info=True,
+                extra={"agent_url": redact_url_for_logging(self.agent_url)},
+            )
+            raise A2AAgentUnavailableError(
+                f"Failed to fetch metadata for A2A agent "
+                f"'{redact_url_for_logging(self.agent_url)}'"
+            ) from exc
+
+    def _build_card_resolver(
+        self,
+        httpx_client: httpx.AsyncClient,
+        *,
+        agent_card_path_override: str | None = None,
+    ) -> A2ACardResolver:
         """Create a resolver that avoids duplicating well-known paths."""
 
         parsed_url = urlsplit(self.agent_url)
@@ -1090,7 +1129,7 @@ class A2AClient:
                 )
             ).rstrip("/")
 
-            card_path = candidate_path
+            card_path = agent_card_path_override or candidate_path
             if parsed_url.query:
                 card_path = f"{card_path}?{parsed_url.query}"
             if parsed_url.fragment:
@@ -1103,6 +1142,12 @@ class A2AClient:
                 agent_card_path=card_path,
             )
 
+        if agent_card_path_override is not None:
+            return A2ACardResolver(
+                httpx_client=httpx_client,
+                base_url=self.agent_url,
+                agent_card_path=agent_card_path_override,
+            )
         return A2ACardResolver(httpx_client=httpx_client, base_url=self.agent_url)
 
     @staticmethod

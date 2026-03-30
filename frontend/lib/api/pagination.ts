@@ -1,13 +1,13 @@
 import { type ItemsEnvelope, parseListResponse } from "@/lib/api/listParser";
 
-export type ListEnvelope<T> = ItemsEnvelope<T> & {
+type ListEnvelope<T> = ItemsEnvelope<T> & {
   pagination?: unknown;
   meta?: unknown;
 };
 
-export type ListResponse<T> = T[] | ListEnvelope<T>;
+type ListResponse<T> = T[] | ListEnvelope<T>;
 
-export type PaginatedResult<T> = {
+type PaginatedResult<T> = {
   items: T[];
   pagination: unknown;
   meta: unknown;

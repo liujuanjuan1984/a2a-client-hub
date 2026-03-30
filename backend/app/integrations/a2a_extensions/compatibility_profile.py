@@ -11,7 +11,12 @@ from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
 )
-from app.integrations.a2a_extensions.shared_contract import COMPATIBILITY_PROFILE_URI
+from app.integrations.a2a_extensions.shared_contract import (
+    COMPATIBILITY_PROFILE_URI,
+    SUPPORTED_COMPATIBILITY_PROFILE_URIS,
+    is_supported_extension_uri,
+    normalize_known_extension_uri,
+)
 from app.integrations.a2a_extensions.types import (
     CompatibilityRetentionEntry,
     ResolvedCompatibilityProfileExtension,
@@ -55,7 +60,9 @@ def _resolve_retention_entry(
             field=f"{field}.{name}.retention",
         ),
         extension_uri=(
-            require_str(extension_uri, field=f"{field}.{name}.extension_uri")
+            normalize_known_extension_uri(
+                require_str(extension_uri, field=f"{field}.{name}.extension_uri")
+            )
             if extension_uri is not None
             else None
         ),
@@ -77,7 +84,8 @@ def _resolve_retention_map(
     items = dict(value)
 
     return {
-        require_str(key, field=field): _resolve_retention_entry(
+        normalize_known_extension_uri(require_str(key, field=field))
+        or require_str(key, field=field): _resolve_retention_entry(
             require_str(key, field=field),
             item,
             field=field,
@@ -98,7 +106,10 @@ def resolve_compatibility_profile(
 
     ext = None
     for candidate in extensions:
-        if getattr(candidate, "uri", None) == COMPATIBILITY_PROFILE_URI:
+        if is_supported_extension_uri(
+            getattr(candidate, "uri", None),
+            SUPPORTED_COMPATIBILITY_PROFILE_URIS,
+        ):
             ext = candidate
             break
     if ext is None:

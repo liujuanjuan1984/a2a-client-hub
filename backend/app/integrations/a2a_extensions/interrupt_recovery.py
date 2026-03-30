@@ -16,6 +16,8 @@ from app.integrations.a2a_extensions.errors import (
 )
 from app.integrations.a2a_extensions.shared_contract import (
     INTERRUPT_RECOVERY_URI,
+    SUPPORTED_INTERRUPT_RECOVERY_URIS,
+    is_supported_extension_uri,
 )
 from app.integrations.a2a_extensions.types import (
     ResolvedInterruptRecoveryExtension,
@@ -32,7 +34,10 @@ def resolve_interrupt_recovery(
 
     ext = None
     for candidate in extensions:
-        if getattr(candidate, "uri", None) == INTERRUPT_RECOVERY_URI:
+        if is_supported_extension_uri(
+            getattr(candidate, "uri", None),
+            SUPPORTED_INTERRUPT_RECOVERY_URIS,
+        ):
             ext = candidate
             break
     if ext is None:

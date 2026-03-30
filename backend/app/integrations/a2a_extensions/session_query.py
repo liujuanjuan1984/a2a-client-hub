@@ -21,6 +21,8 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_extensions.shared_contract import (
     LEGACY_SHARED_SESSION_QUERY_URI,
     SHARED_SESSION_QUERY_URI,
+    SUPPORTED_SESSION_QUERY_URIS,
+    is_supported_extension_uri,
 )
 from app.integrations.a2a_extensions.types import (
     MessageCursorPaginationContract,
@@ -270,9 +272,9 @@ def _find_session_query_extension(
 
     for candidate in extensions:
         uri = getattr(candidate, "uri", None)
-        if uri == SHARED_SESSION_QUERY_URI:
-            return candidate
-        if allow_legacy_uri and uri == LEGACY_SHARED_SESSION_QUERY_URI:
+        if is_supported_extension_uri(uri, SUPPORTED_SESSION_QUERY_URIS):
+            if uri == LEGACY_SHARED_SESSION_QUERY_URI and not allow_legacy_uri:
+                continue
             return candidate
     raise A2AExtensionNotSupportedError("Shared session query extension not found")
 

@@ -1,12 +1,12 @@
 export const CHAT_LIST_BOTTOM_STICK_THRESHOLD = 72;
 
-export type ChatScrollMetrics = {
+type ChatScrollMetrics = {
   offsetY: number;
   viewportHeight: number;
   contentHeight: number;
 };
 
-export type ContentSizeAnchor = {
+type ContentSizeAnchor = {
   offset: number;
   contentHeight: number;
 };

@@ -14,6 +14,8 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_extensions.shared_contract import (
     MODEL_SELECTION_URI,
     SHARED_MODEL_FIELD,
+    SUPPORTED_MODEL_SELECTION_URIS,
+    is_supported_extension_uri,
 )
 from app.integrations.a2a_extensions.types import ResolvedModelSelectionExtension
 
@@ -40,7 +42,10 @@ def resolve_model_selection(card: AgentCard) -> ResolvedModelSelectionExtension:
 
     ext = None
     for candidate in extensions:
-        if getattr(candidate, "uri", None) == MODEL_SELECTION_URI:
+        if is_supported_extension_uri(
+            getattr(candidate, "uri", None),
+            SUPPORTED_MODEL_SELECTION_URIS,
+        ):
             ext = candidate
             break
     if ext is None:

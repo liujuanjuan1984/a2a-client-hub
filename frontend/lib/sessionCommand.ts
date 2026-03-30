@@ -1,4 +1,4 @@
-export type ParsedComposerInput =
+type ParsedComposerInput =
   | {
       kind: "message";
       text: string;
