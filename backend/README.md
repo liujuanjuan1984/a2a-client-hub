@@ -173,6 +173,10 @@ Endpoints:
 
 - Read generic extension capabilities:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
+  - The response also includes a `compatibilityProfile` block when the upstream
+    declares `urn:a2a:compatibility-profile/v1`, exposing
+    `extensionRetention`, `methodRetention`, `serviceBehaviors`, and
+    `consumerGuidance` for Hub-side diagnostics.
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
     - body:
@@ -188,6 +192,12 @@ Endpoints:
     - body example:
       `{"page":1,"size":20,"filters":{"directory":"services/api","roots":true,"start":40,"search":"planner"},"query":{"status":"open"}}`
     - the Hub contract keeps `filters.directory`, `filters.roots`, `filters.start`, and `filters.search` stable, then maps them to the upstream session-query contract declared by the runtime
+
+Validation:
+
+- `POST /api/v1/me/a2a/agents/{agent_id}/card:validate` now returns a
+  `compatibility_profile` diagnostic when the upstream card declares
+  `urn:a2a:compatibility-profile/v1`.
 - Continue a session:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:continue`
 - Trigger async prompt for an existing upstream session:

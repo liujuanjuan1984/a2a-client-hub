@@ -74,6 +74,15 @@ class ResolvedSessionControlMethodCapability:
 
 
 @dataclass(frozen=True, slots=True)
+class CompatibilityRetentionEntry:
+    surface: str
+    availability: str
+    retention: str
+    extension_uri: str | None = None
+    toggle: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedInterruptCallbackExtension:
     uri: str
     required: bool
@@ -141,10 +150,22 @@ class ResolvedStreamHintsExtension:
     session_field: str
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedCompatibilityProfileExtension:
+    uri: str
+    required: bool
+    extension_retention: Mapping[str, CompatibilityRetentionEntry]
+    method_retention: Mapping[str, CompatibilityRetentionEntry]
+    service_behaviors: Mapping[str, object]
+    consumer_guidance: tuple[str, ...]
+
+
 __all__ = [
+    "CompatibilityRetentionEntry",
     "JsonRpcInterface",
     "MessageCursorPaginationContract",
     "PageSizePagination",
+    "ResolvedCompatibilityProfileExtension",
     "ResultEnvelopeMapping",
     "ResolvedModelSelectionExtension",
     "ResolvedProviderDiscoveryExtension",

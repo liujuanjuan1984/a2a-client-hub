@@ -30,6 +30,10 @@ from app.integrations.a2a_extensions.errors import (
 from app.integrations.a2a_runtime_status_contract import (
     runtime_status_contract_payload,
 )
+from app.schemas.a2a_compatibility_profile import (
+    A2ACompatibilityProfileDiagnostic,
+    A2ACompatibilityProfileEntry,
+)
 from app.schemas.a2a_extension import (
     A2AExtensionCapabilitiesResponse,
     A2AExtensionElicitationReplyRequest,
@@ -163,6 +167,41 @@ def _build_session_control_response(
     )
 
 
+def _build_compatibility_profile_response(
+    snapshot: Any,
+) -> A2ACompatibilityProfileDiagnostic:
+    compatibility_snapshot = getattr(snapshot, "compatibility_profile", None)
+    status = cast(
+        Literal["supported", "unsupported", "invalid"],
+        getattr(compatibility_snapshot, "status", "unsupported"),
+    )
+    error = getattr(compatibility_snapshot, "error", None)
+    ext = getattr(compatibility_snapshot, "ext", None)
+    if ext is None:
+        return A2ACompatibilityProfileDiagnostic(
+            declared=status != "unsupported",
+            status=status,
+            error=error,
+        )
+
+    return A2ACompatibilityProfileDiagnostic(
+        declared=True,
+        status=status,
+        uri=getattr(ext, "uri", None),
+        extensionRetention={
+            name: A2ACompatibilityProfileEntry.model_validate(entry)
+            for name, entry in dict(getattr(ext, "extension_retention", {})).items()
+        },
+        methodRetention={
+            name: A2ACompatibilityProfileEntry.model_validate(entry)
+            for name, entry in dict(getattr(ext, "method_retention", {})).items()
+        },
+        serviceBehaviors=dict(getattr(ext, "service_behaviors", {}) or {}),
+        consumerGuidance=list(getattr(ext, "consumer_guidance", ()) or ()),
+        error=error,
+    )
+
+
 def create_extension_capability_router(
     *,
     prefix: str,
@@ -262,6 +301,7 @@ def create_extension_capability_router(
             interruptRecovery=interrupt_recovery,
             sessionPromptAsync=session_prompt_async,
             sessionControl=session_control,
+            compatibilityProfile=_build_compatibility_profile_response(snapshot),
             runtimeStatus=A2ARuntimeStatusContractResponse.model_validate(
                 runtime_status_contract_payload()
             ),
