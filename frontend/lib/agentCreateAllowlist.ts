@@ -108,5 +108,3 @@ export const executeWithAdminAutoAllowlist = async <T>({
     return { status: "created", value: await run() };
   }
 };
-
-export const createWithAdminAutoAllowlist = executeWithAdminAutoAllowlist;
