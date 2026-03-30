@@ -7,7 +7,7 @@ import {
   projectPrimaryTextContent,
 } from "@/lib/api/chat-utils";
 
-export type SessionMessageItem = {
+type SessionMessageItem = {
   id: string;
   role: string;
   content?: string;
@@ -26,7 +26,7 @@ export type SessionMessageItem = {
   }[];
 };
 
-export type A2AMessageItem = {
+type A2AMessageItem = {
   messageId?: string;
   message_id?: string;
   role?: string;

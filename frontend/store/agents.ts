@@ -8,7 +8,7 @@ import {
   createPersistStorage,
 } from "@/lib/storage/mmkv";
 
-export type AgentStatus = "idle" | "checking" | "success" | "error";
+type AgentStatus = "idle" | "checking" | "success" | "error";
 
 export type AgentHeader = HeaderEntryWithId;
 

@@ -6,7 +6,7 @@ import {
 } from "@/lib/agentHeaders";
 import { type A2AAgentCreateRequest } from "@/lib/api/a2aAgents";
 
-export type AgentUpsertInput = {
+type AgentUpsertInput = {
   name: string;
   cardUrl: string;
   authType: AgentAuthType;
