@@ -72,20 +72,14 @@ def test_resolve_compatibility_profile_supports_declared_profile() -> None:
     )
 
 
-def test_resolve_compatibility_profile_rejects_invalid_retention_map() -> None:
+def test_resolve_compatibility_profile_allows_empty_retention_maps() -> None:
     card = _build_card(
         extension_payload={
             "uri": "urn:a2a:compatibility-profile/v1",
             "required": False,
             "params": {
                 "extension_retention": {},
-                "method_retention": {
-                    "opencode.sessions.command": {
-                        "surface": "extension",
-                        "availability": "always",
-                        "retention": "stable",
-                    }
-                },
+                "method_retention": {},
                 "service_behaviors": {
                     "classification": "stable-service-semantics",
                     "methods": {"tasks/cancel": {"retention": "stable"}},
@@ -95,10 +89,30 @@ def test_resolve_compatibility_profile_rejects_invalid_retention_map() -> None:
         }
     )
 
-    with pytest.raises(
-        A2AExtensionContractError,
-        match="params.extension_retention",
-    ):
+    resolved = resolve_compatibility_profile(card)
+
+    assert resolved.extension_retention == {}
+    assert resolved.method_retention == {}
+
+
+def test_resolve_compatibility_profile_rejects_non_object_retention_map() -> None:
+    card = _build_card(
+        extension_payload={
+            "uri": "urn:a2a:compatibility-profile/v1",
+            "required": False,
+            "params": {
+                "extension_retention": [],
+                "method_retention": {},
+                "service_behaviors": {
+                    "classification": "stable-service-semantics",
+                    "methods": {"tasks/cancel": {"retention": "stable"}},
+                },
+                "consumer_guidance": ["Treat opencode.sessions.* as provider-private."],
+            },
+        }
+    )
+
+    with pytest.raises(A2AExtensionContractError, match="params.extension_retention"):
         resolve_compatibility_profile(card)
 
 

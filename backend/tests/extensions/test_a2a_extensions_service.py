@@ -2353,7 +2353,7 @@ def test_build_compatibility_profile_snapshot_returns_supported_status() -> None
     )
 
 
-def test_build_compatibility_profile_snapshot_returns_invalid_status() -> None:
+def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> None:
     service = A2AExtensionsService()
     card = AgentCard.model_validate(
         {
@@ -2368,13 +2368,7 @@ def test_build_compatibility_profile_snapshot_returns_invalid_status() -> None:
                         "required": False,
                         "params": {
                             "extension_retention": {},
-                            "method_retention": {
-                                "opencode.sessions.command": {
-                                    "surface": "extension",
-                                    "availability": "always",
-                                    "retention": "stable",
-                                }
-                            },
+                            "method_retention": {},
                             "service_behaviors": {
                                 "classification": "stable-service-semantics"
                             },
@@ -2393,6 +2387,7 @@ def test_build_compatibility_profile_snapshot_returns_invalid_status() -> None:
 
     snapshot = service._build_compatibility_profile_snapshot(card)
 
-    assert snapshot.status == "invalid"
-    assert snapshot.ext is None
-    assert snapshot.error is not None
+    assert snapshot.status == "supported"
+    assert snapshot.ext is not None
+    assert snapshot.ext.extension_retention == {}
+    assert snapshot.ext.method_retention == {}

@@ -72,9 +72,9 @@ def _resolve_retention_map(
     *,
     field: str,
 ) -> Dict[str, CompatibilityRetentionEntry]:
-    items = as_dict(value)
-    if not items:
+    if not isinstance(value, dict):
         raise A2AExtensionContractError(f"Extension contract missing/invalid '{field}'")
+    items = dict(value)
 
     return {
         require_str(key, field=field): _resolve_retention_entry(

@@ -139,7 +139,7 @@ async def test_fetch_and_validate_agent_card_exposes_invalid_compatibility_profi
                                         "retention": "stable",
                                     }
                                 },
-                                "method_retention": {},
+                                "method_retention": [],
                                 "service_behaviors": {
                                     "classification": "stable-service-semantics"
                                 },
