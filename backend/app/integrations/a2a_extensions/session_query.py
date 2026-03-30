@@ -32,6 +32,8 @@ from app.integrations.a2a_extensions.types import (
     SessionListFiltersContract,
 )
 
+LIMIT_WITH_OPTIONAL_CURSOR_MODE = "limit_and_optional_cursor"
+
 
 def _resolve_pagination_size(
     pagination: Dict[str, Any],
@@ -56,7 +58,7 @@ def _resolve_pagination_size(
 
 
 def _parse_pagination_params(
-    pagination: Dict[str, Any], *, mode: str
+    pagination: Dict[str, Any], *, mode: str, declared_mode: str
 ) -> tuple[tuple[str, ...], bool]:
     raw_params = pagination.get("params")
     params: list[str] = []
@@ -70,7 +72,12 @@ def _parse_pagination_params(
             params.append(token)
 
     if not params:
-        params = ["page", "size"] if mode == "page_size" else ["limit"]
+        if mode == "page_size":
+            params = ["page", "size"]
+        elif declared_mode == LIMIT_WITH_OPTIONAL_CURSOR_MODE:
+            params = ["limit", "before"]
+        else:
+            params = ["limit"]
 
     if mode == "page_size":
         if "page" not in params or "size" not in params:
@@ -82,6 +89,11 @@ def _parse_pagination_params(
     if "limit" not in params:
         raise A2AExtensionContractError(
             "Extension pagination.params must include limit for mode 'limit'"
+        )
+    if declared_mode == LIMIT_WITH_OPTIONAL_CURSOR_MODE and "offset" in params:
+        raise A2AExtensionContractError(
+            "Extension pagination.params must not include offset for mode "
+            "'limit_and_optional_cursor'"
         )
     return tuple(params), "offset" in params
 
@@ -132,6 +144,7 @@ def _resolve_result_envelope(value: Any) -> Optional[ResultEnvelopeMapping]:
 def _resolve_message_cursor_pagination(
     pagination: Dict[str, Any],
     *,
+    pagination_mode: str,
     get_messages_method: str,
 ) -> MessageCursorPaginationContract:
     raw_cursor_applies_to = pagination.get("cursor_applies_to")
@@ -147,6 +160,11 @@ def _resolve_message_cursor_pagination(
     raw_cursor_param = pagination.get("cursor_param")
     raw_result_cursor_field = pagination.get("result_cursor_field")
     if raw_cursor_param is None and raw_result_cursor_field is None:
+        if pagination_mode == LIMIT_WITH_OPTIONAL_CURSOR_MODE:
+            raise A2AExtensionContractError(
+                "Extension contract missing/invalid cursor pagination fields for mode "
+                "'limit_and_optional_cursor'"
+            )
         return MessageCursorPaginationContract()
     if not isinstance(raw_cursor_param, str) or not raw_cursor_param.strip():
         raise A2AExtensionContractError(
@@ -309,7 +327,10 @@ def _resolve_extension(
     )
 
     pagination = as_dict(params.get("pagination"))
-    mode = require_str(pagination.get("mode"), field="pagination.mode")
+    declared_mode = require_str(pagination.get("mode"), field="pagination.mode")
+    mode = (
+        "limit" if declared_mode == LIMIT_WITH_OPTIONAL_CURSOR_MODE else declared_mode
+    )
     uses_legacy_limit_fields = _uses_legacy_limit_fields(pagination)
     is_legacy_variant = (
         getattr(ext, "uri", None) == LEGACY_SHARED_SESSION_QUERY_URI
@@ -351,11 +372,16 @@ def _resolve_extension(
         )
     else:
         raise A2AExtensionContractError(
-            "Extension pagination.mode must be one of 'page_size' or 'limit'"
+            "Extension pagination.mode must be one of 'page_size', 'limit', or "
+            "'limit_and_optional_cursor'"
         )
     if default_size <= 0 or max_size <= 0 or default_size > max_size:
         raise A2AExtensionContractError("Extension pagination sizes are invalid")
-    pagination_params, supports_offset = _parse_pagination_params(pagination, mode=mode)
+    pagination_params, supports_offset = _parse_pagination_params(
+        pagination,
+        mode=mode,
+        declared_mode=declared_mode,
+    )
 
     errors = as_dict(params.get("errors"))
     code_to_error = build_business_code_map(errors.get("business_codes"))
@@ -363,6 +389,7 @@ def _resolve_extension(
     envelope_mapping = _resolve_result_envelope(params.get("result_envelope"))
     message_cursor_pagination = _resolve_message_cursor_pagination(
         pagination,
+        pagination_mode=declared_mode,
         get_messages_method=get_messages_method,
     )
     session_list_filters = _resolve_session_list_filters(
