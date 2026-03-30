@@ -9,6 +9,9 @@ from typing import Any, Dict, Literal, Optional
 
 from app.core.logging import get_logger
 from app.features.personal_agents.runtime import A2ARuntime
+from app.integrations.a2a_extensions.compatibility_profile import (
+    resolve_compatibility_profile,
+)
 from app.integrations.a2a_extensions.errors import (
     A2AExtensionContractError,
     A2AExtensionNotSupportedError,
@@ -47,6 +50,7 @@ from app.integrations.a2a_extensions.shared_support import (
 )
 from app.integrations.a2a_extensions.stream_hints import resolve_stream_hints
 from app.integrations.a2a_extensions.types import (
+    ResolvedCompatibilityProfileExtension,
     ResolvedInterruptCallbackExtension,
     ResolvedInterruptRecoveryExtension,
     ResolvedModelSelectionExtension,
@@ -124,6 +128,13 @@ class StreamHintsCapabilitySnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class CompatibilityProfileCapabilitySnapshot:
+    status: Literal["supported", "unsupported", "invalid"]
+    ext: ResolvedCompatibilityProfileExtension | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedCapabilitySnapshot:
     session_query: SessionQueryCapabilitySnapshot
     session_binding: SessionBindingCapabilitySnapshot
@@ -132,6 +143,7 @@ class ResolvedCapabilitySnapshot:
     model_selection: ModelSelectionCapabilitySnapshot
     provider_discovery: ProviderDiscoveryCapabilitySnapshot
     stream_hints: StreamHintsCapabilitySnapshot
+    compatibility_profile: CompatibilityProfileCapabilitySnapshot
 
 
 @dataclass(slots=True)
@@ -371,6 +383,28 @@ class A2AExtensionsService:
             },
         )
 
+    @staticmethod
+    def _build_compatibility_profile_snapshot(
+        card: Any,
+    ) -> CompatibilityProfileCapabilitySnapshot:
+        try:
+            ext = resolve_compatibility_profile(card)
+        except A2AExtensionNotSupportedError as exc:
+            return CompatibilityProfileCapabilitySnapshot(
+                status="unsupported",
+                error=str(exc),
+            )
+        except A2AExtensionContractError as exc:
+            return CompatibilityProfileCapabilitySnapshot(
+                status="invalid",
+                error=str(exc),
+            )
+
+        return CompatibilityProfileCapabilitySnapshot(
+            status="supported",
+            ext=ext,
+        )
+
     async def resolve_capability_snapshot(
         self,
         *,
@@ -392,6 +426,7 @@ class A2AExtensionsService:
             model_selection=self._build_model_selection_snapshot(card),
             provider_discovery=self._build_provider_discovery_snapshot(card),
             stream_hints=self._build_stream_hints_snapshot(card),
+            compatibility_profile=self._build_compatibility_profile_snapshot(card),
         )
         async with self._capability_snapshot_cache_lock:
             self._capability_snapshot_cache[cache_key] = _CapabilitySnapshotCacheEntry(

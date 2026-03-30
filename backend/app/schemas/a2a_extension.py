@@ -6,6 +6,10 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.a2a_compatibility_profile import (
+    A2ACompatibilityProfileDiagnostic,
+)
+
 
 class A2AExtensionQueryRequest(BaseModel):
     page: int = Field(1, ge=1, description="Page number (1-indexed)")
@@ -329,6 +333,14 @@ class A2AExtensionCapabilitiesResponse(BaseModel):
         ...,
         alias="sessionControl",
         description="Hub-stable method-level session control capability contract",
+    )
+    compatibility_profile: A2ACompatibilityProfileDiagnostic = Field(
+        ...,
+        alias="compatibilityProfile",
+        description=(
+            "Declared compatibility-profile extension summary consumed by the hub "
+            "for compatibility diagnostics."
+        ),
     )
     runtime_status: A2ARuntimeStatusContractResponse = Field(
         ...,

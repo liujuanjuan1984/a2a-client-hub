@@ -18,6 +18,9 @@ from app.integrations.a2a_client.invoke_session import AgentResolutionPolicy
 from app.integrations.a2a_client.validators import (
     validate_agent_card as validate_agent_card_payload,
 )
+from app.integrations.a2a_extensions.compatibility_profile_diagnostics import (
+    diagnose_compatibility_profile,
+)
 from app.integrations.a2a_extensions.session_query_diagnostics import (
     diagnose_session_query,
 )
@@ -70,8 +73,19 @@ async def fetch_and_validate_agent_card(
         if diagnostics_card is not None
         else None
     )
+    compatibility_profile = (
+        diagnose_compatibility_profile(diagnostics_card)
+        if diagnostics_card is not None
+        else None
+    )
     if session_query and session_query.status == "invalid" and session_query.error:
         validation_errors.append(session_query.error)
+    if (
+        compatibility_profile
+        and compatibility_profile.status == "invalid"
+        and compatibility_profile.error
+    ):
+        validation_errors.append(compatibility_profile.error)
 
     success = not validation_errors
     if success and validation_warnings:
@@ -80,6 +94,15 @@ async def fetch_and_validate_agent_card(
         message = "Agent card validated"
     elif session_query and session_query.status == "invalid" and session_query.error:
         message = f"Shared session query contract is invalid: {session_query.error}"
+    elif (
+        compatibility_profile
+        and compatibility_profile.status == "invalid"
+        and compatibility_profile.error
+    ):
+        message = (
+            "Compatibility profile contract is invalid: "
+            f"{compatibility_profile.error}"
+        )
     else:
         message = "Agent card validation issues detected"
 
@@ -90,6 +113,7 @@ async def fetch_and_validate_agent_card(
         "card_description": card_payload.get("description"),
         "card": card_payload,
         "shared_session_query": session_query,
+        "compatibility_profile": compatibility_profile,
     }
     if validation_warnings:
         response_kwargs["validation_warnings"] = validation_warnings

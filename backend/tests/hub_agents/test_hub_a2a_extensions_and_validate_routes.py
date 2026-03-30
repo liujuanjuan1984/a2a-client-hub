@@ -94,6 +94,11 @@ class _FakeExtensionsService:
             provider_discovery=SimpleNamespace(status="unsupported"),
             interrupt_recovery=SimpleNamespace(status="unsupported"),
             session_query=SimpleNamespace(status="unsupported", capability=None),
+            compatibility_profile=SimpleNamespace(
+                status="unsupported",
+                ext=None,
+                error="Compatibility profile extension not found",
+            ),
         )
 
     async def resolve_capability_snapshot(self, *, runtime):
@@ -881,6 +886,81 @@ async def test_hub_card_validate_reports_shared_session_query_diagnostics(
 
 
 @pytest.mark.asyncio
+async def test_hub_card_validate_reports_compatibility_profile_diagnostics(
+    async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "a2a_proxy_allowed_hosts", ["example.com"])
+
+    agent_id, user = await _create_allowlisted_hub_agent(
+        async_session_maker=async_session_maker,
+        async_db_session=async_db_session,
+        admin_email="admin_validate_profile@example.com",
+        user_email="alice_validate_profile@example.com",
+        token="secret-token-validate-profile",
+    )
+
+    fake_gateway = _FakeGateway()
+    fake_gateway.card_payload["capabilities"]["extensions"] = [
+        {
+            "uri": "urn:a2a:compatibility-profile/v1",
+            "params": {
+                "extension_retention": {
+                    "urn:opencode-a2a:session-query/v1": {
+                        "surface": "jsonrpc-extension",
+                        "availability": "always",
+                        "retention": "stable",
+                    }
+                },
+                "method_retention": {
+                    "opencode.sessions.shell": {
+                        "surface": "extension",
+                        "availability": "disabled",
+                        "retention": "deployment-conditional",
+                        "extension_uri": "urn:opencode-a2a:session-query/v1",
+                        "toggle": "A2A_ENABLE_SESSION_SHELL",
+                    }
+                },
+                "service_behaviors": {
+                    "classification": "stable-service-semantics",
+                    "methods": {"tasks/cancel": {"retention": "stable"}},
+                },
+                "consumer_guidance": [
+                    "Treat opencode.sessions.shell as deployment-conditional."
+                ],
+            },
+        }
+    ]
+    monkeypatch.setattr(
+        hub_router, "get_a2a_service", lambda: _FakeA2AService(fake_gateway)
+    )
+
+    async with create_test_client(
+        hub_router.router,
+        async_session_maker=async_session_maker,
+        current_user=user,
+        base_prefix=settings.api_v1_prefix,
+    ) as user_client:
+        resp = await user_client.post(
+            f"{settings.api_v1_prefix}/a2a/agents/{agent_id}/card:validate"
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["success"] is True
+    assert payload["compatibility_profile"]["declared"] is True
+    assert payload["compatibility_profile"]["status"] == "supported"
+    assert payload["compatibility_profile"]["methodRetention"] == {
+        "opencode.sessions.shell": {
+            "surface": "extension",
+            "availability": "disabled",
+            "retention": "deployment-conditional",
+            "extensionUri": "urn:opencode-a2a:session-query/v1",
+            "toggle": "A2A_ENABLE_SESSION_SHELL",
+        }
+    }
+
+
+@pytest.mark.asyncio
 async def test_hub_opencode_routes_use_hub_runtime_and_remain_non_enumerable(
     async_session_maker, async_db_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1287,6 +1367,38 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
         model_selection=SimpleNamespace(status="supported"),
         provider_discovery=SimpleNamespace(status="supported"),
         interrupt_recovery=SimpleNamespace(status="supported"),
+        compatibility_profile=SimpleNamespace(
+            status="supported",
+            error=None,
+            ext=SimpleNamespace(
+                uri="urn:a2a:compatibility-profile/v1",
+                extension_retention={
+                    "urn:opencode-a2a:session-query/v1": SimpleNamespace(
+                        surface="jsonrpc-extension",
+                        availability="always",
+                        retention="stable",
+                        extension_uri=None,
+                        toggle=None,
+                    )
+                },
+                method_retention={
+                    "opencode.sessions.shell": SimpleNamespace(
+                        surface="extension",
+                        availability="disabled",
+                        retention="deployment-conditional",
+                        extension_uri="urn:opencode-a2a:session-query/v1",
+                        toggle="A2A_ENABLE_SESSION_SHELL",
+                    )
+                },
+                service_behaviors={
+                    "classification": "stable-service-semantics",
+                    "methods": {"tasks/cancel": {"retention": "stable"}},
+                },
+                consumer_guidance=(
+                    "Treat opencode.sessions.shell as deployment-conditional.",
+                ),
+            ),
+        ),
         session_query=SimpleNamespace(
             status="supported",
             capability=SimpleNamespace(
@@ -1359,6 +1471,37 @@ async def test_hub_extension_capabilities_route_returns_model_selection_true(
                 "configKey": "A2A_ENABLE_SESSION_SHELL",
             },
         },
+        "compatibilityProfile": {
+            "declared": True,
+            "status": "supported",
+            "uri": "urn:a2a:compatibility-profile/v1",
+            "extensionRetention": {
+                "urn:opencode-a2a:session-query/v1": {
+                    "surface": "jsonrpc-extension",
+                    "availability": "always",
+                    "retention": "stable",
+                    "extensionUri": None,
+                    "toggle": None,
+                }
+            },
+            "methodRetention": {
+                "opencode.sessions.shell": {
+                    "surface": "extension",
+                    "availability": "disabled",
+                    "retention": "deployment-conditional",
+                    "extensionUri": "urn:opencode-a2a:session-query/v1",
+                    "toggle": "A2A_ENABLE_SESSION_SHELL",
+                }
+            },
+            "serviceBehaviors": {
+                "classification": "stable-service-semantics",
+                "methods": {"tasks/cancel": {"retention": "stable"}},
+            },
+            "consumerGuidance": [
+                "Treat opencode.sessions.shell as deployment-conditional."
+            ],
+            "error": None,
+        },
         "runtimeStatus": runtime_status_contract_payload(),
     }
     assert response.headers["cache-control"] == "no-store"
@@ -1383,6 +1526,11 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
         model_selection=SimpleNamespace(status="supported"),
         provider_discovery=SimpleNamespace(status="unsupported"),
         interrupt_recovery=SimpleNamespace(status="unsupported"),
+        compatibility_profile=SimpleNamespace(
+            status="unsupported",
+            ext=None,
+            error="Compatibility profile extension not found",
+        ),
         session_query=SimpleNamespace(
             status="supported",
             capability=SimpleNamespace(
@@ -1454,6 +1602,16 @@ async def test_hub_extension_capabilities_route_returns_model_selection_false_fo
                 "configKey": None,
             },
         },
+        "compatibilityProfile": {
+            "declared": False,
+            "status": "unsupported",
+            "uri": None,
+            "extensionRetention": {},
+            "methodRetention": {},
+            "serviceBehaviors": {},
+            "consumerGuidance": [],
+            "error": "Compatibility profile extension not found",
+        },
         "runtimeStatus": runtime_status_contract_payload(),
     }
     assert response.headers["cache-control"] == "no-store"
@@ -1478,6 +1636,11 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
         model_selection=SimpleNamespace(status="unsupported"),
         provider_discovery=SimpleNamespace(status="supported"),
         interrupt_recovery=SimpleNamespace(status="unsupported"),
+        compatibility_profile=SimpleNamespace(
+            status="invalid",
+            ext=None,
+            error="Extension contract missing/invalid 'params.method_retention'",
+        ),
         session_query=SimpleNamespace(
             status="supported",
             capability=SimpleNamespace(
@@ -1549,6 +1712,16 @@ async def test_hub_extension_capabilities_route_distinguishes_model_selection_fr
                 "enabledByDefault": False,
                 "configKey": "A2A_ENABLE_SESSION_SHELL",
             },
+        },
+        "compatibilityProfile": {
+            "declared": True,
+            "status": "invalid",
+            "uri": None,
+            "extensionRetention": {},
+            "methodRetention": {},
+            "serviceBehaviors": {},
+            "consumerGuidance": [],
+            "error": "Extension contract missing/invalid 'params.method_retention'",
         },
         "runtimeStatus": runtime_status_contract_payload(),
     }

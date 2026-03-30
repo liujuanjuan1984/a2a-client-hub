@@ -4,10 +4,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from a2a.types import AgentCard
 
 from app.integrations.a2a_extensions.errors import A2AExtensionContractError
 from app.integrations.a2a_extensions.service import (
     A2AExtensionsService,
+    CompatibilityProfileCapabilitySnapshot,
     ExtensionCallResult,
     InterruptCallbackCapabilitySnapshot,
     InterruptRecoveryCapabilitySnapshot,
@@ -25,6 +27,7 @@ from app.integrations.a2a_extensions.session_query_runtime_selection import (
     ResolvedSessionQueryRuntimeCapability,
 )
 from app.integrations.a2a_extensions.shared_contract import (
+    COMPATIBILITY_PROFILE_URI,
     INTERRUPT_RECOVERY_URI,
     PROVIDER_DISCOVERY_URI,
     SHARED_INTERRUPT_CALLBACK_URI,
@@ -35,9 +38,11 @@ from app.integrations.a2a_extensions.shared_contract import (
 )
 from app.integrations.a2a_extensions.shared_support import A2AExtensionSupport
 from app.integrations.a2a_extensions.types import (
+    CompatibilityRetentionEntry,
     JsonRpcInterface,
     MessageCursorPaginationContract,
     PageSizePagination,
+    ResolvedCompatibilityProfileExtension,
     ResolvedExtension,
     ResolvedInterruptCallbackExtension,
     ResolvedInterruptRecoveryExtension,
@@ -162,6 +167,19 @@ def _model_selection_snapshot(
     )
 
 
+def _compatibility_profile_snapshot(
+    *,
+    status: str = "unsupported",
+    ext: ResolvedCompatibilityProfileExtension | None = None,
+    error: str | None = None,
+) -> CompatibilityProfileCapabilitySnapshot:
+    return CompatibilityProfileCapabilitySnapshot(
+        status=status,
+        ext=ext,
+        error=error,
+    )
+
+
 def _capability_snapshot(
     *,
     session_query: SessionQueryCapabilitySnapshot,
@@ -171,6 +189,7 @@ def _capability_snapshot(
     model_selection: ModelSelectionCapabilitySnapshot | None = None,
     provider_discovery: ProviderDiscoveryCapabilitySnapshot | None = None,
     stream_hints: StreamHintsCapabilitySnapshot | None = None,
+    compatibility_profile: CompatibilityProfileCapabilitySnapshot | None = None,
 ) -> ResolvedCapabilitySnapshot:
     return ResolvedCapabilitySnapshot(
         session_query=session_query,
@@ -181,6 +200,8 @@ def _capability_snapshot(
         provider_discovery=provider_discovery or _provider_discovery_snapshot(),
         stream_hints=stream_hints
         or StreamHintsCapabilitySnapshot(status="unsupported", meta={}),
+        compatibility_profile=compatibility_profile
+        or _compatibility_profile_snapshot(),
     )
 
 
@@ -241,6 +262,43 @@ def _interrupt_extension_fixture() -> ResolvedInterruptCallbackExtension:
             "reply_elicitation": None,
         },
         business_code_map={},
+    )
+
+
+def _compatibility_profile_extension_fixture() -> ResolvedCompatibilityProfileExtension:
+    return ResolvedCompatibilityProfileExtension(
+        uri=COMPATIBILITY_PROFILE_URI,
+        required=False,
+        extension_retention={
+            SHARED_SESSION_QUERY_URI: CompatibilityRetentionEntry(
+                surface="jsonrpc-extension",
+                availability="always",
+                retention="stable",
+            )
+        },
+        method_retention={
+            "opencode.sessions.command": CompatibilityRetentionEntry(
+                surface="extension",
+                availability="always",
+                retention="stable",
+                extension_uri=SHARED_SESSION_QUERY_URI,
+            ),
+            "opencode.sessions.shell": CompatibilityRetentionEntry(
+                surface="extension",
+                availability="disabled",
+                retention="deployment-conditional",
+                extension_uri=SHARED_SESSION_QUERY_URI,
+                toggle="A2A_ENABLE_SESSION_SHELL",
+            ),
+        },
+        service_behaviors={
+            "classification": "stable-service-semantics",
+            "methods": {"tasks/cancel": {"retention": "stable"}},
+        },
+        consumer_guidance=(
+            "Treat opencode.sessions.shell as deployment-conditional.",
+            "Treat opencode.sessions.* as provider-private operational surfaces.",
+        ),
     )
 
 
@@ -2238,3 +2296,98 @@ async def test_recover_interrupts_returns_method_not_supported_when_upstream_mis
 
     assert result.success is False
     assert result.error_code == "method_not_supported"
+
+
+def test_build_compatibility_profile_snapshot_returns_supported_status() -> None:
+    service = A2AExtensionsService()
+    card = AgentCard.model_validate(
+        {
+            "name": "Example Agent",
+            "description": "Example",
+            "url": "https://example.com",
+            "version": "1.0",
+            "capabilities": {
+                "extensions": [
+                    {
+                        "uri": COMPATIBILITY_PROFILE_URI,
+                        "required": False,
+                        "params": {
+                            "extension_retention": {
+                                SHARED_SESSION_QUERY_URI: {
+                                    "surface": "jsonrpc-extension",
+                                    "availability": "always",
+                                    "retention": "stable",
+                                }
+                            },
+                            "method_retention": {
+                                "opencode.sessions.command": {
+                                    "surface": "extension",
+                                    "availability": "always",
+                                    "retention": "stable",
+                                    "extension_uri": SHARED_SESSION_QUERY_URI,
+                                }
+                            },
+                            "service_behaviors": {
+                                "classification": "stable-service-semantics",
+                                "methods": {"tasks/cancel": {"retention": "stable"}},
+                            },
+                            "consumer_guidance": [
+                                "Treat opencode.sessions.* as provider-private."
+                            ],
+                        },
+                    }
+                ]
+            },
+            "defaultInputModes": [],
+            "defaultOutputModes": [],
+            "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+        }
+    )
+
+    snapshot = service._build_compatibility_profile_snapshot(card)
+
+    assert snapshot.status == "supported"
+    assert snapshot.ext is not None
+    assert snapshot.ext.method_retention["opencode.sessions.command"].retention == (
+        "stable"
+    )
+
+
+def test_build_compatibility_profile_snapshot_allows_empty_retention_maps() -> None:
+    service = A2AExtensionsService()
+    card = AgentCard.model_validate(
+        {
+            "name": "Example Agent",
+            "description": "Example",
+            "url": "https://example.com",
+            "version": "1.0",
+            "capabilities": {
+                "extensions": [
+                    {
+                        "uri": COMPATIBILITY_PROFILE_URI,
+                        "required": False,
+                        "params": {
+                            "extension_retention": {},
+                            "method_retention": {},
+                            "service_behaviors": {
+                                "classification": "stable-service-semantics"
+                            },
+                            "consumer_guidance": [
+                                "Treat opencode.sessions.* as provider-private."
+                            ],
+                        },
+                    }
+                ]
+            },
+            "defaultInputModes": [],
+            "defaultOutputModes": [],
+            "skills": [{"id": "s1", "name": "s1", "description": "d", "tags": []}],
+        }
+    )
+
+    snapshot = service._build_compatibility_profile_snapshot(card)
+
+    assert snapshot.status == "supported"
+    assert snapshot.ext is not None
+    assert snapshot.ext.extension_retention == {}
+    assert snapshot.ext.method_retention == {}

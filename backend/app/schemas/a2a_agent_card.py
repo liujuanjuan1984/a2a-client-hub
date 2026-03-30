@@ -7,6 +7,9 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import AnyHttpUrl, BaseModel, Field
 
 from app.features.personal_agents.schemas import A2AAuthType
+from app.schemas.a2a_compatibility_profile import (
+    A2ACompatibilityProfileDiagnostic,
+)
 
 
 class A2AAgentCardProxyRequest(BaseModel):
@@ -66,6 +69,10 @@ class A2AAgentCardValidationResponse(BaseModel):
     shared_session_query: Optional[SharedSessionQueryDiagnostic] = Field(
         default=None,
         description="Shared session query extension compatibility diagnostics",
+    )
+    compatibility_profile: Optional[A2ACompatibilityProfileDiagnostic] = Field(
+        default=None,
+        description="Compatibility-profile extension diagnostics",
     )
 
 
