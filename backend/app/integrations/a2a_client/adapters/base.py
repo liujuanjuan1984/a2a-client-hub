@@ -53,6 +53,10 @@ class A2AAdapter(ABC):
         """Cancel a downstream task."""
 
     @abstractmethod
+    async def get_authenticated_extended_agent_card(self) -> Any:
+        """Fetch an authenticated extended agent card when the transport supports it."""
+
+    @abstractmethod
     async def close(self) -> None:
         """Release any owned transport resources."""
 

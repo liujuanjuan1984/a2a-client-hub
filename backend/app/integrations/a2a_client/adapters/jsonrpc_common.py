@@ -14,13 +14,17 @@ from app.integrations.a2a_error_contract import (
 )
 
 
-def build_jsonrpc_payload(*, method: str, params: dict[str, Any]) -> dict[str, Any]:
-    return {
+def build_jsonrpc_payload(
+    *, method: str, params: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "jsonrpc": "2.0",
         "id": str(uuid4()),
         "method": method,
-        "params": params,
     }
+    if params is not None:
+        payload["params"] = params
+    return payload
 
 
 async def apply_jsonrpc_interceptors(

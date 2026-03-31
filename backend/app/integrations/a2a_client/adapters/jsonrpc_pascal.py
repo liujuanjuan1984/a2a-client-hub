@@ -33,6 +33,7 @@ _METHOD_SEND_MESSAGE = "SendMessage"
 _METHOD_SEND_STREAMING_MESSAGE = "SendStreamingMessage"
 _METHOD_GET_TASK = "GetTask"
 _METHOD_CANCEL_TASK = "CancelTask"
+_METHOD_GET_AUTHENTICATED_EXTENDED_AGENT_CARD = "GetAuthenticatedExtendedCard"
 _FINAL_STATUS_STATES = terminal_runtime_state_values()
 
 
@@ -114,10 +115,26 @@ class JsonRpcPascalAdapter(A2AAdapter):
                 raise A2AUnsupportedOperationError(str(exc)) from exc
             raise
 
+    async def get_authenticated_extended_agent_card(self) -> Any:
+        try:
+            return await self._send_rpc(
+                _METHOD_GET_AUTHENTICATED_EXTENDED_AGENT_CARD,
+                params=None,
+            )
+        except A2APeerProtocolError as exc:
+            if exc.code == -32601:
+                raise A2AUnsupportedOperationError(str(exc)) from exc
+            raise
+
     async def close(self) -> None:
         return None
 
-    async def _send_rpc(self, method: str, *, params: dict[str, Any]) -> Any:
+    async def _send_rpc(
+        self,
+        method: str,
+        *,
+        params: dict[str, Any] | None,
+    ) -> Any:
         payload = build_jsonrpc_payload(method=method, params=params)
         request_headers = {"Content-Type": "application/json"}
         request_headers.update(self._headers)

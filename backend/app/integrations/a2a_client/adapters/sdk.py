@@ -20,7 +20,10 @@ from a2a.client.errors import A2AClientJSONRPCError
 from a2a.types import TaskIdParams, TaskQueryParams, TransportProtocol
 
 from app.integrations.a2a_client.adapters.base import A2AAdapter
-from app.integrations.a2a_client.errors import A2APeerProtocolError
+from app.integrations.a2a_client.errors import (
+    A2APeerProtocolError,
+    A2AUnsupportedOperationError,
+)
 from app.integrations.a2a_client.http_clients import (
     SharedSDKTransportLease,
     invalidate_shared_sdk_transport_http_client,
@@ -165,6 +168,12 @@ class SDKA2AAdapter(A2AAdapter):
                 )
             except A2AClientJSONRPCError as exc:
                 raise _map_protocol_error(exc) from exc
+
+    async def get_authenticated_extended_agent_card(self) -> Any:
+        raise A2AUnsupportedOperationError(
+            "The official a2a-sdk client does not expose authenticated extended "
+            "agent card retrieval."
+        )
 
     async def close(self) -> None:
         await self.retire()

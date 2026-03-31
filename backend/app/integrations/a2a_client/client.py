@@ -74,6 +74,8 @@ from app.utils.outbound_url import (
 
 logger = get_logger(__name__)
 
+AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH = "/v1/card"
+
 
 class StaticHeaderInterceptor(ClientCallInterceptor):
     """Interceptor that injects static HTTP headers into every outbound request."""
@@ -588,9 +590,9 @@ class A2AClient:
             if self._authenticated_extended_agent_card is not None:
                 return self._authenticated_extended_agent_card
 
-            card = await self._fetch_card(
-                agent_card_path_override=EXTENDED_AGENT_CARD_PATH,
-                log_label="authenticated extended A2A agent card",
+            descriptor = await self._get_peer_descriptor()
+            card = await self._fetch_authenticated_extended_agent_card(
+                descriptor.selected_transport
             )
             self._authenticated_extended_agent_card = card
             return card
@@ -696,6 +698,16 @@ class A2AClient:
     async def _send_with_fallback(self, request: A2AMessageRequest) -> Any:
         return await self._invoke_with_jsonrpc_fallback(
             callback=lambda adapter: adapter.send_message(request)
+        )
+
+    async def _get_authenticated_extended_agent_card_with_jsonrpc_fallback(
+        self,
+    ) -> AgentCard:
+        return cast(
+            AgentCard,
+            await self._invoke_with_jsonrpc_fallback(
+                callback=lambda adapter: adapter.get_authenticated_extended_agent_card()
+            ),
         )
 
     async def _stream_with_fallback(
@@ -1027,6 +1039,69 @@ class A2AClient:
         if isinstance(exc, A2APeerProtocolError):
             return exc.error_code == "method_not_found" or exc.code == -32601
         return False
+
+    async def _fetch_authenticated_extended_agent_card(
+        self,
+        selected_transport: TransportProtocol | str | None,
+    ) -> AgentCard:
+        fallback_errors: list[Exception] = []
+        if normalize_transport_label(selected_transport) == "JSONRPC":
+            try:
+                return (
+                    await self._get_authenticated_extended_agent_card_with_jsonrpc_fallback()
+                )
+            except (
+                A2AAgentUnavailableError,
+                A2AClientResetRequiredError,
+                A2APeerProtocolError,
+                A2AUnsupportedOperationError,
+            ) as exc:
+                fallback_errors.append(exc)
+                logger.info(
+                    "Falling back to HTTP authenticated extended A2A agent card fetch",
+                    extra={
+                        "agent_url": redact_url_for_logging(self.agent_url),
+                        "selected_transport": normalize_transport_label(
+                            selected_transport
+                        ),
+                        "error": str(exc),
+                    },
+                )
+
+        for card_path, log_label in (
+            (
+                AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
+                "authenticated extended A2A agent card",
+            ),
+            (
+                EXTENDED_AGENT_CARD_PATH,
+                "authenticated extended A2A agent card compatibility route",
+            ),
+        ):
+            try:
+                return await self._fetch_card(
+                    agent_card_path_override=card_path,
+                    log_label=log_label,
+                )
+            except A2AAgentUnavailableError as exc:
+                fallback_errors.append(exc)
+                logger.info(
+                    "Authenticated extended A2A agent card fetch failed",
+                    extra={
+                        "agent_url": redact_url_for_logging(self.agent_url),
+                        "card_path": card_path,
+                        "error": str(exc),
+                    },
+                )
+
+        if fallback_errors:
+            raise A2AAgentUnavailableError(
+                str(fallback_errors[-1])
+            ) from fallback_errors[-1]
+        raise A2AAgentUnavailableError(
+            f"Failed to fetch metadata for A2A agent "
+            f"'{redact_url_for_logging(self.agent_url)}'"
+        )
 
     async def _fetch_card(
         self,

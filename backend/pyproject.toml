@@ -38,7 +38,7 @@ dependencies = [
     # Core FastAPI dependencies
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
-    "a2a-sdk==0.3.22",
+    "a2a-sdk==0.3.25",
     # Scheduling
     "APScheduler>=3.10.4",
     # Database dependencies

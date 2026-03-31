@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, call
 
 import httpx
 import pytest
@@ -380,52 +380,102 @@ async def test_get_agent_card_uses_sdk_exact_transport_matching_semantics(
 
 
 @pytest.mark.asyncio
-async def test_get_authenticated_extended_agent_card_prefers_extended_path(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_get_authenticated_extended_agent_card_prefers_jsonrpc_for_jsonrpc_peer() -> (
+    None
+):
     public_card = _build_card(supports_authenticated_extended_card=True)
     extended_card = _build_card(
         name="Extended Gateway",
         supports_authenticated_extended_card=True,
     )
-    resolver_paths: list[str | None] = []
-
-    def fake_validate_outbound_http_url(
-        url: str,
-        *,
-        allowed_hosts,
-        purpose: str = "outbound HTTP request",
-    ) -> str:
-        _ = allowed_hosts, purpose
-        return url
-
-    def build_resolver(_httpx_client, *, agent_card_path_override=None):
-        resolver_paths.append(agent_card_path_override)
-        return _FakeResolver(
-            extended_card
-            if agent_card_path_override == client_module.EXTENDED_AGENT_CARD_PATH
-            else public_card
-        )
-
-    monkeypatch.setattr(
-        client_module,
-        "validate_outbound_http_url",
-        fake_validate_outbound_http_url,
-    )
-    monkeypatch.setattr(
-        client_module.a2a_proxy_service,
-        "get_effective_allowed_hosts_sync",
-        lambda: ["example-agent.internal:24020"],
-    )
 
     a2a_client = A2AClient("http://example-agent.internal:24020")
-    a2a_client._get_http_client = AsyncMock(return_value=Mock())
-    a2a_client._build_card_resolver = Mock(side_effect=build_resolver)
+    a2a_client._agent_card = public_card
+    a2a_client._peer_descriptor = SimpleNamespace(selected_transport="JSONRPC")
+    a2a_client._get_authenticated_extended_agent_card_with_jsonrpc_fallback = AsyncMock(
+        return_value=extended_card
+    )
+    a2a_client._fetch_card = AsyncMock()
 
     fetched = await a2a_client.get_authenticated_extended_agent_card()
 
     assert fetched is extended_card
-    assert resolver_paths == [None, client_module.EXTENDED_AGENT_CARD_PATH]
+    a2a_client._get_authenticated_extended_agent_card_with_jsonrpc_fallback.assert_awaited_once()
+    a2a_client._fetch_card.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_authenticated_extended_agent_card_falls_back_to_standard_http_before_compat_route() -> (
+    None
+):
+    public_card = _build_card(supports_authenticated_extended_card=True)
+    extended_card = _build_card(
+        name="Extended Gateway",
+        supports_authenticated_extended_card=True,
+    )
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._agent_card = public_card
+    a2a_client._peer_descriptor = SimpleNamespace(selected_transport="JSONRPC")
+    a2a_client._get_authenticated_extended_agent_card_with_jsonrpc_fallback = AsyncMock(
+        side_effect=client_module.A2AUnsupportedOperationError("method not found")
+    )
+    a2a_client._fetch_card = AsyncMock(
+        side_effect=[
+            client_module.A2AAgentUnavailableError("standard route unavailable"),
+            extended_card,
+        ]
+    )
+
+    fetched = await a2a_client.get_authenticated_extended_agent_card()
+
+    assert fetched is extended_card
+    assert a2a_client._fetch_card.await_args_list == [
+        call(
+            agent_card_path_override=client_module.AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
+            log_label="authenticated extended A2A agent card",
+        ),
+        call(
+            agent_card_path_override=client_module.EXTENDED_AGENT_CARD_PATH,
+            log_label="authenticated extended A2A agent card compatibility route",
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_authenticated_extended_agent_card_uses_standard_http_for_non_jsonrpc_peer() -> (
+    None
+):
+    public_card = _build_card(
+        supports_authenticated_extended_card=True,
+        preferred_transport=TransportProtocol.http_json,
+        url="http://example-agent.internal:24020/v1",
+    )
+    extended_card = _build_card(
+        name="Extended Gateway",
+        supports_authenticated_extended_card=True,
+        preferred_transport=TransportProtocol.http_json,
+        url="http://example-agent.internal:24020/v1",
+    )
+
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+    a2a_client._agent_card = public_card
+    a2a_client._peer_descriptor = SimpleNamespace(
+        selected_transport=TransportProtocol.http_json
+    )
+    a2a_client._get_authenticated_extended_agent_card_with_jsonrpc_fallback = (
+        AsyncMock()
+    )
+    a2a_client._fetch_card = AsyncMock(return_value=extended_card)
+
+    fetched = await a2a_client.get_authenticated_extended_agent_card()
+
+    assert fetched is extended_card
+    a2a_client._get_authenticated_extended_agent_card_with_jsonrpc_fallback.assert_not_awaited()
+    a2a_client._fetch_card.assert_awaited_once_with(
+        agent_card_path_override=client_module.AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
+        log_label="authenticated extended A2A agent card",
+    )
 
 
 @pytest.mark.asyncio

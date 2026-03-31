@@ -12,6 +12,8 @@ from a2a.client import ClientCallInterceptor
 from a2a.types import (
     CancelTaskRequest,
     CancelTaskResponse,
+    GetAuthenticatedExtendedCardRequest,
+    GetAuthenticatedExtendedCardResponse,
     GetTaskRequest,
     GetTaskResponse,
     MessageSendConfiguration,
@@ -45,6 +47,7 @@ _METHOD_SEND_MESSAGE = "message/send"
 _METHOD_SEND_STREAMING_MESSAGE = "message/stream"
 _METHOD_GET_TASK = "tasks/get"
 _METHOD_CANCEL_TASK = "tasks/cancel"
+_METHOD_GET_AUTHENTICATED_EXTENDED_AGENT_CARD = "agent/getAuthenticatedExtendedCard"
 
 
 class JsonRpcSlashAdapter(A2AAdapter):
@@ -148,6 +151,19 @@ class JsonRpcSlashAdapter(A2AAdapter):
                 method=_METHOD_CANCEL_TASK,
                 payload=rpc_request.model_dump(mode="json", exclude_none=True),
                 response_model=CancelTaskResponse,
+            )
+        except A2APeerProtocolError as exc:
+            if exc.code == -32601:
+                raise A2AUnsupportedOperationError(str(exc)) from exc
+            raise
+
+    async def get_authenticated_extended_agent_card(self) -> Any:
+        rpc_request = GetAuthenticatedExtendedCardRequest(id=str(uuid4()))
+        try:
+            return await self._send_rpc(
+                method=_METHOD_GET_AUTHENTICATED_EXTENDED_AGENT_CARD,
+                payload=rpc_request.model_dump(mode="json", exclude_none=True),
+                response_model=GetAuthenticatedExtendedCardResponse,
             )
         except A2APeerProtocolError as exc:
             if exc.code == -32601:
