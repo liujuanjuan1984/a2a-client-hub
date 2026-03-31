@@ -1,18 +1,15 @@
 # Architecture and API Examples
 
-This document provides a high-level architecture map and minimal API examples
-for local development and integration testing.
+This document provides a high-level architecture map and minimal API examples for local development and integration testing.
 
-For the broader cross-cutting documentation map, see
-[`docs/README.md`](README.md).
+For the broader cross-cutting documentation map, see [`docs/README.md`](README.md).
 
 ## System Overview
 
 `a2a-client-hub` is a client hub for user-managed and admin-managed A2A agents.
 
 - Frontend (`frontend/`): Expo / React Native / Web client.
-- Backend (`backend/`): FastAPI API layer, auth, persistence, scheduling, and
-  A2A runtime integration.
+- Backend (`backend/`): FastAPI API layer, auth, persistence, scheduling, and A2A runtime integration.
 - Database: PostgreSQL with Alembic migrations.
 
 ## Runtime Data Flow
@@ -33,8 +30,7 @@ For the broader cross-cutting documentation map, see
 
 ## Contract References
 
-For the Hub-consumed shared session query extension contract and reference
-payloads, see:
+For the Hub-consumed shared session query extension contract and reference payloads, see:
 
 - `docs/contracts/shared-session-query-canonical-contract.md`
 - `docs/contracts/shared-session-query-reference-payloads.json`
@@ -135,8 +131,7 @@ curl -X POST "$API_BASE_URL/me/a2a/agents/<AGENT_ID>/invoke" \
   }'
 ```
 
-`userMessageId` and `agentMessageId` are optional but recommended for
-client/server message identity consistency. Both must be UUID strings when provided.
+`userMessageId` and `agentMessageId` are optional but recommended for client/server message identity consistency. Both must be UUID strings when provided.
 
 ### Query Unified Sessions
 
@@ -151,8 +146,7 @@ curl -X POST "$API_BASE_URL/me/conversations:query" \
   }'
 ```
 
-`agent_id` is optional. When provided, the result is server-side filtered for
-that agent only.
+`agent_id` is optional. When provided, the result is server-side filtered for that agent only.
 
 ### Query Unified Session Timeline (Primary Chat Read Model)
 
@@ -166,8 +160,7 @@ curl -X POST "$API_BASE_URL/me/conversations/<CONVERSATION_ID>/messages:query" \
   }'
 ```
 
-`messages:query` returns ordered timeline items including blocks and
-cursor page info (`hasMoreBefore`, `nextBefore`) for backward pagination.
+`messages:query` returns ordered timeline items including blocks and cursor page info (`hasMoreBefore`, `nextBefore`) for backward pagination.
 
 ## Notes
 

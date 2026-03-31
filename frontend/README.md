@@ -59,17 +59,13 @@ Authentication conventions are shared between frontend and backend:
 
 - iOS default is `NSAllowsArbitraryLoads=false` (`frontend/app.json`).
 - Production builds should use HTTPS API endpoints.
-- If local debugging requires HTTP endpoints, scope any ATS relaxations to
-  development-only builds and do not ship them in production artifacts.
+- If local debugging requires HTTP endpoints, scope any ATS relaxations to development-only builds and do not ship them in production artifacts.
 
 ## Web Zoom and Accessibility Policy
 
-- iOS/Android Web keeps browser zoom enabled (no `user-scalable=no`, no
-  `maximum-scale=1`) so users can enlarge content when needed.
-- The bottom tab bar is stabilized by safe-area-aware fixed heights so key
-  navigation targets remain reachable under zoom.
-- Keep input fonts at 16px on web (`frontend/global.css`) to reduce
-  unexpected form zoom when focusing inputs.
+- iOS/Android Web keeps browser zoom enabled (no `user-scalable=no`, no `maximum-scale=1`) so users can enlarge content when needed.
+- The bottom tab bar is stabilized by safe-area-aware fixed heights so key navigation targets remain reachable under zoom.
+- Keep input fonts at 16px on web (`frontend/global.css`) to reduce unexpected form zoom when focusing inputs.
 
 ## Time Display Strategy
 
@@ -96,8 +92,7 @@ Use `npm run publish:web` to export and serve the web build locally.
 
 ## Unified Conversations
 
-The Sessions tab now uses the backend unified conversation domain API
-(`POST /me/conversations:query`) and can include:
+The Sessions tab now uses the backend unified conversation domain API (`POST /me/conversations:query`) and can include:
 
 - `manual` sessions (local chat sessions persisted by backend)
 - `scheduled` sessions (task execution sessions)
@@ -105,57 +100,35 @@ The Sessions tab now uses the backend unified conversation domain API
 Notes:
 
 - Backend `source` currently uses `manual` / `scheduled` only.
-- External provider binding is represented by external binding fields (for
-  example `external_provider` / `external_session_id`), not by a separate
-  `source` enum value.
-- Chat page SessionPicker queries backend with `agent_id` so each agent view
-  reads its session directory from server-side authority.
-- SessionPicker titles are rendered from backend `title` directly (no local
-  history-title derivation).
+- External provider binding is represented by external binding fields (for example `external_provider` / `external_session_id`), not by a separate `source` enum value.
+- Chat page SessionPicker queries backend with `agent_id` so each agent view reads its session directory from server-side authority.
+- SessionPicker titles are rendered from backend `title` directly (no local history-title derivation).
 
-Chat timeline loading is unified via
-`POST /me/conversations/{conversation_id}/messages:query`
-(`limit` + `before` cursor for backward pagination from latest window).
-To avoid transport contention, chat history auto-refetch is paused while a
-message is actively streaming.
-The chat composer keeps large drafts in a ref-backed buffer and applies a
-hard `50,000` character limit to avoid long-paste re-render spikes and
-unbounded memory growth.
+Chat timeline loading is unified via `POST /me/conversations/{conversation_id}/messages:query` (`limit` + `before` cursor for backward pagination from latest window). To avoid transport contention, chat history auto-refetch is paused while a message is actively streaming. The chat composer keeps large drafts in a ref-backed buffer and applies a hard `50,000` character limit to avoid long-paste re-render spikes and unbounded memory growth.
 
 Message id contract:
 
 - `messages:query` returns canonical local UUIDs in `item.id`.
 - Frontend store/cache keys must use `item.id` only.
-- Non-text block details (`reasoning`/`tool_call`) are fetched on demand via
-  `POST /me/conversations/{conversation_id}/blocks:query`.
-- `blocks:query` detail items include `messageId` and must match the target
-  message before cache patching.
-- `tool_call` blocks may include a normalized `toolCall` view from backend
-  (`name`, `status`, `callId`, `arguments`, `result`, `error`); frontend should
-  render that stable field instead of parsing provider-private raw payloads.
+- Non-text block details (`reasoning`/`tool_call`) are fetched on demand via `POST /me/conversations/{conversation_id}/blocks:query`.
+- `blocks:query` detail items include `messageId` and must match the target message before cache patching.
+- `tool_call` blocks may include a normalized `toolCall` view from backend (`name`, `status`, `callId`, `arguments`, `result`, `error`); frontend should render that stable field instead of parsing provider-private raw payloads.
 - Stream events are consumed via normalized snake_case fields (`message_id`, `event_id`, `seq`); missing upstream ids are tolerated with fallback keys, and weak fallback identity disables strict duplicate suppression (with throttled warning logs).
 - Invoke payloads should carry both `userMessageId` and `agentMessageId` (UUID).
-- Message status semantics are preserved from history payloads (`streaming`,
-  `done`, `error`, `interrupted`).
+- Message status semantics are preserved from history payloads (`streaming`, `done`, `error`, `interrupted`).
 
 ## Block-based Streaming
 
-Chat streaming now uses a block timeline model.
-Each message stores an ordered `MessageBlock[]`, where each block
-has a `type` (`text`, `reasoning`, `tool_call`, or unknown), `content`, and
-`isFinished`.
+Chat streaming now uses a block timeline model. Each message stores an ordered `MessageBlock[]`, where each block has a `type` (`text`, `reasoning`, `tool_call`, or unknown), `content`, and `isFinished`.
 
 Incoming chunks are reduced with this rule:
 
 - same `block_type` => append to last block
 - different `block_type` => finish previous block and push a new block
 
-Rendering iterates blocks in order to preserve generation timeline and supports
-unknown block types with a fallback view.
+Rendering iterates blocks in order to preserve generation timeline and supports unknown block types with a fallback view.
 
-Continue binding is unified via
-`POST /me/conversations/{conversation_id}:continue` so Chat always restores
-binding metadata through one entrypoint.
+Continue binding is unified via `POST /me/conversations/{conversation_id}:continue` so Chat always restores binding metadata through one entrypoint.
 
 The continue payload also includes canonical binding fields:
 

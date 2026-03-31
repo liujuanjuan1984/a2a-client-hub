@@ -26,8 +26,7 @@ To avoid keeping multiple setup guides in sync, use:
 
 Run relevant checks before opening or updating a PR.
 
-Default local verification mode is the same low-load, serial, scope-based flow
-defined in [AGENTS.md](AGENTS.md). CI may still run broader checks.
+Default local verification mode is the same low-load, serial, scope-based flow defined in [AGENTS.md](AGENTS.md). CI may still run broader checks.
 
 ### Backend changes
 

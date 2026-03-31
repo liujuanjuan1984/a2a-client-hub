@@ -16,8 +16,7 @@ Create `backend/.env` (see `backend/.env.example`).
 Production note:
 
 - Set `APP_ENV=production` to enable strict security baseline checks at startup.
-- See [`docs/security-baseline.md`](../docs/security-baseline.md) for required
-  cookie/CORS/origin/TLS settings.
+- See [`docs/security-baseline.md`](../docs/security-baseline.md) for required cookie/CORS/origin/TLS settings.
 
 ## Initialize Schema and Run Migrations
 
@@ -46,8 +45,7 @@ Default API prefix: `/api/v1`.
 
 ## Backend Structure
 
-The backend now uses a practical feature-based structure for business-facing
-entrypoints and orchestration code.
+The backend now uses a practical feature-based structure for business-facing entrypoints and orchestration code.
 
 Current direction:
 
@@ -68,13 +66,11 @@ Feature-owned areas already organized under `app/features/`:
 - `app/features/sessions/`
 - `app/features/shortcuts/`
 
-This keeps the runtime entrypoints aligned with business capabilities and makes
-the import graph easier to reason about over time.
+This keeps the runtime entrypoints aligned with business capabilities and makes the import graph easier to reason about over time.
 
 ## Test Layout
 
-Backend tests are being grouped under `backend/tests/<group_name>/` so related
-coverage stays close together.
+Backend tests are being grouped under `backend/tests/<group_name>/` so related coverage stays close together.
 
 Current layout direction:
 
@@ -84,8 +80,7 @@ Current layout direction:
 
 ## Incremental mypy Gate
 
-The backend uses a phased mypy gate for changed files instead of a full-repo
-type gate.
+The backend uses a phased mypy gate for changed files instead of a full-repo type gate.
 
 Current scope:
 
@@ -109,12 +104,10 @@ uv run bash scripts/mypy_changed.sh app/features/auth/schemas.py
 
 ## A2A Outbound Allowlist
 
-This backend requires an allowlist for all outbound A2A HTTP requests (agent card
-fetching, transport negotiation, and extensions).
+This backend requires an allowlist for all outbound A2A HTTP requests (agent card fetching, transport negotiation, and extensions).
 
 - Configure `A2A_PROXY_ALLOWED_HOSTS` to allow the downstream host(s).
-- In production (`APP_ENV=production`), this list must be non-empty and must
-  not contain literal `*`.
+- In production (`APP_ENV=production`), this list must be non-empty and must not contain literal `*`.
 
 ## Hub A2A Catalog (Admin-Managed)
 
@@ -122,8 +115,7 @@ This backend supports an admin-managed global A2A catalog ("hub agents") with:
 
 - `public`: visible/invokable by all users.
 - `allowlist`: visible/invokable only by allowlisted users (others get `404`).
-- System-managed credentials: admin can store an encrypted bearer token which is never
-  returned to normal users.
+- System-managed credentials: admin can store an encrypted bearer token which is never returned to normal users.
 
 Endpoints:
 
@@ -141,83 +133,57 @@ Credentials:
 
 ## Shared Session Query / Interrupt Callback Compatibility
 
-This backend supports querying upstream sessions and message history via a
-shared A2A Agent Card extension contract.
+This backend supports querying upstream sessions and message history via a shared A2A Agent Card extension contract.
 
-The current examples in this section use OpenCode-flavored contracts because
-that profile is deeply exercised in this repository, but the Hub is not meant
-to be OpenCode-only. Other coding-agent peers, including Codex-family A2A
-deployments, can participate when they publish a compatible A2A surface.
+The current examples in this section use OpenCode-flavored contracts because that profile is deeply exercised in this repository, but the Hub is not meant to be OpenCode-only. Other coding-agent peers, including Codex-family A2A deployments, can participate when they publish a compatible A2A surface.
 
 Contract references:
 
-- Canonical contract:
-  [`docs/contracts/shared-session-query-canonical-contract.md`](../docs/contracts/shared-session-query-canonical-contract.md)
-- Reference payloads:
-  [`docs/contracts/shared-session-query-reference-payloads.json`](../docs/contracts/shared-session-query-reference-payloads.json)
-- Cross-cutting API examples:
-  [`docs/architecture-and-api.md`](../docs/architecture-and-api.md)
-- Compatibility notes and non-goals:
-  [`docs/compatibility-and-non-goals.md`](../docs/compatibility-and-non-goals.md)
+- Canonical contract: [`docs/contracts/shared-session-query-canonical-contract.md`](../docs/contracts/shared-session-query-canonical-contract.md)
+- Reference payloads: [`docs/contracts/shared-session-query-reference-payloads.json`](../docs/contracts/shared-session-query-reference-payloads.json)
+- Cross-cutting API examples: [`docs/architecture-and-api.md`](../docs/architecture-and-api.md)
+- Compatibility notes and non-goals: [`docs/compatibility-and-non-goals.md`](../docs/compatibility-and-non-goals.md)
 
 Requirements:
 
 - Configure `A2A_PROXY_ALLOWED_HOSTS` to allow the downstream host(s).
-- Create an A2A agent record pointing at the downstream Agent Card URL (e.g.
-  `https://<host>/.well-known/agent-card.json`) using the `/me/a2a/agents` API.
+- Create an A2A agent record pointing at the downstream Agent Card URL (e.g. `https://<host>/.well-known/agent-card.json`) using the `/me/a2a/agents` API.
 
-The examples below still use OpenCode-flavored naming where the upstream
-profile itself is provider-specific.
+The examples below still use OpenCode-flavored naming where the upstream profile itself is provider-specific.
 
 Endpoints:
 
 - Read generic extension capabilities:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/capabilities`
-  - The response also includes a `compatibilityProfile` block when the upstream
-    declares the compatibility-profile extension (either the standard
-    `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS
-    specification URI), exposing
-    `extensionRetention`, `methodRetention`, `serviceBehaviors`, and
-    `consumerGuidance` for Hub-side diagnostics.
+  - The response also includes a `compatibilityProfile` block when the upstream declares the compatibility-profile extension (either the standard `urn:a2a:compatibility-profile/v1` URI or the newer `opencode-a2a` HTTPS specification URI), exposing `extensionRetention`, `methodRetention`, `serviceBehaviors`, and `consumerGuidance` for Hub-side diagnostics.
 - Discover generic model providers:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models/providers:list`
-    - body:
-      `{ "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
+    - body: `{ "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
 - Discover generic models:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/models:list`
-    - body:
-      `{ "provider_id": "openai", "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
+    - body: `{ "provider_id": "openai", "session_metadata": { "shared": { "model": { "providerID": "openai", "modelID": "gpt-5" } } } }`
 - List sessions:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions?page=1&size=20&directory=services/api&roots=true&start=40&search=planner`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions:query`
-    - body example:
-      `{"page":1,"size":20,"filters":{"directory":"services/api","roots":true,"start":40,"search":"planner"},"query":{"status":"open"}}`
+    - body example: `{"page":1,"size":20,"filters":{"directory":"services/api","roots":true,"start":40,"search":"planner"},"query":{"status":"open"}}`
     - the Hub contract keeps `filters.directory`, `filters.roots`, `filters.start`, and `filters.search` stable, then maps them to the upstream session-query contract declared by the runtime
 
 Validation:
 
-- `POST /api/v1/me/a2a/agents/{agent_id}/card:validate` now returns a
-  `compatibility_profile` diagnostic when the upstream card declares
-  the compatibility-profile extension.
-- When an upstream advertises top-level `supportsAuthenticatedExtendedCard`,
-  Hub prefers fetching the authenticated extended card so provider-private
-  extension contracts can still be resolved even if the public Agent Card is
-  intentionally slimmed down.
+- `POST /api/v1/me/a2a/agents/{agent_id}/card:validate` now returns a `compatibility_profile` diagnostic when the upstream card declares the compatibility-profile extension.
+- When an upstream advertises top-level `supportsAuthenticatedExtendedCard`, Hub prefers fetching the authenticated extended card so provider-private extension contracts can still be resolved even if the public Agent Card is intentionally slimmed down.
 - Continue a session:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:continue`
 - Trigger async prompt for an existing upstream session:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}:prompt-async`
-    - body:
-      `{"request":{"parts":[{"type":"text","text":"Continue and summarize next steps."}],"noReply":true},"metadata":{"provider":"opencode","externalSessionId":"ses-123"}}`
+    - body: `{"request":{"parts":[{"type":"text","text":"Continue and summarize next steps."}],"noReply":true},"metadata":{"provider":"opencode","externalSessionId":"ses-123"}}`
 - List messages for a session:
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages?page=1&size=50`
   - `GET /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages?page=1&size=50&before=<opaque-cursor>`
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/sessions/{session_id}/messages:query`
-    - body example:
-      `{"page":1,"size":50,"before":"<opaque-cursor>","include_raw":false}`
-    - cursor-capable runtimes also return:
-      `{"result":{"items":[...],"pagination":{"page":1,"size":50},"pageInfo":{"hasMoreBefore":true,"nextBefore":"<opaque-cursor>"}}}`
+    - body example: `{"page":1,"size":50,"before":"<opaque-cursor>","include_raw":false}`
+    - cursor-capable runtimes also return: `{"result":{"items":[...],"pagination":{"page":1,"size":50},"pageInfo":{"hasMoreBefore":true,"nextBefore":"<opaque-cursor>"}}}`
 - Reply interrupt callbacks:
   - `POST /api/v1/me/a2a/agents/{agent_id}/extensions/interrupts:recover`
     - body: `{ "sessionId": "ses-123" }`
@@ -243,29 +209,15 @@ Optional query (passthrough):
 
 Notes:
 
-- `before` is a Hub-stable request field for extension session message history.
-  The backend maps it to the upstream runtime's declared cursor param when the
-  session-query contract advertises cursor pagination support.
-- `result.pageInfo.nextBefore` is the Hub-stable cursor field. It is derived
-  from the upstream runtime's declared cursor result field and omitted when the
-  runtime does not expose cursor pagination.
+- `before` is a Hub-stable request field for extension session message history. The backend maps it to the upstream runtime's declared cursor param when the session-query contract advertises cursor pagination support.
+- `result.pageInfo.nextBefore` is the Hub-stable cursor field. It is derived from the upstream runtime's declared cursor result field and omitted when the runtime does not expose cursor pagination.
 
-- The backend discovers the JSON-RPC interface URL and method names via the Agent
-  Card extension contract, and enforces the declared pagination constraints
-  (`page/size`, `limit`, or `limit + cursor`, including default/max bounds).
-- Responses include a stable envelope with `success`, `result` (upstream
-  envelope), `error_code`, and `upstream_error`.
-- Non-2xx HTTP errors are normalized under `detail`, for example:
-  `{"detail":{"message":"...","error_code":"...","source":"...","jsonrpc_code":...}}`.
-- Interrupt callback payloads intentionally follow the strict upstream contract:
-  `request_id` is required; legacy fields such as `requestID`, `decision`,
-  `allow` or `deny` are not accepted.
-- `permissions:reply` and `elicitation:reply` are Hub-stable routes for the new
-  shared interrupt callback methods. The backend keeps upstream method names and
-  provider-specific JSON-RPC details behind the extension compatibility layer.
-- Interrupt recovery is exposed as a Hub-stable route. The backend hides the
-  upstream provider-private JSON-RPC methods and merges the recovery views for
-  pending permissions/questions before returning them to the frontend.
+- The backend discovers the JSON-RPC interface URL and method names via the Agent Card extension contract, and enforces the declared pagination constraints (`page/size`, `limit`, or `limit + cursor`, including default/max bounds).
+- Responses include a stable envelope with `success`, `result` (upstream envelope), `error_code`, and `upstream_error`.
+- Non-2xx HTTP errors are normalized under `detail`, for example: `{"detail":{"message":"...","error_code":"...","source":"...","jsonrpc_code":...}}`.
+- Interrupt callback payloads intentionally follow the strict upstream contract: `request_id` is required; legacy fields such as `requestID`, `decision`, `allow` or `deny` are not accepted.
+- `permissions:reply` and `elicitation:reply` are Hub-stable routes for the new shared interrupt callback methods. The backend keeps upstream method names and provider-specific JSON-RPC details behind the extension compatibility layer.
+- Interrupt recovery is exposed as a Hub-stable route. The backend hides the upstream provider-private JSON-RPC methods and merges the recovery views for pending permissions/questions before returning them to the frontend.
 
 Unified error semantics (`error_code` -> HTTP status):
 
@@ -301,16 +253,14 @@ Default mapping:
 
 ## Unified Conversation Domain API
 
-The backend now exposes a unified conversation read model for manual,
-scheduled, and OpenCode sessions:
+The backend now exposes a unified conversation read model for manual, scheduled, and OpenCode sessions:
 
 - `POST /api/v1/me/conversations:query`
 - `POST /api/v1/me/conversations/{conversation_id}/messages:query`
 - `POST /api/v1/me/conversations/{conversation_id}/blocks:query`
 - `POST /api/v1/me/conversations/{conversation_id}:continue`
 
-`conversations:query` supports optional `agent_id` filtering so Chat session
-directory views can be fetched per-agent directly from backend.
+`conversations:query` supports optional `agent_id` filtering so Chat session directory views can be fetched per-agent directly from backend.
 
 `continue` now returns the canonical fields and binding metadata:
 
@@ -320,30 +270,19 @@ directory views can be fetched per-agent directly from backend.
   - `provider` (external provider key)
   - `externalSessionId` (external session identifier)
   - `contextId` (A2A context id)
-  - `<metadata_key>` (strict upstream session-binding key from
-    `urn:opencode-a2a:opencode-session-binding/v1`, e.g. `opencode_session_id`)
+  - `<metadata_key>` (strict upstream session-binding key from `urn:opencode-a2a:opencode-session-binding/v1`, e.g. `opencode_session_id`)
 
-Client-generated chat sessions should use raw UUID conversation IDs, for example
-`550e8400-e29b-41d4-a716-446655440000`.
+Client-generated chat sessions should use raw UUID conversation IDs, for example `550e8400-e29b-41d4-a716-446655440000`.
 
 Message query contract boundary:
 
-- `messages:query` is the primary chat read model and returns ordered
-  message timeline items with block payloads plus backward cursor pagination
-  (`pageInfo.hasMoreBefore`, `pageInfo.nextBefore`).
+- `messages:query` is the primary chat read model and returns ordered message timeline items with block payloads plus backward cursor pagination (`pageInfo.hasMoreBefore`, `pageInfo.nextBefore`).
 - `SessionMessageItem.id` is the canonical local message UUID for all roles.
-- Message body is persisted and queried via ordered blocks for all roles
-  (`user`/`agent`/`system`).
-- `messages:query` keeps full `content` for `text` blocks; `reasoning`/`tool_call`
-  block `content` is fetched via `blocks:query` on demand.
-- `tool_call` blocks also expose a normalized `toolCall` view (`name`, `status`,
-  `callId`, `arguments`, `result`, `error`) so frontend rendering does not need
-  to parse provider-private payload shapes directly.
-- `blocks:query` returns per-block `messageId` so clients can validate cache
-  injection ownership before patching local message state.
-- For streaming `artifact-update`, upstream `message_id/event_id` are treated as
-  optional hints; hub rewrites outgoing stream payloads with stable local
-  `message_id/event_id/seq` for frontend consumption.
+- Message body is persisted and queried via ordered blocks for all roles (`user`/`agent`/`system`).
+- `messages:query` keeps full `content` for `text` blocks; `reasoning`/`tool_call` block `content` is fetched via `blocks:query` on demand.
+- `tool_call` blocks also expose a normalized `toolCall` view (`name`, `status`, `callId`, `arguments`, `result`, `error`) so frontend rendering does not need to parse provider-private payload shapes directly.
+- `blocks:query` returns per-block `messageId` so clients can validate cache injection ownership before patching local message state.
+- For streaming `artifact-update`, upstream `message_id/event_id` are treated as optional hints; hub rewrites outgoing stream payloads with stable local `message_id/event_id/seq` for frontend consumption.
 
 Invoke message id contract:
 
