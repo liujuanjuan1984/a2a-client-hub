@@ -60,8 +60,6 @@ See [security baseline](security-baseline.md) for the full hardening checklist.
 
 ## Related Environment Reference
 
-Frontend API base URL configuration is documented in
-[`frontend/README.md`](../frontend/README.md) so the environment variable stays
-defined in one place:
+Frontend API base URL configuration is documented in [`frontend/README.md`](../frontend/README.md) so the environment variable stays defined in one place:
 
 - `EXPO_PUBLIC_API_BASE_URL`

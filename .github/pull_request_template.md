@@ -12,9 +12,7 @@
 - [ ] Docs / process (`docs`/`chore`)
 
 ## Validation Evidence
-Paste the commands you ran and key outputs.
-Use scoped low-load checks by default, and use a full regression gate only when
-required by `AGENTS.md`.
+Paste the commands you ran and key outputs. Use scoped low-load checks by default, and use a full regression gate only when required by `AGENTS.md`.
 
 ```bash
 # backend scoped example

@@ -1,11 +1,8 @@
 # a2a-client-hub
 
-`a2a-client-hub` is a self-hosted A2A client hub for teams and individuals who
-need one place to manage, invoke, and operate multiple A2A agents across web
-and mobile.
+`a2a-client-hub` is a self-hosted A2A client hub for teams and individuals who need one place to manage, invoke, and operate multiple A2A agents across web and mobile.
 
-It is a client/control plane, not an A2A provider itself.
-It is also not an MCP server, MCP registry, or MCP gateway.
+It is a client/control plane, not an A2A provider itself. It is also not an MCP server, MCP registry, or MCP gateway.
 
 ## Why this project exists
 
@@ -16,30 +13,21 @@ When A2A adoption grows, teams usually face the same problems:
 - Cross-platform user experience (web/mobile) is inconsistent.
 - Calling external A2A endpoints directly creates security and governance risks.
 
-`a2a-client-hub` addresses this by providing a unified frontend + backend system
-for agent discovery, invocation, session continuity, scheduling, and controlled
-outbound access.
+`a2a-client-hub` addresses this by providing a unified frontend + backend system for agent discovery, invocation, session continuity, scheduling, and controlled outbound access.
 
 ## Ecosystem Positioning
 
 This project is designed for the A2A ecosystem first.
 
 - It aims to work with multiple A2A peer profiles rather than one provider only.
-- Current repository examples still use OpenCode-flavored contracts heavily
-  because that profile is one of the most fully exercised in this codebase.
-- The Hub is not intended to replace MCP. MCP is an agent-internal tool/context
-  protocol; this project focuses on agent-to-agent integration and control-plane
-  concerns.
+- Current repository examples still use OpenCode-flavored contracts heavily because that profile is one of the most fully exercised in this codebase.
+- The Hub is not intended to replace MCP. MCP is an agent-internal tool/context protocol; this project focuses on agent-to-agent integration and control-plane concerns.
 
 Current compatibility framing:
 
-- First-class today: A2A peers that expose standard Agent Cards plus the shared
-  session / interrupt capabilities consumed by the Hub.
-- Explicitly exercised in this repository: OpenCode-compatible peers and other
-  coding-agent peers, including Codex-family deployments, when they publish a
-  compatible A2A surface.
-- Partial compatibility: standard A2A peers that only support invoke / stream
-  without the shared extension workflows used for session continuity.
+- First-class today: A2A peers that expose standard Agent Cards plus the shared session / interrupt capabilities consumed by the Hub.
+- Explicitly exercised in this repository: OpenCode-compatible peers and other coding-agent peers, including Codex-family deployments, when they publish a compatible A2A surface.
+- Partial compatibility: standard A2A peers that only support invoke / stream without the shared extension workflows used for session continuity.
 
 Repository-level A2A service references that match the current target profile:
 
@@ -47,17 +35,14 @@ Repository-level A2A service references that match the current target profile:
 - [`liujuanjuan1984/codex-a2a`](https://github.com/liujuanjuan1984/codex-a2a)
 - [`Swival/swival`](https://github.com/Swival/swival)
 
-See [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md)
-for the maintained compatibility notes and explicit non-goals.
+See [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md) for the maintained compatibility notes and explicit non-goals.
 
 ## What value it delivers
 
 - Faster integration: connect multiple A2A agents from one product surface.
-- Better governance: enforce allowlists, admin-only control, and secure
-  token handling.
+- Better governance: enforce allowlists, admin-only control, and secure token handling.
 - Better user continuity: keep chat and session flows available across devices.
-- Better extensibility: support A2A extension workflows (for example, OpenCode
-  session query) without tightly coupling to provider-specific schemas.
+- Better extensibility: support A2A extension workflows (for example, OpenCode session query) without tightly coupling to provider-specific schemas.
 
 ## Core capabilities
 
@@ -65,8 +50,7 @@ for the maintained compatibility notes and explicit non-goals.
   - Add, validate, update, and remove user-managed agents.
   - Invoke via HTTP and WebSocket.
 - Admin-managed Hub Catalog
-  - Publish global agents for all users (`public`) or selected users
-    (`allowlist`).
+  - Publish global agents for all users (`public`) or selected users (`allowlist`).
   - Keep admin credentials encrypted and hidden from normal users.
 - Session and chat continuity
   - Persist sessions/messages and query them from user-facing APIs.
@@ -91,8 +75,7 @@ for the maintained compatibility notes and explicit non-goals.
 - `docs/`
   - Cross-cutting architecture and API examples
 
-See [docs/architecture-and-api.md](docs/architecture-and-api.md) for request
-flows and endpoint examples.
+See [docs/architecture-and-api.md](docs/architecture-and-api.md) for request flows and endpoint examples.
 
 ## Quick start (local development)
 
@@ -116,8 +99,7 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Notes:
 
-- RS256 JWT keys are required. Configure them in `backend/.env` based on
-  `backend/.env.example`.
+- RS256 JWT keys are required. Configure them in `backend/.env` based on `backend/.env.example`.
 - Configure `A2A_PROXY_ALLOWED_HOSTS` before invoking downstream A2A endpoints.
 
 ### 2. Start frontend
@@ -133,29 +115,21 @@ Set `EXPO_PUBLIC_API_BASE_URL` in `frontend/.env` for your backend.
 
 ## Production Parameter Baseline (Scheduler and Streaming)
 
-Set the following parameters explicitly in production to avoid long
-transactions and stuck scheduler runs:
+Set the following parameters explicitly in production to avoid long transactions and stuck scheduler runs:
 
 - `A2A_SCHEDULE_TASK_INVOKE_TIMEOUT`
-  - Total timeout for a single scheduled invoke (the only run-time upper
-    bound). It should be higher than your common task duration ceiling.
+  - Total timeout for a single scheduled invoke (the only run-time upper bound). It should be higher than your common task duration ceiling.
 - `A2A_SCHEDULE_RUN_HEARTBEAT_INTERVAL_SECONDS`
-  - Heartbeat update interval during scheduler execution. Recommended:
-    15-60 seconds, and it must be lower than invoke timeout.
-  - Heartbeat writes use short `lock_timeout/statement_timeout` values so
-    lock contention fails fast and retries on the next heartbeat cycle.
+  - Heartbeat update interval during scheduler execution. Recommended: 15-60 seconds, and it must be lower than invoke timeout.
+  - Heartbeat writes use short `lock_timeout/statement_timeout` values so lock contention fails fast and retries on the next heartbeat cycle.
 - `A2A_SCHEDULE_TASK_STREAM_IDLE_TIMEOUT`
   - Upstream stream idle timeout. Recommended: 30-120 seconds.
 - `A2A_SCHEDULE_EXECUTION_RETENTION_DAYS`
-  - Retention window for terminal schedule execution history. Recommended:
-    14-30 days for small deployments unless you need a longer audit trail.
+  - Retention window for terminal schedule execution history. Recommended: 14-30 days for small deployments unless you need a longer audit trail.
 - PostgreSQL `idle_in_transaction_session_timeout`
-  - Set a database-level fallback (for example, 60s-300s) to prevent long
-    `idle in transaction` sessions on exceptional paths.
+  - Set a database-level fallback (for example, 60s-300s) to prevent long `idle in transaction` sessions on exceptional paths.
 - Cross-process mutual exclusion for the scheduler dispatcher
-  - PostgreSQL advisory lock ensures only one process executes the
-    dispatch loop at a time, reducing extra contention from multi-instance
-    concurrent scan-and-claim behavior.
+  - PostgreSQL advisory lock ensures only one process executes the dispatch loop at a time, reducing extra contention from multi-instance concurrent scan-and-claim behavior.
 
 You can observe these via `/health` under `a2a.ops_metrics`:
 
@@ -174,12 +148,9 @@ You can observe these via `/health` under `a2a.ops_metrics`:
 - Authentication conventions: [docs/authentication.md](docs/authentication.md)
 - Production security baseline: [docs/security-baseline.md](docs/security-baseline.md)
 - Release automation: [docs/release-workflow.md](docs/release-workflow.md)
-- Shared session query contract:
-  [docs/contracts/shared-session-query-canonical-contract.md](docs/contracts/shared-session-query-canonical-contract.md)
-- Architecture and API examples:
-  [docs/architecture-and-api.md](docs/architecture-and-api.md)
-- Compatibility notes and non-goals:
-  [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md)
+- Shared session query contract: [docs/contracts/shared-session-query-canonical-contract.md](docs/contracts/shared-session-query-canonical-contract.md)
+- Architecture and API examples: [docs/architecture-and-api.md](docs/architecture-and-api.md)
+- Compatibility notes and non-goals: [docs/compatibility-and-non-goals.md](docs/compatibility-and-non-goals.md)
 
 ## License
 

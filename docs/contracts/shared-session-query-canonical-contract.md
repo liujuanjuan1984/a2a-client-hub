@@ -1,22 +1,16 @@
 # Shared Session Query Canonical Contract
 
-This document defines the canonical Hub-consumed contract for the shared
-session query extension.
+This document defines the canonical Hub-consumed contract for the shared session query extension.
 
-It is intentionally scoped to the runtime contract that `a2a-client-hub`
-parses and consumes. It does not attempt to document every provider-private
-metadata field or method-level descriptive annotation that an upstream server
-may choose to publish.
+It is intentionally scoped to the runtime contract that `a2a-client-hub` parses and consumes. It does not attempt to document every provider-private metadata field or method-level descriptive annotation that an upstream server may choose to publish.
 
 ## Status
 
 - Hub-stable canonical identifier: `urn:opencode-a2a:session-query/v1`
-- Current `opencode-a2a` HTTPS alias also recognized by Hub:
-  `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1`
+- Current `opencode-a2a` HTTPS alias also recognized by Hub: `https://github.com/Intelligent-Internet/opencode-a2a/blob/main/docs/extension-specifications.md#opencode-session-query-v1`
 - Legacy extension URI still recognized by Hub: `urn:shared-a2a:session-query:v1`
 - This document describes the canonical contract only
-- Hub normalizes known aliases back to its stable internal identifier where a
-  canonical URI value is required by downstream diagnostics
+- Hub normalizes known aliases back to its stable internal identifier where a canonical URI value is required by downstream diagnostics
 
 ## Contract Goals
 
@@ -42,10 +36,7 @@ The canonical declaration must provide:
 - `params.methods.get_session_messages`
 - `params.pagination`
 
-For upstreams that slim down the public Agent Card and move detailed extension
-contracts into an authenticated extended card, Hub should prefer consuming the
-extended card when available. The canonical runtime contract described here
-still applies; only the card discovery surface changes.
+For upstreams that slim down the public Agent Card and move detailed extension contracts into an authenticated extended card, Hub should prefer consuming the extended card when available. The canonical runtime contract described here still applies; only the card discovery surface changes.
 
 The optional canonical declaration may provide:
 
@@ -54,14 +45,9 @@ The optional canonical declaration may provide:
 - `params.errors.business_codes`
 - `params.result_envelope`
 
-If `params.errors.business_codes` is declared, the published keys should match
-the upstream wire contract exactly. For the current OpenCode cross-repo
-contract, that means uppercase enum-style tokens such as
-`SESSION_NOT_FOUND` or `UPSTREAM_HTTP_ERROR`.
+If `params.errors.business_codes` is declared, the published keys should match the upstream wire contract exactly. For the current OpenCode cross-repo contract, that means uppercase enum-style tokens such as `SESSION_NOT_FOUND` or `UPSTREAM_HTTP_ERROR`.
 
-Hub normalizes those declared keys into its own lowercase internal
-`error_code` values during runtime parsing. The extension declaration itself
-should not pre-normalize them to Hub-internal naming.
+Hub normalizes those declared keys into its own lowercase internal `error_code` values during runtime parsing. The extension declaration itself should not pre-normalize them to Hub-internal naming.
 
 ## Methods
 
@@ -128,30 +114,25 @@ Optional:
 
 - `before`
 
-Hub normalizes this declaration into its internal `limit` pagination baseline
-plus cursor capability metadata. This mode is therefore an additive `v1`
-enhancement, not a breaking protocol fork.
+Hub normalizes this declaration into its internal `limit` pagination baseline plus cursor capability metadata. This mode is therefore an additive `v1` enhancement, not a breaking protocol fork.
 
 ### Shared pagination rules
 
 - size values must be positive integers
-- `default_size` / `default_limit` must be less than or equal to the matching
-  max value
+- `default_size` / `default_limit` must be less than or equal to the matching max value
 - missing defaults or max values are invalid
 - `limit_and_optional_cursor` declarations must not advertise `offset`
 - unsupported pagination modes are invalid
 
 ## Result Envelope
 
-If `params.result_envelope` is omitted, Hub falls back to the default top-level
-envelope:
+If `params.result_envelope` is omitted, Hub falls back to the default top-level envelope:
 
 - `items`
 - `pagination`
 - `raw`
 
-If `params.result_envelope` is declared, Hub treats it as strict and only
-accepts these mapping keys:
+If `params.result_envelope` is declared, Hub treats it as strict and only accepts these mapping keys:
 
 - `items`
 - `pagination`
@@ -172,10 +153,7 @@ The following are not part of the canonical runtime envelope contract:
 - provider-private descriptive annotations
 - ad hoc keys such as `result_envelope.by_method`
 
-If an upstream server needs to describe method-specific result structures, that
-information should live in a dedicated descriptive field such as
-`method_contracts.<method>.result`, not inside the runtime-consumed
-`result_envelope` mapping.
+If an upstream server needs to describe method-specific result structures, that information should live in a dedicated descriptive field such as `method_contracts.<method>.result`, not inside the runtime-consumed `result_envelope` mapping.
 
 ## Hub Interpretation
 
@@ -198,5 +176,4 @@ Reference payload assets live in:
 
 - `docs/contracts/shared-session-query-reference-payloads.json`
 
-They are intended to be copied into upstream contract tests, interoperability
-fixtures, or future third-party peer reviews.
+They are intended to be copied into upstream contract tests, interoperability fixtures, or future third-party peer reviews.
