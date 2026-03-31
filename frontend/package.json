@@ -1,6 +1,6 @@
 {
   "name": "a2a-client-hub",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "private": true,
   "description": "Frontend control-plane app for a2a-client-hub (Expo + React Native)",
   "keywords": [
