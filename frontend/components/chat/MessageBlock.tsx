@@ -12,7 +12,7 @@ import {
   type MessageBlock as MessageBlockType,
 } from "@/lib/api/chat-utils";
 
-export interface MessageBlockProps {
+interface MessageBlockProps {
   block: MessageBlockType;
   messageId: string;
   blockIndex: number;

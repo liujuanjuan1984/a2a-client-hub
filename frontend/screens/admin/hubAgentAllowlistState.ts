@@ -1,6 +1,6 @@
 import { type HubA2AAllowlistEntryResponse } from "@/lib/api/hubA2aAgentsAdmin";
 
-export type HubAgentAllowlistDraftEntry = {
+type HubAgentAllowlistDraftEntry = {
   id: string;
   existingUserId: string | null;
   email: string;
