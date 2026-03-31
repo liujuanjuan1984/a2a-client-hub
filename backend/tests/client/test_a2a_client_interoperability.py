@@ -379,6 +379,36 @@ async def test_get_agent_card_uses_sdk_exact_transport_matching_semantics(
     assert validate_calls == ["http://example-agent.internal:24020"]
 
 
+def test_build_card_resolver_uses_root_base_for_standard_http_extended_card_path() -> (
+    None
+):
+    a2a_client = A2AClient("http://example-agent.internal:24020")
+
+    resolver = a2a_client._build_card_resolver(
+        Mock(),
+        agent_card_path_override=client_module.AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
+    )
+
+    assert resolver.base_url == "http://example-agent.internal:24020"
+    assert resolver.agent_card_path == "v1/card"
+
+
+def test_build_card_resolver_rebases_standard_http_extended_card_path_from_well_known_card_url() -> (
+    None
+):
+    a2a_client = A2AClient(
+        "http://example-agent.internal:24020/.well-known/agent-card.json"
+    )
+
+    resolver = a2a_client._build_card_resolver(
+        Mock(),
+        agent_card_path_override=client_module.AUTHENTICATED_EXTENDED_AGENT_CARD_HTTP_PATH,
+    )
+
+    assert resolver.base_url == "http://example-agent.internal:24020"
+    assert resolver.agent_card_path == "v1/card"
+
+
 @pytest.mark.asyncio
 async def test_get_authenticated_extended_agent_card_prefers_jsonrpc_for_jsonrpc_peer() -> (
     None
