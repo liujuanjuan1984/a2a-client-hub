@@ -10,7 +10,7 @@ The repository now uses a two-stage release flow:
 1. A maintainer manually starts `Prepare Release`.
 2. The workflow opens a Draft PR that synchronizes version metadata.
 3. After that PR is merged into `master`, `Release` creates the Git tag and
-   GitHub Release from the synchronized `master` commit.
+   ensures the GitHub Release exists for the synchronized `master` commit.
 
 This keeps the published tag aligned with the final merged commit that contains
 the authoritative version metadata.
@@ -34,13 +34,26 @@ It performs these steps:
 
 The publishing workflow is defined in `.github/workflows/release.yml`.
 
-It runs when a push to `master` changes `VERSION`. The workflow then:
+It runs when a push to `master` changes `VERSION`, and it also supports a
+manual reconciliation mode through `workflow_dispatch`.
+
+On the normal `push` path, the workflow:
 
 1. Reads the release version from the checked-in `VERSION` file.
 2. Verifies that the repository metadata is already synchronized.
 3. Refuses to reuse a tag that points at a different commit.
 4. Creates the release tag from the current `master` commit.
-5. Creates a GitHub Release with generated release notes.
+5. Ensures the GitHub Release exists for that tag, with generated release
+   notes.
+
+On the manual `workflow_dispatch` path, the workflow:
+
+1. Accepts an existing release tag such as `v1.3.2`.
+2. Resolves the tagged commit and validates the checked-in release metadata at
+   that commit.
+3. Refuses to continue if the tag does not exist or points to an unexpected
+   revision.
+4. Recreates the missing GitHub Release if needed, without rewriting the tag.
 
 ## Version Source of Truth
 
@@ -66,6 +79,28 @@ The workflow currently checks and may update these files:
 3. Review and merge the auto-created Draft PR.
 4. Let `.github/workflows/release.yml` create the Git tag and GitHub Release
    from the merged `master` commit.
+
+## Recovery Path for Missing GitHub Releases
+
+If the release workflow succeeds in pushing the tag but fails before the
+GitHub Release is created, use the manual reconciliation path:
+
+1. Open the `Release` workflow in GitHub Actions.
+2. Choose `Run workflow`.
+3. Provide the existing release tag, for example `v1.3.2`.
+4. Run the workflow on `master`.
+
+Behavior:
+
+- If the tag exists and the GitHub Release is missing, the workflow recreates
+  the release.
+- If the GitHub Release already exists, the workflow exits without changing
+  the tag.
+- If the tag does not exist, the workflow fails fast instead of creating a new
+  tag from an ambiguous ref.
+
+The release creation step uses limited retry logic to reduce transient GitHub
+API failures before surfacing an error.
 
 ## Local or CI Validation
 
