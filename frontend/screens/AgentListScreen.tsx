@@ -197,6 +197,10 @@ export function AgentListScreen() {
   const renderPersonalAgentItem = (agent: A2AAgentResponse) => {
     const badge = HEALTH_BADGE_STYLES[agent.health_status];
     const isCheckingThisAgent = checkingAgentId === agent.id;
+    const showCheckedAt = agent.health_status !== "healthy";
+    const checkedAtLabel = agent.last_health_check_at
+      ? `Checked ${new Date(agent.last_health_check_at).toLocaleString()}`
+      : "Not checked yet";
 
     return (
       <View
@@ -217,24 +221,27 @@ export function AgentListScreen() {
               >
                 {badge.label}
               </Text>
-              <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                PERSONAL
-              </Text>
             </View>
           </View>
-          <View className="mt-3 flex-row items-center justify-between gap-3">
-            <Text className="text-xs text-slate-400" numberOfLines={1}>
-              {agent.enabled ? "Enabled" : "Disabled"}
-            </Text>
-            <Text
-              className="flex-1 text-right text-xs text-slate-500"
-              numberOfLines={1}
-            >
-              {agent.last_health_check_at
-                ? `Checked ${new Date(agent.last_health_check_at).toLocaleString()}`
-                : "Not checked yet"}
-            </Text>
-          </View>
+          {!agent.enabled || showCheckedAt ? (
+            <View className="mt-3 flex-row items-center justify-between gap-3">
+              {agent.enabled ? (
+                <View className="flex-1" />
+              ) : (
+                <Text className="text-xs text-slate-400" numberOfLines={1}>
+                  Disabled
+                </Text>
+              )}
+              {showCheckedAt ? (
+                <Text
+                  className="flex-1 text-right text-xs text-slate-500"
+                  numberOfLines={1}
+                >
+                  {checkedAtLabel}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           {agent.last_health_check_error ? (
             <Text className="mt-2 text-xs text-rose-200" numberOfLines={2}>
               {agent.last_health_check_error}

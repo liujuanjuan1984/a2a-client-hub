@@ -1,3 +1,4 @@
+import { Text } from "react-native";
 import { act, create } from "react-test-renderer";
 
 import { AgentListScreen } from "@/screens/AgentListScreen";
@@ -271,5 +272,23 @@ describe("AgentListScreen", () => {
     });
 
     expect(mockSharedPageCalls[mockSharedPageCalls.length - 1]).toBe(2);
+  });
+
+  it("keeps personal cards visually minimal by hiding enabled and personal markers", async () => {
+    let tree: ReturnType<typeof create>;
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    const textContent = tree!.root
+      .findAllByType(Text)
+      .flatMap((node) => node.props.children)
+      .join(" ");
+
+    expect(textContent).not.toContain("PERSONAL");
+    expect(textContent).not.toContain("Enabled");
+    expect(textContent).not.toContain("Checked");
+    expect(textContent).toContain("SHARED");
   });
 });
