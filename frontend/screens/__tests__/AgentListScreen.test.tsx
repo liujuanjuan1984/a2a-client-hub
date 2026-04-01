@@ -7,9 +7,6 @@ const mockPush = jest.fn();
 const mockSetActiveAgent = jest.fn();
 const mockInvalidateQueries = jest.fn(() => Promise.resolve());
 const mockBatchMutate = jest.fn();
-const mockCheckAgentHealth = jest.fn((_agentId: string, _force?: boolean) =>
-  Promise.resolve({}),
-);
 const mockBlurActiveElement = jest.fn();
 const mockSharedPageCalls: number[] = [];
 
@@ -125,8 +122,6 @@ jest.mock("@/hooks/useAgentListQueries", () => ({
 }));
 
 jest.mock("@/lib/api/a2aAgents", () => ({
-  checkAgentHealth: (agentId: string, force?: boolean) =>
-    mockCheckAgentHealth(agentId, force),
   checkAgentsHealth: jest.fn(),
 }));
 
@@ -199,19 +194,7 @@ describe("AgentListScreen", () => {
     expect(mockButtons.some((button) => button.label === "Details")).toBe(
       false,
     );
-
-    const checkButton = mockButtons.find(
-      (button) => button.label === "Check",
-    ) as { onPress: () => Promise<void> };
-    await act(async () => {
-      await checkButton.onPress();
-    });
-
-    expect(mockCheckAgentHealth).toHaveBeenCalledWith(
-      "personal-healthy-1",
-      true,
-    );
-    expect(mockInvalidateQueries).toHaveBeenCalled();
+    expect(mockButtons.some((button) => button.label === "Check")).toBe(false);
 
     const chatButton = mockButtons.find(
       (button) => button.label === "Chat",

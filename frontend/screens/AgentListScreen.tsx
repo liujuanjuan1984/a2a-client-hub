@@ -12,11 +12,7 @@ import {
   usePersonalAgentsListQuery,
   useSharedAgentsListQuery,
 } from "@/hooks/useAgentListQueries";
-import {
-  checkAgentHealth,
-  checkAgentsHealth,
-  type A2AAgentResponse,
-} from "@/lib/api/a2aAgents";
+import { checkAgentsHealth, type A2AAgentResponse } from "@/lib/api/a2aAgents";
 import { type HubA2AAgentUserResponse } from "@/lib/api/hubA2aAgentsUser";
 import { blurActiveElement } from "@/lib/focus";
 import { queryKeys } from "@/lib/queryKeys";
@@ -63,7 +59,6 @@ export function AgentListScreen() {
   const [attentionPage, setAttentionPage] = useState(1);
   const [sharedPage, setSharedPage] = useState(1);
   const [showAttention, setShowAttention] = useState(false);
-  const [checkingAgentId, setCheckingAgentId] = useState<string | null>(null);
 
   const personalQuery = usePersonalAgentsListQuery({
     page: personalPage,
@@ -148,22 +143,6 @@ export function AgentListScreen() {
     },
   });
 
-  const handleCheckAgent = async (agentId: string) => {
-    setCheckingAgentId(agentId);
-    try {
-      await checkAgentHealth(agentId, true);
-      await invalidateAgentQueries();
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not check agent availability.";
-      toast.error("Availability check failed", message);
-    } finally {
-      setCheckingAgentId(null);
-    }
-  };
-
   const onRefresh = async () => {
     const results = await Promise.allSettled([
       personalQuery.refetch(),
@@ -199,7 +178,6 @@ export function AgentListScreen() {
 
   const renderPersonalAgentItem = (agent: A2AAgentResponse) => {
     const badge = HEALTH_BADGE_STYLES[agent.health_status];
-    const isCheckingThisAgent = checkingAgentId === agent.id;
     const showCheckedAt = agent.health_status !== "healthy";
     const checkedAtLabel = agent.last_health_check_at
       ? `Checked ${new Date(agent.last_health_check_at).toLocaleString()}`
@@ -262,18 +240,6 @@ export function AgentListScreen() {
               onPress={() => {
                 blurActiveElement();
                 router.push(`/agents/${agent.id}`);
-              }}
-            />
-            <Button
-              label={isCheckingThisAgent ? "Checking..." : "Check"}
-              size="sm"
-              variant="secondary"
-              iconLeft="pulse-outline"
-              onPress={() => {
-                if (isCheckingThisAgent) {
-                  return;
-                }
-                handleCheckAgent(agent.id).catch(() => undefined);
               }}
             />
           </View>
