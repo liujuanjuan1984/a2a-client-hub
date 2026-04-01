@@ -184,15 +184,21 @@ describe("AgentListScreen", () => {
   });
 
   it("renders paginated sections and handles list actions", async () => {
+    let tree: ReturnType<typeof create>;
+
     await act(async () => {
-      create(<AgentListScreen />);
+      tree = create(<AgentListScreen />);
     });
 
+    expect(mockButtons.some((button) => button.label === "My")).toBe(true);
+    expect(mockButtons.some((button) => button.label === "Shared")).toBe(true);
     expect(
       mockButtons.some((button) => button.label === "Check availability"),
     ).toBe(true);
     expect(mockButtons.some((button) => button.label === "Expand")).toBe(true);
-    expect(mockButtons.some((button) => button.label === "Details")).toBe(true);
+    expect(mockButtons.some((button) => button.label === "Details")).toBe(
+      false,
+    );
 
     const checkButton = mockButtons.find(
       (button) => button.label === "Check",
@@ -241,6 +247,20 @@ describe("AgentListScreen", () => {
     expect(
       mockButtons.some((button) => button.label === "Attention Agent"),
     ).toBe(false);
+
+    const sharedTabButton = mockButtons.find(
+      (button) => button.label === "Shared",
+    ) as { onPress: () => void };
+    mockButtons = [];
+    await act(async () => {
+      sharedTabButton.onPress();
+      tree!.update(<AgentListScreen />);
+    });
+
+    expect(mockButtons.some((button) => button.label === "Details")).toBe(true);
+    expect(
+      mockButtons.some((button) => button.label === "Check availability"),
+    ).toBe(false);
   });
 
   it("does not reset shared pagination when the next page query is temporarily empty", async () => {
@@ -248,6 +268,16 @@ describe("AgentListScreen", () => {
 
     await act(async () => {
       tree = create(<AgentListScreen />);
+    });
+
+    const sharedTabButton = mockButtons.find(
+      (button) => button.label === "Shared",
+    ) as { onPress: () => void };
+
+    mockButtons = [];
+    await act(async () => {
+      sharedTabButton.onPress();
+      tree!.update(<AgentListScreen />);
     });
 
     const initialNextButton = mockButtons.find(
@@ -289,6 +319,38 @@ describe("AgentListScreen", () => {
     expect(textContent).not.toContain("PERSONAL");
     expect(textContent).not.toContain("Enabled");
     expect(textContent).not.toContain("Checked");
+    expect(textContent).not.toContain("SHARED");
+  });
+
+  it("shows shared cards only after switching to the shared tab", async () => {
+    let tree: ReturnType<typeof create>;
+
+    await act(async () => {
+      tree = create(<AgentListScreen />);
+    });
+
+    let textContent = tree!.root
+      .findAllByType(Text)
+      .flatMap((node) => node.props.children)
+      .join(" ");
+
+    expect(textContent).not.toContain("SHARED");
+
+    const sharedTabButton = mockButtons.find(
+      (button) => button.label === "Shared",
+    ) as { onPress: () => void };
+
+    mockButtons = [];
+    await act(async () => {
+      sharedTabButton.onPress();
+      tree!.update(<AgentListScreen />);
+    });
+
+    textContent = tree!.root
+      .findAllByType(Text)
+      .flatMap((node) => node.props.children)
+      .join(" ");
+
     expect(textContent).toContain("SHARED");
   });
 });
