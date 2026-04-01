@@ -4,6 +4,7 @@ import { Switch, Text, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import { CopyButton } from "@/components/ui/CopyButton";
+import { IconButton } from "@/components/ui/IconButton";
 import {
   type IntervalTimePoint,
   type ScheduledJob,
@@ -336,19 +337,21 @@ export function ScheduledJobCard({
       <View className="flex-row items-center justify-between gap-2 bg-black/20 px-4 py-2.5">
         <View className="flex-row items-center gap-2">
           {!canMarkFailed ? (
-            <Button
-              label="Edit"
+            <IconButton
+              accessibilityLabel="Edit job"
+              icon="create-outline"
               size="xs"
               variant="secondary"
-              iconLeft="create-outline"
               onPress={onEdit}
             />
           ) : null}
-          <Button
-            label={promptExpanded ? "Less" : "More"}
+          <IconButton
+            accessibilityLabel={
+              promptExpanded ? "Collapse prompt" : "Expand prompt"
+            }
+            icon={promptExpanded ? "chevron-up" : "chevron-down"}
             size="xs"
             variant="secondary"
-            iconLeft={promptExpanded ? "chevron-up" : "chevron-down"}
             onPress={() => setPromptExpanded(!promptExpanded)}
           />
           {hasPrompt ? (
@@ -361,11 +364,15 @@ export function ScheduledJobCard({
               iconColor={tone.iconColor}
             />
           ) : null}
-          <Button
-            label={executionsOpen ? "Hide" : "History"}
+          <IconButton
+            accessibilityLabel={
+              executionsOpen
+                ? "Hide execution history"
+                : "Show execution history"
+            }
+            icon={executionsOpen ? "time" : "time-outline"}
             size="xs"
             variant={executionsOpen ? "primary" : "secondary"}
-            iconLeft={executionsOpen ? "time" : "time-outline"}
             onPress={onToggleExecutions}
           />
         </View>
@@ -383,12 +390,12 @@ export function ScheduledJobCard({
             />
           ) : null}
           {!canMarkFailed ? (
-            <Button
-              label="Delete"
+            <IconButton
+              accessibilityLabel="Delete job"
+              icon="trash-outline"
               size="xs"
               variant="danger"
               className="bg-red-500/40"
-              iconLeft="trash-outline"
               loading={deleting}
               disabled={!onDelete}
               onPress={handleDelete}

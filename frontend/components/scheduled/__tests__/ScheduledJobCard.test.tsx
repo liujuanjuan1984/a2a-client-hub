@@ -37,6 +37,21 @@ jest.mock("@/components/ui/Button", () => {
   };
 });
 
+jest.mock("@/components/ui/IconButton", () => {
+  const { Pressable, Text } = require("react-native");
+  return {
+    IconButton: ({ accessibilityLabel, onPress }: any) => (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        onPress={onPress}
+      >
+        <Text>{accessibilityLabel}</Text>
+      </Pressable>
+    ),
+  };
+});
+
 jest.mock("@expo/vector-icons", () => ({
   Ionicons: () => null,
 }));
@@ -191,7 +206,7 @@ describe("ScheduledJobCard visuals", () => {
     expect(getByText("Stop stalled run")).toBeTruthy();
   });
 
-  it("toggles prompt expansion with More/Less labels", () => {
+  it("toggles prompt expansion with the prompt icon button", () => {
     const job = {
       id: "6",
       name: "Job",
@@ -207,22 +222,22 @@ describe("ScheduledJobCard visuals", () => {
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
     };
-    const { getByText, queryByText } = render(
+    const { getByLabelText, getByText, queryByText } = render(
       <ScheduledJobCard {...defaultProps} job={job as any} />,
     );
 
     // Prompt should be hidden by default
     expect(queryByText(job.prompt)).toBeNull();
-    expect(getByText("More")).toBeTruthy();
+    expect(getByLabelText("Expand prompt")).toBeTruthy();
 
-    // Click More to expand
-    fireEvent.press(getByText("More"));
+    // Expand prompt
+    fireEvent.press(getByLabelText("Expand prompt"));
 
     expect(getByText(job.prompt)).toBeTruthy();
-    expect(getByText("Less")).toBeTruthy();
+    expect(getByLabelText("Collapse prompt")).toBeTruthy();
 
-    // Click Less to collapse
-    fireEvent.press(getByText("Less"));
+    // Collapse prompt
+    fireEvent.press(getByLabelText("Collapse prompt"));
     expect(queryByText(job.prompt)).toBeNull();
   });
 
@@ -424,12 +439,12 @@ describe("ScheduledJobCard interactions", () => {
       next_run_at_utc: "2026-02-23T10:00:00Z",
       schedule_timezone: "UTC",
     };
-    const { getByText } = render(
+    const { getByLabelText } = render(
       <ScheduledJobCard {...defaultProps} job={job as any} />,
     );
 
     await act(async () => {
-      fireEvent.press(getByText("Delete"));
+      fireEvent.press(getByLabelText("Delete job"));
     });
 
     expect(defaultProps.onDelete).toHaveBeenCalled();
